@@ -81,8 +81,12 @@ isolated(
       headers: { Origin: origin, 'X-CSRF-Token': csrfToken },
     });
     expect(foreign.status()).toBe(404);
-    expect((await api.get(`/api/wallet-addresses/${foreignAddressId}/transactions`)).status()).toBe(404);
-    expect((await api.get(`/api/wallet-addresses/${randomUUID()}/transactions`)).status()).toBe(404);
+    expect((await api.get(`/api/wallet-addresses/${foreignAddressId}/transactions`)).status()).toBe(
+      404,
+    );
+    expect((await api.get(`/api/wallet-addresses/${randomUUID()}/transactions`)).status()).toBe(
+      404,
+    );
     expect(query('SELECT count(*) FROM wallet_addresses')).toBe('1');
     expect(chainRequests()).toEqual([]);
 
@@ -157,7 +161,9 @@ isolated(
         WHERE a."ownerId" = '11111111-1111-4111-8111-111111111111'`),
     ).toBe('60');
     expect(
-      query(`SELECT count(*) FROM wallet_address_transactions WHERE "addressId" = '${foreignAddressId}'`),
+      query(
+        `SELECT count(*) FROM wallet_address_transactions WHERE "addressId" = '${foreignAddressId}'`,
+      ),
     ).toBe('0');
   },
 );
@@ -381,7 +387,7 @@ isolated(
     // The chain check spans the summary under its figures; Last sync starts under its label.
     const summary = main.getByRole('region', { name: 'Summary', exact: true });
     await expect(summary.getByRole('note')).toContainText(
-      /Balance differs by [\d.]+ BTC\. The blockchain shows 46\.88647965 BTC;/,
+      /Balance differs by [\d.]+ BTC.*The blockchain shows 46\.88647965 BTC;/s,
     );
     const misplaced = await summary.evaluate((card) => {
       const box = (element: Element | null) => element?.getBoundingClientRect();

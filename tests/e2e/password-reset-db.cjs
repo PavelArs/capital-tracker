@@ -12,8 +12,11 @@ const { ConfigService } = require('@nestjs/config');
 const { enroll } = require('./mfa-db.cjs');
 
 const settings = {
-  DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e',
-  DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e',
+  DB_HOST: 'postgres',
+  DB_PORT: '5432',
+  DB_USERNAME: 'capital_e2e',
+  DB_PASSWORD: 'capital_e2e',
+  DB_NAME: 'capital_tracker_e2e',
 };
 const database = 'capital_tracker_password_reset_db_e2e';
 const origin = 'https://127.0.0.1:8443';
@@ -27,14 +30,23 @@ let stage = 'isolated setup';
 
 function connection(name) {
   assert.ok([database, settings.DB_NAME].includes(name), 'Allowlisted synthetic database only');
-  return { host: 'postgres', port: 5432, user: 'capital_e2e', password: 'capital_e2e',
-    database: name, connectionTimeoutMillis: 5000 };
+  return {
+    host: 'postgres',
+    port: 5432,
+    user: 'capital_e2e',
+    password: 'capital_e2e',
+    database: name,
+    connectionTimeoutMillis: 5000,
+  };
 }
 
 function command(script, args = [], input) {
   const result = spawnSync(process.execPath, [`/app/backend/dist/${script}.js`, ...args], {
-    cwd: '/app/backend', env: { ...process.env, ...settings, DB_NAME: database },
-    input, encoding: 'utf8', timeout: 60000,
+    cwd: '/app/backend',
+    env: { ...process.env, ...settings, DB_NAME: database },
+    input,
+    encoding: 'utf8',
+    timeout: 60000,
   });
   assert.equal(result.error, undefined);
   assert.equal(result.signal, null);
@@ -45,8 +57,12 @@ function command(script, args = [], input) {
 }
 
 async function rejected(promise, status, error) {
-  await assert.rejects(promise, (thrown) => thrown.getStatus?.() === status
-    && (error === undefined || thrown.getResponse?.().error === error));
+  await assert.rejects(
+    promise,
+    (thrown) =>
+      thrown.getStatus?.() === status &&
+      (error === undefined || thrown.getResponse?.().error === error),
+  );
 }
 
 // The provider boundary: records what would go to SMTP, or fails like an unreachable server.
@@ -73,8 +89,11 @@ async function tokenRows(source) {
 
 // Moves every link of the fixture back in time, keeping each 30-minute lifetime intact.
 async function age(source, interval) {
-  await source.query(`UPDATE password_reset_tokens SET "createdAt" = "createdAt" - $1::interval,
-    "expiresAt" = "expiresAt" - $1::interval`, [interval]);
+  await source.query(
+    `UPDATE password_reset_tokens SET "createdAt" = "createdAt" - $1::interval,
+    "expiresAt" = "expiresAt" - $1::interval`,
+    [interval],
+  );
 }
 
 async function verifyRequest(source, resets, mailer, ownerId) {
@@ -85,8 +104,11 @@ async function verifyRequest(source, resets, mailer, ownerId) {
   assert.equal(mailer.sent[0].to, email);
   const token = linkToken(mailer.sent[0]);
   const [row] = await tokenRows(source);
-  assert.deepEqual({ ...row }, { tokenHash: hash(token), userId: ownerId, usedAt: null,
-    revokedAt: null, lifetime: 1800 }, 'Only the token digest is stored, valid for 30 minutes');
+  assert.deepEqual(
+    { ...row },
+    { tokenHash: hash(token), userId: ownerId, usedAt: null, revokedAt: null, lifetime: 1800 },
+    'Only the token digest is stored, valid for 30 minutes',
+  );
   assert.equal(await resets.status(token), 'valid');
   const before = fingerprint(await tokenRows(source));
   for (const unknown of ['absent@example.invalid', 'reset-owner@example.com']) {
@@ -103,7 +125,9 @@ async function verifyRequest(source, resets, mailer, ownerId) {
   for (const malformed of ['', 'x'.repeat(43), `${newer}=`, 'A'.repeat(44), 42, null]) {
     assert.equal(await resets.status(malformed), 'invalid');
   }
-  console.log('PASS RESET-REQUEST one link per request for the owner, identical silence for unknown emails, newest link only');
+  console.log(
+    'PASS RESET-REQUEST one link per request for the owner, identical silence for unknown emails, newest link only',
+  );
   return newer;
 }
 
@@ -115,7 +139,9 @@ async function verifyMailFailure(source, resets, mailer) {
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal((await tokenRows(source)).length, count + 1);
   mailer.fail = false;
-  console.log('PASS RESET-REQUEST an unreachable SMTP server neither fails nor reveals the request');
+  console.log(
+    'PASS RESET-REQUEST an unreachable SMTP server neither fails nor reveals the request',
+  );
 }
 
 async function verifyUse(source, resets, sessions, factors, auth, factor, token) {
@@ -124,12 +150,24 @@ async function verifyUse(source, resets, sessions, factors, auth, factor, token)
   const authenticated = [];
   for (let index = 0; index < 2; index++) {
     const anonymous = await sessions.csrf(null);
-    const authorized = await sessions.authorize(anonymous.token, false, 'POST', origin, anonymous.csrfToken);
+    const authorized = await sessions.authorize(
+      anonymous.token,
+      false,
+      'POST',
+      origin,
+      anonymous.csrfToken,
+    );
     const pending = await sessions.rotate(authorized.hash, verified);
     authenticated.push(await factors.complete(hash(pending.token), factor.next()));
   }
   const anonymous = await sessions.csrf(null);
-  const authorized = await sessions.authorize(anonymous.token, false, 'POST', origin, anonymous.csrfToken);
+  const authorized = await sessions.authorize(
+    anonymous.token,
+    false,
+    'POST',
+    origin,
+    anonymous.csrfToken,
+  );
   const pending = await sessions.rotate(authorized.hash, verified);
   const visitor = await sessions.csrf(null);
   const [{ credentialVersion }] = await source.query('SELECT "credentialVersion" FROM owner_auth');
@@ -141,9 +179,15 @@ async function verifyUse(source, resets, sessions, factors, auth, factor, token)
   for (const session of authenticated) {
     await rejected(sessions.authorize(session.token, true, 'GET', undefined, undefined), 401);
   }
-  await rejected(sessions.authorize(pending.token, true, 'POST', origin, pending.csrfToken, true), 401);
-  assert.equal((await source.query('SELECT 1 FROM auth_sessions WHERE "userId" IS NOT NULL')).length, 0,
-    'Every owner session is gone');
+  await rejected(
+    sessions.authorize(pending.token, true, 'POST', origin, pending.csrfToken, true),
+    401,
+  );
+  assert.equal(
+    (await source.query('SELECT 1 FROM auth_sessions WHERE "userId" IS NOT NULL')).length,
+    0,
+    'Every owner session is gone',
+  );
   const kept = await sessions.authorize(visitor.token, false, 'POST', origin, visitor.csrfToken);
   assert.equal(kept.state, 'anonymous', 'An unrelated anonymous visitor keeps its session');
   const [owner] = await source.query('SELECT "credentialVersion" FROM owner_auth');
@@ -152,19 +196,36 @@ async function verifyUse(source, resets, sessions, factors, auth, factor, token)
   const renewed = await auth.validateUser(email, newPassword);
   assert.ok(renewed, 'The new password verifies');
   const [stored] = await source.query('SELECT password FROM users WHERE email = $1', [email]);
-  assert.match(stored.password, /^\$argon2id\$v=19\$(?=[^$]*\bm=65536\b)(?=[^$]*\bt=3\b)(?=[^$]*\bp=1\b)[^$]+\$/,
-    'Argon2id with the owner password parameters');
+  assert.match(
+    stored.password,
+    /^\$argon2id\$v=19\$(?=[^$]*\bm=65536\b)(?=[^$]*\bt=3\b)(?=[^$]*\bp=1\b)[^$]+\$/,
+    'Argon2id with the owner password parameters',
+  );
   assert.ok(!stored.password.includes(newPassword));
   const fresh = await sessions.csrf(null);
-  const freshAuthorized = await sessions.authorize(fresh.token, false, 'POST', origin, fresh.csrfToken);
+  const freshAuthorized = await sessions.authorize(
+    fresh.token,
+    false,
+    'POST',
+    origin,
+    fresh.csrfToken,
+  );
   const step = await sessions.rotate(freshAuthorized.hash, renewed);
   await rejected(sessions.authorize(step.token, true, 'GET', undefined, undefined), 401);
   const full = await factors.complete(hash(step.token), factor.next());
-  assert.equal((await sessions.authorize(full.token, true, 'GET', undefined, undefined)).state, 'authenticated',
-    'Only the factor turns the new password into access');
-  const [used] = await source.query('SELECT "usedAt", "revokedAt" FROM password_reset_tokens WHERE "tokenHash" = $1', [hash(token)]);
+  assert.equal(
+    (await sessions.authorize(full.token, true, 'GET', undefined, undefined)).state,
+    'authenticated',
+    'Only the factor turns the new password into access',
+  );
+  const [used] = await source.query(
+    'SELECT "usedAt", "revokedAt" FROM password_reset_tokens WHERE "tokenHash" = $1',
+    [hash(token)],
+  );
   assert.ok(used.usedAt && used.revokedAt === null, 'The link is marked used');
-  console.log('PASS RESET-USE new password revokes every owner session and credential revision, old password fails, the factor stays required');
+  console.log(
+    'PASS RESET-USE new password revokes every owner session and credential revision, old password fails, the factor stays required',
+  );
 }
 
 async function verifyFactorKept(source, resets, mailer, factorState) {
@@ -174,8 +235,14 @@ async function verifyFactorKept(source, resets, mailer, factorState) {
   const token = linkToken(mailer.sent.at(-1));
   const before = await factorState();
   await resets.confirm(token, password);
-  assert.equal(await factorState(), before, 'The authenticator, its counter, cooldown and recovery codes stay as they were');
-  console.log('PASS RESET-USE email reset leaves the second factor, its cooldown and recovery codes unchanged');
+  assert.equal(
+    await factorState(),
+    before,
+    'The authenticator, its counter, cooldown and recovery codes stay as they were',
+  );
+  console.log(
+    'PASS RESET-USE email reset leaves the second factor, its cooldown and recovery codes unchanged',
+  );
 }
 
 async function verifyReuse(source, resets, auth, token, current) {
@@ -183,7 +250,11 @@ async function verifyReuse(source, resets, auth, token, current) {
   const before = fingerprint(await source.query('SELECT password FROM users'));
   assert.equal(await resets.status(token), 'invalid');
   await rejected(resets.confirm(token, 'Synthetic-third-password-42!'), 410, 'invalid');
-  assert.equal(fingerprint(await source.query('SELECT password FROM users')), before, 'Password unchanged');
+  assert.equal(
+    fingerprint(await source.query('SELECT password FROM users')),
+    before,
+    'Password unchanged',
+  );
   assert.ok(await auth.validateUser(email, current));
   console.log('PASS RESET-REUSE a used link is refused and changes nothing');
 }
@@ -192,18 +263,32 @@ async function verifyExpired(source, resets, mailer, auth) {
   stage = 'RESET-EXPIRED a link older than 30 minutes';
   await resets.request(email);
   const token = linkToken(mailer.sent.at(-1));
-  await source.query(`WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS now)
+  await source.query(
+    `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS now)
     UPDATE password_reset_tokens SET "createdAt" = now - interval '30 minutes 1 second',
-    "expiresAt" = now - interval '1 second' FROM moment WHERE "tokenHash" = $1`, [hash(token)]);
-  const before = fingerprint([await source.query('SELECT * FROM users ORDER BY id'),
-    await source.query('SELECT * FROM owner_auth'), await tokenRows(source)]);
+    "expiresAt" = now - interval '1 second' FROM moment WHERE "tokenHash" = $1`,
+    [hash(token)],
+  );
+  const before = fingerprint([
+    await source.query('SELECT * FROM users ORDER BY id'),
+    await source.query('SELECT * FROM owner_auth'),
+    await tokenRows(source),
+  ]);
   assert.equal(await resets.status(token), 'expired');
   await rejected(resets.confirm(token, 'Synthetic-late-password-42!'), 410, 'expired');
-  assert.equal(fingerprint([await source.query('SELECT * FROM users ORDER BY id'),
-    await source.query('SELECT * FROM owner_auth'), await tokenRows(source)]), before,
-  'An expired link changes no password, revision or link');
+  assert.equal(
+    fingerprint([
+      await source.query('SELECT * FROM users ORDER BY id'),
+      await source.query('SELECT * FROM owner_auth'),
+      await tokenRows(source),
+    ]),
+    before,
+    'An expired link changes no password, revision or link',
+  );
   assert.ok(await auth.validateUser(email, password));
-  console.log('PASS RESET-EXPIRED a link older than 30 minutes is refused as expired and the password is unchanged');
+  console.log(
+    'PASS RESET-EXPIRED a link older than 30 minutes is refused as expired and the password is unchanged',
+  );
 }
 
 async function verifyLimit(source, resets, mailer, limits) {
@@ -223,10 +308,13 @@ async function verifyLimit(source, resets, mailer, limits) {
   const subject = 'v4:198.51.100.77/32';
   for (let index = 0; index < 5; index++) await limits.admit('reset-ip', subject);
   await rejected(limits.admit('reset-ip', subject), 429);
-  const [ledger] = await source.query(`SELECT hits, extract(epoch FROM "expiresAt" - "windowStartedAt")::int AS seconds
+  const [ledger] =
+    await source.query(`SELECT hits, extract(epoch FROM "expiresAt" - "windowStartedAt")::int AS seconds
     FROM auth_request_limits WHERE scope = 'reset-ip'`);
   assert.deepEqual({ ...ledger }, { hits: 5, seconds: 60 });
-  console.log('PASS RESET-LIMIT three emails per hour per owner and five requests per minute per client, refused without email');
+  console.log(
+    'PASS RESET-LIMIT three emails per hour per owner and five requests per minute per client, refused without email',
+  );
 }
 
 async function verifyPruneAndRecovery(source, resets, mailer) {
@@ -236,24 +324,46 @@ async function verifyPruneAndRecovery(source, resets, mailer) {
   const rows = await tokenRows(source);
   assert.equal(rows.length, 1, 'Links older than a day are deleted');
   const token = linkToken(mailer.sent.at(-1));
-  command('owner-cli', ['recover', '--user-id', rows[0].userId, '--password-stdin'],
-    JSON.stringify({ password, confirmation: password }));
-  assert.equal(await resets.status(token), 'invalid', 'Operator recovery revokes outstanding links');
-  console.log('PASS RESET-PRUNE/RESET-CLI day-old links are pruned and CLI recovery revokes outstanding links');
+  command(
+    'owner-cli',
+    ['recover', '--user-id', rows[0].userId, '--password-stdin'],
+    JSON.stringify({ password, confirmation: password }),
+  );
+  assert.equal(
+    await resets.status(token),
+    'invalid',
+    'Operator recovery revokes outstanding links',
+  );
+  console.log(
+    'PASS RESET-PRUNE/RESET-CLI day-old links are pruned and CLI recovery revokes outstanding links',
+  );
 }
 
 async function main() {
-  for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, `Isolated harness required: ${key}`);
-  assert.ok(existsSync('/app/backend/dist/auth/password-reset.service.js'), 'Build prerequisite: production PasswordResetService');
+  for (const [key, value] of Object.entries(settings))
+    assert.equal(process.env[key], value, `Isolated harness required: ${key}`);
+  assert.ok(
+    existsSync('/app/backend/dist/auth/password-reset.service.js'),
+    'Build prerequisite: production PasswordResetService',
+  );
   const admin = new Client(connection(settings.DB_NAME));
   await admin.connect();
   try {
-    assert.equal((await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount, 0,
-      'Refuse an existing password reset test database');
+    assert.equal(
+      (await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount,
+      0,
+      'Refuse an existing password reset test database',
+    );
     await admin.query(`CREATE DATABASE "${database}"`);
-  } finally { await admin.end(); }
+  } finally {
+    await admin.end();
+  }
   command('migrate');
-  command('owner-cli', ['bootstrap', '--email', email, '--password-stdin'], JSON.stringify({ password, confirmation: password }));
+  command(
+    'owner-cli',
+    ['bootstrap', '--email', email, '--password-stdin'],
+    JSON.stringify({ password, confirmation: password }),
+  );
   process.env.DB_NAME = database;
   const { default: source } = require('/app/backend/dist/typeorm-data-source.js');
   const { SessionService } = require('/app/backend/dist/auth/session.service.js');
@@ -275,10 +385,11 @@ async function main() {
     const enrollment = await enroll(source, verified.user.id, database);
     let used = 0;
     const factor = { next: () => ({ kind: 'recovery', code: enrollment.recoveryCodes[used++] }) };
-    const factorState = async () => fingerprint([
-      await source.query('SELECT * FROM owner_mfa'),
-      await source.query('SELECT * FROM owner_mfa_recovery ORDER BY "codeHash"'),
-    ]);
+    const factorState = async () =>
+      fingerprint([
+        await source.query('SELECT * FROM owner_mfa'),
+        await source.query('SELECT * FROM owner_mfa_recovery ORDER BY "codeHash"'),
+      ]);
     const mailer = recordingMailer();
     const resets = new PasswordResetService(source, sessions, mailer);
     await verifyRequest(source, resets, mailer, verified.user.id);
@@ -291,11 +402,15 @@ async function main() {
     await verifyExpired(source, resets, mailer, auth);
     await verifyLimit(source, resets, mailer, limits);
     await verifyPruneAndRecovery(source, resets, mailer);
-  } finally { await source.destroy(); }
+  } finally {
+    await source.destroy();
+  }
 }
 
 main().catch((error) => {
   // Values may include synthetic credentials or hashes; name only the stage and error kind.
-  console.error(`FAIL password reset acceptance at stage: ${stage} (${error?.name ?? 'Error'}; details withheld)`);
+  console.error(
+    `FAIL password reset acceptance at stage: ${stage} (${error?.name ?? 'Error'}; details withheld)`,
+  );
   process.exitCode = 1;
 });

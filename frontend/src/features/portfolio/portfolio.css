@@ -92,15 +92,57 @@
   gap: 6px;
 }
 
+.portfolio-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-left: auto;
+}
+
+.portfolio-tools .shell-button {
+  margin-top: 0;
+}
+
+/* The share of the portfolio: a thin bar beside the percentage. */
+.portfolio-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.portfolio-share__text {
+  min-width: 54px;
+  text-align: right;
+}
+
+.portfolio-share__bar {
+  width: 44px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.portfolio-share__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
 .portfolio-search {
   width: 240px;
   max-width: 100%;
   height: 36px;
-  margin-left: auto;
-  padding: 0 12px;
+  padding: 0 12px 0 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-position: 11px 50%;
+  background-repeat: no-repeat;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  background: var(--sunken);
+  background-color: var(--sunken);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-sm);
@@ -240,6 +282,11 @@
   font-size: var(--fs-xs);
 }
 
+.portfolio-sub--inline {
+  display: inline;
+  margin-left: 6px;
+}
+
 .portfolio-summary dd .portfolio-sub {
   font-size: var(--fs-sm);
 }
@@ -315,27 +362,27 @@
 
 .portfolio-bar span[data-tone="1"],
 .portfolio-swatch[data-tone="1"] {
-  background: #3987e5;
+  background: var(--c-p2);
 }
 
 .portfolio-bar span[data-tone="2"],
 .portfolio-swatch[data-tone="2"] {
-  background: #199e70;
+  background: var(--c-p4);
 }
 
 .portfolio-bar span[data-tone="3"],
 .portfolio-swatch[data-tone="3"] {
-  background: #d95926;
+  background: var(--c-p5);
 }
 
 .portfolio-bar span[data-tone="4"],
 .portfolio-swatch[data-tone="4"] {
-  background: #d55181;
+  background: var(--c-p1);
 }
 
 .portfolio-bar span[data-tone="5"],
 .portfolio-swatch[data-tone="5"] {
-  background: #4a5161;
+  background: var(--c-p3);
 }
 
 .portfolio-slices {
@@ -926,9 +973,14 @@ a.portfolio-asset__name:hover {
     font-size: 20px;
   }
 
-  .portfolio-search {
+  .portfolio-tools {
     width: 100%;
     margin-left: 0;
+  }
+
+  .portfolio-tools .portfolio-search {
+    flex: 1 1 160px;
+    width: auto;
   }
 }
 

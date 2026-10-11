@@ -60,7 +60,9 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
 
   await page.goto('/preferences');
   const data = page.getByRole('region', { name: 'Data', exact: true });
-  await expect(data.getByText('one CSV file each in a ZIP archive', { exact: false })).toBeVisible();
+  await expect(
+    data.getByText('one CSV file each in a ZIP archive', { exact: false }),
+  ).toBeVisible();
 
   // EXP-CSV: one archive, one CSV per entity, the account's buy among the operations.
   const archiveDownload = page.waitForEvent('download');

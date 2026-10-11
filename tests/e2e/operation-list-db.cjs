@@ -412,7 +412,13 @@ async function everyJournal(db, s, f) {
   assert.equal(bound.needsClassificationCount, 2);
   await rejected(() => s.accounting.renameAccount(other, trust, { name: 'Taken' }), 404);
   await rejected(() => s.accounting.renameAccount(owner, randomUUID(), { name: 'Absent' }), 404);
-  for (const body of [{}, { name: '' }, { name: 'x'.repeat(121) }, { name: 'a\nb' }, { name: 'A', requestId: randomUUID() }])
+  for (const body of [
+    {},
+    { name: '' },
+    { name: 'x'.repeat(121) },
+    { name: 'a\nb' },
+    { name: 'A', requestId: randomUUID() },
+  ])
     await rejected(() => s.accounting.renameAccount(owner, trust, body), 400);
   await s.accounting.renameAccount(owner, trust, { name: 'Trust Wallet' });
   assert.equal(await fingerprint(db), journalBefore, 'Renaming back restores every row exactly');
@@ -420,7 +426,9 @@ async function everyJournal(db, s, f) {
     `UPDATE wallet_addresses SET "accountId"=NULL, label=NULL WHERE "ownerId"=$1 AND id=$2`,
     [owner, wallet],
   );
-  console.log('PASS WAL-ACCOUNT/WAL-RENAME chain rows show their wallet; rename keeps every journal row');
+  console.log(
+    'PASS WAL-ACCOUNT/WAL-RENAME chain rows show their wallet; rename keeps every journal row',
+  );
 }
 
 async function emptyOwner(db, s, f) {

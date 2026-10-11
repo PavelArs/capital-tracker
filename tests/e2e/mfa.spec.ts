@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type APIRequestContext, type Browser, type Page, expect } from '@playwright/test';
+import { type APIRequestContext, type Browser, expect, type Page } from '@playwright/test';
 import {
   counts,
   expectAdmissionDelta,
@@ -13,14 +13,14 @@ import {
   sourceB,
 } from './admission-fixtures';
 import {
-  type Enrollment,
-  type Factor,
   completeFactor,
   compose,
   cookie,
   cookieName,
   databaseCounter,
+  type Enrollment,
   enrollOwner,
+  type Factor,
   fingerprint,
   getCsrf,
   hashToken,

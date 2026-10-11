@@ -85,7 +85,9 @@ async function fingerprint(source) {
   const values = [];
   for (const { tablename } of tables) {
     assert.match(tablename, /^[a-z_]+$/);
-    const rows = await source.query(`SELECT to_jsonb(t)::text AS row FROM "${tablename}" t ORDER BY row`);
+    const rows = await source.query(
+      `SELECT to_jsonb(t)::text AS row FROM "${tablename}" t ORDER BY row`,
+    );
     values.push([tablename, rows]);
   }
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
@@ -134,8 +136,7 @@ async function workerMain() {
           assert.ok(
             statements.some(
               (sql) =>
-                /^\s*SELECT\b/i.test(sql) &&
-                /manual_accounts|account_trade_journals/i.test(sql),
+                /^\s*SELECT\b/i.test(sql) && /manual_accounts|account_trade_journals/i.test(sql),
             ),
             'The snapshot must be anchored before heads or baseline load',
           );
@@ -152,7 +153,12 @@ async function workerMain() {
     }
     let result;
     try {
-      result = { ok: true, value: await services(source)[service][method](...args), statements, paused };
+      result = {
+        ok: true,
+        value: await services(source)[service][method](...args),
+        statements,
+        paused,
+      };
     } catch (error) {
       result = { ok: false, status: error?.getStatus?.() ?? null, statements, paused };
     }
@@ -277,9 +283,7 @@ const execution = (instrumentId, side, at, order, quantity, grossUsd) => ({
 const summary = (changes = {}) => ({ ...zeros, ...changes });
 
 async function newAccount(svc, owner, name) {
-  return (
-    await svc.accounting.createAccount(owner, { requestId: randomUUID(), name })
-  ).value.id;
+  return (await svc.accounting.createAccount(owner, { requestId: randomUUID(), name })).value.id;
 }
 
 async function openingAccount(svc, owner, instrument, name, unknown = false) {
@@ -364,7 +368,12 @@ async function coverageAndFailures(source, svc, f) {
     coverageFrom,
     assertEmpty: true,
   });
-  const baselineOnly = await carryAccount(svc, owner, firstInstrument, 'Carry baseline at coverage');
+  const baselineOnly = await carryAccount(
+    svc,
+    owner,
+    firstInstrument,
+    'Carry baseline at coverage',
+  );
   const carry = await carryAccount(svc, owner, firstInstrument, 'Known carry historical account');
   const sale = execution(firstInstrument, 'sell', coverageFrom, 0, '1.5', '450');
   const carrySale = await svc.trade.create(owner, carry, {
@@ -512,7 +521,11 @@ async function pagesAndRevision(source, svc, f) {
   assert.equal(beyond.nextOffset, null);
   assert.equal(beyond.initialCostUsd, firstPage.initialCostUsd);
   assert.deepEqual(beyond.summary, firstPage.summary);
-  assert.equal(await fingerprint(source), beforePages, 'Page reads write no accounting or receipt rows');
+  assert.equal(
+    await fingerprint(source),
+    beforePages,
+    'Page reads write no accounting or receipt rows',
+  );
 
   const correction = await svc.trade.correct(owner, account, first.value.trade.tradeId, {
     requestId: randomUUID(),
@@ -563,17 +576,30 @@ async function coherentRead(source, svc, f) {
     const pids = await Promise.all([reader.ready, writer.ready]);
     assert.notEqual(pids[0].process, pids[1].process);
     assert.notEqual(pids[0].database, pids[1].database);
-    assert.notEqual(pids[0].database, (await source.query('SELECT pg_backend_pid() AS pid'))[0].pid);
-    reader.go({ service: 'history', method: 'getSnapshot', args: [owner, account, rawQuery], readBarrier: true });
+    assert.notEqual(
+      pids[0].database,
+      (await source.query('SELECT pg_backend_pid() AS pid'))[0].pid,
+    );
+    reader.go({
+      service: 'history',
+      method: 'getSnapshot',
+      args: [owner, account, rawQuery],
+      readBarrier: true,
+    });
     await reader.barrier;
     writer.go({
       service: 'trade',
       method: 'correct',
-      args: [owner, account, created.value.trade.tradeId, {
-        requestId: randomUUID(),
-        expectedJournalRevision: 1,
-        ...execution(firstInstrument, 'buy', '2025-01-02T00:00:00.000Z', 0, '1', '80'),
-      }],
+      args: [
+        owner,
+        account,
+        created.value.trade.tradeId,
+        {
+          requestId: randomUUID(),
+          expectedJournalRevision: 1,
+          ...execution(firstInstrument, 'buy', '2025-01-02T00:00:00.000Z', 0, '1', '80'),
+        },
+      ],
     });
     const committed = await writer.finished;
     assert.equal(committed.ok, true);
@@ -621,34 +647,55 @@ async function supportedMaxima(source, svc, f) {
   const { owner, firstInstrument: instrument } = f;
   const account = await newAccount(svc, owner, 'Historical supported maxima');
   await svc.accounting.saveOpening(owner, account, {
-    requestId: randomUUID(), expectedRevision: 0, asOf: coverageFrom,
-    positions: [{ instrumentId: instrument, quantity: '100', costStatus: 'known', totalCostUsd: '100' }],
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    asOf: coverageFrom,
+    positions: [
+      { instrumentId: instrument, quantity: '100', costStatus: 'known', totalCostUsd: '100' },
+    ],
   });
   await svc.carry.initialize(owner, account, {
-    requestId: randomUUID(), expectedOpeningRevision: 1, assertReviewed: true,
-    lots: Array.from({ length: 100 }, (_, index) => lot(instrument, index, { originalCostUsd: '1' })),
+    requestId: randomUUID(),
+    expectedOpeningRevision: 1,
+    assertReviewed: true,
+    lots: Array.from({ length: 100 }, (_, index) =>
+      lot(instrument, index, { originalCostUsd: '1' }),
+    ),
   });
   const maximum = `${'9'.repeat(48)}.${'9'.repeat(30)}`;
   const seeded = Array.from({ length: 999 }, (_, index) => {
     const fields = execution(instrument, 'buy', coverageFrom, index, maximum, maximum);
-    return { id: randomUUID(), requestId: randomUUID(), revision: index + 1, order: index,
-      payload: JSON.stringify({ kind: 'create', expectedJournalRevision: index, ...fields }) };
+    return {
+      id: randomUUID(),
+      requestId: randomUUID(),
+      revision: index + 1,
+      order: index,
+      payload: JSON.stringify({ kind: 'create', expectedJournalRevision: index, ...fields }),
+    };
   });
   // Valid fixture history only in the guarded fresh synthetic database. The final
   // actual service command validates/recomputes all1000 heads plus immutable lots.
   await source.transaction(async (manager) => {
-    await manager.query(`INSERT INTO account_trades(id,"ownerId","accountId","currentVersion","createdAt")
+    await manager.query(
+      `INSERT INTO account_trades(id,"ownerId","accountId","currentVersion","createdAt")
       SELECT x.id,$1,$2,1,clock_timestamp() FROM jsonb_to_recordset($3::jsonb) AS x(id uuid)`,
-      [owner, account, JSON.stringify(seeded)]);
-    await manager.query(`INSERT INTO account_trade_versions("ownerId","accountId","tradeId",version,"journalRevision","requestId",
+      [owner, account, JSON.stringify(seeded)],
+    );
+    await manager.query(
+      `INSERT INTO account_trade_versions("ownerId","accountId","tradeId",version,"journalRevision","requestId",
       "canonicalPayload",kind,"instrumentId",side,"occurredAt","orderWithinTimestamp",quantity,"grossUsd","feeUsd","createdAt")
       SELECT $1,$2,x.id,1,x.revision,x."requestId",x.payload,'create',$4,'buy',$5::timestamptz,x."order",$6::numeric,$6::numeric,0,clock_timestamp()
       FROM jsonb_to_recordset($3::jsonb) AS x(id uuid,"requestId" uuid,revision integer,"order" integer,payload text)`,
-      [owner, account, JSON.stringify(seeded), instrument, coverageFrom, maximum]);
-    await manager.query('UPDATE account_trade_journals SET "currentRevision"=999 WHERE "ownerId"=$1 AND "accountId"=$2', [owner, account]);
+      [owner, account, JSON.stringify(seeded), instrument, coverageFrom, maximum],
+    );
+    await manager.query(
+      'UPDATE account_trade_journals SET "currentRevision"=999 WHERE "ownerId"=$1 AND "accountId"=$2',
+      [owner, account],
+    );
   });
   const last = await svc.trade.create(owner, account, {
-    requestId: randomUUID(), expectedJournalRevision: 999,
+    requestId: randomUUID(),
+    expectedJournalRevision: 999,
     ...execution(instrument, 'buy', coverageFrom, 999, maximum, maximum),
   });
   assert.equal(last.value.journalRevision, 1000);
@@ -660,15 +707,30 @@ async function supportedMaxima(source, svc, f) {
   assert.equal(snapshot.journalRevision, 1000);
   assert.equal(snapshot.initialCostUsd, '100');
   assert.deepEqual(snapshot.summary, summary({ grossBuysUsd: buys, remainingCostUsd: total }));
-  assert.deepEqual(snapshot.items, [{ instrumentId: instrument, instrumentName: 'First same-symbol instrument',
-    instrumentSymbol: 'SAME', quantity: total, costUsd: total }]);
+  assert.deepEqual(snapshot.items, [
+    {
+      instrumentId: instrument,
+      instrumentName: 'First same-symbol instrument',
+      instrumentSymbol: 'SAME',
+      quantity: total,
+      costUsd: total,
+    },
+  ]);
   assert.equal(snapshot.nextOffset, null, 'Aggregate all1100 lots before limit1');
-  const empty = await at(svc, owner, account, coverageFrom, { offset: '1', limit: '1', journalRevision: '1000' });
+  const empty = await at(svc, owner, account, coverageFrom, {
+    offset: '1',
+    limit: '1',
+    journalRevision: '1000',
+  });
   assert.deepEqual(empty.items, []);
   assert.deepEqual(empty.summary, snapshot.summary);
   assert.equal(empty.initialCostUsd, '100');
   assert.equal(empty.nextOffset, null);
-  assert.equal(await fingerprint(source), before, 'Maximum-bound historical reads preserve every row');
+  assert.equal(
+    await fingerprint(source),
+    before,
+    'Maximum-bound historical reads preserve every row',
+  );
 }
 
 async function invalidSavedHistory(source, svc, f) {
@@ -677,11 +739,18 @@ async function invalidSavedHistory(source, svc, f) {
   const account = await carryAccount(svc, owner, firstInstrument, 'Malformed synthetic baseline');
   // Deliberately invalidate chronology only in this fresh isolated fixture. SQL
   // storage constraints remain enabled; a saved domain error is not caller input.
-  await source.query(`UPDATE account_carry_in_lots SET "acquiredAt"='2025-01-02T00:00:00Z'
-    WHERE "ownerId"=$1 AND "accountId"=$2`, [owner, account]);
+  await source.query(
+    `UPDATE account_carry_in_lots SET "acquiredAt"='2025-01-02T00:00:00Z'
+    WHERE "ownerId"=$1 AND "accountId"=$2`,
+    [owner, account],
+  );
   const before = await fingerprint(source);
   await status(() => at(svc, owner, account, coverageFrom), 409);
-  assert.equal(await fingerprint(source), before, 'Refusal never repairs or rewrites saved history');
+  assert.equal(
+    await fingerprint(source),
+    before,
+    'Refusal never repairs or rewrites saved history',
+  );
 }
 
 async function main() {
@@ -735,7 +804,13 @@ async function main() {
     assert.equal(migrations[19].name, 'AddOwnedTransfers1790100000000');
     const svc = services(source);
     const fixture = await seed(source, svc);
-    for (const run of [coverageAndFailures, pagesAndRevision, coherentRead, supportedMaxima, invalidSavedHistory]) {
+    for (const run of [
+      coverageAndFailures,
+      pagesAndRevision,
+      coherentRead,
+      supportedMaxima,
+      invalidSavedHistory,
+    ]) {
       await run(source, svc, fixture);
     }
     console.log('PASS HIST-002/003 synthetic production-service PostgreSQL acceptance');
@@ -753,7 +828,9 @@ watchdog.unref();
 (process.argv[2] === '--worker' ? workerMain() : main())
   .catch(() => {
     for (const child of children) child.kill('SIGKILL');
-    console.error(`FAIL isolated historical-accounting fixture at stage: ${stage} (details withheld)`);
+    console.error(
+      `FAIL isolated historical-accounting fixture at stage: ${stage} (details withheld)`,
+    );
     process.exitCode = 1;
   })
   .finally(() => clearTimeout(watchdog));
