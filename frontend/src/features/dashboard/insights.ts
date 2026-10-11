@@ -103,6 +103,7 @@ export function collectInsights(
   }
 
   let unpriced = 0;
+  let unrated = 0;
   const review: { size: number; item: InsightItem }[] = [];
   for (const asset of portfolio.assets) {
     if (Number(asset.knownCostQuantity) <= 0) continue;
@@ -112,7 +113,7 @@ export function collectInsights(
         Number(asset.quantity) !== 0 &&
         (rules.gainReviewPercent !== null || rules.lossReviewPercent !== null)
       )
-        unpriced += 1;
+        asset.missingPrice === 'no-rate' ? (unrated += 1) : (unpriced += 1);
       continue;
     }
     const change = Number(asset.knownUnrealizedReturnPercent);
@@ -142,11 +143,14 @@ export function collectInsights(
     }
   }
 
-  if (unpriced > 0 && note === null) {
+  const notChecked = unpriced + unrated;
+  if (notChecked > 0 && note === null) {
+    const missing =
+      unrated === 0 ? 'price' : unpriced === 0 ? 'exchange rate' : 'price or exchange rate';
     note =
-      unpriced === 1
-        ? '1 asset has no price yet, so its return on cost is not checked.'
-        : `${unpriced} assets have no price yet, so their returns on cost are not checked.`;
+      notChecked === 1
+        ? `1 asset has no ${missing} yet, so its return on cost is not checked.`
+        : `${notChecked} assets have no ${missing} yet, so their returns on cost are not checked.`;
   }
 
   const widest = (a: { gap?: number; size?: number }, b: { gap?: number; size?: number }) =>

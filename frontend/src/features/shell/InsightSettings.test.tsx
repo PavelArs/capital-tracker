@@ -194,4 +194,25 @@ describe('insight rules in Settings', () => {
     render(<InsightSettings />);
     expect(await screen.findByRole('button', { name: 'Add target' })).toBeEnabled();
   });
+
+  it('INS-SETTINGS: still loads and saves the rules when the portfolio cannot be read', async () => {
+    valued.mockRejectedValue(new Error('offline'));
+    get.mockResolvedValue(
+      settings({
+        targets: [],
+        driftPoints: '5',
+        gainReviewPercent: '80',
+        lossReviewPercent: null,
+      }),
+    );
+    const user = userEvent.setup();
+    render(<InsightSettings />);
+    expect(await screen.findByDisplayValue('80')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Add target' })).toBeDisabled();
+    expect(screen.getByText(/assets could not be loaded/)).toBeInTheDocument();
+    await user.clear(screen.getByDisplayValue('80'));
+    await user.type(screen.getAllByPlaceholderText('Off')[1], '60');
+    await user.click(screen.getByRole('button', { name: 'Save rules' }));
+    expect(update).toHaveBeenCalled();
+  });
 });

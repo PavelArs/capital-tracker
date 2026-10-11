@@ -100,6 +100,7 @@ export default function InsightSettings() {
   const [gain, setGain] = useState('');
   const [loss, setLoss] = useState('');
   const [counter, setCounter] = useState(0);
+  const [pickerDown, setPickerDown] = useState(false);
   const { setInsightRules } = useMainCurrency();
 
   const fill = (rules: InsightRules | null) => {
@@ -112,10 +113,12 @@ export default function InsightSettings() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([cachedReads.settings.load(), cachedReads.portfolio.load()])
+    // The portfolio only feeds the asset picker: without it the rest of the rules still work.
+    Promise.all([cachedReads.settings.load(), cachedReads.portfolio.load().catch(() => null)])
       .then(([settings, portfolio]) => {
         if (!active) return;
-        setAssets(portfolio.assets);
+        setAssets(portfolio?.assets ?? []);
+        setPickerDown(portfolio === null);
         fill(settings.insightRules);
         setState('ready');
       })
@@ -261,6 +264,12 @@ export default function InsightSettings() {
               </span>
             )}
           </div>
+          {pickerDown && (
+            <p className="shell-setting__hint">
+              Your assets could not be loaded, so targets cannot be added now. The other rules still
+              work.
+            </p>
+          )}
         </fieldset>
         <fieldset disabled={busy}>
           <legend>When to look</legend>

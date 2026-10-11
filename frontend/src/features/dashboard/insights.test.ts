@@ -211,4 +211,25 @@ describe('collectInsights', () => {
       "Some holdings have no price yet and an account's history starts later, so shares are not compared.",
     );
   });
+
+  it('INS-REVIEW-UNPRICED: names a missing exchange rate instead of a missing price', () => {
+    const note = (...missing: AssetValuation['missingPrice'][]) =>
+      collectInsights(
+        portfolio(
+          missing.map((missingPrice, index) =>
+            asset(id(10 + index), `T${index}`, {
+              missingPrice,
+              knownUnrealizedReturnPercent: null,
+            }),
+          ),
+        ),
+        rules({ gainReviewPercent: '100' }),
+      ).note;
+    expect(note('no-rate')).toBe(
+      '1 asset has no exchange rate yet, so its return on cost is not checked.',
+    );
+    expect(note('no-price', 'no-rate')).toBe(
+      '2 assets have no price or exchange rate yet, so their returns on cost are not checked.',
+    );
+  });
 });
