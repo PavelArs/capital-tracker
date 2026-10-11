@@ -104,6 +104,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     ['Portfolio', '/portfolio'],
     ['Transactions', '/transactions'],
     ['Wallets', '/wallets'],
+    ['Deposits', '/deposits'],
     ['Settings', '/preferences'],
   ] as const;
   for (const [index, [name, path]] of sections.entries()) {
