@@ -131,6 +131,17 @@ export function nextSort(current: AssetSort, key: SortKey): AssetSort {
 }
 
 /**
+ * The order a phone shows. Its Sort by offers each choice in one direction only, so a table
+ * order it cannot name falls back to Value, largest first; a wider screen brings the table's
+ * order back.
+ */
+export function phoneSort(sort: AssetSort): AssetSort {
+  return phoneSorts.some(([key]) => key === sort.key)
+    ? { key: sort.key, direction: firstDirection(sort.key) }
+    : defaultSort;
+}
+
+/**
  * The asset's unrealized P&L: over the coins whose purchase price is known when others have
  * none, instead of a dash (PV-KNOWN-PART).
  */
@@ -511,11 +522,12 @@ export default function PortfolioPage() {
     (asset) => (filter === 'all' || asset.assetType === filter) && matchesSearch(asset, search),
   );
   // PAGES: twenty assets a page; the list is sorted first, so its pages follow the order.
-  // The table and the phone list share one order: the server's (largest value first) until a
-  // column is chosen.
-  const ordered = sortAssets(visible, sort);
+  // The table and the phone list share one order, Value largest first until another is chosen;
+  // a phone shows only the orders its Sort by can name.
+  const shown = phone ? phoneSort(sort) : sort;
+  const ordered = sortAssets(visible, shown);
   const paged = useInfinite(ordered, {
-    resetKey: `${filter}|${search.trim()}|${sort.key}|${sort.direction}|${phone}`,
+    resetKey: `${filter}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
   });
   const added = (asset: PortfolioAsset) => {
     // The new row must be visible, so a filter or search that would hide it is cleared.
@@ -602,7 +614,7 @@ export default function PortfolioPage() {
                   Sort by
                   <select
                     className="ui-input ui-input--sm"
-                    value={sort.key}
+                    value={shown.key}
                     onChange={(event) => {
                       const key = event.target.value as SortKey;
                       setSort({ key, direction: firstDirection(key) });

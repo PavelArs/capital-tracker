@@ -19,7 +19,7 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetPage from './AssetPage';
-import PortfolioPage, { defaultSort, nextSort, sortAssets } from './PortfolioPage';
+import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -1118,6 +1118,16 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(names({ key: 'amount', direction: 'asc' })).toEqual(['Priced', 'Unpriced', 'Unheld']);
     // A name order is only names.
     expect(names({ key: 'name', direction: 'asc' })).toEqual(['Priced', 'Unheld', 'Unpriced']);
+  });
+
+  it('SORT-PHONE shows on a phone only an order its Sort by can name', () => {
+    expect(phoneSort({ key: 'amount', direction: 'asc' })).toEqual(defaultSort);
+    expect(phoneSort({ key: 'value', direction: 'asc' })).toEqual(defaultSort);
+    expect(phoneSort({ key: 'pnl', direction: 'asc' })).toEqual({ key: 'pnl', direction: 'desc' });
+    expect(phoneSort({ key: 'name', direction: 'desc' })).toEqual({
+      key: 'name',
+      direction: 'asc',
+    });
   });
 
   it('PHONE-LIST shows two-line asset rows and a Sort by select instead of the table', async () => {
