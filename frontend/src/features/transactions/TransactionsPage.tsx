@@ -1,5 +1,5 @@
 import { cachedReads } from '@api/cached-reads';
-import type { Operation, OperationList } from '@api/operations.api';
+import type { Operation, OperationList, OperationRange } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -29,6 +29,8 @@ import {
   typeLabel,
   walletLabel,
 } from './operation-format';
+import PeriodFilter from './PeriodFilter';
+import { periodOf } from './period';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import { useNarrowScreen } from './useNarrowScreen';
@@ -101,11 +103,24 @@ function searchable(operation: Operation): string {
     .toLowerCase();
 }
 
-/** Options of a filter, in first-seen order of the newest-first list. */
-function options(operations: Operation[], entries: (operation: Operation) => [string, string][]) {
+/**
+ * Options of a filter, in first-seen order of the newest-first list. What is chosen stays an
+ * option when the period shows no row of it, under the label it was last seen with.
+ */
+function options(
+  operations: Operation[],
+  entries: (operation: Operation) => [string, string][],
+  chosen: string,
+  seen: Map<string, string>,
+) {
   const found = new Map<string, string>();
   for (const operation of operations)
-    for (const [key, label] of entries(operation)) if (!found.has(key)) found.set(key, label);
+    for (const [key, label] of entries(operation)) {
+      seen.set(key, label);
+      if (!found.has(key)) found.set(key, label);
+    }
+  const label = seen.get(chosen);
+  if (chosen && !found.has(chosen) && label) found.set(chosen, label);
   return [...found].sort((left, right) => left[1].localeCompare(right[1], 'en'));
 }
 
@@ -352,22 +367,32 @@ function reveal(row: Element) {
   row.scrollIntoView?.({ block: 'center', behavior: still ? 'auto' : 'smooth' });
 }
 
+// The same question asked of the cache with or without a period, so the other pages' reads
+// (no period) and this one's share what they share.
+const lastList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  range ? cachedReads.operations.last(currency, range) : cachedReads.operations.last(currency);
+const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  range ? cachedReads.operations.load(currency, range) : cachedReads.operations.load(currency);
+
 // Every operation the app knows in one list (list-all-operations, OPS-4).
 export default function TransactionsPage() {
   // No currency in the address means the owner's main currency (Settings).
   const [asked] = useAskedCurrency();
+  const [params, setParams] = useSearchParams();
+  // OPS-PERIOD: the days shown live in the address (?from=, ?to=) and narrow the list on the
+  // server; none means the whole history.
+  const from = params.get('from');
+  const to = params.get('to');
+  const period = useMemo(() => periodOf(from, to), [from, to]);
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
-  const [list, setList] = useState<OperationList | null>(
-    () => cachedReads.operations.last(asked) ?? null,
-  );
+  const [list, setList] = useState<OperationList | null>(() => lastList(asked, period) ?? null);
   const [failed, setFailed] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   const [hiddenTokens, setHiddenTokens] = useState<ReadonlySet<string>>(() =>
     hiddenTokenSymbols(cachedReads.wallets.last() ?? []),
   );
   const [search, setSearch] = useState('');
-  const [params, setParams] = useSearchParams();
   // OPS-OPEN: a link from another page (the wallet page) names the transaction to open.
   const [openId, setOpenId] = useState<string | null>(null);
   // The Edit window of the prototype (M9); new transactions open from the page header.
@@ -381,23 +406,30 @@ export default function TransactionsPage() {
   const listRef = useRef<HTMLElement>(null);
 
   // A switched currency keeps the rows on screen until its values arrive.
-  const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
-    const request = ++latest.current;
-    setFailed(false);
-    if (fresh) setList(cachedReads.operations.last(currency) ?? null);
-    try {
-      const next = await cachedReads.operations.load(currency);
-      if (request !== latest.current) return null;
-      setList(next);
-      return next;
-    } catch {
-      if (request === latest.current) setFailed(true);
-      return null;
-    }
-  }, []);
+  const load = useCallback(
+    async (
+      currency: AccountingCurrency | undefined,
+      range: OperationRange | undefined,
+      fresh: boolean,
+    ) => {
+      const request = ++latest.current;
+      setFailed(false);
+      if (fresh) setList(lastList(currency, range) ?? null);
+      try {
+        const next = await loadList(currency, range);
+        if (request !== latest.current) return null;
+        setList(next);
+        return next;
+      } catch {
+        if (request === latest.current) setFailed(true);
+        return null;
+      }
+    },
+    [],
+  );
   useEffect(() => {
-    void load(asked, false);
-  }, [load, asked]);
+    void load(asked, period, false);
+  }, [load, asked, period]);
   useEffect(() => {
     let live = true;
     // Without the wallets the filter lists every asset, as before.
@@ -447,31 +479,43 @@ export default function TransactionsPage() {
     });
 
   const operations = list?.operations ?? [];
+  // OPS-PERIOD: the options are those of the period shown.
+  const seenAssets = useRef(new Map<string, string>());
+  const seenPlaces = useRef(new Map<string, string>());
   const assetOptions = useMemo(
     () =>
-      options(operations, (operation) =>
-        [operation.asset, operation.counterAsset].flatMap((item) =>
-          item &&
-          // A token the wallets leave out is no asset to filter by, unless it is chosen now.
-          (assetKey(item) === asset || !(item.symbol && hiddenTokens.has(item.symbol)))
-            ? [[assetKey(item), item.symbol?.toUpperCase() ?? item.name] as [string, string]]
-            : [],
-        ),
+      options(
+        operations,
+        (operation) =>
+          [operation.asset, operation.counterAsset].flatMap((item) =>
+            item &&
+            // A token the wallets leave out is no asset to filter by, unless it is chosen now.
+            (assetKey(item) === asset || !(item.symbol && hiddenTokens.has(item.symbol)))
+              ? [[assetKey(item), item.symbol?.toUpperCase() ?? item.name] as [string, string]]
+              : [],
+          ),
+        asset,
+        seenAssets.current,
       ),
     [operations, hiddenTokens, asset],
   );
   const placeOptions = useMemo(
     () =>
-      options(operations, (operation) => {
-        const { accounts, wallets } = places(operation);
-        return [
-          ...accounts.flatMap((item) => (item ? [[item.id, item.name] as [string, string]] : [])),
-          ...wallets.flatMap((item) =>
-            item ? [[`wallet:${item.id}`, walletLabel(item)] as [string, string]] : [],
-          ),
-        ];
-      }),
-    [operations],
+      options(
+        operations,
+        (operation) => {
+          const { accounts, wallets } = places(operation);
+          return [
+            ...accounts.flatMap((item) => (item ? [[item.id, item.name] as [string, string]] : [])),
+            ...wallets.flatMap((item) =>
+              item ? [[`wallet:${item.id}`, walletLabel(item)] as [string, string]] : [],
+            ),
+          ];
+        },
+        place,
+        seenPlaces.current,
+      ),
+    [operations, place],
   );
   const query = search.trim().toLowerCase();
   // Asset, account and search; the chips choose the view on top of them.
@@ -480,7 +524,7 @@ export default function TransactionsPage() {
     (!place || placeKeys(operation).includes(place)) &&
     (!query || searchable(operation).includes(query));
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
-  const filtered = view !== 'all' || asset || place || query;
+  const filtered = view !== 'all' || asset || place || query || period;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
@@ -501,7 +545,7 @@ export default function TransactionsPage() {
   const changed = () => {
     setDialog(null);
     setOpenId(null);
-    void load(asked, false);
+    void load(asked, period, false);
   };
   // CLS-NEXT: the open transaction is marked in the list and brought into view, so the one
   // opened after a classification can be found when the drawer closes.
@@ -527,7 +571,7 @@ export default function TransactionsPage() {
   // backlog is worked through without going back to the list.
   const classified = async (label: string) => {
     const was = opened;
-    const next = await load(asked, false);
+    const next = await load(asked, period, false);
     if (!next || !was) return;
     // BYBIT-GAP-DELETE: the record is gone from the list.
     if (label === 'deleted') {
@@ -590,13 +634,13 @@ export default function TransactionsPage() {
           <DuplicateProposals
             onReplaced={(message) => {
               setNotice(message);
-              void load(asked, false);
+              void load(asked, period, false);
             }}
           />
           <TransferProposals
             onJoined={(message) => {
               setNotice(message);
-              void load(asked, false);
+              void load(asked, period, false);
             }}
           />
         </>
@@ -604,13 +648,17 @@ export default function TransactionsPage() {
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your transactions. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load(asked, true)}>
+          <button
+            type="button"
+            className="shell-button"
+            onClick={() => void load(asked, period, true)}
+          >
             Try again
           </button>
         </section>
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
-      ) : operations.length === 0 ? (
+      ) : operations.length === 0 && !period ? (
         <section className="shell-card shell-empty" aria-labelledby="transactions-empty">
           <h2 id="transactions-empty">No transactions yet</h2>
           <p>
@@ -673,6 +721,11 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
+              <PeriodFilter
+                period={period}
+                today={new Date().toISOString().slice(0, 10)}
+                onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
+              />
               <input
                 className="transactions-search"
                 type="search"
@@ -694,7 +747,7 @@ export default function TransactionsPage() {
           {visible.length === 0 ? (
             <div className="portfolio-none transactions-none">
               <p>
-                {view === 'needs-classification' && !asset && !place && !query
+                {view === 'needs-classification' && !asset && !place && !query && !period
                   ? 'All caught up'
                   : 'No transactions match'}
               </p>
@@ -766,7 +819,8 @@ export default function TransactionsPage() {
           )}
           <p className="shell-note portfolio-note">
             {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
-            {operations.length === 1 ? 'transaction' : 'transactions'}, newest first.{' '}
+            {operations.length === 1 ? 'transaction' : 'transactions'}
+            {period ? ' in the period' : ''}, newest first.{' '}
             {currency === 'USD'
               ? 'Values are in USD as recorded'
               : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}

@@ -15,6 +15,7 @@
 }
 
 .transactions-filter select,
+.transactions-filter input,
 .transactions-search {
   height: 36px;
   padding: 0 10px;
@@ -32,6 +33,7 @@
 }
 
 .transactions-filter select:focus-visible,
+.transactions-filter input:focus-visible,
 .transactions-search:focus-visible {
   border-color: var(--accent);
   outline: 2px solid var(--accent-soft);
@@ -578,6 +580,11 @@
     grid-column: 1 / -1;
     order: -1;
     width: 100%;
+  }
+
+  /* The period takes a row of its own, so From | To sit side by side under it. */
+  .transactions-filter--period {
+    grid-column: 1 / -1;
   }
 }
 
