@@ -1,4 +1,6 @@
 import type { Deposit, DepositStatus, MovementKind } from '@api/deposits.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { currencySymbols, DASH } from '../portfolio/format';
 
 const DAY_MS = 86_400_000;
 
@@ -67,4 +69,19 @@ export function attention(deposit: Deposit, asOf: string): string | null {
   const age = daysBetween(checked, asOf);
   if (age > STALE_CHECK_DAYS) return `Not checked against the bank for ${age} days`;
   return null;
+}
+
+/**
+ * Money from an exact decimal string with two decimals, grouped by thousands without going
+ * through a floating-point number: a balance can hold more digits than a double keeps exactly.
+ */
+export function money(value: string | null, currency: AccountingCurrency, signed = false): string {
+  if (value === null) return DASH;
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!match) return DASH;
+  const cents = (match[3] ?? '').padEnd(2, '0').slice(0, 2);
+  const whole = match[2].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+$)/g, ',');
+  const zero = /^0+$/.test(match[2] + cents);
+  const mark = match[1] && !zero ? '-' : signed && !zero ? '+' : '';
+  return `${mark}${currencySymbols[currency]}${whole}.${cents}`;
 }

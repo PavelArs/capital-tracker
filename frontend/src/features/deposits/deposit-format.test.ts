@@ -1,6 +1,6 @@
 import type { Deposit } from '@api/deposits.api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attention, dateText, daysBetween, termText, today } from './deposit-format';
+import { attention, dateText, daysBetween, money, termText, today } from './deposit-format';
 
 const deposit = (change: Partial<Deposit> = {}): Deposit => ({
   id: 'd1',
@@ -72,5 +72,16 @@ describe('today', () => {
     expect(today()).toBe('2026-10-12');
     vi.setSystemTime(new Date('2026-10-11T20:59:00Z'));
     expect(today()).toBe('2026-10-11');
+  });
+});
+
+describe('money', () => {
+  it('writes exact decimals beyond what a floating-point number keeps', () => {
+    expect(money('100999999999998.99', 'RUB')).toBe('₽100,999,999,999,998.99');
+    expect(money('1234.5', 'USD')).toBe('$1,234.50');
+    expect(money('0.00', 'EUR', true)).toBe('€0.00');
+    expect(money('1.23', 'EUR', true)).toBe('+€1.23');
+    expect(money('-0.01', 'EUR')).toBe('-€0.01');
+    expect(money(null, 'EUR')).toBe('—');
   });
 });

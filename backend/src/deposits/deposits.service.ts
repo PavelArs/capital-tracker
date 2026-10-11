@@ -405,9 +405,11 @@ export class DepositsService {
         : ended
           ? ('matured' as const)
           : ('active' as const);
+    // A snapshot forecasts from what was known on that day, not from movements saved since.
+    const known = movements.filter((movement) => movement.date <= asOf);
     const maturity =
       terms.endDate !== null && now.closedOn === null
-        ? projectDeposit(terms, movements, terms.endDate)
+        ? projectDeposit(terms, known, terms.endDate)
         : null;
     // Only checks made by the asked day: a later one says nothing about this day.
     const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
@@ -446,7 +448,7 @@ export class DepositsService {
       due: now.due,
       balance: now.balance,
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
-      nextPayout: status === 'active' ? nextPayout(terms, movements, asOf) : null,
+      nextPayout: status === 'active' ? nextPayout(terms, known, asOf) : null,
       atMaturity: maturity
         ? {
             date: terms.endDate as string,

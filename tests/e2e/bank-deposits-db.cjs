@@ -162,6 +162,8 @@ async function accrual(db, service, owner) {
     amount: '50.00',
   });
   assert.equal(withdrawnAll.closedOn, '2026-08-10');
+  const hypothetical = await service.get(owner, same.id, '2026-07-15');
+  assert.notEqual(hypothetical.nextPayout, null, 'A snapshot forecasts from what it knew then');
   await rejected(
     () => service.addRate(owner, same.id, { effectiveFrom: '2026-09-01', ratePercent: '5' }),
     422,
