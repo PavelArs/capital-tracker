@@ -1242,7 +1242,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     expect(within(details).getByRole('note')).toHaveTextContent('has no purchase price');
     expect(within(details).getByRole('link', { name: 'Review transactions' })).toHaveAttribute(
       'href',
-      '/transactions?asset=BTC',
+      '/transactions?asset=BTC&cost=unknown',
     );
   });
 

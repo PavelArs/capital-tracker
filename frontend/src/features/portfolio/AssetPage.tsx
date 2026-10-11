@@ -408,7 +408,7 @@ function AssetDetails({
             </span>
             <Link
               className="shell-button"
-              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}`}
+              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
             >
               Review transactions
             </Link>
