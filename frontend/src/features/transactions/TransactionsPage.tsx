@@ -438,6 +438,8 @@ export default function TransactionsPage() {
   // before that builds on the first one, not on the address it replaces.
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
+  // A list is on screen: it was kept from before, or has arrived.
+  const onScreen = useRef(list !== null);
 
   const narrow = useNarrowScreen();
   const listRef = useRef<HTMLElement>(null);
@@ -451,10 +453,19 @@ export default function TransactionsPage() {
     ) => {
       const request = ++latest.current;
       setFailed(false);
-      if (fresh) setList(lastList(currency, range) ?? null);
+      if (fresh) {
+        const kept = lastList(currency, range);
+        setList(kept ?? null);
+        onScreen.current = kept !== undefined;
+      }
       try {
-        const [next] = await Promise.all([loadList(currency, range), proposalsArrived()]);
+        // Only the first paint waits for the cards; a refresh of a list on screen does not.
+        const [next] = await Promise.all([
+          loadList(currency, range),
+          onScreen.current ? undefined : proposalsArrived(),
+        ]);
         if (request !== latest.current) return null;
+        onScreen.current = true;
         setList(next);
         return next;
       } catch {

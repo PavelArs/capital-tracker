@@ -3472,6 +3472,25 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     // And it asked once: the card used what the page read.
     expect(offer).toHaveBeenCalledTimes(1);
   });
+
+  it('SMOOTH-REFRESH: a list already on screen is refreshed without waiting for the cards', async () => {
+    const user = userEvent.setup();
+    forgetReads();
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(all)
+      .mockResolvedValue(list(all.operations.slice(0, 2)));
+    // The cards answer once, then the server stops answering them.
+    vi.spyOn(operationsApi, 'transferProposals')
+      .mockResolvedValueOnce(found([proposal]))
+      .mockReturnValue(new Promise(() => undefined));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+  });
 });
 
 describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', () => {
