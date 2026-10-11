@@ -9,7 +9,7 @@ import type {
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
@@ -28,6 +28,7 @@ import { kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
+import HideAsset from './HideAsset';
 import { assetCaption, Change, Signed } from './PortfolioPage';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
@@ -464,6 +465,7 @@ function AssetDetails({
 // One asset across every account (portfolio-valuation PV-5).
 export default function AssetPage() {
   const { assetId } = useParams();
+  const navigate = useNavigate();
   const [asked] = useAskedCurrency();
   // Coming back shows the last answers at once; the loads below replace them.
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
@@ -536,6 +538,12 @@ export default function AssetPage() {
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
         </Link>
+        {asset && (
+          <HideAsset
+            symbol={asset.symbol}
+            onHidden={() => navigate(withCurrency('/portfolio', asked))}
+          />
+        )}
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
