@@ -166,4 +166,31 @@ describe('collectInsights', () => {
     expect(withLevels.note).toBe('1 asset has no price yet, so its return on cost is not checked.');
     expect(collectInsights(portfolio([unpriced]), rules()).note).toBeNull();
   });
+
+  it('INS-DRIFT-EMPTY: does not compare shares while the portfolio has no value', () => {
+    const result = collectInsights(
+      portfolio([asset(btc, 'BTC', { quantity: '0', allocationPercent: null })], {
+        totalValue: '0',
+      }),
+      rules({ targets: [{ instrumentId: btc, percent: '50' }] }),
+    );
+    expect(result.items).toEqual([]);
+    expect(result.note).toBe('The portfolio has no value yet, so shares are not compared.');
+  });
+
+  it('INS-LABEL: tells assets with the same ticker apart in every card', () => {
+    const first = asset(btc, 'USDT', { name: 'Tether', allocationPercent: '40' });
+    const second = asset(eth, 'USDT', { name: 'Tether', allocationPercent: '40' });
+    const { items } = collectInsights(
+      portfolio([first, second]),
+      rules({
+        targets: [
+          { instrumentId: btc, percent: '10' },
+          { instrumentId: eth, percent: '10' },
+        ],
+      }),
+    );
+    expect(new Set(items.map((item) => item.title)).size).toBe(2);
+    expect(items[0].title).toContain('USDT · Tether · #');
+  });
 });

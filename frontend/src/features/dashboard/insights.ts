@@ -16,6 +16,26 @@ export interface Insights {
   note: string | null;
 }
 
+// The ticker, or "TICKER · name" and then the end of the id when assets share a ticker, so two
+// cards never read the same for different assets.
+function assetLabels(portfolio: PortfolioValuation): Map<string, string> {
+  const base = (asset: PortfolioValuation['assets'][number]) => asset.symbol ?? asset.name;
+  const count = (texts: string[]) =>
+    texts.reduce((all, text) => all.set(text, (all.get(text) ?? 0) + 1), new Map<string, number>());
+  const first = count(portfolio.assets.map(base));
+  const named = portfolio.assets.map((asset) => ({
+    asset,
+    text: (first.get(base(asset)) ?? 0) > 1 ? `${base(asset)} · ${asset.name}` : base(asset),
+  }));
+  const second = count(named.map(({ text }) => text));
+  return new Map(
+    named.map(({ asset, text }) => [
+      asset.instrumentId,
+      (second.get(text) ?? 0) > 1 ? `${text} · #${asset.instrumentId.slice(-6)}` : text,
+    ]),
+  );
+}
+
 const plain = (value: number) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
 
@@ -26,10 +46,8 @@ export function collectInsights(
   rules: InsightRules | null,
 ): Insights {
   if (!rules) return { items: [], note: null };
-  const label = (instrumentId: string) => {
-    const asset = portfolio.assets.find((item) => item.instrumentId === instrumentId);
-    return asset?.symbol ?? asset?.name ?? 'An asset';
-  };
+  const labels = assetLabels(portfolio);
+  const label = (instrumentId: string) => labels.get(instrumentId) ?? 'An asset';
 
   let note: string | null = null;
   let unchecked = 0;
@@ -37,6 +55,8 @@ export function collectInsights(
   if (rules.targets.length > 0) {
     if (!portfolio.allocation.complete || portfolio.totalValue === null) {
       note = 'Some holdings have no price yet, so shares are not compared.';
+    } else if (Number(portfolio.totalValue) <= 0) {
+      note = 'The portfolio has no value yet, so shares are not compared.';
     } else {
       const total = Number(portfolio.totalValue);
       for (const { instrumentId, percent } of rules.targets) {
@@ -89,7 +109,7 @@ export function collectInsights(
     const change = Number(asset.knownUnrealizedReturnPercent);
     const gain = rules.gainReviewPercent;
     const loss = rules.lossReviewPercent;
-    const name = asset.symbol ?? asset.name;
+    const name = label(asset.instrumentId);
     if (gain !== null && change >= Number(gain)) {
       review.push({
         size: change,
