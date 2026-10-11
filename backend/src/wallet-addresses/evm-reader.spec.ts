@@ -66,4 +66,17 @@ describe('BLOCKSCOUT fallback reader', () => {
     const reader = new EvmReader(primary.client, fallback.client);
     await expect(reader.normal('0x', 1, 2)).resolves.toEqual({ ok: false, reason: 'unavailable' });
   });
+
+  it('SYNC-DETAIL keeps what the last refusal said until a read succeeds', async () => {
+    const primary = fake([
+      { ok: false, reason: 'unavailable', detail: 'api.example answered HTTP 404' },
+      { ok: true, items: [] },
+    ]);
+    const reader = new EvmReader(primary.client, null);
+    expect(reader.detail).toBeNull();
+    await reader.normal('0x', 1, 2);
+    expect(reader.detail).toBe('api.example answered HTTP 404');
+    await reader.normal('0x', 1, 2);
+    expect(reader.detail).toBeNull();
+  });
 });

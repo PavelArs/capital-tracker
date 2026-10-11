@@ -7,6 +7,7 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { hiddenTokenSymbols } from '../wallets/WalletParts';
@@ -480,6 +481,14 @@ export default function TransactionsPage() {
     (!place || placeKeys(operation).includes(place)) &&
     (!query || searchable(operation).includes(query));
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
+  // INFINITE: twenty rows first, twenty more each time the end of the list is reached; a
+  // changed filter or search starts again at twenty.
+  const paged = useInfinite(visible, {
+    resetKey: `${view}|${asset}|${place}|${query}`,
+    keep: 'transactions',
+  });
+  // A reload comes back to the rows and the place the owner was at.
+  useScrollMemory('transactions', list !== null && !failed);
   const filtered = view !== 'all' || asset || place || query;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
@@ -490,7 +499,7 @@ export default function TransactionsPage() {
   const currency = list?.quoteCurrency ?? 'USD';
   // One group per UTC day, under a heading as in the prototype.
   const days: { heading: string; operations: Operation[] }[] = [];
-  for (const operation of visible) {
+  for (const operation of paged.rows) {
     const heading = dayHeading(operation.occurredAt, list?.at ?? operation.occurredAt);
     const last = days.at(-1);
     if (last?.heading === heading) last.operations.push(operation);
@@ -512,11 +521,27 @@ export default function TransactionsPage() {
       ),
     [],
   );
+  // A transaction opened from elsewhere, or the next one to classify, may be further down than
+  // the rows on screen: the list grows to it once, when it is first found, and then scrolls to it.
+  const turned = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openId) {
+      turned.current = null;
+      return;
+    }
+    if (turned.current === openId) return;
+    const at = visible.findIndex((operation) => operation.id === openId);
+    if (at < 0) return;
+    turned.current = openId;
+    paged.reveal(at);
+  });
+  const shown = paged.rows.length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: growing the list puts the row on screen.
   useEffect(() => {
     if (!openId) return;
     const row = rowOf(openId);
     if (row) reveal(row);
-  }, [openId, rowOf]);
+  }, [openId, rowOf, shown]);
   const [notice, setNotice] = useState<string | null>(null);
   const open = (id: string) => {
     setNotice(null);
@@ -764,6 +789,7 @@ export default function TransactionsPage() {
               </table>
             </div>
           )}
+          {paged.more && <LoadMore {...paged.more} label="transactions" />}
           <p className="shell-note portfolio-note">
             {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
             {operations.length === 1 ? 'transaction' : 'transactions'}, newest first.{' '}
