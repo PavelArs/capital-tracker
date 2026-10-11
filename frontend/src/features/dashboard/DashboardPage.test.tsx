@@ -615,7 +615,7 @@ describe('show-dashboard-top-assets', () => {
     ]);
     await user.click(within(allocation).getByRole('radio', { name: 'Type' }));
     expect(shares()).toEqual(['Crypto$8,500.0085.00%', 'Cash$1,500.0015.00%']);
-    await user.click(within(allocation).getByRole('radio', { name: 'Account' }));
+    await user.click(within(allocation).getByRole('radio', { name: 'Wallets' }));
     expect(shares()).toEqual(['Trust Wallet$7,000.0070.00%', 'Cold storage$3,000.0030.00%']);
   });
 

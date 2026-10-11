@@ -316,7 +316,7 @@ export async function completeFactor(page: Page, factor = nextFactor()) {
   expect(Object.keys(body).sort()).toEqual(['csrfToken', 'user']);
   expect(body.user).toMatchObject({ id: owner.id, email: owner.email });
   expect(typeof body.csrfToken).toBe('string');
-  await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(owner.email, { exact: true })).toBeVisible();
   await page.waitForLoadState('networkidle');
   return { token: await cookie(page), csrfToken: body.csrfToken as string, user: body.user };
 }
