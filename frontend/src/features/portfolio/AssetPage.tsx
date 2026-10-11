@@ -1,16 +1,22 @@
-import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import type { WalletKind } from '@api/accounting.api';
+import type { AssetHistory } from '@api/asset-history.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation, OperationList } from '@api/operations.api';
 import { type HistoryPeriod, historyPeriods } from '@api/portfolio-history.api';
-import {
-  type AccountingCurrency,
-  type AssetValuation,
-  type PortfolioValuation,
-  portfolioValuationApi,
+import type {
+  AccountingCurrency,
+  AssetValuation,
+  PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
+import { onlyChain, useTokenChains } from '../shell/token-chains';
 import {
   assetKey,
   day,
@@ -20,10 +26,13 @@ import {
   statusLabels,
   typeLabel,
 } from '../transactions/operation-format';
-import AssetChart, { type Purchase } from './AssetChart';
+import { kindLabels, kindsOf } from '../wallets/wallets';
+import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
+import HideAsset from './HideAsset';
 import { assetCaption, Change, Signed } from './PortfolioPage';
+import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
@@ -54,7 +63,6 @@ function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: D
   return `${sourceName(current.source)} · ${current.status === 'stale' ? 'stale, ' : ''}updated ${when}`;
 }
 
-const SHOWN_OPERATIONS = 10;
 const periodNames: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
   '7D': 'past 7 days',
@@ -68,11 +76,16 @@ const periodNames: Record<HistoryPeriod, string> = {
 const keyOf = (asset: AssetValuation) =>
   assetKey({ instrumentId: asset.instrumentId, symbol: asset.symbol, name: asset.name });
 
-/** Operations that move this asset, newest first (as the Transactions page filters them). */
+/**
+ * Operations that move this asset, newest first (as the Transactions page filters them); dust
+ * stays under its own filter there.
+ */
 export function assetOperations(operations: readonly Operation[], key: string): Operation[] {
   return operations
-    .filter((operation) =>
-      [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
+    .filter(
+      (operation) =>
+        operation.status !== 'dust' &&
+        [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
     )
     .sort(
       (left, right) =>
@@ -116,20 +129,23 @@ function ValueChart({
   operations: OperationsState;
 }) {
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
-  const [history, setHistory] = useState<AssetHistory | null>(null);
-  const [failed, setFailed] = useState(false);
   const instrumentId = asset.instrumentId;
+  const [history, setHistory] = useState<AssetHistory | null>(
+    () => cachedReads.assetHistory.last(instrumentId, '1M', asked) ?? null,
+  );
+  const [failed, setFailed] = useState(false);
   // Only the latest request may fill the chart: an earlier period's answer can arrive later.
   const latest = useRef(0);
   const load = useCallback(async () => {
     const request = ++latest.current;
     setFailed(false);
-    setHistory(null);
+    const kept = cachedReads.assetHistory.last(instrumentId, period, asked);
+    setHistory(kept ?? null);
     try {
-      const loaded = await assetHistoryApi.get(instrumentId, period, asked);
+      const loaded = await cachedReads.assetHistory.load(instrumentId, period, asked);
       if (request === latest.current) setHistory(loaded);
     } catch {
-      if (request === latest.current) setFailed(true);
+      if (request === latest.current && !kept) setFailed(true);
     }
   }, [instrumentId, period, asked]);
   useEffect(() => {
@@ -141,22 +157,35 @@ function ValueChart({
   return (
     <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
       <div className="portfolio-toolbar">
-        <div className="dashboard-legend" aria-label="Chart legend">
-          <span>
-            <i className="dashboard-legend__line" aria-hidden="true" />
-            Position value
-          </span>
-          <span>
-            <i
-              className="dashboard-legend__line dashboard-legend__line--invested"
-              aria-hidden="true"
-            />
-            Cost basis
-          </span>
-          <span>
-            <i className="dashboard-legend__deposit" aria-hidden="true" />
-            Purchase
-          </span>
+        <div className="dashboard-chart-card__name">
+          <div className="dashboard-legend" aria-label="Chart legend">
+            <span>
+              <i className="dashboard-legend__line" aria-hidden="true" />
+              Position value
+            </span>
+            {history && costUnknown(history.points) ? (
+              <span>Cost basis unknown</span>
+            ) : (
+              <>
+                <span>
+                  <i
+                    className="dashboard-legend__line dashboard-legend__line--invested"
+                    aria-hidden="true"
+                  />
+                  Cost basis
+                </span>
+                <span>
+                  <i className="dashboard-legend__deposit" aria-hidden="true" />
+                  Purchase
+                </span>
+              </>
+            )}
+          </div>
+          <AboutChart>
+            Value of what you held at stored prices and Bank of Russia rates in{' '}
+            {history?.currency ?? currency}: hourly for the last week, daily since Jan 1, 2025.
+            Times are UTC. Cost basis counts the coins with a known purchase price.
+          </AboutChart>
         </div>
         <div className="dashboard-periods" role="tablist" aria-label="Chart period">
           {historyPeriods.map((value) => (
@@ -180,9 +209,7 @@ function ValueChart({
           </button>
         </div>
       ) : history === null ? (
-        <p className="dashboard-chart__empty" role="status">
-          Loading the chart…
-        </p>
+        <InlineSkeleton label="Loading the chart" chart />
       ) : (
         <AssetChart
           key={`${history.period}:${history.currency}:${history.at}`}
@@ -194,11 +221,6 @@ function ValueChart({
           label={`${asset.name} position value and cost basis, ${periodNames[history.period]}, in ${history.currency}`}
         />
       )}
-      <p className="shell-note dashboard-note">
-        Value of what you held at stored prices and Bank of Russia rates in{' '}
-        {history?.currency ?? currency}: hourly for the last week, daily since Jan 1, 2025. Times
-        are UTC. Cost basis counts the coins with a known purchase price.
-      </p>
     </section>
   );
 }
@@ -210,7 +232,7 @@ function movedAmount(operation: Operation, key: string): string {
   return operationAmount(operation.counterQuantity, operation.counterAsset, '+');
 }
 
-// The asset's own operations: the latest ten, then a link to all of them (prototype).
+// The asset's own operations, twenty a page, then a link to all of them in Transactions.
 function AssetTransactions({
   asset,
   operations,
@@ -222,6 +244,8 @@ function AssetTransactions({
 }) {
   const key = keyOf(asset);
   const own = typeof operations === 'object' ? assetOperations(operations.operations, key) : [];
+  // PAGES: twenty transactions a page.
+  const pagedOwn = useInfinite(own);
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
@@ -237,15 +261,13 @@ function AssetTransactions({
           </button>
         </div>
       ) : operations === 'loading' ? (
-        <p className="portfolio-none" role="status">
-          Loading transactions…
-        </p>
+        <InlineSkeleton label="Loading transactions" />
       ) : own.length === 0 ? (
         <p className="portfolio-none">No transactions yet.</p>
       ) : (
         <>
           <ul className="portfolio-holdings portfolio-operations">
-            {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
+            {pagedOwn.rows.map((operation) => (
               <li key={operation.id}>
                 <span>
                   {operation.status === 'needs-classification' ? (
@@ -268,8 +290,9 @@ function AssetTransactions({
               </li>
             ))}
           </ul>
+          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
           <Link className="portfolio-link portfolio-operations__all" to={all}>
-            {own.length > SHOWN_OPERATIONS ? `Show all ${own.length}` : 'Open in Transactions'}
+            Open in Transactions
           </Link>
         </>
       )}
@@ -283,6 +306,8 @@ function AssetDetails({
   asked,
   operations,
   onRetryOperations,
+  kinds,
+  onPriceSaved,
   now,
 }: {
   asset: AssetValuation;
@@ -290,20 +315,34 @@ function AssetDetails({
   asked: AccountingCurrency | undefined;
   operations: OperationsState;
   onRetryOperations: () => void;
+  /** W1, A3: how each wallet is held, once known. */
+  kinds: Record<string, WalletKind | null>;
+  onPriceSaved: () => void;
   now: Date;
 }) {
+  const [pricing, setPricing] = useState(false);
   const unit = asset.symbol ?? '';
   const currency = portfolio.currency;
+  const chains = useTokenChains();
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
   const unknown = Number(asset.unknownCostQuantity) > 0;
   const missingRate = Number(asset.missingRateQuantity) > 0;
+  // Part of the coins has no cost: show the rest on its own, marked as the known part.
+  const partial =
+    asset.costBasis === null && Number(asset.knownCostQuantity) > 0 && (unknown || missingRate);
   return (
     <>
       <div className="portfolio-head">
-        <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} size="lg" />
+        <AssetIcon
+          symbol={asset.symbol}
+          name={asset.name}
+          assetType={asset.assetType}
+          network={onlyChain(asset.symbol, chains)}
+          size="lg"
+        />
         <div className="portfolio-head__title">
           <h2>{asset.name}</h2>
-          <span className="portfolio-sub">{assetCaption(asset)}</span>
+          <span className="portfolio-sub">{assetCaption(asset, chains)}</span>
         </div>
         <div className="portfolio-head__price">
           <b>{asset.price ? price(asset.price.value, currency) : missingLabel(asset)}</b>
@@ -317,8 +356,28 @@ function AssetDetails({
           >
             {priceDetail(asset, currency, now)}
           </span>
+          {asset.priceSource === 'manual' && (
+            <button
+              type="button"
+              className="shell-button shell-button--secondary"
+              onClick={() => setPricing(true)}
+            >
+              Update price
+            </button>
+          )}
         </div>
       </div>
+      {pricing && (
+        <UpdatePriceDialog
+          instrumentId={asset.instrumentId}
+          name={asset.name}
+          onClose={() => setPricing(false)}
+          onSaved={() => {
+            setPricing(false);
+            onPriceSaved();
+          }}
+        />
+      )}
       <section className="shell-card" aria-label="Position">
         <dl className="portfolio-stats">
           <Stat label="Amount">
@@ -328,22 +387,38 @@ function AssetDetails({
           <Stat label="Average buy price">
             {asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
           </Stat>
-          <Stat label="Cost basis">{amount(asset.costBasis)}</Stat>
+          <Stat label="Cost basis">
+            {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
+            {partial && <span className="portfolio-sub">known part only</span>}
+          </Stat>
           <Stat label="Unrealized P&L">
             <Signed
-              value={asset.unrealizedPnl}
+              value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
               currency={currency}
-              ratio={asset.unrealizedReturnPercent}
+              ratio={partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent}
             />
+            {partial && asset.knownUnrealizedPnl !== null && (
+              <span className="portfolio-sub">known part only</span>
+            )}
           </Stat>
           <Stat label="Realized P&L">
             <Signed value={asset.realizedPnl} currency={currency} />
           </Stat>
         </dl>
         {unknown && (
-          <p className="portfolio-warn" role="note">
-            {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
-            unrealized P&amp;L are unknown. Known cost: {amount(asset.knownCostSubtotal)}.
+          <p className="portfolio-warn portfolio-warn--action" role="note">
+            <Icon name="alert" className="shell-icon shell-icon--sm" />
+            <span>
+              {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
+              unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known cost:{' '}
+              {amount(asset.knownCostSubtotal)}.
+            </span>
+            <Link
+              className="shell-button"
+              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
+            >
+              Review transactions
+            </Link>
           </p>
         )}
         {missingRate && (
@@ -371,17 +446,26 @@ function AssetDetails({
             <p className="portfolio-none">Nothing held right now.</p>
           ) : (
             <ul className="portfolio-holdings">
-              {asset.holdings.map((holding) => (
-                <li key={holding.accountId}>
-                  <Link to={withCurrency(`/wallets/${holding.accountId}`, asked)}>
-                    {holding.accountName}
-                  </Link>
-                  <span className="portfolio-num">
-                    {quantity(holding.quantity)} {unit}
-                    <span className="portfolio-sub">{amount(holding.value)}</span>
-                  </span>
-                </li>
-              ))}
+              {asset.holdings.map((holding) => {
+                const kind = kinds[holding.accountId];
+                return (
+                  <li key={holding.accountId}>
+                    <span className="portfolio-holding">
+                      <Link
+                        className="shell-link"
+                        to={withCurrency(`/wallets/${holding.accountId}`, asked)}
+                      >
+                        {holding.accountName}
+                      </Link>
+                      {kind && <span className="portfolio-sub">{kindLabels[kind]}</span>}
+                    </span>
+                    <span className="portfolio-num">
+                      {quantity(holding.quantity)} {unit}
+                      <span className="portfolio-sub">{amount(holding.value)}</span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
           <p className="shell-note portfolio-note">
@@ -397,17 +481,22 @@ function AssetDetails({
 // One asset across every account (portfolio-valuation PV-5).
 export default function AssetPage() {
   const { assetId } = useParams();
-  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
-  const [failed, setFailed] = useState(false);
+  const navigate = useNavigate();
   const [asked] = useAskedCurrency();
+  // Coming back shows the last answers at once; the loads below replace them.
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
+    () => cachedReads.portfolio.last(asked) ?? null,
+  );
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     setFailed(false);
-    setPortfolio(null);
+    const kept = cachedReads.portfolio.last(asked);
+    setPortfolio(kept ?? null);
     try {
-      setPortfolio(await portfolioValuationApi.get(asked));
+      setPortfolio(await cachedReads.portfolio.load(asked));
     } catch {
-      setFailed(true);
+      if (!kept) setFailed(true);
     }
   }, [asked]);
   useEffect(() => {
@@ -415,22 +504,40 @@ export default function AssetPage() {
   }, [load]);
 
   // The asset's operations feed both the chart's purchases and its transactions card.
-  const [operations, setOperations] = useState<OperationsState>('loading');
+  const [operations, setOperations] = useState<OperationsState>(
+    () => cachedReads.operations.last(asked) ?? 'loading',
+  );
   const latestOperations = useRef(0);
   const loadOperations = useCallback(async () => {
     const request = ++latestOperations.current;
-    setOperations('loading');
+    const kept = cachedReads.operations.last(asked);
+    setOperations(kept ?? 'loading');
     try {
       // The same currency as the page, so the values match its other amounts.
-      const list = await operationsApi.list(asked);
+      const list = await cachedReads.operations.load(asked);
       if (request === latestOperations.current) setOperations(list);
     } catch {
-      if (request === latestOperations.current) setOperations('failed');
+      if (request === latestOperations.current && !kept) setOperations('failed');
     }
   }, [asked]);
   useEffect(() => {
     void loadOperations();
   }, [loadOperations]);
+
+  // A3: how each wallet is held; the page does not wait for it, and shows no label without it.
+  const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
+    kindsOf(cachedReads.accounts.last()),
+  );
+  useEffect(() => {
+    let live = true;
+    cachedReads.accounts
+      .load()
+      .then((accounts) => live && setKinds(kindsOf(accounts)))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
@@ -447,6 +554,13 @@ export default function AssetPage() {
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
         </Link>
+        {asset && (
+          <HideAsset
+            instrumentId={asset.instrumentId}
+            symbol={asset.symbol}
+            onHidden={() => navigate(withCurrency('/portfolio', asked))}
+          />
+        )}
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
@@ -456,9 +570,7 @@ export default function AssetPage() {
           </button>
         </section>
       ) : portfolio === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading asset…
-        </section>
+        <PageSkeleton label="Loading asset" show={['stats', 'chart', 'rows']} />
       ) : asset ? (
         <AssetDetails
           asset={asset}
@@ -466,6 +578,8 @@ export default function AssetPage() {
           asked={asked}
           operations={operations}
           onRetryOperations={() => void loadOperations()}
+          kinds={kinds}
+          onPriceSaved={() => void load()}
           now={new Date()}
         />
       ) : (

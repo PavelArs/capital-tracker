@@ -1,12 +1,20 @@
-import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { cachedReads } from '@api/cached-reads';
+import type { FxRatesReport } from '@api/fx-rates.api';
+import { announceClassificationChange } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
+import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
-import { useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { rateText } from '../portfolio/format';
+import DataExport from '../export/DataExport';
+import { money, rateText } from '../portfolio/format';
+import HiddenAssets from '../portfolio/HiddenAssets';
+import SecuritySettings from '../security/SecuritySettings';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
+import { Bone } from './Skeleton';
+import '../portfolio/portfolio.css';
 import './shell-page.css';
 
 const themeChoices = [
@@ -22,8 +30,20 @@ const rateDate = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
-function ratesHint(report: FxRatesReport | null | 'failed'): string {
-  if (report === null) return 'Loading Bank of Russia rates…';
+/** The room a hint takes once it arrives, held empty so the cards below do not move. */
+function PendingHint({ id, long }: { id?: string; long?: boolean }) {
+  return (
+    <p
+      id={id}
+      className={`shell-setting__hint shell-setting__hint--pending${long ? ' shell-setting__hint--long' : ''}`}
+      aria-busy="true"
+    >
+      <Bone width="70%" height={12} />
+    </p>
+  );
+}
+
+function ratesHint(report: FxRatesReport | 'failed'): string {
   if (report === 'failed') return 'Could not load the Bank of Russia rates.';
   const known = report.rates.flatMap((rate) =>
     rate.rubPerUnit && rate.date
@@ -40,27 +60,32 @@ function ratesHint(report: FxRatesReport | null | 'failed'): string {
 
 /** Main currency of every screen; stored for the owner, so it survives logout (CUR-SWITCH). */
 function MainCurrency() {
-  const [saved, setSaved] = useState<AccountingCurrency | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'failed' | 'save-failed'>(
-    'loading',
+  // Coming back shows the settings last read while they are read again.
+  const [saved, setSaved] = useState<AccountingCurrency | null>(
+    () => cachedReads.settings.last()?.mainCurrency ?? null,
   );
-  const [rates, setRates] = useState<FxRatesReport | null | 'failed'>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'failed' | 'save-failed'>(
+    () => (cachedReads.settings.last() ? 'ready' : 'loading'),
+  );
+  const [rates, setRates] = useState<FxRatesReport | null | 'failed'>(
+    () => cachedReads.rates.last() ?? null,
+  );
   const { setMain } = useMainCurrency();
   const latest = useRef(0);
   useEffect(() => {
     let active = true;
-    ownerSettingsApi
-      .get()
+    cachedReads.settings
+      .load()
       .then((settings) => {
         if (!active) return;
         setSaved(settings.mainCurrency);
         setState('ready');
       })
-      .catch(() => active && setState('failed'));
-    fxRatesApi
-      .get()
+      .catch(() => active && setState((current) => (current === 'ready' ? current : 'failed')));
+    cachedReads.rates
+      .load()
       .then((report) => active && setRates(report))
-      .catch(() => active && setRates('failed'));
+      .catch(() => active && setRates((current) => current ?? 'failed'));
     return () => {
       active = false;
     };
@@ -103,7 +128,11 @@ function MainCurrency() {
         >
           {hint}
         </p>
-        <p className="shell-setting__hint">{ratesHint(rates)}</p>
+        {rates === null ? (
+          <PendingHint />
+        ) : (
+          <p className="shell-setting__hint">{ratesHint(rates)}</p>
+        )}
       </div>
       <div
         className="shell-seg"
@@ -129,12 +158,152 @@ function MainCurrency() {
   );
 }
 
+const dustAmount = /^[0-9]{1,7}(\.[0-9]{1,8})?$/;
+
+/** The dust threshold as typed: empty turns it off; else a positive USD amount up to 1,000,000. */
+function parseDust(text: string): string | null | undefined {
+  const value = text.trim();
+  if (value === '') return null;
+  if (!dustAmount.test(value) || Number(value) <= 0 || Number(value) > 1_000_000) return undefined;
+  return value;
+}
+
+/** CLS-DUST: incoming wallet transactions worth less than this skip "Needs classification". */
+function DustThreshold() {
+  const kept = cachedReads.settings.last();
+  const [saved, setSaved] = useState<string | null | undefined>(kept?.dustThresholdUsd);
+  const [text, setText] = useState(kept?.dustThresholdUsd ?? '');
+  const [state, setState] = useState<
+    'loading' | 'ready' | 'saving' | 'saved' | 'invalid' | 'failed' | 'save-failed'
+  >(kept ? 'ready' : 'loading');
+  useEffect(() => {
+    let active = true;
+    cachedReads.settings
+      .load()
+      .then((settings) => {
+        if (!active) return;
+        setSaved(settings.dustThresholdUsd);
+        setText(settings.dustThresholdUsd ?? '');
+        setState('ready');
+      })
+      .catch(() => active && setState((current) => (current === 'ready' ? current : 'failed')));
+    return () => {
+      active = false;
+    };
+  }, []);
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    const value = parseDust(text);
+    if (value === undefined) {
+      setState('invalid');
+      return;
+    }
+    setState('saving');
+    try {
+      const settings = await ownerSettingsApi.update({ dustThresholdUsd: value });
+      setSaved(settings.dustThresholdUsd);
+      setText(settings.dustThresholdUsd ?? '');
+      setState('saved');
+      // The sidebar count and the dashboard re-read what needs classification.
+      announceClassificationChange();
+    } catch {
+      setState('save-failed');
+    }
+  };
+  const hint = {
+    loading: '',
+    ready:
+      saved === null
+        ? 'Off: every incoming wallet transaction asks to be classified.'
+        : `Incoming wallet transactions worth less than ${money(saved ?? null, 'USD')} at the latest price don't ask to be classified.`,
+    saving: 'Saving…',
+    saved:
+      saved === null
+        ? 'Saved. Every incoming wallet transaction asks to be classified again.'
+        : `Saved. Smaller incoming transactions are under Transactions → Dust.`,
+    invalid:
+      'Enter an amount in USD above 0 and up to 1,000,000, or leave it empty to turn it off.',
+    failed: 'Could not load the dust threshold; try again later.',
+    'save-failed': 'Could not save the dust threshold; nothing changed.',
+  }[state];
+  const alert = state === 'invalid' || state === 'failed' || state === 'save-failed';
+  return (
+    <form className="shell-setting" onSubmit={(event) => void save(event)} noValidate>
+      <div className="shell-setting__text">
+        <label htmlFor="settings-dust" className="shell-setting__label">
+          Dust threshold
+        </label>
+        {state === 'loading' ? (
+          <PendingHint id="settings-dust-hint" long />
+        ) : (
+          <p
+            id="settings-dust-hint"
+            className="shell-setting__hint"
+            role={alert ? 'alert' : undefined}
+          >
+            {hint}
+          </p>
+        )}
+        <p className="shell-setting__hint">
+          They still count in your balances, so wallets stay in step with the blockchain.
+        </p>
+      </div>
+      <div className="shell-dust">
+        <span className="shell-dust__unit" aria-hidden="true">
+          $
+        </span>
+        <input
+          id="settings-dust"
+          type="text"
+          inputMode="decimal"
+          placeholder="Off"
+          autoComplete="off"
+          value={text}
+          disabled={saved === undefined || state === 'saving'}
+          aria-invalid={state === 'invalid' || undefined}
+          aria-describedby="settings-dust-hint"
+          onChange={(event) => {
+            setText(event.target.value);
+            if (state !== 'saving') setState('ready');
+          }}
+        />
+        <button
+          type="submit"
+          className="shell-button shell-button--secondary"
+          disabled={saved === undefined || state === 'saving' || text.trim() === (saved ?? '')}
+        >
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Prototype Settings → Profile: the address the owner signs in with. */
+function Profile() {
+  const { user } = useAuth();
+  return (
+    <section className="shell-card" aria-labelledby="settings-profile">
+      <h2 id="settings-profile">Profile</h2>
+      <div className="shell-setting">
+        <div className="shell-setting__text">
+          <span className="shell-setting__label">Email</span>
+          <p className="shell-setting__hint">Used to sign in and for password reset links.</p>
+        </div>
+        <span className="shell-setting__value">{user?.email ?? '—'}</span>
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   return (
     <div className="shell-page">
       <PageHeader title="Settings" />
       <div className="shell-settings">
+        <Profile />
+        <SecuritySettings />
         <section className="shell-card" aria-labelledby="settings-display">
           <h2 id="settings-display">Display</h2>
           <div className="shell-setting">
@@ -170,10 +339,27 @@ export default function SettingsPage() {
           </div>
           <MainCurrency />
         </section>
-        <p className="shell-note">
-          Security, sessions and export arrive in later steps. Language and the old display rates
-          are still in <Link to="/settings">Legacy settings</Link>.
-        </p>
+        <section className="shell-card" aria-labelledby="settings-wallets">
+          <h2 id="settings-wallets">Wallets</h2>
+          <DustThreshold />
+        </section>
+        <HiddenAssets />
+        <section className="shell-card" aria-labelledby="settings-history">
+          <h2 id="settings-history">History</h2>
+          <div className="shell-setting">
+            <div className="shell-setting__text">
+              <span className="shell-setting__label">Change history</span>
+              <p className="shell-setting__hint">
+                Who changed what and when: every transaction you added, corrected or deleted, and
+                each answer to a blockchain transaction.
+              </p>
+            </div>
+            <Link className="shell-button shell-button--secondary" to="/history">
+              Open history
+            </Link>
+          </div>
+        </section>
+        <DataExport />
       </div>
     </div>
   );

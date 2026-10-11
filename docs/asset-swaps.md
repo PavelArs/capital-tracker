@@ -1,5 +1,7 @@
 # Manual asset exchanges
 
+> **Endpoints removed (G1 backend, 2026-10-10).** The manual swap endpoints (`/accounting/accounts/:id/swaps`) were removed (G1 backend). Swaps made by classifying blockchain legs, and the ones already stored, are unchanged.
+
 Status: independently reviewed and archived on 2026-09-26. Populated21 upgrade, SQL
 constraints, concurrency, bounds, connected CSV and coherent snapshots are verified.
 The final review closed two CSV evidence gaps; see the linked verification and review.

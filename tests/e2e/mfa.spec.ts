@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type APIRequestContext, type Browser, type Page, expect } from '@playwright/test';
+import { type APIRequestContext, type Browser, expect, type Page } from '@playwright/test';
 import {
   counts,
   expectAdmissionDelta,
@@ -13,14 +13,14 @@ import {
   sourceB,
 } from './admission-fixtures';
 import {
-  type Enrollment,
-  type Factor,
   completeFactor,
   compose,
   cookie,
   cookieName,
   databaseCounter,
+  type Enrollment,
   enrollOwner,
+  type Factor,
   fingerprint,
   getCsrf,
   hashToken,
@@ -114,7 +114,7 @@ async function assertPending(page: Page, token: string) {
     AND "expiresAt" <= "createdAt" + interval '5 minutes'
     FROM auth_sessions WHERE "tokenHash" = '${hashToken(token)}'`),
   ).toBe('t');
-  await expect(page.getByLabel('Код из приложения', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Code from your authenticator app', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
 }
 
@@ -133,11 +133,11 @@ test('MFA-002-A: real password submission grants only five-minute pending state 
   await assertPending(page, pending.token);
   for (const path of [
     '/api/auth/me',
-    '/api/crypto',
-    '/api/assets',
-    '/api/liabilities',
-    '/api/metrics',
-    '/api/currencies/list',
+    '/api/accounting/portfolio',
+    '/api/accounting/operations',
+    '/api/wallet-addresses',
+    '/api/owner-settings',
+    '/api/export/backup',
   ]) {
     const response = await page.context().request.get(path);
     expect(response.status(), path).toBe(401);
@@ -187,7 +187,7 @@ test('MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable f
   expect(await page.evaluate(() => Object.keys(localStorage))).not.toContain('token');
   await restartBackend(request);
   await page.reload();
-  await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(owner.email, { exact: true })).toBeVisible();
   expect((await page.context().request.get('/api/auth/me')).status()).toBe(200);
   await expectHostAdmissions(1, 1);
   expect(

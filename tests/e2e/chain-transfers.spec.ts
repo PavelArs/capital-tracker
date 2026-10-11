@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, type Locator } from '@playwright/test';
 import { compose, origin, query, test } from './mfa-fixtures';
-import { tradeApi } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi } from './usd-trades-fixtures';
 
 // All names, amounts and both addresses are synthetic (valid bech32 of hashed labels); no other
 // case uses them. The shared acceptance database holds other cases' rows too, so this case
@@ -135,6 +135,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   // XFER-CAPITAL: the receiver's 0.006 BTC keep the sender's 60000 USD per BTC.
   expect(await basis(receiver.id)).toBe(360);
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   const table = main.getByRole('table', { name: 'Transactions', exact: true });
@@ -149,8 +150,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     '0.006',
     /^(≈ \$[\d,]+\.\d{2}|—)$/,
     `${senderName} → ${receiverName}`,
-    'Auto: own wallets',
-    'Blockchain',
+    'Auto: own walletsBlockchain',
   ]);
   await expect(cells(rows.nth(2))).toHaveText([
     'Buy09:00',
@@ -158,8 +158,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     '+0.01',
     '$600.00',
     new RegExp(`^${senderName}`),
-    'Recorded',
-    'Blockchain',
+    'RecordedBlockchain',
   ]);
   await page.screenshot({ path: testInfo.outputPath('transfer-list-1440-dark.png') });
 
@@ -170,7 +169,14 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   );
   await expect(fact(moved, 'From')).toHaveText(senderName);
   await expect(fact(moved, 'To')).toHaveText(receiverName);
-  await expect(fact(moved, 'Other address')).toHaveText(receiverAddress);
+  // The drawer shows the short form; the tooltip and the copy button carry the full address.
+  await expect(fact(moved, 'Other address')).toHaveText(
+    `${receiverAddress.slice(0, 6)}…${receiverAddress.slice(-4)}`,
+  );
+  await expect(fact(moved, 'Other address').locator('.copy-value')).toHaveAttribute(
+    'title',
+    receiverAddress,
+  );
   await expect(fact(moved, 'Network fee')).toHaveText('0.00001 BTC');
   await page.screenshot({ path: testInfo.outputPath('transfer-drawer-1440-dark.png') });
   await page.keyboard.press('Escape');
@@ -182,9 +188,12 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   await expect(question.getByRole('button')).toHaveText([
     'Transfer between my wallets',
     'Sell',
+    'Swap',
     'Expense',
     'Gift sent',
     'Fee',
+    'Pool deposit',
+    'Other',
   ]);
   await question.getByRole('button', { name: 'Transfer between my wallets' }).click();
   await expect(
@@ -210,8 +219,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     '0.001',
     /^(≈ \$[\d,]+\.\d{2}|—)$/,
     `${senderName} → ${exchangeName}`,
-    'Recorded',
-    'Blockchain',
+    'RecordedBlockchain',
   ]);
   // The exchange now holds 0.001 BTC at its cost; nothing was recorded as a deposit.
   expect(await basis(exchange.id)).toBe(60);

@@ -29,9 +29,15 @@ export interface AssetEntry {
    */
   value: string;
   currency: ValuationCurrency;
+  /** An existing account, or NEW_ACCOUNT to make one named `accountName`. */
   accountId: string;
+  accountName: string;
   notes: string;
 }
+
+/** The choice that makes a new account for the balance. */
+export const NEW_ACCOUNT = 'new';
+export const MAX_ACCOUNT_NAME = 120;
 
 export type AssetProblem =
   | 'name'
@@ -39,6 +45,7 @@ export type AssetProblem =
   | 'amount'
   | 'value'
   | 'account'
+  | 'account-name'
   | 'notes'
   | 'no-accounts';
 
@@ -55,7 +62,10 @@ export function assetProblems(entry: AssetEntry, accountCount: number): Set<Asse
     const value = entryValue(entry);
     if (entry.kind === 'crypto' ? positive(value) === null : value && positive(value) === null)
       found.add('value');
-    if (accountCount === 0) found.add('no-accounts');
+    if (entry.accountId === NEW_ACCOUNT) {
+      const name = entry.accountName.trim();
+      if (!name || name.length > MAX_ACCOUNT_NAME || /[\r\n]/.test(name)) found.add('account-name');
+    } else if (accountCount === 0) found.add('no-accounts');
     else if (!entry.accountId) found.add('account');
   }
   if (entry.notes.trim().length > MAX_COMMENT_LENGTH) found.add('notes');

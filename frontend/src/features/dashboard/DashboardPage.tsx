@@ -1,18 +1,23 @@
+import { cachedReads } from '@api/cached-reads';
 import {
   type HistoryPeriod,
   historyPeriods,
   type PortfolioHistory,
-  portfolioHistoryApi,
 } from '@api/portfolio-history.api';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { PortfolioValuation } from '@api/portfolio-valuation.api';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
+import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency } from '../portfolio/currency';
-import { money, percent, tone } from '../portfolio/format';
+import { money, percent, quantity, tone } from '../portfolio/format';
+import AboutChart from '../shell/AboutChart';
+import { useAttention } from '../shell/attention-context';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
-import { useNeedsClassification } from '../transactions/useNeedsClassification';
+import { tokenChains } from '../shell/token-chains';
 import HistoryChart from './HistoryChart';
+import TopAssets from './TopAssets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './dashboard.css';
@@ -54,6 +59,28 @@ function ChangeSplit({ history }: { history: PortfolioHistory }) {
   );
 }
 
+// Coins with no purchase price leave cost basis, net invested and profit incomplete
+// (prototype: "0.0087 BTC without purchase price" beside Market and Net deposits).
+export function UnknownCost({ portfolio }: { portfolio: PortfolioValuation | null }) {
+  const coins = (portfolio?.assets ?? []).filter((asset) => Number(asset.unknownCostQuantity) > 0);
+  if (coins.length === 0) return null;
+  const shown = coins.slice(0, 2).map((asset) => {
+    const unit = asset.symbol ?? asset.name;
+    return `${quantity(asset.unknownCostQuantity)} ${unit}`;
+  });
+  const more = coins.length - shown.length;
+  return (
+    <p className="dashboard-unknown" role="note">
+      <Icon name="info" className="shell-icon shell-icon--sm" />
+      <span>
+        {shown.join(', ')}
+        {more > 0 && ` and ${more} more`} without purchase price, so cost basis and profit are
+        incomplete.
+      </span>
+    </p>
+  );
+}
+
 // The prototype dims the cents of the big number: $42,738.84 with .84 muted.
 function Amount({ text }: { text: string }) {
   const point = text.lastIndexOf('.');
@@ -68,7 +95,13 @@ function Amount({ text }: { text: string }) {
 
 // Under the net worth: profit or loss to date against all the money put in, whatever the
 // period; the period itself only drives the chart and the split below.
-function NetWorth({ history }: { history: PortfolioHistory }) {
+function NetWorth({
+  history,
+  portfolio,
+}: {
+  history: PortfolioHistory;
+  portfolio: PortfolioValuation | null;
+}) {
   const { currency, profit } = history;
   const direction = tone(profit);
   return (
@@ -93,6 +126,7 @@ function NetWorth({ history }: { history: PortfolioHistory }) {
         )}
       </div>
       <ChangeSplit history={history} />
+      <UnknownCost portfolio={portfolio} />
       {!history.complete && (
         <p className="portfolio-warn" role="note">
           Incomplete: some assets had no price or rate in this period, so their value is not
@@ -165,57 +199,32 @@ function Empty({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-// How the chart is built, behind an info button instead of a paragraph under the chart.
-function AboutChart() {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  return (
-    <div className="dashboard-about">
-      <button
-        type="button"
-        className="dashboard-about__button"
-        aria-label="About this chart"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen((shown) => !shown)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') setOpen(false);
-        }}
-        onBlur={() => setOpen(false)}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 11v5M12 8h.01" />
-        </svg>
-      </button>
-      {open && (
-        <p id={id} className="dashboard-about__note" role="note">
-          Snapshots at stored prices and Bank of Russia rates: hourly for the last week, daily since
-          Jan 1, 2025, in UTC. Net invested is the money put in minus the money taken out; the gap
-          to the value line is your profit or loss.
-        </p>
-      )}
-    </div>
-  );
-}
-
 // Net worth, change for the period and the capital chart from portfolio snapshots
-// (record-portfolio-snapshots). Allocation and attention arrive with M16.
+// (record-portfolio-snapshots); top assets and allocation from the current valuation. What
+// needs the owner lives in the header bell (ATTN-BELL).
 export default function DashboardPage() {
-  const [history, setHistory] = useState<PortfolioHistory | null>(null);
+  const [asked] = useAskedCurrency();
+  // Coming back to the page paints the last answers at once; the loads below replace them.
+  const [history, setHistory] = useState<PortfolioHistory | null>(
+    () => cachedReads.history.last('1M', asked) ?? null,
+  );
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
   const [adding, setAdding] = useState(false);
-  const [asked] = useAskedCurrency();
   const latest = useRef(0);
-  const toClassify = useNeedsClassification();
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
+    () => cachedReads.portfolio.last(asked) ?? null,
+  );
+  const [portfolioFailed, setPortfolioFailed] = useState(false);
+  const latestPortfolio = useRef(0);
+  const wallets = useAttention()?.wallets ?? null;
 
   // Only the newest request may change the page; switching keeps the last chart visible.
   const load = useCallback(async () => {
     const request = ++latest.current;
     setFailed(false);
     try {
-      const next = await portfolioHistoryApi.get(period, asked);
+      const next = await cachedReads.history.load(period, asked);
       if (request === latest.current) setHistory(next);
     } catch {
       if (request === latest.current) setFailed(true);
@@ -224,6 +233,26 @@ export default function DashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Top assets, allocation and old prices come from today's valuation; a failure there
+  // leaves the net worth and the chart in place.
+  const loadPortfolio = useCallback(async () => {
+    const request = ++latestPortfolio.current;
+    setPortfolioFailed(false);
+    try {
+      const next = await cachedReads.portfolio.load(asked);
+      if (request === latestPortfolio.current) setPortfolio(next);
+    } catch {
+      if (request === latestPortfolio.current) setPortfolioFailed(true);
+    }
+  }, [asked]);
+  useEffect(() => {
+    void loadPortfolio();
+  }, [loadPortfolio]);
+  const reload = () => {
+    void load();
+    void loadPortfolio();
+  };
 
   const shown = history;
   const chartLabel = shown
@@ -235,24 +264,7 @@ export default function DashboardPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={load} />
-      {/* CLS-COUNT: until classified, these transactions are left out of the numbers below. */}
-      {toClassify !== null && toClassify > 0 && (
-        <section className="dashboard-attention" aria-label="Needs attention">
-          <span className="dashboard-attention__dot" aria-hidden="true" />
-          <span className="dashboard-attention__text">
-            {toClassify === 1
-              ? '1 blockchain transaction needs classification'
-              : `${toClassify} blockchain transactions need classification`}
-          </span>
-          <Link
-            className="shell-button"
-            to={`/transactions?status=needs-classification${asked ? `&currency=${asked}` : ''}`}
-          >
-            Review
-          </Link>
-        </section>
-      )}
+      <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={reload} />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>
@@ -266,7 +278,7 @@ export default function DashboardPage() {
         <Empty onAdd={() => setAdding(true)} />
       ) : (
         <>
-          <NetWorth history={shown} />
+          <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} />
           <section
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"
@@ -275,7 +287,11 @@ export default function DashboardPage() {
               <div className="dashboard-chart-card__title">
                 <div className="dashboard-chart-card__name">
                   <h2>Capital</h2>
-                  <AboutChart />
+                  <AboutChart>
+                    Snapshots at stored prices and Bank of Russia rates: hourly for the last week,
+                    daily since Jan 1, 2025, in UTC. Net invested is the money put in minus the
+                    money taken out; the gap to the value line is your profit or loss.
+                  </AboutChart>
                 </div>
                 <div className="dashboard-legend" aria-label="Chart legend">
                   <span>
@@ -317,6 +333,18 @@ export default function DashboardPage() {
               label={chartLabel}
             />
           </section>
+          <div className="dashboard-bottom">
+            <TopAssets
+              chains={tokenChains(wallets)}
+              portfolio={portfolio}
+              failed={portfolioFailed}
+              onRetry={() => void loadPortfolio()}
+              asked={asked}
+            />
+            {portfolio !== null && !portfolioFailed && (
+              <Allocation portfolio={portfolio} limit={6} />
+            )}
+          </div>
         </>
       )}
       {adding && (
@@ -324,7 +352,7 @@ export default function DashboardPage() {
           onClose={() => setAdding(false)}
           onSaved={() => {
             setAdding(false);
-            void load();
+            reload();
           }}
         />
       )}

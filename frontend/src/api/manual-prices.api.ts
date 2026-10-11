@@ -9,13 +9,6 @@ export interface SetPriceCommand {
   assertReviewed: true;
 }
 
-export interface VoidPriceCommand {
-  requestId: string;
-  expectedRevision: number;
-  observedAt: string;
-  assertReviewed: true;
-}
-
 export type PriceReceipt = {
   instrumentId: string;
   revision: number;
@@ -35,15 +28,6 @@ export interface PriceBook {
   nextOffset: number | null;
 }
 
-export interface PriceHistory {
-  instrumentId: string;
-  observedAt: string;
-  source: 'manual';
-  quoteCurrency: 'USD';
-  items: PriceReceipt[];
-  nextBeforeRevision: number | null;
-}
-
 const path = (instrumentId: string) =>
   `/accounting/instruments/${encodeURIComponent(instrumentId)}/usd-prices`;
 
@@ -56,20 +40,4 @@ export const manualPricesApi = {
     ).data,
   set: async (instrumentId: string, command: SetPriceCommand): Promise<PriceReceipt> =>
     (await apiClient.post<PriceReceipt>(path(instrumentId), command)).data,
-  void: async (instrumentId: string, command: VoidPriceCommand): Promise<PriceReceipt> =>
-    (await apiClient.post<PriceReceipt>(`${path(instrumentId)}/void`, command)).data,
-  history: async (
-    instrumentId: string,
-    observedAt: string,
-    beforeRevision?: number,
-  ): Promise<PriceHistory> =>
-    (
-      await apiClient.get<PriceHistory>(`${path(instrumentId)}/history`, {
-        params: {
-          observedAt,
-          limit: 10,
-          ...(beforeRevision === undefined ? {} : { beforeRevision }),
-        },
-      })
-    ).data,
 };

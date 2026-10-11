@@ -153,11 +153,14 @@ a.wallets-asset:hover {
   border-top: 1px solid var(--line);
 }
 
+.wallets-source {
+  --wallets-columns: minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr)
+    minmax(90px, 0.8fr) minmax(170px, 1.2fr);
+}
+
 .wallets-source__open {
   display: grid;
-  grid-template-columns:
-    minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr) minmax(90px, 0.8fr)
-    minmax(170px, 1.2fr);
+  grid-template-columns: var(--wallets-columns);
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -182,6 +185,12 @@ a.wallets-asset:hover {
   overflow-wrap: anywhere;
 }
 
+/* SOL-STAKE-BALANCE: "14.5 SOL staked" on its own line under the balance it is part of. */
+.wallets-amounts__staked {
+  display: block;
+  font-size: var(--fs-xs);
+}
+
 button.wallets-source__open {
   cursor: pointer;
 }
@@ -193,6 +202,44 @@ button.wallets-source__open:hover {
 button.wallets-source__open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* W4: the copy button lies over the address column of the row, on the same grid. */
+.wallets-source--copy {
+  display: grid;
+}
+
+.wallets-source--copy > .wallets-source__open,
+.wallets-source--copy > .wallets-source__copy {
+  grid-area: 1 / 1;
+}
+
+.wallets-source__copy {
+  display: grid;
+  grid-template-columns: var(--wallets-columns);
+  align-items: center;
+  gap: 12px;
+  padding: 13px 22px;
+  pointer-events: none;
+}
+
+.wallets-source__copy-cell {
+  display: flex;
+  grid-column: 2;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Takes the width of the address it follows, so the button sits right after the text. */
+.wallets-source__copy-cell > span {
+  min-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.wallets-source__copy-cell .copy-value__button {
+  pointer-events: auto;
 }
 
 .wallets-source--manual .wallets-source__open {
@@ -211,10 +258,18 @@ button.wallets-source__open:focus-visible {
   min-width: 0;
 }
 
+.wallets-asset__text {
+  display: grid;
+  min-width: 0;
+}
+
 .wallets-asset__name {
   overflow: hidden;
   font-weight: 500;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -323,6 +378,51 @@ button.wallets-source__open:focus-visible {
   background: var(--warn-soft);
 }
 
+/* W5: the difference on one line; the sums and what to do about it are behind Details. */
+.wallets-diff {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.wallets-diff summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.wallets-diff summary::-webkit-details-marker {
+  display: none;
+}
+
+.wallets-diff__line {
+  min-width: 0;
+}
+
+.wallets-diff__more {
+  flex: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.wallets-diff[open] .wallets-diff__more::after {
+  content: " ▴";
+}
+
+.wallets-diff:not([open]) .wallets-diff__more::after {
+  content: " ▾";
+}
+
+.wallets-diff > p {
+  margin: 8px 0 0;
+}
+
+.wallets-diff > .shell-button {
+  margin-top: 10px;
+}
+
 .wallets-message--error {
   background: color-mix(in srgb, var(--neg) 12%, transparent);
 }
@@ -383,6 +483,15 @@ button.wallets-source__open:focus-visible {
   margin-left: 6px;
 }
 
+.wallets-networks__title {
+  margin: 0 0 -4px;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .wallets-networks {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -391,6 +500,7 @@ button.wallets-source__open:focus-visible {
 
 .wallets-network {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: 10px;
   padding: 16px;
@@ -459,6 +569,55 @@ button.wallets-source__open:focus-visible {
   justify-self: start;
 }
 
+/* WALLET-REMOVE: the confirmation under "Stop tracking" in the address drawer. */
+.wallets-confirm {
+  display: grid;
+  gap: var(--sp-3);
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  font-size: var(--fs-sm);
+}
+
+.wallets-confirm p {
+  margin: 0;
+}
+
+.wallets-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.wallets-remove {
+  margin-top: var(--sp-2);
+}
+
+.wallets-journal {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.wallets-journal li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.wallets-journal time {
+  justify-self: end;
+}
+
+.wallets-journal__text {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
 .wallets-recent {
   margin: 0 0 10px;
   padding: 0;
@@ -477,6 +636,11 @@ button.wallets-source__open:focus-visible {
 @media (max-width: 1100px) {
   .wallets-source__open {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* Two columns have no room for it; the address is copied from the drawer. */
+  .wallets-source__copy {
+    display: none;
   }
 
   .wallets-right {
@@ -517,4 +681,112 @@ button.wallets-source__open:focus-visible {
 .wallets-stack {
   display: grid;
   justify-items: end;
+}
+
+/* SOL-STAKE-BALANCE: stake accounts in a Solana address's drawer, two lines each at any width. */
+.wallets-stake {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.wallets-stake li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.wallets-stake__main,
+.wallets-stake__side {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wallets-stake__side {
+  justify-items: end;
+}
+
+.wallets-stake__note {
+  margin: 10px 0 0;
+}
+
+/* TOKEN-SHOW-MORE: the toggle under an address's coins, and how many tokens it hides. */
+.wallets-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 0 22px 12px;
+  font-size: var(--fs-sm);
+}
+
+.wallets-more .portfolio-link {
+  padding: 0;
+}
+
+.transactions-hero .wallets-more {
+  padding: 4px 0 0;
+}
+
+/* TOKEN-HIDE: the other tokens of an address, and the hidden ones, in its drawer. */
+.wallets-tokens {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.wallets-tokens li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.wallets-tokens__name {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 639.98px) {
+  .wallets-more {
+    padding: 0 16px 12px;
+  }
+}
+
+/* Drawer: a listed transaction opens in Transactions. */
+.wallets-recent li > .wallets-recent__open {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.wallets-recent li > .wallets-recent__open:hover {
+  color: var(--accent);
+}
+
+.wallets-recent__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.wallets-recent__more .portfolio-link {
+  padding: 0;
 }

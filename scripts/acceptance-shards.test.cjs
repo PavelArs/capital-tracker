@@ -42,7 +42,6 @@ const legacyChecks = [
   'manual-usd-prices-db',
   'historical-valuation-db',
   'valuation-history-db',
-  'display-fx-db',
   'manual-portfolio-valuation-db',
   'owned-transfers-db',
   'owned-transfers-bounds-db',
@@ -61,11 +60,25 @@ const legacyChecks = [
   'manual-operations-db',
   'chain-classification-db',
   'chain-transfers-db',
+  'chain-swaps-db',
+  'chain-pools-db',
   'ethereum-wallets-db',
+  'solana-wallets-db',
+  'bitcoin-xpub-db',
+  'bybit-db',
+  'tron-wallets-db',
+  'audit-history-db',
+  'stellar-wallets-db',
+  'zcash-wallets-db',
+  'evm-chains-db',
+  'wallet-removal-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
   'mfa-expiry',
+  'password-reset-db',
+  'security-settings-db',
+  'owner-export-db',
 ];
 const canonical = ['restore-readiness', ...legacyChecks, 'client-source-startup'];
 const legacyCritical = [
@@ -316,7 +329,7 @@ test('ENG-007-C browser cases are a deterministic modulo split of the manifest',
   const split = shards.BROWSER_SHARDS.map((shard) => shards.browserCases(manifest, shard));
   assert.deepEqual(
     split.map((cases) => cases.length),
-    [8, 8, 7, 7],
+    [5, 5, 5, 4],
   );
   split.forEach((cases, index) => {
     assert.deepEqual(

@@ -19,7 +19,17 @@ export function failureMessage(
     case 'invalid_response':
       return `The ${network} data source sent an answer the app cannot read. Try again later.`;
     case 'not_configured':
-      return `${network} sync needs a valid Etherscan API key on the server.`;
+      if (address?.network === 'tron')
+        return 'TronGrid refused the requests. A free TronGrid API key on the server lets the app read Tron wallets.';
+      if (address?.network === 'zcash')
+        return 'The Zcash data sources refused the requests. A free NOWNodes API key on the server lets the app read Zcash wallets.';
+      return address?.network === 'bybit'
+        ? 'The stored Bybit API key cannot be read on this server. Add the account again with its read-only key.'
+        : `${network} sync needs a valid Etherscan API key on the server.`;
+    case 'key_rejected':
+      return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;
+    case 'plan_required':
+      return `The free Etherscan plan does not cover ${network}, and no other free source is set up for it yet.`;
     case 'server':
       return 'Could not reach the server. Try again.';
     case 'busy':

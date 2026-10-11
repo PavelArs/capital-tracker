@@ -51,18 +51,19 @@ describe('SHELL-002 navigation presentation', () => {
     expect(target?.getAttribute('tabindex')).toBe('-1');
   });
 
-  it('keeps the compact menu button contract and an English logout', async () => {
+  it('always shows the sections (no menu button) and keeps an English logout', async () => {
     const document = await markup();
     const buttons = [...document.querySelectorAll('nav button')];
-    const toggle = buttons.find((button) => button.textContent === 'Menu');
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle?.getAttribute('aria-controls')).toBe('application-menu');
-    expect(document.getElementById('application-menu')).not.toBeNull();
+    expect(buttons.some((button) => button.textContent === 'Menu')).toBe(false);
+    expect(document.querySelector('[aria-expanded]')).toBeNull();
+    expect(
+      document.getElementById('application-menu')?.querySelectorAll('a').length,
+    ).toBeGreaterThan(4);
     expect(buttons.some((button) => button.getAttribute('aria-label') === 'Log out')).toBe(true);
   });
 });
 
-describe('SHELL-001 sections first, current screens under Legacy', () => {
+describe('SHELL-001 the five sections, no Legacy group', () => {
   it('lists the five new sections in order', async () => {
     const document = await markup();
     expect(linksOf(document.querySelector('[data-nav-group="sections"]'))).toEqual([
@@ -74,33 +75,34 @@ describe('SHELL-001 sections first, current screens under Legacy', () => {
     ]);
   });
 
-  it('keeps every current screen in an open Legacy group with unchanged URLs and labels', async () => {
+  it('has no Legacy group and no link to the retired older screens (G1)', async () => {
     const document = await markup();
-    const group = [...document.querySelectorAll('details')].find(
-      (node) => node.querySelector('summary')?.textContent === 'Legacy',
-    );
-    expect(group).toBeDefined();
-    expect(group?.hasAttribute('open')).toBe(true);
-    expect(linksOf(group)).toEqual([
-      ['Ручные счета', '/manual-accounts'],
-      ['Переводы между счетами', '/owned-transfers'],
-      ['Вводы и выводы', '/capital-flows'],
-      ['Ручные цены', '/manual-prices'],
-      ['Адреса кошельков', '/wallet-addresses'],
-      ['Прибыль за период', '/period-profit'],
-      ['Настройки', '/settings'],
-      ['Прежний обзор', '/legacy-overview'],
-      ['Активы', '/assets'],
-      ['Криптокошельки', '/crypto'],
-    ]);
-    expect(document.querySelector('nav a[href^="/liabilities"]')).toBeNull();
+    expect(
+      [...document.querySelectorAll('details')].some(
+        (node) => node.querySelector('summary')?.textContent === 'Legacy',
+      ),
+    ).toBe(false);
+    expect(document.body.textContent).not.toMatch(/[А-Яа-я]/);
+    for (const older of ['/manual-accounts', '/manual-prices'])
+      expect(document.querySelector(`nav a[href^="${older}"]`)).toBeNull();
+    for (const retired of [
+      '/owned-transfers',
+      '/capital-flows',
+      '/wallet-addresses',
+      '/period-profit',
+      '/settings',
+      '/legacy-overview',
+      '/assets',
+      '/crypto',
+      '/liabilities',
+    ])
+      expect(document.querySelector(`nav a[href^="${retired}"]`)).toBeNull();
   });
 
-  it('marks exactly one current destination for new and nested legacy routes', async () => {
+  it('marks exactly one current destination', async () => {
     for (const [path, current] of [
       ['/dashboard', '/dashboard'],
       ['/preferences', '/preferences'],
-      ['/manual-accounts/11111111-1111-4111-8111-111111111111', '/manual-accounts'],
     ]) {
       const document = await markup(path);
       const marked = document.querySelectorAll('a[aria-current="page"]');

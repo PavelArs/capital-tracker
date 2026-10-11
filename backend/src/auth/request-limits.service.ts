@@ -7,6 +7,7 @@ const policies = {
   'login-ip': { limit: 5, seconds: 60 },
   'mfa-ip': { limit: 5, seconds: 60 },
   'login-account': { limit: 10, seconds: 600 },
+  'reset-ip': { limit: 5, seconds: 60 },
 } as const;
 export type AuthRequestScope = keyof typeof policies;
 
@@ -29,7 +30,7 @@ export class AuthRequestLimitsService {
       // Callers supply the canonical source or validated normalized email. Reject
       // internal misuse without opening a transaction or exposing its inputs.
       if (
-        !Object.prototype.hasOwnProperty.call(policies, scope) ||
+        !Object.hasOwn(policies, scope) ||
         typeof subject !== 'string' ||
         subject.length === 0 ||
         subject.length > 254

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { compose, fingerprint, loginWithMfa, origin, owner, test } from './mfa-fixtures';
 
 // Maintained acceptance on the actual predecessor image: no future trade table,
@@ -36,7 +36,13 @@ async function realEmptyAccount(page: Page) {
   });
   expect(created.status(), 'The predecessor already supports real empty manual accounts').toBe(201);
   const account = (await created.json()) as Account;
-  expect(Object.keys(account).sort()).toEqual(['createdAt', 'currentRevision', 'id', 'name']);
+  expect(Object.keys(account).sort()).toEqual([
+    'createdAt',
+    'currentRevision',
+    'id',
+    'kind',
+    'name',
+  ]);
   expect(account.id).toMatch(uuidV4);
   expect(account.name).toBe(name);
   expect(account.currentRevision).toBe(0);
@@ -162,46 +168,6 @@ test('TRADE-001-A: a real owner explicitly initializes an empty-origin journal a
     // No process restart occurs inside this measured flow: legacy warmups are outside it.
     expect
       .soft(providerRequests(), 'Journal initialization and reads never call providers')
-      .toEqual(providersBefore);
-  }
-});
-
-test('TRADE-006-A: the protected Russian journal page requires an unchecked explicit empty-position assertion', async ({
-  page,
-}) => {
-  const { account, request } = await realEmptyAccount(page);
-  const before = fingerprint(['auth_sessions']);
-  const providersBefore = providerRequests();
-
-  try {
-    await page.goto(`/manual-accounts/${account.id}`);
-    await expect(page.getByRole('heading', { name: account.name, exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'Журнал сделок в USD', exact: true }),
-    ).toBeVisible();
-    const assertion = page.getByRole('checkbox', { name: 'Позиции были пустыми', exact: true });
-    await expect(assertion).toBeVisible();
-    await expect(assertion).not.toBeChecked();
-    await expect(
-      page.getByRole('navigation').getByText(owner.email, { exact: true }),
-    ).toBeVisible();
-    const state = await request.get(`/api/accounting/accounts/${account.id}/trade-journal`);
-    expect(state.status()).toBe(200);
-    expect(await state.json()).toEqual({
-      accountId: account.id,
-      eligible: true,
-      ineligibilityReason: null,
-      journal: null,
-    });
-  } finally {
-    expect
-      .soft(
-        fingerprint(['auth_sessions']),
-        'Merely viewing an empty account cannot attest its origin or create trades',
-      )
-      .toBe(before);
-    expect
-      .soft(providerRequests(), 'The protected journal page never calls providers')
       .toEqual(providersBefore);
   }
 });

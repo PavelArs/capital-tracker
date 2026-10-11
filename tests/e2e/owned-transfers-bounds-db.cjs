@@ -74,7 +74,7 @@ function migrate() {
     timeout: 60000,
   });
   assert.equal(result.status, 0, 'Actual guarded production migration CLI');
-  assert.match(result.stdout, /Migrations applied: 35/);
+  assert.match(result.stdout, /Migrations applied: 58/);
 }
 async function account(s, owner, name, initialize = true) {
   const id = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name })).value.id;
@@ -204,18 +204,38 @@ async function oneComponentRead(db, action) {
   db.createQueryRunner = function (...args) {
     const runner = original.apply(this, args);
     const query = runner.query.bind(runner);
-    runner.query = (sql, ...rest) => { statements.push(sql); return query(sql, ...rest); };
+    runner.query = (sql, ...rest) => {
+      statements.push(sql);
+      return query(sql, ...rest);
+    };
     return runner;
   };
   try {
     const result = await action();
-    assert.equal(statements.filter(sql => sql === 'SET TRANSACTION READ ONLY').length, 1);
-    const tradeReads = statements.filter(sql => /SELECT/.test(sql) && sql.includes('account_trade_versions'));
-    assert.equal(tradeReads.filter(sql => /count\(\*\)/i.test(sql)).length, 1, 'One component capacity preflight');
-    assert.equal(tradeReads.filter(sql => !/count\(\*\)/i.test(sql)).length, 1, 'One trade materialization across all selected accounts or sample instants');
-    assert.equal(statements.filter(sql => /SELECT/.test(sql) && sql.includes('manual_usd_price_versions')).length, 1, 'One batched exact price read');
+    assert.equal(statements.filter((sql) => sql === 'SET TRANSACTION READ ONLY').length, 1);
+    const tradeReads = statements.filter(
+      (sql) => /SELECT/.test(sql) && sql.includes('account_trade_versions'),
+    );
+    assert.equal(
+      tradeReads.filter((sql) => /count\(\*\)/i.test(sql)).length,
+      1,
+      'One component capacity preflight',
+    );
+    assert.equal(
+      tradeReads.filter((sql) => !/count\(\*\)/i.test(sql)).length,
+      1,
+      'One trade materialization across all selected accounts or sample instants',
+    );
+    assert.equal(
+      statements.filter((sql) => /SELECT/.test(sql) && sql.includes('manual_usd_price_versions'))
+        .length,
+      1,
+      'One batched exact price read',
+    );
     return result;
-  } finally { db.createQueryRunner = original; }
+  } finally {
+    db.createQueryRunner = original;
+  }
 }
 
 async function distinctPositions(db, s, owner) {
@@ -268,18 +288,41 @@ async function distinctPositions(db, s, owner) {
     ),
   );
   const beforeReads = await fingerprint(db);
-  const selected = await oneComponentRead(db, () => s.portfolio.preview(owner, { at, accountIds: [sender, receiver] }, {}));
-  assert.equal(selected.totalValueUsd, '2202', 'Principal is never double counted across selected accounts');
-  assert.equal(selected.accounts.find(row => row.accountId === sender).totalValueUsd, '0');
-  assert.equal(selected.accounts.find(row => row.accountId === receiver).items.length, 1101);
-  assert.ok(selected.accounts.every(row => !Object.hasOwn(row, 'transferSummary')), 'Selected account metadata retains explicit field selection');
-  const series = await oneComponentRead(db, () => s.series.getSeries(owner, receiver, { from: buyAt, to: at }));
+  const selected = await oneComponentRead(db, () =>
+    s.portfolio.preview(owner, { at, accountIds: [sender, receiver] }, {}),
+  );
+  assert.equal(
+    selected.totalValueUsd,
+    '2202',
+    'Principal is never double counted across selected accounts',
+  );
+  assert.equal(selected.accounts.find((row) => row.accountId === sender).totalValueUsd, '0');
+  assert.equal(selected.accounts.find((row) => row.accountId === receiver).items.length, 1101);
+  assert.ok(
+    selected.accounts.every((row) => !Object.hasOwn(row, 'transferSummary')),
+    'Selected account metadata retains explicit field selection',
+  );
+  const series = await oneComponentRead(db, () =>
+    s.series.getSeries(owner, receiver, { from: buyAt, to: at }),
+  );
   assert.deepEqual(series.revisionBudget, { used: 1101, limit: 10000 });
-  assert.equal(Object.hasOwn(series, 'transferSummary'), false, 'No from-point summary presented as whole-series totals');
-  assert.deepEqual(series.points.map(point => [point.at, point.totalValueUsd, point.missingPriceCount]),
-    [[buyAt, null, 1000], [moveAt, null, 1101], [at, '2202', 0]]);
+  assert.equal(
+    Object.hasOwn(series, 'transferSummary'),
+    false,
+    'No from-point summary presented as whole-series totals',
+  );
+  assert.deepEqual(
+    series.points.map((point) => [point.at, point.totalValueUsd, point.missingPriceCount]),
+    [
+      [buyAt, null, 1000],
+      [moveAt, null, 1101],
+      [at, '2202', 0],
+    ],
+  );
   assert.equal(await fingerprint(db), beforeReads, 'Portfolio/series reads preserve every row');
-  console.log('PASS TRANSFER-004-C 1101 priced positions, offset1100, coherent series/portfolio and once-only loads');
+  console.log(
+    'PASS TRANSFER-004-C 1101 priced positions, offset1100, coherent series/portfolio and once-only loads',
+  );
 }
 
 async function carryInTwo(s, owner, receiver, instrumentId) {
@@ -339,7 +382,10 @@ async function wideMatches(db, s, owner) {
   });
   assert.equal(lastLot.items.length, 1, 'All 10001 held fragments remain pageable');
   assert.equal(lastLot.nextOffset, null);
-  assert.deepEqual((await s.trade.listLots(owner, receiver, { journalRevision: '10', offset: '99999' })).items, []);
+  assert.deepEqual(
+    (await s.trade.listLots(owner, receiver, { journalRevision: '10', offset: '99999' })).items,
+    [],
+  );
   assert.equal(lastLot.items[0].sourceKind, 'transfer');
   assert.deepEqual(
     [lastLot.items[0].remainingQuantity, lastLot.items[0].remainingCostUsd],
@@ -396,7 +442,15 @@ async function wideMatches(db, s, owner) {
   });
   assert.equal(lastMatch.items.length, 1, 'All 10001 sale matches remain pageable');
   assert.equal(lastMatch.nextOffset, null);
-  assert.deepEqual((await s.trade.listMatches(owner, receiver, sale.value.trade.tradeId, { journalRevision: '11', offset: '99999' })).items, []);
+  assert.deepEqual(
+    (
+      await s.trade.listMatches(owner, receiver, sale.value.trade.tradeId, {
+        journalRevision: '11',
+        offset: '99999',
+      })
+    ).items,
+    [],
+  );
   const lastSource = [...sources.slice(1)]
     .sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0))
     .at(-1);
@@ -475,7 +529,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 35);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 58);
     const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified")
       VALUES('transfer-bounds@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);

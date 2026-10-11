@@ -1,0 +1,45 @@
+// Alloy for the Loki stack next to this file. The discovery and processing blocks are the
+// same as ../alloy-logs.alloy (a spec keeps them equal); only the loki.write block is added.
+discovery.docker "capital_tracker" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=capital-tracker"]
+  }
+}
+
+discovery.relabel "capital_tracker" {
+  targets = discovery.docker.capital_tracker.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "capital_tracker" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.capital_tracker.output
+  labels     = { app = "capital-tracker" }
+  forward_to = [loki.process.capital_tracker.receiver]
+}
+
+loki.process "capital_tracker" {
+  // Only the backend writes JSON; the other containers keep plain lines.
+  stage.match {
+    selector = "{container=\"capital_tracker_backend\"}"
+    stage.json {
+      expressions = { level = "level" }
+    }
+    stage.labels {
+      values = { level = "" }
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -29,10 +29,27 @@
   /* One colour per asset everywhere (asset-identity.ts); unknown tickers are "other". */
   --c-btc: #d95926;
   --c-eth: #3987e5;
+  --c-base: #3b6cff;
+  --c-arb: #2d9bd8;
+  --c-op: #e8394a;
+  --c-pol: #8a5cf0;
+  --c-bnb: #e0a82e;
+  --c-avax: #e84142;
   --c-sol: #d55181;
   --c-zec: #199e70;
+  --c-trx: #dd3442;
+  --c-xlm: #7a8dad;
+  --c-usdt: #2bb3a3;
+  --c-usdc: #2f74d6;
   --c-cash: #9085e9;
   --c-other: #4a5161;
+  /* Tokens the app has no colour for take one of these, by ticker, so they tell apart. */
+  --c-p1: #b36bd9;
+  --c-p2: #3fb5c4;
+  --c-p3: #c9a227;
+  --c-p4: #7bb661;
+  --c-p5: #e0866b;
+  --c-p6: #6f86d6;
 
   --font-ui: "Onest Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
@@ -78,8 +95,24 @@
   --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
   --c-btc: #eb6834;
   --c-eth: #2a78d6;
+  --c-base: #1f4fe0;
+  --c-arb: #1b86c4;
+  --c-op: #d62839;
+  --c-pol: #6f3fd6;
+  --c-bnb: #b8860b;
+  --c-avax: #cc2a2b;
   --c-sol: #e87ba4;
   --c-zec: #1baf7a;
+  --c-trx: #e5404d;
+  --c-xlm: #5c6f8f;
+  --c-usdt: #168f80;
+  --c-usdc: #1f5fb8;
   --c-cash: #4a3aa7;
   --c-other: #c4c8d2;
+  --c-p1: #8f3fb8;
+  --c-p2: #14899a;
+  --c-p3: #9c7b0e;
+  --c-p4: #4f8a35;
+  --c-p5: #c25a3c;
+  --c-p6: #4a62b8;
 }

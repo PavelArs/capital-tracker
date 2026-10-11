@@ -1,9 +1,11 @@
 import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
+import { AttentionProvider } from '@features/shell/attention-context';
+import { BellSlotContext } from '@features/shell/bell-slot';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
-import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
+import { shellSections } from '@features/shell/navigation';
 import SyncIndicator from '@features/shell/SyncIndicator';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
@@ -23,18 +25,27 @@ export default function Layout() {
   // The header's display currency follows the owner from page to page.
   const [asked] = useAskedCurrency();
   const { t } = useTranslation();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   // CLS-COUNT: blockchain transactions waiting for an answer, next to Transactions.
   const toClassify = useNeedsClassification();
-  // Open by default: the owner still works in these screens until they are replaced.
-  const [legacyOpen, setLegacyOpen] = useState(true);
-  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  // PHONE-BELL: where the page header draws the notifications bell on a phone.
+  const [bellSlot, setBellSlot] = useState<HTMLElement | null>(null);
 
+  // Phones show the sections as a swipeable strip: keep the current one in view, also after a
+  // turn of the device.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
   useEffect(() => {
-    setMobileMenuOpen(false);
-    if (isLegacyPath(pathname)) setLegacyOpen(true);
+    const center = () => {
+      const strip = menuRef.current;
+      const current = strip?.querySelector<HTMLElement>('a[aria-current="page"]');
+      if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
+      strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
+    };
+    center();
+    window.addEventListener('resize', center);
+    return () => window.removeEventListener('resize', center);
   }, [pathname]);
 
   const handleLogout = useCallback(async () => {
@@ -54,109 +65,77 @@ export default function Layout() {
   }, [logout, navigate, showError, t]);
 
   function followLink() {
-    setMobileMenuOpen(false);
     mainRef.current?.focus();
   }
 
   const email = user?.email ?? '';
 
   return (
-    <div className="shell">
-      <a className="skip-link" href="#main-content">
-        Skip to content
-      </a>
-      <nav
-        className="shell-nav"
-        aria-label="Main navigation"
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && mobileMenuOpen) {
-            event.preventDefault();
-            setMobileMenuOpen(false);
-            menuToggleRef.current?.focus();
-          }
-        }}
-      >
-        <div className="shell-nav__header">
-          <div className="shell-brand">
-            <BrandMark />
-            Capital
+    <BellSlotContext.Provider value={bellSlot}>
+      <div className="shell">
+        <a className="skip-link" href="#main-content">
+          Skip to content
+        </a>
+        <nav className="shell-nav" aria-label="Main navigation">
+          <div className="shell-nav__header">
+            <div className="shell-brand">
+              <BrandMark />
+              Capital
+            </div>
           </div>
-          <button
-            ref={menuToggleRef}
-            type="button"
-            className="shell-nav__toggle"
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            aria-expanded={mobileMenuOpen}
-            aria-controls="application-menu"
-          >
-            Menu
-          </button>
-        </div>
-        <div id="application-menu" className={`shell-nav__menu${mobileMenuOpen ? ' is-open' : ''}`}>
-          <ul className="shell-nav__sections" data-nav-group="sections">
-            {shellSections.map((section) => (
-              <li key={section.path}>
-                <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
-                  <Icon name={section.icon} />
-                  {section.label}
-                  {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
-                    <span
-                      className="shell-nav__count"
-                      title={`${toClassify} to classify`}
-                      aria-label={`${toClassify} to classify`}
-                    >
-                      {toClassify}
-                    </span>
-                  )}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-          <details
-            className="shell-nav__legacy"
-            open={legacyOpen}
-            onToggle={(event) => setLegacyOpen(event.currentTarget.open)}
-          >
-            <summary>Legacy</summary>
-            <ul>
-              {legacyLinks.map(([path, label]) => (
-                <li key={path}>
-                  <NavLink to={path} onClick={followLink}>
-                    {label}
+          <div id="application-menu" ref={menuRef} className="shell-nav__menu">
+            <ul className="shell-nav__sections" data-nav-group="sections">
+              {shellSections.map((section) => (
+                <li key={section.path}>
+                  <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
+                    <Icon name={section.icon} />
+                    {section.label}
+                    {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
+                      <span
+                        className="shell-nav__count"
+                        title={`${toClassify} to classify`}
+                        aria-label={`${toClassify} to classify`}
+                      >
+                        {toClassify}
+                      </span>
+                    )}
                   </NavLink>
                 </li>
               ))}
             </ul>
-          </details>
-          <SyncIndicator onFollow={followLink} />
-        </div>
-        <div className="shell-owner">
-          <span className="shell-owner__avatar" aria-hidden="true">
-            {email.charAt(0).toUpperCase()}
-          </span>
-          <span className="shell-owner__who">
-            <span className="shell-owner__email" title={email}>
-              {email}
+            <SyncIndicator onFollow={followLink} />
+          </div>
+          <div className="shell-owner">
+            <div className="shell-owner__bell" ref={setBellSlot} />
+            <span className="shell-owner__avatar" aria-hidden="true">
+              {email.charAt(0).toUpperCase()}
             </span>
-            <small>Owner · 2FA on</small>
-          </span>
-          <button
-            type="button"
-            className="shell-owner__logout"
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-            aria-label="Log out"
-            title="Log out"
-          >
-            <Icon name="logout" />
-          </button>
-        </div>
-      </nav>
-      <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
-        <MainCurrencyProvider>
-          <Outlet />
-        </MainCurrencyProvider>
-      </main>
-    </div>
+            <span className="shell-owner__who">
+              <span className="shell-owner__name" title={email}>
+                Owner
+              </span>
+              <small>2FA on</small>
+            </span>
+            <button
+              type="button"
+              className="shell-owner__logout"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              aria-label="Log out"
+              title="Log out"
+            >
+              <Icon name="logout" />
+            </button>
+          </div>
+        </nav>
+        <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
+          <MainCurrencyProvider>
+            <AttentionProvider>
+              <Outlet />
+            </AttentionProvider>
+          </MainCurrencyProvider>
+        </main>
+      </div>
+    </BellSlotContext.Provider>
   );
 }

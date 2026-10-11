@@ -6,12 +6,13 @@ import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.ap
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import AddTransactionDialog from './AddTransactionDialog';
+import AddTransactionDialog, { byAllocation, splitAssets } from './AddTransactionDialog';
 import {
   addDecimal,
   bankRate,
@@ -186,21 +187,30 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
   const rates = vi.fn();
   beforeEach(() => {
     vi.spyOn(portfolioAssetsApi, 'listAll').mockResolvedValue([bitcoin, ether, dollars]);
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [
         {
           id: id(11),
           name: 'Hardware wallet',
+          kind: null,
           currentRevision: 0,
           createdAt: '2025-01-01T00:00:00.000Z',
         },
         {
           id: id(12),
           name: 'No journal',
+          kind: null,
           currentRevision: 0,
           createdAt: '2025-01-01T00:00:00.000Z',
         },
-        { id: id(13), name: 'Exchange', currentRevision: 0, createdAt: '2025-01-01T00:00:00.000Z' },
+        {
+          id: id(13),
+          name: 'Exchange',
+          kind: null,
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
       ],
       nextCursor: null,
     });
@@ -259,6 +269,19 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     return { dialog, onSaved };
   };
 
+  it('DIALOG-CLOSE closes from the ✕ at the right of the title', async () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog onClose={onClose} onSaved={vi.fn()} />
+      </MemoryRouter>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
+    await within(dialog).findByRole('group', { name: 'Asset' });
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('fills the Bank of Russia rate of the date and saves rubles as paid', async () => {
     const user = userEvent.setup();
     const { dialog, onSaved } = await open();
@@ -295,6 +318,52 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       requestId: expect.any(String),
       expectedJournalRevision: 7,
     });
+  });
+
+  it('asks for the rate of a typed date only when the date field loses focus', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'RUB' }));
+    await waitFor(() => expect(rates).toHaveBeenCalled());
+    rates.mockClear();
+    await user.clear(view.getByLabelText('Date'));
+    await user.type(view.getByLabelText('Date'), '2025-06-08');
+    expect(rates).not.toHaveBeenCalled();
+    await user.tab();
+    await waitFor(() => expect(rates).toHaveBeenCalledWith('2025-06-08'));
+    expect(await view.findByDisplayValue('78.5')).toBe(view.getByLabelText('Exchange rate'));
+  });
+
+  it('shows a field problem when the field loses focus and clears it once fixed', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const amount = view.getByLabelText('Amount');
+    await user.click(amount);
+    await user.type(amount, 'abc');
+    expect(view.queryByText('Enter an amount greater than 0')).not.toBeInTheDocument();
+    await user.tab();
+    expect(view.getByText('Enter an amount greater than 0')).toBeInTheDocument();
+    await user.click(amount);
+    await user.clear(amount);
+    await user.type(amount, '2');
+    expect(view.queryByText('Enter an amount greater than 0')).not.toBeInTheDocument();
+  });
+
+  it('checks a typed date when the date field loses focus and clears the problem once fixed', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const date = view.getByLabelText('Date');
+    await user.clear(date);
+    await user.type(date, '2999-01-01');
+    expect(view.queryByText('Choose a date, today or earlier')).not.toBeInTheDocument();
+    await user.tab();
+    expect(view.getByText('Choose a date, today or earlier')).toBeInTheDocument();
+    await user.clear(date);
+    await user.type(date, '2025-06-08');
+    expect(view.queryByText('Choose a date, today or earlier')).not.toBeInTheDocument();
   });
 
   it('sends the rate the owner typed, and asks for one when none is stored', async () => {
@@ -393,7 +462,8 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(create).toHaveBeenCalledWith(id(11), {
       instrumentId: id(1),
       side: 'buy',
-      occurredAt: expect.stringMatching(/T00:00:00\.000Z$/),
+      // Today without a time is the current minute (OPS-SAME-DAY).
+      occurredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/),
       quantity: '0.01',
       grossUsd: '850.53',
       feeUsd: '0',
@@ -419,6 +489,9 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.queryByRole('button', { name: '+ Other asset' })).not.toBeInTheDocument();
     expect(await view.findByText(/Available in Hardware wallet: 0\.2 BTC/)).toBeInTheDocument();
     await user.type(view.getByLabelText('Amount'), '0.3');
+    // The warning waits for the owner to leave the amount.
+    expect(view.queryByRole('alert')).not.toBeInTheDocument();
+    await user.tab();
     expect(view.getByRole('alert')).toHaveTextContent(/Only 0\.2 BTC is available/);
     await user.clear(view.getByLabelText('Amount'));
     await user.type(view.getByLabelText('Amount'), '0.1');
@@ -478,6 +551,63 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      'XFER-REFUSED names the account a new transfer would leave short',
+      {
+        message: 'An account does not hold enough for this transfer',
+        dependent: {
+          operationId: `transfer:${id(41)}`,
+          accountId: id(11),
+          instrumentId: id(1),
+          occurredAt: '2025-07-01T00:00:00.000Z',
+        },
+      },
+      /Hardware wallet does not hold enough BTC on Jul 1, 2025 for this transfer/,
+    ],
+    [
+      'XFER-REFUSED names the account whose records start after the date',
+      {
+        message: 'The records of an account start after this entry',
+        coverage: { accountId: id(13), coverageFrom: '2999-01-01T00:00:00.000Z' },
+      },
+      /The records of Exchange start on Jan 1, 2999, after this transaction on /,
+    ],
+    [
+      'XFER-REFUSED names the account opened with balances whose records have not started',
+      {
+        message: 'The records of an account have not started',
+        coverage: { accountId: id(13), coverageFrom: null },
+      },
+      /The records of Exchange have not started: it was opened with balances, so start them on Manual accounts first/,
+    ],
+  ])('%s', async (_name, data, expected) => {
+    const user = userEvent.setup();
+    vi.spyOn(ownedTransfersApi, 'create').mockRejectedValue(
+      new AxiosError('conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data,
+      }),
+    );
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '5',
+    }));
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Transfer' }));
+    await user.selectOptions(view.getByLabelText('To'), 'Exchange');
+    await user.type(view.getByLabelText('Amount'), '0.1');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    expect(await view.findByRole('alert')).toHaveTextContent(expected);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
   it('PR-OPS-2 saves an airdrop of unknown value as a reward without a cost', async () => {
     const user = userEvent.setup();
     const rewardCreate = vi.spyOn(assetRewardsApi, 'create').mockResolvedValue({} as RewardReceipt);
@@ -517,12 +647,14 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('radio', { name: 'Sell' }));
     await user.clear(view.getByLabelText('Date'));
     await user.type(view.getByLabelText('Date'), '2026-04-01');
+    await user.tab();
     expect(await view.findByText(/Available in Hardware wallet: 0\.2 BTC/)).toBeInTheDocument();
     expect(available).toHaveBeenLastCalledWith(id(11), {
       instrumentId: id(1),
       at: '2026-04-01T00:00:00.000Z',
     });
     await user.type(view.getByLabelText('Amount'), '0.3');
+    await user.tab();
     expect(view.getByRole('alert')).toHaveTextContent(
       'Only 0.2 BTC is available in Hardware wallet on Apr 1, 2026 · Use all',
     );
@@ -536,6 +668,40 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ side: 'sell', quantity: '0.2' });
+  });
+
+  it('OPS-SAME-DAY a new sale dated today without a time stands for the current minute', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-07T15:59:30.000Z'));
+    try {
+      const user = userEvent.setup();
+      available.mockImplementation(async (accountId, query) => ({
+        accountId,
+        ...query,
+        journalRevision: 4,
+        quantity: '1',
+      }));
+      const { dialog, onSaved } = await open();
+      const view = within(dialog);
+      await user.click(view.getByRole('radio', { name: 'Sell' }));
+      expect(view.getByLabelText('Date')).toHaveValue('2026-10-07');
+      expect(await view.findByText(/Available in Hardware wallet: 1 BTC/)).toBeInTheDocument();
+      expect(available).toHaveBeenLastCalledWith(id(11), {
+        instrumentId: id(1),
+        at: '2026-10-07T15:59:00.000Z',
+      });
+      expect(view.getByLabelText('Time, UTC (optional)')).toHaveValue('');
+      await user.type(view.getByLabelText('Amount'), '0.5');
+      await user.type(view.getByLabelText('Total received'), '30000');
+      await user.click(view.getByRole('button', { name: 'Save transaction' }));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(create.mock.calls[0][1]).toMatchObject({
+        side: 'sell',
+        occurredAt: '2026-10-07T15:59:00.000Z',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   const recorded: Operation = {
@@ -695,6 +861,39 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.getByLabelText('Total paid')).toHaveValue('42526.67');
   });
 
+  it('OPS-EDIT keeps the recorded total when only the amount changes', async () => {
+    const user = userEvent.setup();
+    const { dialog, onSaved } = await open({
+      ...recorded,
+      quantity: '50000',
+      valueUsd: '6172.5',
+      value: '6172.5',
+    });
+    const view = within(dialog);
+    // The price the record implies, not rounded to cents.
+    expect(view.getByLabelText('Price per BTC')).toHaveValue('0.12345');
+    await user.clear(view.getByLabelText('Amount'));
+    await user.type(view.getByLabelText('Amount'), '50001');
+    expect(view.getByLabelText('Total paid')).toHaveValue('6172.5');
+    await user.click(view.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(correct.mock.calls[0][2]).toMatchObject({ quantity: '50001', grossUsd: '6172.5' });
+  });
+
+  it('X2 shows a market price below a cent instead of 0', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [{ instrumentId: id(1), priceSource: 'market', price: { value: '0.004' } }],
+    } as PortfolioValuation);
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '1000');
+    const hint = await view.findByText(/Market today/);
+    await user.click(within(hint).getByRole('button', { name: 'Use' }));
+    expect(view.getByLabelText('Price per BTC')).toHaveValue('0.004');
+    expect(view.getByLabelText('Total paid')).toHaveValue('4');
+  });
+
   it('X3 adds a coin that is not among the assets together with its first buy', async () => {
     const user = userEvent.setup();
     const created = { ...asset(5, 'Toncoin', 'TON', 'crypto'), priceSource: 'manual' as const };
@@ -739,6 +938,79 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     });
   });
 
+  it('TOKEN-HIDE does not offer the coins of tokens the wallets leave out', async () => {
+    const spam = asset(7, 'Spam Token', 'SPAM1A2B', 'crypto');
+    const seen = asset(8, 'Seen Token', 'SEEN', 'crypto');
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, spam, seen]);
+    const address = (hidden: string[], shown: string[]) =>
+      ({
+        hiddenTokens: hidden.map((symbol) => ({
+          symbol,
+          name: symbol,
+          quantity: '1',
+          reason: 'dust',
+        })),
+        balances: shown.map((symbol) => ({ symbol, quantity: '1' })),
+      }) as unknown as WalletAddress;
+    // SEEN is left out by one address but held by another, so it stays an asset.
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([
+      address(['SPAM1A2B', 'SEEN'], []),
+      address([], ['SEEN']),
+    ]);
+    const { dialog } = await open();
+    const assets = within(within(dialog).getByRole('group', { name: 'Asset' }));
+    expect(assets.queryByText('SPAM1A2B')).not.toBeInTheDocument();
+    expect(assets.getByText('SEEN')).toBeInTheDocument();
+    expect(assets.getByText('ETH')).toBeInTheDocument();
+  });
+
+  const chips = (group: HTMLElement) =>
+    within(group)
+      .getAllByRole('button')
+      .map((item) => item.textContent)
+      .filter((text) => text !== '+ Other asset');
+
+  it('ASSET-ORDER lists the assets by their share of the portfolio and starts with the largest', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [
+        {
+          instrumentId: id(1),
+          priceSource: 'market',
+          price: { value: '85053.34' },
+          allocationPercent: '12.5',
+        },
+        {
+          instrumentId: id(2),
+          priceSource: 'market',
+          price: { value: '3000' },
+          allocationPercent: '80',
+        },
+        {
+          instrumentId: id(4),
+          priceSource: 'market',
+          price: { value: '1' },
+          allocationPercent: null,
+        },
+      ],
+    } as PortfolioValuation);
+    const { dialog } = await open();
+    const group = within(dialog).getByRole('group', { name: 'Asset' });
+    expect(chips(group)).toEqual(['ETH', 'BTC', 'USDT']);
+    expect(within(group).getByRole('button', { name: 'ETH' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('ASSET-ORDER keeps the order given while the valuation cannot be read', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, tether]);
+    vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
+    const { dialog } = await open();
+    const group = within(dialog).getByRole('group', { name: 'Asset' });
+    expect(chips(group)).toEqual(['BTC', 'ETH', 'USDT']);
+  });
+
   it("OPS-BUY-CASH shows how much of a buy the account's cash pays", async () => {
     const user = userEvent.setup();
     vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
@@ -762,7 +1034,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     ).toBeInTheDocument();
     expect(available).toHaveBeenCalledWith(id(11), {
       instrumentId: id(4),
-      at: expect.stringMatching(/T00:00:00\.000Z$/),
+      at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/),
     });
     await user.clear(view.getByLabelText('Total paid'));
     await user.type(view.getByLabelText('Total paid'), '20000');
@@ -782,5 +1054,41 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ settlementCurrency: 'USDT' });
+  });
+});
+
+describe('ASSET-CHIPS which assets become chips', () => {
+  const many = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => asset(n, `Coin ${n}`, `C${n}`, 'crypto'));
+
+  it('shows every asset while there are few', () => {
+    expect(splitAssets(many.slice(0, 6), many[0].id, new Map())).toEqual({
+      shown: many.slice(0, 6),
+      more: [],
+    });
+  });
+
+  it('puts assets with a market price first and the unpriced ones behind the list', () => {
+    const priced = new Map([[many[7].id, '1']]);
+    const { shown, more } = splitAssets(many, many[7].id, priced);
+    expect(shown.map((item) => item.symbol)).toEqual(['C8', 'C1', 'C2', 'C3', 'C4', 'C5']);
+    expect(more.map((item) => item.symbol)).toEqual(['C6', 'C7']);
+  });
+
+  it('orders by allocation and keeps held assets among the chips', () => {
+    const share = new Map([
+      [many[5].id, 10],
+      [many[7].id, 60],
+    ]);
+    const ordered = byAllocation(many, share);
+    expect(ordered.map((item) => item.symbol).slice(0, 3)).toEqual(['C8', 'C6', 'C1']);
+    const { shown, more } = splitAssets(ordered, ordered[0].id, new Map(), share);
+    expect(shown.map((item) => item.symbol)).toEqual(['C8', 'C6', 'C1', 'C2', 'C3', 'C4']);
+    expect(more.map((item) => item.symbol)).toEqual(['C5', 'C7']);
+  });
+
+  it('always shows the chosen asset', () => {
+    const { shown, more } = splitAssets(many, many[6].id, new Map());
+    expect(shown.map((item) => item.symbol)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C7']);
+    expect(more.map((item) => item.symbol)).toEqual(['C6', 'C8']);
   });
 });

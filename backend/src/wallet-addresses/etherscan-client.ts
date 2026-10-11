@@ -1,12 +1,14 @@
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
 
-// Etherscan's free API (Q6): one key, Ethereum mainnet through the V2 endpoint. Lists are read
-// oldest first between two block numbers, at most PAGE_SIZE items per request.
+// Etherscan's free API (Q6): one key, any chain it lists through the V2 endpoint's `chainid`
+// (mainnet unless told otherwise). Lists are read oldest first between two block numbers, at
+// most PAGE_SIZE items per request.
 export const ETHERSCAN_PAGE_SIZE = 1000;
 const DEFAULT_BASE_URL = 'https://api.etherscan.io/v2/api';
-const MAINNET = '1';
+const MAINNET = 1;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
+const MAX_REDIRECTS = 2;
 const MAX_UNIX_SECONDS = 253402300799;
 
 /** A transaction the address sent or received (action txlist). */
@@ -51,12 +53,19 @@ export interface TokenTransfer {
   raw: Record<string, unknown>;
 }
 
-export type ListResult<T> = { ok: true; items: T[] } | { ok: false; reason: StepFailure };
-export type BlockResult = { ok: true; block: number } | { ok: false; reason: StepFailure };
+/** Why a read failed, and (SYNC-DETAIL) what the source itself said, for the owner's message. */
+export type Failed = { ok: false; reason: StepFailure; detail?: string };
+export type ListResult<T> = { ok: true; items: T[] } | Failed;
+export type BlockResult = { ok: true; block: number } | Failed;
+/** What a read-only contract call returned; null when the call reverted. */
+export type CallResult = { ok: true; data: string | null } | Failed;
 
 class InvalidResponse extends Error {}
 class Refused extends Error {
-  constructor(readonly reason: StepFailure) {
+  constructor(
+    readonly reason: StepFailure,
+    readonly said?: string,
+  ) {
     super(reason);
   }
 }
@@ -119,7 +128,8 @@ export function parseNormal(value: unknown): NormalTransaction {
 export function parseInternal(value: unknown): InternalTransfer {
   const item = record(value);
   return {
-    hash: hash(item.hash),
+    // Blockscout names the transaction an internal transfer belongs to `transactionHash`.
+    hash: hash(item.hash ?? item.transactionHash),
     blockNumber: block(item.blockNumber),
     timeStamp: time(item.timeStamp),
     from: address(item.from),
@@ -158,20 +168,33 @@ export function parseList<T>(body: unknown, parse: (item: unknown) => T): T[] {
     return result.map(parse);
   }
   if (status !== '0') return invalid();
-  if (
-    Array.isArray(result) &&
-    result.length === 0 &&
-    /^No (transactions|records) found/i.test(text(message))
-  )
+  // An empty range: Etherscan says "No transactions found"; Blockscout names what is missing, as
+  // in "No token transfers found" or "No internal transactions found".
+  if (Array.isArray(result) && result.length === 0 && /^No [a-z ]+ found/i.test(text(message)))
     return [];
   throw refusal(result);
 }
 
+/** A refusal's words as shown to the owner: one short line, with anything address-like cut out. */
+function said(result: string): string {
+  return (
+    result
+      .replace(/0x[0-9a-f]{6,}/gi, '0x…')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is stripped
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .trim()
+      .slice(0, 80)
+  );
+}
+
 function refusal(result: unknown): Refused | InvalidResponse {
   if (typeof result !== 'string') return new InvalidResponse();
+  // Etherscan's own words for a chain outside the free plan (docs.etherscan.io, common errors).
+  if (/free api access is not supported|upgrade your api plan/i.test(result))
+    return new Refused('plan_required');
   if (/rate limit/i.test(result)) return new Refused('rate_limited');
   if (/api ?key/i.test(result)) return new Refused('not_configured');
-  return new Refused('unavailable');
+  return new Refused('unavailable', said(result));
 }
 
 /** The newest block number (proxy eth_blockNumber). */
@@ -185,38 +208,108 @@ export function parseBlockNumber(body: unknown): number {
   return invalid();
 }
 
+// A contract's answer to one view call: a few words, never a page of data.
+const MAX_CALL_HEX = 2 + 64 * 64;
+
+/**
+ * The answer to proxy eth_call: the returned bytes as hex, or null when the contract reverted
+ * (it has no such function). A refusal reads as in the lists.
+ */
+export function parseCall(body: unknown): string | null {
+  const envelope = record(body);
+  const { result, error } = envelope;
+  if (
+    typeof result === 'string' &&
+    result.length <= MAX_CALL_HEX &&
+    /^0x([0-9a-f]{2})*$/i.test(result)
+  )
+    return result.toLowerCase();
+  if (error !== undefined) {
+    return /revert/i.test(text(record(error).message)) ? null : invalid();
+  }
+  if (envelope.status === '0') throw refusal(result);
+  return invalid();
+}
+
+interface ClientOptions {
+  apiKey?: string | null;
+  baseUrl?: string;
+  timeoutMs?: number;
+  pauseMs?: number;
+  chainId?: number;
+  /** BLOCKSCOUT: another explorer answering Etherscan's calls: no key, no `chainid`. */
+  keyless?: boolean;
+}
+
 export class EtherscanClient {
   private readonly apiKey: string | null;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
-  private lastRequestAt = 0;
+  private readonly chainId: number;
+  private readonly keyless: boolean;
+  // The key's rate limit is shared by every chain, so the views of one client share the pause.
+  private readonly pace: { lastRequestAt: number };
 
-  constructor(
-    options: {
-      apiKey?: string | null;
-      baseUrl?: string;
-      timeoutMs?: number;
-      pauseMs?: number;
-    } = {},
-  ) {
+  constructor(options: ClientOptions = {}, pace: { lastRequestAt: number } = { lastRequestAt: 0 }) {
     this.apiKey = options.apiKey?.trim() || null;
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.timeoutMs = options.timeoutMs ?? 8_000;
     // The free plan allows three calls a second (docs/provider-feasibility.md).
     this.pauseMs = options.pauseMs ?? 400;
+    this.chainId = options.chainId ?? MAINNET;
+    this.keyless = options.keyless ?? false;
+    this.pace = pace;
+  }
+
+  /**
+   * BLOCKSCOUT: the same questions put to a chain's Blockscout explorer (`baseUrl` ends in /api),
+   * which needs no key. It paces itself: its limit is its own.
+   */
+  blockscout(baseUrl: string): EtherscanClient {
+    return new EtherscanClient({
+      baseUrl,
+      keyless: true,
+      timeoutMs: this.timeoutMs,
+      pauseMs: this.pauseMs,
+    });
+  }
+
+  /** EVM-MULTICHAIN: the same key and pacing, reading another chain of Etherscan's V2 API. */
+  forChain(chainId: number): EtherscanClient {
+    return new EtherscanClient(
+      {
+        apiKey: this.apiKey,
+        baseUrl: this.baseUrl,
+        timeoutMs: this.timeoutMs,
+        pauseMs: this.pauseMs,
+        chainId,
+      },
+      this.pace,
+    );
   }
 
   /** Without a key nothing is requested: the wallet reports what the server misses. */
   get configured(): boolean {
-    return this.apiKey !== null;
+    return this.keyless || this.apiKey !== null;
   }
 
   blockNumber(): Promise<BlockResult> {
-    return this.get({ module: 'proxy', action: 'eth_blockNumber' }, (body) => ({
+    const params = this.keyless
+      ? { module: 'block', action: 'eth_block_number' }
+      : { module: 'proxy', action: 'eth_blockNumber' };
+    return this.get(params, (body) => ({
       ok: true,
       block: parseBlockNumber(body),
     }));
+  }
+
+  /** A read-only call of `to` with `data` as of the given block (proxy eth_call). */
+  call(to: string, data: string, block: number): Promise<CallResult> {
+    return this.get(
+      { module: 'proxy', action: 'eth_call', to, data, tag: `0x${block.toString(16)}` },
+      (body) => ({ ok: true, data: parseCall(body) }),
+    );
   }
 
   normal(address: string, from: number, to: number): Promise<ListResult<NormalTransaction>> {
@@ -253,39 +346,88 @@ export class EtherscanClient {
     );
   }
 
+  /** The source's host name, which names it in what the owner reads. */
+  private get host(): string {
+    try {
+      return new URL(this.baseUrl).hostname;
+    } catch {
+      return 'The data source';
+    }
+  }
+
   private async get<T>(
     params: Record<string, string>,
     parse: (body: unknown) => T,
-  ): Promise<T | { ok: false; reason: StepFailure }> {
-    if (!this.apiKey) return { ok: false, reason: 'not_configured' };
-    const wait = this.lastRequestAt + this.pauseMs - Date.now();
+  ): Promise<T | Failed> {
+    if (!this.configured) return { ok: false, reason: 'not_configured' };
+    const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     let response: { status: number; data: string };
+    // REDIRECT: an explorer may answer with a redirect (301) to the same address in another form.
+    // Only one that stays on the same host and scheme is followed; a request carries the key in
+    // its query, so it never goes to another host.
+    const origin = new URL(this.baseUrl);
+    let movedTo: string | null = null;
     try {
       response = await axios.get<string>(this.baseUrl, {
-        params: { chainid: MAINNET, ...params, apikey: this.apiKey },
+        params: this.keyless
+          ? params
+          : { chainid: String(this.chainId), ...params, apikey: this.apiKey },
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
-        maxRedirects: 0,
+        maxRedirects: MAX_REDIRECTS,
+        beforeRedirect: (options: {
+          protocol?: string;
+          hostname?: string;
+          port?: string | number;
+        }) => {
+          const port = String(options.port ?? '');
+          const same =
+            options.protocol === origin.protocol &&
+            options.hostname === origin.hostname &&
+            (port === origin.port || (origin.port === '' && ['', '80', '443'].includes(port)));
+          if (!same) {
+            movedTo = options.hostname ?? null;
+            throw new Error('Redirected to another host');
+          }
+        },
         maxContentLength: MAX_BODY_BYTES,
         responseType: 'text',
         transformResponse: [(data: string) => data],
         validateStatus: () => true,
         headers: { Accept: 'application/json' },
       });
-    } catch {
-      return { ok: false, reason: 'unavailable' };
+    } catch (error) {
+      if (movedTo !== null) {
+        const target = said(movedTo);
+        return { ok: false, reason: 'unavailable', detail: `${this.host} moved to ${target}` };
+      }
+      const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
+      return { ok: false, reason: 'unavailable', detail: `${this.host} did not answer${code}` };
     } finally {
-      this.lastRequestAt = Date.now();
+      this.pace.lastRequestAt = Date.now();
     }
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
-    if (response.status !== 200) return { ok: false, reason: 'unavailable' };
+    if (response.status !== 200) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        detail: `${this.host} answered HTTP ${response.status}`,
+      };
+    }
     try {
       return parse(JSON.parse(response.data));
     } catch (error) {
-      if (error instanceof Refused) return { ok: false, reason: error.reason };
-      return { ok: false, reason: 'invalid_response' };
+      if (error instanceof Refused) {
+        const detail = error.said ? `${this.host} said: ${error.said}` : undefined;
+        return { ok: false, reason: error.reason, ...(detail ? { detail } : {}) };
+      }
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `${this.host} sent an unexpected answer`,
+      };
     }
   }
 }

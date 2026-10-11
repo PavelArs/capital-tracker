@@ -1,5 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
+import { insertObservations } from './bitcoin-history';
+import { isExtendedKey } from './bitcoin-xpub';
+import { BitcoinXpubSync } from './bitcoin-xpub-sync';
 import type { ChainSyncAdapter, StepResult } from './chain-sync';
 import {
   type ChainObservation,
@@ -28,13 +31,20 @@ export class BitcoinSyncAdapter implements ChainSyncAdapter {
   readonly network = 'bitcoin';
   readonly name = 'Bitcoin';
 
+  // M21: a wallet tracked through its account public key walks each derived address instead.
+  private readonly accounts: BitcoinXpubSync;
+
   constructor(
     private readonly source: DataSource,
     private readonly esplora: EsploraClient,
-  ) {}
+  ) {
+    this.accounts = new BitcoinXpubSync(source, esplora);
+  }
 
   async step(ownerId: string, addressId: string): Promise<StepResult> {
     let state = await this.walk(ownerId, addressId);
+    if (isExtendedKey(state.address))
+      return this.accounts.step(state.ownerId, state.id, state.address);
     const started = Date.now();
     let imported = 0;
     const finish = (outcome: StepResult['outcome'], reason: ProviderFailure | null) => ({
@@ -112,7 +122,7 @@ export class BitcoinSyncAdapter implements ChainSyncAdapter {
         : -1;
       const fresh = known >= 0 ? page.slice(0, known) : page;
       const finished = known >= 0 || page.length < PAGE_SIZE;
-      const inserted = await this.insert(manager, current, fresh);
+      const inserted = await insertObservations(manager, current, fresh);
       const walkTop = current.walkTopTxid ?? page[0]?.txid ?? null;
       // TypeORM returns [rows, affected] for UPDATE ... RETURNING on PostgreSQL.
       const [[next]]: [WalkRow[], number] = finished
@@ -129,35 +139,5 @@ export class BitcoinSyncAdapter implements ChainSyncAdapter {
           );
       return { inserted, finished, state: { ...expected, ...next } };
     });
-  }
-
-  private async insert(manager: EntityManager, address: WalkRow, page: ChainObservation[]) {
-    if (page.length === 0) return 0;
-    const values: unknown[] = [];
-    const rows = page.map((tx) => {
-      const base = values.length;
-      values.push(
-        address.ownerId,
-        address.id,
-        tx.txid,
-        tx.blockHeight,
-        tx.blockHash,
-        tx.blockTime,
-        tx.receivedSats.toString(),
-        tx.sentSats.toString(),
-        tx.feeSats.toString(),
-        tx.direction,
-        JSON.stringify(tx.raw),
-      );
-      const slot = (offset: number) => `$${base + offset}`;
-      return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb)`;
-    });
-    const inserted: { txid: string }[] = await manager.query(
-      `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-        "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw)
-        VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-      values,
-    );
-    return inserted.length;
   }
 }

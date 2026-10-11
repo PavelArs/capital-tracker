@@ -51,6 +51,15 @@ services:
       PRICE_COLLECTION_ENABLED: "true"
       # Free Etherscan key for Ethereum wallets (M14); without it they report a missing key.
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      # Optional free TronGrid key for Tron wallets; without it TronGrid's lower keyless rate applies.
+      TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
+      # Free NOWNodes key for Zcash wallets (Blockbook); Trezor's public instances turn servers away.
+      ZCASH_BLOCKBOOK_API_KEY: ${ZCASH_BLOCKBOOK_API_KEY:-}
+      ZCASH_BLOCKBOOK_URL: ${ZCASH_BLOCKBOOK_URL:-}
+      # Yandex mailbox and app password for password reset emails (M17); without them reset
+      # requests are answered as usual but no email is sent.
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:?Set exact observed proxy socket IPs as JSON or explicit [] for direct mode}
       MFA_KEY_FILE: /run/secrets/ct-mfa-key
       MFA_KEY_ID: ${MFA_KEY_ID:?Set the non-secret MFA key identifier}
@@ -65,6 +74,8 @@ services:
           create_host_path: false
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"
+      # Prometheus metrics, loopback only so a host-network Prometheus can scrape 127.0.0.1:9464.
+      - "127.0.0.1:${METRICS_HOST_PORT:-9464}:9464"
     depends_on:
       postgres:
         condition: service_healthy

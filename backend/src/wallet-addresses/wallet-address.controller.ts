@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { WalletAddressService } from './wallet-address.service';
@@ -28,10 +39,32 @@ export class WalletAddressController {
     return this.addresses.update(owner.userId, id, input);
   }
 
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
+    await this.addresses.remove(owner.userId, id);
+  }
+
+  @Patch(':id/tokens')
+  tokens(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() input: unknown) {
+    return this.addresses.setTokenVisibility(owner.userId, id, input);
+  }
+
   @Post(':id/sync')
   @HttpCode(200)
   sync(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
     return this.addresses.sync(owner.userId, id);
+  }
+
+  @Get(':id/sync-runs')
+  syncRuns(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
+    return this.addresses.syncRuns(owner.userId, id);
+  }
+
+  @Post(':id/balance-gap')
+  @HttpCode(200)
+  countGap(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() input: unknown) {
+    return this.addresses.countGap(owner.userId, id, input);
   }
 
   @Get(':id/transactions')

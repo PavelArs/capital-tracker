@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
+import { trackJob } from '../observability/metrics';
 import { isDue, nextRunAt } from '../prices/price-collection';
 import { CbrClient, type FxFailure } from './cbr-client';
 import {
@@ -144,7 +145,7 @@ export class FxRatesService {
   @Interval(5 * 60_000)
   async scheduledTick(): Promise<void> {
     try {
-      await this.tick();
+      await trackJob('fx', () => this.tick());
     } catch {
       this.logger.warn('Bank of Russia rate collection could not finish');
     }

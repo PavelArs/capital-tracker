@@ -55,7 +55,7 @@ const transfer = {
 describe('ETH-SYNC Etherscan client', () => {
   let server: Server;
   let baseUrl: string;
-  let replies: { status: number; body: string }[];
+  let replies: { status: number; body: string; location?: string }[];
   let requests: URL[];
   const client = (apiKey: string | null = key) =>
     new EtherscanClient({ apiKey, baseUrl, timeoutMs: 500, pauseMs: 0 });
@@ -66,7 +66,10 @@ describe('ETH-SYNC Etherscan client', () => {
     server = createServer((request, response) => {
       requests.push(new URL(request.url ?? '/', 'http://localhost'));
       const reply = replies.shift() ?? { status: 500, body: '' };
-      response.writeHead(reply.status, { 'content-type': 'application/json' });
+      response.writeHead(reply.status, {
+        'content-type': 'application/json',
+        ...(reply.location ? { location: reply.location } : {}),
+      });
       response.end(reply.body);
     });
     server.listen(0, '127.0.0.1');
@@ -95,6 +98,30 @@ describe('ETH-SYNC Etherscan client', () => {
       reason: 'not_configured',
     });
     expect(requests).toHaveLength(0);
+  });
+
+  it('EVM-MULTICHAIN asks for the chain it was made for with the same key, and mainnet otherwise', async () => {
+    replies.push(ok([]), ok([]), ok([]));
+    await client().normal(owned, 1, 2);
+    await client().forChain(8453).normal(owned, 1, 2);
+    await client().forChain(42161).blockNumber();
+    expect(requests.map((request) => request.searchParams.get('chainid'))).toEqual([
+      '1',
+      '8453',
+      '42161',
+    ]);
+    expect(requests.map((request) => request.searchParams.get('apikey'))).toEqual([key, key, key]);
+    expect(new EtherscanClient({ apiKey: null }).forChain(10).configured).toBe(false);
+  });
+
+  it('EVM-MULTICHAIN paces the calls of every chain together, as the key allows a few a second', async () => {
+    replies.push(ok([]), ok([]), ok([]));
+    const paced = new EtherscanClient({ apiKey: key, baseUrl, timeoutMs: 500, pauseMs: 60 });
+    const started = Date.now();
+    await paced.normal(owned, 1, 2);
+    await paced.forChain(10).normal(owned, 1, 2);
+    await paced.forChain(8453).normal(owned, 1, 2);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(110);
   });
 
   it('reads one block range of mainnet history oldest first with the key', async () => {
@@ -171,6 +198,83 @@ describe('ETH-SYNC Etherscan client', () => {
     expect(tokens.ok && tokens.items[0].logIndex).toBeNull();
   });
 
+  it('BLOCKSCOUT asks another explorer without a key or chain id, and reads its internal transfers', async () => {
+    const inner = {
+      blockNumber: '20000003',
+      timeStamp: '1720000024',
+      transactionHash: hash('3'),
+      from: other,
+      to: owned,
+      value: '10',
+      type: 'call',
+      isError: '0',
+      errCode: '',
+    };
+    replies.push(ok([inner]), json({ jsonrpc: '2.0', id: 1, result: '0x1312d00' }), ok([normal]));
+    const scout = client(null).blockscout(baseUrl);
+    expect(scout.configured).toBe(true);
+    const internal = await scout.internal(owned, 1, 2);
+    expect(internal.ok && internal.items[0]).toMatchObject({ hash: hash('3'), value: 10n });
+    await expect(scout.blockNumber()).resolves.toEqual({ ok: true, block: 20_000_000 });
+    await expect(scout.normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    for (const url of requests) {
+      expect(url.searchParams.has('apikey')).toBe(false);
+      expect(url.searchParams.has('chainid')).toBe(false);
+    }
+    expect(requests[1].searchParams.get('module')).toBe('block');
+    expect(requests[1].searchParams.get('action')).toBe('eth_block_number');
+  });
+
+  it('BLOCKSCOUT reads an empty range however it words it', async () => {
+    replies.push(
+      json({ status: '0', message: 'No token transfers found', result: [] }),
+      json({ status: '0', message: 'No internal transactions found', result: [] }),
+    );
+    await expect(client().tokens(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
+    await expect(client().internal(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
+  });
+
+  it('SYNC-DETAIL says which source failed and how, without address-like text', async () => {
+    replies.push(
+      json({}, 404),
+      json({ status: '0', message: 'NOTOK', result: `Invalid address ${owned} format` }),
+      { status: 200, body: 'not json' },
+    );
+    const host = new URL(baseUrl).hostname;
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} answered HTTP 404`,
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: Invalid address 0x… format`,
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_response',
+      detail: `${host} sent an unexpected answer`,
+    });
+  });
+
+  it('REDIRECT follows a redirect that stays on the same host and refuses one that leaves it', async () => {
+    replies.push({ status: 301, body: '', location: `${baseUrl}/` }, ok([normal]), {
+      status: 301,
+      body: '',
+      location: 'http://localhost:1/api',
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    const left = await client().normal(owned, 1, 2);
+    expect(left).toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: '127.0.0.1 moved to localhost',
+    });
+    // The request that would have carried the key left for no other host.
+    expect(requests).toHaveLength(3);
+  });
+
   it('reads an empty range', async () => {
     replies.push(json({ status: '0', message: 'No transactions found', result: [] }));
     await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
@@ -200,14 +304,24 @@ describe('ETH-SYNC Etherscan client', () => {
       'not_configured',
     ],
     [
+      'a chain outside the free plan',
+      {
+        status: '0',
+        message: 'NOTOK',
+        result:
+          'Free API access is not supported for this chain. Please upgrade your api plan for full chain coverage.',
+      },
+      'plan_required',
+    ],
+    [
       'another refusal',
       { status: '0', message: 'NOTOK', result: 'Query Timeout occured' },
       'unavailable',
     ],
   ] as const)('maps %s', async (_case, body, reason) => {
     replies.push(json(body), json(body));
-    await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: false, reason });
-    await expect(client().blockNumber()).resolves.toEqual({ ok: false, reason });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({ ok: false, reason });
+    await expect(client().blockNumber()).resolves.toMatchObject({ ok: false, reason });
   });
 
   it.each([
@@ -216,7 +330,7 @@ describe('ETH-SYNC Etherscan client', () => {
     [403, 'unavailable'],
   ] as const)('maps HTTP %d to %s', async (status, reason) => {
     replies.push(json({}, status));
-    await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: false, reason });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({ ok: false, reason });
   });
 
   const invalid: [string, unknown][] = [
@@ -239,7 +353,7 @@ describe('ETH-SYNC Etherscan client', () => {
   ];
   it.each(invalid)('refuses %s', async (_case, body) => {
     replies.push(json(body));
-    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({
       ok: false,
       reason: 'invalid_response',
     });
@@ -247,13 +361,60 @@ describe('ETH-SYNC Etherscan client', () => {
 
   it('refuses a block number that is not one', async () => {
     replies.push(json({ jsonrpc: '2.0', id: 83, result: 'latest' }), { status: 200, body: 'x' });
-    await expect(client().blockNumber()).resolves.toEqual({
+    await expect(client().blockNumber()).resolves.toMatchObject({
       ok: false,
       reason: 'invalid_response',
     });
-    await expect(client().blockNumber()).resolves.toEqual({
+    await expect(client().blockNumber()).resolves.toMatchObject({
       ok: false,
       reason: 'invalid_response',
+    });
+  });
+
+  it('calls a contract as of a block and reads its answer or its revert', async () => {
+    const word = `0x${'0'.repeat(48)}${'de0b6b3a7640000'.padStart(16, '0')}`;
+    replies.push(
+      json({ jsonrpc: '2.0', id: 1, result: word.toUpperCase().replace('0X', '0x') }),
+      json({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }),
+      json({ jsonrpc: '2.0', id: 1, result: '0x' }),
+    );
+    const data = `0x3af9e669${'0'.repeat(24)}${owned.slice(2)}`;
+    await expect(client().call(other, data, 20_000_000)).resolves.toEqual({ ok: true, data: word });
+    expect(Object.fromEntries(requests[0].searchParams)).toEqual({
+      chainid: '1',
+      module: 'proxy',
+      action: 'eth_call',
+      to: other,
+      data,
+      tag: '0x1312d00',
+      apikey: key,
+    });
+    await expect(client().call(other, data, 1)).resolves.toEqual({ ok: true, data: null });
+    await expect(client().call(other, data, 1)).resolves.toEqual({ ok: true, data: '0x' });
+  });
+
+  it.each([
+    [
+      'a refusal',
+      { status: '0', message: 'NOTOK', result: 'Max rate limit reached' },
+      'rate_limited',
+    ],
+    [
+      'another node error',
+      { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'missing trie node' } },
+      'invalid_response',
+    ],
+    ['an odd hex answer', { jsonrpc: '2.0', id: 1, result: '0x123' }, 'invalid_response'],
+    [
+      'an oversized answer',
+      { jsonrpc: '2.0', id: 1, result: `0x${'00'.repeat(4097)}` },
+      'invalid_response',
+    ],
+  ] as const)('maps %s of a contract call', async (_case, body, reason) => {
+    replies.push(json(body));
+    await expect(client().call(other, '0x3af9e669', 1)).resolves.toMatchObject({
+      ok: false,
+      reason,
     });
   });
 });

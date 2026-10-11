@@ -1,14 +1,26 @@
-import { announceClassificationChange, operationsApi } from '@api/operations.api';
+import { operationsApi } from '@api/operations.api';
+import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
   type HistoryPeriod,
   type PortfolioHistory,
   portfolioHistoryApi,
 } from '@api/portfolio-history.api';
-import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import {
+  type AccountingCurrency,
+  type AssetValuation,
+  type PortfolioValuation,
+  portfolioValuationApi,
+} from '@api/portfolio-valuation.api';
+import { type SyncSource, syncStatusApi } from '@api/sync-status.api';
+import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AttentionProvider } from '../shell/attention-context';
+import { MainCurrencyProvider } from '../shell/main-currency';
+import SyncIndicator from '../shell/SyncIndicator';
+import { useNeedsClassification } from '../transactions/useNeedsClassification';
 import DashboardPage from './DashboardPage';
 
 // The window has its own tests; here it only has to open and report a saved trade.
@@ -80,16 +92,162 @@ const nothing = (changes: Partial<PortfolioHistory> = {}) =>
 function renderPage(path = '/dashboard') {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <DashboardPage />
+      <AttentionProvider>
+        <DashboardPage />
+      </AttentionProvider>
     </MemoryRouter>,
   );
 }
 
+// Synthetic ids, names and amounts only (ALLOC: BTC 4200, ETH 2000, cash 1500, others 2300).
+const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const trust = id(10);
+const cold = id(11);
+const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+const asset = (
+  n: number,
+  name: string,
+  symbol: string,
+  value: string,
+  changes: Partial<AssetValuation> = {},
+): AssetValuation => ({
+  instrumentId: id(n),
+  name,
+  symbol,
+  assetType: 'crypto',
+  valuationCurrency: 'USD',
+  priceSource: 'market',
+  quantity: '2',
+  price: {
+    value: String(Number(value) / 2),
+    observedAt: ago(8),
+    source: 'kraken',
+    status: 'fresh',
+  },
+  missingPrice: null,
+  priceChange24hPercent: '1.25',
+  value,
+  allocationPercent: String(Number(value) / 100),
+  costBasis: null,
+  knownCostSubtotal: '0',
+  unknownCostQuantity: '0',
+  missingRateQuantity: '0',
+  averageBuyPrice: null,
+  unrealizedPnl: null,
+  unrealizedReturnPercent: null,
+  knownCostQuantity: '0',
+  knownUnrealizedPnl: null,
+  knownUnrealizedReturnPercent: null,
+  realizedPnl: null,
+  knownRealizedSubtotal: '0',
+  unknownRealizedCount: 0,
+  holdings: [{ accountId: trust, accountName: 'Trust Wallet', quantity: '2', value }],
+  ...changes,
+});
+
+const assets = [
+  asset(1, 'Bitcoin', 'BTC', '4200', { priceChange24hPercent: '-0.80', quantity: '0.05' }),
+  asset(2, 'Ethereum', 'ETH', '2000'),
+  asset(3, 'US Dollar', 'USD', '1500', {
+    assetType: 'fiat',
+    priceSource: 'fixed',
+    price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+    priceChange24hPercent: null,
+    quantity: '1500',
+  }),
+  asset(4, 'Solana', 'SOL', '900'),
+  asset(5, 'Zcash', 'ZEC', '600'),
+  asset(6, 'Tron', 'TRX', '500'),
+  asset(7, 'Stellar', 'XLM', '300'),
+  // Sold out: no longer a top asset.
+  asset(8, 'Dogecoin', 'DOGE', '0', { quantity: '0', allocationPercent: null }),
+];
+
+const slice = (key: string, label: string, value: string) => ({
+  key,
+  label,
+  value,
+  percent: String(Number(value) / 100),
+});
+
+const valuation = (changes: Partial<PortfolioValuation> = {}): PortfolioValuation => ({
+  at: new Date().toISOString(),
+  currency: 'USD',
+  mainCurrency: 'USD',
+  rates: [],
+  completeness: 'complete',
+  totalValue: '10000',
+  pricedSubtotal: '10000',
+  missingPriceCount: 0,
+  stalePriceCount: 0,
+  unavailableAccountCount: 0,
+  costBasis: null,
+  knownCostSubtotal: '0',
+  unknownCostCount: 0,
+  missingRateCount: 0,
+  unrealizedPnl: null,
+  unrealizedReturnPercent: null,
+  knownUnrealizedPnl: null,
+  knownUnrealizedReturnPercent: null,
+  realizedPnl: null,
+  knownRealizedSubtotal: '0',
+  unknownRealizedCount: 0,
+  assets,
+  allocation: {
+    complete: true,
+    byAsset: assets
+      .filter((item) => item.value !== '0')
+      .map((item) => slice(item.instrumentId, item.name, item.value ?? '0')),
+    byType: [slice('crypto', 'Crypto', '8500'), slice('fiat', 'Cash', '1500')],
+    byAccount: [slice(trust, 'Trust Wallet', '7000'), slice(cold, 'Cold storage', '3000')],
+  },
+  accounts: [
+    {
+      accountId: trust,
+      name: 'Trust Wallet',
+      coverage: 'covered',
+      pricedValue: '7000',
+      missingPriceCount: 0,
+    },
+    {
+      accountId: cold,
+      name: 'Cold storage',
+      coverage: 'covered',
+      pricedValue: '3000',
+      missingPriceCount: 0,
+    },
+  ],
+  ...changes,
+});
+
+const pricesSource = (changes: Partial<SyncSource> = {}): SyncSource => ({
+  key: 'prices',
+  kind: 'prices',
+  name: 'Prices',
+  state: 'synced',
+  lastAttemptAt: ago(8),
+  lastSuccessAt: ago(8),
+  errorMessage: null,
+  ...changes,
+});
+
 const toClassify = vi.spyOn(operationsApi, 'needsClassification');
+const valued = vi.spyOn(portfolioValuationApi, 'get');
+const sources = vi.spyOn(syncStatusApi, 'get');
+const wallets = vi.spyOn(walletAddressesApi, 'list');
 
 beforeEach(() => {
   toClassify.mockReset();
   toClassify.mockResolvedValue(0);
+  valued.mockReset();
+  valued.mockImplementation(async (currency?: AccountingCurrency) =>
+    valuation({ currency: currency ?? 'USD' }),
+  );
+  sources.mockReset();
+  sources.mockResolvedValue([pricesSource()]);
+  wallets.mockReset();
+  wallets.mockResolvedValue([]);
   get.mockReset();
   get.mockImplementation(async (period: HistoryPeriod, currency?: AccountingCurrency) =>
     history({ period, currency: currency ?? 'USD' }),
@@ -415,20 +573,150 @@ describe('record-portfolio-snapshots dashboard', () => {
   });
 });
 
-describe('classify-chain-transactions dashboard notice', () => {
-  it('CLS-COUNT says how many blockchain transactions wait and links to them', async () => {
-    toClassify.mockResolvedValueOnce(3).mockResolvedValue(0);
+describe('show-dashboard-top-assets', () => {
+  it('DASH-MAIN shows the top five assets with price, 24h change, value and share', async () => {
     renderPage();
-    const notice = await screen.findByRole('region', { name: 'Needs attention' });
-    expect(notice).toHaveTextContent('3 blockchain transactions need classification');
-    expect(within(notice).getByRole('link', { name: 'Review' })).toHaveAttribute(
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    expect(valued).toHaveBeenCalledWith(undefined);
+    const rows = within(top).getAllByRole('row').slice(1);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.00%',
+      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.00%',
+      'US Dollar1,500 USD$1.00—$1,500.0015.00%',
+      'Solana2 SOL$450.00+1.25%$900.009.00%',
+      'Zcash2 ZEC$300.00+1.25%$600.006.00%',
+    ]);
+    expect(within(rows[0]).getByText('-0.80%')).toHaveClass('portfolio-neg');
+    expect(within(rows[0]).getByRole('link', { name: 'Bitcoin' })).toHaveAttribute(
       'href',
-      '/transactions?status=needs-classification',
+      `/portfolio/${id(1)}`,
     );
-    // An answer saved anywhere refreshes the count; none left, no notice.
-    announceClassificationChange();
-    await waitFor(() =>
-      expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull(),
+    expect(within(top).getByRole('link', { name: 'All assets' })).toHaveAttribute(
+      'href',
+      '/portfolio',
     );
+  });
+
+  it('ALLOC groups by asset, type and account and folds the smallest assets into Other', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const allocation = await screen.findByRole('region', { name: 'Allocation' });
+    const shares = () =>
+      within(allocation)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent);
+    expect(shares()).toEqual([
+      'Bitcoin BTC$4,200.0042.00%',
+      'Ethereum ETH$2,000.0020.00%',
+      'US Dollar USD$1,500.0015.00%',
+      'Solana SOL$900.009.00%',
+      'Zcash ZEC$600.006.00%',
+      'Other 2 assets$800.008.00%',
+    ]);
+    await user.click(within(allocation).getByRole('radio', { name: 'Type' }));
+    expect(shares()).toEqual(['Crypto$8,500.0085.00%', 'Cash$1,500.0015.00%']);
+    await user.click(within(allocation).getByRole('radio', { name: 'Wallets' }));
+    expect(shares()).toEqual(['Trust Wallet$7,000.0070.00%', 'Cold storage$3,000.0030.00%']);
+  });
+
+  it('PHONE-LIST shows top assets as two-line rows with the 24h change', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      renderPage();
+      const top = await screen.findByRole('region', { name: 'Top assets' });
+      expect(within(top).queryByRole('table')).toBeNull();
+      const links = within(top).getAllByRole('link', { name: /today|Fixed/ });
+      expect(links.map((link) => link.textContent)).toEqual([
+        'Bitcoin$4,200.000.05 BTC-0.80% today',
+        'Ethereum$2,000.002 ETH+1.25% today',
+        'US Dollar$1,500.001,500 USDFixed',
+        'Solana$900.002 SOL+1.25% today',
+        'Zcash$600.002 ZEC+1.25% today',
+      ]);
+      expect(links[0]).toHaveAttribute('href', `/portfolio/${id(1)}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('ATTN-BELL keeps what needs the owner off the page; the header bell holds it', async () => {
+    toClassify.mockResolvedValue(3);
+    renderPage();
+    await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('button', { name: 'Notifications, 1 need attention' });
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/blockchain transactions need classification/);
+  });
+
+  it('DASH-UNKNOWN-COST names the coins without a purchase price under the net worth', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({
+        currency: currency ?? 'USD',
+        assets: [
+          asset(1, 'Bitcoin', 'BTC', '4200', { unknownCostQuantity: '0.0087' }),
+          asset(2, 'Ethereum', 'ETH', '2000', { unknownCostQuantity: '1.5' }),
+          asset(3, 'Solana', 'SOL', '900', { unknownCostQuantity: '3' }),
+          asset(4, 'Zcash', 'ZEC', '600'),
+        ],
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(await within(hero).findByRole('note')).toHaveTextContent(
+      '0.0087 BTC, 1.5 ETH and 1 more without purchase price, so cost basis and profit are incomplete.',
+    );
+  });
+
+  it('DASH-UNKNOWN-COST stays quiet when every coin has a purchase price', async () => {
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('region', { name: 'Top assets' });
+    expect(within(hero).queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('says when the assets cannot be loaded and keeps the net worth', async () => {
+    const user = userEvent.setup();
+    valued.mockRejectedValueOnce(new Error('offline'));
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    expect(await within(top).findByRole('alert')).toHaveTextContent('Could not load your assets.');
+    expect(screen.getByRole('region', { name: 'Net worth' })).toBeInTheDocument();
+    await user.click(within(top).getByRole('button', { name: 'Try again' }));
+    expect(await within(top).findByRole('link', { name: 'Bitcoin' })).toBeInTheDocument();
+  });
+
+  it('CACHE-ONCE asks for each route once when the dashboard opens', async () => {
+    const settings = vi
+      .spyOn(ownerSettingsApi, 'get')
+      .mockResolvedValue({ mainCurrency: 'USD' } as never);
+    // The shell reads these for the bell, the sidebar and the menu badge, the page for itself.
+    function Badge() {
+      return <span data-testid="to-classify">{useNeedsClassification()}</span>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <MainCurrencyProvider>
+          <AttentionProvider>
+            <Badge />
+            <SyncIndicator />
+            <DashboardPage />
+          </AttentionProvider>
+        </MainCurrencyProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('region', { name: 'Top assets' });
+    await waitFor(() => expect(screen.getByTestId('to-classify')).toHaveTextContent('0'));
+    await waitFor(() => expect(settings).toHaveBeenCalled());
+    expect(sources).toHaveBeenCalledTimes(1);
+    expect(toClassify).toHaveBeenCalledTimes(1);
+    expect(valued).toHaveBeenCalledTimes(1);
+    expect(wallets).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(settings).toHaveBeenCalledTimes(1);
   });
 });

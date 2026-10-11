@@ -355,7 +355,8 @@ async function sqlConstraints(db, s, f) {
           await runner.query(statement, parameters);
           await runner.query('SET CONSTRAINTS ALL IMMEDIATE');
         },
-        (error) => error.driverError?.code === code &&
+        (error) =>
+          error.driverError?.code === code &&
           (!constraint || error.driverError?.constraint === constraint),
         `${label}: expected PostgreSQL ${code}`,
       );
@@ -1053,7 +1054,7 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, migrated.stderr);
-  assert.match(migrated.stdout, /Migrations applied: 35/);
+  assert.match(migrated.stdout, /Migrations applied: 58/);
   const db = source();
   await db.initialize();
   try {

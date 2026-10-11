@@ -9,7 +9,8 @@ export interface Quote {
   price: string;
   observedAt: string;
   kind: QuoteKind;
-  source: ProviderSource;
+  /** BYBIT-ANY-COIN: Bybit's spot market prices the coins the two providers are not asked for. */
+  source: ProviderSource | 'bybit';
 }
 export type QuoteResult =
   | { ok: true; quotes: Quote[]; missing: string[] }
@@ -29,15 +30,15 @@ const CLOCK_SKEW_S = 600;
 const MAX_BODY_BYTES = 1024 * 1024;
 
 class InvalidResponse extends Error {}
-function invalid(): never {
+export function invalid(): never {
   throw new InvalidResponse();
 }
-function record(value: unknown): Record<string, unknown> {
+export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : invalid();
 }
-function positiveDecimal(value: unknown): string {
+export function positiveDecimal(value: unknown): string {
   if (typeof value !== 'string' || !/^[0-9]{1,30}(\.[0-9]{1,30})?$/.test(value)) invalid();
   const [whole, fraction = ''] = value.split('.');
   const integer = whole.replace(/^0+/, '') || '0';
@@ -54,7 +55,7 @@ function instant(value: unknown, nowSeconds: number): number {
 }
 
 type Fetched = { ok: true; body: unknown } | { ok: false; reason: PriceFailure };
-async function getJson(
+export async function getJson(
   url: string,
   timeoutMs: number,
   headers: Record<string, string> = {},
@@ -265,7 +266,7 @@ export class CoinGeckoClient implements PriceProvider {
       const quotes: Quote[] = [];
       const missing: string[] = [];
       for (const asset of assets) {
-        if (!Object.prototype.hasOwnProperty.call(body, asset.coingeckoId)) {
+        if (!Object.hasOwn(body, asset.coingeckoId)) {
           missing.push(asset.code);
           continue;
         }
@@ -283,4 +284,56 @@ export class CoinGeckoClient implements PriceProvider {
       return { ok: false, reason: 'invalid_response' };
     }
   }
+
+  /**
+   * TOKEN-ANY-PRICE: the USD price of tokens by contract on one of CoinGecko's platforms. A
+   * token CoinGecko does not know is absent from the answer. An EVM chain's contract is matched
+   * without regard to case, a Solana mint exactly.
+   */
+  async tokens(
+    platform: string,
+    contracts: readonly string[],
+    now: Date,
+  ): Promise<{ ok: true; prices: Map<string, TokenQuote> } | { ok: false; reason: PriceFailure }> {
+    const query = new URLSearchParams({
+      contract_addresses: contracts.join(','),
+      vs_currencies: 'usd',
+      include_last_updated_at: 'true',
+      precision: 'full',
+    });
+    const fetched = await getJson(
+      `${this.baseUrl}/api/v3/simple/token_price/${platform}?${query}`,
+      this.timeoutMs,
+      this.demoKey ? { 'x-cg-demo-api-key': this.demoKey } : {},
+    );
+    if (!fetched.ok) return fetched;
+    const nowSeconds = Math.floor(now.getTime() / 1000);
+    try {
+      const body = record(fetched.body);
+      const answered = new Map(
+        Object.entries(body).map(([key, value]) => [
+          platform === 'solana' ? key : key.toLowerCase(),
+          value,
+        ]),
+      );
+      const prices = new Map<string, TokenQuote>();
+      for (const contract of contracts) {
+        const value = answered.get(platform === 'solana' ? contract : contract.toLowerCase());
+        if (value === undefined) continue;
+        const entry = record(value);
+        prices.set(contract, {
+          price: geckoPrice(entry.usd),
+          observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
+        });
+      }
+      return { ok: true, prices };
+    } catch {
+      return { ok: false, reason: 'invalid_response' };
+    }
+  }
+}
+
+export interface TokenQuote {
+  price: string;
+  observedAt: string;
 }

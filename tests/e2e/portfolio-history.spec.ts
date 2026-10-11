@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type Page } from '@playwright/test';
 import { origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and prices are synthetic. The shared acceptance database holds other
 // cases' holdings too, so this case checks what its own backdated buy adds to the history
@@ -19,6 +19,12 @@ type History = {
   changePercent: string | null;
   profit: string | null;
   points: Point[];
+};
+
+// The part of GET /accounting/portfolio the dashboard's top assets and allocation show.
+type Valuation = {
+  assets: { instrumentId: string; name: string; quantity: string }[];
+  allocation: { byAsset: { key: string; label: string }[] };
 };
 
 const periods = ['24H', '7D', '1M', '3M', '1Y', 'ALL'] as const;
@@ -117,7 +123,11 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   }
 
   // DASH-MAIN: the dashboard opens on one month and shows exactly what the backend returned.
+  await forgetBrowserReads(page);
   const first = historyResponse(page, '1M');
+  const valued = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/accounting/portfolio',
+  );
   await page.goto('/');
   await expect(page).toHaveURL(`${origin}/dashboard`);
   const shown = (await (await first).json()) as History;
@@ -136,6 +146,35 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   const tabs = chart.getByRole('tablist', { name: 'Chart period' });
   await expect(tabs.getByRole('tab', { name: '1M' })).toHaveAttribute('aria-selected', 'true');
   expect(Date.parse(shown.at) - Date.parse(shown.from)).toBe(30 * DAY);
+
+  // DASH-MAIN, ALLOC: the five largest held assets and the allocation the valuation returned,
+  // and the header bell once its checks have answered (it no longer sits on the page).
+  const valuation = (await (await valued).json()) as Valuation;
+  const held = valuation.assets.filter((asset) => Number(asset.quantity) !== 0).slice(0, 5);
+  expect(held.length).toBeGreaterThan(0);
+  const top = main.getByRole('region', { name: 'Top assets' });
+  await expect(top.getByRole('row')).toHaveCount(held.length + 1);
+  const hrefs = await top
+    .getByRole('table')
+    .getByRole('link')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+  expect(hrefs).toEqual(held.map((asset) => `/portfolio/${asset.instrumentId}`));
+  await expect(top.getByRole('link', { name: 'All assets' })).toHaveAttribute('href', '/portfolio');
+  const slices = valuation.allocation.byAsset;
+  const allocation = main.getByRole('region', { name: 'Allocation' });
+  const shares = allocation
+    .getByRole('list', { name: 'Allocation by asset' })
+    .getByRole('listitem');
+  await expect(shares).toHaveCount(Math.min(slices.length, 6));
+  await expect(shares.first()).toContainText(slices[0].label);
+  if (slices.length > 6)
+    await expect(shares.last()).toContainText(`Other ${slices.length - 5} assets`);
+  await expect(main.getByRole('region', { name: 'Needs attention' })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  const attention = page.getByRole('region', { name: 'Notifications' });
+  await expect(attention).toBeVisible();
+  await expect(attention).not.toContainText('Checking prices and wallets');
+  await page.keyboard.press('Escape');
   await page.screenshot({
     path: testInfo.outputPath('dashboard-1m-1440-dark.png'),
     fullPage: true,

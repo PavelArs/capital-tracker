@@ -40,6 +40,20 @@ export function rateOn(series: readonly FxRate[], date: string): FxRate | null {
   return low === 0 ? null : series[low - 1];
 }
 
+/** Longest stretch of days without a Bank of Russia rate (holidays) that a trade may reuse. */
+export const MAX_RATE_AGE_DAYS = 15;
+
+/**
+ * Like `rateOn`, but null when the latest rate is older than `MAX_RATE_AGE_DAYS`, so a stopped
+ * rate collection cannot fix a trade's amount at a weeks-old rate.
+ */
+export function freshRateOn(series: readonly FxRate[], date: string): FxRate | null {
+  const rate = rateOn(series, date);
+  if (!rate) return null;
+  const age = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${rate.date}T00:00:00Z`)) / 86_400_000;
+  return age > MAX_RATE_AGE_DAYS ? null : rate;
+}
+
 /** Signed quotient, half away from zero. */
 function divide(numerator: bigint, denominator: bigint): bigint {
   const negative = numerator < 0n;

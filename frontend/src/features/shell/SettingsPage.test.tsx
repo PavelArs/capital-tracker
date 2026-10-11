@@ -1,11 +1,19 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
+import { securityApi } from '@api/security.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from './SettingsPage';
+
+// Settings → Security has its own tests; here it only has to render.
+vi.mock('@contexts/AuthContext', () => ({
+  useAuth: () => ({ logoutEverywhere: vi.fn(), user: { email: 'owner@example.test' } }),
+}));
 
 // A controllable device colour scheme behind window.matchMedia.
 let deviceDark = false;
@@ -24,6 +32,8 @@ beforeEach(() => {
   // Theme cases do not depend on the server settings; they stay pending.
   vi.spyOn(ownerSettingsApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(hiddenAssetsApi, 'list').mockReturnValue(new Promise(() => {}));
   stored.clear();
   listeners.clear();
   vi.mocked(window.localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
@@ -97,12 +107,34 @@ describe('SHELL-006 theme setting', () => {
     expect(applied()).toBe('dark');
   });
 
-  it('points to the legacy settings that are still separate', () => {
+  it('S1: Settings starts with a Profile card that shows the sign-in email', () => {
     renderSettings();
-    expect(screen.getByRole('link', { name: 'Legacy settings' })).toHaveAttribute(
-      'href',
-      '/settings',
-    );
+    const profile = screen.getByRole('region', { name: 'Profile' });
+    expect(within(profile).getByText('owner@example.test')).toBeInTheDocument();
+    expect(
+      profile.compareDocumentPosition(screen.getByRole('region', { name: 'Security' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('HIST-LINK: Settings opens the change history', () => {
+    renderSettings();
+    expect(screen.getByRole('heading', { level: 2, name: 'History' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open history' })).toHaveAttribute('href', '/history');
+  });
+
+  it('G1: Settings no longer lists older screens', () => {
+    renderSettings();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Older screens' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open manual prices' })).toBeNull();
+    expect(screen.queryByText(/still in Russian/)).toBeNull();
+  });
+
+  it('no longer points to the retired legacy settings (M20)', () => {
+    renderSettings();
+    expect(screen.queryByRole('link', { name: 'Legacy settings' })).toBeNull();
+    expect(screen.queryByText(/old display rates/)).toBeNull();
   });
 });
 
@@ -118,10 +150,15 @@ describe('CUR-SWITCH main currency setting', () => {
   };
 
   it('loads the saved currency, saves a new one and shows the stored rates', async () => {
-    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'USD' });
-    const update = vi
-      .spyOn(ownerSettingsApi, 'update')
-      .mockImplementation(async (settings) => settings);
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
+    const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+      ...settings,
+    }));
     vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates);
     const user = userEvent.setup();
     renderSettings();
@@ -139,7 +176,10 @@ describe('CUR-SWITCH main currency setting', () => {
   });
 
   it('keeps the saved currency when saving fails and says so', async () => {
-    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'RUB' });
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'RUB',
+      dustThresholdUsd: null,
+    });
     vi.spyOn(ownerSettingsApi, 'update').mockRejectedValue(new Error('offline'));
     vi.spyOn(fxRatesApi, 'get').mockResolvedValue({
       ...rates,
@@ -168,5 +208,134 @@ describe('CUR-SWITCH main currency setting', () => {
       'Could not save the main currency; nothing changed.',
     );
     expect(within(group).getByRole('radio', { name: 'RUB' })).toBeChecked();
+  });
+});
+
+describe('dust threshold (CLS-DUST)', () => {
+  it('saves a threshold, refuses a bad one and turns it off when emptied', async () => {
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
+    const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+      ...settings,
+    }));
+    const user = userEvent.setup();
+    renderSettings();
+    const input = await screen.findByRole('textbox', { name: 'Dust threshold' });
+    await waitFor(() => expect(input).toBeEnabled());
+    expect(
+      screen.getByText('Off: every incoming wallet transaction asks to be classified.'),
+    ).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'Save' });
+
+    await user.type(input, '0');
+    await user.click(save);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Enter an amount in USD above 0 and up to 1,000,000, or leave it empty to turn it off.',
+    );
+    expect(update).not.toHaveBeenCalled();
+
+    await user.clear(input);
+    await user.type(input, '1.5');
+    await user.click(save);
+    expect(update).toHaveBeenCalledWith({ dustThresholdUsd: '1.5' });
+    expect(
+      await screen.findByText(
+        'Saved. Smaller incoming transactions are under Transactions → Dust.',
+      ),
+    ).toBeInTheDocument();
+
+    await user.clear(input);
+    await user.click(save);
+    expect(update).toHaveBeenLastCalledWith({ dustThresholdUsd: null });
+    expect(
+      await screen.findByText(
+        'Saved. Every incoming wallet transaction asks to be classified again.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the saved threshold and keeps it when saving fails', async () => {
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: '2',
+    });
+    vi.spyOn(ownerSettingsApi, 'update').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderSettings();
+    const input = await screen.findByRole('textbox', { name: 'Dust threshold' });
+    await waitFor(() => expect(input).toHaveValue('2'));
+    expect(
+      screen.getByText(
+        "Incoming wallet transactions worth less than $2.00 at the latest price don't ask to be classified.",
+      ),
+    ).toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, '5');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not save the dust threshold; nothing changed.',
+    );
+  });
+});
+
+describe('ASSET-HIDE hidden assets', () => {
+  const hidden = (n: number, symbol: string | null, name: string): HiddenAsset => ({
+    instrumentId: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    symbol,
+    name,
+    hiddenAt: '2026-10-11T09:00:00.000Z',
+  });
+
+  it('says so when nothing is hidden', async () => {
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
+    renderSettings();
+    const card = screen.getByRole('region', { name: 'Hidden assets' });
+    expect(await within(card).findByText(/Nothing is hidden/)).toBeInTheDocument();
+  });
+
+  it('lists the hidden assets and shows one again, its wallet tokens included', async () => {
+    const night = hidden(1, 'NIGHT', 'Midnight');
+    const gold = hidden(2, null, 'Gold bars');
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([night, gold]);
+    const show = vi.spyOn(hiddenAssetsApi, 'show').mockResolvedValue(undefined);
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
+      {
+        id: 'wallet-a',
+        hiddenTokens: [
+          { symbol: 'NIGHT', name: 'Midnight', quantity: '2', reason: 'owner' },
+          { symbol: 'SPAM', name: 'Spam', quantity: '1', reason: 'lookalike' },
+        ],
+      },
+      { id: 'wallet-b', hiddenTokens: [] },
+    ] as unknown as WalletAddress[]);
+    const tokens = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue({} as WalletAddress);
+    const user = userEvent.setup();
+    renderSettings();
+    const card = screen.getByRole('region', { name: 'Hidden assets' });
+    expect(await within(card).findByText('NIGHT')).toBeInTheDocument();
+    expect(within(card).getByText('Gold bars')).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Show NIGHT' }));
+    await waitFor(() => expect(show).toHaveBeenCalledWith(night.instrumentId));
+    // Only the address that hid the token by choice gets it back.
+    expect(tokens.mock.calls).toEqual([['wallet-a', ['NIGHT'], 'shown']]);
+    await waitFor(() => expect(within(card).queryByText('NIGHT')).toBeNull());
+    expect(within(card).getByText('Gold bars')).toBeInTheDocument();
+  });
+
+  it('keeps the asset listed and says so when showing it fails', async () => {
+    const gold = hidden(2, null, 'Gold bars');
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([gold]);
+    vi.spyOn(hiddenAssetsApi, 'show').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderSettings();
+    const card = screen.getByRole('region', { name: 'Hidden assets' });
+    await user.click(await within(card).findByRole('button', { name: 'Show Gold bars' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Could not show Gold bars');
+    expect(within(card).getByRole('button', { name: 'Show Gold bars' })).toBeEnabled();
   });
 });

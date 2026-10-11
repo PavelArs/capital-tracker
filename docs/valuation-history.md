@@ -1,5 +1,13 @@
 # Account valuation history
 
+> **Screen removed (G1, 2026-10-10).** The Russian browser screen this page describes was removed
+> from the application. Accounts are made in Add asset and Add wallet, trades are added in Add
+> transaction and the price of a hand-valued asset is changed on its asset page. The wording
+> about screens below is historical; the data and API rules still describe the stored records.
+>
+> The `/accounting/accounts/:id/valuation-history` endpoint was removed (G1 backend); the Portfolio and asset charts use the portfolio history instead.
+
+
 This view compares sampled valuations for one account over a bounded period. The
 [verification record](../openspec/changes/archive/2026-09-24-chart-account-valuations/verification.md)
 tracks the selected checks; consult it for their current status.

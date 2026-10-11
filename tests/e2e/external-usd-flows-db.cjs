@@ -842,7 +842,7 @@ async function main() {
     await source.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 35);
+    assert.equal(migrations.length, 58);
     assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');
     assert.equal(migrations[17].name, 'AddManualUsdPrices1790080000000');
     assert.equal(migrations[18].name, 'AddDailyDisplayFx1790090000000');
@@ -985,7 +985,12 @@ async function storageConstraints(source, _flows, owner) {
     'portfolio_flow_versions_ownerId_fkey',
   );
   stage = 'FLOW-MIG-001 referenced user deletion RESTRICT refusal';
-  await reject('DELETE FROM users WHERE id=$1', [owner.timeline], ['23001'], 'portfolio_flow_journals_ownerId_fkey');
+  await reject(
+    'DELETE FROM users WHERE id=$1',
+    [owner.timeline],
+    ['23001'],
+    'portfolio_flow_journals_ownerId_fkey',
+  );
   stage = 'FLOW-MIG-001 referenced version deletion RESTRICT refusal';
   await reject(
     'DELETE FROM portfolio_flow_versions WHERE "ownerId"=$1 AND "flowId"=$2 AND version=1',

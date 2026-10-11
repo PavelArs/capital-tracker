@@ -1,4 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import {
   type AddressTransaction,
@@ -9,12 +11,31 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
-import { DASH, quantity } from '../portfolio/format';
+import { age, DASH, quantity } from '../portfolio/format';
+import CloseButton from '../shell/CloseButton';
+import CopyValue from '../shell/CopyValue';
+import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import type { WalletAccount } from './AddWalletDialog';
+import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
+import RemoveAddress from './RemoveAddress';
+import SyncJournal from './SyncJournal';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
-import { addressValue, chainAmounts, type Prices } from './WalletParts';
-import { chainBalances } from './wallets';
+import TokensSection from './TokensSection';
+import {
+  addressValue,
+  ConvertNote,
+  chainPieces,
+  EarnSection,
+  MoreCoins,
+  PoolsSection,
+  type Prices,
+  ReportedBalanceNote,
+  SHOWN_COINS,
+  StakingSection,
+} from './WalletParts';
+import { chainBalances, shortAddress } from './wallets';
 
 const NEW = '__new';
 const NONE = '';
@@ -24,12 +45,42 @@ const directionLabels: Record<AddressTransaction['direction'], string> = {
   out: 'Sent',
   self: 'To itself',
 };
+/**
+ * A Bybit record: a spot trade, a deposit or withdrawal (M22), Earn yield (BYBIT-EARN) or a
+ * convert (BYBIT-CONVERT).
+ */
+const recordLabel = (item: AddressTransaction) =>
+  item.txid.startsWith('bybit-trade-convert-')
+    ? 'Convert'
+    : item.txid.startsWith('bybit-trade-')
+      ? 'Trade'
+      : item.txid.startsWith('bybit-earn-')
+        ? 'Earn yield'
+        : item.direction === 'out'
+          ? 'Withdrawal'
+          : 'Deposit';
 const dayFormat = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
   timeZone: 'UTC',
 });
+
+/** Pages of the address's history read to fill the list: a spammed address has long runs of dust. */
+const MAX_PAGES = 10;
+
+/**
+ * This address's rows of the Transactions list by txid: the row to open and whether it is dust
+ * (CLS-DUST). A leg the list folds into a swap or a transfer has no row of its own.
+ */
+function operationsOf(operations: readonly Operation[], addressId: string) {
+  const found = new Map<string, Operation>();
+  for (const operation of operations) {
+    if (operation.chain && operation.wallet?.id === addressId)
+      found.set(operation.chain.txid, operation);
+  }
+  return found;
+}
 
 interface Props {
   address: WalletAddress;
@@ -40,6 +91,8 @@ interface Props {
   run: SyncRun | undefined;
   onSync: () => void;
   onSaved: (address: WalletAddress, newAccount: boolean) => void;
+  /** WALLET-REMOVE: the address stopped being tracked. */
+  onRemoved: (address: WalletAddress) => void;
   onClose: () => void;
 }
 
@@ -53,6 +106,7 @@ export default function AddressDrawer({
   run,
   onSync,
   onSaved,
+  onRemoved,
   onClose,
 }: Props) {
   const drawer = useRef<HTMLDivElement>(null);
@@ -61,12 +115,28 @@ export default function AddressDrawer({
   close.current = onClose;
   const [choice, setChoice] = useState(address.accountId ?? NONE);
   const [newName, setNewName] = useState('');
+  // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
+  const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
   const [label, setLabel] = useState(address.label ?? '');
   const [saving, setSaving] = useState(false);
+  const [allCoins, setAllCoins] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
-  // undefined while loading, null when the read failed.
-  const [recent, setRecent] = useState<AddressTransaction[] | null | undefined>(undefined);
-  const attempt = useRef<{ name: string; requestId: string } | null>(null);
+  // The history read so far, newest first; undefined while loading, null when the read failed.
+  const [history, setHistory] = useState<
+    { items: AddressTransaction[]; next: number | null } | null | undefined
+  >(undefined);
+  const [showDust, setShowDust] = useState(false);
+  // INFINITE: how many of the transactions below are on screen, twenty more each time the end
+  // of the list is reached.
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
+  // The Transactions list says which of them are dust and where each one opens; undefined while
+  // it loads, null when it cannot be read (every row then shows, none opens).
+  const [listed, setListed] = useState<ReadonlyMap<string, Operation> | null | undefined>(() => {
+    const kept = cachedReads.operations.last();
+    return kept ? operationsOf(kept.operations, address.id) : undefined;
+  });
+  const reading = useRef(false);
+  const attempt = useRef<{ key: string; requestId: string } | null>(null);
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -93,23 +163,75 @@ export default function AddressDrawer({
   // A sync that stores new transactions changes the count; the newest are read again.
   useEffect(() => {
     if (count === 0) {
-      setRecent([]);
+      setHistory({ items: [], next: null });
       return;
     }
     let live = true;
     walletAddressesApi
       .transactions(address.id)
-      .then((page) => live && setRecent(page.items.slice(0, 10)))
-      .catch(() => live && setRecent(null));
+      .then((page) => live && setHistory({ items: page.items, next: page.nextOffset }))
+      .catch(() => live && setHistory(null));
+    return () => {
+      live = false;
+    };
+  }, [address.id, count]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a sync that stores transactions changes what is dust, so the list is asked again.
+  useEffect(() => {
+    let live = true;
+    cachedReads.operations
+      .load()
+      .then((list) => live && setListed(operationsOf(list.operations, address.id)))
+      .catch(() => live && setListed((kept) => kept ?? null));
     return () => {
       live = false;
     };
   }, [address.id, count]);
 
+  const isDust = (item: AddressTransaction) => listed?.get(item.txid)?.status === 'dust';
+  const rows = history?.items ?? [];
+  const listedRows = showDust ? rows : rows.filter((item) => !isDust(item));
+  const shown = listedRows.slice(0, shownCount);
+  // Whether rows wait beyond those on screen: older pages are read until some do, or until
+  // the history, or the number of pages read for one list, runs out.
+  const more = listedRows.length > shownCount;
+  const exhausted = history?.next === null || rows.length >= MAX_PAGES * 50;
+  const dust = rows.filter(isDust).length;
+  // Older pages may hold more dust than the ones read.
+  const dustLabel = `${dust}${history?.next ? '+' : ''} dust ${dust === 1 && !history?.next ? 'transaction' : 'transactions'}`;
+  const waiting =
+    history === undefined || (history !== null && rows.length > 0 && listed === undefined);
+  // Dust takes no place in the list, so older pages are read until the page and the one after
+  // it are known.
+  useEffect(() => {
+    if (!history || history.next === null || listed === undefined || reading.current) return;
+    if (more || rows.length >= MAX_PAGES * 50) return;
+    reading.current = true;
+    const offset = history.next;
+    walletAddressesApi
+      .transactions(address.id, offset)
+      .then((page) =>
+        setHistory((kept) =>
+          kept && kept.next === offset
+            ? { items: [...kept.items, ...page.items], next: page.nextOffset }
+            : kept,
+        ),
+      )
+      .catch(() => undefined)
+      .finally(() => {
+        reading.current = false;
+      });
+  }, [history, listed, more, rows.length, address.id]);
+
   const wallet = accounts.find((account) => account.accountId === address.accountId);
+  // M21: a Bitcoin account public key and the addresses it derives.
+  const key = address.accountKey ?? null;
+  // M22: a Bybit account, its balances as Bybit reports them.
+  const exchange = address.exchange ?? null;
+  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
   const network = networkOf(address);
   const balances = chainBalances(address);
   const value = addressValue(address, prices, currency);
+  const pieces = chainPieces(address);
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -123,9 +245,14 @@ export default function AddressDrawer({
     try {
       let accountId: string | null = choice === NONE ? null : choice;
       if (choice === NEW) {
-        if (attempt.current?.name !== name) attempt.current = { name, requestId: newRequestId() };
+        const key = `${name}\n${kind}`;
+        if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
         accountId = (
-          await accountingApi.createAccount({ requestId: attempt.current.requestId, name })
+          await accountingApi.createAccount({
+            requestId: attempt.current.requestId,
+            name,
+            ...(kind ? { kind } : {}),
+          })
         ).id;
       }
       const saved = await walletAddressesApi.update(address.id, {
@@ -165,21 +292,20 @@ export default function AddressDrawer({
       >
         <div className="transactions-drawer__head">
           <h2 id="address-title">
-            {wallet ? `${wallet.name} · ${network.name}` : `${network.name} address`}
+            {wallet
+              ? `${wallet.name} · ${network.name}`
+              : `${network.name} ${exchange ? 'account' : 'address'}`}
           </h2>
-          <button
-            ref={closeButton}
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          <CloseButton buttonRef={closeButton} onClick={onClose} />
         </div>
         <div className="transactions-drawer__body">
           <div className="transactions-hero">
             <span className="transactions-hero__amount">
-              {balances === null ? `${DASH} ${network.symbol}` : chainAmounts(address)}
+              {balances === null
+                ? exchange
+                  ? DASH
+                  : `${DASH} ${network.symbol}`
+                : (allCoins ? pieces : pieces.slice(0, SHOWN_COINS)).join(' · ')}
             </span>
             <span className="transactions-hero__value">
               {balances === null
@@ -188,6 +314,14 @@ export default function AddressDrawer({
                   ? 'No price yet'
                   : value}
             </span>
+            {balances !== null && (
+              <MoreCoins
+                total={pieces.length}
+                expanded={allCoins}
+                hidden={0}
+                onToggle={() => setAllCoins((current) => !current)}
+              />
+            )}
           </div>
           <dl className="transactions-facts" aria-label="Details">
             <div>
@@ -197,22 +331,70 @@ export default function AddressDrawer({
             {network.assets.length > 1 && (
               <div>
                 <dt>Tracked assets</dt>
-                <dd>{network.assets.join(', ')}</dd>
+                <dd>
+                  {exchange
+                    ? 'Every coin the account holds; Bybit prices the ones Kraken does not list'
+                    : `${network.assets.join(', ')}${network.anyToken ? ' and every other token' : ''}`}
+                </dd>
               </div>
             )}
             <div>
-              <dt>Address</dt>
+              <dt>{key ? 'Public key' : exchange ? 'Bybit UID' : 'Address'}</dt>
               <dd>
-                <span className="wallets-mono">{address.address}</span>{' '}
-                <button
-                  type="button"
-                  className="portfolio-link"
-                  onClick={() => void navigator.clipboard?.writeText(address.address)}
-                >
-                  Copy
-                </button>
+                <CopyValue
+                  value={address.address}
+                  label={key ? 'Copy public key' : exchange ? 'Copy UID' : 'Copy address'}
+                />
               </dd>
             </div>
+            {key && (
+              <div>
+                <dt>Addresses</dt>
+                <dd>{key.usedAddresses} used · new ones are found automatically</dd>
+              </div>
+            )}
+            {exchange && (
+              <>
+                <div>
+                  <dt>API key</dt>
+                  <dd>
+                    <span className="wallets-mono">…{exchange.keyHint}</span> · read-only, stored
+                    encrypted
+                  </dd>
+                </div>
+                <div>
+                  <dt>Key expires</dt>
+                  <dd>
+                    {exchange.ipBound
+                      ? 'Never: bound to an IP address'
+                      : exchange.keyExpiresAt
+                        ? `${dayFormat.format(new Date(exchange.keyExpiresAt))}. Bind it to the server's IP address in Bybit to keep it.`
+                        : 'Unknown'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>History from</dt>
+                  <dd>{dayFormat.format(new Date(exchange.historyFrom))}</dd>
+                </div>
+                {exchange.reportedAt && (
+                  <div>
+                    <dt>Balances</dt>
+                    <dd>As Bybit reported them {age(exchange.reportedAt, new Date())}</dd>
+                  </div>
+                )}
+                {exchange.untracked.length > 0 && (
+                  <div>
+                    <dt>Not tracked</dt>
+                    <dd>
+                      {exchange.untracked
+                        .map((item) => `${quantity(item.quantity)} ${item.symbol}`)
+                        .join(' · ')}
+                      <span className="wallets-muted"> · not counted</span>
+                    </dd>
+                  </div>
+                )}
+              </>
+            )}
             <div>
               <dt>Status</dt>
               <dd>
@@ -233,6 +415,35 @@ export default function AddressDrawer({
               <dd>Every hour in the background</dd>
             </div>
           </dl>
+          {key && key.alsoTracked.length > 0 && (
+            <p className="wallets-message wallets-message--warn" role="alert">
+              {key.alsoTracked.length === 1
+                ? 'One address of this key is also tracked as its own wallet'
+                : `${key.alsoTracked.length} addresses of this key are also tracked as their own wallets`}{' '}
+              ({key.alsoTracked.map((item) => item.label ?? shortAddress(item.address)).join(', ')}
+              ), so their coins count twice.
+            </p>
+          )}
+          {address.network === 'tron' && <ReportedBalanceNote address={address} />}
+          <TokensSection address={address} onChange={(saved) => onSaved(saved, false)} />
+          {address.staking && <StakingSection address={address} staking={address.staking} />}
+          {address.pools && <PoolsSection pools={address.pools} />}
+          {address.network === 'stellar' && address.reportedBalance && (
+            <p className="wallets-message wallets-message--warn" role="note">
+              Stellar reports {quantity(address.reportedBalance)} {network.symbol}; the transactions
+              read give {quantity(address.chainBalance ?? '0')} {network.symbol}. The app does not
+              read offers on the Stellar exchange, claimable balances or liquidity pools, and the
+              public server keeps only recent history.
+            </p>
+          )}
+          {address.network === 'zcash' && (
+            <p className="wallets-note" role="note">
+              This is the balance of the transparent address. Shielded balances are private and the
+              app cannot read them: ZEC moved to a shielded address shows as sent.
+            </p>
+          )}
+          {exchange && <EarnSection exchange={exchange} />}
+          {exchange && <ConvertNote exchange={exchange} />}
           {syncProblem(address, run) && (
             <p className="wallets-message wallets-message--error" role="alert">
               {syncProblem(address, run)}
@@ -262,22 +473,26 @@ export default function AddressDrawer({
               </select>
             </div>
             {choice === NEW && (
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="address-new-wallet">
-                  New wallet name
-                </label>
-                <input
-                  id="address-new-wallet"
-                  className="portfolio-input"
-                  maxLength={120}
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                />
-              </div>
+              <>
+                <div className="portfolio-field">
+                  <label className="portfolio-field__label" htmlFor="address-new-wallet">
+                    New wallet name
+                  </label>
+                  <input
+                    id="address-new-wallet"
+                    className="portfolio-input"
+                    maxLength={120}
+                    value={newName}
+                    onChange={(event) => setNewName(event.target.value)}
+                  />
+                </div>
+                <KindField id="address-new-kind" value={kind} onChange={setPickedKind} />
+              </>
             )}
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor="address-label">
-                Address name <span className="wallets-muted">(optional)</span>
+                {exchange ? 'Account name' : 'Address name'}{' '}
+                <span className="wallets-muted">(optional)</span>
               </label>
               <input
                 id="address-label"
@@ -305,43 +520,93 @@ export default function AddressDrawer({
           </form>
           <section aria-labelledby="address-transactions">
             <h3 id="address-transactions" className="transactions-section">
-              Blockchain transactions
+              {exchange ? 'Bybit records' : 'Blockchain transactions'}
             </h3>
-            {!recent?.length ? (
+            {waiting ? (
+              <p className="wallets-muted">Loading…</p>
+            ) : shown.length === 0 ? (
               <p className="wallets-muted">
-                {count === 0
-                  ? 'None loaded yet. They appear here after a sync.'
-                  : recent === null
-                    ? 'Could not load them; they are in Transactions.'
-                    : 'Loading…'}
+                {history === null
+                  ? 'Could not load them; they are in Transactions.'
+                  : dust > 0
+                    ? 'Only dust in the latest transactions.'
+                    : 'None loaded yet. They appear here after a sync.'}
               </p>
             ) : (
               <ul className="wallets-recent">
-                {recent.map((item) => (
-                  <li key={item.txid}>
-                    <span>
-                      {directionLabels[item.direction]}{' '}
-                      <span className="wallets-muted">
-                        {dayFormat.format(new Date(item.blockTime))}
+                {shown.map((item) => {
+                  const operation = listed?.get(item.txid);
+                  const line = (
+                    <>
+                      <span>
+                        {exchange ? recordLabel(item) : directionLabels[item.direction]}{' '}
+                        <span className="wallets-muted">
+                          {dayFormat.format(new Date(item.blockTime))}
+                          {operation?.status === 'dust' && ' · dust'}
+                        </span>
                       </span>
-                    </span>
-                    <span className="wallets-num">
-                      {item.net.startsWith('-') ? '-' : '+'}
-                      {quantity(item.net)} {item.symbol}
-                    </span>
-                  </li>
-                ))}
+                      <span className="wallets-num">
+                        {item.net.startsWith('-') ? '-' : '+'}
+                        {quantity(item.net.replace(/^-/, ''))} {item.symbol}
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={item.txid}>
+                      {operation ? (
+                        <Link
+                          className="wallets-recent__open"
+                          to={`/transactions?open=${encodeURIComponent(operation.id)}`}
+                        >
+                          {line}
+                        </Link>
+                      ) : (
+                        line
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
-            {count > 0 && (
-              <Link
-                className="portfolio-link"
-                to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
-              >
-                All in Transactions
-              </Link>
+            {(more || !exhausted) && !waiting && shown.length > 0 && (
+              <LoadMore
+                shown={shown.length}
+                total={history?.next === null ? listedRows.length : undefined}
+                busy={!more && !exhausted}
+                onMore={() => setShownCount((current) => current + PAGE_SIZE)}
+                label="transactions"
+              />
             )}
+            <div className="wallets-recent__more">
+              {dust > 0 && (
+                <button
+                  type="button"
+                  className="portfolio-link"
+                  aria-expanded={showDust}
+                  onClick={() => {
+                    setShowDust((current) => !current);
+                    setShownCount(PAGE_SIZE);
+                  }}
+                >
+                  {showDust ? 'Hide dust' : `Show ${dustLabel}`}
+                </button>
+              )}
+              {count > 0 && (
+                <Link
+                  className="portfolio-link"
+                  to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
+                >
+                  All in Transactions
+                </Link>
+              )}
+            </div>
           </section>
+          <SyncJournal address={address} run={run} />
+          <RemoveAddress
+            id={address.id}
+            exchange={!!exchange}
+            onRemoved={() => onRemoved(address)}
+          />
         </div>
         <div className="transactions-drawer__foot">
           <span className="transactions-grow" />
@@ -351,6 +616,7 @@ export default function AddressDrawer({
             disabled={running}
             onClick={onSync}
           >
+            <Icon name="refresh" className="shell-icon shell-icon--sm" />
             {running ? 'Syncing…' : 'Sync now'}
           </button>
         </div>

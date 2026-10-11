@@ -21,10 +21,13 @@ import {
   withoutTrade,
 } from './available-quantity';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
+import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
   connectedResult,
+  journalNotStarted,
+  notCovered,
   projectConnectedLedger,
   readConnectedLedger,
   readTradeVersionCount,
@@ -194,7 +197,13 @@ export async function findOrCreateInstrument(
   );
   if (found || !create) return found ?? null;
   const value = { requestId: randomUUID(), ...asset };
-  const classification = classifyAsset(value);
+  // BYBIT-ANY-COIN: a chain coin is always market-priced, so this lookup finds it again; one no
+  // provider quotes yet shows no price rather than becoming an asset priced by hand.
+  const classified = classifyAsset(value);
+  const classification =
+    classified.assetType === 'crypto'
+      ? { ...classified, priceSource: 'market' as const }
+      : classified;
   const [created]: { id: string; name: string; symbol: string | null }[] = await manager.query(
     `INSERT INTO accounting_instruments
     (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")
@@ -266,6 +275,49 @@ export class TradeService {
       parseTradeCorrection(input),
     );
   }
+  /**
+   * CLS-PAID: the trade saved again as it is, its cash side settled anew in `currency` against
+   * what the account holds then, apart from the coins of the transfer `apart` if one is named.
+   * A voided or changed trade that cannot be settled in coins is left alone. The caller owns the
+   * transaction and rethrows history errors.
+   */
+  async settleWithin(
+    manager: EntityManager,
+    owner: string,
+    accountId: string,
+    tradeId: string,
+    currency: SettlementCurrency,
+    apart?: string,
+  ): Promise<void> {
+    const head = (await readTradeHeads(manager, owner, accountId)).find(
+      (item) => item.tradeId === tradeId,
+    );
+    const journal = await readJournal(manager, owner, accountId);
+    if (!head || !journal || head.kind === 'void' || head.side !== 'buy') return;
+    if (head.paid || head.purpose) return;
+    await this.mutateWithin(
+      manager,
+      owner,
+      accountId,
+      'correct',
+      tradeId,
+      parseTradeCorrection({
+        requestId: randomUUID(),
+        expectedJournalRevision: journal.currentRevision,
+        instrumentId: head.instrumentId,
+        side: head.side,
+        occurredAt: head.occurredAt,
+        orderWithinTimestamp: head.orderWithinTimestamp,
+        quantity: head.quantity,
+        grossUsd: head.grossUsd,
+        feeUsd: head.feeUsd,
+        ...(head.comment === undefined ? {} : { comment: head.comment }),
+        settlementCurrency: currency,
+      }),
+      apart,
+    );
+  }
+
   async void(ownerId: string, accountId: string, tradeId: string, input: unknown) {
     return this.mutate(
       parseUuid(ownerId),
@@ -284,14 +336,18 @@ export class TradeService {
     value: TradeCreateInput | TradeVoidInput,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
     return this.source
-      .transaction((manager) => this.mutateWithin(manager, owner, id, kind, target, value))
+      .transaction(async (manager) => {
+        if (target !== undefined) await refuseProducedEntry(manager, owner, 'tradeId', target);
+        return this.mutateWithin(manager, owner, id, kind, target, value);
+      })
       .catch(rethrowAccountingHistory);
   }
 
   /**
    * One create, correction or void inside the caller's transaction, under the owner's
    * accounting lock: a chain classification (M12) writes its own row in the same transaction.
-   * The caller rethrows history errors.
+   * The caller rethrows history errors. `apart` names an owned transfer whose coins the cash
+   * side must not take (CLS-PAID).
    */
   async mutateWithin(
     manager: EntityManager,
@@ -300,6 +356,7 @@ export class TradeService {
     kind: Kind,
     target: string | undefined,
     value: TradeCreateInput | TradeVoidInput,
+    apart?: string,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
     const input = kind === 'void' ? undefined : (value as TradeCreateInput);
     const fields = input && requested(input);
@@ -316,7 +373,10 @@ export class TradeService {
       (kind === 'create' && value.expectedJournalRevision === 0
         ? await startEmptyJournal(manager, owner, account, value.requestId)
         : undefined);
-    if (!journal) throw conflict();
+    if (!journal)
+      throw kind === 'create' && value.expectedJournalRevision === 0
+        ? journalNotStarted(id)
+        : conflict();
     const [previous]: VersionRow[] = await manager.query(
       `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
       [owner, id, value.requestId],
@@ -365,14 +425,16 @@ export class TradeService {
       journal.currentRevision >= 10000
     )
       throw conflict();
-    if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
+    if (nextExecution.occurredAt < journal.coverageFrom.toISOString())
+      throw notCovered(id, journal.coverageFrom.toISOString());
     if (input?.settlementCurrency) {
+      const others = target === undefined ? ledger : withoutTrade(ledger, id, target);
       const settlement = await this.settle(
         manager,
         owner,
         input.settlementCurrency,
         nextExecution,
-        target === undefined ? ledger : withoutTrade(ledger, id, target),
+        apart === undefined ? others : withoutOperation(others, `transfer:${apart}`),
         id,
       );
       if (settlement) nextExecution = { ...nextExecution, settlement };

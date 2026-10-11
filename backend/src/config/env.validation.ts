@@ -40,6 +40,55 @@ export class EnvironmentVariables {
   @IsOptional()
   ETHERSCAN_API_KEY?: string;
 
+  // Optional free TronGrid key for Tron wallet history; without it TronGrid's lower keyless
+  // rate applies.
+  @IsString()
+  @IsOptional()
+  TRONGRID_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  ZCASH_BLOCKBOOK_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  ZCASH_BLOCKBOOK_URL?: string;
+
+  // Password reset email (M17, Q5): Yandex SMTP over implicit TLS. Without a user and an
+  // app password, reset requests are answered as usual but no email goes out.
+  @IsString()
+  @IsOptional()
+  SMTP_HOST?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PORT?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_USER?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASSWORD?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_FROM?: string;
+
+  // Internal Prometheus listener (/metrics on its own port). Compose never publishes it, so
+  // only containers on the application network can scrape it.
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  METRICS_ENABLED = 'true';
+
+  @IsNumber()
+  @Min(1)
+  @Max(65535)
+  @Transform(({ value }) => Number.parseInt(value, 10))
+  @IsOptional()
+  METRICS_PORT = 9464;
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;

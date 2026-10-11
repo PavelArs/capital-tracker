@@ -18,14 +18,38 @@ interface ErrorResponse {
   path: string;
   // The operation a refused accounting change would leave short (409 only).
   dependent?: Record<string, unknown>;
+  // The account whose records start after the refused change, or have not started (409 only).
+  coverage?: { accountId: string; coverageFrom: string | null };
 }
 
 // A 409 may name the later operation it protects so the client can say which one.
 // Only that plain object passes through; every other response field stays dropped.
+function conflictCoverage(status: number, value: unknown) {
+  if (status !== HttpStatus.CONFLICT) return undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const { accountId, coverageFrom } = value as Record<string, unknown>;
+  // A null start is an account whose records have not started at all.
+  return typeof accountId === 'string' &&
+    (typeof coverageFrom === 'string' || coverageFrom === null)
+    ? { accountId, coverageFrom }
+    : undefined;
+}
+
 function conflictDependent(status: number, value: unknown) {
   if (status !== HttpStatus.CONFLICT) return undefined;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   return value as Record<string, unknown>;
+}
+
+// Frames only: the first stack line repeats the error message, which may quote submitted
+// values or database parameters.
+function stackFrames(exception: unknown): string | undefined {
+  if (!(exception instanceof Error) || !exception.stack) return undefined;
+  return exception.stack
+    .split('\n')
+    .filter((line) => line.trimStart().startsWith('at '))
+    .slice(0, 12)
+    .join('\n');
 }
 
 @Injectable()
@@ -45,7 +69,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       response.setHeader('Cache-Control', 'no-store');
     }
 
-    const { status, message, error, dependent } = this.getErrorDetails(exception);
+    const { status, message, error, dependent, coverage } = this.getErrorDetails(exception);
 
     const errorResponse: ErrorResponse = {
       statusCode: status,
@@ -54,6 +78,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url.split('?')[0],
       ...(dependent ? { dependent } : {}),
+      ...(coverage ? { coverage } : {}),
     };
 
     // Log error with context
@@ -67,6 +92,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     message: string;
     error: string;
     dependent?: Record<string, unknown>;
+    coverage?: { accountId: string; coverageFrom: string | null };
   } {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
@@ -75,6 +101,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       let message: string;
       let error: string;
       let dependent: Record<string, unknown> | undefined;
+      let coverage: { accountId: string; coverageFrom: string | null } | undefined;
 
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
@@ -86,13 +113,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           : (responseObj.message as string) || exception.message;
         error = (responseObj.error as string) || exception.name;
         dependent = conflictDependent(status, responseObj.dependent);
+        coverage = conflictCoverage(status, responseObj.coverage);
       } else {
         message = exception.message;
         error = exception.name;
       }
 
       // Nest's default unmatched-route message includes the complete request URL.
-      return { status, message: status === 404 ? 'Not Found' : message, error, dependent };
+      return {
+        status,
+        message: status === 404 ? 'Not Found' : message,
+        error,
+        dependent,
+        coverage,
+      };
     }
 
     // Express's body parser reports this before Nest can create an HttpException.
@@ -125,6 +159,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       method: request.method,
       url: request.url.split('?')[0],
       ip: request.ip,
+      requestId: (request as Request & { id?: unknown }).id,
     };
 
     if (status >= 500) {
@@ -132,6 +167,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         {
           ...logContext,
           errorType: exception instanceof Error ? exception.name : 'UnknownError',
+          stack: stackFrames(exception),
         },
         'Server error occurred',
       );

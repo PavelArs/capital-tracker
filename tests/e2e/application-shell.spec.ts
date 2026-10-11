@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { nextFactor, origin, owner, passwordStep, test } from './mfa-fixtures';
 
 async function fitsViewport(page: Page) {
@@ -12,14 +12,14 @@ async function fitsViewport(page: Page) {
     .toBeLessThanOrEqual(1);
 }
 
-test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy entry and logout', async ({
+test('SHELL-UI: real owner login, responsive keyboard navigation and logout', async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.setViewportSize({ width: 360, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
-  await page.goto('/manual-accounts');
+  await page.goto('/wallets');
   await expect(page).toHaveURL(`${origin}/login`);
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
@@ -27,13 +27,13 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await page.screenshot({ path: testInfo.outputPath('login-360.png'), fullPage: true });
 
   await page.getByLabel('Email', { exact: true }).fill(owner.email);
-  await page.getByLabel('Пароль', { exact: true }).fill('incorrect-synthetic-password');
+  await page.getByLabel('Password', { exact: true }).fill('incorrect-synthetic-password');
   const refusedLogin = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/login' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Вход', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   expect((await refusedLogin).status()).toBe(401);
   await expect(page.getByRole('alert')).toBeVisible();
   await fitsViewport(page);
@@ -43,24 +43,24 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('mfa-360.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Использовать код восстановления', exact: true }).click();
-  await expect(page.getByLabel('Код восстановления', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Use a recovery code instead', exact: true }).click();
+  await expect(page.getByLabel('Recovery code', { exact: true })).toBeVisible();
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('recovery-360.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Использовать код из приложения', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to authenticator code', exact: true }).click();
   const factor = nextFactor();
   expect(factor.kind).toBe('totp');
-  await page.getByLabel('Код из приложения', { exact: true }).fill(factor.code);
+  await page.getByLabel('Code from your authenticator app', { exact: true }).fill(factor.code);
   const pendingFactor = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/mfa' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await page.getByRole('button', { name: 'Verify', exact: true }).click();
   const factorResponse = await pendingFactor;
   expect(factorResponse.status()).toBe(200);
   expect((await factorResponse.json()).user.email).toBe(owner.email);
-  // Genuine predecessor RED: before add-app-shell a successful login opened /manual-accounts.
+  // Genuine predecessor RED: before add-app-shell a successful login opened the old accounts screen.
   await expect(page).toHaveURL(`${origin}/dashboard`);
   await expect(
     page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true }),
@@ -89,7 +89,8 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(200);
 
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
-  const toggle = page.getByRole('button', { name: 'Menu', exact: true });
+  // The sections are always on screen; there is no menu button on any width (M31).
+  const menuButton = page.getByRole('button', { name: 'Menu', exact: true });
   const apiRequests: string[] = [];
   page.on('request', (request) => {
     const { pathname } = new URL(request.url());
@@ -97,7 +98,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   });
 
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(toggle).toBeHidden();
+  await expect(menuButton).toHaveCount(0);
   const sections = [
     ['Dashboard', '/dashboard'],
     ['Portfolio', '/portfolio'],
@@ -117,7 +118,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(syncStatus).toHaveAttribute('href', '/wallets');
   await expect(syncStatus).not.toContainText('Checking sync');
   await expect(syncStatus).not.toContainText('Sync status unavailable');
-  await expect(nav.getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(nav.getByTitle(owner.email, { exact: true })).toBeVisible();
 
   // WAL-LIST: Wallets is a real page that reads the owner's wallets, no longer a placeholder.
   await nav.getByRole('link', { name: 'Wallets', exact: true }).click();
@@ -204,104 +205,82 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 
-  // SHELL-001-A: current screens stay reachable under the open Legacy group.
-  const legacy = nav.locator('details', { has: page.getByText('Legacy', { exact: true }) });
-  await expect(legacy).toHaveAttribute('open', '');
-  for (const [name, path] of [
-    ['Ручные счета', '/manual-accounts'],
-    ['Переводы между счетами', '/owned-transfers'],
-    ['Вводы и выводы', '/capital-flows'],
-    ['Ручные цены', '/manual-prices'],
-    ['Адреса кошельков', '/wallet-addresses'],
-    ['Прибыль за период', '/period-profit'],
-    ['Настройки', '/settings'],
-    ['Прежний обзор', '/legacy-overview'],
-    ['Активы', '/assets'],
-    ['Криптокошельки', '/crypto'],
-  ] as const) {
-    await expect(legacy.getByRole('link', { name, exact: true })).toHaveAttribute('href', path);
-  }
-  await expect(nav.locator('a[href^="/liabilities"]')).toHaveCount(0);
-
-  await legacy.getByRole('link', { name: 'Ручные счета', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/manual-accounts`);
-  await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
-  await page.getByLabel('Название счета', { exact: true }).fill('Основной счет');
-  const accountCreated = page.waitForResponse(
+  // G1: a hand-valued asset gets its price from the asset page, not a separate screen.
+  await portfolio.getByRole('link', { name: depositName }).first().click();
+  await page.getByRole('button', { name: 'Update price', exact: true }).click();
+  const priceDialog = page.getByRole('dialog', { name: 'Update price' });
+  await priceDialog.getByLabel('Price of one unit, USD', { exact: true }).fill('12.5');
+  const priceSaved = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === '/api/accounting/accounts' &&
+      new URL(response.url()).pathname.endsWith('/usd-prices') &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Создать счет', exact: true }).click();
-  const createdResponse = await accountCreated;
-  expect(createdResponse.status()).toBe(201);
-  const created = await createdResponse.json();
-  await page.goto('/');
-  await expect(page).toHaveURL(`${origin}/dashboard`);
-  await legacy.getByRole('link', { name: 'Ручные счета', exact: true }).click();
-  await expect(page.locator(`a[href="/manual-accounts/${created.id}"]`)).toContainText(
-    'Основной счет',
-  );
+  await priceDialog.getByRole('button', { name: 'Save price', exact: true }).click();
+  expect((await priceSaved).ok()).toBe(true);
+  await expect(priceDialog).toHaveCount(0);
+  await expect(page.getByText(/Manual price set for/)).toBeVisible();
+
+  // G1: no Legacy group and no Older screens: Settings carries the profile, security and data only.
+  await expect(nav.getByText('Legacy', { exact: true })).toHaveCount(0);
+  await expect(nav.locator('a[href^="/manual-"]')).toHaveCount(0);
+  await expect(nav.locator('a[href^="/liabilities"]')).toHaveCount(0);
+  await nav.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/preferences`);
+  await expect(page.getByRole('region', { name: 'Older screens' })).toHaveCount(0);
+  await expect(page.locator('a[href^="/manual-"]')).toHaveCount(0);
 
   for (const width of [360, 768]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(toggle).toHaveAttribute('aria-controls', 'application-menu');
-    await expect(nav.getByText(owner.email, { exact: true })).toBeVisible();
-    await toggle.focus();
-    await page.keyboard.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const accountLink = nav.getByRole('link', { name: 'Ручные счета', exact: true });
+    await expect(menuButton).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
+    const accountLink = nav.getByRole('link', { name: 'Settings', exact: true });
     await expect(accountLink).toHaveAttribute('aria-current', 'page');
     await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    await accountLink.focus();
-    await page.keyboard.press('Escape');
-    await expect(toggle).toBeFocused();
-    await expect(accountLink).toBeHidden();
-    await page.keyboard.press('Tab');
-    await expect(nav.locator('#application-menu :focus')).toHaveCount(0);
-    await toggle.click();
+    // The strip scrolls the current section into view instead of hiding it behind a menu.
+    const strip = await nav.locator('#application-menu').boundingBox();
+    await expect
+      .poll(async () => {
+        const link = await accountLink.boundingBox();
+        return (
+          !!strip &&
+          !!link &&
+          link.x >= strip.x - 1 &&
+          link.x + link.width <= strip.x + strip.width + 1
+        );
+      })
+      .toBe(true);
     await fitsViewport(page);
     await page.screenshot({ path: testInfo.outputPath(`menu-${width}.png`), fullPage: true });
-    await nav.getByRole('link', { name: 'Ручные цены', exact: true }).click();
-    await expect(page).toHaveURL(`${origin}/manual-prices`);
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await toggle.click();
-    await nav.getByRole('link', { name: 'Ручные счета', exact: true }).click();
-    await expect(page).toHaveURL(`${origin}/manual-accounts`);
-    await fitsViewport(page);
   }
 
   for (const width of [1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(toggle).toBeHidden();
+    await expect(menuButton).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Ручные счета', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await fitsViewport(page);
   }
   const skip = page.getByRole('link', { name: 'Skip to content', exact: true });
   await skip.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('main')).toBeFocused();
-  await nav.getByRole('link', { name: 'Прежний обзор', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/legacy-overview`);
-  await expect(page.getByRole('note', { name: 'Область прежнего обзора' })).toContainText(
-    'не включает ручные счета',
-  );
-  // Router-major compatibility: the retained assets splat and fixed absolute tab paths.
-  await nav.locator('a[href="/assets"]').click();
-  await expect(page).toHaveURL(`${origin}/assets/overview`);
-  for (const [label, path] of [
-    ['Балансовые активы', '/assets/stock'],
-    ['Потоковые активы', '/assets/flow'],
-    ['Обзор', '/assets/overview'],
+  // LEGACY-RETIRE: a bookmark of a retired screen opens the section that replaced it.
+  for (const [retired, replacement, heading] of [
+    ['/legacy-overview', '/dashboard', 'Dashboard'],
+    ['/liabilities', '/portfolio', 'Portfolio'],
+    ['/crypto', '/wallets', 'Wallets'],
+    ['/wallet-addresses', '/wallets', 'Wallets'],
+    ['/owned-transfers', '/transactions', 'Transactions'],
+    ['/capital-flows', '/dashboard', 'Dashboard'],
+    ['/period-profit', '/dashboard', 'Dashboard'],
+    ['/manual-accounts', '/wallets', 'Wallets'],
+    ['/manual-accounts/00000000-0000-4000-8000-000000000000', '/wallets', 'Wallets'],
+    ['/manual-prices', '/portfolio', 'Portfolio'],
+    ['/settings', '/preferences', 'Settings'],
   ] as const) {
-    const tab = page.getByRole('button', { name: label, exact: true });
-    await tab.click();
-    await expect(page).toHaveURL(`${origin}${path}`);
-    await expect(tab).toHaveAttribute('aria-current', 'page');
+    await page.goto(retired);
+    await expect(page).toHaveURL(`${origin}${replacement}`);
+    await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
   }
 
   // SHELL-006-A: with no stored choice System follows a dark device, then a light one.
@@ -346,7 +325,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await page.goto('/mvp-unknown-route');
   await expect(page).toHaveURL(`${origin}/login`);
-  await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -42,7 +42,7 @@ export class SessionGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]) === true,
-      policy === 'login-ip' || policy === 'mfa-ip',
+      policy === 'login-ip' || policy === 'mfa-ip' || policy === 'reset-ip',
     );
     request.authSession = session;
     if (session.user) request.user = session.user;

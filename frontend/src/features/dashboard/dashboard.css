@@ -431,28 +431,54 @@
   }
 }
 
-/* CLS-COUNT: blockchain transactions waiting for an answer (M12). */
-.dashboard-attention {
+/* Net worth, then the chart, then top assets beside allocation (prototype "dash-bottom"). */
+.dashboard-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dashboard-link {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.dashboard-link:hover {
+  text-decoration: underline;
+}
+
+.dashboard-assets__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--ink-2);
+}
+
+.dashboard-assets__state p {
+  margin: 0;
+}
+
+.dashboard-assets__state .shell-button {
+  margin-top: 0;
+}
+
+/* D1: the coins that have no purchase price. */
+.dashboard-unknown {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
-  padding: 10px 12px 10px 16px;
-  border-radius: var(--r-md);
-  background: var(--warn-soft);
-  color: var(--ink);
+  gap: 6px;
+  margin: var(--sp-2) 0 0;
+  color: var(--ink-3);
   font-size: var(--fs-sm);
-}
-
-.dashboard-attention__dot {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--warn);
-}
-
-.dashboard-attention__text {
-  flex: 1;
-  min-width: 0;
 }

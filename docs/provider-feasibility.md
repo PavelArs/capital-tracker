@@ -8,6 +8,9 @@ paid service selected. “Documented” means the cited source supports the clai
 
 ## Existing implementation
 
+> M20 removed the three legacy services below (crypto balances, crypto prices, currency rates)
+> together with their modules; current providers are listed in the README.
+
 - `backend/src/crypto/crypto-update.service.ts`: hourly BTC address balance from
   `https://blockstream.info/api/address/{address}`; ETH and configured ERC-20
   balances through `eth_getBalance`/`eth_call` at `eth.llamarpc.com`,

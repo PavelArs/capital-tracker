@@ -1,5 +1,7 @@
 # Annual XIRR preview
 
+> **Retired screen (M20, 2026-10-08):** the XIRR preview lived on `/period-profit`, which now opens the Dashboard; it is hidden in the new interface (Q10) and its API stays until a separate removal.
+
 Implemented and verified with targeted numerical, PostgreSQL and real HTTPS
 checks. See the [verification record](../openspec/changes/archive/2026-09-23-preview-conventional-xirr/verification.md).
 This is a limited manual preview; automatic valuations and general cash-flow

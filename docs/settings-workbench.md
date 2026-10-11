@@ -1,5 +1,7 @@
 # Settings workbench
 
+> **Retired screen (M20, 2026-10-08):** `/settings` now opens the new Settings (`/preferences`). The currency visibility list and display rates panel are gone from the interface; their APIs stay until the legacy modules are removed.
+
 **Настройки** keeps three destinations: **Общие**, **Валюты** and
 **Курсы для отображения**. The selected section is announced and marked with a
 strong border and text weight. Native buttons support ordinary Tab/Enter/Space

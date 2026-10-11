@@ -4,6 +4,9 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { httpMetrics } from './observability/metrics';
+import { MetricsCollector } from './observability/metrics.collector';
+import { startMetricsServer } from './observability/metrics-server';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -17,6 +20,9 @@ async function bootstrap(): Promise<void> {
 
   // Security Headers
   app.use(helmet());
+
+  // Request metrics for the internal Prometheus listener started below.
+  app.use(httpMetrics);
 
   // Do not trust client-supplied forwarding headers.
   app.getHttpAdapter().getInstance().set('trust proxy', false);
@@ -59,7 +65,26 @@ async function bootstrap(): Promise<void> {
   await app.listen(port);
 
   logger.log(`Application is running on: http://localhost:${port}`);
+
+  if (configService.get('METRICS_ENABLED', 'true') === 'true') {
+    await startMetricsServer(
+      app.get(MetricsCollector),
+      configService.get<number>('METRICS_PORT', 9464),
+    );
+  }
 }
+
+// Last resort: log what would otherwise reach stderr as plain text, so Loki sees it.
+process.on('unhandledRejection', (reason) => {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      time: new Date().toISOString(),
+      msg: 'Unhandled promise rejection',
+      errorType: reason instanceof Error ? reason.name : typeof reason,
+    }),
+  );
+});
 
 bootstrap().catch((error: Error) => {
   console.error('Failed to start application:', error);

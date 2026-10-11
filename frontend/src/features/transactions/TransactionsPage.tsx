@@ -1,4 +1,5 @@
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation, OperationList, OperationRange } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -6,7 +7,11 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
+import { PageSkeleton } from '../shell/Skeleton';
+import { leftOutSymbols } from '../wallets/WalletParts';
+import DuplicateProposals from './DuplicateProposals';
 import OperationDrawer from './OperationDrawer';
 import {
   amount,
@@ -17,7 +22,7 @@ import {
   rowTime,
   shortAddress,
   signedQuantity,
-  sourceLabels,
+  sourceLabel,
   statusLabel,
   statusLabels,
   ticker,
@@ -25,31 +30,57 @@ import {
   typeLabel,
   walletLabel,
 } from './operation-format';
+import PeriodFilter from './PeriodFilter';
+import { periodOf } from './period';
+import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
 
-type View = 'all' | 'needs-classification' | 'hidden' | Operation['source'];
+type StatusView = 'needs-classification' | 'hidden' | 'dust';
+type View = 'all' | StatusView | Operation['source'];
 const views: [View, string][] = [
   ['all', 'All'],
   ['needs-classification', 'Needs classification'],
   ['hidden', 'Hidden'],
+  ['dust', 'Dust'],
   ['chain', 'Blockchain'],
   ['manual', 'Manual'],
   ['csv', 'CSV'],
 ];
+const isStatusView = (value: string | null): value is StatusView =>
+  value === 'needs-classification' || value === 'hidden' || value === 'dust';
 
+// Dust is filtered out of every view but its own (CLS-DUST).
 function inView(operation: Operation, view: View): boolean {
-  if (view === 'all') return true;
-  if (view === 'needs-classification' || view === 'hidden') return operation.status === view;
-  return operation.source === view;
+  if (isStatusView(view)) return operation.status === view;
+  if (operation.status === 'dust') return false;
+  return view === 'all' || operation.source === view;
+}
+
+/**
+ * COST-UNKNOWN: a row that brings coins in without a purchase price, so the asset's cost basis
+ * and profit leave them out: an incoming wallet transaction nobody has answered, or a recorded
+ * receipt, reward, opening balance or swap whose cost is missing. Hidden and dust rows do not
+ * count in the balances. A transfer between own wallets carries the cost of its source row,
+ * which is listed here when that one is unknown.
+ */
+export function lacksCost(operation: Operation, asset: string): boolean {
+  if (operation.status === 'hidden' || operation.status === 'dust') return false;
+  const brings = operation.direction === 'in' || operation.type === 'swap';
+  // A purchase or an answered receipt costs what was paid; a reward or an opening balance
+  // carries its own cost basis, which may be missing while the value is known.
+  const known =
+    operation.costBasisUsd !== null ||
+    (operation.kind !== 'reward' && operation.kind !== 'opening' && operation.valueUsd !== null);
+  return brings && !known && assetKey(operation.asset) === asset;
 }
 
 /** Where a row happened; a blockchain row's suggested other side is not a place yet (M13). */
 function places(operation: Operation) {
-  const moved = operation.type === 'transfer';
+  const moved = operation.type === 'transfer' || operation.type === 'swap';
   return {
     accounts: [operation.account, moved ? operation.counterAccount : null],
     wallets: [operation.wallet, moved ? operation.counterWallet : null],
@@ -64,6 +95,9 @@ function placeKeys(operation: Operation): string[] {
     ...accounts.map((account) => account?.id),
   ].filter((key): key is string => key !== undefined);
 }
+
+/** Filter key of a row's type; a wallet transaction nobody classified is told by its direction. */
+const typeKey = (operation: Operation) => operation.type ?? `direction:${operation.direction}`;
 
 function assetKeys(operation: Operation): string[] {
   return [operation.asset, operation.counterAsset].flatMap((asset) =>
@@ -80,7 +114,9 @@ function searchable(operation: Operation): string {
     operation.counterAsset?.name,
     placeLabel(operation),
     operation.wallet?.address,
-    operation.type === 'transfer' ? operation.counterWallet?.address : undefined,
+    operation.type === 'transfer' || operation.type === 'swap'
+      ? operation.counterWallet?.address
+      : undefined,
     operation.chain?.txid,
     transactionHash(operation),
   ]
@@ -89,11 +125,24 @@ function searchable(operation: Operation): string {
     .toLowerCase();
 }
 
-/** Options of a filter, in first-seen order of the newest-first list. */
-function options(operations: Operation[], entries: (operation: Operation) => [string, string][]) {
+/**
+ * Options of a filter, in first-seen order of the newest-first list. What is chosen stays an
+ * option when the period shows no row of it, under the label it was last seen with.
+ */
+function options(
+  operations: Operation[],
+  entries: (operation: Operation) => [string, string][],
+  chosen: string,
+  seen: Map<string, string>,
+) {
   const found = new Map<string, string>();
   for (const operation of operations)
-    for (const [key, label] of entries(operation)) if (!found.has(key)) found.set(key, label);
+    for (const [key, label] of entries(operation)) {
+      seen.set(key, label);
+      if (!found.has(key)) found.set(key, label);
+    }
+  const label = seen.get(chosen);
+  if (chosen && !found.has(chosen) && label) found.set(chosen, label);
   return [...found].sort((left, right) => left[1].localeCompare(right[1], 'en'));
 }
 
@@ -143,25 +192,61 @@ function ValueCell({
   return <span className="transactions-muted">{DASH}</span>;
 }
 
+// Fixed widths: a chip or filter that shows other rows never moves the columns.
+const columns = ['type', 'asset', 'amount', 'value', 'place', 'status'];
+
+/** Status, then where the row came from on a second line: "To classify / Blockchain". */
+function StatusCell({ operation }: { operation: Operation }) {
+  const needs = operation.status === 'needs-classification';
+  const muted = operation.status === 'hidden' || operation.status === 'dust';
+  return (
+    <td>
+      {needs || muted ? (
+        <span
+          className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
+        >
+          {needs ? 'To classify' : statusLabels[operation.status]}
+        </span>
+      ) : (
+        <span className="transactions-status">
+          <Glyph name="check" />
+          {statusLabel(operation)}
+        </span>
+      )}
+      <span className="portfolio-sub transactions-source">
+        {operation.source === 'chain' && <Glyph name="chain" />}
+        {sourceLabel(operation)}
+      </span>
+    </td>
+  );
+}
+
 function OperationRow({
   operation,
   currency,
+  current,
   onOpen,
 }: {
   operation: Operation;
   currency: AccountingCurrency;
+  current: boolean;
   onOpen: () => void;
 }) {
   const needs = operation.status === 'needs-classification';
+  const muted = operation.status === 'hidden' || operation.status === 'dust';
   return (
     <tr
       className={
-        needs
-          ? 'transactions-row--needs'
-          : operation.status === 'hidden'
-            ? 'transactions-row--hidden'
-            : undefined
+        [
+          needs && 'transactions-row--needs',
+          muted && 'transactions-row--hidden',
+          current && 'transactions-row--open',
+        ]
+          .filter(Boolean)
+          .join(' ') || undefined
       }
+      data-operation={operation.id}
+      aria-current={current || undefined}
       onClick={onOpen}
     >
       <td className="transactions-wrap">
@@ -187,7 +272,12 @@ function OperationRow({
           className="transactions-asset"
           title={[operation.asset.name, operation.counterAsset?.name].filter(Boolean).join(' → ')}
         >
-          <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} size="sm" />
+          <AssetIcon
+            symbol={operation.asset.symbol}
+            name={operation.asset.name}
+            network={operation.asset.network}
+            size="sm"
+          />
           {ticker(operation.asset)}
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
@@ -213,26 +303,7 @@ function OperationRow({
           placeLabel(operation)
         )}
       </td>
-      <td>
-        {needs || operation.status === 'hidden' ? (
-          <span
-            className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
-          >
-            {statusLabels[operation.status]}
-          </span>
-        ) : (
-          <span className="transactions-status">
-            <Glyph name="check" />
-            {statusLabel(operation)}
-          </span>
-        )}
-      </td>
-      <td>
-        <span className="transactions-status">
-          {operation.source === 'chain' && <Glyph name="chain" />}
-          {sourceLabels[operation.source]}
-        </span>
-      </td>
+      <StatusCell operation={operation} />
     </tr>
   );
 }
@@ -259,10 +330,12 @@ function phoneValue(operation: Operation, currency: AccountingCurrency): string 
 function OperationItem({
   operation,
   currency,
+  current,
   onOpen,
 }: {
   operation: Operation;
   currency: AccountingCurrency;
+  current: boolean;
   onOpen: () => void;
 }) {
   const needs = operation.status === 'needs-classification';
@@ -273,13 +346,17 @@ function OperationItem({
       (operation.counterAsset ? ` → ${ticker(operation.counterAsset)}` : ''),
   ].join(' ');
   return (
-    <li>
+    <li data-operation={operation.id} aria-current={current || undefined}>
       <button
         type="button"
-        className={`transactions-item${needs ? ' transactions-item--needs' : ''}`}
+        className={`transactions-item${needs ? ' transactions-item--needs' : ''}${current ? ' transactions-item--open' : ''}`}
         onClick={onOpen}
       >
-        <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} />
+        <AssetIcon
+          symbol={operation.asset.symbol}
+          name={operation.asset.name}
+          network={operation.asset.network}
+        />
         <span className="transactions-item__main">
           <span className="transactions-item__title">{title}</span>
           {needs ? (
@@ -288,7 +365,8 @@ function OperationItem({
             </span>
           ) : (
             <span className="transactions-item__detail">
-              {operation.status === 'hidden' && 'Hidden · '}
+              {(operation.status === 'hidden' || operation.status === 'dust') &&
+                `${statusLabels[operation.status]} · `}
               {placeLabel(operation)}
               {at !== 'No time' && ` · ${at}`}
             </span>
@@ -303,56 +381,114 @@ function OperationItem({
   );
 }
 
+/** Brings a row into view unless it is already on screen; the drawer covers only its right. */
+function reveal(row: Element) {
+  const box = row.getBoundingClientRect();
+  if (box.height > 0 && box.top >= 0 && box.bottom <= window.innerHeight) return;
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? true;
+  row.scrollIntoView?.({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+}
+
+// The same question asked of the cache with or without a period, so the other pages' reads
+// (no period) and this one's share what they share.
+const lastList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  range ? cachedReads.operations.last(currency, range) : cachedReads.operations.last(currency);
+const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  range ? cachedReads.operations.load(currency, range) : cachedReads.operations.load(currency);
+
 // Every operation the app knows in one list (list-all-operations, OPS-4).
 export default function TransactionsPage() {
-  const [list, setList] = useState<OperationList | null>(null);
+  // No currency in the address means the owner's main currency (Settings).
+  const [asked] = useAskedCurrency();
+  const [params, setParams] = useSearchParams();
+  // OPS-PERIOD: the days shown live in the address (?from=, ?to=) and narrow the list on the
+  // server; none means the whole history.
+  const from = params.get('from');
+  const to = params.get('to');
+  const period = useMemo(() => periodOf(from, to), [from, to]);
+  // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
+  // loads, instead of a loading card that makes the page jump.
+  const [list, setList] = useState<OperationList | null>(() => lastList(asked, period) ?? null);
   const [failed, setFailed] = useState(false);
+  // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
+  // ASSET-HIDE: so are the assets the owner hid from their own pages.
+  const [hiddenTokens, setHiddenTokens] = useState<ReadonlySet<string>>(() =>
+    leftOutSymbols(cachedReads.wallets.last() ?? [], cachedReads.hiddenAssets.last() ?? []),
+  );
   const [search, setSearch] = useState('');
+  // OPS-OPEN: a link from another page (the wallet page) names the transaction to open.
   const [openId, setOpenId] = useState<string | null>(null);
   // The Edit window of the prototype (M9); new transactions open from the page header.
   const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
-  const [params, setParams] = useSearchParams();
   // The router commits an address change later, in a transition; a second filter change
   // before that builds on the first one, not on the address it replaces.
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
 
-  // No currency in the address means the owner's main currency (Settings).
-  const [asked] = useAskedCurrency();
   const narrow = useNarrowScreen();
+  const listRef = useRef<HTMLElement>(null);
 
   // A switched currency keeps the rows on screen until its values arrive.
-  const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
-    const request = ++latest.current;
-    setFailed(false);
-    if (fresh) setList(null);
-    try {
-      const next = await operationsApi.list(currency);
-      if (request !== latest.current) return null;
-      setList(next);
-      return next;
-    } catch {
-      if (request === latest.current) setFailed(true);
-      return null;
-    }
-  }, []);
+  const load = useCallback(
+    async (
+      currency: AccountingCurrency | undefined,
+      range: OperationRange | undefined,
+      fresh: boolean,
+    ) => {
+      const request = ++latest.current;
+      setFailed(false);
+      if (fresh) setList(lastList(currency, range) ?? null);
+      try {
+        const next = await loadList(currency, range);
+        if (request !== latest.current) return null;
+        setList(next);
+        return next;
+      } catch {
+        if (request === latest.current) setFailed(true);
+        return null;
+      }
+    },
+    [],
+  );
   useEffect(() => {
-    void load(asked, false);
-  }, [load, asked]);
+    void load(asked, period, false);
+  }, [load, asked, period]);
+  useEffect(() => {
+    let live = true;
+    // Without the wallets or the hidden assets the filter lists every asset, as before.
+    Promise.all([
+      cachedReads.wallets.load().catch(() => []),
+      cachedReads.hiddenAssets.load().catch(() => []),
+    ]).then(([wallets, hidden]) => live && setHiddenTokens(leftOutSymbols(wallets, hidden)));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // Filters live in the address, so other screens can link to "Needs classification".
   const status = params.get('status');
-  const view: View = (
-    status === 'needs-classification' || status === 'hidden'
-      ? status
-      : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all')
-  ) as View;
+  const view: View = isStatusView(status)
+    ? status
+    : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all');
   const asset = params.get('asset') ?? '';
   const place = params.get('account') ?? '';
+  // COST-UNKNOWN: the asset page links the rows that leave its cost basis empty.
+  const unknownCost = params.get('cost') === 'unknown' && asset !== '';
+  const kind = params.get('type') ?? '';
   const replaceParams = (next: URLSearchParams) => {
     pending.current = { from: params, next };
     setParams(next, { replace: true });
   };
+  // OPS-OPEN: the address names the transaction only to get here; it opens and the address
+  // goes back to the filters, so Back returns to the page that linked and a reload keeps the list.
+  const linked = params.get('open');
+  useEffect(() => {
+    if (!linked) return;
+    setOpenId(linked);
+    const next = new URLSearchParams(params);
+    next.delete('open');
+    replaceParams(next);
+  });
   const update = (changes: Record<string, string>) => {
     const base = pending.current?.from === params ? pending.current.next : params;
     const next = new URLSearchParams(base);
@@ -364,43 +500,78 @@ export default function TransactionsPage() {
   };
   const setView = (next: View) =>
     update({
-      status: next === 'needs-classification' || next === 'hidden' ? next : '',
-      source: next === 'all' || next === 'needs-classification' || next === 'hidden' ? '' : next,
+      status: isStatusView(next) ? next : '',
+      source: next === 'all' || isStatusView(next) ? '' : next,
     });
 
   const operations = list?.operations ?? [];
+  // OPS-PERIOD: the options are those of the period shown.
+  const seenAssets = useRef(new Map<string, string>());
+  const seenPlaces = useRef(new Map<string, string>());
+  const seenKinds = useRef(new Map<string, string>());
   const assetOptions = useMemo(
     () =>
-      options(operations, (operation) =>
-        [operation.asset, operation.counterAsset].flatMap((item) =>
-          item
-            ? [[assetKey(item), item.symbol?.toUpperCase() ?? item.name] as [string, string]]
-            : [],
-        ),
+      options(
+        operations,
+        (operation) =>
+          [operation.asset, operation.counterAsset].flatMap((item) =>
+            item &&
+            // A token the wallets leave out is no asset to filter by, unless it is chosen now.
+            (assetKey(item) === asset || !(item.symbol && hiddenTokens.has(item.symbol)))
+              ? [[assetKey(item), item.symbol?.toUpperCase() ?? item.name] as [string, string]]
+              : [],
+          ),
+        asset,
+        seenAssets.current,
       ),
-    [operations],
+    [operations, hiddenTokens, asset],
   );
   const placeOptions = useMemo(
     () =>
-      options(operations, (operation) => {
-        const { accounts, wallets } = places(operation);
-        return [
-          ...accounts.flatMap((item) => (item ? [[item.id, item.name] as [string, string]] : [])),
-          ...wallets.flatMap((item) =>
-            item ? [[`wallet:${item.id}`, walletLabel(item)] as [string, string]] : [],
-          ),
-        ];
-      }),
-    [operations],
+      options(
+        operations,
+        (operation) => {
+          const { accounts, wallets } = places(operation);
+          return [
+            ...accounts.flatMap((item) => (item ? [[item.id, item.name] as [string, string]] : [])),
+            ...wallets.flatMap((item) =>
+              item ? [[`wallet:${item.id}`, walletLabel(item)] as [string, string]] : [],
+            ),
+          ];
+        },
+        place,
+        seenPlaces.current,
+      ),
+    [operations, place],
+  );
+  const kindOptions = useMemo(
+    () =>
+      options(
+        operations,
+        (operation) => [[typeKey(operation), typeLabel(operation)] as [string, string]],
+        kind,
+        seenKinds.current,
+      ),
+    [operations, kind],
   );
   const query = search.trim().toLowerCase();
   // Asset, account and search; the chips choose the view on top of them.
   const matches = (operation: Operation) =>
     (!asset || assetKeys(operation).includes(asset)) &&
     (!place || placeKeys(operation).includes(place)) &&
+    (!unknownCost || lacksCost(operation, asset)) &&
+    (!kind || typeKey(operation) === kind) &&
     (!query || searchable(operation).includes(query));
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
-  const filtered = view !== 'all' || asset || place || query;
+  // INFINITE: twenty rows first, twenty more each time the end of the list is reached; a
+  // changed filter, period or search starts again at twenty.
+  const paged = useInfinite(visible, {
+    resetKey: `${view}|${asset}|${place}|${kind}|${from ?? ''}|${to ?? ''}|${query}|${unknownCost}`,
+    keep: 'transactions',
+  });
+  // A reload comes back to the rows and the place the owner was at.
+  useScrollMemory('transactions', list !== null && !failed);
+  const filtered = view !== 'all' || asset || place || kind || query || period || unknownCost;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
@@ -410,17 +581,49 @@ export default function TransactionsPage() {
   const currency = list?.quoteCurrency ?? 'USD';
   // One group per UTC day, under a heading as in the prototype.
   const days: { heading: string; operations: Operation[] }[] = [];
-  for (const operation of visible) {
+  for (const operation of paged.rows) {
     const heading = dayHeading(operation.occurredAt, list?.at ?? operation.occurredAt);
     const last = days.at(-1);
     if (last?.heading === heading) last.operations.push(operation);
     else days.push({ heading, operations: [operation] });
   }
+  // OPS-DELETE: an added, changed or deleted transaction keeps the rows on screen until the
+  // new list replaces them, so nothing jumps.
   const changed = () => {
     setDialog(null);
     setOpenId(null);
-    void load(asked, true);
+    void load(asked, period, false);
   };
+  // CLS-NEXT: the open transaction is marked in the list and brought into view, so the one
+  // opened after a classification can be found when the drawer closes.
+  const rowOf = useCallback(
+    (id: string) =>
+      [...(listRef.current?.querySelectorAll<HTMLElement>('[data-operation]') ?? [])].find(
+        (row) => row.dataset.operation === id,
+      ),
+    [],
+  );
+  // A transaction opened from elsewhere, or the next one to classify, may be further down than
+  // the rows on screen: the list grows to it once, when it is first found, and then scrolls to it.
+  const turned = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openId) {
+      turned.current = null;
+      return;
+    }
+    if (turned.current === openId) return;
+    const at = visible.findIndex((operation) => operation.id === openId);
+    if (at < 0) return;
+    turned.current = openId;
+    paged.reveal(at);
+  });
+  const shown = paged.rows.length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: growing the list puts the row on screen.
+  useEffect(() => {
+    if (!openId) return;
+    const row = rowOf(openId);
+    if (row) reveal(row);
+  }, [openId, rowOf, shown]);
   const [notice, setNotice] = useState<string | null>(null);
   const open = (id: string) => {
     setNotice(null);
@@ -431,8 +634,14 @@ export default function TransactionsPage() {
   // backlog is worked through without going back to the list.
   const classified = async (label: string) => {
     const was = opened;
-    const next = await load(asked, false);
+    const next = await load(asked, period, false);
     if (!next || !was) return;
+    // BYBIT-GAP-DELETE: the record is gone from the list.
+    if (label === 'deleted') {
+      setOpenId(null);
+      setNotice('Record deleted. The wallet shows the difference again.');
+      return;
+    }
     const said =
       label === 'hidden'
         ? 'Hidden from calculations.'
@@ -442,8 +651,17 @@ export default function TransactionsPage() {
     const waiting = next.operations.filter(
       (item) => item.status === 'needs-classification' && item.id !== was.id,
     );
-    // The next one comes from the rows the filters show, so a wallet is finished first.
-    const following = was.status === 'needs-classification' ? waiting.find(matches) : undefined;
+    // CLS-ADJACENT: the next one is the neighbour in time among the rows the filters show:
+    // the next older one below it in the list, or at the end the next newer one above it.
+    const open = new Map(waiting.filter(matches).map((item) => [item.id, item]));
+    const at = operations.findIndex((item) => item.id === was.id);
+    const older = operations.slice(at + 1).find((item) => open.has(item.id));
+    const newer = operations
+      .slice(0, Math.max(at, 0))
+      .reverse()
+      .find((item) => open.has(item.id));
+    const neighbour = was.status === 'needs-classification' ? (older ?? newer) : undefined;
+    const following = neighbour && open.get(neighbour.id);
     if (following) {
       setOpenId(following.id);
       setNotice(`${said} Here is the next one.`);
@@ -474,18 +692,36 @@ export default function TransactionsPage() {
           {notice}
         </p>
       )}
+      {list !== null && !failed && (
+        <>
+          <DuplicateProposals
+            onReplaced={(message) => {
+              setNotice(message);
+              void load(asked, period, false);
+            }}
+          />
+          <TransferProposals
+            onJoined={(message) => {
+              setNotice(message);
+              void load(asked, period, false);
+            }}
+          />
+        </>
+      )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your transactions. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load(asked, true)}>
+          <button
+            type="button"
+            className="shell-button"
+            onClick={() => void load(asked, period, true)}
+          >
             Try again
           </button>
         </section>
       ) : list === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading transactions…
-        </section>
-      ) : operations.length === 0 ? (
+        <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
+      ) : operations.length === 0 && !period ? (
         <section className="shell-card shell-empty" aria-labelledby="transactions-empty">
           <h2 id="transactions-empty">No transactions yet</h2>
           <p>
@@ -494,20 +730,23 @@ export default function TransactionsPage() {
           </p>
           {/* Add transaction is in the page header. */}
           <div className="transactions-actions">
-            <Link className="shell-button" to="/manual-accounts">
-              Open manual accounts
-            </Link>
-            <Link className="shell-button" to="/wallet-addresses">
-              Open wallet addresses
+            <Link className="shell-button" to="/wallets">
+              Open wallets
             </Link>
           </div>
         </section>
       ) : (
-        <section className="shell-card" aria-label="All transactions">
+        <section className="shell-card" aria-label="All transactions" ref={listRef}>
           <div className="portfolio-toolbar">
             <div className="portfolio-chips" role="group" aria-label="Filter transactions">
               {views.map(([key, label]) => {
-                const count = operations.filter((operation) => inView(operation, key)).length;
+                // OPS-COUNTS: what the chip would show with the other filters as they are.
+                const count = operations.filter(
+                  (operation) => inView(operation, key) && matches(operation),
+                ).length;
+                // The Dust chip appears once a threshold is set or something is dust.
+                if (key === 'dust' && count === 0 && list.dustThresholdUsd === null && view !== key)
+                  return null;
                 return (
                   <button
                     key={key}
@@ -545,6 +784,22 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
+              <label className="transactions-filter">
+                <span>Type</span>
+                <select value={kind} onChange={(event) => update({ type: event.target.value })}>
+                  <option value="">All types</option>
+                  {kindOptions.map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <PeriodFilter
+                period={period}
+                today={new Date().toISOString().slice(0, 10)}
+                onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
+              />
               <input
                 className="transactions-search"
                 type="search"
@@ -555,10 +810,28 @@ export default function TransactionsPage() {
               />
             </div>
           </div>
+          {unknownCost && (
+            <p className="transactions-info">
+              Incoming transactions without a purchase price, which leave the cost basis and profit
+              of this asset incomplete. Open one and answer it as a purchase, income or a transfer
+              from your own wallet to give it a cost.{' '}
+              <button type="button" className="shell-link" onClick={() => update({ cost: '' })}>
+                Show all of this asset
+              </button>
+            </p>
+          )}
+          {view === 'dust' && (
+            <p className="transactions-info transactions-dust-note">
+              {list.dustThresholdUsd === null
+                ? 'No dust threshold is set, so incoming wallet transactions ask to be classified, except those of tokens no price source lists or that you hid.'
+                : `Incoming wallet transactions worth less than ${money(list.dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`}{' '}
+              <Link to="/preferences">Change the threshold in Settings</Link>
+            </p>
+          )}
           {visible.length === 0 ? (
             <div className="portfolio-none transactions-none">
               <p>
-                {view === 'needs-classification' && !asset && !place && !query
+                {view === 'needs-classification' && !asset && !place && !kind && !query && !period
                   ? 'All caught up'
                   : 'No transactions match'}
               </p>
@@ -577,6 +850,7 @@ export default function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         currency={currency}
+                        current={operation.id === openId}
                         onOpen={() => open(operation.id)}
                       />
                     ))}
@@ -587,6 +861,11 @@ export default function TransactionsPage() {
           ) : (
             <div className="portfolio-table-wrap">
               <table className="portfolio-table transactions-table" aria-label="Transactions">
+                <colgroup>
+                  {columns.map((column) => (
+                    <col key={column} className={`transactions-col--${column}`} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
                     <th scope="col">Type</th>
@@ -599,13 +878,12 @@ export default function TransactionsPage() {
                     </th>
                     <th scope="col">Account</th>
                     <th scope="col">Status</th>
-                    <th scope="col">Source</th>
                   </tr>
                 </thead>
                 {days.map((group) => (
                   <tbody key={group.heading}>
                     <tr className="transactions-day">
-                      <th scope="rowgroup" colSpan={7}>
+                      <th scope="rowgroup" colSpan={columns.length}>
                         {group.heading}
                       </th>
                     </tr>
@@ -614,6 +892,7 @@ export default function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         currency={currency}
+                        current={operation.id === openId}
                         onOpen={() => open(operation.id)}
                       />
                     ))}
@@ -622,13 +901,16 @@ export default function TransactionsPage() {
               </table>
             </div>
           )}
+          {paged.more && <LoadMore {...paged.more} label="transactions" />}
           <p className="shell-note portfolio-note">
             {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
-            {operations.length === 1 ? 'transaction' : 'transactions'}, newest first.{' '}
+            {operations.length === 1 ? 'transaction' : 'transactions'}
+            {period ? ' in the period' : ''}, newest first.{' '}
             {currency === 'USD'
               ? 'Values are in USD as recorded'
               : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
-            ; ≈ marks an estimate at the latest stored price. Dates and times are in UTC.
+            ; ≈ marks an estimate at the price stored for the transaction's time. Dates and times
+            are in UTC.
           </p>
         </section>
       )}
@@ -641,9 +923,13 @@ export default function TransactionsPage() {
           onClassified={(label) => void classified(label)}
           currency={currency}
           operations={operations}
+          dustThresholdUsd={list?.dustThresholdUsd ?? null}
           onClose={() => {
+            const closed = opened.id;
             setOpenId(null);
             setNotice(null);
+            // The keyboard comes back to the row the drawer showed last.
+            window.requestAnimationFrame(() => rowOf(closed)?.querySelector('button')?.focus());
           }}
           onEdit={(operation) => {
             setOpenId(null);

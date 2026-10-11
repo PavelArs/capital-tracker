@@ -1,16 +1,19 @@
 import { accountingApi } from '@api/accounting.api';
 import { assetRewardsApi } from '@api/asset-rewards.api';
+import { cachedReads } from '@api/cached-reads';
 import { fxRatesApi } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
 import { ownedTransfersApi } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
-import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type DependentOperation, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
+import CloseButton from '../shell/CloseButton';
+import { hiddenTokenSymbols } from '../wallets/WalletParts';
+import { unitPrice } from './add-asset';
 import {
   addDecimal,
   bankRate,
@@ -24,12 +27,15 @@ import {
   isPurposeKind,
   MAX_COMMENT_LENGTH,
   needsRate,
+  numberProblem,
   occurredAt,
   type PaidIn,
   paidIn,
   positive,
+  priceFigure,
   problems,
   purposeTradeFromEntry,
+  rateDate,
   rewardFromEntry,
   spends,
   subtractDecimal,
@@ -40,6 +46,7 @@ import {
   usdTotal,
   valued,
   valueOptional,
+  withDefaultTime,
 } from './add-transaction';
 import { money, price, quantity } from './format';
 
@@ -73,22 +80,75 @@ const shortDate = new Intl.DateTimeFormat('en-US', {
 /** Mar 1, 2026, as the prototype and the Transactions list write dates. */
 export const dateText = (iso: string) => shortDate.format(new Date(iso));
 
+/** The message of a 409 that names the transfer itself as the first operation left short. */
+const OWN_SHORTFALL = 'An account does not hold enough for this transfer';
+
 /** The operation a 409 names as depending on the change, if the server named one. */
 export function dependentOf(error: unknown): DependentOperation | null {
   const data = isAxiosError(error) ? error.response?.data : undefined;
-  return isAxiosError(error) && error.response?.status === 409 && data?.dependent
+  return isAxiosError(error) &&
+    error.response?.status === 409 &&
+    data?.dependent &&
+    data.message !== OWN_SHORTFALL
     ? (data.dependent as DependentOperation)
     : null;
 }
 
-function failure(error: unknown): string {
+/** The account a new transfer would leave short, when the server named it. */
+export function shortOf(error: unknown): DependentOperation | null {
+  const data = isAxiosError(error) ? error.response?.data : undefined;
+  return isAxiosError(error) &&
+    error.response?.status === 409 &&
+    data?.dependent &&
+    data.message === OWN_SHORTFALL
+    ? (data.dependent as DependentOperation)
+    : null;
+}
+
+/** An account whose records start after the date of the change, when the server named it. */
+export function coverageOf(
+  error: unknown,
+): { accountId: string; coverageFrom: string | null } | null {
+  const data = isAxiosError(error) ? error.response?.data : undefined;
+  return isAxiosError(error) && error.response?.status === 409 && data?.coverage
+    ? (data.coverage as { accountId: string; coverageFrom: string | null })
+    : null;
+}
+
+/** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
+export const shortText = (account: string, coin: string, date: string) =>
+  `${account} does not hold enough ${coin} on ${dateText(date)} for this transfer.`;
+/**
+ * The account's records start later than the transaction, so nothing can move in or out; with no
+ * start date its records have not started: it was opened with balances.
+ */
+export const coverageText = (account: string, from: string | null, date: string) =>
+  from === null
+    ? `The records of ${account} have not started: it was opened with balances, so start them on Manual accounts first.`
+    : `The records of ${account} start on ${dateText(from)}, after this transaction on ${dateText(date)}.`;
+
+function failure(
+  error: unknown,
+  accounts: readonly Account[] | null,
+  coin: string,
+  date: string,
+): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   const message = isAxiosError(error) ? String(error.response?.data?.message ?? '') : '';
   const dependent = dependentOf(error);
+  const name = (id: string) => accounts?.find((item) => item.id === id)?.name ?? 'The account';
+  const short = shortOf(error);
+  const coverage = coverageOf(error);
   if (status === undefined)
     return 'Could not reach the server. Try again; the same request will not save the transaction twice.';
   if (status === 409 && message.includes('Bank of Russia rate'))
     return 'No Bank of Russia rate is stored for this date. Enter the rate you paid.';
+  if (short)
+    return `${shortText(name(short.accountId), coin, short.occurredAt)} Add the receipts that bring it there first.`;
+  if (coverage)
+    return coverage.coverageFrom === null
+      ? coverageText(name(coverage.accountId), null, date)
+      : `${coverageText(name(coverage.accountId), coverage.coverageFrom, date)} Choose a later date.`;
   if (dependent)
     return `A later transaction on ${dateText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
   if (status === 409 || status === 422)
@@ -99,6 +159,10 @@ function failure(error: unknown): string {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** The price per unit a total and an amount imply, exact before it is shown. */
+const derivedPrice = (total: string, amount: string) =>
+  priceFigure(Number(unitPrice(total, amount)));
 
 export async function journalAccounts(): Promise<Account[]> {
   const accounts = [];
@@ -174,6 +238,39 @@ type Availability = { key: string; quantity: string | null };
 type OtherAsset = { ticker: string; name: string };
 const tickerPattern = /^[A-Za-z0-9.-]{1,32}$/;
 
+const ASSET_CHIPS = 6;
+
+/**
+ * The assets by their share of the portfolio, the largest first, so the one the owner holds most
+ * of is the first choice. Assets with no share keep the order they came in.
+ */
+export function byAllocation(
+  assets: readonly PortfolioAsset[],
+  allocation: ReadonlyMap<string, number>,
+): PortfolioAsset[] {
+  return [...assets].sort((a, b) => (allocation.get(b.id) ?? 0) - (allocation.get(a.id) ?? 0));
+}
+
+/**
+ * The asset chips are for the few coins in daily use: with more than six assets the held ones
+ * and the ones with a market price come first (in the order given, which is by allocation), the
+ * rest sit behind "More assets", and the chosen one is always a chip.
+ */
+export function splitAssets(
+  assets: readonly PortfolioAsset[],
+  chosen: string,
+  market: ReadonlyMap<string, string>,
+  held: ReadonlyMap<string, number> = new Map(),
+): { shown: PortfolioAsset[]; more: PortfolioAsset[] } {
+  if (assets.length <= ASSET_CHIPS) return { shown: [...assets], more: [] };
+  const first = (item: PortfolioAsset) => market.has(item.id) || held.has(item.id);
+  const ranked = [...assets.filter(first), ...assets.filter((item) => !first(item))];
+  const shown = ranked.slice(0, ASSET_CHIPS);
+  const pick = assets.find((item) => item.id === chosen);
+  if (pick && !shown.includes(pick)) shown[ASSET_CHIPS - 1] = pick;
+  return { shown, more: ranked.filter((item) => !shown.includes(item)) };
+}
+
 // "Add transaction" from the accepted prototype: buy or sell, paid in USD, USDT, USDC, EUR or RUB.
 export default function AddTransactionDialog({ onClose, onSaved, editing }: Props) {
   const [initial] = useState(() => (editing ? entryFromOperation(editing) : blankEntry()));
@@ -188,6 +285,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const otherRequest = useRef<{ ticker: string; requestId: string } | null>(null);
   // Latest market price in USD per asset, for the "Market today" hint.
   const [market, setMarket] = useState<ReadonlyMap<string, string>>(new Map());
+  // The share of the portfolio of each asset held, for the order of the choices.
+  const [allocation, setAllocation] = useState<ReadonlyMap<string, number>>(new Map());
   const [cashAvailability, setCashAvailability] = useState<Availability | null>(null);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -198,10 +297,17 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [unit, setUnit] = useState(() => {
     const units = positive(initial.amount);
     const sum = positive(initial.total);
-    return editing && units && sum ? trimmed(Number(sum) / Number(units), 2) : '';
+    return editing && units && sum ? derivedPrice(sum, units) : '';
   });
+  // Which of price and total the owner typed last; an edit starts from the recorded total.
+  const driver = useRef<'unit' | 'total'>(editing ? 'total' : 'unit');
   const [bank, setBank] = useState<{ key: string; rate: string | null } | null>(null);
   const [tried, setTried] = useState(false);
+  // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
+  const [left, setLeft] = useState<ReadonlySet<EntryProblem>>(new Set());
+  // The date and time the rate and balance lookups follow: they move when the owner leaves the
+  // field, not on every keystroke of a half-typed date.
+  const [settled, setSettled] = useState(() => ({ date: initial.date, time: initial.time }));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
@@ -235,11 +341,47 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   useEffect(() => {
     let live = true;
-    Promise.all([portfolioAssetsApi.listAll(), journalAccounts()])
-      .then(([allAssets, withJournal]) => {
+    // TOKEN-HIDE: the coins of tokens the wallets leave out are not offered; the list still shows
+    // them when the wallets cannot be read, and an edit keeps the asset it was recorded with.
+    const hiddenTokens = cachedReads.wallets
+      .load()
+      .then(hiddenTokenSymbols)
+      .catch(() => new Set<string>());
+    // ASSET-HIDE: nor are the assets the owner hid from their own pages.
+    const hiddenAssets = cachedReads.hiddenAssets
+      .load()
+      .then((hidden) => new Set(hidden.map((asset) => asset.instrumentId)))
+      .catch(() => new Set<string>());
+    // The valuation is optional: the market hint and the order by allocation need it, nothing else.
+    const valuation = cachedReads.portfolio.load('USD').catch(() => null);
+    Promise.all([
+      portfolioAssetsApi.listAll(),
+      journalAccounts(),
+      hiddenTokens,
+      hiddenAssets,
+      valuation,
+    ])
+      .then(([allAssets, withJournal, hidden, hiddenIds, report]) => {
         if (!live) return;
-        const tradable = allAssets.filter(
-          (asset) => asset.assetType !== 'fiat' || asset.id === initial.instrumentId,
+        const prices = new Map<string, string>();
+        const shares = new Map<string, number>();
+        for (const item of report?.assets ?? []) {
+          if (item.priceSource === 'market' && item.price)
+            prices.set(item.instrumentId, item.price.value);
+          const share = Number(item.allocationPercent);
+          if (share > 0) shares.set(item.instrumentId, share);
+        }
+        setMarket(prices);
+        setAllocation(shares);
+        const tradable = byAllocation(
+          allAssets.filter(
+            (asset) =>
+              asset.id === initial.instrumentId ||
+              (asset.assetType !== 'fiat' &&
+                !hiddenIds.has(asset.id) &&
+                !(asset.assetType === 'crypto' && asset.symbol && hidden.has(asset.symbol))),
+          ),
+          shares,
         );
         setAssets(tradable);
         setAllAssets(allAssets);
@@ -256,27 +398,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     };
   }, [editing, initial.instrumentId]);
 
-  useEffect(() => {
-    let live = true;
-    portfolioValuationApi
-      .get('USD')
-      .then((valuation) => {
-        if (!live) return;
-        const prices = new Map<string, string>();
-        for (const item of valuation.assets)
-          if (item.priceSource === 'market' && item.price)
-            prices.set(item.instrumentId, item.price.value);
-        setMarket(prices);
-      })
-      // The hint is optional: without prices the window works as before.
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
-
   // The Bank of Russia rate of the chosen date fills the rate field until the owner edits it.
-  const rateKey = needsRate(entry.currency) ? `${entry.currency}:${entry.date}` : null;
+  const settledEntry = { ...entry, ...settled };
+  const rateKey = needsRate(entry.currency)
+    ? `${entry.currency}:${rateDate(settledEntry, new Date(), Boolean(editing))}`
+    : null;
   useEffect(() => {
     if (!rateKey) return;
     const [currency, date] = rateKey.split(':') as ['EUR' | 'RUB', string];
@@ -290,22 +416,26 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       live = false;
     };
   }, [rateKey]);
-  const prefill = bank && bank.key === rateKey ? bank.rate : null;
-  const rateLoading = rateKey !== null && bank?.key !== rateKey;
-  const shown: TransactionEntry = entry.rateEdited ? entry : { ...entry, rate: prefill ?? '' };
+  // While the date or time is still being typed the stored rate belongs to the old moment.
+  const pending = settled.date !== entry.date || settled.time !== entry.time;
+  const prefill = !pending && bank && bank.key === rateKey ? bank.rate : null;
+  const rateLoading = rateKey !== null && (pending || bank?.key !== rateKey);
+  // An edit keeps its recorded instant; a new entry for today without a time is now.
+  const timed = editing ? entry : withDefaultTime(entry, new Date());
+  const shown: TransactionEntry = entry.rateEdited ? timed : { ...timed, rate: prefill ?? '' };
 
   // A sale cannot take more than the account holds on its date or later (OPS-OVERSPEND), nor
   // can an expense, a gift sent, a fee or a transfer with its fee.
   const sell = spends(kind);
   const buy = kind === 'buy';
   const transfer = kind === 'transfer';
-  const at = occurredAt(entry);
+  const at = occurredAt(editing ? settledEntry : withDefaultTime(settledEntry, new Date()));
   const availableKey =
     sell &&
     accountId &&
     entry.instrumentId &&
-    /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
-    (!entry.time || /^\d{2}:\d{2}$/.test(entry.time))
+    /^\d{4}-\d{2}-\d{2}$/.test(settled.date) &&
+    (!settled.time || /^\d{2}:\d{2}$/.test(settled.time))
       ? `${accountId}|${entry.instrumentId}|${at}`
       : null;
   useEffect(() => {
@@ -337,8 +467,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     other?.ticker.trim().toUpperCase() !== entry.currency &&
     cashAsset &&
     accountId &&
-    /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
-    (!entry.time || /^\d{2}:\d{2}$/.test(entry.time))
+    /^\d{4}-\d{2}-\d{2}$/.test(settled.date) &&
+    (!settled.time || /^\d{2}:\d{2}$/.test(settled.time))
       ? `${accountId}|${cashAsset.id}|${at}`
       : null;
   useEffect(() => {
@@ -375,7 +505,17 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const checked: TransactionEntry = other
     ? { ...shown, instrumentId: otherValid ? 'other' : '' }
     : shown;
-  const found = tried ? problems(checked, today(), kind) : new Set<EntryProblem>();
+  const all = problems(checked, today(), kind);
+  const overshown = overspent && (tried || left.has('amount'));
+  const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
+  /** Marks a field as left, so its problem, if any, shows from now on. */
+  const leave = (problem: EntryProblem) => () =>
+    setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
+  /** Date and time settle when focus leaves them, and the lookups follow. */
+  const settle = (problem: 'date' | 'time') => () => {
+    leave(problem)();
+    setSettled({ date: entry.date, time: entry.time });
+  };
   const priced = kind === 'buy' || kind === 'sell';
   const usd = priced ? usdTotal(shown) : null;
   const accountName = accounts?.find((item) => item.id === accountId)?.name ?? 'This account';
@@ -399,9 +539,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     if (spends(next)) setOther(null);
   };
 
-  // Price per unit and total follow each other: the field typed last decides.
+  // Price per unit and total follow each other: the field typed last decides. A total that
+  // was typed (or recorded) is never recomputed from the shown, rounded price.
   const setAmount = (amount: string) => {
     const units = positive(amount);
+    if (driver.current === 'total') {
+      update({ amount });
+      const sum = positive(entry.total);
+      if (units && sum) setUnit(derivedPrice(sum, units));
+      return;
+    }
     const each = positive(unit);
     update({
       amount,
@@ -409,23 +556,25 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     });
   };
   const setUnitPrice = (value: string) => {
+    driver.current = 'unit';
     setUnit(value);
     const units = positive(entry.amount);
     const each = positive(value);
     if (units && each) update({ total: trimmed(Number(units) * Number(each), 2) });
   };
   const setTotal = (total: string) => {
+    driver.current = 'total';
     update({ total });
     const units = positive(entry.amount);
     const sum = positive(total);
-    if (units && sum) setUnit(trimmed(Number(sum) / Number(units), 2));
+    if (units && sum) setUnit(derivedPrice(sum, units));
   };
 
   // The asset's latest market price in the price field's currency (prototype "Market today").
   const marketUsd = asset ? market.get(asset.id) : undefined;
   const rateShown = needsRate(entry.currency) ? positive(shown.rate) : '1';
   const marketPrice =
-    marketUsd && rateShown ? trimmed(Number(marketUsd) * Number(rateShown), 2) : null;
+    marketUsd && rateShown ? priceFigure(Number(marketUsd) * Number(rateShown)) : null;
   // What the amount is worth at today's market price, for the Value field.
   const marketValue =
     marketUsd && typedAmount ? trimmed(Number(marketUsd) * Number(typedAmount), 2) : null;
@@ -460,6 +609,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // Enter inside the date or time: settle it first, the rate and balance for it load, then save.
+    if (pending) {
+      setSettled({ date: entry.date, time: entry.time });
+      return;
+    }
     setTried(true);
     const account = accounts?.find((item) => item.id === accountId);
     const receiver = accounts?.find((item) => item.id === toAccountId);
@@ -538,7 +692,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       }
       onSaved();
     } catch (caught) {
-      setError(failure(caught));
+      setError(failure(caught, accounts, symbol, occurredAt(shown)));
       setSaving(false);
     }
   };
@@ -554,6 +708,12 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` }
       : {};
   const ready = assets !== null && accounts !== null;
+  const { shown: shownAssets, more: moreAssets } = splitAssets(
+    assets ?? [],
+    entry.instrumentId,
+    market,
+    allocation,
+  );
 
   return (
     <div className="portfolio-scrim">
@@ -567,6 +727,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
         <form onSubmit={submit} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
+            <CloseButton onClick={onClose} disabled={saving} />
           </div>
           <div className="portfolio-dialog__body">
             <div className="portfolio-field">
@@ -655,13 +816,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               </p>
             ) : accounts.length === 0 || assets.length === 0 ? (
               <p className="shell-note" role="status">
-                {accounts.length === 0
-                  ? 'Add a wallet or account first on the '
-                  : 'Add an asset first on the Portfolio page, then record its trades. '}
-                {accounts.length === 0 && (
+                {accounts.length === 0 ? (
                   <>
-                    <Link to="/manual-accounts">manual accounts</Link> page.
+                    Add a wallet first on the <Link to="/wallets">Wallets</Link> page, or an asset
+                    with a balance on the Portfolio page.
                   </>
+                ) : (
+                  'Add an asset first on the Portfolio page, then record its trades.'
                 )}
               </p>
             ) : (
@@ -671,7 +832,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     Asset
                   </span>
                   <div className="portfolio-chips" role="group" aria-labelledby={`${id}-asset`}>
-                    {assets.map((item) => (
+                    {shownAssets.map((item) => (
                       <button
                         key={item.id}
                         type="button"
@@ -691,6 +852,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         {item.symbol ?? item.name}
                       </button>
                     ))}
+                    {moreAssets.length > 0 && (
+                      <select
+                        className="portfolio-input portfolio-chip-select"
+                        aria-label="More assets"
+                        value=""
+                        onChange={(event) => {
+                          setOther(null);
+                          update({ instrumentId: event.target.value });
+                        }}
+                      >
+                        <option value="">More assets…</option>
+                        {moreAssets.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     {!sell && !editing && (
                       <button
                         type="button"
@@ -717,6 +896,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         autoComplete="off"
                         value={other.ticker}
                         onChange={(event) => setOther({ ...other, ticker: event.target.value })}
+                        onBlur={leave('instrument')}
                         {...invalid('instrument')}
                       />
                       {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
@@ -750,13 +930,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         placeholder="0.00"
                         value={entry.amount}
                         onChange={(event) => setAmount(event.target.value)}
-                        {...(overspent
+                        onBlur={leave('amount')}
+                        {...(overshown
                           ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
                           : invalid('amount'))}
                       />
                       <span className="portfolio-affix__suffix">{symbol}</span>
                     </span>
-                    {fieldError('amount') ||
+                    {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
                       (sell && (
                         <Availability
                           id={`${id}-available`}
@@ -765,7 +946,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           date={at}
                           available={available}
                           loading={availableKey !== null && availability?.key !== availableKey}
-                          over={overspent}
+                          over={overshown}
                           onUseAll={useAll}
                         />
                       ))}
@@ -781,6 +962,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       max={today()}
                       value={entry.date}
                       onChange={(event) => update({ date: event.target.value })}
+                      onBlur={settle('date')}
                       {...invalid('date')}
                     />
                     {fieldError('date')}
@@ -833,6 +1015,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             placeholder="0.00"
                             value={entry.total}
                             onChange={(event) => setTotal(event.target.value)}
+                            onBlur={leave('total')}
                             {...invalid('total')}
                           />
                           <span className="portfolio-affix__suffix">{entry.currency}</span>
@@ -903,6 +1086,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                               update({ rate: event.target.value, rateEdited: true })
                             }
                             aria-describedby={`${id}-rate-hint`}
+                            onBlur={leave('rate')}
                             {...invalid('rate')}
                           />
                           <span className="portfolio-affix__suffix">
@@ -947,11 +1131,15 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         value={entry.total}
                         onChange={(event) => update({ total: event.target.value })}
                         aria-describedby={`${id}-value-hint`}
+                        onBlur={leave('total')}
                         {...invalid('total')}
                       />
                       <span className="portfolio-affix__suffix">USD</span>
                     </span>
-                    {fieldError('total', 'Enter what it was worth on that date')}
+                    {fieldError(
+                      'total',
+                      numberProblem(entry.total, 'Enter what it was worth on that date'),
+                    )}
                     <span className="portfolio-field__hint" id={`${id}-value-hint`}>
                       What it was worth on that date. {valueHints[kind]}
                       {marketValue && (
@@ -1069,6 +1257,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         type="time"
                         value={entry.time}
                         onChange={(event) => update({ time: event.target.value })}
+                        onBlur={settle('time')}
                         {...invalid('time')}
                       />
                       {fieldError('time')}
@@ -1086,13 +1275,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             placeholder="0.00"
                             value={entry.fee}
                             onChange={(event) => update({ fee: event.target.value })}
+                            onBlur={leave('fee')}
                             {...invalid('fee')}
                           />
                           <span className="portfolio-affix__suffix">
                             {transfer ? symbol : entry.currency}
                           </span>
                         </span>
-                        {fieldError('fee')}
+                        {fieldError('fee', numberProblem(entry.fee, problemText.fee))}
                       </div>
                     )}
                   </div>
@@ -1106,6 +1296,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       placeholder="Optional"
                       value={entry.comment}
                       onChange={(event) => update({ comment: event.target.value })}
+                      onBlur={leave('comment')}
                       {...invalid('comment')}
                     />
                     {fieldError('comment')}

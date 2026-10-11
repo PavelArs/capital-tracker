@@ -1,4 +1,5 @@
 import type { AssetType } from '@api/portfolio-assets.api';
+import type { Network } from '@api/wallet-addresses.api';
 
 /** The colour and glyph an asset keeps on every screen (prototype "aico"). */
 export interface AssetIdentity {
@@ -15,12 +16,28 @@ const known: Record<string, AssetIdentity> = {
   ETH: { color: 'var(--c-eth)', glyph: 'Ξ' },
   SOL: { color: 'var(--c-sol)', glyph: 'S' },
   ZEC: { color: 'var(--c-zec)', glyph: 'Z' },
-  USDT: { color: cash, glyph: '₮' },
-  USDC: { color: cash, glyph: '$' },
+  // EVM-MULTICHAIN: the chains that hold ETH look like themselves, not like Ethereum.
+  BASE: { color: 'var(--c-base)', glyph: 'B' },
+  ARB: { color: 'var(--c-arb)', glyph: 'A' },
+  OP: { color: 'var(--c-op)', glyph: 'O' },
+  POL: { color: 'var(--c-pol)', glyph: 'P' },
+  BNB: { color: 'var(--c-bnb)', glyph: 'B' },
+  AVAX: { color: 'var(--c-avax)', glyph: 'A' },
+  TRX: { color: 'var(--c-trx)', glyph: 'T' },
+  XLM: { color: 'var(--c-xlm)', glyph: 'X' },
+  USDT: { color: 'var(--c-usdt)', glyph: '₮' },
+  USDC: { color: 'var(--c-usdc)', glyph: '$' },
   USD: { color: cash, glyph: '$' },
   EUR: { color: cash, glyph: '€' },
   RUB: { color: cash, glyph: '₽' },
 };
+
+/** A token with no colour of its own takes one of six by its ticker, the same one every time. */
+function paletteColor(ticker: string): string {
+  let hash = 0;
+  for (const char of ticker) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return `var(--c-p${(hash % 6) + 1})`;
+}
 
 export function assetIdentity(asset: {
   symbol: string | null;
@@ -31,9 +48,35 @@ export function assetIdentity(asset: {
   const found = ticker ? known[ticker] : undefined;
   if (found) return found;
   return {
-    color: asset.assetType === 'fiat' ? cash : other,
+    color:
+      asset.assetType === 'fiat'
+        ? cash
+        : asset.assetType === 'crypto' && ticker
+          ? paletteColor(ticker)
+          : other,
     glyph: (ticker || asset.name.trim()).slice(0, 1).toUpperCase() || '?',
   };
+}
+
+export type Blockchain = Exclude<Network, 'bybit'>;
+const networkCoins: Record<Blockchain, string> = {
+  bitcoin: 'BTC',
+  ethereum: 'ETH',
+  base: 'BASE',
+  arbitrum: 'ARB',
+  optimism: 'OP',
+  polygon: 'POL',
+  bnb: 'BNB',
+  avalanche: 'AVAX',
+  solana: 'SOL',
+  tron: 'TRX',
+  stellar: 'XLM',
+  zcash: 'ZEC',
+};
+
+/** TOKEN-CHAIN: a blockchain looks like its own coin. */
+export function networkIdentity(network: Blockchain): AssetIdentity {
+  return known[networkCoins[network]];
 }
 
 /** Allocation by type: crypto in the prototype's blue, cash in the cash colour. */

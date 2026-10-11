@@ -1,5 +1,10 @@
 # Daily USD display conversion
 
+> **Retired (M20):** the display rates panel left with the old Settings screen (2026-10-08), and the
+> backend module, its API, collector and `display-fx-db` probe were removed with the other legacy
+> modules. The two tables and their rows stay; the JSON backup lists them as not backed up. USD/EUR/RUB
+> values now come from Bank of Russia rates (M5). The rest of this page describes the retired feature.
+
 The private Settings panel can convert an entered USD amount to EUR and RUB
 using the latest saved daily observation. It is an indicative display only: it
 does not change USD trades, account values, profit, or XIRR. It is not a trade

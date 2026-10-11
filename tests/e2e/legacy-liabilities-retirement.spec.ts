@@ -13,7 +13,7 @@ import {
 
 const bookmarks = ['/liabilities', '/liabilities/legacy-bookmark'];
 
-test('LIR-UI: retired bookmarks preserve private legacy records and lead to manual accounts', async ({
+test('LIR-UI: retired bookmarks open Portfolio and legacy records leave only through the backup', async ({
   page,
   browser,
 }) => {
@@ -22,7 +22,7 @@ test('LIR-UI: retired bookmarks preserve private legacy records and lead to manu
     const visitor = await unauthenticated.newPage();
     for (const state of ['anonymous', 'password-only']) {
       if (state === 'password-only') await passwordStep(visitor);
-      const denied = await unauthenticated.request.get('/api/liabilities');
+      const denied = await unauthenticated.request.get('/api/export/backup');
       expect(denied.status(), state).toBe(401);
       noStore(denied);
       for (const path of bookmarks) {
@@ -54,47 +54,42 @@ test('LIR-UI: retired bookmarks preserve private legacy records and lead to manu
       (SELECT id FROM currencies WHERE code = 'USD'), '2025-02-03', 'Private foreign record', 'yearly', NULL)`);
   const before = fingerprint(['auth_sessions', 'auth_request_limits']);
   const providersBefore = providerRequests();
-  const businessRequests: string[] = [];
-  page.on('request', (request) => {
-    const path = new URL(request.url()).pathname;
-    if (path.startsWith('/api/') && !path.startsWith('/api/auth/')) businessRequests.push(path);
-  });
 
   for (const path of bookmarks) {
+    // The legacy notice is retired with the other old screens (M20): Portfolio replaces it.
     await page.goto(path);
-    // Intended RED: the predecessor still renders the legacy editor at /liabilities.
+    await expect(page).toHaveURL(`${origin}/portfolio`);
     await expect(
-      page.getByRole('heading', { name: 'Раздел обязательств закрыт', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Portfolio', exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('Сохранённые записи не удалены.', { exact: true })).toBeVisible();
     await expect(page.getByRole('navigation').locator('a[href^="/liabilities"]')).toHaveCount(0);
     const main = page.getByRole('main');
-    await expect(main.locator('form, input, select, textarea, canvas, table, button')).toHaveCount(
-      0,
-    );
     await expect(main.getByText(ownName, { exact: true })).toHaveCount(0);
     await expect(main.getByText(foreignName, { exact: true })).toHaveCount(0);
-    await expect(
-      main.getByRole('link', { name: 'Перейти к ручным счетам', exact: true }),
-    ).toHaveAttribute('href', '/manual-accounts');
     await page.waitForLoadState('networkidle');
   }
-  expect(businessRequests).toEqual([]);
   expect(providerRequests()).toEqual(providersBefore);
 
-  const list = await page.request.get('/api/liabilities');
-  expect(list.status()).toBe(200);
-  noStore(list);
-  const liabilities = await list.json();
-  expect(liabilities.map((row: { id: string }) => row.id)).toContain(ownId);
-  expect(liabilities.every((row: { userId: string }) => row.userId === owner.id)).toBe(true);
-  expect(liabilities.map((row: { id: string }) => row.id)).not.toContain(foreignId);
-  const own = await page.request.get(`/api/liabilities/${ownId}`);
-  expect(own.status()).toBe(200);
-  noStore(own);
-  expect(await own.json()).toMatchObject({
+  // The legacy API is retired (M20): its rows stay in the database and leave with the backup.
+  for (const path of [
+    '/api/liabilities',
+    `/api/liabilities/${ownId}`,
+    `/api/liabilities/${foreignId}`,
+  ]) {
+    const gone = await page.request.get(path);
+    expect(gone.status(), path).toBe(404);
+    expect(await gone.text()).not.toContain(foreignName);
+  }
+  const backup = await page.request.get('/api/export/backup');
+  expect(backup.status()).toBe(200);
+  noStore(backup);
+  const text = await backup.text();
+  expect(text).not.toContain(foreignName);
+  const liabilities: { id: string }[] = JSON.parse(text).tables.liabilities;
+  expect(liabilities.map((row) => row.id)).toContain(ownId);
+  expect(liabilities.map((row) => row.id)).not.toContain(foreignId);
+  expect(liabilities.find((row) => row.id === ownId)).toMatchObject({
     id: ownId,
-    userId: owner.id,
     name: ownName,
     category: 'loans',
     amount: '123.45678901',
@@ -103,15 +98,7 @@ test('LIR-UI: retired bookmarks preserve private legacy records and lead to manu
     frequency: 'monthly',
     deadline: '2027-01-02',
   });
-  const foreign = await page.request.get(`/api/liabilities/${foreignId}`);
-  expect(foreign.status()).toBe(404);
-  noStore(foreign);
-  expect(await foreign.text()).not.toContain(foreignName);
 
-  await page.getByRole('link', { name: 'Перейти к ручным счетам', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/manual-accounts`);
-  await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
-  await page.waitForLoadState('networkidle');
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(before);
   expect(providerRequests()).toEqual(providersBefore);
 });

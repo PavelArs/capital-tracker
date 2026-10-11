@@ -1,5 +1,5 @@
 import type { SwapSummary } from './asset-swaps.api';
-import type { CarryInCurrentLot, CarryInMatch, CarryInOrigin } from './carry-in.api';
+import type { CarryInOrigin } from './carry-in.api';
 import apiClient from './client';
 
 export interface TradeExecution {
@@ -121,43 +121,6 @@ export interface TradeReceipt {
   journalRevision: number;
   trade: TradeVersion;
 }
-export interface TradeLot {
-  buyTradeId: string;
-  buyVersion: number;
-  instrumentId: string;
-  instrumentName: string;
-  instrumentSymbol: string | null;
-  occurredAt: string;
-  orderWithinTimestamp: number;
-  originalQuantity: string;
-  originalCostUsd: string;
-  remainingQuantity: string;
-  remainingCostUsd: string;
-}
-export interface TradeRealization {
-  sellTradeId: string;
-  sellVersion: number;
-  instrumentId: string;
-  instrumentName: string;
-  instrumentSymbol: string | null;
-  occurredAt: string;
-  orderWithinTimestamp: number;
-  quantity: string;
-  grossUsd: string;
-  feeUsd: string;
-  netUsd: string;
-  consumedCostUsd: string | null;
-  realizedUsd: string | null;
-  basisCoverage?: { knownConsumedCostUsd: string; unknownMatchCount: number };
-}
-export interface TradeMatch {
-  sellTradeId: string;
-  sellVersion: number;
-  buyTradeId: string;
-  buyVersion: number;
-  quantity: string;
-  costUsd: string;
-}
 export interface TransferArrival {
   transferId: string;
   version: number;
@@ -183,27 +146,6 @@ export interface SwapOrigin {
   originalQuantity: string;
   originalCostUsd: string | null;
 }
-export interface SwapCurrentLot {
-  sourceKind: 'swap';
-  instrumentId: string;
-  instrumentName: string;
-  instrumentSymbol: string | null;
-  origin: SwapOrigin;
-  intervalStart: string;
-  intervalEnd: string;
-  remainingQuantity: string;
-  remainingCostUsd: string | null;
-}
-export interface SwapMatch {
-  sourceKind: 'swap';
-  sellTradeId: string;
-  sellVersion: number;
-  origin: SwapOrigin;
-  intervalStart: string;
-  intervalEnd: string;
-  quantity: string;
-  costUsd: string | null;
-}
 export type TransferOrigin =
   | {
       accountId: string;
@@ -228,62 +170,6 @@ export type TransferOrigin =
     }
   | RewardOrigin
   | SwapOrigin;
-export interface RewardCurrentLot {
-  sourceKind: 'reward';
-  instrumentId: string;
-  instrumentName: string;
-  instrumentSymbol: string | null;
-  origin: RewardOrigin;
-  intervalStart: string;
-  intervalEnd: string;
-  remainingQuantity: string;
-  remainingCostUsd: string | null;
-}
-export interface RewardMatch {
-  sourceKind: 'reward';
-  sellTradeId: string;
-  sellVersion: number;
-  origin: RewardOrigin;
-  intervalStart: string;
-  intervalEnd: string;
-  quantity: string;
-  costUsd: string | null;
-}
-export interface TransferCurrentLot {
-  sourceKind: 'transfer';
-  instrumentId: string;
-  instrumentName: string;
-  instrumentSymbol: string | null;
-  origin: TransferOrigin;
-  arrival: TransferArrival;
-  intervalStart: string;
-  intervalEnd: string;
-  remainingQuantity: string;
-  remainingCostUsd: string | null;
-}
-export interface TransferMatch {
-  sourceKind: 'transfer';
-  sellTradeId: string;
-  sellVersion: number;
-  origin: TransferOrigin;
-  arrival: TransferArrival;
-  intervalStart: string;
-  intervalEnd: string;
-  quantity: string;
-  costUsd: string | null;
-}
-export type JournalLot =
-  | TradeLot
-  | CarryInCurrentLot
-  | RewardCurrentLot
-  | SwapCurrentLot
-  | TransferCurrentLot;
-export type JournalMatch = TradeMatch | CarryInMatch | RewardMatch | SwapMatch | TransferMatch;
-export interface TradePage<T> {
-  journalRevision: number;
-  items: T[];
-  nextOffset: number | null;
-}
 export interface TradeVersions {
   tradeId: string;
   items: TradeVersion[];
@@ -334,59 +220,16 @@ export interface VoidCommand {
 const accountPath = (id: string) => `/accounting/accounts/${encodeURIComponent(id)}`;
 const tradePath = (id: string, tradeId: string) =>
   `${accountPath(id)}/trades/${encodeURIComponent(tradeId)}`;
-const pageParams = (journalRevision: number, offset = 0) => ({
-  journalRevision,
-  offset,
-  limit: 50,
-});
 
 export const tradesApi = {
   state: async (id: string): Promise<JournalState> =>
     (await apiClient.get<JournalState>(`${accountPath(id)}/trade-journal`)).data,
-  initialize: async (
-    id: string,
-    input: { requestId: string; coverageFrom: string; assertEmpty: true },
-  ): Promise<JournalOrigin> =>
-    (await apiClient.post<JournalOrigin>(`${accountPath(id)}/trade-journal`, input)).data,
   create: async (id: string, input: TradeCommand): Promise<TradeReceipt> =>
     (await apiClient.post<TradeReceipt>(`${accountPath(id)}/trades`, input)).data,
   correct: async (id: string, tradeId: string, input: TradeCommand): Promise<TradeReceipt> =>
     (await apiClient.post<TradeReceipt>(`${tradePath(id, tradeId)}/corrections`, input)).data,
   void: async (id: string, tradeId: string, input: VoidCommand): Promise<TradeReceipt> =>
     (await apiClient.post<TradeReceipt>(`${tradePath(id, tradeId)}/voids`, input)).data,
-  trades: async (id: string, revision: number, offset = 0): Promise<TradePage<TradeVersion>> =>
-    (
-      await apiClient.get<TradePage<TradeVersion>>(`${accountPath(id)}/trades`, {
-        params: pageParams(revision, offset),
-      })
-    ).data,
-  lots: async (id: string, revision: number, offset = 0): Promise<TradePage<JournalLot>> =>
-    (
-      await apiClient.get<TradePage<JournalLot>>(`${accountPath(id)}/trade-lots`, {
-        params: pageParams(revision, offset),
-      })
-    ).data,
-  realizations: async (
-    id: string,
-    revision: number,
-    offset = 0,
-  ): Promise<TradePage<TradeRealization>> =>
-    (
-      await apiClient.get<TradePage<TradeRealization>>(`${accountPath(id)}/trade-realizations`, {
-        params: pageParams(revision, offset),
-      })
-    ).data,
-  matches: async (
-    id: string,
-    tradeId: string,
-    revision: number,
-    offset = 0,
-  ): Promise<TradePage<JournalMatch>> =>
-    (
-      await apiClient.get<TradePage<JournalMatch>>(`${tradePath(id, tradeId)}/matches`, {
-        params: pageParams(revision, offset),
-      })
-    ).data,
   available: async (id: string, query: AvailableQuery): Promise<AvailableQuantity> =>
     (await apiClient.get<AvailableQuantity>(`${accountPath(id)}/available`, { params: query }))
       .data,

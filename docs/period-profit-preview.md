@@ -1,5 +1,7 @@
 # Manual period profit preview
 
+> **Retired screen (M20, 2026-10-08):** `/period-profit` now opens the Dashboard; the preview is hidden in the new interface (Q10) and its API stays until a separate removal.
+
 Implemented and locally verified under `preview-period-profit`. Exact scenarios,
 commands and limitations are in the [archived verification](../openspec/changes/archive/2026-09-23-preview-period-profit/verification.md).
 This is not a production rollout or completion of the whole performance roadmap.

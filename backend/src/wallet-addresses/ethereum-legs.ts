@@ -1,4 +1,5 @@
 import { chainAssets } from './chain-assets';
+import type { TokenFacts } from './chain-tokens';
 import type { Direction } from './esplora-client';
 import {
   ETHERSCAN_PAGE_SIZE,
@@ -6,16 +7,18 @@ import {
   type NormalTransaction,
   type TokenTransfer,
 } from './etherscan-client';
+import { type EvmNetwork, evmNetworks } from './evm-chains';
 
 // track-ethereum-wallets (M14, ETH-IDENTITY): what one block range of an address's history
 // stores. Each transaction hash has at most one leg in ether (the transaction itself, the
-// ether contracts moved inside it and the fee) and one leg per USDT or USDC transfer event.
+// ether contracts moved inside it and the fee) and one leg per ERC-20 transfer event: USDT and
+// USDC by ticker, any other token by its contract (TOKEN-ANY, M25).
 
 /** One raw leg as wallet_address_transactions stores it. */
 export interface EthereumLeg {
   /** The hash without 0x; a token leg adds "-" and the event's index. */
   txid: string;
-  /** Null for ether, else the token's ticker. */
+  /** Null for ether, the ticker of USDT or USDC, else the token's contract. */
   asset: string | null;
   blockHeight: number;
   blockHash: string | null;
@@ -27,13 +30,50 @@ export interface EthereumLeg {
   raw: Record<string, unknown>;
 }
 
-const tokensByContract = new Map(
-  chainAssets
-    .filter((asset) => asset.network === 'ethereum' && asset.contract)
-    .map((asset) => [asset.contract as string, asset.token as string]),
+// EVM-MULTICHAIN: USDT and USDC are different contracts on each chain.
+const tokensByContract = new Map<EvmNetwork, Map<string, string>>(
+  evmNetworks.map((network) => [
+    network,
+    new Map(
+      chainAssets
+        .filter((asset) => asset.network === network && asset.contract)
+        .map((asset) => [asset.contract as string, asset.token as string]),
+    ),
+  ]),
 );
 
 const bare = (hash: string) => hash.slice(2);
+
+/** What a leg names its token by: USDT and USDC by ticker, any other token by its contract. */
+export const tokenAsset = (contract: string, network: EvmNetwork = 'ethereum'): string =>
+  tokensByContract.get(network)?.get(contract) ?? contract;
+
+/**
+ * TOKEN-ANY: what Etherscan's transfers say about each token other than USDT and USDC, from the
+ * first transfer of each contract. A transfer without readable decimals gives NaN, which leaves
+ * the token out.
+ */
+export function ethereumTokenFacts(
+  tokens: readonly TokenTransfer[],
+  network: EvmNetwork = 'ethereum',
+): TokenFacts[] {
+  const facts = new Map<string, TokenFacts>();
+  for (const item of tokens) {
+    if (tokensByContract.get(network)?.has(item.contract) || facts.has(item.contract)) continue;
+    const decimals = item.raw.tokenDecimal;
+    facts.set(item.contract, {
+      network,
+      contract: item.contract,
+      symbol: typeof item.raw.tokenSymbol === 'string' ? item.raw.tokenSymbol : null,
+      name: typeof item.raw.tokenName === 'string' ? item.raw.tokenName : null,
+      decimals:
+        typeof decimals === 'string' && /^[0-9]{1,2}$/.test(decimals)
+          ? Number(decimals)
+          : Number.NaN,
+    });
+  }
+  return [...facts.values()];
+}
 const at = (seconds: number) => new Date(seconds * 1000).toISOString();
 
 /**
@@ -60,6 +100,7 @@ export function ethereumLegs(
   normal: readonly NormalTransaction[],
   internal: readonly InternalTransfer[],
   tokens: readonly TokenTransfer[],
+  network: EvmNetwork = 'ethereum',
 ): EthereumLeg[] {
   const legs: EthereumLeg[] = [];
   const hashes = new Map<
@@ -109,12 +150,9 @@ export function ethereumLegs(
       },
     });
   }
-  // Zero-value transfers (address poisoning) and other tokens move nothing tracked.
+  // Zero-value transfers (address poisoning) move nothing.
   const moving = tokens.filter(
-    (item) =>
-      item.value > 0n &&
-      tokensByContract.has(item.contract) &&
-      (item.from === address || item.to === address),
+    (item) => item.value > 0n && (item.from === address || item.to === address),
   );
   const byHash = new Map<string, TokenTransfer[]>();
   for (const item of moving) byHash.set(item.hash, [...(byHash.get(item.hash) ?? []), item]);
@@ -141,7 +179,7 @@ export function ethereumLegs(
       const sent = item.from === address ? item.value : 0n;
       legs.push({
         txid,
-        asset: tokensByContract.get(item.contract) as string,
+        asset: tokenAsset(item.contract, network),
         blockHeight: item.blockNumber,
         blockHash: bare(item.blockHash),
         blockTime: at(item.timeStamp),

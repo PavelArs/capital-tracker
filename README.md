@@ -30,7 +30,7 @@ The verified [manual accounting](docs/manual-accounting.md) slice passed real
 PostgreSQL checks and all 85 HTTPS Chromium cases, including 74 retained cases.
 The [USD trade journal](docs/usd-trade-journal.md) passed all 101 HTTPS Chromium
 cases (85 retained and 16 new), plus real PostgreSQL and migration checks.
-The [reviewed CSV import](docs/csv-imports.md) slice adds explicit mapping, whole-batch
+The [reviewed CSV import](docs/csv-imports.md) slice (its screen and endpoints were removed on 2026-10-10; stored batches stay readable) added explicit mapping, whole-batch
 preview/confirmation, retained source provenance and conditional rollback to the USD
 journal. All 124 HTTPS Chromium cases passed (101 retained and 23 new), together
 with real PostgreSQL and migration checks. Full release hardening and the remaining
@@ -154,6 +154,7 @@ backend/src/
   metrics/        Net worth, runway, FL-ratio calculations
   cache/          Redis cache module
   health/         Health check endpoint
+  observability/  Prometheus metrics, JSON request logging with request ids
   entities/       TypeORM entities
   migrations/     Database migrations
 
@@ -227,12 +228,12 @@ Swagger/documentation endpoint is mounted, including in development.
 | Group       | Endpoints                                                                                                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
-| Assets      | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id`                                                                                  |
-| Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id`                                                                        |
-| Crypto      | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
-| Currencies  | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show`                                 |
-| Metrics     | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD`                                                            |
+| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions, proposed transfers and duplicates, manual prices, portfolio value and history; `GET /accounting/hidden-assets` and `PUT`/`DELETE /accounting/hidden-assets/:id` hide an asset from the portfolio and show it again; `DELETE /accounting/accounts/:id` stops tracking a wallet that holds no recorded transaction |
+| Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `DELETE /wallet-addresses/:id` (stop tracking an address; its history stays), `POST /wallet-addresses/:id/sync`, `GET /wallet-addresses/:id/sync-runs`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
+| Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
+| Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
 | Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |
+| Metrics     | Internal only: Prometheus `GET /metrics` on `METRICS_PORT` (default 9464), a separate listener that Compose publishes on the server's loopback only |
 
 Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
 All writes, including login/MFA/logout, require the exact configured Origin and
@@ -252,10 +253,18 @@ guessable identifiers.
 
 ## External APIs
 
-- **Exchange rates:** [ExchangeRate-API](https://api.exchangerate-api.com) (free tier)
-- **ETH balances/tokens:** Public RPC endpoints (LlamaRPC, Ankr, PublicNode)
-- **BTC balances:** [Blockstream API](https://blockstream.info/api)
-- **Crypto prices:** [CoinGecko API](https://api.coingecko.com) (free tier)
+- **Crypto prices (hourly):** [Kraken](https://api.kraken.com), then [CoinGecko](https://api.coingecko.com) (free tier)
+- **USD/EUR/RUB rates:** [Bank of Russia](https://www.cbr.ru) daily rates
+- **Bitcoin history:** [Blockstream Esplora](https://blockstream.info/api)
+- **Ethereum history:** [Etherscan](https://api.etherscan.io) (free key). The same key and API (`chainid`) also read Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain and Avalanche C-Chain, each added as a wallet of its own. Etherscan's free plan does not serve OP Mainnet, Base, BNB Smart Chain or Avalanche C-Chain: OP Mainnet and Base then fall back to their keyless [Blockscout](https://docs.blockscout.com) explorers, the other two report that the plan does not cover them
+- **Solana history:** public RPC `https://api.mainnet-beta.solana.com`
+- **Bybit account:** [Bybit V5 API](https://api.bybit.com) with the owner's read-only key, stored encrypted
+- **Tron history and staking:** [TronGrid](https://api.trongrid.io) (free tier; optional free key `TRONGRID_API_KEY`); TRX that contracts send into a wallet, which TronGrid's account list omits, is found through [Tronscan](https://tronscan.org)'s public list (no key)
+- **Stellar history:** SDF's public [Horizon](https://horizon.stellar.org) (no key; keeps about one year of history)
+- **Zcash history:** [Blockbook](https://github.com/trezor/blockbook) at NOWNodes (free key `ZCASH_BLOCKBOOK_API_KEY`) or at the address in `ZCASH_BLOCKBOOK_URL` (a provider with the key in its path); without either Trezor's public instances, which answer 403 to servers; transparent addresses only, shielded balances cannot be read
+
+The old asset, liability, crypto wallet, currency, display-rate and metrics APIs were removed
+in M20; their tables and rows stay in the database and leave with the JSON backup.
 
 ## License
 

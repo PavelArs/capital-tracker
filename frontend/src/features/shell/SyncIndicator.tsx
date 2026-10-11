@@ -1,6 +1,8 @@
-import { SYNC_CHANGED, type SyncSource, syncStatusApi } from '@api/sync-status.api';
+import { cachedReads } from '@api/cached-reads';
+import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAttention } from './attention-context';
 import { summarizeSync } from './sync-summary';
 
 // The background jobs run every few minutes; a minute keeps "8 min ago" honest.
@@ -11,10 +13,11 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
   const [sources, setSources] = useState<SyncSource[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const attention = useAttention();
 
   const load = useCallback(async () => {
     try {
-      setSources(await syncStatusApi.get());
+      setSources(await cachedReads.sources.load());
       setFailed(false);
     } catch {
       setFailed(true);
@@ -42,6 +45,13 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
           problems: [],
         }
       : summarizeSync(sources, now);
+  // N4: the plate counts what the bell counts, so the two never disagree.
+  const items = attention?.loaded ? attention.attention.items : [];
+  if (items.length > 0) {
+    summary.tone = 'warn';
+    summary.title = items.length === 1 ? '1 needs attention' : `${items.length} need attention`;
+    summary.problems = items.map((item) => item.title);
+  }
   return (
     <Link
       to="/wallets"

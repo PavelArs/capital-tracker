@@ -1,5 +1,4 @@
 import apiClient from './client';
-import type { BasisCoverage, TransferArrival, TransferOrigin } from './trades.api';
 
 export interface TransferMovement {
   instrumentId: string;
@@ -57,43 +56,6 @@ export interface TransferVoidCommand {
   expectedToJournalRevision: number;
 }
 
-export interface TransferPage {
-  journalRevision: number;
-  activeCount: number;
-  versionCount: number;
-  limits: { activeTransfers: number; versions: number };
-  items: TransferVersion[];
-  nextOffset: number | null;
-}
-
-export interface TransferVersions {
-  items: TransferVersion[];
-  nextBeforeVersion: number | null;
-}
-
-export interface TransferAllocationItem {
-  kind: 'principal' | 'fee';
-  instrumentId: string;
-  quantity: string;
-  costUsd: string | null;
-  origin: TransferOrigin;
-  intervalStart: string;
-  intervalEnd: string;
-  arrival: TransferArrival | null;
-}
-
-export interface TransferAllocation {
-  transferId: string;
-  version: number;
-  fromJournalRevision: number;
-  toJournalRevision: number;
-  principalBasisUsd: string | null;
-  feeConsumedBasisUsd: string | null;
-  items: TransferAllocationItem[];
-  nextOffset: number | null;
-  basisCoverage?: { principal: BasisCoverage; fee: BasisCoverage };
-}
-
 const path = '/accounting/transfers';
 const transferPath = (id: string) => `${path}/${encodeURIComponent(id)}`;
 
@@ -104,36 +66,4 @@ export const ownedTransfersApi = {
     (await apiClient.post<TransferReceipt>(`${transferPath(id)}/corrections`, input)).data,
   void: async (id: string, input: TransferVoidCommand): Promise<TransferReceipt> =>
     (await apiClient.post<TransferReceipt>(`${transferPath(id)}/voids`, input)).data,
-  list: async (journalRevision?: number, offset = 0): Promise<TransferPage> =>
-    (
-      await apiClient.get<TransferPage>(path, {
-        params: {
-          ...(journalRevision === undefined ? {} : { journalRevision }),
-          offset,
-          limit: 50,
-        },
-      })
-    ).data,
-  versions: async (id: string, beforeVersion?: number): Promise<TransferVersions> =>
-    (
-      await apiClient.get<TransferVersions>(`${transferPath(id)}/versions`, {
-        params: { limit: 10, ...(beforeVersion === undefined ? {} : { beforeVersion }) },
-      })
-    ).data,
-  allocation: async (
-    id: string,
-    fromJournalRevision?: number,
-    toJournalRevision?: number,
-    offset = 0,
-  ): Promise<TransferAllocation> =>
-    (
-      await apiClient.get<TransferAllocation>(`${transferPath(id)}/allocation`, {
-        params: {
-          ...(fromJournalRevision === undefined ? {} : { fromJournalRevision }),
-          ...(toJournalRevision === undefined ? {} : { toJournalRevision }),
-          offset,
-          limit: 50,
-        },
-      })
-    ).data,
 };

@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { type APIRequestContext, type Page, test as base, expect } from '@playwright/test';
+import { type APIRequestContext, test as base, expect, type Page } from '@playwright/test';
 import { ledgerState, observeBrowserCsrf, resetAdmissionsBetweenCases } from './admission-fixtures';
 import { restartBackends, selectBackend } from './replicas';
 
@@ -272,13 +272,13 @@ export async function passwordStep(page: Page, password = owner.password) {
   observeBrowserCsrf(page);
   await page.goto('/login');
   await page.getByLabel('Email', { exact: true }).fill(owner.email);
-  await page.getByLabel('Пароль', { exact: true }).fill(password);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   const pending = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/login' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Вход', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const response = await pending;
   expect(response.status()).toBe(200);
   expect(response.headers()['cache-control']).toMatch(/(?:^|[,\s])no-store(?:$|[,\s])/);
@@ -286,7 +286,7 @@ export async function passwordStep(page: Page, password = owner.password) {
   expect(Object.keys(body).sort()).toEqual(['csrfToken', 'mfaRequired']);
   expect(body.mfaRequired).toBe(true);
   expect(typeof body.csrfToken).toBe('string');
-  await expect(page.getByLabel('Код из приложения', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Code from your authenticator app', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await page.waitForLoadState('networkidle');
   return { token: await cookie(page), csrfToken: body.csrfToken as string };
@@ -294,12 +294,10 @@ export async function passwordStep(page: Page, password = owner.password) {
 
 export async function completeFactor(page: Page, factor = nextFactor()) {
   if (factor.kind === 'recovery') {
-    await page
-      .getByRole('button', { name: 'Использовать код восстановления', exact: true })
-      .click();
+    await page.getByRole('button', { name: 'Use a recovery code instead', exact: true }).click();
   }
   await page
-    .getByLabel(factor.kind === 'totp' ? 'Код из приложения' : 'Код восстановления', {
+    .getByLabel(factor.kind === 'totp' ? 'Code from your authenticator app' : 'Recovery code', {
       exact: true,
     })
     .fill(factor.code);
@@ -308,7 +306,9 @@ export async function completeFactor(page: Page, factor = nextFactor()) {
       new URL(response.url()).pathname === '/api/auth/mfa' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await page
+    .getByRole('button', { name: factor.kind === 'totp' ? 'Verify' : 'Sign in', exact: true })
+    .click();
   const response = await pending;
   expect(response.status()).toBe(200);
   expect(response.headers()['cache-control']).toMatch(/(?:^|[,\s])no-store(?:$|[,\s])/);
@@ -316,7 +316,7 @@ export async function completeFactor(page: Page, factor = nextFactor()) {
   expect(Object.keys(body).sort()).toEqual(['csrfToken', 'user']);
   expect(body.user).toMatchObject({ id: owner.id, email: owner.email });
   expect(typeof body.csrfToken).toBe('string');
-  await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(owner.email, { exact: true })).toBeVisible();
   await page.waitForLoadState('networkidle');
   return { token: await cookie(page), csrfToken: body.csrfToken as string, user: body.user };
 }

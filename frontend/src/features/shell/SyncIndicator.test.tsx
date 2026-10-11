@@ -2,7 +2,11 @@ import { announceSyncChange, type SyncSource, syncStatusApi } from '@api/sync-st
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AttentionState } from './attention-context';
 import SyncIndicator from './SyncIndicator';
+
+const attentionState = vi.hoisted(() => ({ current: null as AttentionState | null }));
+vi.mock('./attention-context', () => ({ useAttention: () => attentionState.current }));
 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 const prices: SyncSource = {
@@ -31,7 +35,10 @@ const show = () =>
     </MemoryRouter>,
   );
 
-beforeEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  vi.restoreAllMocks();
+  attentionState.current = null;
+});
 afterEach(cleanup);
 
 describe('SYNC-STATUS sidebar indicator', () => {
@@ -58,6 +65,27 @@ describe('SYNC-STATUS sidebar indicator', () => {
     expect(await screen.findByText('All synced')).toBeInTheDocument();
     expect(screen.getByRole('link')).toHaveTextContent('Prices and wallets just now');
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('N4: counts what the bell counts, even when every source is synced', async () => {
+    vi.spyOn(syncStatusApi, 'get').mockResolvedValue([prices]);
+    const item = (key: string) => ({
+      key,
+      tone: 'warn' as const,
+      icon: 'alert' as const,
+      title: `Problem ${key}`,
+      detail: '',
+    });
+    attentionState.current = {
+      loaded: true,
+      attention: { items: [item('a'), item('b'), item('c')], checked: true, pricesUpdatedAt: null },
+      wallets: [],
+      now: new Date(),
+      refresh: () => undefined,
+    };
+    show();
+    const link = await screen.findByRole('link', { name: /3 need attention/ });
+    expect(link).toHaveAttribute('title', 'Problem a\nProblem b\nProblem c');
   });
 
   it('says so when the status cannot be read', async () => {

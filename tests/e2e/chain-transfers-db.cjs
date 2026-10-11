@@ -236,13 +236,16 @@ async function capital(db, s, owner, f, transferId) {
   same(sender.summary.realizedUsd, '0', 'A transfer realises nothing');
   assert.equal(await transferKind(db, transferId), 'create');
 
-  stage = 'XFER-CAPITAL / FLOW-SPLIT-TRANSFER at BTC 60000 the week changes by the fee only';
+  stage =
+    'XFER-CAPITAL / FLOW-SPLIT-TRANSFER at BTC 60000 the transfer changes the week by its fee';
   const history = await week(s, owner);
   assert.equal(history.points[0].at, '2026-09-28T00:00:00.000Z');
   same(history.points[0].value, '36000');
   assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
-  same(history.change, '-6', 'Portfolio value changes by the 6 USD fee only');
-  same(history.marketEffect, '-6', 'The fee is market effect, not a withdrawal');
+  // D1: the unanswered send of 0.05002 BTC (3001.2 USD) has already left A, without a
+  // withdrawal; the transfer itself costs only its 6 USD fee.
+  same(history.change, '-3007.2', 'The 6 USD fee and the unanswered send leave the portfolio');
+  same(history.marketEffect, '-3007.2', 'Neither is a withdrawal');
   console.log('PASS XFER-CAPITAL/FLOW-SPLIT-TRANSFER');
 }
 
@@ -352,6 +355,601 @@ async function reclassify(db, s, owner, f, transferId) {
   console.log('PASS XFER-RECLASSIFY/XFER-HIDE');
 }
 
+// XFER-REFUSED: a transfer the books cannot take says why, in a body the browser can read: the
+// sender does not hold the coins (the shortfall is the transfer itself, not a later operation),
+// or an account's records start after the transaction.
+async function refused(db, s) {
+  stage = 'XFER-REFUSED synthetic second owner with a sender, a receiver and one send';
+  const [other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('refused-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = other.id;
+  const sender = await account(s, owner, 'Sender');
+  const receiver = await account(s, owner, 'Receiver');
+  const a = await wallet(
+    db,
+    owner,
+    sender,
+    'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3',
+  );
+  const b = await wallet(db, owner, receiver, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+  await raw(db, owner, a, 21, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
+  await raw(db, owner, a, 22, 'out', '9990000', '60000000', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, b, 22, 'in', '50000000', '0', '10000', '2026-10-01T10:00:00.000Z');
+  const send = () =>
+    classify(s, owner, a, 22, {
+      expectedVersion: 0,
+      classification: { type: 'transfer', accountId: receiver },
+    });
+  const refusal = async () => {
+    try {
+      await send();
+    } catch (error) {
+      assert.equal(error.getStatus?.(), 409);
+      return error.getResponse();
+    }
+    assert.fail('The transfer must be refused');
+  };
+
+  stage = 'XFER-REFUSED the sender holds nothing: the body names the transfer as the shortfall';
+  const short = await refusal();
+  assert.equal(short.message, 'An account does not hold enough for this transfer');
+  assert.equal(short.dependent.accountId, sender);
+  assert.match(short.dependent.operationId, /^transfer:/);
+  assert.equal(short.dependent.occurredAt, '2026-10-01T10:00:00.000Z');
+
+  stage = 'XFER-REFUSED the receiver starts its records after the send: the body names it';
+  await s.trades.initialize(owner, receiver, {
+    requestId: randomUUID(),
+    coverageFrom: '2026-10-05T00:00:00.000Z',
+    assertEmpty: true,
+  });
+  // The receipt that funds the sender; the pair is not linked on its own, as the receiver's
+  // records start after it.
+  await classify(s, owner, a, 21, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '30000' },
+  });
+  const late = await refusal();
+  assert.equal(late.message, 'The records of an account start after this entry');
+  assert.deepEqual(late.coverage, {
+    accountId: receiver,
+    coverageFrom: '2026-10-05T00:00:00.000Z',
+  });
+  assert.equal(late.dependent, undefined);
+  assert.equal(await count(s, owner), 2, 'Neither leg of the refused send was answered');
+
+  stage = 'XFER-REFUSED an account opened with balances has no records to move coins in or out of';
+  const legacy = await account(s, owner, 'Opened with balances');
+  const { value: ether } = await s.accounting.createInstrument(owner, {
+    requestId: randomUUID(),
+    name: 'Synthetic coin',
+    symbol: 'SYN',
+    assetType: 'crypto',
+  });
+  await s.accounting.saveOpening(owner, legacy, {
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    asOf: '2026-01-01T00:00:00.000Z',
+    positions: [
+      { instrumentId: ether.id, quantity: '5', costStatus: 'known', totalCostUsd: '9000' },
+    ],
+  });
+  const c = await wallet(db, owner, legacy, 'bc1q9h6yz4cl2y7p8v6kgsz3vurmk4vqq9a63k6ctw');
+  await raw(db, owner, c, 23, 'out', '0', '1010000', '10000', '2026-10-02T10:00:00.000Z');
+  try {
+    await classify(s, owner, c, 23, {
+      expectedVersion: 0,
+      classification: { type: 'transfer', accountId: receiver },
+    });
+    assert.fail('The transfer must be refused');
+  } catch (error) {
+    assert.equal(error.getStatus?.(), 409);
+    assert.equal(error.getResponse().message, 'The records of an account have not started');
+    assert.deepEqual(error.getResponse().coverage, { accountId: legacy, coverageFrom: null });
+  }
+
+  stage = 'XFER-REFUSED any answer that adds coins before the records of the account begin says so';
+  await raw(db, owner, b, 24, 'in', '1000000', '0', '0', '2026-10-02T10:00:00.000Z');
+  for (const classification of [
+    { type: 'airdrop', valueUsd: null },
+    { type: 'buy', currency: 'USD', amount: '500' },
+  ]) {
+    try {
+      await classify(s, owner, b, 24, { expectedVersion: 0, classification });
+      assert.fail(`${classification.type} must be refused`);
+    } catch (error) {
+      assert.equal(error.getStatus?.(), 409, classification.type);
+      assert.equal(error.getResponse().message, 'The records of an account start after this entry');
+      assert.deepEqual(error.getResponse().coverage, {
+        accountId: receiver,
+        coverageFrom: '2026-10-05T00:00:00.000Z',
+      });
+    }
+  }
+  console.log('PASS XFER-REFUSED');
+}
+
+// XFER-PROPOSED: a withdrawal and a receipt that name different transactions are proposed, not
+// linked; accepting answers the withdrawal as a transfer naming the receipt, and the fee is
+// what went missing between them.
+async function proposed(db, s) {
+  stage = 'XFER-PROPOSED synthetic third owner: a sender, a receiver, a send and a receipt';
+  const [third] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('proposed-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = third.id;
+  const sender = await account(s, owner, 'Exchange');
+  const receiver = await account(s, owner, 'Hardware');
+  const other = await account(s, owner, 'Savings');
+  const a = await wallet(db, owner, sender, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+  const b = await wallet(db, owner, receiver, 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq');
+  const c = await wallet(db, owner, other, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+  // 41: 0.6 BTC arrive in A. 42: A sends 0.5001 BTC at 10:00. 43: B gets 0.4999 BTC at 10:12
+  // under another transaction, so 0.0002 BTC went missing between them.
+  await raw(db, owner, a, 41, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
+  await raw(db, owner, a, 42, 'out', '0', '50010000', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, b, 43, 'in', '49990000', '0', '10000', '2026-10-01T10:12:00.000Z');
+  await classify(s, owner, a, 41, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '30000' },
+  });
+  const before = await rawFingerprint(db, owner);
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  assert.equal(await count(s, owner), 2, 'The app does not link legs of two transactions itself');
+
+  stage = 'XFER-PROPOSED the pair is proposed with the fee between them';
+  const seen = await s.classifications.transferProposals(owner);
+  assert.deepEqual([seen.windowHours, seen.feePercent], [24, 2]);
+  assert.equal(seen.proposals.length, 1);
+  const [proposal] = seen.proposals;
+  assert.deepEqual(
+    [proposal.coin, proposal.sent, proposal.arrived, proposal.fee],
+    ['BTC', '0.5001', '0.4999', '0.0002'],
+  );
+  assert.deepEqual(
+    [proposal.outgoing.addressId, proposal.outgoing.txid, proposal.outgoing.accountName],
+    [a, txid(42), 'Exchange'],
+  );
+  assert.deepEqual(
+    [proposal.incoming.addressId, proposal.incoming.txid, proposal.incoming.accountId],
+    [b, txid(43), receiver],
+  );
+
+  stage = 'XFER-PROPOSED an unrelated or unfitting leg is refused as the other side';
+  const accept = (partner, accountId = receiver, version = 0) =>
+    classify(s, owner, a, 42, {
+      expectedVersion: version,
+      classification: { type: 'transfer', accountId, partner },
+    });
+  await rejected(() => accept({ addressId: c, txid: txid(43) }, other), 422);
+  await rejected(() => accept({ addressId: b, txid: txid(99) }), 422);
+  await rejected(() => accept({ addressId: a, txid: txid(41) }), 422);
+  await raw(db, owner, c, 44, 'in', '49990000', '0', '10000', '2026-10-03T10:12:00.000Z');
+  await rejected(() => accept({ addressId: c, txid: txid(44) }, other), 422);
+  assert.equal(await count(s, owner), 3, 'Nothing was answered');
+
+  stage = 'XFER-PROPOSED two equally good receipts leave the choice to the owner';
+  await raw(db, owner, c, 45, 'in', '49990000', '0', '10000', '2026-10-01T10:12:00.000Z');
+  assert.deepEqual((await s.classifications.transferProposals(owner)).proposals, []);
+  await db.query(`DELETE FROM wallet_address_transactions WHERE txid IN ($1,$2)`, [
+    txid(44),
+    txid(45),
+  ]);
+  assert.equal((await s.classifications.transferProposals(owner)).proposals.length, 1);
+
+  stage = 'XFER-PROPOSED accepting joins the two legs as one transfer with the missing part as fee';
+  const joined = await accept({ addressId: b, txid: txid(43) });
+  assert.equal(joined.value.operation.kind, 'transfer');
+  assert.equal(joined.value.linkedAddressId, null, 'The link column is for legs of one hash');
+  assert.equal(joined.value.automatic, false);
+  assert.equal(await count(s, owner), 0);
+  const legs = await db.query(
+    `SELECT "addressId", txid, version, status, "transferId", "linkedAddressId"
+      FROM chain_transaction_classification_versions
+      WHERE txid IN ($1,$2) AND status='classified' ORDER BY "addressId"`,
+    [txid(42), txid(43)],
+  );
+  assert.equal(legs.length, 2);
+  assert.equal(legs[0].transferId, legs[1].transferId);
+  assert.deepEqual(
+    legs.map((leg) => leg.linkedAddressId),
+    [null, null],
+  );
+  assert.deepEqual(legs.map((leg) => leg.addressId).sort(), [a, b].sort());
+  const mine = (await s.operations.read(owner, {}, now)).operations.filter(
+    (operation) => operation.chain?.txid === txid(42) || operation.chain?.txid === txid(43),
+  );
+  assert.equal(mine.length, 1, 'The pair is listed once, on the sending leg');
+  assert.deepEqual(
+    [mine[0].type, mine[0].wallet.id, mine[0].counterWallet.id, mine[0].counterAccount.id],
+    ['transfer', a, b, receiver],
+  );
+  same(mine[0].quantity, '0.4999', 'The receiver got 0.4999 BTC');
+  same(
+    (await journal(s, owner, receiver)).summary.remainingCostUsd,
+    '24995',
+    "B's 0.4999 BTC keeps A's 50000 per BTC",
+  );
+  same((await journal(s, owner, sender)).transferSummary.feeConsumedBasisUsd, '10');
+  assert.deepEqual((await s.classifications.transferProposals(owner)).proposals, []);
+
+  stage = 'XFER-PROPOSED answering the send differently frees the receipt and proposes again';
+  await classify(s, owner, a, 42, {
+    expectedVersion: 1,
+    classification: { type: 'sell', currency: 'USD', amount: '30000' },
+  });
+  assert.equal(await count(s, owner), 1);
+  assert.equal((await s.classifications.transferProposals(owner)).proposals.length, 0, 'sold');
+  assert.equal(await rawFingerprint(db, owner), before, 'Raw chain rows are never edited');
+  console.log('PASS XFER-PROPOSED');
+}
+
+// XFER-ADDRESS: two addresses of the receiving account took part in the one transaction; the
+// owner names the address that received the transfer. The other address's payment of its own
+// stays unanswered, and a leg that does not fit is refused.
+async function addressChoice(db, s) {
+  stage = 'XFER-ADDRESS synthetic fourth owner: a send received at two addresses of one account';
+  const [fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('address-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = fourth.id;
+  const sender = await account(s, owner, 'Spending');
+  const receiver = await account(s, owner, 'Hardware');
+  const a = await wallet(db, owner, sender, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+  const b = await wallet(db, owner, receiver, 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq');
+  const c = await wallet(db, owner, receiver, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+  // 61: 0.6 BTC arrive in A. 62: A sends 0.3001 BTC (fee 0.0001); B gets 0.3 BTC and C a payment
+  // of 0.05 BTC of its own in the same transaction.
+  await raw(db, owner, a, 61, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
+  await raw(db, owner, a, 62, 'out', '0', '30010000', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, b, 62, 'in', '30000000', '0', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, c, 62, 'in', '5000000', '0', '10000', '2026-10-01T10:00:00.000Z');
+  await classify(s, owner, a, 61, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '30000' },
+  });
+  const before = await rawFingerprint(db, owner);
+  const send = (partner) =>
+    classify(s, owner, a, 62, {
+      expectedVersion: 0,
+      classification: { type: 'transfer', accountId: receiver, ...(partner ? { partner } : {}) },
+    });
+
+  stage = 'XFER-ADDRESS without a choice the two addresses leave the transfer unlinked';
+  await rejected(() => send(), 422);
+  assert.equal(await count(s, owner), 3, 'Nothing was answered');
+
+  stage = 'XFER-ADDRESS the address whose amount does not fit is refused';
+  await rejected(() => send({ addressId: c, txid: txid(62) }), 422);
+  await rejected(() => send({ addressId: a, txid: txid(62) }), 422);
+  assert.equal(await count(s, owner), 3, 'Nothing was answered');
+
+  stage = 'XFER-ADDRESS the named address links as the other side with the sender fee';
+  const saved = await send({ addressId: b, txid: txid(62) });
+  assert.equal(saved.value.operation.kind, 'transfer');
+  assert.deepEqual([saved.value.linkedAddressId, saved.value.automatic], [b, false]);
+  assert.equal(await count(s, owner), 1, "C's payment still needs an answer");
+  const legs = await db.query(
+    `SELECT "addressId", "transferId", "linkedAddressId" FROM chain_transaction_classification_versions
+      WHERE txid=$1 AND status='classified' ORDER BY "addressId"`,
+    [txid(62)],
+  );
+  assert.equal(legs.length, 2);
+  assert.equal(legs[0].transferId, legs[1].transferId);
+  assert.deepEqual(legs.map((leg) => leg.addressId).sort(), [a, b].sort());
+  const mine = (await rows(s, owner, 62)).filter((operation) => operation.type === 'transfer');
+  assert.equal(mine.length, 1, 'The pair is listed once');
+  same(mine[0].quantity, '0.3', 'B received 0.3 BTC');
+  same(mine[0].fee.quantity, '0.0001', "The fee is the sender's own");
+  same(
+    (await journal(s, owner, receiver)).summary.remainingCostUsd,
+    '15000',
+    "B's 0.3 BTC keeps A's 50000 per BTC",
+  );
+  assert.equal(await rawFingerprint(db, owner), before, 'Raw chain rows are never edited');
+
+  stage = 'XFER-ADDRESS a leg of the same transaction short of the amount is not taken as fee';
+  // 63: A sends 0.1001 BTC (fee 0.0001); B gets only 0.0995, so 0.0006 BTC are unexplained.
+  await raw(db, owner, a, 63, 'out', '0', '10010000', '10000', '2026-10-02T10:00:00.000Z');
+  await raw(db, owner, b, 63, 'in', '9950000', '0', '10000', '2026-10-02T10:00:00.000Z');
+  await rejected(
+    () =>
+      classify(s, owner, a, 63, {
+        expectedVersion: 0,
+        classification: {
+          type: 'transfer',
+          accountId: receiver,
+          partner: { addressId: b, txid: txid(63) },
+        },
+      }),
+    422,
+  );
+  assert.equal(
+    (await rows(s, owner, 63)).filter((operation) => operation.type === 'transfer').length,
+    0,
+  );
+  console.log('PASS XFER-ADDRESS');
+}
+
+// BYBIT-LINK-HASH, XFER-REJOIN: a Bybit withdrawal to an Ethereum-like chain other than Ethereum
+// is stored under Bybit's own id and names the chain's hash in its record; it meets the wallet's
+// receipt of that hash. When the owner answered the receipt alone first, the two are joined
+// once the withdrawal is synced. A record naming another hash is left alone.
+async function bybitHash(db, s) {
+  stage = 'BYBIT-LINK-HASH synthetic fourth owner: a Bybit account and an Arbitrum wallet';
+  const [fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('bybit-hash-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = fourth.id;
+  const exchange = await account(s, owner, 'Bybit');
+  const metamask = await account(s, owner, 'Metamask');
+  const place = async (network, address, accountId) =>
+    (
+      await db.query(
+        `INSERT INTO wallet_addresses(id,"ownerId",network,address,"accountId")
+          VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [randomUUID(), owner, network, address, accountId],
+      )
+    )[0].id;
+  const uid = await place('bybit', '1000001', exchange);
+  const arbitrum = await place('arbitrum', `0x${'ab'.repeat(20)}`, metamask);
+  const wei = (units) => (BigInt(units) * 10n ** 10n).toString(); // 1 unit = 1e-8 ETH
+  const leg = (addressId, id, direction, received, sent, fee, at, record, bybitLeg) =>
+    db.query(
+      `INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockHash",
+        "blockTime","receivedUnits","sentUnits","feeUnits",direction,asset,raw)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [
+        owner,
+        addressId,
+        id,
+        bybitLeg ? 0 : 900000,
+        bybitLeg ? null : sha256(`block:${id}`),
+        at,
+        wei(received),
+        wei(sent),
+        wei(fee),
+        direction,
+        bybitLeg ? 'ETH' : null,
+        JSON.stringify(record),
+      ],
+    );
+  const hash = (n) => txid(900 + n);
+  const withdrawal = (n, named = hash(n)) => ({
+    kind: 'withdrawal',
+    internal: false,
+    record: { chain: 'ARBI', toAddress: `0x${'ab'.repeat(20)}`, txID: `0x${named.toUpperCase()}` },
+  });
+  const answer = (addressId, id, body) =>
+    s.classifications.classify(owner, addressId, id, {
+      requestId: randomUUID(),
+      hidden: false,
+      ...body,
+    });
+  const heads = (id) =>
+    db.query(
+      `SELECT "addressId", version, status, type, "transferId", "linkedAddressId", automatic, comment
+        FROM chain_transaction_classification_versions WHERE txid=$1 ORDER BY "addressId", version`,
+      [id],
+    );
+  const listed = async (...ids) =>
+    (await s.operations.read(owner, {}, now)).operations.filter((operation) =>
+      ids.includes(operation.chain?.txid),
+    );
+
+  stage = 'BYBIT-LINK-HASH Bybit holds 0.5 ETH bought at 2000 each';
+  await leg(
+    uid,
+    'bybit-deposit-fund1',
+    'in',
+    50_000_000,
+    0,
+    0,
+    '2026-10-09T08:00:00.000Z',
+    {
+      kind: 'deposit',
+      internal: false,
+      record: { chain: 'ETH', txID: `0x${hash(0)}` },
+    },
+    true,
+  );
+  await answer(uid, 'bybit-deposit-fund1', {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '1000' },
+  });
+
+  stage = 'BYBIT-LINK-HASH the withdrawal and the wallet receipt of its hash are linked at once';
+  // 0.02212814 ETH leave Bybit (0.00004 of it Bybit's fee); 0.02208814 arrive two minutes later.
+  await leg(
+    uid,
+    'bybit-withdrawal-7000001',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T17:56:00.000Z',
+    withdrawal(1),
+    true,
+  );
+  await leg(
+    arbitrum,
+    hash(1),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T17:58:00.000Z',
+    { hash: hash(1) },
+    false,
+  );
+  assert.equal(await count(s, owner), 2);
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 1 });
+  assert.equal(await count(s, owner), 0);
+  const sent = await heads('bybit-withdrawal-7000001');
+  const got = await heads(hash(1));
+  assert.deepEqual(
+    [...sent, ...got].map((row) => [row.status, row.type, row.automatic]),
+    [
+      ['classified', 'transfer', true],
+      ['classified', 'transfer', true],
+    ],
+  );
+  assert.equal(sent[0].transferId, got[0].transferId);
+  const [row, ...rest] = await listed('bybit-withdrawal-7000001', hash(1));
+  assert.equal(rest.length, 0, 'The pair is listed once');
+  assert.deepEqual(
+    [row.type, row.direction, row.account.id, row.counterAccount.id],
+    ['transfer', 'internal', exchange, metamask],
+  );
+  same(row.quantity, '0.02208814', 'Metamask received 0.02208814 ETH');
+  same(row.fee.quantity, '0.00004', "Bybit's withdrawal fee");
+  // 2000 USD per ETH: 44.17628 move, the 0.08 fee is consumed.
+  same((await journal(s, owner, metamask)).summary.remainingCostUsd, '44.17628');
+  same((await journal(s, owner, exchange)).summary.remainingCostUsd, '955.74372');
+  same((await journal(s, owner, exchange)).transferSummary.feeConsumedBasisUsd, '0.08');
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  console.log('PASS BYBIT-LINK-HASH');
+
+  stage = 'XFER-REJOIN the receipt was answered alone first: the withdrawal that follows joins it';
+  await leg(
+    arbitrum,
+    hash(2),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T18:58:00.000Z',
+    { hash: hash(2) },
+    false,
+  );
+  const alone = await answer(arbitrum, hash(2), {
+    expectedVersion: 0,
+    comment: 'from the exchange',
+    classification: { type: 'transfer', accountId: exchange },
+  });
+  assert.equal(alone.value.linkedAddressId, null);
+  same((await journal(s, owner, metamask)).summary.remainingCostUsd, '88.35256');
+  assert.equal(await count(s, owner), 0);
+  await leg(
+    uid,
+    'bybit-withdrawal-7000002',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T18:56:00.000Z',
+    withdrawal(2),
+    true,
+  );
+  assert.equal(await count(s, owner), 1, 'The withdrawal counts as new until it is joined');
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 1 });
+  assert.equal(await count(s, owner), 0);
+  const joined = await heads(hash(2));
+  assert.deepEqual(
+    joined.map((row) => [row.version, row.status, row.type, row.automatic, row.comment]),
+    [
+      [1, 'classified', 'transfer', false, 'from the exchange'],
+      [2, 'classified', 'transfer', true, 'from the exchange'],
+    ],
+    "The owner's note stays",
+  );
+  const withdrawn = await heads('bybit-withdrawal-7000002');
+  assert.equal(withdrawn.length, 1);
+  assert.equal(withdrawn[0].transferId, joined[1].transferId);
+  assert.notEqual(joined[0].transferId, joined[1].transferId);
+  assert.equal((await listed('bybit-withdrawal-7000002', hash(2))).length, 1);
+  // The receipt is counted once: 2 x 44.17628 in Metamask, the fee consumed twice in Bybit.
+  same((await journal(s, owner, metamask)).summary.remainingCostUsd, '88.35256');
+  same((await journal(s, owner, exchange)).summary.remainingCostUsd, '911.48744');
+  assert.equal(
+    (
+      await db.query(
+        `SELECT count(*)::int AS n FROM owned_transfers t JOIN owned_transfer_versions v
+      ON v."transferId"=t.id AND v.version=t."currentVersion" WHERE t."ownerId"=$1 AND v.kind<>'void'`,
+        [owner],
+      )
+    )[0].n,
+    2,
+    'Two transfers stand, no third',
+  );
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  console.log('PASS XFER-REJOIN');
+
+  stage =
+    'BYBIT-LINK-HASH a record naming another hash, or an answer to another account, is left alone';
+  const savings = await account(s, owner, 'Savings');
+  const vault = await place('arbitrum', `0x${'cd'.repeat(20)}`, savings);
+  await leg(
+    vault,
+    hash(5),
+    'in',
+    50_000_000,
+    0,
+    0,
+    '2026-10-09T09:00:00.000Z',
+    { hash: hash(5) },
+    false,
+  );
+  await answer(vault, hash(5), {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '1000' },
+  });
+  await leg(
+    arbitrum,
+    hash(3),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T19:58:00.000Z',
+    { hash: hash(3) },
+    false,
+  );
+  await leg(
+    uid,
+    'bybit-withdrawal-7000003',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T19:56:00.000Z',
+    withdrawal(3, hash(99)),
+    true,
+  );
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  assert.equal(await count(s, owner), 2);
+  // The receipt of hash 4 was moved from Savings by the owner: Bybit's withdrawal of that hash
+  // is not the other side of that answer.
+  await leg(
+    arbitrum,
+    hash(4),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T20:58:00.000Z',
+    { hash: hash(4) },
+    false,
+  );
+  await answer(arbitrum, hash(4), {
+    expectedVersion: 0,
+    classification: { type: 'transfer', accountId: savings },
+  });
+  await leg(
+    uid,
+    'bybit-withdrawal-7000004',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T20:56:00.000Z',
+    withdrawal(4),
+    true,
+  );
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  assert.equal((await heads('bybit-withdrawal-7000003')).length, 0, 'Still to classify');
+  assert.equal((await heads('bybit-withdrawal-7000004')).length, 0, 'Still to classify');
+  assert.equal((await heads(hash(4))).length, 1, "The owner's answer stands");
+  console.log('PASS BYBIT-LINK-HASH-REFUSED');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -384,7 +982,7 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 35/);
+  assert.match(migrated.stdout, /Migrations applied: 58/);
   const db = source();
   try {
     await db.initialize();
@@ -399,6 +997,10 @@ async function main() {
     await manual(db, s, owner.id, f);
     await reclassify(db, s, owner.id, f, transferId);
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
+    await refused(db, s);
+    await proposed(db, s);
+    await addressChoice(db, s);
+    await bybitHash(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

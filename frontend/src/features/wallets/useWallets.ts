@@ -1,11 +1,13 @@
+import type { WalletKind } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
-import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
 import { failureMessage, type SyncRun } from './SyncStatus';
+import { kindsOf } from './wallets';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
@@ -17,11 +19,20 @@ const BACKGROUND_REFRESH_MS = 10_000;
  * refresh while the background job (M11) loads a history.
  */
 export function useWallets() {
-  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
-  const [addresses, setAddresses] = useState<WalletAddress[] | null>(null);
+  const [asked] = useAskedCurrency();
+  // Coming back to the page shows the last answers at once; the load below replaces them.
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
+    () => cachedReads.portfolio.last(asked) ?? null,
+  );
+  const [addresses, setAddresses] = useState<WalletAddress[] | null>(
+    () => cachedReads.wallets.last() ?? null,
+  );
+  // W1: how each wallet is held; a failed read leaves the labels out, not the page.
+  const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
+    kindsOf(cachedReads.accounts.last()),
+  );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
-  const [asked] = useAskedCurrency();
   const latest = useRef(0);
   const running = useRef(new Set<string>());
   const mounted = useRef(true);
@@ -37,17 +48,24 @@ export function useWallets() {
     async (quiet = false) => {
       const request = ++latest.current;
       setFailed(false);
-      if (!quiet) setPortfolio(null);
+      const kept = quiet ? undefined : cachedReads.portfolio.last(asked);
+      const keptAddresses = cachedReads.wallets.last();
+      if (!quiet) setPortfolio(kept && keptAddresses ? kept : null);
       try {
+        // The labels never hold the page back: they arrive when they arrive, or not at all.
+        cachedReads.accounts
+          .load()
+          .then((accounts) => request === latest.current && setKinds(kindsOf(accounts)))
+          .catch(() => undefined);
         const [nextPortfolio, nextAddresses] = await Promise.all([
-          portfolioValuationApi.get(asked),
-          walletAddressesApi.list(),
+          cachedReads.portfolio.load(asked),
+          cachedReads.wallets.load(),
         ]);
         if (request !== latest.current) return;
         setPortfolio(nextPortfolio);
         setAddresses(nextAddresses);
       } catch {
-        if (request === latest.current && !quiet) setFailed(true);
+        if (request === latest.current && !quiet && !(kept && keptAddresses)) setFailed(true);
       }
     },
     [asked],
@@ -63,6 +81,10 @@ export function useWallets() {
         ? list.map((item) => (item.id === address.id ? address : item))
         : [...list, address];
     });
+  }, []);
+  // WALLET-REMOVE: an address stopped leaves the list at once; the next load confirms it.
+  const forget = useCallback((id: string) => {
+    setAddresses((current) => (current ? current.filter((item) => item.id !== id) : current));
   }, []);
   const setRun = useCallback((id: string, run: SyncRun | null) => {
     setRuns((current) => {
@@ -124,5 +146,5 @@ export function useWallets() {
     return () => window.clearInterval(timer);
   }, [backgroundSyncing, load]);
 
-  return { portfolio, addresses, failed, load, replace, runs, sync, asked };
+  return { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked };
 }

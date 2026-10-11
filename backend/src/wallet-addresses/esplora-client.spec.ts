@@ -206,6 +206,48 @@ describe('Esplora adapter at the outbound HTTP boundary', () => {
     expect(result.transactions[1].raw).toEqual(spendWithChange);
   });
 
+  it('XPUB-AMOUNTS counts every address of an account, so change and consolidation stay inside', async () => {
+    const change = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2';
+    const payment = tx(
+      hex('6'),
+      [input(owned, 50_000)],
+      [output(other, 30_000), output(change, 19_800)],
+      200,
+      840_006,
+    );
+    const consolidation = tx(
+      hex('7'),
+      [input(owned, 10_000), input(change, 5_000, hex('8'))],
+      [output(change, 14_800)],
+      200,
+      840_005,
+    );
+    replies.push(json([payment, consolidation]), json([payment]));
+    const account = await client().page(owned, null, new Set([owned, change]));
+    const single = await client().page(owned, null);
+    expect(account.ok && single.ok).toBe(true);
+    if (!account.ok || !single.ok) return;
+    const amounts = ({
+      txid,
+      receivedSats,
+      sentSats,
+      direction,
+    }: (typeof account.transactions)[0]) => ({
+      txid,
+      received: receivedSats.toString(),
+      sent: sentSats.toString(),
+      direction,
+    });
+    expect(account.transactions.map(amounts)).toEqual([
+      { txid: hex('6'), received: '19800', sent: '50000', direction: 'out' },
+      { txid: hex('7'), received: '14800', sent: '15000', direction: 'self' },
+    ]);
+    // The same payment seen from the one address alone: its change looks sent away.
+    expect(single.transactions.map(amounts)).toEqual([
+      { txid: hex('6'), received: '0', sent: '50000', direction: 'out' },
+    ]);
+  });
+
   it('ADDR-AMOUNTS formats satoshis as exact 8-decimal BTC without floats', () => {
     expect(formatSats(0n)).toBe('0.00000000');
     expect(formatSats(1n)).toBe('0.00000001');

@@ -1,3 +1,5 @@
+import { accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
 import { manualPricesApi } from '@api/manual-prices.api';
 import {
   type PortfolioAsset,
@@ -7,8 +9,8 @@ import {
 import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
+import CloseButton from '../shell/CloseButton';
 import { type Account, journalAccounts } from './AddTransactionDialog';
 import {
   type AssetEntry,
@@ -20,9 +22,11 @@ import {
   assetProblems,
   balanceInstant,
   balanceTrade,
+  MAX_ACCOUNT_NAME,
+  NEW_ACCOUNT,
   unitPrice,
 } from './add-asset';
-import { MAX_COMMENT_LENGTH } from './add-transaction';
+import { bankRate, MAX_COMMENT_LENGTH } from './add-transaction';
 
 const kindHints: Record<AssetKind, string> = {
   cash: 'Cash is worth exactly its amount in its own currency.',
@@ -44,6 +48,7 @@ const problemText: Record<AssetProblem, string> = {
   amount: 'Enter an amount greater than 0',
   value: 'Enter a value greater than 0',
   account: 'Choose a wallet or account',
+  'account-name': 'Enter a name for the account',
   notes: `Keep the notes within ${MAX_COMMENT_LENGTH} characters`,
   'no-accounts': '',
 };
@@ -83,6 +88,7 @@ const blankEntry = (): AssetEntry => ({
   value: '',
   currency: 'USD',
   accountId: '',
+  accountName: '',
   notes: '',
 });
 
@@ -106,6 +112,12 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const assetAttempt = useRef<{ body: string; requestId: string } | null>(null);
   const tradeAttempt = useRef<{ body: string; requestId: string; at: string } | null>(null);
   const receipt = useRef<TradeReceipt | null>(null);
+  // A new account is made once per name; a retry gets the account it already made.
+  const accountAttempt = useRef<{
+    name: string;
+    requestId: string;
+    account: Account | null;
+  } | null>(null);
   const priceRequest = useRef<string | null>(null);
   // After a lost answer or a server error the balance may have been saved: until a definite
   // answer, the retry must send the same request, so its fields stay as they were.
@@ -146,9 +158,10 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         setAccounts(list);
         setLoadFailed(false);
         setEntry((current) =>
-          list.some((account) => account.id === current.accountId)
+          list.some((account) => account.id === current.accountId) ||
+          (current.accountId === NEW_ACCOUNT && accountAttempt.current === null)
             ? current
-            : { ...current, accountId: list[0]?.id ?? '' },
+            : { ...current, accountId: list[0]?.id ?? NEW_ACCOUNT },
         );
       },
       () => {
@@ -163,7 +176,12 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
 
   const update = (changes: Partial<AssetEntry>) =>
     setEntry((current) => ({ ...current, ...changes }));
-  const found = tried ? assetProblems(entry, accounts?.length ?? 0) : new Set<AssetProblem>();
+  // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
+  const [left, setLeft] = useState<ReadonlySet<AssetProblem>>(new Set());
+  const leave = (problem: AssetProblem) => () =>
+    setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
+  const all = assetProblems(entry, accounts?.length ?? 0);
+  const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const fieldError = (problem: AssetProblem, text = problemText[problem]) =>
     found.has(problem) && (
       <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
@@ -175,6 +193,36 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
       ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` }
       : {};
 
+  // The account the balance goes to; a new one is made first, so nothing else is saved without it.
+  const accountFor = async (): Promise<Account | null> => {
+    if (entry.accountId !== NEW_ACCOUNT)
+      return accounts?.find((item) => item.id === entry.accountId) ?? null;
+    const name = entry.accountName.trim();
+    if (accountAttempt.current?.name !== name)
+      accountAttempt.current = { name, requestId: newRequestId(), account: null };
+    const attempt = accountAttempt.current;
+    if (!attempt.account) {
+      try {
+        const saved = await accountingApi.createAccount({ requestId: attempt.requestId, name });
+        // A new account has no journal yet, so its first trade starts it at revision 0.
+        attempt.account = { id: saved.id, name: saved.name, journalRevision: 0 };
+      } catch (caught) {
+        setError(
+          status(caught) === undefined
+            ? 'Could not reach the server. Try again; the same request will not make the account twice.'
+            : 'Could not make the account. Nothing was saved; try again.',
+        );
+        return null;
+      }
+    }
+    const account = attempt.account;
+    setAccounts((list) =>
+      list?.some((item) => item.id === account.id) ? list : [...(list ?? []), account],
+    );
+    update({ accountId: account.id });
+    return account;
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
@@ -182,6 +230,30 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
     setSaving(true);
     setError(null);
     let asset = created;
+    // A RUB or EUR balance needs today's Bank of Russia rate. Without one the asset would be
+    // saved and its balance refused, so check first and save nothing.
+    const { currency } = entry;
+    if (!asset && entry.amount.trim() && (currency === 'RUB' || currency === 'EUR')) {
+      const rate = await cachedReads.rates.load().then(
+        (report) => bankRate(currency, report),
+        () => undefined, // Unknown: the balance itself reports a missing rate.
+      );
+      if (rate === null) {
+        setError(
+          `No Bank of Russia rate is stored for today yet, so the ${currency} balance cannot be converted. Nothing was saved; try again later.`,
+        );
+        setSaving(false);
+        return;
+      }
+    }
+    let account: Account | null = null;
+    if (entry.amount.trim()) {
+      account = await accountFor();
+      if (!account) {
+        setSaving(false);
+        return;
+      }
+    }
     if (!asset) {
       const body = assetBody(entry);
       const key = JSON.stringify(body);
@@ -199,10 +271,15 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         return;
       }
     }
-    if (entry.amount.trim()) {
-      const account = accounts.find((item) => item.id === entry.accountId)!;
+    if (entry.amount.trim() && account) {
       if (!receipt.current) {
-        const key = JSON.stringify({ ...entry, kind: undefined, name: undefined });
+        const key = JSON.stringify({
+          ...entry,
+          accountId: account.id,
+          accountName: undefined,
+          kind: undefined,
+          name: undefined,
+        });
         if (tradeAttempt.current?.body !== key)
           tradeAttempt.current = {
             body: key,
@@ -270,6 +347,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         <form onSubmit={submit} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id={`${id}-title`}>Add asset</h2>
+            <CloseButton onClick={() => finish.current()} disabled={saving} />
             <p className="shell-note">
               For things the app can't track by itself: cash, a bank deposit, an unsupported coin or
               anything else.
@@ -311,6 +389,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   value={entry.name}
                   disabled={locked}
                   onChange={(event) => update({ name: event.target.value })}
+                  onBlur={leave('name')}
                   {...invalid('name')}
                 />
                 {fieldError('name')}
@@ -328,6 +407,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                     value={entry.ticker}
                     disabled={locked}
                     onChange={(event) => update({ ticker: event.target.value })}
+                    onBlur={leave('ticker')}
                     {...invalid('ticker')}
                   />
                   {fieldError('ticker')}
@@ -347,6 +427,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   value={entry.amount}
                   disabled={balanceUnsure}
                   onChange={(event) => update({ amount: event.target.value })}
+                  onBlur={leave('amount')}
                   {...invalid('amount')}
                 />
                 {fieldError('amount')}
@@ -365,6 +446,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                       value={entry.value}
                       disabled={balanceUnsure}
                       onChange={(event) => update({ value: event.target.value })}
+                      onBlur={leave('value')}
                       {...invalid('value')}
                     />
                     <span className="portfolio-affix__suffix">{entry.currency}</span>
@@ -401,34 +483,29 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               </span>
             </div>
             <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+              <label
+                className="portfolio-field__label"
+                htmlFor={noAccounts ? `${id}-account-name` : `${id}-account`}
+              >
                 Wallet or account
               </label>
               {accounts === null ? (
                 <span className="portfolio-field__hint" role="status">
                   Loading your accounts…
                 </span>
-              ) : noAccounts ? (
-                <p
-                  className={found.has('no-accounts') ? 'portfolio-field__error' : 'shell-note'}
-                  id={`${id}-no-accounts-error`}
-                >
-                  {loadFailed ? (
-                    'Could not load your accounts, so a balance cannot be added. Close this window and try again.'
-                  ) : (
-                    <>
-                      To give it a balance, add a wallet or account first on the{' '}
-                      <Link to="/manual-accounts">manual accounts</Link> page.
-                    </>
-                  )}
+              ) : loadFailed ? (
+                <p className="portfolio-field__error" id={`${id}-no-accounts-error`}>
+                  Could not load your accounts, so a balance cannot be added. Close this window and
+                  try again.
                 </p>
-              ) : (
+              ) : noAccounts ? null : (
                 <select
                   id={`${id}-account`}
                   className="portfolio-input"
                   value={entry.accountId}
                   disabled={balanceUnsure}
                   onChange={(event) => update({ accountId: event.target.value })}
+                  onBlur={leave('account')}
                   {...invalid('account')}
                 >
                   {accounts.map((account) => (
@@ -436,7 +513,31 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                       {account.name}
                     </option>
                   ))}
+                  <option value={NEW_ACCOUNT}>New account…</option>
                 </select>
+              )}
+              {entry.accountId === NEW_ACCOUNT && !loadFailed && accounts !== null && (
+                <>
+                  <input
+                    id={`${id}-account-name`}
+                    className="portfolio-input"
+                    aria-label={noAccounts ? undefined : 'Name of the new account'}
+                    placeholder="e.g. Home safe, Bank"
+                    maxLength={MAX_ACCOUNT_NAME}
+                    autoComplete="off"
+                    value={entry.accountName}
+                    disabled={balanceUnsure}
+                    onChange={(event) => update({ accountName: event.target.value })}
+                    onBlur={leave('account-name')}
+                    {...invalid('account-name')}
+                  />
+                  <span className="portfolio-field__hint">
+                    {noAccounts
+                      ? 'You have no account yet. The balance is kept in this one.'
+                      : 'The balance is kept in a new account you can use for more assets later.'}
+                  </span>
+                  {fieldError('account-name')}
+                </>
               )}
               {fieldError('account')}
             </div>
@@ -450,6 +551,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                 value={entry.notes}
                 disabled={balanceUnsure}
                 onChange={(event) => update({ notes: event.target.value })}
+                onBlur={leave('notes')}
                 {...invalid('notes')}
               />
               {fieldError('notes')}

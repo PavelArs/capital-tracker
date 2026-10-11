@@ -26,6 +26,7 @@ import {
   SESSION_COOKIE,
   SessionService,
 } from './session.service';
+import { deviceLabel } from './session-device';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -76,7 +77,11 @@ export class AuthController {
     @Request() req: SessionRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const state = await this.factors.complete(req.authSession.hash, factor);
+    const state = await this.factors.complete(
+      req.authSession.hash,
+      factor,
+      deviceLabel(req.headers?.['user-agent']),
+    );
     res.cookie(SESSION_COOKIE, state.token, { ...COOKIE_OPTIONS, maxAge: FULL_SESSION_MS });
     return { user: state.user, csrfToken: state.csrfToken };
   }

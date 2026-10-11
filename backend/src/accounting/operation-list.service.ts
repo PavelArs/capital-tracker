@@ -6,9 +6,13 @@ import {
   isAccountingCurrency,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
-import { readMainCurrency } from '../owner-settings/owner-settings.service';
-import { latestMarketPrices } from '../prices/market-price.store';
+import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
+import { storedPricesAt } from '../prices/market-price.store';
+import { chainFacts } from '../wallet-addresses/bybit-records';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
+import { evmNetworks } from '../wallet-addresses/evm-chains';
+import { stakeMoves } from '../wallet-addresses/stake-tables';
+import { leftOutTokens } from '../wallet-addresses/token-left-out';
 import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
@@ -18,6 +22,7 @@ import {
   type OperationFee,
   type OperationList,
   type OperationPlace,
+  type OperationRange,
   projectOperations,
   type RewardOperationInput,
 } from './operation-list';
@@ -112,6 +117,12 @@ interface ChainRow {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  stakeUnits: string;
+  /** SWAP-ONE-TX: the owner's Ethereum transaction called a contract; its decoded method. */
+  contractCall: boolean | null;
+  callMethod: string | null;
+  /** BYBIT-CHAIN-FACTS: the on-chain parts of a Bybit deposit or withdrawal record. */
+  bybitRecord: unknown;
   classificationVersion: number | null;
   classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
   classificationType: ChainType | null;
@@ -120,8 +131,11 @@ interface ChainRow {
   producedTradeId: string | null;
   producedRewardId: string | null;
   producedTransferId: string | null;
+  producedSwapId: string | null;
   linkedAddressId: string | null;
   automatic: boolean | null;
+  pairedAddressId: string | null;
+  pairedTxid: string | null;
 }
 
 // Current versions only: a voided operation has left the books (its history keeps it).
@@ -133,6 +147,8 @@ const feeColumns = `v."feeInstrumentId", fi.name AS "feeName", fi.symbol AS "fee
   v."feeQuantity"::text AS "feeQuantity"`;
 const feeJoin = `LEFT JOIN accounting_instruments fi ON fi."ownerId"=v."ownerId" AND fi.id=v."feeInstrumentId"`;
 
+// The networks read like Ethereum (EVM-MULTICHAIN): a transaction there may call a contract.
+const evmNetworkList = evmNetworks.map((network) => `'${network}'`).join(', ');
 const decimal = (value: string) => parseDecimal(value, false);
 const optional = (value: string | null) => (value === null ? null : decimal(value));
 const place = (row: Named): OperationPlace => ({ id: row.accountId, name: row.accountName });
@@ -164,16 +180,42 @@ function payment(row: TradeRow): TradePayment | null {
   };
 }
 
-/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
-function parseQuery(query: unknown): AccountingCurrency | null {
+interface ListQuery {
+  currency: AccountingCurrency | null;
+  range: OperationRange;
+}
+
+const calendarDay = /^\d{4}-\d{2}-\d{2}$/;
+function parseDay(value: unknown): string {
+  if (typeof value !== 'string' || !calendarDay.test(value))
+    throw new BadRequestException('Invalid accounting input');
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
+    throw new BadRequestException('Invalid accounting input');
+  return value;
+}
+
+/**
+ * `currency` (USD, EUR or RUB; without it the main currency is used) and, OPS-PERIOD, `from`
+ * and `to`: UTC days (YYYY-MM-DD), both included, either may be left out.
+ */
+function parseQuery(query: unknown): ListQuery {
   if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
-  const keys = Object.keys(query);
-  if (keys.length === 0) return null;
-  const { currency } = query as Record<string, unknown>;
-  if (keys.length !== 1 || keys[0] !== 'currency' || !isAccountingCurrency(currency))
+  const given = query as Record<string, unknown>;
+  if (Object.keys(given).some((key) => key !== 'currency' && key !== 'from' && key !== 'to'))
     throw new BadRequestException('Invalid accounting input');
-  return currency;
+  if ('currency' in given && !isAccountingCurrency(given.currency))
+    throw new BadRequestException('Invalid accounting input');
+  const range: OperationRange = {};
+  if ('from' in given) range.from = parseDay(given.from);
+  if ('to' in given) range.to = parseDay(given.to);
+  if (range.from && range.to && range.from > range.to)
+    throw new BadRequestException('Invalid accounting input');
+  return {
+    currency: isAccountingCurrency(given.currency) ? given.currency : null,
+    range,
+  };
 }
 
 @Injectable()
@@ -182,7 +224,7 @@ export class OperationListService {
 
   async read(ownerId: string, rawQuery: unknown, now = new Date()): Promise<OperationList> {
     const owner = parseUuid(ownerId);
-    const asked = parseQuery(rawQuery);
+    const { currency: asked, range } = parseQuery(rawQuery);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
       const trades: TradeRow[] = await manager.query(
@@ -283,11 +325,26 @@ export class OperationListService {
             a.name AS "accountName", t.txid, t.asset, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
+            coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
+              AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits",
+            (w.network IN (${evmNetworkList}) AND t.asset IS NULL
+              AND lower(t.raw->'transaction'->>'from')=lower(w.address)
+              AND coalesce(t.raw->'transaction'->>'input', '0x') NOT IN ('', '0x'))
+              AS "contractCall",
+            nullif(split_part(t.raw->'transaction'->>'functionName', '(', 1), '')
+              AS "callMethod",
+            CASE WHEN w.network='bybit' AND t.raw->>'kind' IN ('deposit', 'withdrawal')
+              AND t.raw->>'internal' IS DISTINCT FROM 'true'
+              THEN json_build_object('kind', t.raw->'kind', 'chain', t.raw->'record'->'chain',
+                'toAddress', t.raw->'record'->'toAddress',
+                'fromAddress', t.raw->'record'->'fromAddress', 'txID', t.raw->'record'->'txID')
+            END AS "bybitRecord",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
             c."rewardId" AS "producedRewardId", c."transferId" AS "producedTransferId",
-            c."linkedAddressId", c.automatic
+            c."swapId" AS "producedSwapId", c."linkedAddressId", c.automatic,
+            c."pairedAddressId", c."pairedTxid"
           FROM wallet_addresses w
           JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
           LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
@@ -295,11 +352,20 @@ export class OperationListService {
             AND h.txid=t.txid
           LEFT JOIN chain_transaction_classification_versions c ON c."addressId"=h."addressId"
             AND c.txid=h.txid AND c.version=h."currentVersion"
-          WHERE w."ownerId"=$1`,
+          WHERE w."ownerId"=$1 AND c.status IS DISTINCT FROM 'deleted'
+            -- WALLET-REMOVE: an address stopped keeps only the rows whose answer made an entry.
+            AND (w."removedAt" IS NULL OR c."tradeId" IS NOT NULL OR c."rewardId" IS NOT NULL
+              OR c."transferId" IS NOT NULL OR c."swapId" IS NOT NULL)`,
         [owner],
       );
-      const symbols = new Set(chain.map((row) => chainAsset(row.network, row.asset).symbol));
-      const market = await latestMarketPrices(manager, [...symbols], now);
+      // EST-AT-TIME: each chain transaction is valued at the price stored for its own time.
+      const marketPrices = await storedPricesAt(
+        manager,
+        chain.map((row) => ({
+          asset: chainAsset(row.network, row.asset).symbol,
+          at: row.blockTime.toISOString(),
+        })),
+      );
       const currency = asked ?? (await readMainCurrency(manager, owner));
       const fx = new FxConverter(await readFxRates(manager), currency);
 
@@ -411,6 +477,9 @@ export class OperationListService {
             receivedUnits: row.receivedUnits,
             sentUnits: row.sentUnits,
             feeUnits: row.feeUnits,
+            stakeUnits: row.stakeUnits,
+            call: row.contractCall ? { method: row.callMethod } : null,
+            exchange: chainFacts(row.bybitRecord),
             classification:
               row.classificationVersion === null || row.classificationStatus === null
                 ? null
@@ -420,25 +489,30 @@ export class OperationListService {
                     type: row.classificationType,
                     details: row.classificationDetails,
                     comment: row.classificationComment,
-                    produced: row.producedTradeId
-                      ? { kind: 'trade', id: row.producedTradeId }
-                      : row.producedRewardId
-                        ? { kind: 'reward', id: row.producedRewardId }
-                        : row.producedTransferId
-                          ? { kind: 'transfer', id: row.producedTransferId }
-                          : null,
+                    produced: row.producedSwapId
+                      ? { kind: 'swap', id: row.producedSwapId }
+                      : row.producedTradeId
+                        ? { kind: 'trade', id: row.producedTradeId }
+                        : row.producedRewardId
+                          ? { kind: 'reward', id: row.producedRewardId }
+                          : row.producedTransferId
+                            ? { kind: 'transfer', id: row.producedTransferId }
+                            : null,
                     linkedAddressId: row.linkedAddressId,
                     automatic: row.automatic === true,
+                    paired:
+                      row.pairedAddressId && row.pairedTxid
+                        ? { addressId: row.pairedAddressId, txid: row.pairedTxid }
+                        : null,
+                    carryTransferId: row.producedSwapId ? row.producedTransferId : null,
                   },
           })),
-          marketPrices: new Map(
-            market.map((row) => [
-              row.asset,
-              { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-            ]),
-          ),
+          marketPrices,
+          dustThresholdUsd: await readDustThreshold(manager, owner),
+          leftOutTokens: await leftOutTokens(manager, owner),
         },
         fx,
+        range,
       );
     });
   }

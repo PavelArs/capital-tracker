@@ -1,0 +1,79 @@
+# Prometheus alerting rules. Add the file to `rule_files:` of your Prometheus (or load it in
+# Grafana alerting via the Prometheus data source's rules). Thresholds follow the app: prices
+# are stale after two hours (STALE_AFTER_MS), wallets are re-synced hourly.
+groups:
+  - name: capital-tracker
+    rules:
+      - alert: CapitalTrackerBackendDown
+        expr: up{job="capital-tracker-backend"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: The Capital Tracker backend cannot be scraped.
+
+      - alert: CapitalTrackerDependencyDown
+        expr: ct_dependency_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: '{{ $labels.dependency }} is not answering the backend.'
+
+      - alert: CapitalTrackerRestartLoop
+        expr: changes(process_start_time_seconds{job="capital-tracker-backend"}[30m]) >= 3
+        labels: { severity: critical }
+        annotations:
+          summary: The backend restarted at least three times in 30 minutes.
+
+      - alert: CapitalTrackerPricesStale
+        expr: time() - max(ct_source_last_success_timestamp_seconds{source=~"prices:.*"}) > 7200
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: No price source has succeeded for more than two hours.
+
+      - alert: CapitalTrackerRatesStale
+        expr: time() - max(ct_source_last_success_timestamp_seconds{source="fx:cbr"}) > 21600
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Bank of Russia rates have not updated for more than six hours.
+
+      - alert: CapitalTrackerWalletSyncFailing
+        expr: ct_wallets{state="failed"} > 0
+        for: 3h
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $value }} {{ $labels.network }} wallet(s) have been failing to sync for 3 hours.'
+
+      - alert: CapitalTrackerWalletSyncStale
+        expr: time() - ct_wallet_oldest_success_timestamp_seconds > 21600
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: 'The oldest {{ $labels.network }} wallet sync is more than six hours old.'
+
+      - alert: CapitalTrackerJobErrors
+        expr: sum by (job) (increase(ct_job_runs_total{outcome="error"}[15m])) >= 3
+        labels: { severity: warning }
+        annotations:
+          summary: 'The {{ $labels.job }} background job threw at least three times in 15 minutes.'
+
+      - alert: CapitalTrackerServerErrors
+        expr: sum(increase(ct_http_request_duration_seconds_count{status=~"5.."}[10m])) >= 3
+        labels: { severity: warning }
+        annotations:
+          summary: The API answered with three or more 5xx errors in 10 minutes.
+
+      - alert: CapitalTrackerDbPoolWaiting
+        expr: ct_db_pool_connections{state="waiting"} > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Requests are waiting for a free database connection.
+
+      - alert: CapitalTrackerMemoryHigh
+        expr: process_resident_memory_bytes{job="capital-tracker-backend"} > 1024 * 1024 * 1024
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: The backend uses more than 1 GiB of memory.

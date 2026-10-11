@@ -50,7 +50,8 @@ function owner(value: Record<string, unknown>): string | null {
   return typeof address === 'string' ? address : invalid();
 }
 
-function observe(address: string, value: unknown): ChainObservation {
+// An address's history, or an account's (M21): a transaction's effect on every address it owns.
+function observe(owned: ReadonlySet<string>, value: unknown): ChainObservation {
   const tx = record(value);
   const txid = typeof tx.txid === 'string' && hash.test(tx.txid) ? tx.txid : invalid();
   const status = record(tx.status);
@@ -68,7 +69,7 @@ function observe(address: string, value: unknown): ChainObservation {
   let everyOutputReturns = true;
   for (const output of list(tx.vout).map(record)) {
     const value = BigInt(amount(output.value));
-    const mine = owner(output) === address;
+    const mine = owned.has(owner(output) ?? '');
     related ||= mine;
     if (mine) received += value;
     else if (value > 0n) everyOutputReturns = false;
@@ -78,7 +79,7 @@ function observe(address: string, value: unknown): ChainObservation {
     if (input.prevout === null && input.is_coinbase === true) continue;
     const previous = record(input.prevout);
     const value = BigInt(amount(previous.value));
-    if (owner(previous) === address) {
+    if (owned.has(owner(previous) ?? '')) {
       related = true;
       sent += value;
     }
@@ -99,10 +100,11 @@ function observe(address: string, value: unknown): ChainObservation {
   };
 }
 
-export function parsePage(address: string, body: unknown): ChainObservation[] {
+export function parsePage(owned: string | ReadonlySet<string>, body: unknown): ChainObservation[] {
   const items = list(body);
   if (items.length > PAGE_SIZE) invalid();
-  const transactions = items.map((item) => observe(address, item));
+  const addresses = typeof owned === 'string' ? new Set([owned]) : owned;
+  const transactions = items.map((item) => observe(addresses, item));
   if (new Set(transactions.map(({ txid }) => txid)).size !== transactions.length) invalid();
   return transactions;
 }
@@ -125,9 +127,14 @@ export class EsploraClient {
     this.pauseMs = options.pauseMs ?? 250;
   }
 
-  async page(address: string, afterTxid: string | null): Promise<PageResult> {
+  /** One page of an address's history; `owned` names every address of its account (M21). */
+  async page(
+    address: string,
+    afterTxid: string | null,
+    owned: ReadonlySet<string> = new Set([address]),
+  ): Promise<PageResult> {
     const path = `/address/${encodeURIComponent(address)}/txs/chain${afterTxid ? `/${afterTxid}` : ''}`;
-    return this.get(path, (body) => ({ ok: true, transactions: parsePage(address, body) }));
+    return this.get(path, (body) => ({ ok: true, transactions: parsePage(owned, body) }));
   }
 
   // Confirmed transaction count, used to tell the end of history from a lagging backend.

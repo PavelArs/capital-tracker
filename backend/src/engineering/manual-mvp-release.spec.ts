@@ -31,4 +31,15 @@ describe('MVP-002: actual deployment policy', () => {
   it('MVP-002-D invokes the existing explicit migration CLI during release', () => {
     expect(commands).toMatch(/backend\/dist\/migrate\.js/);
   });
+  it('MVP-002-E checks only private routes the browser acceptance proves answer 401', () => {
+    // A route the application removed answers 404 and fails the release after migration.
+    const smoke = /for route in ([^;]+); do/.exec(readFileSync(serverScript, 'utf8'));
+    const routes = smoke?.[1].trim().split(/\s+/) ?? [];
+    const sessions = readFileSync(resolve(root, 'tests/e2e/sessions.spec.ts'), 'utf8');
+    const privateRoutes = /SES-004-A: backend root is private by default[\s\S]*?\]\) \{/.exec(
+      sessions,
+    )?.[0];
+    expect(routes.length).toBeGreaterThan(0);
+    for (const route of routes) expect(privateRoutes).toContain(`'/api/${route}'`);
+  });
 });

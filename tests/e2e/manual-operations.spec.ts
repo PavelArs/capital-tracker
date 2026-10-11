@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, reloadFresh, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and dates are synthetic. The shared acceptance database holds other
 // cases' operations too, so this case works in its own account and finds its own rows.
@@ -33,6 +33,7 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
       (operation) => operation.account?.id === account.id,
     );
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   await expect(
@@ -40,8 +41,16 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   ).toBeVisible();
   const openDialog = async (name: string) => {
     const dialog = page.getByRole('dialog', { name, exact: true });
-    await expect(dialog.getByRole('group', { name: 'Asset' })).toBeVisible();
-    await dialog.getByRole('button', { name: symbol, exact: true }).click();
+    const assets = dialog.getByRole('group', { name: 'Asset' });
+    await expect(assets).toBeVisible();
+    // With more than six assets only the held and priced ones are chips and the rest sit behind
+    // "More assets"; the shared acceptance database holds many, and this coin is new and unpriced.
+    const chip = assets.getByRole('button', { name: symbol, exact: true });
+    const more = assets.getByRole('combobox', { name: 'More assets' });
+    await expect(chip.or(more)).toBeVisible();
+    if (await chip.count()) await chip.click();
+    else await more.selectOption({ label: `${symbol} · MANUAL-OPS coin ${suffix}` });
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
     await dialog.getByRole('combobox', { name: 'Wallet or account' }).selectOption({
       label: accountName,
     });
@@ -76,15 +85,18 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
       grossUsd: '76000',
     }),
   );
-  await page.reload();
+  await reloadFresh(page);
   await main.getByRole('button', { name: 'Add transaction', exact: true }).click();
   const sell = await openDialog('Add transaction');
   await sell.getByRole('radio', { name: 'Sell' }).check();
   await sell.getByLabel('Date').fill('2025-04-01');
+  // The balance on the date is looked up once the date field loses focus.
+  await sell.getByLabel('Date').blur();
   await expect(
     sell.getByText(`Available in ${accountName}: 0.2 ${symbol} · Use all`),
   ).toBeVisible();
   await sell.getByLabel('Amount').fill('0.3');
+  await sell.getByLabel('Amount').blur();
   await expect(sell.getByRole('alert')).toHaveText(
     `Only 0.2 ${symbol} is available in ${accountName} on Apr 1, 2025 · Use all`,
   );

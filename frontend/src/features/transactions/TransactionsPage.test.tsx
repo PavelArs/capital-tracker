@@ -1,13 +1,24 @@
 import { accountingApi } from '@api/accounting.api';
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import { cachedReads } from '@api/cached-reads';
+import {
+  type DuplicateProposal,
+  type Operation,
+  type OperationList,
+  operationsApi,
+  type TransferProposal,
+} from '@api/operations.api';
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
+import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
-import { MemoryRouter } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { shortValue } from '../shell/CopyValue';
+import { poolCandidates } from './ClassifyForm';
 import TransactionsPage from './TransactionsPage';
 
 // Synthetic ids, names and amounts only.
@@ -78,7 +89,7 @@ const chainOperation = (n: number, changes: Partial<Operation>): Operation =>
     chain: {
       txid: txid(n),
       blockHeight: 800000 + n,
-      priceObservedAt: '2026-10-04T11:00:00.000Z',
+      priceObservedAt: '2025-06-20T08:00:00.000Z',
       direction: changes.direction ?? 'in',
     },
     status: 'needs-classification',
@@ -133,11 +144,12 @@ const manual = operation({
   valueUsd: '1000',
   feeUsd: '0',
 });
-const list = (operations: Operation[]): OperationList => ({
+const list = (operations: Operation[], dustThresholdUsd: string | null = null): OperationList => ({
   at: '2026-10-04T12:00:00.000Z',
   quoteCurrency: 'USD',
   needsClassificationCount: operations.filter((item) => item.status === 'needs-classification')
     .length,
+  dustThresholdUsd,
   operations,
 });
 const all = list([outgoing, receipt, transfer, tether, imported, manual]);
@@ -170,7 +182,29 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+function Where() {
+  const { search } = useLocation();
+  return <output aria-label="Address">{search}</output>;
+}
+
 describe('TransactionsPage (list-all-operations)', () => {
+  it('OPS-OPEN: a link naming a transaction opens it and leaves the filters in the address', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    render(
+      <MemoryRouter
+        initialEntries={[`/transactions?open=${encodeURIComponent(receipt.id)}&currency=EUR`]}
+      >
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByRole('dialog', { name: 'Incoming transaction · BTC' }),
+    ).toBeInTheDocument();
+    // Back must not reopen it and a reload keeps the list: only the currency stays.
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?currency=EUR$/);
+  });
+
   it('OPS-LIST: lists manual, CSV and blockchain operations with every column, newest first', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage();
@@ -180,7 +214,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       within(table())
         .getAllByRole('columnheader')
         .map((cell) => cell.textContent),
-    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status', 'Source']);
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status']);
     // Grouped under day headings as in the prototype; the time sits under the type.
     expect(dayHeadings()).toEqual([
       'Jun 21, 2025',
@@ -197,8 +231,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       '+0.00918359',
       '≈ $780.10',
       'Bitcoin wallet bc1qsy…f3t4',
-      'Needs classification',
-      'Blockchain',
+      'To classifyBlockchain',
     ]);
     expect(rows[0]).toEqual([
       'Outgoing08:00',
@@ -206,8 +239,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       '-0.0005',
       '—',
       'Bitcoin wallet bc1qsy…f3t4',
-      'Needs classification',
-      'Blockchain',
+      'To classifyBlockchain',
     ]);
     // A transaction entered without a time says so instead of showing midnight.
     expect(rows[2]).toEqual([
@@ -216,18 +248,16 @@ describe('TransactionsPage (list-all-operations)', () => {
       '0.005',
       '—',
       'Bybit → Cold storage',
-      'Recorded',
-      'Manual',
+      'RecordedManual',
     ]);
-    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'Recorded', 'CSV']);
+    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'RecordedCSV']);
     expect(rows[5]).toEqual([
       'BuyNo time',
       'BTC',
       '+0.00918359',
       '$1,000.00',
       'Bybit',
-      'Recorded',
-      'Manual',
+      'RecordedManual',
     ]);
     expect(screen.getByRole('button', { name: /Needs classification\s*2/ })).toBeInTheDocument();
   });
@@ -252,13 +282,51 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(bodyRows()).toHaveLength(6);
   });
 
+  it('TOKEN-HIDE keeps the tokens the wallets leave out out of the asset filter', async () => {
+    const user = userEvent.setup();
+    const spam = { instrumentId: id(30), symbol: 'SPAM1A2B', name: 'Spam Claim' };
+    const held = { instrumentId: id(31), symbol: 'HELD', name: 'Held Token' };
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([
+        operation({ id: id(40), asset: btc }),
+        operation({ id: id(41), asset: spam, status: 'dust' }),
+        operation({ id: id(42), asset: held, status: 'dust' }),
+      ]),
+    );
+    // HELD is left out by one address but shown by another, so it stays a choice.
+    const address = (hidden: string[], shown: string[]) =>
+      ({
+        hiddenTokens: hidden.map((symbol) => ({
+          symbol,
+          name: symbol,
+          quantity: '1',
+          reason: 'dust',
+        })),
+        balances: shown.map((symbol) => ({ symbol, quantity: '1' })),
+      }) as unknown as WalletAddress;
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
+      address(['SPAM1A2B', 'HELD'], []),
+      address([], ['HELD']),
+    ]);
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    const filter = screen.getByRole('combobox', { name: 'Asset' });
+    await waitFor(() =>
+      expect(within(filter).queryByRole('option', { name: 'SPAM1A2B' })).not.toBeInTheDocument(),
+    );
+    expect(within(filter).getByRole('option', { name: 'HELD' })).toBeInTheDocument();
+    expect(within(filter).getByRole('option', { name: 'BTC' })).toBeInTheDocument();
+    await user.selectOptions(filter, 'BTC');
+    expect(bodyRows()).toHaveLength(1);
+  });
+
   it('filters by source, account and search text', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     await user.click(screen.getByRole('button', { name: /^CSV/ }));
-    expect(bodyRows().map((row) => cellTexts(row)[6])).toEqual(['CSV']);
+    expect(bodyRows().map((row) => cellTexts(row)[5])).toEqual(['RecordedCSV']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     // A transfer belongs to both of its accounts.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), cold.id);
@@ -290,7 +358,7 @@ describe('TransactionsPage (list-all-operations)', () => {
     const fact = (label: string) =>
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('Wallet')).toBe('Cold storage');
-    expect(fact('Address')).toBe(`Savings · ${wallet.address}`);
+    expect(fact('Address')).toBe(`Savings · ${shortValue(wallet.address)}`);
     // The wallet's name opens its page (M10); classifying happens right here (M12).
     expect(within(drawer).getByRole('link', { name: 'Cold storage' })).toHaveAttribute(
       'href',
@@ -406,6 +474,125 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Fee')).toBe('₽98.76');
   });
 
+  it('OPS-TYPE: filters by what a transaction is, keeps the other filters and counts the chips by it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    render(
+      <MemoryRouter initialEntries={['/transactions']}>
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    const type = screen.getByRole('combobox', { name: 'Type' });
+    expect(
+      within(type)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All types', 'Buy', 'Incoming', 'Outgoing', 'Transfer']);
+    await user.selectOptions(type, 'Buy');
+    expect(bodyRows().map(typeOf)).toEqual(['Buy', 'Buy', 'Buy']);
+    expect(screen.getByLabelText('Address')).toHaveTextContent('?type=buy');
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 3');
+    expect(screen.getByRole('button', { name: /^CSV/ })).toHaveTextContent('CSV 1');
+    expect(screen.getByText(/3 of 6 transactions/)).toBeInTheDocument();
+    // An unclassified wallet transaction is told by its direction.
+    await user.selectOptions(type, 'Incoming');
+    expect(bodyRows().map(typeOf)).toEqual(['Incoming']);
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    expect(screen.getByText('No transactions match')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(bodyRows()).toHaveLength(6);
+    expect(type).toHaveValue('');
+  });
+
+  it('OPS-PERIOD: the period is asked of the server, lives in the address and keeps the other filters', async () => {
+    const user = userEvent.setup();
+    const read = vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) =>
+      list(
+        all.operations.filter((item) => {
+          const day = item.occurredAt.slice(0, 10);
+          return (!range?.from || day >= range.from) && (!range?.to || day <= range.to);
+        }),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={['/transactions?asset=BTC&from=2025-06-16&to=2025-06-20']}>
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(read).toHaveBeenLastCalledWith(undefined, { from: '2025-06-16', to: '2025-06-20' });
+    expect(dayHeadings()).toEqual(['Jun 20, 2025', 'Jun 18, 2025']);
+    // A range that is none of the presets is the custom one, with its two dates.
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('custom');
+    expect(screen.getByLabelText('From')).toHaveValue('2025-06-16');
+    expect(screen.getByLabelText('To')).toHaveValue('2025-06-20');
+    // The chips count the rows of the period, with the other filters as they are.
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 2');
+    expect(screen.getByText(/2 of 3 transactions in the period/)).toBeInTheDocument();
+    // The asset list offers what the period holds; the chosen one stays.
+    expect(
+      within(screen.getByRole('combobox', { name: 'Asset' }))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All assets', 'BTC', 'USDT']);
+
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2025-06-14' } });
+    // The start follows when the end is moved before it.
+    await waitFor(() =>
+      expect(read).toHaveBeenLastCalledWith(undefined, { from: '2025-06-14', to: '2025-06-14' }),
+    );
+    expect(screen.getByLabelText('From')).toHaveValue('2025-06-14');
+    await waitFor(() => expect(dayHeadings()).toEqual(['Jun 14, 2025']));
+    expect(screen.getByLabelText('Address')).toHaveTextContent(
+      '?asset=BTC&from=2025-06-14&to=2025-06-14',
+    );
+
+    // A preset replaces the dates; All time takes the period away again.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Last 30 days');
+    await waitFor(() =>
+      expect(read).toHaveBeenLastCalledWith(undefined, {
+        from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    );
+    expect(screen.queryByLabelText('From')).toBeNull();
+    expect(screen.getByLabelText('Address')).toHaveTextContent(
+      /^\?asset=BTC&from=\d{4}-\d{2}-\d{2}$/,
+    );
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'All time');
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(undefined));
+    await waitFor(() => expect(bodyRows()).toHaveLength(5));
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?asset=BTC$/);
+  });
+
+  it('OPS-PERIOD: a period without transactions keeps the filters and can be cleared', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) =>
+      range ? list([]) : all,
+    );
+    renderPage('/transactions?from=2030-01-01');
+    // Not the empty-account card: the period is the reason, and it can be changed here.
+    expect(await screen.findByText('No transactions match')).toBeInTheDocument();
+    expect(screen.queryByText('No transactions yet')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Period' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+  });
+
+  it('OPS-PERIOD: a custom range can be opened before any date is chosen; bad dates are ignored', async () => {
+    const user = userEvent.setup();
+    const read = vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage('/transactions?from=2025-02-30&to=nonsense');
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(read).toHaveBeenLastCalledWith(undefined);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Custom range');
+    expect(screen.getByLabelText('From')).toHaveValue('');
+    expect(screen.getByLabelText('To')).toHaveValue('');
+    expect(bodyRows()).toHaveLength(6);
+  });
+
   it('OPS-PHONE: below 640 px shows two-line rows under day headings instead of the table', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
@@ -465,6 +652,39 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
   });
 
+  it('COST-UNKNOWN lists only the incoming rows of the asset that have no purchase price', async () => {
+    const user = userEvent.setup();
+    const bought = operation({
+      id: `trade:${id(50)}`,
+      occurredAt: '2025-06-10T00:00:00.000Z',
+      valueUsd: '900',
+    });
+    const reward = operation({
+      id: `reward:${id(51)}`,
+      kind: 'reward',
+      type: 'staking-reward',
+      occurredAt: '2025-06-11T00:00:00.000Z',
+      valueUsd: '5',
+      costBasisUsd: null,
+    });
+    const hiddenReceipt = chainOperation(3, {
+      occurredAt: '2025-06-12T08:00:00.000Z',
+      status: 'hidden',
+    });
+    const otherAsset = operation({ id: `trade:${id(52)}`, asset: usdt, valueUsd: null });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([receipt, outgoing, bought, reward, hiddenReceipt, otherAsset, transfer]),
+    );
+    renderPage('/transactions?asset=BTC&cost=unknown');
+    // The unanswered receipt and the reward without a cost basis; not the purchase, the
+    // outgoing row, the hidden receipt, the transfer or another asset.
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.getByText(/Incoming transactions without a purchase price/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show all of this asset' }));
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(2));
+    expect(screen.queryByText(/Incoming transactions without a purchase price/)).toBeNull();
+  });
+
   it('opens a side drawer with the raw chain facts and closes it with Escape', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
@@ -480,20 +700,56 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Date')).toBe('Jun 20, 2025, 08:05 UTC');
     expect(fact('Network')).toBe('Bitcoin');
     expect(fact('Wallet')).toBe('Not in a wallet yet');
-    expect(fact('Address')).toBe(wallet.address);
+    expect(fact('Address')).toBe(shortValue(wallet.address));
     expect(within(drawer).getByRole('link', { name: 'Open Wallets' })).toHaveAttribute(
       'href',
       '/wallets',
     );
-    expect(fact('Transaction')).toBe(txid(1));
+    expect(fact('Transaction')).toBe(`${shortValue(txid(1))}View in explorer`);
     expect(fact('Block')).toBe('800,001');
     expect(fact('Network fee')).toBe('Paid by sender');
+    // EST-AT-TIME: the estimate is at the price stored for the transaction's hour.
+    expect(fact('Estimated value')).toBe('≈ $780.10 at the price stored Jun 20, 2025, 08:00 UTC');
     expect(fact('Status')).toBe('Needs classification');
     expect(fact('Source')).toBe('Blockchain');
+    // CLS-COMPACT: what identifies the transaction stays up front; the technical facts are
+    // folded away until asked for, so the question is not pushed down the drawer.
+    const folded = within(facts).getByText('Details', { selector: 'summary' }).closest('details');
+    expect(folded).not.toHaveAttribute('open');
+    for (const label of ['Address', 'Transaction', 'Block', 'Network fee', 'Status', 'Source'])
+      expect(folded).toContainElement(within(facts).getByText(label, { exact: true }));
+    for (const label of ['Date', 'Network', 'Wallet'])
+      expect(folded).not.toContainElement(within(facts).getByText(label, { exact: true }));
     expect(within(drawer).getByRole('group', { name: 'What was this transaction?' })).toBeVisible();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(opener).toHaveFocus();
+  });
+
+  it('ASSET-LINK opens the asset page from the ticker in the drawer title', async () => {
+    const user = userEvent.setup();
+    // A blockchain leg names its coin by ticker only; the portfolio's assets find its page.
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([receipt, tether]));
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [{ instrumentId: id(1), symbol: 'BTC', name: 'Bitcoin' }],
+    } as PortfolioValuation);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    await waitFor(() =>
+      expect(within(drawer).getByRole('link', { name: 'BTC' })).toHaveAttribute(
+        'href',
+        `/portfolio/${id(1)}`,
+      ),
+    );
+    // A journal row carries its asset's id itself, so it needs no lookup.
+    await user.keyboard('{Escape}');
+    await user.click(within(bodyRows()[1]).getByRole('button'));
+    expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'USDT' })).toHaveAttribute(
+      'href',
+      `/portfolio/${id(2)}`,
+    );
   });
 
   it('shows a recorded trade with its fee and comment, and Edit and Delete', async () => {
@@ -521,7 +777,12 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(within(drawer).queryByText('Version')).toBeNull();
     expect(within(drawer).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-    expect(within(drawer).queryByRole('link')).toBeNull();
+    // Only the ticker in the title is a link (to the asset's page).
+    expect(
+      within(drawer)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['BTC']);
     await user.click(within(drawer).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -550,17 +811,20 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
     await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Staking reward' }));
     let drawer = screen.getByRole('dialog', { name: 'Staking reward · BTC' });
-    expect(within(drawer).getByRole('link', { name: 'Open in Bybit' })).toHaveAttribute(
-      'href',
-      `/manual-accounts/${bybit.id}`,
-    );
+    // G1: no screen edits it any more, so nothing offers to.
+    expect(within(drawer).queryByRole('link', { name: /^Open in/ })).toBeNull();
     expect(within(drawer).queryByRole('button', { name: 'Delete' })).toBeNull();
     await user.click(within(drawer).getByRole('button', { name: 'Close' }));
 
     await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Transfer' }));
     drawer = screen.getByRole('dialog', { name: 'Transfer · BTC' });
     expect(within(drawer).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-    expect(within(drawer).queryByRole('link')).toBeNull();
+    // Only the ticker in the title is a link (to the asset's page).
+    expect(
+      within(drawer)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['BTC']);
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     await waitFor(() =>
@@ -577,10 +841,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([]));
     renderPage();
     expect(await screen.findByRole('heading', { name: 'No transactions yet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open manual accounts' })).toHaveAttribute(
-      'href',
-      '/manual-accounts',
-    );
+    expect(screen.getByRole('link', { name: 'Open wallets' })).toHaveAttribute('href', '/wallets');
+    expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
   });
 
   it('offers a retry when loading fails and never shows numbers it does not have', async () => {
@@ -854,6 +1116,28 @@ describe('classify-chain-transactions (M12)', () => {
     return { user, drawer: screen.getByRole('dialog', { name }) };
   };
 
+  it('XFER-REFUSED: an airdrop dated before the records of the account begin names the account', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'The records of an account start after this entry',
+          coverage: { accountId: cold.id, coverageFrom: '2026-01-01T00:00:00.000Z' },
+        },
+      }),
+    );
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Airdrop' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      /The records of Cold storage start on Jan 1, 2026, after this transaction on Jun 20, 2025\. Hide the transaction/,
+    );
+  });
+
   it('CLS-BUY: classifies a receipt as a buy and opens the next one to classify', async () => {
     vi.spyOn(operationsApi, 'list')
       .mockResolvedValueOnce(list([toClassify, nextOne]))
@@ -868,11 +1152,14 @@ describe('classify-chain-transactions (M12)', () => {
     ).toEqual([
       'Transfer between my wallets',
       'Buy',
+      'Swap',
       'Income',
       'Reward',
       'Staking reward',
       'Airdrop',
       'Gift received',
+      'Pool reward',
+      'Pool withdrawal',
       'Other',
     ]);
     expect(within(drawer).getByText('1 left to classify')).toBeInTheDocument();
@@ -904,7 +1191,16 @@ describe('classify-chain-transactions (M12)', () => {
       within(within(next).getByRole('group', { name: 'What was this transaction?' }))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee']);
+    ).toEqual([
+      'Transfer between my wallets',
+      'Sell',
+      'Swap',
+      'Expense',
+      'Gift sent',
+      'Fee',
+      'Pool deposit',
+      'Other',
+    ]);
     expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
     // The classified row reads as the buy it recorded.
     expect(cellTexts(bodyRows()[0])).toEqual([
@@ -913,8 +1209,7 @@ describe('classify-chain-transactions (M12)', () => {
       '+0.00918359',
       '$1,000.00',
       'Cold storage · bc1qsy…f3t4',
-      'Recorded',
-      'Blockchain',
+      'RecordedBlockchain',
     ]);
   });
 
@@ -961,6 +1256,54 @@ describe('classify-chain-transactions (M12)', () => {
     });
   });
 
+  it('CLS-OTHER: a payment nobody can name leaves the balance without a withdrawal', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([nextOne]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Other' }));
+    expect(
+      within(drawer).getByText(
+        'The amount leaves your balance without a sale price and is not a withdrawal. Add a comment so you remember what it was.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({ type: 'other' });
+  });
+
+  it('FEE-VALUE: a fee may be saved without a value; the stored price then counts', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([nextOne]));
+    const noPrice = new AxiosError('unprocessable', '422', undefined, undefined, {
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+      data: { message: 'No stored price for this coin at that time' },
+    });
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(noPrice)
+      .mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Fee' }));
+    const value = within(drawer).getByLabelText('Value at the time (optional)');
+    expect(
+      within(drawer).getByText(
+        /^Empty: USDT and USDC count 1:1, other coins at their stored price/,
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({ type: 'fee', valueUsd: null });
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'There is no stored price for this coin at that time. Enter the value in USD.',
+    );
+    await user.type(value, '1.25');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    expect(classify.mock.calls[1][2].classification).toEqual({ type: 'fee', valueUsd: '1.25' });
+  });
+
   it('CLS-RECLASSIFY, CLS-HIDE: a classified row can be changed or hidden, keeping its answer', async () => {
     const hidden = { ...bought, type: null, status: 'hidden' as const };
     vi.spyOn(operationsApi, 'list')
@@ -998,7 +1341,7 @@ describe('classify-chain-transactions (M12)', () => {
       within(again).getByRole('button', { name: 'Include in calculations' }),
     ).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(cellTexts(bodyRows()[0])).toContain('Hidden');
+    expect(cellTexts(bodyRows()[0])).toContain('HiddenBlockchain');
     await user.click(screen.getByRole('button', { name: /^Hidden\s*1/ }));
     expect(bodyRows()).toHaveLength(1);
   });
@@ -1027,6 +1370,71 @@ describe('classify-chain-transactions (M12)', () => {
     );
     // A retry of one answer reuses its request id, so it is recorded at most once.
     expect(classify.mock.calls[1][2].requestId).toBe(classify.mock.calls[0][2].requestId);
+  });
+});
+
+describe('chain dust threshold (CLS-DUST)', () => {
+  const dust = chainOperation(3, {
+    occurredAt: '2025-06-22T09:00:00.000Z',
+    quantity: '0.00000546',
+    estimatedValueUsd: '0.546',
+    status: 'dust',
+  });
+
+  it('keeps dust out of every view but its own, which says why and links to Settings', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([dust, receipt, manual], '1'));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.getByRole('button', { name: /^Dust\s*1/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Blockchain/ }));
+    expect(bodyRows().map(typeOf)).toEqual(['Incoming']);
+    await user.click(screen.getByRole('button', { name: /^Dust/ }));
+    expect(bodyRows().map(cellTexts)).toEqual([
+      [
+        'Incoming09:00',
+        'BTC',
+        '+0.00000546',
+        '≈ $0.55',
+        'Bitcoin wallet bc1qsy…f3t4',
+        'DustBlockchain',
+      ],
+    ]);
+    expect(
+      screen.getByText(/Incoming wallet transactions worth less than \$1\.00 at the latest price/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Change the threshold in Settings' })).toHaveAttribute(
+      'href',
+      '/preferences',
+    );
+  });
+
+  it('reads the Dust filter from the address and hides the chip while nothing is dust', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([receipt, manual]));
+    const { unmount } = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /^Dust/ })).toBeNull();
+    unmount();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([dust, receipt], '1'));
+    renderPage('/transactions?status=dust');
+    await waitFor(() => expect(bodyRows().map(typeOf)).toEqual(['Incoming']));
+    expect(screen.getByRole('button', { name: /^Dust/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('opens a dust receipt with a note and lets the owner classify or hide it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([dust], '1'));
+    renderPage('/transactions?status=dust');
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      "Worth less than your dust threshold, or a token no price source lists, so it doesn't ask to be classified. It still counts in your balance.",
+    );
+    expect(within(drawer).getByRole('button', { name: 'Classify' })).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole('button', { name: 'Hide from calculations' }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1077,6 +1485,7 @@ describe('link-own-transfers (M13)', () => {
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [cold, bybit].map((account) => ({
         ...account,
+        kind: null,
         currentRevision: 0,
         createdAt: '2025-01-01T00:00:00.000Z',
       })),
@@ -1090,6 +1499,194 @@ describe('link-own-transfers (M13)', () => {
     });
   });
 
+  it('BYBIT-EARN: Earn yield Bybit paid is recorded as staking income by itself', async () => {
+    const earned = chainOperation(5, {
+      type: 'staking-reward',
+      occurredAt: '2025-06-24T00:30:00.000Z',
+      quantity: '0.0001',
+      estimatedValueUsd: '6',
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: 'bybit-earn-flexible-1002096',
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'in',
+      },
+      status: 'recorded',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'staking-reward', valueUsd: '6.00' },
+        comment: null,
+        automatic: true,
+      },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([earned]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(cellTexts(bodyRows()[0]).at(-1)).toBe('Auto: Earn yieldBybit');
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    expect(within(screen.getByRole('dialog')).getByRole('note')).toHaveTextContent(
+      "Recognised automatically from Bybit's Earn yield history: counts as staking income at the coin's price when Bybit paid it. Change the classification if it is wrong.",
+    );
+  });
+
+  it('BYBIT-CHAIN-FACTS: a withdrawal names its blockchain, address and hash, opened on that chain', async () => {
+    const hash = `0x${'d'.repeat(64)}`;
+    const sent = chainOperation(8, {
+      type: null,
+      direction: 'out',
+      occurredAt: '2025-06-24T08:00:00.000Z',
+      quantity: '1.5',
+      estimatedValueUsd: null,
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: 'bybit-withdrawal-9000001',
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'out',
+        exchange: {
+          kind: 'withdrawal',
+          chain: 'ARBI',
+          network: 'arbitrum',
+          address: `0x${'ab'.repeat(20)}`,
+          fromAddress: null,
+          hash: hash.slice(2),
+        },
+      },
+      status: 'needs-classification',
+      classification: null,
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByText('Blockchain')).toBeInTheDocument();
+    expect(within(drawer).getByText('Arbitrum One')).toBeInTheDocument();
+    expect(within(drawer).getByText('Withdrawal address')).toBeInTheDocument();
+    expect(within(drawer).getByText('Transaction')).toBeInTheDocument();
+    expect(within(drawer).getByRole('link', { name: 'View in explorer' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/tx/${hash}`,
+    );
+  });
+
+  it('BYBIT-GAP-DELETE: a counted difference can be deleted, after asking', async () => {
+    const counted = chainOperation(7, {
+      type: null,
+      occurredAt: '2025-06-24T08:00:00.000Z',
+      quantity: '3',
+      estimatedValueUsd: null,
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: `bybit-deposit-gap-${id(70)}`,
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'in',
+      },
+      status: 'needs-classification',
+      classification: null,
+    });
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([counted]))
+      .mockResolvedValue(list([]));
+    const remove = vi.spyOn(operationsApi, 'removeCounted').mockResolvedValue();
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
+    expect(remove).not.toHaveBeenCalled();
+    expect(within(drawer).getByText(/the difference shows again/)).toBeInTheDocument();
+    await user.click(within(drawer).getByText('Keep'));
+    expect(within(drawer).getByText('Delete', { selector: 'button' })).toBeInTheDocument();
+    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
+    await user.click(within(drawer).getByText('Delete record'));
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(remove.mock.calls[0][1]).toBe(`bybit-deposit-gap-${id(70)}`);
+    expect(remove.mock.calls[0][2]).toEqual({ requestId: expect.any(String), expectedVersion: 0 });
+    expect(await screen.findByText(/Record deleted/)).toBeInTheDocument();
+  });
+
+  it('a Bybit record the exchange made cannot be deleted', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([
+        chainOperation(8, {
+          type: 'staking-reward',
+          occurredAt: '2025-06-24T00:30:00.000Z',
+          quantity: '0.0001',
+          account: bybit,
+          wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+          chain: {
+            txid: 'bybit-earn-flexible-1002096',
+            blockHeight: 0,
+            priceObservedAt: null,
+            direction: 'in',
+          },
+          status: 'recorded',
+          classification: {
+            version: 1,
+            hidden: false,
+            value: { type: 'staking-reward', valueUsd: '6.00' },
+            comment: null,
+            automatic: true,
+          },
+        }),
+      ]),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(within(drawer).getByText(/can't be deleted/)).toBeInTheDocument();
+  });
+
+  it('BYBIT-CONVERT: a convert into USDT is a sale recognised from the convert history', async () => {
+    const converted = chainOperation(6, {
+      type: 'sell',
+      direction: 'out',
+      occurredAt: '2025-06-24T06:00:00.000Z',
+      quantity: '0.01',
+      valueUsd: '650',
+      estimatedValueUsd: '650',
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: 'bybit-trade-convert-5100000000000000000000000001',
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'out',
+      },
+      status: 'recorded',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'sell', currency: 'USDT', amount: '650' },
+        comment: null,
+        automatic: true,
+      },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([converted]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    expect(drawer).toHaveTextContent('Convert 5100000000000000000000000001');
+    expect(within(drawer).getAllByRole('note')[0]).toHaveTextContent(
+      "Recognised automatically from Bybit's convert history: the coins sold were already in this account, so it counts as a sale, not a deposit. Change the classification if it is wrong.",
+    );
+  });
+
   it('XFER-AUTO: a pair between own wallets is one transfer A → B, recognised automatically', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
     const { drawer } = await openRow(0, 'Transfer · BTC');
@@ -1099,8 +1696,7 @@ describe('link-own-transfers (M13)', () => {
       '0.5',
       '≈ $30,000.00',
       'Cold storage → Bybit',
-      'Auto: own wallets',
-      'Blockchain',
+      'Auto: own walletsBlockchain',
     ]);
     expect(within(drawer).getByRole('note')).toHaveTextContent(
       'Recognised automatically: both addresses belong to your wallets and Bybit received the same amount minus the network fee. Counts as a transfer, not a sale or a deposit.',
@@ -1110,10 +1706,60 @@ describe('link-own-transfers (M13)', () => {
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('From')).toBe('Cold storage');
     expect(fact('To')).toBe('Bybit');
-    expect(fact('Other address')).toBe(other.address);
+    expect(fact('Other address')).toBe(shortValue(other.address));
     expect(fact('Network fee')).toBe('0.0001 BTC');
     expect(fact('Status')).toBe('Auto: own wallets');
     expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
+  });
+
+  it('SOL-STAKE-MOVE: SOL moved into an own stake account needs no classification', async () => {
+    const sol = { instrumentId: null, symbol: 'SOL', name: 'Solana' };
+    const staked = chainOperation(9, {
+      type: 'stake',
+      direction: 'internal',
+      status: 'recorded',
+      asset: sol,
+      account: bybit,
+      quantity: '10',
+      estimatedValueUsd: '1500',
+      fee: { asset: sol, quantity: '0.000005' },
+      chain: { txid: txid(9), blockHeight: 300000009, priceObservedAt: null, direction: 'out' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([staked]));
+    const { drawer } = await openRow(0, 'Stake · SOL');
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      'Moved into a stake account of this wallet: the coins stay yours and keep their purchase price. Only the network fee is a cost.',
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Classify' })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Change classification' })).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Hide from calculations' })).toBeEnabled();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(
+      within(facts).getByText('Network fee', { exact: true }).nextElementSibling,
+    ).toHaveTextContent('0.000005 SOL');
+    expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
+  });
+
+  it('ETH-STAKE-MOVE: ETH deposited into a staking pool needs no classification', async () => {
+    const eth = { instrumentId: null, symbol: 'ETH', name: 'Ethereum' };
+    const staked = chainOperation(10, {
+      type: 'stake',
+      direction: 'internal',
+      status: 'recorded',
+      asset: eth,
+      account: bybit,
+      wallet: { id: id(77), network: 'ethereum', address: `0x${'5e'.repeat(20)}`, label: null },
+      quantity: '1',
+      estimatedValueUsd: '2000',
+      fee: { asset: eth, quantity: '0.0005' },
+      chain: { txid: txid(10), blockHeight: 20000010, priceObservedAt: null, direction: 'out' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([staked]));
+    const { drawer } = await openRow(0, 'Stake · ETH');
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      'Moved into a staking pool of this wallet: the coins stay yours and keep their purchase price. Only the network fee is a cost.',
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Classify' })).toBeNull();
   });
 
   it('XFER-AUTO: the owner can still reclassify an automatic transfer', async () => {
@@ -1158,6 +1804,93 @@ describe('link-own-transfers (M13)', () => {
     });
   });
 
+  describe('XFER-ADDRESS: a wallet with several addresses in one transaction', () => {
+    // Cold storage sends 0.2001 BTC; two addresses of Bybit took part, one received the transfer
+    // and the other got a payment of its own in the same transaction.
+    const second = {
+      ...other,
+      id: id(23),
+      address: 'bc1qsyntheticsecondaddress000000000y7m5',
+    };
+    const receivedAt = (to: typeof other, n: number, quantity: string) =>
+      chainOperation(4, {
+        id: `chain:${to.id}:${txid(4)}`,
+        direction: 'in',
+        occurredAt: '2025-06-23T08:00:00.000Z',
+        quantity,
+        account: bybit,
+        wallet: to,
+        chain: { txid: txid(4), blockHeight: 800004 + n, priceObservedAt: null, direction: 'in' },
+      });
+    const legA = receivedAt(other, 0, '0.2');
+    const legB = receivedAt(second, 1, '0.05');
+
+    it('asks which address and sends it as the other side of the transfer', async () => {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent, legA, legB]));
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+      await within(drawer).findByRole('option', { name: 'Bybit' });
+      // One wallet at a time: nothing to choose before the wallet is.
+      expect(within(drawer).queryByLabelText('Received at')).toBeNull();
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      const picker = within(drawer).getByLabelText('Received at');
+      expect(
+        within(picker)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual([
+        'Choose the address',
+        expect.stringContaining('+0.2 BTC'),
+        expect.stringContaining('+0.05 BTC'),
+      ]);
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      expect(within(drawer).getByText('Choose the address of that wallet')).toBeInTheDocument();
+      expect(classify).not.toHaveBeenCalled();
+      await user.selectOptions(picker, other.id);
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: {
+          type: 'transfer',
+          accountId: bybit.id,
+          partner: { addressId: other.id, txid: txid(4) },
+        },
+      });
+    });
+
+    it('offers nothing when one address of the wallet took part', async () => {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent, legA]));
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+      await within(drawer).findByRole('option', { name: 'Bybit' });
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      expect(within(drawer).queryByLabelText('Received at')).toBeNull();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toMatchObject({
+        classification: { type: 'transfer', accountId: bybit.id },
+      });
+      expect(classify.mock.calls[0][2].classification).not.toHaveProperty('partner');
+    });
+
+    it('asks again when the other wallet changes', async () => {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent, legA, legB]));
+      const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+      await within(drawer).findByRole('option', { name: 'Bybit' });
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      await user.selectOptions(within(drawer).getByLabelText('Received at'), other.id);
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), '');
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      expect(within(drawer).getByLabelText('Received at')).toHaveValue('');
+    });
+  });
+
   it('XFER-AUTO: an unanswered leg with an own address on the other side suggests the transfer', async () => {
     const suggested = { ...sent, counterAccount: bybit, counterWallet: other };
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
@@ -1191,5 +1924,1798 @@ describe('link-own-transfers (M13)', () => {
     expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       'Choose another wallet or another type.',
     );
+  });
+  it.each([
+    [
+      'names the account that does not hold the coins',
+      {
+        message: 'An account does not hold enough for this transfer',
+        dependent: {
+          operationId: `transfer:${id(41)}`,
+          accountId: cold.id,
+          instrumentId: id(1),
+          occurredAt: '2025-06-23T08:00:00.000Z',
+        },
+      },
+      /Cold storage does not hold enough BTC on Jun 23, 2025 for this transfer\. Classify the receipts/,
+    ],
+    [
+      'names the account whose records start after the transaction',
+      {
+        message: 'The records of an account start after this entry',
+        coverage: { accountId: bybit.id, coverageFrom: '2025-07-01T00:00:00.000Z' },
+      },
+      /The records of Bybit start on Jul 1, 2025, after this transaction on Jun 23, 2025\. Hide the transaction/,
+    ],
+    [
+      'names the account opened with balances whose records have not started',
+      {
+        message: 'The records of an account have not started',
+        coverage: { accountId: cold.id, coverageFrom: null },
+      },
+      /The records of Cold storage have not started: it was opened with balances, so start them on Manual accounts first\. Until then this transaction can only be hidden/,
+    ],
+  ])('XFER-REFUSED: %s', async (_name, data, expected) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data,
+      }),
+    );
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+    await within(drawer).findByRole('option', { name: 'Bybit' });
+    await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(expected);
+  });
+});
+
+describe('swap-chain-coins (CLS-SWAP)', () => {
+  // Trust Wallet pays 1000 USDT from its Ethereum address for 0.0125 BTC at its Bitcoin one.
+  const trust = { id: id(12), name: 'Trust Wallet' };
+  const ethWallet = {
+    id: id(22),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000aa',
+    label: null,
+  };
+  const chainUsdt = { instrumentId: null, symbol: 'USDT', name: 'Tether' };
+  const bought = chainOperation(5, {
+    occurredAt: '2026-09-01T10:40:00.000Z',
+    quantity: '0.0125',
+    estimatedValueUsd: '750',
+    account: trust,
+  });
+  const usdtTxid = `${'d'.repeat(64)}-3`;
+  const paid = operation({
+    id: `chain:${ethWallet.id}:${usdtTxid}`,
+    kind: 'chain',
+    type: null,
+    direction: 'out',
+    occurredAt: '2026-09-01T10:00:00.000Z',
+    asset: chainUsdt,
+    quantity: '1000',
+    account: trust,
+    wallet: ethWallet,
+    chain: { txid: usdtTxid, blockHeight: 20000003, priceObservedAt: null, direction: 'out' },
+    status: 'needs-classification',
+    source: 'chain',
+    version: null,
+  });
+  // Not candidates: the same coin, and a payment a month earlier.
+  const btcSent = chainOperation(6, {
+    direction: 'out',
+    occurredAt: '2026-09-01T09:00:00.000Z',
+    quantity: '0.1',
+    account: trust,
+    chain: { txid: txid(6), blockHeight: 800006, priceObservedAt: null, direction: 'out' },
+  });
+  const earlier = {
+    ...paid,
+    id: `chain:${ethWallet.id}:${'f'.repeat(64)}-1`,
+    occurredAt: '2026-08-01T10:00:00.000Z',
+    chain: { ...paid.chain!, txid: `${'f'.repeat(64)}-1` },
+  };
+  const swapped = chainOperation(5, {
+    type: 'swap',
+    direction: 'internal',
+    occurredAt: '2026-09-01T10:40:00.000Z',
+    asset: chainUsdt,
+    quantity: '1000',
+    counterAsset: chainBtc,
+    counterQuantity: '0.0125',
+    valueUsd: '1000',
+    costBasisUsd: '1000',
+    account: trust,
+    counterWallet: ethWallet,
+    chain: {
+      txid: txid(5),
+      blockHeight: 800005,
+      priceObservedAt: null,
+      direction: 'in',
+      pairedTxid: usdtTxid,
+    },
+    status: 'recorded',
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'swap', with: { addressId: ethWallet.id, txid: usdtTxid }, valueUsd: null },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const openRow = async (
+    operations: Operation[],
+    index: number,
+    name: string,
+    dustThresholdUsd: string | null = null,
+  ) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(operations, dustThresholdUsd));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
+    await user.click(within(bodyRows()[index]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name }) };
+  };
+
+  it('CLS-SWAP-UI: a receipt is paid with a transaction from one of the wallets', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(
+      [bought, paid, btcSent, earlier],
+      0,
+      'Incoming transaction · BTC',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    const select = within(drawer).getByLabelText('Paid with');
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the transaction',
+      'Sep 1, 2026, 10:00 · -1,000 USDT · Trust Wallet · Ethereum 0x0000…00aa',
+    ]);
+    expect(
+      within(drawer).getByText(
+        'Empty: USDT and USDC count 1:1, other coins at their stored price on Sep 1, 2026.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(
+      within(drawer).getByText('Choose the transaction on the other side'),
+    ).toBeInTheDocument();
+    expect(classify).not.toHaveBeenCalled();
+    await user.selectOptions(select, `${ethWallet.id}|${usdtTxid}`);
+    await user.type(within(drawer).getByLabelText('Value at the time (optional)'), '1012.5');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][1]).toBe(txid(5));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: {
+        type: 'swap',
+        with: { addressId: ethWallet.id, txid: usdtTxid },
+        valueUsd: '1012.5',
+      },
+    });
+  });
+
+  it('CLS-SWAP-UI: an outgoing transaction names what it bought', async () => {
+    const { user, drawer } = await openRow([bought, paid], 1, 'Outgoing transaction · USDT');
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    expect(
+      within(within(drawer).getByLabelText('Received in exchange'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the transaction',
+      'Sep 1, 2026, 10:40 · +0.0125 BTC · Trust Wallet · Bitcoin bc1qsy…f3t4',
+    ]);
+  });
+
+  it('CLS-SWAP-UI: a swap is one row USDT → BTC with both transactions in the drawer', async () => {
+    const { user, drawer } = await openRow([swapped], 0, 'Swap · USDT → BTC');
+    expect(cellTexts(bodyRows()[0])).toEqual([
+      'Swap10:40',
+      'USDT → BTC',
+      '-1,000+0.0125 BTC',
+      '$1,000.00',
+      'Trust Wallet',
+      'RecordedBlockchain',
+    ]);
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Paid')).toBe('-1,000 USDT');
+    expect(fact('Paid from')).toBe('Trust Wallet');
+    expect(fact('Paying address')).toBe(`Ethereum · ${shortValue(ethWallet.address)}`);
+    expect(fact('Paying transaction')).toBe(`${shortValue(`0x${'d'.repeat(64)}`)}View in explorer`);
+    expect(fact('Received')).toBe('+0.0125 BTC');
+    expect(fact('Received in')).toBe('Trust Wallet');
+    expect(fact('Address')).toBe(`Bitcoin · ${shortValue(wallet.address)}`);
+    expect(fact('Value')).toBe('$1,000.00');
+    expect(fact('Cost basis')).toBe('$1,000.00');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The transaction paired now stays the choice, though the list shows it inside the swap.
+    expect(within(drawer).getByLabelText('Paid with')).toHaveValue(`${ethWallet.id}|${usdtTxid}`);
+  });
+
+  it('CLS-SWAP-UI: says why a pair cannot be one swap', async () => {
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message: 'Choose the account of the other wallet first' },
+      }),
+    );
+    const { user, drawer } = await openRow([bought, paid], 0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    await user.selectOptions(
+      within(drawer).getByLabelText('Paid with'),
+      `${ethWallet.id}|${usdtTxid}`,
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'The address on the other side is not in a wallet yet. Choose its wallet first.',
+    );
+  });
+
+  it('CLS-SWAP-DUST: dust, hidden and too-small transactions are no other side', async () => {
+    const other = (n: number, changes: Partial<Operation>) => ({
+      ...paid,
+      id: `chain:${ethWallet.id}:${'e'.repeat(63)}${n}-1`,
+      chain: { ...paid.chain!, txid: `${'e'.repeat(63)}${n}-1` },
+      ...changes,
+    });
+    const { user, drawer } = await openRow(
+      [
+        bought,
+        paid,
+        other(1, { quantity: '0.4', estimatedValueUsd: '0.4' }),
+        other(2, { status: 'hidden' }),
+        other(3, { status: 'dust', direction: 'in', estimatedValueUsd: '0.2' }),
+        other(4, { quantity: '0' }),
+      ],
+      0,
+      'Incoming transaction · BTC',
+      '1',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    expect(
+      within(within(drawer).getByLabelText('Paid with'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the transaction',
+      'Sep 1, 2026, 10:00 · -1,000 USDT · Trust Wallet · Ethereum 0x0000…00aa',
+    ]);
+  });
+
+  describe('CLS-RECORDED-UI', () => {
+    // The 1000 USDT sent paid for 0.0125 BTC the owner had already added by hand.
+    const purchase = operation({
+      id: `trade:${id(60)}`,
+      occurredAt: '2026-09-01T09:30:00.000Z',
+      quantity: '0.0125',
+      asset: btc,
+      account: trust,
+      valueUsd: '1000',
+      settlement: { asset: usdt, quantity: '1000' },
+    });
+    const imported = operation({
+      ...purchase,
+      id: `trade:${id(61)}`,
+      occurredAt: '2026-09-02T00:00:00.000Z',
+      settlement: null,
+      source: 'csv',
+    });
+    // Not choices: another wallet's record and a sale of BTC.
+    const elsewhere = operation({ ...purchase, id: `trade:${id(62)}`, account: cold });
+    const sold = operation({ ...purchase, id: `trade:${id(63)}`, type: 'sell', direction: 'out' });
+    const linked = operation({
+      ...paid,
+      type: 'buy',
+      status: 'recorded',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'recorded', operation: { kind: 'trade', id: id(60) } },
+        comment: null,
+        automatic: false,
+      },
+    });
+
+    it('an outgoing transaction can be the payment of a purchase added by hand', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow(
+        [imported, paid, purchase, elsewhere, sold],
+        1,
+        'Outgoing transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      const group = within(select).getByRole('group', { name: 'Added by you or from CSV' });
+      expect(
+        within(group)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, 09:30 · Buy 0.0125 BTC for 1,000 USDT · Added by you']);
+      await user.selectOptions(select, `trade:${id(60)}`);
+      expect(within(drawer).queryByLabelText('Value at the time (optional)')).toBeNull();
+      expect(
+        within(drawer).getByText(
+          'This transaction is that record: nothing new is added, and the coins are not counted twice.',
+        ),
+      ).toBeInTheDocument();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: { type: 'recorded', operation: { kind: 'trade', id: id(60) } },
+      });
+    });
+
+    it('CLS-PAID-UI: USDT sent can pay for a purchase made by hand in another account', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      // 300 USDT, bought ZEC in an account of its own that held no USDT then.
+      const zcash = { id: id(13), name: 'Zcash' };
+      const zec = { instrumentId: id(3), symbol: 'ZEC', name: 'Zcash' };
+      const owed = operation({
+        id: `trade:${id(64)}`,
+        occurredAt: '2026-09-01T09:00:00.000Z',
+        quantity: '10',
+        asset: zec,
+        account: zcash,
+        valueUsd: '300',
+        feeUsd: '0',
+        settlement: { asset: usdt, quantity: '0' },
+      });
+      // Not choices: paid from that account's cash in full, paid in RUB, and another coin's cash.
+      const settled = operation({
+        ...owed,
+        id: `trade:${id(65)}`,
+        settlement: { asset: usdt, quantity: '300' },
+      });
+      const inRub = operation({
+        ...owed,
+        id: `trade:${id(66)}`,
+        paid: {
+          currency: 'RUB',
+          gross: '24000',
+          fee: '0',
+          rateDate: '2026-09-01',
+          perUsd: '80',
+          rateSource: 'bank-of-russia',
+        },
+      });
+      const inUsdc = operation({
+        ...owed,
+        id: `trade:${id(67)}`,
+        settlement: {
+          asset: { instrumentId: id(4), symbol: 'USDC', name: 'USD Coin' },
+          quantity: '120',
+        },
+      });
+      const { user, drawer } = await openRow(
+        [paid, owed, settled, inRub, inUsdc],
+        0,
+        'Outgoing transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      const group = within(select).getByRole('group', { name: 'Added by you or from CSV' });
+      expect(
+        within(group)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, 09:00 · Buy 10 ZEC · Added by you · Zcash']);
+      await user.selectOptions(select, `trade:${id(64)}`);
+      expect(
+        within(drawer).getByText(
+          'The coins move to Zcash just before that purchase and pay for it there. Nothing is counted twice.',
+        ),
+      ).toBeInTheDocument();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: { type: 'recorded', operation: { kind: 'trade', id: id(64) } },
+      });
+    });
+
+    it('CLS-PAID-UI: coins received never pay for a purchase in another account', async () => {
+      const owed = operation({
+        ...purchase,
+        id: `trade:${id(68)}`,
+        account: cold,
+        settlement: { asset: usdt, quantity: '0' },
+      });
+      const { user, drawer } = await openRow(
+        [owed, { ...paid, direction: 'in', chain: { ...paid.chain!, direction: 'in' } }],
+        1,
+        'Incoming transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      expect(within(drawer).queryByRole('group', { name: 'Added by you or from CSV' })).toBeNull();
+    });
+
+    it('CLS-PAID-UI: a payment carried to another account reads as a transfer naming the purchase', async () => {
+      const zcash = { id: id(13), name: 'Zcash' };
+      const owed = operation({
+        id: `trade:${id(64)}`,
+        occurredAt: '2026-09-01T09:00:00.000Z',
+        quantity: '10',
+        asset: { instrumentId: id(3), symbol: 'ZEC', name: 'Zcash' },
+        account: zcash,
+        valueUsd: '300',
+        settlement: { asset: usdt, quantity: '300' },
+      });
+      const carried = operation({
+        ...paid,
+        type: 'transfer',
+        direction: 'internal',
+        status: 'recorded',
+        counterAccount: zcash,
+        classification: {
+          version: 1,
+          hidden: false,
+          value: { type: 'recorded', operation: { kind: 'trade', id: id(64) } },
+          comment: null,
+          automatic: false,
+        },
+      });
+      const { user, drawer } = await openRow([carried, owed], 0, 'Transfer · USDT');
+      expect(
+        within(drawer).getByText(/These coins moved to Zcash and paid for the purchase/),
+      ).toBeInTheDocument();
+      expect(within(drawer).queryByText(/Already recorded by hand or from CSV/)).toBeNull();
+      const facts = within(drawer).getByRole('region', { name: 'Details' });
+      expect(
+        within(facts).getByText('Recorded as', { exact: true }).nextElementSibling?.textContent,
+      ).toBe('Sep 1, 2026, 09:00 · Buy 10 ZEC for 300 USDT · Added by you · Zcash');
+      await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+      expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(`trade:${id(64)}`);
+    });
+
+    it('a receipt can be the coins of a purchase imported from CSV', async () => {
+      const { user, drawer } = await openRow(
+        [imported, bought, purchase],
+        1,
+        'Incoming transaction · BTC',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const group = within(within(drawer).getByLabelText('Paid with')).getByRole('group', {
+        name: 'Added by you or from CSV',
+      });
+      expect(
+        within(group)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual([
+        'Sep 1, 2026, 09:30 · Buy 0.0125 BTC for 1,000 USDT · Added by you',
+        'Sep 2, 2026, No time · Buy 0.0125 BTC · From CSV',
+      ]);
+    });
+
+    it('a recorded transaction names its record and opens on it to change', async () => {
+      const { user, drawer } = await openRow([linked, purchase], 0, 'Buy · USDT');
+      expect(within(drawer).getByText(/Already recorded by hand or from CSV/)).toBeInTheDocument();
+      const facts = within(drawer).getByRole('region', { name: 'Details' });
+      const fact = (label: string) =>
+        within(facts).queryByText(label, { exact: true })?.nextElementSibling?.textContent;
+      expect(fact('Recorded as')).toBe(
+        'Sep 1, 2026, 09:30 · Buy 0.0125 BTC for 1,000 USDT · Added by you',
+      );
+      expect(fact('Value')).toBeUndefined();
+      await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+      expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(`trade:${id(60)}`);
+    });
+  });
+
+  describe('CLS-SWAP-RECORD-UI', () => {
+    // The 1000 USDT sent paid for 10 ZEC bought by hand in the same wallet, dated before the
+    // transaction (an import without a time).
+    const zec = { instrumentId: id(3), symbol: 'ZEC', name: 'Zcash' };
+    const zecBuy = operation({
+      id: `trade:${id(70)}`,
+      occurredAt: '2026-09-01T00:00:00.000Z',
+      quantity: '10',
+      asset: zec,
+      account: trust,
+      valueUsd: '1000',
+      feeUsd: '0',
+      version: 4,
+    });
+    const group = 'Added by you, to be replaced by this swap';
+    const refusal = (status: number, message: string) =>
+      new AxiosError('refused', String(status), undefined, undefined, {
+        status,
+        statusText: 'Refused',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message },
+      });
+
+    it('an outgoing transaction can be replaced by a plain purchase of another coin', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      // Not choices: another wallet's, with a fee, paid in RUB, a sale, a purpose, the same coin,
+      // a month away, and one that already names this very transaction's record.
+      const rub = {
+        currency: 'RUB' as const,
+        gross: '80000',
+        fee: '0',
+        rateDate: '2026-09-01',
+        perUsd: '80',
+        rateSource: 'bank-of-russia' as const,
+      };
+      const others = [
+        operation({ ...zecBuy, id: `trade:${id(71)}`, account: cold }),
+        operation({ ...zecBuy, id: `trade:${id(72)}`, feeUsd: '2' }),
+        operation({ ...zecBuy, id: `trade:${id(73)}`, paid: rub }),
+        operation({ ...zecBuy, id: `trade:${id(74)}`, type: 'sell', direction: 'out' }),
+        operation({ ...zecBuy, id: `trade:${id(75)}`, type: 'income' }),
+        operation({ ...zecBuy, id: `trade:${id(76)}`, asset: usdt }),
+        operation({ ...zecBuy, id: `trade:${id(77)}`, occurredAt: '2026-08-01T00:00:00.000Z' }),
+      ];
+      const { user, drawer } = await openRow(
+        [paid, zecBuy, ...others],
+        0,
+        'Outgoing transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      expect(
+        within(within(select).getByRole('group', { name: group }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, No time · Buy 10 ZEC · Added by you']);
+      await user.selectOptions(select, `replace:${id(70)}:4`);
+      expect(
+        within(drawer).getByText(
+          'The purchase you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(drawer).getByText('Empty: the value of the record you added.'),
+      ).toBeInTheDocument();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: {
+          type: 'swap',
+          record: { kind: 'trade', id: id(70), version: 4 },
+          valueUsd: null,
+        },
+      });
+    });
+
+    it('the value the owner enters goes with the answer', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow([paid, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      await user.type(within(drawer).getByLabelText('Value at the time (optional)'), '990');
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2].classification).toEqual({
+        type: 'swap',
+        record: { kind: 'trade', id: id(70), version: 4 },
+        valueUsd: '990',
+      });
+    });
+
+    it('an incoming transaction can be replaced by a sale, never by a purchase', async () => {
+      const zecSale = operation({
+        ...zecBuy,
+        id: `trade:${id(78)}`,
+        type: 'sell',
+        direction: 'out',
+      });
+      const { user, drawer } = await openRow(
+        [{ ...paid, direction: 'in', chain: { ...paid.chain!, direction: 'in' } }, zecBuy, zecSale],
+        0,
+        'Incoming transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Paid with');
+      expect(
+        within(within(select).getByRole('group', { name: group }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, No time · Sell 10 ZEC · Added by you']);
+      await user.selectOptions(select, `replace:${id(78)}:4`);
+      expect(within(drawer).getByText(/The sale you added is deleted/)).toBeInTheDocument();
+    });
+
+    it("a purchase paid in the very coin that left stays the transaction's own record", async () => {
+      const spent = operation({ ...zecBuy, settlement: { asset: usdt, quantity: '1000' } });
+      const { user, drawer } = await openRow([paid, spent], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      expect(within(drawer).queryByRole('group', { name: group })).toBeNull();
+      expect(
+        within(within(drawer).getByLabelText('Received in exchange')).getByRole('group', {
+          name: 'Added by you or from CSV',
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it('a saved swap opens on the record it replaced', async () => {
+      const swapped = operation({
+        ...paid,
+        type: 'swap',
+        direction: 'internal',
+        status: 'recorded',
+        counterAsset: zec,
+        counterQuantity: '10',
+        classification: {
+          version: 1,
+          hidden: false,
+          value: {
+            type: 'swap',
+            record: { kind: 'trade', id: id(70), version: 4 },
+            valueUsd: null,
+          },
+          comment: null,
+          automatic: false,
+        },
+      });
+      const { user, drawer } = await openRow([swapped], 0, 'Swap · USDT → ZEC');
+      await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      expect(select).toHaveValue(`replace:${id(70)}:4`);
+      expect(
+        within(within(select).getByRole('group', { name: group }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['The record this swap replaced']);
+    });
+
+    it('says why a record was refused', async () => {
+      vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+        refusal(422, 'That record is too far from this transaction'),
+      );
+      const { user, drawer } = await openRow([paid, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      expect(
+        await within(drawer).findByText(
+          'That record is more than a week from this transaction. Choose another one.',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
+describe('token blockchain (TOKEN-CHAIN)', () => {
+  // The same ticker on two blockchains: each row names its own.
+  const ethWallet = {
+    id: id(23),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000bb',
+    label: null,
+  };
+  const solWallet = {
+    id: id(24),
+    network: 'solana' as const,
+    address: 'So1Synthetic1111111111111111111111111111111',
+    label: null,
+  };
+  const leg = (wallet: typeof ethWallet | typeof solWallet, n: number, at: string) =>
+    operation({
+      id: `chain:${wallet.id}:${txid(n)}`,
+      kind: 'chain',
+      type: null,
+      direction: 'in',
+      occurredAt: at,
+      asset: { instrumentId: null, symbol: 'USDT', name: 'Tether', network: wallet.network },
+      quantity: '250',
+      wallet,
+      chain: { txid: txid(n), blockHeight: n, priceObservedAt: null, direction: 'in' },
+      status: 'needs-classification',
+      source: 'chain',
+      version: null,
+    });
+  const onEthereum = leg(ethWallet, 31, '2026-09-02T10:00:00.000Z');
+  const onSolana = leg(solWallet, 32, '2026-09-01T10:00:00.000Z');
+
+  it('TOKEN-CHAIN-UI: a token row and its drawer name the blockchain', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([onEthereum, onSolana]));
+    const user = userEvent.setup();
+    const { container } = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual([
+      'USDT (Ethereum)',
+      'USDT (Solana)',
+    ]);
+    expect(
+      [...container.querySelectorAll('tbody .asset-icon__chain')].map((icon) =>
+        icon.getAttribute('data-chain'),
+      ),
+    ).toEqual(['Ξ', 'S']);
+    await user.click(within(bodyRows()[1]).getByRole('button'));
+    expect(
+      screen.getByRole('dialog', { name: 'Incoming transaction · USDT (Solana)' }),
+    ).toBeInTheDocument();
+  });
+
+  it('TOKEN-CHAIN-UI: a swap of tokens names the blockchain of each', async () => {
+    const swapped = operation({
+      ...onSolana,
+      id: `chain:${solWallet.id}:${txid(33)}`,
+      type: 'swap',
+      direction: 'internal',
+      asset: { instrumentId: null, symbol: 'USDT', name: 'Tether', network: 'ethereum' },
+      quantity: '250',
+      counterAsset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin', network: 'solana' },
+      counterQuantity: '249.5',
+      counterWallet: ethWallet,
+      status: 'recorded',
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([swapped]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(cellTexts(bodyRows()[0]).slice(1, 3)).toEqual([
+      'USDT (Ethereum) → USDC (Solana)',
+      '-250+249.5 USDC (Solana)',
+    ]);
+  });
+});
+
+describe('swap in one transaction (SWAP-ONE-TX)', () => {
+  // A DEX swap: 0.5 ETH went to a contract that sent 1,500 USDC back in the same transaction.
+  const trust = { id: id(12), name: 'Trust Wallet' };
+  const ethWallet = {
+    id: id(26),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000cc',
+    label: null,
+  };
+  const hash = 'e'.repeat(64);
+  const call = { method: 'swapExactETHForTokens' };
+  const leg = (txid: string, changes: Partial<Operation>) =>
+    operation({
+      id: `chain:${ethWallet.id}:${txid}`,
+      kind: 'chain',
+      type: null,
+      occurredAt: '2026-09-03T10:00:00.000Z',
+      account: trust,
+      wallet: ethWallet,
+      status: 'needs-classification',
+      source: 'chain',
+      version: null,
+      ...changes,
+    });
+  const ether = leg(hash, {
+    direction: 'out',
+    asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+    quantity: '0.5',
+    fee: { asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' }, quantity: '0.002' },
+    chain: {
+      txid: hash,
+      blockHeight: 21000014,
+      priceObservedAt: null,
+      direction: 'out',
+      call,
+      swapWith: { addressId: ethWallet.id, txid: `${hash}-7` },
+    },
+  });
+  const usdc = leg(`${hash}-7`, {
+    direction: 'in',
+    asset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin', network: 'ethereum' },
+    quantity: '1500',
+    chain: {
+      txid: `${hash}-7`,
+      blockHeight: 21000014,
+      priceObservedAt: null,
+      direction: 'in',
+      call,
+      swapWith: { addressId: ethWallet.id, txid: hash },
+    },
+  });
+
+  it('SWAP-ONE-TX-UI: the token back is suggested as a swap paid with the contract call', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([usdc, ether]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog', {
+      name: 'Incoming transaction · USDC (Ethereum)',
+    });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(
+      within(facts).getByText('Contract call', { exact: true }).nextElementSibling?.textContent,
+    ).toBe('swapExactETHForTokens');
+    expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const paidWith = within(drawer).getByLabelText('Paid with');
+    expect(paidWith).toHaveValue(`${ethWallet.id}|${hash}`);
+    expect(within(paidWith).getByRole('option', { selected: true }).textContent).toBe(
+      'Same transaction · -0.5 ETH · Trust Wallet · Ethereum 0x0000…00cc',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toMatchObject({
+      classification: {
+        type: 'swap',
+        with: { addressId: ethWallet.id, txid: hash },
+        valueUsd: null,
+      },
+    });
+  });
+
+  it('SWAP-ONE-TX-UI: the contract call is suggested as a swap for what came back', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([usdc, ether]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[1]).getByRole('button'));
+    const drawer = screen.getByRole('dialog', { name: 'Outgoing transaction · ETH' });
+    expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(
+      `${ethWallet.id}|${hash}-7`,
+    );
+  });
+});
+
+// Owner's notes of 2026-10-09: the list stays put while it changes, the open row is marked,
+// chip counts follow the other filters, and a transaction hash copies and opens its explorer.
+describe('transactions-page-polish', () => {
+  const nextOne = chainOperation(2, {
+    account: cold,
+    direction: 'out',
+    occurredAt: '2025-06-19T08:00:00.000Z',
+    quantity: '0.0005',
+    chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null, direction: 'out' },
+  });
+  const first = chainOperation(1, {
+    account: cold,
+    occurredAt: '2025-06-20T08:05:00.000Z',
+    quantity: '0.00918359',
+  });
+  const bought = operation({
+    ...first,
+    type: 'buy',
+    status: 'recorded',
+    valueUsd: '1000',
+    costBasisUsd: '1000',
+    feeUsd: '0',
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'buy', currency: 'USDT', amount: '1000' },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const chipCounts = () =>
+    within(screen.getByRole('group', { name: 'Filter transactions' }))
+      .getAllByRole('button')
+      .map((chip) => chip.textContent);
+
+  it('OPS-COUNTS: chip counts follow the asset, account and search filters', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(chipCounts()).toEqual([
+      'All 6',
+      'Needs classification 2',
+      'Hidden 0',
+      'Blockchain 2',
+      'Manual 3',
+      'CSV 1',
+    ]);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), bybit.id);
+    expect(bodyRows()).toHaveLength(4);
+    expect(chipCounts()).toEqual([
+      'All 4',
+      'Needs classification 0',
+      'Hidden 0',
+      'Blockchain 0',
+      'Manual 3',
+      'CSV 1',
+    ]);
+    await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'tether');
+    expect(chipCounts()).toEqual([
+      'All 1',
+      'Needs classification 0',
+      'Hidden 0',
+      'Blockchain 0',
+      'Manual 1',
+      'CSV 0',
+    ]);
+  });
+
+  it('OPS-COMPACT: status and source share one column, the source under the status', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(
+      within(table())
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status']);
+    const status = within(bodyRows()[1]).getAllByRole('cell')[5];
+    expect(within(status).getByText('To classify')).toBeInTheDocument();
+    expect(within(status).getByText('Blockchain')).toBeInTheDocument();
+    // Fixed column widths: a chip that shows other rows never moves the columns.
+    expect(table().querySelectorAll('colgroup col')).toHaveLength(6);
+  });
+
+  it('OPS-DELETE keeps the rows on screen while the list reloads', async () => {
+    const user = userEvent.setup();
+    let reloaded: (value: OperationList) => void = () => undefined;
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([tether, manual]))
+      .mockReturnValueOnce(new Promise((resolve) => (reloaded = resolve)));
+    vi.spyOn(tradesApi, 'versions').mockResolvedValue({
+      tradeId: id(30),
+      items: [],
+      nextBeforeVersion: null,
+    });
+    vi.spyOn(tradesApi, 'state').mockResolvedValue({
+      journal: { journalRevision: 2 },
+    } as JournalState);
+    vi.spyOn(tradesApi, 'void').mockResolvedValue({} as TradeReceipt);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Buy' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Loading transactions…')).toBeNull();
+    expect(bodyRows()).toHaveLength(2);
+    await act(async () => reloaded(list([tether])));
+    expect(bodyRows()).toHaveLength(1);
+  });
+
+  it('OPS-RETURN: coming back to the page shows the last list at once and refreshes it', async () => {
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(all)
+      .mockReturnValueOnce(new Promise(() => undefined));
+    const page = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    page.unmount();
+    renderPage();
+    expect(screen.queryByText('Loading transactions…')).toBeNull();
+    expect(bodyRows()).toHaveLength(6);
+    expect(operationsApi.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('CLS-NEXT: the next transaction to classify is marked in the list and scrolled into view', async () => {
+    const user = userEvent.setup();
+    const scrolled: Element[] = [];
+    // jsdom has no scrollIntoView; record which element asked to be shown.
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = original;
+    });
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([first, nextOne]))
+      .mockResolvedValue(list([bought, nextOne]));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
+    expect(bodyRows()[0]).toHaveAttribute('aria-current', 'true');
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '1000');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await screen.findByRole('dialog', { name: 'Outgoing transaction · BTC' });
+    expect(bodyRows()[0]).not.toHaveAttribute('aria-current');
+    expect(bodyRows()[1]).toHaveAttribute('aria-current', 'true');
+    // jsdom lays nothing out, so every row counts as off screen and is scrolled to.
+    expect(scrolled.at(-1)).toBe(bodyRows()[1]);
+    // Closing the drawer leaves the keyboard on the row it showed.
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(within(bodyRows()[1]).getByRole('button', { name: 'Outgoing' })).toHaveFocus(),
+    );
+    expect(bodyRows()[1]).not.toHaveAttribute('aria-current');
+  });
+
+  it('TX-HASH: copies a transaction hash in one click and opens it in the explorer', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Copy transaction hash' }));
+    expect(writeText).toHaveBeenCalledWith(txid(1));
+    expect(within(drawer).getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    const explorer = within(drawer).getByRole('link', { name: 'View in explorer' });
+    expect(explorer).toHaveAttribute('href', `https://mempool.space/tx/${txid(1)}`);
+    expect(explorer).toHaveAttribute('target', '_blank');
+    expect(explorer).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+});
+
+describe('liquidity-pool-chain-legs (POOL-*)', () => {
+  // Trust Wallet's Ethereum address put 3000 USDC into a pool and got 3400 USDC back.
+  const trust = { id: id(12), name: 'Trust Wallet' };
+  const ethWallet = {
+    id: id(23),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000bb',
+    label: null,
+  };
+  const chainUsdc = { instrumentId: null, symbol: 'USDC', name: 'USD Coin' };
+  const chainEth = { instrumentId: null, symbol: 'ETH', name: 'Ethereum' };
+  const depositTxid = `${'f'.repeat(64)}-4`;
+  const backTxid = `${'e'.repeat(64)}-3`;
+  const leg = (txid: string, changes: Partial<Operation>) =>
+    operation({
+      id: `chain:${ethWallet.id}:${txid}`,
+      kind: 'chain',
+      type: null,
+      asset: chainUsdc,
+      account: trust,
+      wallet: ethWallet,
+      chain: {
+        txid,
+        blockHeight: 20000000,
+        priceObservedAt: null,
+        direction: changes.direction ?? 'in',
+      },
+      status: 'needs-classification',
+      source: 'chain',
+      version: null,
+      ...changes,
+    });
+  const unanswered = leg(depositTxid, {
+    direction: 'out',
+    occurredAt: '2026-08-10T10:00:00.000Z',
+    quantity: '3000',
+  });
+  const deposited = leg(depositTxid, {
+    type: 'pool-deposit',
+    direction: 'internal',
+    occurredAt: '2026-08-10T10:00:00.000Z',
+    quantity: '3000',
+    status: 'recorded',
+    chain: { txid: depositTxid, blockHeight: 20000000, priceObservedAt: null, direction: 'out' },
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'pool-deposit' },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const back = leg(backTxid, { occurredAt: '2026-09-01T10:00:00.000Z', quantity: '3400' });
+  // Not candidates: a deposit of another coin, and one made after the withdrawal.
+  const etherIn = leg(`${'f'.repeat(64)}`, {
+    ...deposited,
+    id: `chain:${ethWallet.id}:${'f'.repeat(64)}`,
+    asset: chainEth,
+    quantity: '1',
+    chain: { ...deposited.chain!, txid: 'f'.repeat(64) },
+  });
+  const later = {
+    ...deposited,
+    id: `chain:${ethWallet.id}:${'c'.repeat(64)}-1`,
+    occurredAt: '2026-09-20T10:00:00.000Z',
+    chain: { ...deposited.chain!, txid: `${'c'.repeat(64)}-1` },
+  };
+  const returned = leg(backTxid, {
+    type: 'pool-withdrawal',
+    direction: 'internal',
+    occurredAt: '2026-09-01T10:00:00.000Z',
+    quantity: '3400',
+    valueUsd: '400',
+    costBasisUsd: '400',
+    status: 'recorded',
+    chain: {
+      txid: backTxid,
+      blockHeight: 20000001,
+      priceObservedAt: null,
+      direction: 'in',
+      pairedTxid: depositTxid,
+    },
+    pool: { deposited: '3000', difference: '400' },
+    classification: {
+      version: 1,
+      hidden: false,
+      value: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: null,
+      },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const openRow = async (operations: Operation[], index: number, name: string) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(operations));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
+    await user.click(within(bodyRows()[index]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name }) };
+  };
+
+  it('POOL-DEPOSIT-UI: an outgoing transaction is a pool deposit with nothing to enter', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow([unanswered], 0, 'Outgoing transaction · USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool deposit' }));
+    expect(
+      within(drawer).getByText(/The coins stay yours while they are in the pool/),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText(/Value/)).not.toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: { type: 'pool-deposit' },
+    });
+  });
+
+  it('POOL-WITHDRAW-UI: a receipt names the deposit it returns, of its coin, made before it', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(
+      [later, back, deposited, etherIn],
+      1,
+      'Incoming transaction · USDC',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    const select = within(drawer).getByLabelText('Returns the deposit');
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the pool deposit',
+      'Aug 10, 2026, 10:00 · 3,000 USDC · Ethereum 0x0000…00bb',
+    ]);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(
+      within(drawer).getByText('Choose the pool deposit this withdrawal returns'),
+    ).toBeInTheDocument();
+    expect(classify).not.toHaveBeenCalled();
+    await user.selectOptions(select, `${ethWallet.id}|${depositTxid}`);
+    await user.type(within(drawer).getByLabelText('Value of the gain (optional)'), '410');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: '410',
+      },
+    });
+  });
+
+  it('POOL-WITHDRAW-UI: a withdrawal shows its deposit and the pool income; a returned deposit is no choice', async () => {
+    const { user, drawer } = await openRow([returned, deposited], 0, 'Pool withdrawal · USDC');
+    expect(
+      within(drawer).getByText(
+        'Returned from a liquidity pool: the deposit comes back as your own coins, not income and not a deposit. The 400 USDC above it is pool income.',
+      ),
+    ).toBeInTheDocument();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Deposited')).toBe('3,000 USDC');
+    expect(fact('Pool income')).toBe('+400 USDC');
+    expect(fact('Deposit transaction')).toBe(shortValue(`0x${'f'.repeat(64)}`));
+    expect(fact('Value')).toBe('$400.00');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByLabelText('Returns the deposit')).toHaveValue(
+      `${ethWallet.id}|${depositTxid}`,
+    );
+    // Another receipt cannot return the same deposit again.
+    const other = leg(`${'b'.repeat(64)}-1`, { occurredAt: '2026-09-02T10:00:00.000Z' });
+    expect(poolCandidates(other, [returned, deposited, other]).map(([key]) => key)).toEqual([]);
+  });
+
+  // POOL-PARTIAL: the pool paid 1,000 of the 3,000 back and keeps 2,000 for now.
+  const partTxid = `${'e'.repeat(64)}-3`;
+  const part = leg(partTxid, {
+    type: 'pool-withdrawal',
+    direction: 'internal',
+    occurredAt: '2026-08-20T10:00:00.000Z',
+    quantity: '1000',
+    status: 'recorded',
+    chain: {
+      txid: partTxid,
+      blockHeight: 20000001,
+      priceObservedAt: null,
+      direction: 'in',
+      pairedTxid: depositTxid,
+    },
+    pool: { deposited: '3000', difference: '0', partial: true, remaining: '2000' },
+    classification: {
+      version: 1,
+      hidden: false,
+      value: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: null,
+        partial: true,
+      },
+      comment: null,
+      automatic: false,
+    },
+  });
+
+  it('POOL-PARTIAL-UI: a withdrawal can be marked as a part of its deposit', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow([back, deposited], 0, 'Incoming transaction · USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    expect(
+      within(drawer).getByText(/The last or only withdrawal of this deposit: what is missing/),
+    ).toBeInTheDocument();
+    await user.selectOptions(
+      within(drawer).getByLabelText('Returns the deposit'),
+      `${ethWallet.id}|${depositTxid}`,
+    );
+    await user.click(within(drawer).getByLabelText('Part of the deposit'));
+    expect(within(drawer).getByText(/The rest is still in the pool/)).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: null,
+        partial: true,
+      },
+    });
+  });
+
+  it('POOL-PARTIAL-UI: a part shows what is left in the pool and keeps the choice on edit', async () => {
+    const { user, drawer } = await openRow([part, deposited], 0, 'Pool withdrawal · USDC');
+    expect(
+      within(drawer).getByText(
+        'Returned from a liquidity pool: a part of the deposit comes back as your own coins, not income and not a deposit. The 2,000 USDC left in the pool stay yours, with their purchase price.',
+      ),
+    ).toBeInTheDocument();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Deposited')).toBe('3,000 USDC');
+    expect(fact('Left in the pool')).toBe('2,000 USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByLabelText('Part of the deposit')).toBeChecked();
+  });
+
+  it('POOL-PARTIAL-UI: a deposit stays a choice while parts leave coins in the pool', () => {
+    const other = leg(`${'b'.repeat(64)}-1`, { occurredAt: '2026-09-02T10:00:00.000Z' });
+    const keys = (operations: Operation[]) =>
+      poolCandidates(other, operations).map(([key, label]) => [key, label]);
+    expect(keys([part, deposited, other])).toEqual([
+      [
+        `${ethWallet.id}|${depositTxid}`,
+        'Aug 10, 2026, 10:00 · 3,000 USDC · Ethereum 0x0000…00bb · 2,000 USDC left in the pool',
+      ],
+    ]);
+    // Returned in full by the parts, or closed by a withdrawal that is not a part: no choice.
+    const empty = { ...part, pool: { ...part.pool!, remaining: '0' } };
+    expect(keys([empty, deposited, other])).toEqual([]);
+    expect(keys([part, returned, deposited, other])).toEqual([]);
+  });
+
+  it('POOL-UNDO-UI: explains why a deposit a withdrawal returns cannot be hidden', async () => {
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message: 'A pool withdrawal names this deposit; change the withdrawal first' },
+      }),
+    );
+    const { user, drawer } = await openRow([deposited], 0, 'Pool deposit · USDC');
+    expect(
+      within(drawer).getByText(
+        'Moved into a liquidity pool: the coins stay yours and keep their purchase price until a pool withdrawal returns them. Only the network fee is a cost.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Hide from calculations' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.',
+    );
+  });
+
+  it('POOL-REWARD-UI: a receipt can be a pool reward with an optional value', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow([back], 0, 'Incoming transaction · USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool reward' }));
+    await user.type(within(drawer).getByLabelText('Value at the time (optional)'), '25');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toMatchObject({
+      classification: { type: 'pool-reward', valueUsd: '25' },
+    });
+  });
+});
+
+// Owner's note of 2026-10-09 15:34Z: after a classification the drawer moves to the
+// transaction next to the one just answered, not back to the newest one.
+describe('CLS-ADJACENT: the next transaction is the neighbour in time', () => {
+  const waitingAt = (n: number, occurredAt: string) =>
+    chainOperation(n, {
+      account: cold,
+      occurredAt,
+      quantity: `0.00${n}`,
+      chain: { txid: txid(n), blockHeight: 800000 + n, priceObservedAt: null, direction: 'in' },
+    });
+  const newest = waitingAt(1, '2025-06-22T08:00:00.000Z');
+  const middle = waitingAt(2, '2025-06-21T08:00:00.000Z');
+  const oldest = waitingAt(3, '2025-06-20T08:00:00.000Z');
+  const answered = (row: Operation) =>
+    operation({
+      ...row,
+      type: 'buy',
+      status: 'recorded',
+      valueUsd: '10',
+      costBasisUsd: '10',
+      feeUsd: '0',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'buy', currency: 'USDT', amount: '10' },
+        comment: null,
+        automatic: false,
+      },
+    });
+  const classifyRow = async (index: number, after: Operation[]) => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([newest, middle, oldest]))
+      .mockResolvedValue(list(after));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    await user.click(within(bodyRows()[index]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '10');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(screen.getByText('Saved as Buy. Here is the next one.')).toBeVisible(),
+    );
+    return screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+  };
+
+  it('opens the next older transaction below the one just classified', async () => {
+    const next = await classifyRow(1, [newest, answered(middle), oldest]);
+    expect(within(next).getByText('+0.003 BTC')).toBeInTheDocument();
+    expect(bodyRows()[2]).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('at the oldest one, opens the newer neighbour above it', async () => {
+    const next = await classifyRow(2, [newest, middle, answered(oldest)]);
+    expect(within(next).getByText('+0.002 BTC')).toBeInTheDocument();
+    expect(bodyRows()[1]).toHaveAttribute('aria-current', 'true');
+  });
+});
+
+describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
+  const leg = (n: number, accountName: string, at: string, label: string | null = null) => ({
+    addressId: id(60 + n),
+    txid: txid(80 + n),
+    version: 0,
+    accountId: id(70 + n),
+    accountName,
+    wallet: { network: 'ethereum' as const, address: `0x${String(n).repeat(40)}`, label },
+    occurredAt: at,
+  });
+  const proposal: TransferProposal = {
+    coin: 'USDT',
+    sent: '100.5',
+    arrived: '100',
+    fee: '0.5',
+    outgoing: leg(1, 'Exchange', '2026-10-01T10:00:00.000Z', 'Main'),
+    incoming: leg(2, 'Hardware', '2026-10-01T10:12:00.000Z'),
+  };
+  const found = (proposals: TransferProposal[]) => ({ windowHours: 24, feePercent: 2, proposals });
+
+  it('XFER-PROPOSED: lists the pair with the fee and joins it with one tap', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals')
+      .mockResolvedValueOnce(found([proposal]))
+      .mockResolvedValue(found([]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    expect(within(card).getByText(/100 USDT/)).toBeInTheDocument();
+    expect(card).toHaveTextContent('from Exchange to Hardware');
+    expect(card).toHaveTextContent('Left Main Oct 1, 2026, 10:00 UTC');
+    expect(card).toHaveTextContent('100.5 USDT left, so 0.5 USDT is the fee');
+    expect(card).toHaveTextContent('within 24 hours');
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify).toHaveBeenCalledWith(
+      { id: proposal.outgoing.addressId },
+      proposal.outgoing.txid,
+      expect.objectContaining({
+        expectedVersion: 0,
+        hidden: false,
+        classification: {
+          type: 'transfer',
+          accountId: proposal.incoming.accountId,
+          partner: { addressId: proposal.incoming.addressId, txid: proposal.incoming.txid },
+        },
+      }),
+    );
+    expect(await screen.findByText(/Joined as one transfer: 100 USDT/)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: /possible transfer/ })).toBeNull(),
+    );
+  });
+
+  it('says why a pair could not be joined and keeps the offer', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('Unprocessable', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'The other wallet did not receive what this one sent, less the network fee',
+        },
+      }),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'These cannot be joined: the other wallet did not receive what this one sent, less the network fee.',
+    );
+    expect(within(card).getByRole('button', { name: 'Join as one transfer' })).toBeEnabled();
+  });
+
+  it('shows nothing without a proposal, and twenty at a time of many', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    const many = Array.from({ length: 22 }, (_, n) => ({
+      ...proposal,
+      outgoing: { ...proposal.outgoing, txid: txid(100 + n) },
+    }));
+    vi.spyOn(operationsApi, 'transferProposals')
+      .mockResolvedValueOnce(found([]))
+      .mockResolvedValue(found(many));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    // Leaving only after the answer came: a page left mid-load would hand it to the next one.
+    await waitFor(() => expect(cachedReads.transferProposals.last()).toBeDefined());
+    expect(screen.queryByRole('region', { name: /possible transfer/ })).toBeNull();
+    cleanup();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: '22 possible transfers between your accounts',
+    });
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(20);
+    await user.click(within(card).getByRole('button', { name: 'Show more' }));
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(22);
+  });
+});
+
+describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', () => {
+  const proposal: DuplicateProposal = {
+    coin: 'ETH',
+    direction: 'in',
+    transaction: {
+      addressId: id(61),
+      txid: txid(81),
+      version: 0,
+      accountId: id(71),
+      accountName: 'Trust Wallet',
+      wallet: { network: 'ethereum', address: `0x${'1'.repeat(40)}`, label: 'Main' },
+      occurredAt: '2026-10-01T10:20:00.000Z',
+      quantity: '0.4',
+    },
+    record: {
+      kind: 'trade',
+      id: id(95),
+      version: 2,
+      type: 'buy',
+      quantity: '0.4',
+      valueUsd: '1200',
+      occurredAt: '2026-10-01T10:00:00.000Z',
+    },
+    classification: { type: 'buy', currency: 'USD', amount: '1200' },
+    comment: 'first purchase',
+  };
+  const found = (proposals: DuplicateProposal[]) => ({
+    windowHours: 48,
+    amountPercent: 1,
+    proposals,
+  });
+
+  it("CLS-DUPLICATE: lists both records and replaces yours with the wallet's in one tap", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals')
+      .mockResolvedValueOnce(found([proposal]))
+      .mockResolvedValue(found([]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    expect(card).toHaveTextContent('0.4 ETH in Trust Wallet');
+    expect(card).toHaveTextContent(
+      'You added: Buy 0.4 ETH worth $1,200.00, Oct 1, 2026, 10:00 UTC',
+    );
+    expect(card).toHaveTextContent('Main received 0.4 ETH, Oct 1, 2026, 10:20 UTC');
+    expect(card).toHaveTextContent('within 48 hours');
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify).toHaveBeenCalledWith(
+      { id: proposal.transaction.addressId },
+      proposal.transaction.txid,
+      expect.objectContaining({
+        expectedVersion: 0,
+        hidden: false,
+        classification: proposal.classification,
+        comment: 'first purchase',
+        replaces: { kind: 'trade', id: proposal.record.id, version: 2 },
+      }),
+    );
+    expect(
+      await screen.findByText(/Replaced your record with the wallet's: 0.4 ETH/),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: /possible duplicate/ })).toBeNull(),
+    );
+  });
+
+  it('says why it could not be replaced and keeps the offer', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue(found([proposal]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('Conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message: 'That record changed; reload and try again' },
+      }),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'This cannot be replaced: that record changed; reload and try again.',
+    );
+    expect(within(card).getByRole('button', { name: "Replace with the wallet's" })).toBeEnabled();
+  });
+
+  it('a sent coin reads as sent, and a record without a value leaves out its worth', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue(
+      found([
+        {
+          ...proposal,
+          direction: 'out',
+          record: { ...proposal.record, type: 'sell', valueUsd: null },
+        },
+      ]),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    expect(card).toHaveTextContent('You added: Sell 0.4 ETH, Oct 1, 2026, 10:00 UTC');
+    expect(card).toHaveTextContent('Main sent 0.4 ETH');
+  });
+});
+
+describe('INFINITE: twenty transactions, twenty more as the end is reached', () => {
+  // 45 purchases, one a day, newest first; every ninth is a CSV import.
+  const day = 24 * 60 * 60 * 1000;
+  const many = Array.from({ length: 45 }, (_, index) =>
+    operation({
+      id: `trade:${id(500 + index)}`,
+      occurredAt: new Date(Date.UTC(2025, 5, 30) - index * day).toISOString(),
+      quantity: String(index + 1),
+      valueUsd: String(100 + index),
+      source: index % 9 === 8 ? 'csv' : 'manual',
+    }),
+  );
+  const shownIds = () => bodyRows().map((row) => row.getAttribute('data-operation'));
+  const idsOf = (from: number, to: number) => many.slice(from, to).map((item) => item.id);
+  const more = () => screen.getByRole('button', { name: 'Show more' });
+
+  // jsdom has no IntersectionObserver: a stand-in lets a test bring the end of the list in view.
+  const observers: Array<{ callback: IntersectionObserverCallback; node: Element | null }> = [];
+  // The page watches its end from an effect, which may run a moment after the rows are on screen.
+  const reachEnd = async () => {
+    await waitFor(() => expect(observers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const watching of observers.splice(0))
+        watching.callback(
+          [{ isIntersecting: true, target: watching.node } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+    });
+  };
+  beforeEach(() => {
+    observers.length = 0;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        node: Element | null = null;
+        entry: { callback: IntersectionObserverCallback; node: Element | null };
+        constructor(callback: IntersectionObserverCallback) {
+          this.entry = { callback, node: null };
+          observers.push(this.entry);
+        }
+        observe(node: Element) {
+          this.entry.node = node;
+        }
+        disconnect() {
+          const at = observers.indexOf(this.entry);
+          if (at >= 0) observers.splice(at, 1);
+        }
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+      },
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the first twenty and adds twenty each time the end is reached', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    expect(shownIds()).toEqual(idsOf(0, 20));
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 45 transactions');
+    await reachEnd();
+    expect(shownIds()).toEqual(idsOf(0, 40));
+    // The day headings continue under the rows that were already there.
+    expect(dayHeadings()).toHaveLength(40);
+    await reachEnd();
+    expect(shownIds()).toEqual(idsOf(0, 45));
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(screen.getByText(/45 transactions, newest first/)).toBeInTheDocument();
+  });
+
+  it('comes back after a reload with the rows that were on screen and the place the owner was at', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const scrollTo = vi.fn();
+    vi.stubGlobal('scrollTo', scrollTo);
+    const first = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await reachEnd();
+    expect(bodyRows()).toHaveLength(40);
+    window.sessionStorage.setItem(
+      'infinite:transactions',
+      JSON.stringify({
+        ...JSON.parse(window.sessionStorage.getItem('infinite:transactions') ?? '{}'),
+        scroll: 900,
+      }),
+    );
+    first.unmount();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(40));
+    expect(scrollTo).toHaveBeenCalledWith(0, 900);
+  });
+
+  it('adds the rows with the button too, for a keyboard or a browser without the observer', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await user.click(more());
+    expect(bodyRows()).toHaveLength(40);
+  });
+
+  it('starts again at twenty when a filter or the search changes', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await user.click(more());
+    expect(bodyRows()).toHaveLength(40);
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 40');
+    await user.click(more());
+    await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'buy');
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    // Five rows are CSV imports: they fit in the first twenty.
+    await user.clear(screen.getByRole('searchbox', { name: 'Search transactions' }));
+    await user.click(screen.getByRole('button', { name: /^CSV/ }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(5));
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
+  it('keeps the open row and the rows on screen when more rows arrive', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await user.click(within(bodyRows()[3]).getByRole('button', { name: 'Buy' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await reachEnd();
+    expect(shownIds()).toEqual(idsOf(0, 40));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(bodyRows()[3]).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('grows the list to a transaction opened from another page', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    renderPage(`/transactions?open=${encodeURIComponent(many[33].id)}`);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(shownIds()).toEqual(idsOf(0, 40)));
+    expect(
+      bodyRows().find((row) => row.getAttribute('data-operation') === many[33].id),
+    ).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('on the phone layout adds rows under the same day headings', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    renderPage();
+    const rows = await screen.findByRole('list', { name: 'Transactions' });
+    expect(within(rows).getAllByRole('button').length).toBe(20);
+    await reachEnd();
+    expect(within(rows).getAllByRole('button').length).toBe(40);
   });
 });

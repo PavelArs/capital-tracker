@@ -194,7 +194,7 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-HIS-1 | An hourly portfolio snapshot is stored; backdated operation changes rebuild later snapshots. | 3.2, 12 | 7, 24 |
 | PR-HIS-2 | Chart periods 24H, 7D, 1M, 3M, 1Y, ALL (default 1M), with absolute and percentage change for the period. | 3.1, 3.2 | 7 |
 | PR-HIS-3 | For any period, the change splits into market effect and net deposits/withdrawals. | 10 | 7 |
-| PR-SYN-1 | Each background source (prices, FX, each wallet) has its own state: last success, last attempt, state (synced, syncing, delayed, failed) and a readable error. One failing source never blocks another. | 12 | 24, 25 |
+| PR-SYN-1 | Each background source (prices, FX, each wallet) has its own state: last success, last attempt, state (synced, syncing, delayed, failed) and a readable error. One failing source never blocks another. A wallet also keeps a journal of its latest 50 passes (time, result, the reason it stopped, transactions stored); the address panel lists them. | 12 | 24, 25 |
 | PR-EXP-1 | Export CSV (assets, accounts and wallets, operations with classifications) and a JSON backup. | 15 | 23 |
 | PR-OWN-1 | With every provider down, history, operations, last prices and allocation stay available. | 16 | — |
 
@@ -455,6 +455,20 @@ I know where its value comes from.
   key or seed phrase, **and** a 12- or 24-word input in the address field is rejected
   without being stored or logged.
 
+**US-3.1a** As the owner I stop tracking an address or a wallet I no longer want.
+
+- WALLET-REMOVE: **Given** an address with loaded transactions, some answered **when**
+  the owner removes it and confirms **then** it leaves the Wallets lists, stops syncing
+  and its unanswered movements stop counting in balances and in the transactions to
+  classify, **and** nothing is deleted: its stored transactions, the owner's answers and
+  the entries they produced stay in the history; **when** the same address is added again
+  **then** its history is back and the unanswered movements count again.
+- WALLET-REMOVE-ACCOUNT: **Given** a wallet **when** the owner removes it **then** its
+  addresses are removed the same way and it leaves the lists, **but** a wallet that holds
+  recorded transactions is refused with that reason, because they are the history the
+  cost basis and profit depend on; its addresses can still be removed one by one.
+- A removed Bybit account also loses its stored API key.
+
 **US-3.2** As the owner my wallets sync themselves.
 
 - SYNC-BG: **Given** a wallet with 3 transactions at the stubbed provider **when** the
@@ -484,6 +498,14 @@ I know where its value comes from.
 - BYBIT-DEPOSIT: **Given** a Bybit deposit whose transaction hash matches a withdrawal
   from the owner's BTC wallet **when** both are synced **then** they form one transfer
   automatically (D7).
+- BYBIT-LINK-HASH: **Given** Bybit's withdrawal of 0.02212814 ETH to Arbitrum One (fee 0.00004
+  ETH) whose record names the chain's transaction hash, and the owner's Arbitrum wallet
+  received 0.02208814 ETH in the transaction of that hash **when** both are synced **then** they
+  are the two sides of one transaction like a Bitcoin or Ethereum withdrawal: the app links them
+  as one transfer automatically (XFER-AUTO), with Bybit's fee as the transfer's fee, and
+  Transactions lists them once. This holds for every Ethereum-like chain Bybit names (Arbitrum
+  One, Base, OP Mainnet, Polygon, BNB Smart Chain, Avalanche C-Chain); a withdrawal that names
+  no hash, another hash or another amount is left to classify (or to XFER-PROPOSED).
 - BYBIT-GAPS: **Given** an operation the API does not return (for example a P2P RUB
   purchase) **then** the owner enters it by hand, and the balance check against
   Bybit's reported balance shows any remaining difference.
@@ -571,6 +593,144 @@ network-specific identity:
 - XFER-MANUAL: **Given** an outgoing BTC leg from a wallet and a manual account
   "Bybit" **when** the owner links it as a transfer to Bybit **then** Bybit's holdings
   increase and no deposit is recorded.
+
+**US-4.6** As the owner I record buying one coin with another on the chain as one swap.
+
+- CLS-SWAP-SAME: **Given** wallet Trust Wallet sends 1000 USDT from its Ethereum address
+  and receives 0.0125 BTC at its Bitcoin address **when** the owner classifies the BTC
+  receipt as Swap paid with that USDT transaction **then** one swap USDT → BTC is recorded
+  in Trust Wallet at the time the BTC arrived, the USDT leaves by FIFO, the BTC costs
+  1000 USD, both transactions stop asking for a classification, the list shows one row,
+  **and** the network fee is classified on its own row as before.
+- CLS-SWAP-CROSS: **Given** the coins were paid from wallet A and arrived in wallet B
+  **then** the paid coins first move A→B as an own transfer carrying the network fee,
+  and the swap is recorded in B; wallet balances still match the chain.
+- CLS-SWAP-VALUE: **Given** no value is entered **then** USDT and USDC on either side
+  count 1:1 with USD, other coins at the paid coin's stored price at most two days old,
+  otherwise the value stays unknown; a value the owner enters wins.
+- CLS-SWAP-UNDO: **Given** a recorded swap **when** either transaction is classified
+  otherwise or hidden **then** the swap and its transfer are voided and the other
+  transaction asks for a classification again.
+- CLS-SWAP-INVALID: the same coin on both sides, two transactions moving the same way,
+  or a side whose address is not in a wallet are refused with a reason; nothing is saved.
+- CLS-SWAP-DUST: **Given** a dust threshold of 1 USD **then** the transactions offered as
+  the other side leave out dust, hidden ones, and any worth less than the threshold at the
+  price stored for their time, in either direction.
+- CLS-RECORDED: **Given** the owner added "Buy 0.0125 BTC for 1000 USDT" in Trust Wallet by
+  hand or from CSV, and Trust Wallet's address sent the 1000 USDT **when** the owner picks
+  that buy under "Added by you or from CSV" in the Swap choices **then** the transaction is
+  that record: nothing new is recorded, it stops counting on its own (the USDT leave once),
+  and it leaves "Needs classification". Offered are trades and swaps of the same wallet within
+  a week that moved this coin the same way (a buy's coin or its cash, a sale's coin or its
+  proceeds, a swap's sides). A record of another wallet, one a blockchain transaction
+  produced, or one that moved another coin is refused. **Given** the record is deleted later
+  **then** the transaction counts again and asks for a classification.
+- CLS-PAID: **Given** the owner added "Buy 10 ZEC for 300 USDT" by hand in an account of its
+  own that held no USDT (so the buy entered as money from outside), and a tracked wallet sent
+  300 USDT **when** the owner picks that buy under "Added by you or from CSV" in the Swap
+  choices **then** the 300 USDT move to that account as a transfer dated just before the buy
+  (or at the time of the send, if that was earlier), the buy is settled again and spends them,
+  and the transaction reads as that transfer. Nothing is counted twice and the buy is not new
+  money. Offered are plain buys in another account within a week, for sent USDT or USDC, that
+  the account's cash has not already paid in full; a sale, a buy paid in RUB or EUR, another
+  coin, or a wallet that did not hold the coins at the time of the buy is refused with a
+  reason. **Given** the owner answers the send differently or hides it **then** the buy is
+  settled again without those coins and the transfer is voided. **Given** the buy is deleted
+  **then** the send stays a transfer and the coins stay in the other account.
+- XFER-PROPOSED: **Given** coins of one asset left an address in one account and, within 24
+  hours, arrived at an address in another account under a different transaction hash (a
+  withdrawal that names its own id, say), and the amount received is at most 2% below the
+  amount sent, and no one has answered either **then** Transactions shows "One possible
+  transfer between your accounts" with the amounts, the times and the difference as the fee,
+  and one tap on "Join as one transfer" answers the withdrawal as a transfer naming the receipt:
+  one owned transfer moves what arrived, the cost basis goes with it, only the difference is
+  spent as a fee, both transactions read as that one transfer, and the pair is listed once.
+  Nothing is joined without the tap (the same hash with the exact fee is still linked by the
+  app, XFER-AUTO). A pair is offered only when each side is the other's single closest
+  candidate; a second equally good receipt, a different coin, the same account, a receipt
+  before the withdrawal or one a day later, or more arriving than left offers nothing and the
+  owner classifies as before. **Given** the owner answers the withdrawal differently **then**
+  the transfer is voided and the receipt asks for a classification again.
+- XFER-REJOIN: **Given** the owner answered one side of a transfer alone, as a transfer with the
+  account of the other side (the receipt of 0.02208814 ETH as a transfer from Bybit, before
+  Bybit's withdrawal of it was synced), **when** the other side turns up and is certainly the
+  same transaction (XFER-AUTO, BYBIT-LINK-HASH) and nothing else was answered **then** the app
+  joins them without asking: the transfer that stood for one side is replaced by one that both
+  sides name, the owner's note on it stays, and the coins leave the sending account once, not
+  twice. An answer of another kind, a transfer with a third account, or a hidden transaction is
+  never changed.
+- CLS-DUPLICATE: **Given** the owner added "Buy 0.4 ETH for 1200 USD" by hand or from CSV in an
+  account, and a wallet of that account received 0.4 ETH within 48 hours of it, so the same
+  coins count twice **when** no one has answered the transaction **then** Transactions shows
+  "One possible duplicate" with both lines, and one tap on "Replace with the wallet's" answers
+  the transaction as the record said (a Buy of the same amount in the same currency, with the
+  same note), deletes the record and writes both to the audit history, in one step: the coins
+  count once, the transaction keeps its exact time and amount, and what the record knew (the
+  price, the RUB or EUR amount and rate, the cash it was settled in, income, expense, gift or fee,
+  a staking reward or airdrop and its value) moves over to it. Offered are buys, sales, income,
+  expense, gift, fee entries and rewards of the same account for the same coin the same way,
+  whose amount differs from the transaction's by at most 1% and whose time by at most 48 hours,
+  when each is the other's single closest match (a tie, or a second equally close candidate,
+  proposes nothing). A record that a transaction already stands for or produced, a record whose
+  amounts an answer cannot repeat (a basis different from its income, a fee beside an income),
+  and a swap or a transfer are never offered. A record that changed since it was shown, an
+  answer that does not say what the record says, or a record the books cannot do without (a
+  later entry depends on it) is refused with a reason and nothing is saved. A buy or sale that
+  was settled in the account's cash is replaced before the transaction is recorded, so the cash
+  it spent is spent once and not entered as new money.
+- CLS-SWAP-RECORD: **Given** the owner added "Buy 10 ZEC for 1000 USD" by hand or from CSV in an
+  account, and a wallet of that account sent 1000 USDC within a week of it to pay for it **when**
+  the owner answers the send as a Swap and chooses that purchase under "Received in exchange"
+  (for coins that arrived, a sale under "Paid with") **then** the purchase is deleted and one
+  swap takes its place in the same step, at the transaction's time and with its exact amount,
+  with the purchase's value in USD unless the owner enters one: the coins count once, the cash
+  the purchase spent is free for the swap to spend, the audit history shows both, and changing
+  the answer later voids the swap and does not bring the purchase back. Offered are plain
+  purchases and sales of another coin in the same account that no transaction already names;
+  one with a fee, an amount stated in RUB or EUR, a purpose, or in another account, a coin the
+  wallet moved, or more than a week away is refused with a reason, as is a record that changed
+  since it was shown or that later entries depend on. No migration.
+
+**US-4.7** As the owner I record coins I put into a liquidity pool (for example Uniswap),
+take back out, and the rewards it pays.
+
+- POOL-DEPOSIT: **Given** Trust Wallet's Ethereum address sends 1 ETH (network fee 0.001
+  ETH) and 3000 USDC to a pool **when** the owner classifies both legs as Pool deposit
+  **then** the coins stay in holdings with their purchase price, only the network fee
+  leaves, nothing is realised and no withdrawal is recorded; both legs stop asking for a
+  classification, the list shows them as Pool deposit, **and** the address card lists them
+  under "Liquidity pools" as part of its balance, which still matches the books. A pool
+  token received for the deposit is not valued on its own.
+- POOL-WITHDRAW: **Given** that deposit **when** the pool returns 0.9 ETH and 3400 USDC
+  and the owner classifies each receipt as Pool withdrawal of its deposit **then** the
+  principal comes back without a deposit or income; the 400 USDC above the deposit is pool
+  income with that value as its cost basis (USDT and USDC 1:1, another coin at its stored
+  price at most two days old, a value the owner enters wins, otherwise unknown); the 0.1
+  ETH below it leaves holdings without a sale price (impermanent loss); the network fee of
+  the withdrawal leaves; **and** the deposits no longer show under "Liquidity pools".
+- POOL-REWARD: **Given** 25 USDC of pool fees or a reward token arrive on their own **when**
+  classified as Pool reward **then** they are income with the value entered as cost basis,
+  or count without a purchase price when none is entered, like a Reward.
+- POOL-UNDO: **Given** a deposit that a withdrawal names **when** the owner hides the
+  deposit or classifies it otherwise **then** this is refused until the withdrawal is
+  changed; **when** the withdrawal is classified otherwise or hidden **then** its pool
+  income is voided and the deposit is in the pool again.
+- POOL-PARTIAL: **Given** the 1 ETH deposit **when** the pool pays back 0.4 ETH and the owner
+  classifies it as Pool withdrawal with "Part of the deposit" ticked **then** no income and
+  no loss is recorded, the 0.6 ETH still in the pool stay in holdings with their purchase
+  price and under "Liquidity pools" on the address card (its balance still matches the
+  books), and the list shows what is left in the pool. **When** a later receipt of 0.7 ETH is
+  classified the same way **then** 0.6 ETH close the deposit and the 0.1 ETH above it are pool
+  income (cost basis as in POOL-WITHDRAW). **When** a receipt of 0.35 ETH is classified
+  without the tick **then** it closes the deposit and the 0.25 ETH it left in the pool are
+  impermanent loss. The withdrawals of one deposit count in the order they happened: one
+  cannot be added before, changed or hidden under a later one until that one changes (a note
+  alone may change), and undoing the last part puts what it returned back in the pool.
+- POOL-INVALID: a withdrawal naming a leg that is not a Pool deposit, another coin, a
+  deposit made after it, one in another wallet, or one that a withdrawal without the tick
+  closed or the parts returned in full is refused with a reason, and so is a Pool deposit or
+  withdrawal on an exchange account, parts that come back on another network than their
+  deposit, and a withdrawal added before a later one of the same deposit; nothing is saved.
 
 ### E5 Valuation and P&L
 
@@ -740,7 +900,7 @@ Beyond section 17:
 |---|---|---|---|---|
 | 10 | Market vs deposits | Adapt | `external-usd-flows`, `period-profit-preview` | M7 |
 | 13 | Duplicate protection | Keep | uniqueness per address and txid; request-id idempotency on every journal | extend per network in M14, M15 |
-| 14 | Audit | Keep | immutable versions on every journal | classification versions in M12 |
+| 14 | Audit | Keep | immutable versions on every journal | classification versions in M12; history screen in M27 |
 | 16 | Data ownership | Keep | database-first prices and FX | — |
 | 15 | Future CSV import | Keep | `usd-csv-imports` + PR #34 | — |
 
@@ -781,6 +941,25 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
+| M23 | `track-stellar-wallets` | XLM history and balance of a Stellar account from the public Horizon, the balance Horizon reports when the history differs (after D4, section 10) | M11, M12, M13 | — |
+| M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
+| M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
+| M24 | `track-zcash-wallets` | ZEC history and balance of a transparent Zcash address from Trezor's public Blockbook; shielded balances cannot be read (after D4, section 10) | M11, M12, M13 | — |
+| M27 | `show-audit-history` | History screen (Settings → Change history): every stored version of trades, transfers, swaps, rewards, deposits and withdrawals, manual prices and blockchain answers, newest first, each compared with the version before it (created, changed, deleted; who made it: you, a CSV import or the app); filters by change, type, source and date; side drawer with the values before and after; phone list per the mobile-tables rule; read only on the existing version tables, no migration | M12, M13 | — |
+| M28 | `hide-spam-tokens` | other tokens of Ethereum and Solana addresses that cannot be real (a negative balance from forged transfers, a copy of USDT or ETH from another contract) are left out of the address's balances, value and balance check by themselves; the owner hides or restores any other token per address, and an address lists two coins with the rest behind "Show N more" | M25 | — |
+| M29 | `withdraw-pool-in-parts` | a liquidity pool pays a deposit back in several withdrawals: "Part of the deposit" on Pool withdrawal leaves the rest in the pool (balance and "Liquidity pools" follow), a shortfall is a loss only on the withdrawal that closes the deposit, withdrawals of one deposit count in the order they happened; no migration (the flag is stored in the saved answer) | M13 | — |
+| M31 | `phone-shell` | phones and tablets (under 960 px): the sidebar becomes a slim bar with the brand, owner and Log out over a swipeable strip of the sections (prototype), no Menu button; page header on phones is title, then currency and Add transaction on one row, then the page's own buttons; first of the mobile-layout slices (the tables already follow the mobile-tables rule), frontend only, no migration | M1 | — |
+| M32 | `phone-sheets` | phones (under 640 px): Add transaction, Add asset and Add wallet are full-screen sheets with the title on top and Cancel / Save fixed at the bottom while only the fields scroll; Portfolio lists the assets before the allocation; second of the mobile-layout slices, frontend only, no migration | M31 | — |
+| M33 | `phone-filters-asset` | phones: the header (brand, owner, section strip) stays pinned while the page scrolls; Transactions and History filters sit in two columns with the search on its own row; the asset page drops the repeated name, puts the price under the icon and shows the position figures two to a row; third of the mobile-layout slices, frontend only, no migration | M32 | — |
+| M34 | `phone-charts-types` | phones: the Dashboard and asset charts write three dates instead of five and give the value labels less room, so the dates stop running together and the plot is wider; the Add transaction type row keeps More on the same line instead of wrapping it alone; fourth of the mobile-layout slices, frontend only, no migration | M33 | — |
+| M35 | `pay-purchase-from-wallet` | USDT or USDC sent from a tracked wallet can be answered as the payment of a purchase the owner added by hand in another account (CLS-PAID): the coins move to that account just before the purchase and the purchase is settled against them, so it stops counting as money from outside; first of three slices that link manual records with blockchain transactions, no migration | M13 | — |
+| M36 | `propose-transfer-pairs` | a withdrawal and a receipt of one coin in two accounts that name different transactions are proposed on Transactions and joined as one transfer with one tap (XFER-PROPOSED); the difference is the fee; the other leg is found by the transfer both name, so the link column stays for legs of one hash; second of three slices that link manual records with blockchain transactions, no migration | M13, M35 | — |
+| M37 | `replace-duplicate-records` | a record the owner added by hand or from CSV and a wallet transaction of the same account that are the same movement (same coin and way, amount within 1%, time within 48 hours) are proposed on Transactions; one tap answers the transaction as the record said and deletes the record in one step, so the coins count once and the audit history shows both (CLS-DUPLICATE); last of three slices that link manual records with blockchain transactions, no migration | M35, M36 | — |
+| M38 | `swap-with-record` | an outgoing or incoming blockchain transaction can be answered as a swap against a purchase or sale the owner added by hand or from CSV in the same wallet: the record is replaced by one swap at the transaction's time, with its exact amount and the record's value (CLS-SWAP-RECORD); no migration | M37 | — |
+| M39 | `track-evm-chains` | the same 0x address is read on Base, Arbitrum One and OP Mainnet like on Ethereum, through Etherscan's V2 API and the one existing key: ETH as the chain's own coin, USDT and USDC by each chain's own contract, every other token named from the chain; each chain is a wallet of its own, with its own sync, balances and explorer link; first of the slices that grow into a multichain portfolio (more chains, a keyless fallback source, automatic discovery of the chains an address has been used on); migration widens the wallet checks | M14, M25 | — |
+| M40 | `more-evm-chains` | Polygon (POL), BNB Smart Chain (BNB) and Avalanche C-Chain (AVAX) join Base, Arbitrum One and OP Mainnet: each chain has its own coin, which the portfolio prices from Bybit's spot market like the other coins outside the price catalog, and its own USDT and USDC contracts (18 decimals on BNB Smart Chain); a token calling itself POL, BNB or AVAX from another contract is a lookalike like one calling itself ETH; no migration (M39 already names the chains) | M39 | — |
+| M41 | `link-bybit-by-hash` | a Bybit deposit or withdrawal on an Ethereum-like chain other than Ethereum meets the wallet's leg of the hash its record names, so the two are linked as one transfer by the app (BYBIT-LINK-HASH); a transfer answered on one side alone is joined once the other side is certain (XFER-REJOIN); the link column stays for legs of one identity, the pair is found by the transfer both name; no migration | M22, M36, M39 | — |
+| M42 | `evm-free-fallback` | Etherscan's free plan no longer serves OP Mainnet, Base, BNB Smart Chain or Avalanche C-Chain; when it refuses a chain with its plan message, OP Mainnet (explorer.optimism.io) and Base (base.blockscout.com) are read from their keyless Blockscout explorers instead (same calls, no key, internal transfers named `transactionHash`), for six hours before Etherscan is asked again; BNB Smart Chain and Avalanche C-Chain, which have no known Blockscout explorer, say the free plan does not cover them; an empty range is read however the explorer words it (Blockscout says "No token transfers found"), and a failed read says which source answered and how (host and HTTP status, or its refusal text with address-like parts cut out) in the wallet's message and sync journal; a redirect that stays on the same host and scheme is followed (twice at most), one to another host is refused and named; no migration | M39, M40 | — |
 
 ```mermaid
 flowchart LR
@@ -809,6 +988,17 @@ flowchart LR
   M9 --> M22
   M11 --> M22
   M13 --> M22
+  M22 --> M26
+  M14 --> M25
+  M15 --> M25
+  M11 --> M23
+  M12 --> M23
+  M13 --> M23
+  M11 --> M24
+  M12 --> M24
+  M13 --> M24
+  M25 --> M28
+  M13 --> M29
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),
@@ -843,6 +1033,6 @@ sidebar, five sections) so it does not wait for mockups.
 
 From BR 18 and the items above that the MVP leaves out: Trezor xpub scanning (first
 after MVP, Q8), accounting currencies beyond USD, EUR and RUB, Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
-re-enrolment, an audit history screen, stocks, bonds, ETFs, deposits, real estate,
+re-enrolment, stocks, bonds, ETFs, deposits, real estate,
 metals and liabilities as asset types, exchanges other than Bybit, bank integrations, tax reports,
 DeFi and NFT valuation, mobile layouts.

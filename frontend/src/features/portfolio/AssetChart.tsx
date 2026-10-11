@@ -2,7 +2,14 @@ import type { AssetHistoryPoint } from '@api/asset-history.api';
 import type { HistoryPeriod } from '@api/portfolio-history.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { compact, niceStep, pointLabel, tickLabel } from '../dashboard/HistoryChart';
+import {
+  chartDateTicks,
+  chartRightPad,
+  compact,
+  niceStep,
+  pointLabel,
+  tickLabel,
+} from '../dashboard/HistoryChart';
 import { money, quantity } from './format';
 import '../dashboard/dashboard.css';
 
@@ -39,6 +46,13 @@ export function purchasesByPoint(
     byPoint.set(index, [...(byPoint.get(index) ?? []), purchase]);
   }
   return byPoint;
+}
+
+// True when coins were held but no purchase price is known at any point: a cost line at $0
+// would read as "nothing invested", so the chart leaves it out.
+export function costUnknown(points: readonly AssetHistoryPoint[]): boolean {
+  const held = points.filter((point) => Number(point.quantity) > 0);
+  return held.length > 0 && held.every((point) => !point.costComplete && Number(point.cost) === 0);
 }
 
 // The position's value against its cost basis over the period, with its purchases (prototype
@@ -84,7 +98,7 @@ export default function AssetChart({
       </p>
     );
 
-  const innerWidth = Math.max(1, width - PAD.left - PAD.right);
+  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
   const innerHeight = HEIGHT - PAD.top - PAD.bottom;
   // The period spans every point: cost basis is known even while the price is not.
   const timeOf = points.map((point) => Date.parse(point.at));
@@ -94,8 +108,9 @@ export default function AssetChart({
   const x = (time: number) =>
     PAD.left + (points.length === 1 ? innerWidth / 2 : ((time - start) / span) * innerWidth);
   const last = plotted[plotted.length - 1];
+  const noCost = costUnknown(points);
   const costs = points.map((point) => Number(point.cost));
-  const values = [...plotted.map((entry) => entry.value), ...costs];
+  const values = [...plotted.map((entry) => entry.value), ...(noCost ? [] : costs)];
   let low = Math.min(...values);
   let high = Math.max(...values);
   const pad = (high - low) * 0.08 || high * 0.02 || 1;
@@ -139,8 +154,8 @@ export default function AssetChart({
     })
     .join('');
   // Each purchase sits on the cost basis it raised.
-  const bought = purchasesByPoint(points, purchases);
-  const tickCount = Math.min(5, points.length);
+  const bought = noCost ? new Map<number, Purchase[]>() : purchasesByPoint(points, purchases);
+  const tickCount = chartDateTicks(width, points.length);
   const xTicks = [
     ...new Set(
       Array.from({ length: tickCount }, (_, index) =>
@@ -236,7 +251,7 @@ export default function AssetChart({
           </text>
         ))}
         <path d={area} fill="url(#asset-area)" />
-        <path d={costLine} className="dashboard-chart__invested" />
+        {!noCost && <path d={costLine} className="dashboard-chart__invested" />}
         <path d={line} className="dashboard-chart__line" />
         {[...bought.keys()].map((index) => (
           <circle
@@ -286,8 +301,8 @@ export default function AssetChart({
           <div className="dashboard-tip__row">
             <span>Cost basis</span>
             <span>
-              {money(current.point.cost, currency)}
-              {!current.point.costComplete && ' known'}
+              {noCost ? 'unknown' : money(current.point.cost, currency)}
+              {!noCost && !current.point.costComplete && ' known'}
             </span>
           </div>
           {purchasesHere.map((purchase) => (

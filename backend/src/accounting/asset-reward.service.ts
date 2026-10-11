@@ -27,9 +27,11 @@ import {
   rewardPayload,
 } from './asset-reward-input';
 import type { FifoReward } from './asset-reward-types';
+import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  notCovered,
   projectConnectedLedger,
   readConnectedLedger,
   rethrowAccountingHistory,
@@ -89,9 +91,10 @@ export class AssetRewardService {
     target?: string,
   ) {
     try {
-      return await this.source.transaction((manager) =>
-        this.mutateWithin(manager, owner, accountId, kind, input, target),
-      );
+      return await this.source.transaction(async (manager) => {
+        if (target !== undefined) await refuseProducedEntry(manager, owner, 'rewardId', target);
+        return this.mutateWithin(manager, owner, accountId, kind, input, target);
+      });
     } catch (error) {
       return rethrowAccountingHistory(error);
     }
@@ -148,6 +151,8 @@ export class AssetRewardService {
     const ledger = await readConnectedLedger(manager, owner, [accountId], { lock: true });
     const account = ledger.accounts.get(accountId)!;
     if (account.journal.currentRevision !== input.expectedJournalRevision) throw conflict();
+    if (kind !== 'void' && values.occurredAt < account.coverageFrom)
+      throw notCovered(accountId, account.coverageFrom);
     assertRevisionCapacity(ledger);
     const rewardId = target ?? randomUUID();
     const orderWithinTimestamp =

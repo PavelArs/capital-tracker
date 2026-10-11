@@ -296,8 +296,10 @@ async function everyJournal(db, s, f) {
   const wallet = await chainRows(db, owner);
   await db.query(
     `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-    VALUES ('BTC','USD','kraken',$1,'84945','hourly-close')`,
-    [new Date(now.getTime() - 30 * 60_000)],
+    VALUES ('BTC','USD','kraken',$1,'84945','hourly-close'),
+      ('BTC','USD','kraken',$2,'120000','hourly-close')`,
+    // EST-AT-TIME: the receipt is valued at the price of its own hour, never today's.
+    ['2025-06-20T07:30:00.000Z', new Date(now.getTime() - 30 * 60_000)],
   );
   // Another owner's operations never mix in.
   const foreignBtc = await instrument(s, other, {
@@ -313,6 +315,7 @@ async function everyJournal(db, s, f) {
   const list = await read(s, owner);
   assert.deepEqual(Object.keys(list).sort(), [
     'at',
+    'dustThresholdUsd',
     'needsClassificationCount',
     'operations',
     'quoteCurrency',
@@ -346,13 +349,17 @@ async function everyJournal(db, s, f) {
   assert.deepEqual(receipt.chain, {
     txid: txid(1),
     blockHeight: 800001,
-    priceObservedAt: new Date(now.getTime() - 30 * 60_000).toISOString(),
+    priceObservedAt: '2025-06-20T07:30:00.000Z',
     direction: 'in',
+    pairedTxid: null,
   });
   assert.equal(out.direction, 'out');
   assert.deepEqual(out.fee, {
     asset: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
     quantity: '0.000003',
+    // TOKEN-FEE: at 84,945 USD, the price stored for its time, to the cent.
+    valueUsd: '0.25',
+    value: '0.25',
   });
   assert.equal(transfer.counterAccount.name, 'Cold storage');
   assert.deepEqual(transfer.fee, {
@@ -405,7 +412,13 @@ async function everyJournal(db, s, f) {
   assert.equal(bound.needsClassificationCount, 2);
   await rejected(() => s.accounting.renameAccount(other, trust, { name: 'Taken' }), 404);
   await rejected(() => s.accounting.renameAccount(owner, randomUUID(), { name: 'Absent' }), 404);
-  for (const body of [{}, { name: '' }, { name: 'x'.repeat(121) }, { name: 'a\nb' }, { name: 'A', requestId: randomUUID() }])
+  for (const body of [
+    {},
+    { name: '' },
+    { name: 'x'.repeat(121) },
+    { name: 'a\nb' },
+    { name: 'A', requestId: randomUUID() },
+  ])
     await rejected(() => s.accounting.renameAccount(owner, trust, body), 400);
   await s.accounting.renameAccount(owner, trust, { name: 'Trust Wallet' });
   assert.equal(await fingerprint(db), journalBefore, 'Renaming back restores every row exactly');
@@ -413,7 +426,9 @@ async function everyJournal(db, s, f) {
     `UPDATE wallet_addresses SET "accountId"=NULL, label=NULL WHERE "ownerId"=$1 AND id=$2`,
     [owner, wallet],
   );
-  console.log('PASS WAL-ACCOUNT/WAL-RENAME chain rows show their wallet; rename keeps every journal row');
+  console.log(
+    'PASS WAL-ACCOUNT/WAL-RENAME chain rows show their wallet; rename keeps every journal row',
+  );
 }
 
 async function emptyOwner(db, s, f) {
@@ -423,6 +438,7 @@ async function emptyOwner(db, s, f) {
     at: now.toISOString(),
     quoteCurrency: 'USD',
     needsClassificationCount: 0,
+    dustThresholdUsd: null,
     operations: [],
   });
   console.log('PASS OPS-EMPTY');
@@ -488,7 +504,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 35);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 58);
     const [owner, other, third] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('operations-owner@example.invalid','synthetic-not-a-hash',true),

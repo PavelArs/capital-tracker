@@ -82,11 +82,23 @@ export const valueOptional = (kind: EntryKind) => kind === 'reward' || kind === 
 
 export const MAX_COMMENT_LENGTH = 500;
 
+/**
+ * "1,500" could be one and a half or fifteen hundred: a comma followed by exactly three digits
+ * after an integer part that does not start with 0 is not read either way.
+ */
+export const ambiguousComma = (value: string) =>
+  /^[1-9]\d{0,2},\d{3}$/.test(value.replace(/[\s ]/g, ''));
+
 /** "1 000,50" as typed becomes "1000.50"; anything else that is not a decimal is null. */
 export function decimal(value: string): string | null {
+  if (ambiguousComma(value)) return null;
   const text = value.replace(/[\s ]/g, '').replace(',', '.');
   return /^\d+(\.\d+)?$/.test(text) ? text : null;
 }
+
+/** What to tell the owner about a number the form refused: the comma case needs its own words. */
+export const numberProblem = (value: string, fallback: string) =>
+  ambiguousComma(value) ? 'Write it without a comma between thousands: 1500, or 1.5' : fallback;
 export const positive = (value: string) => {
   const text = decimal(value);
   return text !== null && Number(text) > 0 ? text : null;
@@ -95,6 +107,15 @@ export const positive = (value: string) => {
 /** Display figure for a rate or a computed amount; the saved amounts are what was typed. */
 export function trimmed(value: number, digits: number): string {
   return value.toFixed(digits).replace(/\.?0+$/, '');
+}
+
+/**
+ * Display figure for a price per unit: cents from 1 up, and below 1 enough places to keep five
+ * significant digits, so a $0.004 token never shows as 0.
+ */
+export function priceFigure(value: number): string {
+  const places = value >= 1 || value <= 0 ? 2 : Math.min(18, Math.ceil(-Math.log10(value)) + 5);
+  return trimmed(value, places);
 }
 
 /** The Bank of Russia rate of the date as units per 1 USD, or null if none is stored. */
@@ -149,6 +170,34 @@ export function problems(
 /** The instant the entry stands for: its date at the time given, or at 00:00 UTC. */
 export const occurredAt = (entry: Pick<TransactionEntry, 'date' | 'time'>) =>
   `${entry.date}T${entry.time || '00:00'}:00.000Z`;
+
+/**
+ * A new entry dated today (UTC) without a time stands for the current minute, so it follows
+ * today's earlier operations, such as an asset added with an amount a moment ago.
+ */
+export function withDefaultTime<T extends Pick<TransactionEntry, 'date' | 'time'>>(
+  entry: T,
+  now: Date,
+): T {
+  const instant = now.toISOString();
+  if (entry.time || entry.date !== instant.slice(0, 10)) return entry;
+  return { ...entry, time: instant.slice(11, 16) };
+}
+
+/**
+ * The Moscow calendar date the server will use for the entry's Bank of Russia rate: the date of
+ * its instant (with the default time of a new entry dated today) at UTC+3, not the typed date.
+ */
+export function rateDate(
+  entry: Pick<TransactionEntry, 'date' | 'time'>,
+  now: Date,
+  editing = false,
+): string {
+  const timed = editing ? entry : withDefaultTime(entry, now);
+  const time = Date.parse(occurredAt(timed));
+  if (Number.isNaN(time)) return entry.date;
+  return new Date(time + 3 * 3_600_000).toISOString().slice(0, 10);
+}
 
 /** Two nonnegative decimal strings as integers of the same scale, and that scale. */
 function scaledPair(left: string, right: string): [bigint, bigint, number] {

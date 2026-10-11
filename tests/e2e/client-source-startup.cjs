@@ -11,8 +11,11 @@ const net = require('node:net');
 const { Client } = require('pg');
 
 const settings = {
-  DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e',
-  DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e',
+  DB_HOST: 'postgres',
+  DB_PORT: '5432',
+  DB_USERNAME: 'capital_e2e',
+  DB_PASSWORD: 'capital_e2e',
+  DB_NAME: 'capital_tracker_e2e',
 };
 const mainPath = '/app/backend/dist/main.js';
 const validationPath = '/app/backend/dist/config/env.validation.js';
@@ -52,8 +55,11 @@ const invalid = [
 
 function environment(value) {
   const env = {
-    ...process.env, ...settings, PORT: String(startupPort),
-    NODE_ENV: 'production', BACKGROUND_JOBS_ENABLED: 'false',
+    ...process.env,
+    ...settings,
+    PORT: String(startupPort),
+    NODE_ENV: 'production',
+    BACKGROUND_JOBS_ENABLED: 'false',
     HTTP_STARTUP_SECRET_SENTINEL: sentinel,
   };
   delete env.TRUSTED_PROXY_IPS;
@@ -84,20 +90,22 @@ async function fingerprint(client) {
       FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public'
       ORDER BY c.relname,k.conname`,
-    indexes: "SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname",
+    indexes:
+      "SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname",
     enums: `SELECT t.typname,e.enumlabel,e.enumsortorder FROM pg_enum e
       JOIN pg_type t ON t.oid=e.enumtypid JOIN pg_namespace n ON n.oid=t.typnamespace
       WHERE n.nspname='public' ORDER BY t.typname,e.enumsortorder`,
     sequences: "SELECT * FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename",
     extensions: 'SELECT extname,extversion FROM pg_extension ORDER BY extname',
   };
-  for (const [name, sql] of Object.entries(schemaQueries)) result[name] = (await client.query(sql)).rows;
+  for (const [name, sql] of Object.entries(schemaQueries))
+    result[name] = (await client.query(sql)).rows;
   result.rows = {};
   for (const { tablename } of result.tables) {
     const quoted = '"' + tablename.replaceAll('"', '""') + '"';
-    result.rows[tablename] = (await client.query(
-      `SELECT to_jsonb(t)::text AS row FROM public.${quoted} t ORDER BY row`,
-    )).rows;
+    result.rows[tablename] = (
+      await client.query(`SELECT to_jsonb(t)::text AS row FROM public.${quoted} t ORDER BY row`)
+    ).rows;
   }
   return createHash('sha256').update(JSON.stringify(result)).digest('hex');
 }
@@ -105,7 +113,10 @@ async function fingerprint(client) {
 function listening() {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port: startupPort });
-    const finish = (accepted) => { socket.destroy(); resolve(accepted); };
+    const finish = (accepted) => {
+      socket.destroy();
+      resolve(accepted);
+    };
     socket.once('connect', () => finish(true));
     socket.once('error', () => finish(false));
     socket.setTimeout(100, () => finish(false));
@@ -119,11 +130,17 @@ async function startup(value) {
   let childError;
   const probes = [];
   const probe = () => {
-    probes.push(listening().then((accepted) => { served ||= accepted; }));
+    probes.push(
+      listening().then((accepted) => {
+        served ||= accepted;
+      }),
+    );
   };
   const child = spawn(process.execPath, [mainPath], {
-    cwd: '/app/backend', env: environment(value),
-    stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000,
+    cwd: '/app/backend',
+    env: environment(value),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 15000,
   });
   const capture = (chunk) => {
     output += chunk;
@@ -134,20 +151,34 @@ async function startup(value) {
   };
   child.stdout.on('data', capture);
   child.stderr.on('data', capture);
-  child.on('error', (error) => { childError = error; });
+  child.on('error', (error) => {
+    childError = error;
+  });
   probe();
   const monitor = setInterval(probe, 20);
-  const closed = await new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  const closed = await new Promise((resolve) =>
+    child.once('close', (code, signal) => resolve({ code, signal })),
+  );
   clearInterval(monitor);
   await Promise.all(probes);
-  assert.equal(childError, undefined, 'Compiled backend must execute, not fail the test prerequisite');
+  assert.equal(
+    childError,
+    undefined,
+    'Compiled backend must execute, not fail the test prerequisite',
+  );
   assert.equal(closed.signal, null, 'Invalid configuration must terminate promptly, not time out');
   assert.notEqual(closed.code, null);
   assert.notEqual(closed.code, 0, 'Invalid proxy configuration must refuse HTTP startup');
   safeOutput(output, value);
-  assert.match(output, /Invalid TRUSTED_PROXY_IPS configuration/,
-    'Refusal must come from actual proxy validation, not an unrelated startup failure');
-  assert.doesNotMatch(output, /Cannot find module|MODULE_NOT_FOUND|ENOTFOUND|ECONNREFUSED|password authentication failed|Unable to connect to the database/i);
+  assert.match(
+    output,
+    /Invalid TRUSTED_PROXY_IPS configuration/,
+    'Refusal must come from actual proxy validation, not an unrelated startup failure',
+  );
+  assert.doesNotMatch(
+    output,
+    /Cannot find module|MODULE_NOT_FOUND|ENOTFOUND|ECONNREFUSED|password authentication failed|Unable to connect to the database/i,
+  );
   assert.doesNotMatch(output, /Application is running|Nest application successfully started/);
   assert.equal(served, false, 'Invalid configuration must never accept a TCP client');
   assert.equal(await listening(), false);
@@ -158,61 +189,111 @@ async function main() {
     assert.equal(process.env[name], expected, `Allowlisted isolated fixture required: ${name}`);
   }
   assert.equal(process.env.BACKGROUND_JOBS_ENABLED, 'false');
-  assert.ok(process.env.MFA_KEY_FILE && existsSync(process.env.MFA_KEY_FILE), 'Private synthetic key prerequisite');
-  assert.ok(existsSync(mainPath) && existsSync(validationPath) && existsSync(migrationPath),
-    'Compiled release artifacts prerequisite');
+  assert.ok(
+    process.env.MFA_KEY_FILE && existsSync(process.env.MFA_KEY_FILE),
+    'Private synthetic key prerequisite',
+  );
+  assert.ok(
+    existsSync(mainPath) && existsSync(validationPath) && existsSync(migrationPath),
+    'Compiled release artifacts prerequisite',
+  );
   const { validateEnvironment } = require(validationPath);
   for (const value of ['[]', ' [ "::ffff:192.0.2.1", "2001:0db8:0000::1" ] ']) {
-    assert.equal(validateEnvironment(environment(value)).TRUSTED_PROXY_IPS, value,
-      'Environment validation preserves the exact explicit JSON for the source service');
+    assert.equal(
+      validateEnvironment(environment(value)).TRUSTED_PROXY_IPS,
+      value,
+      'Environment validation preserves the exact explicit JSON for the source service',
+    );
   }
   for (const [, value] of invalid) {
-    assert.throws(() => validateEnvironment(environment(value)), (error) => {
-      safeOutput(error.message, value);
-      return error.message === 'Invalid TRUSTED_PROXY_IPS configuration';
-    });
+    assert.throws(
+      () => validateEnvironment(environment(value)),
+      (error) => {
+        safeOutput(error.message, value);
+        return error.message === 'Invalid TRUSTED_PROXY_IPS configuration';
+      },
+    );
   }
-  console.log('PASS PROXY-001-B compiled environment validation preserves explicit JSON and rejects invalid settings');
+  console.log(
+    'PASS PROXY-001-B compiled environment validation preserves explicit JSON and rejects invalid settings',
+  );
 
   const client = new Client({
-    host: settings.DB_HOST, port: Number(settings.DB_PORT), user: settings.DB_USERNAME,
-    password: settings.DB_PASSWORD, database: settings.DB_NAME, connectionTimeoutMillis: 5000,
+    host: settings.DB_HOST,
+    port: Number(settings.DB_PORT),
+    user: settings.DB_USERNAME,
+    password: settings.DB_PASSWORD,
+    database: settings.DB_NAME,
+    connectionTimeoutMillis: 5000,
   });
   await client.connect();
   try {
-    const { rows: [state] } = await client.query(`SELECT
+    const {
+      rows: [state],
+    } = await client.query(`SELECT
       (SELECT count(*) FROM migrations) AS migrations,
       (SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1) AS latest_migration,
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
-    assert.equal(Number(state.migrations), 35, 'Run after the actual preserved thirty-five migrations');
-    assert.equal(state.latest_migration, 'TrackEthereumWallets1792000000000',
-      'Latest current migration follows the preceding exact-ledger migration probe');
+    assert.equal(
+      Number(state.migrations),
+      58,
+      'Run after the actual preserved fifty-eight migrations',
+    );
+    assert.equal(
+      state.latest_migration,
+      'HideAssets1796400000000',
+      'Latest current migration follows the preceding exact-ledger migration probe',
+    );
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
     const before = await fingerprint(client);
     for (const [name, value] of invalid) {
       await startup(value);
-      assert.equal(await fingerprint(client), before, `Rejected startup must preserve all database state: ${name}`);
+      assert.equal(
+        await fingerprint(client),
+        before,
+        `Rejected startup must preserve all database state: ${name}`,
+      );
     }
-    console.log(`PASS PROXY-001-B ${invalid.length} actual HTTP startup refusals without listener, secret output or database changes`);
+    console.log(
+      `PASS PROXY-001-B ${invalid.length} actual HTTP startup refusals without listener, secret output or database changes`,
+    );
 
     // Actual read-only CLI success, not merely a module import or argument rejection.
     const shown = spawnSync(process.execPath, [migrationPath, 'show'], {
-      cwd: '/app/backend', env: environment(undefined), encoding: 'utf8', timeout: 15000,
+      cwd: '/app/backend',
+      env: environment(undefined),
+      encoding: 'utf8',
+      timeout: 15000,
     });
     assert.equal(shown.error, undefined);
     assert.equal(shown.signal, null);
     safeOutput(shown.stdout + shown.stderr);
     assert.equal(shown.status, 0, 'Migration CLI must work without the HTTP-only setting');
-    const shownNames = [...shown.stdout.matchAll(/^\[X\] (\S+)$/gm)].map((match) => match[1]).sort();
-    const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map((row) => row.name);
-    assert.equal(shownNames.length, 35);
-    assert.deepEqual(shownNames, appliedNames, 'CLI displays every exact applied migration from the preserved ledger');
+    const shownNames = [...shown.stdout.matchAll(/^\[X\] (\S+)$/gm)]
+      .map((match) => match[1])
+      .sort();
+    const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map(
+      (row) => row.name,
+    );
+    assert.equal(shownNames.length, 58);
+    assert.deepEqual(
+      shownNames,
+      appliedNames,
+      'CLI displays every exact applied migration from the preserved ledger',
+    );
     assert.ok(!(shown.stdout + shown.stderr).includes('TRUSTED_PROXY_IPS'));
-    assert.equal(await fingerprint(client), before, 'Read-only CLI inspection preserves all database state');
+    assert.equal(
+      await fingerprint(client),
+      before,
+      'Read-only CLI inspection preserves all database state',
+    );
     console.log('PASS PROXY-001-B actual migration CLI works with HTTP proxy configuration absent');
   } finally {
     await client.end();
   }
 }
 
-main().catch((error) => { console.error(error); process.exitCode = 1; });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -1,5 +1,7 @@
 # Owned-account transfers
 
+> **Retired screen (M20, 2026-10-08):** `/owned-transfers` now opens Transactions, where transfers are added, edited and deleted (M9); the API below is unchanged.
+
 Implemented and verified with real PostgreSQL and selected HTTPS Playwright journeys.
 See the [change and evidence](../openspec/changes/archive/2026-09-24-record-owned-transfers/verification.md).
 This records already-performed movements; it does not imply production rollout.

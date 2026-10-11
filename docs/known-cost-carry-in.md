@@ -1,5 +1,7 @@
 # Known-cost opening lots
 
+> **Endpoints removed (G1 backend, 2026-10-10).** The carry-in endpoints (`/accounting/accounts/:id/trade-journal/carry-in`) were removed (G1 backend); lots already stored keep feeding FIFO, valuation and the exports.
+
 The verified `seed-known-cost-carry-in` slice adds an explicit FIFO origin for an
 account whose current opening has known costs for every position. The complete local
 release gate passed133/133 HTTPS Chromium cases and real PostgreSQL/migration checks.

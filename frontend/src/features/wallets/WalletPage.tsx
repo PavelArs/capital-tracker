@@ -1,38 +1,56 @@
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import { accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation, OperationList } from '@api/operations.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { announceSyncChange } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
+import { isAxiosError } from 'axios';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { withCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
+import ConfirmDialog from '../security/ConfirmDialog';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
+import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
 import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
-import RenameWalletDialog from './RenameWalletDialog';
+import EditWalletDialog from './EditWalletDialog';
+
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
-import { AddressRow, holdingsOf, ReconcileNote, subtitle } from './WalletParts';
-import { pricesOf, reconcile } from './wallets';
+import {
+  AddressRow,
+  holdingsOf,
+  ReconcileNote,
+  subtitle,
+  withoutHiddenTokens,
+} from './WalletParts';
+import { gapAddress, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
 
-const SHOWN_OPERATIONS = 10;
-
 type OperationsState = OperationList | 'loading' | 'failed';
 
-/** What happened in the account, newest first: its own rows, transfers in and chain rows. */
+/**
+ * What happened in the account, newest first: its own rows, transfers in and chain rows. Dust
+ * stays on the Transactions page under its own filter.
+ */
 export function accountOperations(operations: readonly Operation[], accountId: string) {
   return operations
     .filter(
       (operation) =>
-        operation.account?.id === accountId ||
-        // A blockchain row to classify only suggests its other side (M13).
-        (operation.type === 'transfer' && operation.counterAccount?.id === accountId),
+        operation.status !== 'dust' &&
+        (operation.account?.id === accountId ||
+          // A blockchain row to classify only suggests its other side (M13).
+          (operation.type === 'transfer' && operation.counterAccount?.id === accountId)),
     )
     .sort(
       (left, right) =>
@@ -82,15 +100,19 @@ function LastSync({
 
 function WalletTransactions({
   accountId,
+  asked,
   operations,
   onRetry,
 }: {
   accountId: string;
+  asked: AccountingCurrency | undefined;
   operations: OperationsState;
   onRetry: () => void;
 }) {
   const own =
     typeof operations === 'object' ? accountOperations(operations.operations, accountId) : [];
+  // PAGES: twenty transactions a page.
+  const pagedOwn = useInfinite(own);
   return (
     <section className="shell-card" aria-labelledby="wallet-transactions">
       <div className="portfolio-toolbar">
@@ -105,45 +127,49 @@ function WalletTransactions({
           </button>
         </div>
       ) : operations === 'loading' ? (
-        <p className="portfolio-none" role="status">
-          Loading transactions…
-        </p>
+        <InlineSkeleton label="Loading transactions" />
       ) : own.length === 0 ? (
         <p className="portfolio-none">No transactions yet.</p>
       ) : (
         <>
           <ul className="portfolio-holdings portfolio-operations">
-            {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
+            {pagedOwn.rows.map((operation) => (
               <li key={operation.id}>
-                <span>
-                  {operation.status === 'needs-classification' ? (
-                    <span className="portfolio-pill">{statusLabels[operation.status]}</span>
-                  ) : (
-                    typeLabel(operation)
-                  )}
-                  <span className="portfolio-sub">
-                    {day(operation.occurredAt)}
-                    {operation.type === 'transfer' && operation.counterAccount
-                      ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
-                      : ''}
-                  </span>
-                </span>
-                <span className="portfolio-num">
-                  {signedAmount(operation)}
-                  {operation.value !== null && typeof operations === 'object' && (
+                <Link
+                  className="portfolio-operation"
+                  to={`/transactions?open=${encodeURIComponent(operation.id)}${asked ? `&currency=${asked}` : ''}`}
+                >
+                  <span>
+                    {operation.status === 'needs-classification' ? (
+                      <span className="portfolio-pill">{statusLabels[operation.status]}</span>
+                    ) : (
+                      typeLabel(operation)
+                    )}
                     <span className="portfolio-sub">
-                      {money(operation.value, operations.quoteCurrency)}
+                      {day(operation.occurredAt)}
+                      {operation.type === 'transfer' && operation.counterAccount
+                        ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
+                        : ''}
                     </span>
-                  )}
-                </span>
+                  </span>
+                  <span className="portfolio-num">
+                    {signedAmount(operation)}
+                    {operation.value !== null && typeof operations === 'object' && (
+                      <span className="portfolio-sub">
+                        {money(operation.value, operations.quoteCurrency)}
+                      </span>
+                    )}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
+          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
           <Link
             className="portfolio-link portfolio-operations__all"
             to={`/transactions?account=${encodeURIComponent(accountId)}`}
           >
-            {own.length > SHOWN_OPERATIONS ? `Show all ${own.length}` : 'Open in Transactions'}
+            Open in Transactions
           </Link>
         </>
       )}
@@ -151,25 +177,42 @@ function WalletTransactions({
   );
 }
 
+/** WALLET-REMOVE: the reason the server gave, or a plain sentence for what went wrong. */
+function removalFailure(error: unknown): string {
+  const response = isAxiosError(error) ? error.response : undefined;
+  if (!response) return 'Could not reach the server. Nothing was changed; try again.';
+  if (response.status === 409 && typeof response.data?.message === 'string')
+    return response.data.message;
+  if (response.status === 404) return 'This wallet no longer exists. Reload the page.';
+  return 'Could not remove the wallet. Nothing was changed; try again.';
+}
+
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
   const { accountId = '' } = useParams();
-  const { portfolio, addresses, failed, load, replace, runs, sync, asked } = useWallets();
+  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
+    useWallets();
+  const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
-  const [renaming, setRenaming] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
 
-  const [operations, setOperations] = useState<OperationsState>('loading');
+  const [operations, setOperations] = useState<OperationsState>(
+    () => cachedReads.operations.last(asked) ?? 'loading',
+  );
   const latestOperations = useRef(0);
   const loadOperations = useCallback(async () => {
     const request = ++latestOperations.current;
-    setOperations('loading');
+    // What was kept stays on screen while the fresh list loads.
+    const kept = cachedReads.operations.last(asked);
+    setOperations(kept ?? 'loading');
     try {
-      const list = await operationsApi.list(asked);
+      const list = await cachedReads.operations.load(asked);
       if (request === latestOperations.current) setOperations(list);
     } catch {
-      if (request === latestOperations.current) setOperations('failed');
+      if (request === latestOperations.current && !kept) setOperations('failed');
     }
   }, [asked]);
   useEffect(() => {
@@ -177,6 +220,7 @@ export default function WalletPage() {
   }, [loadOperations]);
 
   const account = portfolio?.accounts.find((item) => item.accountId === accountId);
+  const kind = kinds[accountId] ?? null;
   const accounts: WalletAccount[] = (portfolio?.accounts ?? []).map(({ accountId: id, name }) => ({
     accountId: id,
     name,
@@ -185,10 +229,14 @@ export default function WalletPage() {
   const own = list.filter((address) => address.accountId === accountId);
   const currency = portfolio?.currency ?? 'USD';
   const prices = pricesOf(portfolio);
-  const holdings = portfolio ? holdingsOf(portfolio, accountId) : [];
+  const holdings = portfolio ? withoutHiddenTokens(holdingsOf(portfolio, accountId), own) : [];
+  const chains = tokenChains(addresses, accountId);
   const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
+  // PAGES: twenty addresses and twenty assets a page.
+  const pagedAddresses = useInfinite(own);
+  const pagedHoldings = useInfinite(holdings);
   const refresh = () => {
     void load(true);
     void loadOperations();
@@ -218,9 +266,7 @@ export default function WalletPage() {
           </button>
         </section>
       ) : portfolio === null || addresses === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading wallet…
-        </section>
+        <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
       ) : !account ? (
         <section className="shell-card shell-empty" aria-labelledby="wallet-missing">
           <h2 id="wallet-missing">Wallet not found</h2>
@@ -233,19 +279,27 @@ export default function WalletPage() {
         <>
           <div className="portfolio-head">
             <span className="wallets-card__icon wallets-card__icon--lg" aria-hidden="true">
-              <Icon name="wallets" />
+              <Icon name={kind ?? 'wallets'} />
             </span>
             <div className="portfolio-head__title">
               <h2>{account.name}</h2>
-              <span className="portfolio-sub">{subtitle(own)}</span>
+              <span className="portfolio-sub">{subtitle(own, kind)}</span>
             </div>
             <div className="wallets-actions">
               <button
                 type="button"
                 className="shell-button shell-button--ghost"
-                onClick={() => setRenaming(true)}
+                onClick={() => setEditing(true)}
               >
-                Rename
+                <Icon name="edit" className="shell-icon shell-icon--sm" />
+                Edit
+              </button>
+              <button
+                type="button"
+                className="shell-button shell-button--ghost"
+                onClick={() => setRemoving(true)}
+              >
+                Remove
               </button>
               {own.length > 0 && (
                 <button
@@ -254,6 +308,7 @@ export default function WalletPage() {
                   disabled={syncing}
                   onClick={() => void syncAll()}
                 >
+                  <Icon name="refresh" className="shell-icon shell-icon--sm" />
                   {syncing ? 'Syncing…' : 'Sync now'}
                 </button>
               )}
@@ -268,7 +323,11 @@ export default function WalletPage() {
                 <LastSync addresses={own} runs={runs} />
               </Stat>
             </dl>
-            <ReconcileNote result={reconcile(list, portfolio, accountId)} />
+            <ReconcileNote
+              result={reconcile(list, portfolio, accountId)}
+              target={gapAddress(list, accountId)}
+              onCounted={() => void load(true)}
+            />
           </section>
           {own.length > 0 && (
             <section className="shell-card wallets-card" aria-labelledby="wallet-addresses">
@@ -284,7 +343,7 @@ export default function WalletPage() {
                 </button>
               </div>
               <ul className="wallets-sources">
-                {own.map((address) => (
+                {pagedAddresses.rows.map((address) => (
                   <AddressRow
                     key={address.id}
                     address={address}
@@ -297,6 +356,7 @@ export default function WalletPage() {
                   />
                 ))}
               </ul>
+              {pagedAddresses.more && <LoadMore {...pagedAddresses.more} label="addresses" />}
             </section>
           )}
           <div className="portfolio-split">
@@ -308,7 +368,7 @@ export default function WalletPage() {
                 <p className="portfolio-none">No assets in this wallet.</p>
               ) : (
                 <ul className="portfolio-holdings">
-                  {holdings.map((holding) => (
+                  {pagedHoldings.rows.map((holding) => (
                     <li key={holding.asset.instrumentId}>
                       <Link
                         className="wallets-asset"
@@ -318,12 +378,17 @@ export default function WalletPage() {
                           symbol={holding.asset.symbol}
                           name={holding.asset.name}
                           assetType={holding.asset.assetType}
+                          network={onlyChain(holding.asset.symbol, chains)}
                           size="sm"
                         />
                         <span>
                           {holding.asset.name}
                           <span className="portfolio-sub">
-                            {quantity(holding.quantity)} {holding.asset.symbol ?? ''}
+                            {withChains(
+                              `${quantity(holding.quantity)} ${holding.asset.symbol ?? ''}`.trim(),
+                              holding.asset.symbol,
+                              chains,
+                            )}
                           </span>
                         </span>
                       </Link>
@@ -339,9 +404,11 @@ export default function WalletPage() {
                   ))}
                 </ul>
               )}
+              {pagedHoldings.more && <LoadMore {...pagedHoldings.more} label="assets" />}
             </section>
             <WalletTransactions
               accountId={accountId}
+              asked={asked}
               operations={operations}
               onRetry={() => void loadOperations()}
             />
@@ -373,20 +440,41 @@ export default function WalletPage() {
             setAdding(false);
             replace(address);
             void load(true);
-            if (created) void sync(address.id).then(() => void loadOperations());
-            else setOpenId(address.id);
+            if (created || address.network === 'bybit')
+              void sync(address.id).then(() => void loadOperations());
+            if (!created) setOpenId(address.id);
           }}
         />
       )}
-      {renaming && account && (
-        <RenameWalletDialog
+      {editing && account && (
+        <EditWalletDialog
           accountId={account.accountId}
           name={account.name}
-          onClose={() => setRenaming(false)}
-          onRenamed={() => {
-            setRenaming(false);
+          kind={kind}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
             refresh();
           }}
+        />
+      )}
+      {removing && account && (
+        <ConfirmDialog
+          title={`Remove ${account.name}?`}
+          text={
+            own.length > 0
+              ? `${account.name} leaves your wallets and its ${own.length === 1 ? 'address stops' : `${own.length} addresses stop`} syncing. A wallet that holds recorded transactions cannot be removed, because they are your history; remove its addresses instead.`
+              : `${account.name} leaves your wallets. A wallet that holds recorded transactions cannot be removed, because they are your history.`
+          }
+          confirmLabel="Remove wallet"
+          busyLabel="Removing…"
+          failure={removalFailure}
+          onConfirm={async () => {
+            await accountingApi.removeAccount(account.accountId);
+            announceSyncChange();
+            navigate(withCurrency('/wallets', asked));
+          }}
+          onClose={() => setRemoving(false)}
         />
       )}
       {open && portfolio && (
@@ -401,6 +489,11 @@ export default function WalletPage() {
           onSaved={(address, newAccount) => {
             replace(address);
             if (newAccount || address.accountId !== accountId) refresh();
+          }}
+          onRemoved={(address) => {
+            setOpenId(null);
+            forget(address.id);
+            refresh();
           }}
           onClose={() => setOpenId(null)}
         />

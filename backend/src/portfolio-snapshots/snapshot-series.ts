@@ -181,3 +181,10 @@ export function periodChange(start: string | null, end: string | null) {
     changePercent: from > 0n ? formatPercent(change, from) : null,
   };
 }
+
+/** The first point of a series that has a value. */
+export function firstValuedPoint<T extends { value: string | null }>(
+  series: readonly T[],
+): T | null {
+  return series.find((point) => point.value !== null) ?? null;
+}

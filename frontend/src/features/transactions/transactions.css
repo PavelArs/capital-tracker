@@ -15,26 +15,62 @@
 }
 
 .transactions-filter select,
+.transactions-filter input,
 .transactions-search {
   height: 36px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  background: var(--sunken);
+  outline: none;
+  background-color: var(--sunken);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-sm);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
+/* The prototype select: the field's own chevron in the muted ink, not the system arrow. */
+.transactions-filter select {
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* The prototype search: a magnifier at the left of the field. */
 .transactions-search {
-  width: 220px;
+  width: 260px;
   max-width: 100%;
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-position: 11px 50%;
+  background-repeat: no-repeat;
 }
 
-.transactions-filter select:focus-visible,
-.transactions-search:focus-visible {
+.transactions-search::placeholder {
+  color: var(--ink-3);
+}
+
+.transactions-filter select:hover,
+.transactions-filter input:hover,
+.transactions-search:hover {
+  border-color: var(--ink-3);
+}
+
+.transactions-filter select:focus,
+.transactions-filter input:focus,
+.transactions-search:focus {
   border-color: var(--accent);
-  outline: 2px solid var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .transactions-chip--warn .portfolio-chip__count {
@@ -53,7 +89,34 @@
   background: transparent;
 }
 
-/* Seven columns fit 1280 px: tighter cells; long types, assets and accounts wrap. */
+/* Six columns of fixed shares fit 1280 px: a chip or filter that shows other rows never
+   moves them (OPS-STABLE). Long types, assets and accounts wrap; narrower screens scroll. */
+.transactions-table {
+  min-width: 820px;
+  table-layout: fixed;
+}
+
+.transactions-col--type {
+  width: 19%;
+}
+
+.transactions-col--asset {
+  width: 12%;
+}
+
+.transactions-col--amount,
+.transactions-col--value {
+  width: 14%;
+}
+
+.transactions-col--place {
+  width: 24%;
+}
+
+.transactions-col--status {
+  width: 17%;
+}
+
 .transactions-table th,
 .transactions-table td {
   padding-inline: 8px;
@@ -108,14 +171,14 @@
 }
 
 .transactions-table td.transactions-wrap {
-  max-width: 130px;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.transactions-table td.transactions-place {
-  min-width: 110px;
-  max-width: 170px;
-  overflow-wrap: break-word;
+/* Room between the value and the account, both edges of their columns. */
+.transactions-table td.transactions-place,
+.transactions-table th:nth-child(5) {
+  padding-left: 20px;
 }
 
 .transactions-row--needs td:first-child {
@@ -266,6 +329,7 @@
 
 .transactions-drawer__foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid var(--line);
@@ -273,6 +337,17 @@
 
 .transactions-drawer__foot .shell-button {
   margin-top: 0;
+}
+
+/* Height of a one-line footer, so the buttons do not move when a label or a note changes. */
+.transactions-drawer__foot {
+  min-height: 65px;
+  align-items: center;
+}
+
+/* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
+.transactions-drawer__foot .shell-button--primary {
+  min-width: 96px;
 }
 
 .transactions-hero {
@@ -324,6 +399,25 @@
   font-size: 12px;
 }
 
+/* TX-HASH: the short hash with its copy button, the explorer link after it. */
+.transactions-hash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+/* A wallet or address line: the network and label, then the address with its copy button. */
+.transactions-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
 .transactions-info {
   margin: 0;
   padding: 10px 12px;
@@ -339,6 +433,24 @@
 
 .transactions-delete {
   color: var(--neg);
+}
+
+/* BYBIT-GAP-DELETE: the question and its two answers take the whole footer. */
+.transactions-remove {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.transactions-remove__text {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
 .transactions-section {
@@ -441,7 +553,10 @@
 .transactions-item__detail {
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -465,25 +580,31 @@
   font-size: var(--fs-xs);
 }
 
+/* Phones: the search spans the row, the other filters sit two to a row with their label
+   above (Asset | Account, Type | Period, From | To). */
 @media (max-width: 639.98px) {
   .transactions-filters {
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-2);
   }
 
   .transactions-filter {
-    flex: 1 1 100%;
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    font-size: var(--fs-xs);
   }
 
-  .transactions-filter > span {
-    width: 56px;
-  }
-
-  .transactions-filter select {
-    flex: 1;
+  .transactions-filter select,
+  .transactions-filter input {
+    width: 100%;
     min-width: 0;
   }
 
   .transactions-search {
+    grid-column: 1 / -1;
+    order: -1;
     width: 100%;
   }
 }
@@ -553,6 +674,11 @@
 
 .transactions-more[open] > summary {
   margin-bottom: var(--sp-4);
+}
+
+/* CLS-COMPACT: the folded technical facts of a transaction waiting for its answer. */
+.transactions-more--facts {
+  margin-top: var(--sp-3);
 }
 
 .transactions-more > .portfolio-field {
@@ -637,12 +763,99 @@
   color: var(--ink-3);
 }
 
-@media (max-width: 559.98px) {
-  .transactions-options {
-    grid-template-columns: minmax(0, 1fr);
+.transactions-classify__warn {
+  margin: 0;
+}
+
+/* The source sits under the status (OPS-COMPACT). */
+.transactions-source {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.transactions-source .transactions-glyph {
+  width: 12px;
+  height: 12px;
+}
+
+/* CLS-NEXT: the open row stands above the drawer's scrim, so the list shows which it is. */
+.transactions-table tr.transactions-row--open td {
+  position: relative;
+  z-index: 81;
+  background: var(--raised);
+}
+
+.transactions-table tr.transactions-row--open td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.transactions-item--open {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 10px;
+  background: var(--raised);
+}
+
+/* XFER-PROPOSED: pairs of a withdrawal and a receipt the owner can join in one tap. */
+.transactions-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.transactions-proposals h2,
+.transactions-proposals p {
+  margin: 0;
+}
+
+.transactions-proposals__lead {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.transactions-proposals__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transactions-proposal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.transactions-proposal__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.transactions-proposal__error {
+  color: var(--neg);
+  font-size: var(--fs-sm);
+}
+
+.transactions-proposals .shell-link {
+  align-self: flex-start;
+}
+
+@media (max-width: 640px) {
+  .transactions-proposal {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
-.transactions-classify__warn {
-  margin: 0;
+.transactions-line .copy-value {
+  font-size: inherit;
 }

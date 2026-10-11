@@ -108,7 +108,7 @@ jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/n
 smoke() {
   [[ $(curl --fail --silent --show-error --max-time 10 "$origin/health") == '{"status":"ok"}' ]] || return 1
   local route code
-  for route in auth/me accounting/accounts assets crypto/wallets metrics health/details; do
+  for route in auth/me accounting/accounts accounting/operations wallet-addresses owner-settings health/details; do
     code=$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' "$origin/api/$route")
     [[ $code == 401 ]] || return 1
   done
@@ -311,4 +311,24 @@ mv "$root/docker-compose.yml.next" "$root/docker-compose.yml"
 if [[ $installation != existing ]]; then mv "$root/.release-managed-env.next" "$root/.release-managed-env"; fi
 mv "$state/receipt.next" "$state/receipt"
 success=true
+# Best effort after a verified release: the running pair, the pair it replaced and the pair
+# before that stay for recovery, every older application image goes. Docker refuses images a
+# container uses (no -f). The third pair is the one the previous successful release replaced.
+prune_old_release_images() {
+  local current_backend current_frontend older_state older_images
+  current_backend=$(docker inspect capital_tracker_backend --format '{{.Image}}') || return 0
+  current_frontend=$(docker inspect capital_tracker_frontend --format '{{.Image}}') || return 0
+  [[ $current_backend =~ ^sha256:[a-f0-9]{64}$ && $current_frontend =~ ^sha256:[a-f0-9]{64}$ ]] || return 0
+  older_images=''
+  for older_state in $(ls -d "$root"/releases/*/*/ 2>/dev/null | awk -F/ '{print $(NF-1) " " $0}' | sort -r | cut -d' ' -f2); do
+    [[ ${older_state%/} != "$state" && -f ${older_state}receipt && -f ${older_state}previous-images ]] || continue
+    older_images=$(cat "${older_state}previous-images")
+    break
+  done
+  docker images -a --no-trunc --format '{{.ID}} {{.Repository}}' \
+    | awk -v b="${backend%@*}" -v f="${frontend%@*}" '$2 == b || $2 == f { print $1 }' | sort -u \
+    | grep -vxF -e "$current_backend" -e "$current_frontend" -e "$previous_backend" -e "$previous_frontend" -e "$older_images" \
+    | xargs -r docker rmi >/dev/null 2>&1 || true
+}
+prune_old_release_images || true
 echo 'Release verified; private server receipt records images, schema and encrypted backup'

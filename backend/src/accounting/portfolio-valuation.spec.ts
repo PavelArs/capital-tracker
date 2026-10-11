@@ -8,6 +8,7 @@ import {
   portfolioAccount,
   projectPortfolio,
   type StoredPrice,
+  withoutAssets,
 } from './portfolio-valuation';
 
 const now = new Date('2026-10-04T12:00:00.000Z');
@@ -269,6 +270,68 @@ describe('PV-UNKNOWN-COST partly unknown cost', () => {
   });
 });
 
+describe('PV-KNOWN-PART profit over the coins whose cost is known', () => {
+  it('prices the known part on its own and leaves the unknown coins out', () => {
+    const result = projectPortfolio(
+      now,
+      [btc, eth],
+      [
+        holding(1, 'Trezor', [
+          position(btc, '1', '50000'),
+          position(btc, '0.5', null),
+          position(eth, '2', '4000'),
+        ]),
+      ],
+      prices({ BTC: ['60000', minutesAgo(5)], ETH: ['3000', minutesAgo(5)] }),
+    );
+    expect(assetOf(result, btc)).toMatchObject({
+      unrealizedPnl: null,
+      knownCostQuantity: '1',
+      knownUnrealizedPnl: '10000',
+      knownUnrealizedReturnPercent: '20.00',
+    });
+    expect(assetOf(result, eth)).toMatchObject({
+      unrealizedPnl: '2000',
+      knownCostQuantity: '2',
+      knownUnrealizedPnl: '2000',
+    });
+    // 60000 - 50000 + 6000 - 4000 over a known cost of 54000.
+    expect(result).toMatchObject({
+      costBasis: null,
+      unrealizedPnl: null,
+      knownCostSubtotal: '54000',
+      knownUnrealizedPnl: '12000',
+      knownUnrealizedReturnPercent: '22.22',
+    });
+  });
+
+  it('stays empty when a coin with a known cost has no price', () => {
+    const result = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Trezor', [position(btc, '1', '50000'), position(btc, '0.5', null)])],
+      prices({}),
+    );
+    expect(assetOf(result, btc).knownUnrealizedPnl).toBeNull();
+    expect(result.knownUnrealizedPnl).toBeNull();
+  });
+
+  it('is empty when no coin has a known cost', () => {
+    const result = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Trezor', [position(btc, '0.5', null)])],
+      prices({ BTC: ['60000', minutesAgo(5)] }),
+    );
+    expect(assetOf(result, btc)).toMatchObject({
+      knownCostQuantity: '0',
+      knownUnrealizedPnl: null,
+    });
+    expect(result.knownUnrealizedPnl).toBeNull();
+    expect(result.knownUnrealizedReturnPercent).toBeNull();
+  });
+});
+
 describe('PV-NONE and PV-FIXED missing prices are not zero', () => {
   it('reports no price, no rate and fixed USD cash', () => {
     const result = projectPortfolio(
@@ -494,5 +557,33 @@ describe('PV-24H price change over the last 24 hours', () => {
       prices({ BTC: ['80000', minutesAgo(30)] }),
     );
     expect(assetOf(without, btc).priceChange24hPercent).toBeNull();
+  });
+});
+
+describe('PV-HIDE an asset the owner hid', () => {
+  const accounts = [
+    account(1, 'Bybit', [
+      trade(btc, 'buy', '1', '50000'),
+      trade(eth, 'buy', '10', '20000'),
+      trade(eth, 'sell', '4', '10000'),
+    ]),
+  ];
+  const priced = prices({ BTC: ['80000', minutesAgo(30)], ETH: ['3000', minutesAgo(30)] });
+
+  it('leaves it out of the assets, the total and the realized sum, whatever the books hold', () => {
+    const all = projectPortfolio(now, [btc, eth], accounts, priced);
+    expect(all.totalValue).toBe('98000');
+    expect(all.realizedPnl).toBe('2000');
+    const hidden = new Set([eth.id]);
+    const result = projectPortfolio(now, [btc], withoutAssets(accounts, hidden), priced);
+    expect(result.assets.map((item) => item.instrumentId)).toEqual([btc.id]);
+    expect(result).toMatchObject({ totalValue: '80000', realizedPnl: '0' });
+    // The books themselves are not changed.
+    expect(accounts[0].lots.some((lot) => lot.instrumentId === eth.id)).toBe(true);
+    expect(accounts[0].realizations.some((item) => item.instrumentId === eth.id)).toBe(true);
+  });
+
+  it('changes nothing while no asset is hidden', () => {
+    expect(withoutAssets(accounts, new Set())).toEqual(accounts);
   });
 });

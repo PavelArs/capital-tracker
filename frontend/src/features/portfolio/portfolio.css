@@ -16,6 +16,23 @@
   margin: 0;
 }
 
+/* The question before an asset is hidden: a card under the breadcrumb row. */
+.portfolio-confirm {
+  flex: 1 1 100%;
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.portfolio-confirm p {
+  margin: 0;
+}
+
+.portfolio-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
 .shell-button--danger {
   margin-top: 0;
   border-color: transparent;
@@ -75,15 +92,57 @@
   gap: 6px;
 }
 
+.portfolio-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-left: auto;
+}
+
+.portfolio-tools .shell-button {
+  margin-top: 0;
+}
+
+/* The share of the portfolio: a thin bar beside the percentage. */
+.portfolio-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.portfolio-share__text {
+  min-width: 54px;
+  text-align: right;
+}
+
+.portfolio-share__bar {
+  width: 44px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.portfolio-share__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
 .portfolio-search {
   width: 240px;
   max-width: 100%;
   height: 36px;
-  margin-left: auto;
-  padding: 0 12px;
+  padding: 0 12px 0 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-position: 11px 50%;
+  background-repeat: no-repeat;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  background: var(--sunken);
+  background-color: var(--sunken);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-sm);
@@ -131,14 +190,23 @@
   overflow-x: auto;
 }
 
+/* The prototype table sits on the card: no fill, no header band, no underlines of the old
+   global table rules (index.css). */
 .portfolio-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  background: transparent;
+}
+
+.portfolio-table tr:hover {
+  background: transparent;
 }
 
 .portfolio-table th {
   padding: 8px 12px;
+  background: transparent;
+  border-bottom: 0;
   color: var(--ink-3);
   font-weight: 500;
   font-size: var(--fs-xs);
@@ -149,6 +217,7 @@
 .portfolio-table td {
   padding: 11px 12px;
   border-top: 1px solid var(--line);
+  border-bottom: 0;
   white-space: nowrap;
 }
 
@@ -213,6 +282,11 @@
   font-size: var(--fs-xs);
 }
 
+.portfolio-sub--inline {
+  display: inline;
+  margin-left: 6px;
+}
+
 .portfolio-summary dd .portfolio-sub {
   font-size: var(--fs-sm);
 }
@@ -232,6 +306,33 @@
   background: var(--warn-soft);
   color: var(--ink);
   font-size: var(--fs-sm);
+}
+
+.portfolio-warn--action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.portfolio-warn--action > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.portfolio-warn--action .shell-icon {
+  flex: none;
+  color: var(--warn);
+}
+
+.portfolio-warn--action .shell-button {
+  flex: none;
+  text-decoration: none;
+}
+
+@media (max-width: 559.98px) {
+  .portfolio-warn--action {
+    flex-wrap: wrap;
+  }
 }
 
 .portfolio-warn-text {
@@ -261,27 +362,27 @@
 
 .portfolio-bar span[data-tone="1"],
 .portfolio-swatch[data-tone="1"] {
-  background: #3987e5;
+  background: var(--c-p2);
 }
 
 .portfolio-bar span[data-tone="2"],
 .portfolio-swatch[data-tone="2"] {
-  background: #199e70;
+  background: var(--c-p4);
 }
 
 .portfolio-bar span[data-tone="3"],
 .portfolio-swatch[data-tone="3"] {
-  background: #d95926;
+  background: var(--c-p5);
 }
 
 .portfolio-bar span[data-tone="4"],
 .portfolio-swatch[data-tone="4"] {
-  background: #d55181;
+  background: var(--c-p1);
 }
 
 .portfolio-bar span[data-tone="5"],
 .portfolio-swatch[data-tone="5"] {
-  background: #4a5161;
+  background: var(--c-p3);
 }
 
 .portfolio-slices {
@@ -406,10 +507,25 @@ a.portfolio-asset__name:hover {
   margin: 0;
 }
 
-.portfolio-operations li > span:first-child {
+.portfolio-operations li > span:first-child,
+.portfolio-operations li > .portfolio-operation > span:first-child {
   display: grid;
   justify-items: start;
   gap: 2px;
+}
+
+/* A transaction of the wallet page: the whole row opens it in Transactions. */
+.portfolio-operations li > .portfolio-operation {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.portfolio-operations li > .portfolio-operation:hover {
+  color: var(--accent);
 }
 
 .portfolio-operations__all {
@@ -469,12 +585,14 @@ a.portfolio-asset__name:hover {
   font-size: var(--fs-sm);
 }
 
-.portfolio-holdings li:first-child {
-  border-top: 0;
+.portfolio-holding {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
-.portfolio-holdings a {
-  color: var(--ink);
+.portfolio-holdings li:first-child {
+  border-top: 0;
 }
 
 .portfolio-holdings .portfolio-num {
@@ -513,6 +631,11 @@ a.portfolio-asset__name:hover {
 }
 
 .portfolio-dialog__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
   padding: 18px 22px 0;
 }
 
@@ -522,7 +645,13 @@ a.portfolio-asset__name:hover {
   font-weight: 600;
 }
 
+.portfolio-dialog__head h2 {
+  flex: 1;
+  min-width: 0;
+}
+
 .portfolio-dialog__head .shell-note {
+  flex-basis: 100%;
   margin-top: 8px;
 }
 
@@ -700,6 +829,17 @@ a.portfolio-asset__name:hover {
   padding-left: 4px;
 }
 
+.portfolio-input.portfolio-chip-select {
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  height: 32px;
+  padding: 0 28px 0 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
 .portfolio-more summary {
   color: var(--ink-2);
   font-weight: 500;
@@ -792,7 +932,10 @@ a.portfolio-asset__name:hover {
 .portfolio-list__name,
 .portfolio-list__detail {
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -833,8 +976,129 @@ a.portfolio-asset__name:hover {
     font-size: 20px;
   }
 
-  .portfolio-search {
+  .portfolio-tools {
     width: 100%;
     margin-left: 0;
+  }
+
+  .portfolio-tools .portfolio-search {
+    flex: 1 1 160px;
+    width: auto;
+  }
+}
+
+/* Phones: a dialog is a full-screen sheet, so the form's footer with Save stays in reach
+   and only the fields scroll. */
+@media (max-width: 639.98px) {
+  .portfolio-scrim:has(> .portfolio-dialog--wide) {
+    place-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .portfolio-dialog--wide {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .portfolio-dialog--wide > form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .portfolio-dialog--wide .portfolio-dialog__head {
+    flex: none;
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .portfolio-dialog--wide .wallets-steps {
+    flex: none;
+    padding: 12px 16px 0;
+  }
+
+  .portfolio-dialog--wide .portfolio-dialog__body {
+    flex: 1;
+    align-content: start;
+    min-height: 0;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  .portfolio-dialog--wide .portfolio-dialog__foot {
+    flex: none;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Asset page on phones: the page title already names the asset, the price sits under the icon
+   row and the position figures go two to a row. */
+@media (max-width: 639.98px) {
+  .portfolio-head {
+    gap: 8px 12px;
+  }
+
+  .portfolio-head__title {
+    min-width: 0;
+  }
+
+  .portfolio-head__title h2 {
+    display: none;
+  }
+
+  .portfolio-head__price {
+    flex-basis: 100%;
+    text-align: left;
+  }
+
+  .portfolio-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .portfolio-stat dd {
+    font-size: var(--fs-lg);
+  }
+}
+
+/* Phones: the five types and More share one row instead of More wrapping alone. */
+@media (max-width: 639.98px) {
+  .portfolio-types {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .portfolio-types .shell-seg {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .portfolio-types .shell-seg label {
+    padding: 6px 7px;
+    font-size: var(--fs-sm);
+  }
+
+  .portfolio-types__more {
+    flex: none;
+    padding: 9px 10px;
+    font-size: var(--fs-sm);
+  }
+}
+
+@media (max-width: 380px) {
+  .portfolio-types .shell-seg label {
+    padding: 6px 5px;
+    font-size: var(--fs-xs);
+  }
+
+  .portfolio-types__more {
+    padding: 9px 8px;
+    font-size: var(--fs-xs);
   }
 }

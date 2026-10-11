@@ -1,10 +1,19 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseRegistration, parseUpdate } from './wallet-address-input';
+import {
+  parseBalanceGap,
+  parseRegistration,
+  parseTokenVisibility,
+  parseUpdate,
+} from './wallet-address-input';
 
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const accountId = '00000000-0000-4000-8000-000000000001';
 // An EIP-55 test vector, not an owner's address.
 const ethereum = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+// The System Program's id: a well-known public key, never an owner's wallet.
+const solana = '11111111111111111111111111111111';
+// The public USDT contract on Tron: a well-known address, never an owner's wallet.
+const tron = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 // Synthetic BIP-39 words in the order of the standard test vector, never a real wallet.
 const seedPhrase =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -26,6 +35,43 @@ describe('WAL-ADD: wallet registration input', () => {
       accountId,
       label: null,
     });
+  });
+
+  it('takes a Solana address exactly as given (M15)', () => {
+    expect(parseRegistration({ network: 'solana', address: solana })).toEqual({
+      network: 'solana',
+      address: solana,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes a Tron address exactly as given', () => {
+    expect(parseRegistration({ network: 'tron', address: tron })).toEqual({
+      network: 'tron',
+      address: tron,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes a Bitcoin account public key exactly as given (M21)', () => {
+    // The BIP-84 test vector's account key, never an owner's wallet.
+    const zpub =
+      'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+    expect(parseRegistration({ network: 'bitcoin', address: zpub, accountId })).toEqual({
+      network: 'bitcoin',
+      address: zpub,
+      accountId,
+      label: null,
+    });
+    // The key is a Bitcoin one only.
+    expect(() => parseRegistration({ network: 'solana', address: zpub })).toThrow(
+      BadRequestException,
+    );
+    expect(() =>
+      parseRegistration({ network: 'bitcoin', address: `${zpub.slice(0, -1)}t` }),
+    ).toThrow(BadRequestException);
   });
 
   it('binds the address to an account with a trimmed label', () => {
@@ -51,7 +97,13 @@ describe('WAL-ADD: wallet registration input', () => {
   it.each([
     ['WAL-INVALID: a Bitcoin address as Ethereum', { network: 'ethereum', address }],
     ['an Ethereum address as Bitcoin', { network: 'bitcoin', address: ethereum }],
-    ['a network not tracked yet', { network: 'solana', address }],
+    ['a Bitcoin address as Solana', { network: 'solana', address }],
+    ['an Ethereum address as Solana', { network: 'solana', address: ethereum }],
+    ['a Solana address as Ethereum', { network: 'ethereum', address: solana }],
+    ['a Bitcoin address as Tron', { network: 'tron', address }],
+    ['a Tron address as Solana', { network: 'solana', address: tron }],
+    ['a Tron address as Ethereum', { network: 'ethereum', address: tron }],
+    ['a network not tracked', { network: 'dogecoin', address }],
     ['a label over 40 characters', { address, label: 'x'.repeat(41) }],
     ['a label with a control character', { address, label: 'Cold\nwallet' }],
     ['a label that is not text', { address, label: 7 }],
@@ -60,6 +112,40 @@ describe('WAL-ADD: wallet registration input', () => {
     ['a seed phrase field', { address, seed: seedPhrase }],
   ])('refuses %s', (_case, input) => {
     expect(() => parseRegistration(input)).toThrow(BadRequestException);
+  });
+});
+
+describe('BYBIT-KEY: adding a Bybit account (M22)', () => {
+  // Synthetic key and secret, never an owner's.
+  const apiKey = 'SyntheticKey0001';
+  const apiSecret = 'SyntheticSecret000000000000001';
+
+  it('takes a read-only API key and secret, trimmed of the spaces a copy adds', () => {
+    expect(
+      parseRegistration({
+        network: 'bybit',
+        apiKey: ` ${apiKey} `,
+        apiSecret: `${apiSecret}\n`,
+        accountId,
+        label: ' Bybit ',
+      }),
+    ).toEqual({
+      network: 'bybit',
+      credentials: { apiKey, apiSecret },
+      accountId,
+      label: 'Bybit',
+    });
+  });
+
+  it('refuses an address, a missing secret, unknown fields or a key that is not plain text', () => {
+    const bad = [
+      { network: 'bybit', address: '123456789' },
+      { network: 'bybit', apiKey },
+      { network: 'bybit', apiKey, apiSecret, address: '123456789' },
+      { network: 'bybit', apiKey: 'key with spaces', apiSecret },
+      { network: 'bybit', apiKey, apiSecret: 'short' },
+    ];
+    for (const body of bad) expect(() => parseRegistration(body)).toThrow(BadRequestException);
   });
 });
 
@@ -105,5 +191,69 @@ describe('WAL-ACCOUNT: changing a wallet address', () => {
     ['no object', null],
   ])('refuses %s', (_case, input) => {
     expect(() => parseUpdate(input)).toThrow(BadRequestException);
+  });
+});
+
+describe('BYBIT-COUNT-GAP: counting a difference of a Bybit balance', () => {
+  const gap = {
+    requestId: accountId,
+    coin: 'BTC',
+    direction: 'in',
+    quantity: '0.03842035',
+    reported: '0.04165398',
+  };
+
+  it('accepts a coin, a direction and exact amounts', () => {
+    expect(parseBalanceGap(gap)).toEqual(gap);
+    expect(parseBalanceGap({ ...gap, coin: 'NIGHT', direction: 'out', reported: '0' }).coin).toBe(
+      'NIGHT',
+    );
+  });
+
+  it.each([
+    ['fiat', { coin: 'EUR' }],
+    ['a lower-case ticker', { coin: 'btc' }],
+    ['another direction', { direction: 'self' }],
+    ['a zero difference', { quantity: '0.000' }],
+    ['a negative difference', { quantity: '-1' }],
+    ['more than 18 decimals', { quantity: '0.0000000000000000001' }],
+    ['an exponent', { reported: '1e3' }],
+    ['a bad request id', { requestId: 'x' }],
+    ['an extra field', { accountId }],
+  ])('refuses %s', (_case, change) => {
+    expect(() => parseBalanceGap({ ...gap, ...change })).toThrow(BadRequestException);
+  });
+
+  it('refuses a body that is not an object', () => {
+    expect(() => parseBalanceGap(null)).toThrow(BadRequestException);
+    expect(() => parseBalanceGap([gap])).toThrow(BadRequestException);
+  });
+});
+
+describe('TOKEN-HIDE: hiding tokens of an address', () => {
+  it('names the tickers and what happens to them', () => {
+    expect(parseTokenVisibility({ tickers: ['SYN', 'USDT7F3A'], visibility: 'hidden' })).toEqual({
+      tickers: ['SYN', 'USDT7F3A'],
+      visibility: 'hidden',
+    });
+    expect(parseTokenVisibility({ tickers: ['SYN', 'SYN'], visibility: 'shown' })).toEqual({
+      tickers: ['SYN'],
+      visibility: 'shown',
+    });
+  });
+
+  it.each([
+    ['no body', undefined],
+    ['no tickers', { tickers: [], visibility: 'hidden' }],
+    [
+      'too many tickers',
+      { tickers: Array.from({ length: 201 }, (_, i) => `T${i}`), visibility: 'hidden' },
+    ],
+    ['a lower-case ticker', { tickers: ['syn'], visibility: 'hidden' }],
+    ['a ticker that is not text', { tickers: [5], visibility: 'hidden' }],
+    ['another visibility', { tickers: ['SYN'], visibility: 'gone' }],
+    ['an extra field', { tickers: ['SYN'], visibility: 'hidden', address: 'x' }],
+  ])('refuses %s', (_name, body) => {
+    expect(() => parseTokenVisibility(body)).toThrow(BadRequestException);
   });
 });

@@ -1,10 +1,12 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { PageSkeleton } from '../shell/Skeleton';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
@@ -16,17 +18,43 @@ import {
   ReconcileNote,
   subtitle,
   trackedSymbols,
+  withoutHiddenTokens,
 } from './WalletParts';
-import { isCoin, pricesOf, reconcile } from './wallets';
+import { gapAddress, isCoin, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
 
+/** The addresses of one wallet, twenty to a page; the page is only shown when there are more. */
+function PagedSources({
+  items,
+  label,
+  row,
+  children,
+}: {
+  items: WalletAddress[];
+  label: string;
+  row: (address: WalletAddress) => ReactNode;
+  children?: ReactNode;
+}) {
+  const paged = useInfinite(items);
+  return (
+    <>
+      <ul className="wallets-sources">
+        {paged.rows.map(row)}
+        {children}
+      </ul>
+      {paged.more && <LoadMore {...paged.more} label={label} />}
+    </>
+  );
+}
+
 // Wallets grouped the way the owner holds them (prototype "Wallets", M10): each account with
 // its tracked addresses, the coins entered by hand, and whether the chain agrees.
 export default function WalletsPage() {
-  const { portfolio, addresses, failed, load, replace, runs, sync, asked } = useWallets();
+  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
+    useWallets();
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
@@ -57,6 +85,8 @@ export default function WalletsPage() {
         )
     : [];
 
+  // PAGES: twenty wallets a page.
+  const pagedCards = useInfinite(cards);
   const addButton = (
     <button
       type="button"
@@ -67,19 +97,18 @@ export default function WalletsPage() {
       Add wallet
     </button>
   );
-  const rows = (items: WalletAddress[]) =>
-    items.map((address) => (
-      <AddressRow
-        key={address.id}
-        address={address}
-        run={runs[address.id]}
-        narrow={narrow}
-        prices={prices}
-        currency={currency}
-        onOpen={() => setOpenId(address.id)}
-        onSync={() => void sync(address.id)}
-      />
-    ));
+  const row = (address: WalletAddress) => (
+    <AddressRow
+      key={address.id}
+      address={address}
+      run={runs[address.id]}
+      narrow={narrow}
+      prices={prices}
+      currency={currency}
+      onOpen={() => setOpenId(address.id)}
+      onSync={() => void sync(address.id)}
+    />
+  );
 
   return (
     <div className="shell-page">
@@ -96,9 +125,7 @@ export default function WalletsPage() {
           </button>
         </section>
       ) : portfolio === null || addresses === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading wallets…
-        </section>
+        <PageSkeleton label="Loading wallets" show={['cards']} />
       ) : cards.length === 0 && list.length === 0 ? (
         <section className="shell-card shell-empty" aria-labelledby="wallets-empty">
           <span className="shell-empty__ill" aria-hidden="true">
@@ -106,8 +133,8 @@ export default function WalletsPage() {
           </span>
           <h2 id="wallets-empty">No wallets connected</h2>
           <p>
-            Add a Bitcoin or Ethereum address. The app only reads public data and never asks for a
-            seed phrase.
+            Add a Bitcoin, Ethereum or Solana address. The app only reads public data and never asks
+            for a seed phrase.
           </p>
           {addButton}
         </section>
@@ -115,8 +142,8 @@ export default function WalletsPage() {
         <>
           <div className="wallets-intro">
             <p className="wallets-soft">
-              Wallets are read-only. The app stores only public addresses; it never asks for a seed
-              phrase or a private key.
+              Wallets are read-only. The app stores only public addresses and read-only exchange
+              keys; it never asks for a seed phrase or a private key.
             </p>
             {addButton}
           </div>
@@ -131,15 +158,17 @@ export default function WalletsPage() {
                   <span>Open an address and choose the wallet it belongs to.</span>
                 </div>
               </div>
-              <ul className="wallets-sources">{rows(unassigned)}</ul>
+              <PagedSources items={unassigned} label="addresses" row={row} />
             </section>
           )}
-          {cards.map(({ account, addresses: own, holdings }) => {
+          {pagedCards.rows.map(({ account, addresses: own, holdings: all }) => {
+            const holdings = withoutHiddenTokens(all, own);
             const tracked = trackedSymbols(own);
             const manual = holdings.filter(
               (holding) => ![...tracked].some((symbol) => isCoin(holding.asset, symbol)),
             );
             const headingId = `wallet-${account.accountId}`;
+            const kind = kinds[account.accountId] ?? null;
             return (
               <section
                 key={account.accountId}
@@ -148,7 +177,7 @@ export default function WalletsPage() {
               >
                 <div className="wallets-card__head">
                   <span className="wallets-card__icon" aria-hidden="true">
-                    <Icon name="wallets" />
+                    <Icon name={kind ?? 'wallets'} />
                   </span>
                   <div className="wallets-card__title">
                     <h2 id={headingId}>
@@ -159,7 +188,7 @@ export default function WalletsPage() {
                         {account.name}
                       </Link>
                     </h2>
-                    <span>{subtitle(own)}</span>
+                    <span>{subtitle(own, kind)}</span>
                   </div>
                   <div className="wallets-card__total">
                     <strong>{money(account.pricedValue, currency)}</strong>
@@ -167,19 +196,23 @@ export default function WalletsPage() {
                   </div>
                 </div>
                 {own.length > 0 || manual.length > 0 ? (
-                  <ul className="wallets-sources">
-                    {rows(own)}
+                  <PagedSources items={own} label={`addresses of ${account.name}`} row={row}>
                     {manual.length > 0 && (
                       <ManualRow holdings={manual} currency={currency} narrow={narrow} />
                     )}
-                  </ul>
+                  </PagedSources>
                 ) : (
                   <p className="wallets-empty-row">Nothing in this wallet yet.</p>
                 )}
-                <ReconcileNote result={reconcile(list, portfolio, account.accountId)} />
+                <ReconcileNote
+                  result={reconcile(list, portfolio, account.accountId)}
+                  target={gapAddress(list, account.accountId)}
+                  onCounted={() => void load(true)}
+                />
               </section>
             );
           })}
+          {pagedCards.more && <LoadMore {...pagedCards.more} label="wallets" />}
         </>
       )}
       {adding && (
@@ -197,6 +230,8 @@ export default function WalletsPage() {
             void load(true);
             if (created) void sync(address.id);
             else setOpenId(address.id);
+            // A Bybit account added again carries a new key: read it at once.
+            if (!created && address.network === 'bybit') void sync(address.id);
           }}
         />
       )}
@@ -212,6 +247,11 @@ export default function WalletsPage() {
           onSaved={(address, newAccount) => {
             replace(address);
             if (newAccount) void load(true);
+          }}
+          onRemoved={(address) => {
+            setOpenId(null);
+            forget(address.id);
+            void load(true);
           }}
           onClose={() => setOpenId(null)}
         />

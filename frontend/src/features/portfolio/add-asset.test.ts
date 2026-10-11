@@ -17,6 +17,7 @@ const entry: AssetEntry = {
   value: '',
   currency: 'RUB',
   accountId: 'account',
+  accountName: '',
   notes: '',
 };
 
