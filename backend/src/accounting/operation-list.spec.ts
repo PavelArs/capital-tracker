@@ -2026,4 +2026,35 @@ describe('list-all-operations projection', () => {
     ]);
     expect([second.account, second.wallet]).toEqual([null, wallet]);
   });
+
+  it('OPS-PERIOD: a period keeps the UTC days from and to, both included, and each end may stay open', () => {
+    const at = (n: number, blockTime: string) => chain(n, { blockTime });
+    const input = sources({
+      chain: [
+        at(1, '2026-09-30T23:59:59.000Z'),
+        at(2, '2026-10-01T00:00:00.000Z'),
+        at(3, '2026-10-02T12:00:00.000Z'),
+        at(4, '2026-10-03T23:59:59.000Z'),
+        at(5, '2026-10-04T00:00:00.000Z'),
+      ],
+      marketPrices: new Map(),
+    });
+    const days = (range?: { from?: string; to?: string }) =>
+      projectOperations(now, input, undefined, range).operations.map((row) =>
+        row.occurredAt.slice(0, 10),
+      );
+    expect(days()).toHaveLength(5);
+    expect(days({ from: '2026-10-01', to: '2026-10-03' })).toEqual([
+      '2026-10-03',
+      '2026-10-02',
+      '2026-10-01',
+    ]);
+    expect(days({ from: '2026-10-02' })).toEqual(['2026-10-04', '2026-10-03', '2026-10-02']);
+    expect(days({ to: '2026-09-30' })).toEqual(['2026-09-30']);
+    expect(days({ from: '2026-10-05' })).toEqual([]);
+    // The count of what waits for an answer is that of the whole list, not of the period.
+    expect(
+      projectOperations(now, input, undefined, { from: '2026-10-05' }).needsClassificationCount,
+    ).toBe(5);
+  });
 });

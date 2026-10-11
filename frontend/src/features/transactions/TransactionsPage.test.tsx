@@ -473,6 +473,125 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Fee')).toBe('₽98.76');
   });
 
+  it('OPS-TYPE: filters by what a transaction is, keeps the other filters and counts the chips by it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    render(
+      <MemoryRouter initialEntries={['/transactions']}>
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    const type = screen.getByRole('combobox', { name: 'Type' });
+    expect(
+      within(type)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All types', 'Buy', 'Incoming', 'Outgoing', 'Transfer']);
+    await user.selectOptions(type, 'Buy');
+    expect(bodyRows().map(typeOf)).toEqual(['Buy', 'Buy', 'Buy']);
+    expect(screen.getByLabelText('Address')).toHaveTextContent('?type=buy');
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 3');
+    expect(screen.getByRole('button', { name: /^CSV/ })).toHaveTextContent('CSV 1');
+    expect(screen.getByText(/3 of 6 transactions/)).toBeInTheDocument();
+    // An unclassified wallet transaction is told by its direction.
+    await user.selectOptions(type, 'Incoming');
+    expect(bodyRows().map(typeOf)).toEqual(['Incoming']);
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    expect(screen.getByText('No transactions match')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(bodyRows()).toHaveLength(6);
+    expect(type).toHaveValue('');
+  });
+
+  it('OPS-PERIOD: the period is asked of the server, lives in the address and keeps the other filters', async () => {
+    const user = userEvent.setup();
+    const read = vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) =>
+      list(
+        all.operations.filter((item) => {
+          const day = item.occurredAt.slice(0, 10);
+          return (!range?.from || day >= range.from) && (!range?.to || day <= range.to);
+        }),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={['/transactions?asset=BTC&from=2025-06-16&to=2025-06-20']}>
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(read).toHaveBeenLastCalledWith(undefined, { from: '2025-06-16', to: '2025-06-20' });
+    expect(dayHeadings()).toEqual(['Jun 20, 2025', 'Jun 18, 2025']);
+    // A range that is none of the presets is the custom one, with its two dates.
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('custom');
+    expect(screen.getByLabelText('From')).toHaveValue('2025-06-16');
+    expect(screen.getByLabelText('To')).toHaveValue('2025-06-20');
+    // The chips count the rows of the period, with the other filters as they are.
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 2');
+    expect(screen.getByText(/2 of 3 transactions in the period/)).toBeInTheDocument();
+    // The asset list offers what the period holds; the chosen one stays.
+    expect(
+      within(screen.getByRole('combobox', { name: 'Asset' }))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All assets', 'BTC', 'USDT']);
+
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2025-06-14' } });
+    // The start follows when the end is moved before it.
+    await waitFor(() =>
+      expect(read).toHaveBeenLastCalledWith(undefined, { from: '2025-06-14', to: '2025-06-14' }),
+    );
+    expect(screen.getByLabelText('From')).toHaveValue('2025-06-14');
+    await waitFor(() => expect(dayHeadings()).toEqual(['Jun 14, 2025']));
+    expect(screen.getByLabelText('Address')).toHaveTextContent(
+      '?asset=BTC&from=2025-06-14&to=2025-06-14',
+    );
+
+    // A preset replaces the dates; All time takes the period away again.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Last 30 days');
+    await waitFor(() =>
+      expect(read).toHaveBeenLastCalledWith(undefined, {
+        from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    );
+    expect(screen.queryByLabelText('From')).toBeNull();
+    expect(screen.getByLabelText('Address')).toHaveTextContent(
+      /^\?asset=BTC&from=\d{4}-\d{2}-\d{2}$/,
+    );
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'All time');
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(undefined));
+    await waitFor(() => expect(bodyRows()).toHaveLength(5));
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?asset=BTC$/);
+  });
+
+  it('OPS-PERIOD: a period without transactions keeps the filters and can be cleared', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) =>
+      range ? list([]) : all,
+    );
+    renderPage('/transactions?from=2030-01-01');
+    // Not the empty-account card: the period is the reason, and it can be changed here.
+    expect(await screen.findByText('No transactions match')).toBeInTheDocument();
+    expect(screen.queryByText('No transactions yet')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Period' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+  });
+
+  it('OPS-PERIOD: a custom range can be opened before any date is chosen; bad dates are ignored', async () => {
+    const user = userEvent.setup();
+    const read = vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage('/transactions?from=2025-02-30&to=nonsense');
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(read).toHaveBeenLastCalledWith(undefined);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Custom range');
+    expect(screen.getByLabelText('From')).toHaveValue('');
+    expect(screen.getByLabelText('To')).toHaveValue('');
+    expect(bodyRows()).toHaveLength(6);
+  });
+
   it('OPS-PHONE: below 640 px shows two-line rows under day headings instead of the table', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
