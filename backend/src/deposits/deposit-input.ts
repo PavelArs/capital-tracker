@@ -82,9 +82,12 @@ export function parseDate(value: unknown): string {
   return value;
 }
 
-/** A positive amount with at most two decimal places, as a bank shows it. */
+/**
+ * A positive amount with at most two decimal places, as a bank shows it. Up to twelve whole
+ * digits, so that every accepted amount is shown to the cent by the page.
+ */
 export function parseAmount(value: unknown, allowZero = false): string {
-  if (typeof value !== 'string' || !/^(0|[1-9]\d{0,14})(\.\d{1,2})?$/.test(value)) return bad();
+  if (typeof value !== 'string' || !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(value)) return bad();
   const [whole, fraction = ''] = value.split('.');
   const result = `${whole}.${fraction.padEnd(2, '0')}`;
   if (!allowZero && result === '0.00') return bad();

@@ -112,7 +112,10 @@ export class DepositsService {
       const date = asOf ?? today;
       const all = await this.load(manager, owner);
       const converters = await this.converters(manager);
-      const items = all.map((stored) => this.view(stored, date, converters));
+      // A deposit that has not started by the asked day is not part of that day's picture.
+      const items = all
+        .filter((stored) => stored.deposit.startDate <= date)
+        .map((stored) => this.view(stored, date, converters));
       // A closed deposit still counts while interest posted before the closure is unpaid.
       const open = items.filter(
         (item) => item.status !== 'closed' || canonicalDecimalToAtoms(item.balance) > 0n,
@@ -339,7 +342,7 @@ export class DepositsService {
     const movements: MovementRow[] = await manager.query(
       `SELECT id, "depositId", to_char("occurredOn", 'YYYY-MM-DD') AS "occurredOn", kind, amount::text AS amount, comment
        FROM bank_deposit_movements WHERE "ownerId"=$1 AND "depositId" = ANY($2)
-       ORDER BY "occurredOn", "createdAt", id`,
+       ORDER BY "occurredOn", "position"`,
       [owner, ids],
     );
     const checks: CheckRow[] = await manager.query(

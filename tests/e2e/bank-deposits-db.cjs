@@ -136,6 +136,27 @@ async function accrual(db, service, owner) {
   assert.deepEqual(settled.totals, before, 'Once paid out, the closed deposit counts for nothing');
   await service.remove(owner, kept.id);
   console.log('PASS DEP-CLOSED-DUE');
+
+  stage = 'synthetic snapshot before the start, amount range and same-day order';
+  const early = await service.list(owner, '2026-06-15');
+  assert.deepEqual(early.items, [], 'Deposits that had not started are not in an earlier snapshot');
+  assert.deepEqual(early.totals, { USD: '0.00', EUR: '0.00', RUB: '0.00' });
+  await rejected(() => service.create(owner, { ...savings, amount: '1000000000000' }), 400);
+  const same = await service.create(owner, { ...savings, name: 'Same day', amount: '100.00' });
+  await service.addMovement(owner, same.id, { date: '2026-07-01', kind: 'topup', amount: '100.00' });
+  const ordered = await service.addMovement(owner, same.id, {
+    date: '2026-07-01',
+    kind: 'withdrawal',
+    amount: '150.00',
+  });
+  assert.deepEqual(
+    ordered.movements.map((movement) => movement.kind),
+    ['topup', 'topup', 'withdrawal'],
+    'The same day is replayed in the order it was entered',
+  );
+  assert.equal(ordered.principal, '50.00');
+  await service.remove(owner, same.id);
+  console.log('PASS DEP-ORDER');
   return { rub: rub.id, usd: usd.id };
 }
 
