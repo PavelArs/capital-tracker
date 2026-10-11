@@ -258,3 +258,27 @@ th {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Text that does not fit on its line fades out at the end instead of ending in "…". A rule opts in
+ * with `overflow: hidden; white-space: nowrap; mask-image: var(--fade-end); animation: fade-end
+ * linear; animation-timeline: scroll(self inline);`: the mask applies only while the text really
+ * overflows (the line is then a scroll container), so short text is never dimmed. Browsers
+ * without scroll-driven animations fade the end of every such line.
+ */
+:root {
+  --fade-end: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+
+@supports (animation-timeline: scroll()) {
+  :root {
+    --fade-end: none;
+  }
+}
+
+@keyframes fade-end {
+  from,
+  to {
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+}

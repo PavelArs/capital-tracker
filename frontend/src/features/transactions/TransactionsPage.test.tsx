@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { shortValue } from '../shell/CopyValue';
 import { poolCandidates } from './ClassifyForm';
 import TransactionsPage from './TransactionsPage';
 
@@ -356,7 +357,7 @@ describe('TransactionsPage (list-all-operations)', () => {
     const fact = (label: string) =>
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('Wallet')).toBe('Cold storage');
-    expect(fact('Address')).toBe(`Savings · ${wallet.address}`);
+    expect(fact('Address')).toBe(`Savings · ${shortValue(wallet.address)}`);
     // The wallet's name opens its page (M10); classifying happens right here (M12).
     expect(within(drawer).getByRole('link', { name: 'Cold storage' })).toHaveAttribute(
       'href',
@@ -546,12 +547,12 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Date')).toBe('Jun 20, 2025, 08:05 UTC');
     expect(fact('Network')).toBe('Bitcoin');
     expect(fact('Wallet')).toBe('Not in a wallet yet');
-    expect(fact('Address')).toBe(wallet.address);
+    expect(fact('Address')).toBe(shortValue(wallet.address));
     expect(within(drawer).getByRole('link', { name: 'Open Wallets' })).toHaveAttribute(
       'href',
       '/wallets',
     );
-    expect(fact('Transaction')).toBe(`${txid(1)}CopyView in explorer`);
+    expect(fact('Transaction')).toBe(`${shortValue(txid(1))}View in explorer`);
     expect(fact('Block')).toBe('800,001');
     expect(fact('Network fee')).toBe('Paid by sender');
     // EST-AT-TIME: the estimate is at the price stored for the transaction's hour.
@@ -1516,7 +1517,7 @@ describe('link-own-transfers (M13)', () => {
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('From')).toBe('Cold storage');
     expect(fact('To')).toBe('Bybit');
-    expect(fact('Other address')).toBe(other.address);
+    expect(fact('Other address')).toBe(shortValue(other.address));
     expect(fact('Network fee')).toBe('0.0001 BTC');
     expect(fact('Status')).toBe('Auto: own wallets');
     expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
@@ -1945,11 +1946,11 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('Paid')).toBe('-1,000 USDT');
     expect(fact('Paid from')).toBe('Trust Wallet');
-    expect(fact('Paying address')).toBe(`Ethereum · ${ethWallet.address}`);
-    expect(fact('Paying transaction')).toBe(`0x${'d'.repeat(64)}CopyView in explorer`);
+    expect(fact('Paying address')).toBe(`Ethereum · ${shortValue(ethWallet.address)}`);
+    expect(fact('Paying transaction')).toBe(`${shortValue(`0x${'d'.repeat(64)}`)}View in explorer`);
     expect(fact('Received')).toBe('+0.0125 BTC');
     expect(fact('Received in')).toBe('Trust Wallet');
-    expect(fact('Address')).toBe(`Bitcoin · ${wallet.address}`);
+    expect(fact('Address')).toBe(`Bitcoin · ${shortValue(wallet.address)}`);
     expect(fact('Value')).toBe('$1,000.00');
     expect(fact('Cost basis')).toBe('$1,000.00');
     await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
@@ -2773,9 +2774,7 @@ describe('transactions-page-polish', () => {
     const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
     await user.click(within(drawer).getByRole('button', { name: 'Copy transaction hash' }));
     expect(writeText).toHaveBeenCalledWith(txid(1));
-    expect(within(drawer).getByRole('button', { name: 'Copy transaction hash' })).toHaveTextContent(
-      'Copied',
-    );
+    expect(within(drawer).getByRole('button', { name: 'Copied' })).toBeInTheDocument();
     const explorer = within(drawer).getByRole('link', { name: 'View in explorer' });
     expect(explorer).toHaveAttribute('href', `https://mempool.space/tx/${txid(1)}`);
     expect(explorer).toHaveAttribute('target', '_blank');
@@ -2955,7 +2954,7 @@ describe('liquidity-pool-chain-legs (POOL-*)', () => {
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('Deposited')).toBe('3,000 USDC');
     expect(fact('Pool income')).toBe('+400 USDC');
-    expect(fact('Deposit transaction')).toBe(`0x${'f'.repeat(64)}`);
+    expect(fact('Deposit transaction')).toBe(shortValue(`0x${'f'.repeat(64)}`));
     expect(fact('Value')).toBe('$400.00');
     await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
     expect(within(drawer).getByLabelText('Returns the deposit')).toHaveValue(

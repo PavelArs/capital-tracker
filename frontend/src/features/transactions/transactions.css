@@ -17,24 +17,57 @@
 .transactions-filter select,
 .transactions-search {
   height: 36px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  background: var(--sunken);
+  outline: none;
+  background-color: var(--sunken);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-sm);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
+/* The prototype select: the field's own chevron in the muted ink, not the system arrow. */
+.transactions-filter select {
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* The prototype search: a magnifier at the left of the field. */
 .transactions-search {
-  width: 220px;
+  width: 260px;
   max-width: 100%;
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-position: 11px 50%;
+  background-repeat: no-repeat;
 }
 
-.transactions-filter select:focus-visible,
-.transactions-search:focus-visible {
+.transactions-search::placeholder {
+  color: var(--ink-3);
+}
+
+.transactions-filter select:hover,
+.transactions-search:hover {
+  border-color: var(--ink-3);
+}
+
+.transactions-filter select:focus,
+.transactions-search:focus {
   border-color: var(--accent);
-  outline: 2px solid var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .transactions-chip--warn .portfolio-chip__count {
@@ -303,6 +336,17 @@
   margin-top: 0;
 }
 
+/* Height of a one-line footer, so the buttons do not move when a label or a note changes. */
+.transactions-drawer__foot {
+  min-height: 65px;
+  align-items: center;
+}
+
+/* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
+.transactions-drawer__foot .shell-button--primary {
+  min-width: 96px;
+}
+
 .transactions-hero {
   display: grid;
   gap: 6px;
@@ -352,45 +396,23 @@
   font-size: 12px;
 }
 
-/* TX-HASH: the hash, then Copy and the explorer link on a line of their own. */
+/* TX-HASH: the short hash with its copy button, the explorer link after it. */
 .transactions-hash {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.transactions-hash .transactions-mono {
-  overflow-wrap: anywhere;
-}
-
-/* A long address or hash keeps to one line; its middle gives way when the panel is narrow. */
-.transactions-line {
-  display: block;
-  min-width: 0;
-}
-
-.transactions-mid {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-  white-space: nowrap;
-}
-
-.transactions-mid__head {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.transactions-mid__tail {
-  flex: none;
-}
-
-.transactions-hash__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 14px;
+  min-width: 0;
   font-size: var(--fs-sm);
+}
+
+/* A wallet or address line: the network and label, then the address with its copy button. */
+.transactions-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
 }
 
 .transactions-info {
@@ -528,7 +550,10 @@
 .transactions-item__detail {
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -826,4 +851,8 @@
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.transactions-line .copy-value {
+  font-size: inherit;
 }

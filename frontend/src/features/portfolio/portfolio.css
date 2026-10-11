@@ -868,7 +868,10 @@ a.portfolio-asset__name:hover {
 .portfolio-list__name,
 .portfolio-list__detail {
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 

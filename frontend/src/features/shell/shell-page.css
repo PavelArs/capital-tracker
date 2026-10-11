@@ -611,3 +611,28 @@
     border-radius: var(--r-lg) var(--r-lg) 0 0;
   }
 }
+
+/* A hint that has not arrived holds the line it will take (two on a phone), so the cards below stay put. */
+.shell-setting__hint--pending {
+  min-height: 1lh;
+}
+
+/* The dust hint is long enough to push its field onto a line of its own. */
+.shell-setting__hint--long {
+  width: 44rem;
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .shell-setting__hint--pending {
+    min-height: 2lh;
+  }
+
+  .shell-setting__hint--long {
+    min-height: 3lh;
+  }
+}
+
+.shell-setting__hint--pending .shell-bone {
+  margin-top: 0.4em;
+}

@@ -11,6 +11,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { shortValue } from '../shell/CopyValue';
 import WalletsPage from './WalletsPage';
 
 // Synthetic ids, names, addresses and amounts only.
@@ -532,7 +533,7 @@ describe('WAL-ACCOUNT: an address drawer', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: `Bitcoin ${addresses.loose}` }));
     const drawer = screen.getByRole('dialog', { name: 'Bitcoin address' });
-    expect(drawer).toHaveTextContent(addresses.loose);
+    expect(drawer).toHaveTextContent(shortValue(addresses.loose));
     expect(drawer).toHaveTextContent('Blockstream Esplora');
     await user.selectOptions(within(drawer).getByLabelText('Wallet'), 'Cold storage');
     await user.type(within(drawer).getByLabelText(/Address name/), 'Spare');
@@ -1355,7 +1356,7 @@ describe('M21: Bitcoin wallets by account public key', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: `Trezor BTC ${zpub}` }));
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
-    expect(drawer).toHaveTextContent(`Public key${zpub}`);
+    expect(drawer).toHaveTextContent(`Public key${shortValue(zpub)}`);
     expect(drawer).toHaveTextContent('5 used · new ones are found automatically');
     expect(within(drawer).getByRole('alert')).toHaveTextContent(
       'One address of this key is also tracked as its own wallet (Old Trezor address), so their coins count twice.',
