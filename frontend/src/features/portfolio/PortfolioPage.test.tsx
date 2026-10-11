@@ -19,7 +19,7 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetPage from './AssetPage';
-import PortfolioPage, { nextSort, sortAssets } from './PortfolioPage';
+import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -1038,7 +1038,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
   });
 
-  it('SORT-HEADERS click on a column name sorts by it: descending, ascending, then the default order', async () => {
+  it('SORT-HEADERS opens by value, largest first; a column name sorts by it and a second click turns it around', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
     const user = userEvent.setup();
     renderAt('/portfolio');
@@ -1051,17 +1051,20 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const header = (name: string) => screen.getByRole('columnheader', { name });
     const click = (name: string) => user.click(within(header(name)).getByRole('button', { name }));
     expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
-    expect(document.querySelectorAll('th[aria-sort]')).toHaveLength(0);
+    expect(header('Value')).toHaveAttribute('aria-sort', 'descending');
+    expect(document.querySelectorAll('th[aria-sort]')).toHaveLength(1);
 
     await click('Amount');
     expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
     expect(header('Amount')).toHaveAttribute('aria-sort', 'descending');
+    expect(header('Value')).not.toHaveAttribute('aria-sort');
     await click('Amount');
-    expect(order()).toEqual(['Toncoin', 'Bitcoin', 'US dollar']);
+    // Toncoin is no longer held, so it stays below the holdings either way.
+    expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
     expect(header('Amount')).toHaveAttribute('aria-sort', 'ascending');
     await click('Amount');
-    expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
-    expect(header('Amount')).not.toHaveAttribute('aria-sort');
+    expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
+    expect(header('Amount')).toHaveAttribute('aria-sort', 'descending');
 
     // Another column starts over; names run A to Z first; unknown figures stay last.
     await click('Asset');
@@ -1077,7 +1080,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(order()).toEqual(['Bitcoin', 'Toncoin']);
   });
 
-  it('SORT-ORDER cycles a column and keeps unknown figures last in both directions', () => {
+  it('SORT-ORDER turns a column around and keeps unknown figures last in both directions', () => {
     const named = (n: number, name: string, value: string | null) =>
       valued(n, name, null, crypto, { value });
     const assets = [named(1, 'B', '2'), named(2, 'A', null), named(3, 'C', '9')];
@@ -1086,21 +1089,44 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(names({ key: 'value', direction: 'desc' })).toEqual(['C', 'B', 'A']);
     expect(names({ key: 'value', direction: 'asc' })).toEqual(['B', 'C', 'A']);
     expect(names({ key: 'name', direction: 'desc' })).toEqual(['C', 'B', 'A']);
-    expect(names(null)).toEqual(['B', 'A', 'C']);
-    expect(nextSort(null, 'value')).toEqual({ key: 'value', direction: 'desc' });
     expect(nextSort({ key: 'value', direction: 'desc' }, 'value')).toEqual({
       key: 'value',
       direction: 'asc',
     });
-    expect(nextSort({ key: 'value', direction: 'asc' }, 'value')).toBeNull();
-    expect(nextSort({ key: 'name', direction: 'asc' }, 'name')).toEqual({
-      key: 'name',
+    expect(nextSort({ key: 'value', direction: 'asc' }, 'value')).toEqual({
+      key: 'value',
       direction: 'desc',
     });
-    expect(nextSort({ key: 'name', direction: 'desc' }, 'name')).toBeNull();
+    expect(nextSort({ key: 'value', direction: 'desc' }, 'name')).toEqual({
+      key: 'name',
+      direction: 'asc',
+    });
     expect(nextSort({ key: 'name', direction: 'desc' }, 'value')).toEqual({
       key: 'value',
       direction: 'desc',
+    });
+  });
+
+  it('SORT-HELD keeps a holding without a price ahead of assets no longer held, as the server ranks them', () => {
+    const priced = valued(1, 'Priced', null, crypto, { quantity: '1', value: '50' });
+    const unpriced = valued(2, 'Unpriced', null, crypto, { quantity: '3', value: null });
+    const unheld = valued(3, 'Unheld', null, crypto, { quantity: '0', value: '0' });
+    const names = (sort: Parameters<typeof sortAssets>[1]) =>
+      sortAssets([unheld, unpriced, priced], sort).map((asset) => asset.name);
+    expect(names(defaultSort)).toEqual(['Priced', 'Unpriced', 'Unheld']);
+    expect(names({ key: 'value', direction: 'asc' })).toEqual(['Priced', 'Unpriced', 'Unheld']);
+    expect(names({ key: 'amount', direction: 'asc' })).toEqual(['Priced', 'Unpriced', 'Unheld']);
+    // A name order is only names.
+    expect(names({ key: 'name', direction: 'asc' })).toEqual(['Priced', 'Unheld', 'Unpriced']);
+  });
+
+  it('SORT-PHONE shows on a phone only an order its Sort by can name', () => {
+    expect(phoneSort({ key: 'amount', direction: 'asc' })).toEqual(defaultSort);
+    expect(phoneSort({ key: 'value', direction: 'asc' })).toEqual(defaultSort);
+    expect(phoneSort({ key: 'pnl', direction: 'asc' })).toEqual({ key: 'pnl', direction: 'desc' });
+    expect(phoneSort({ key: 'name', direction: 'desc' })).toEqual({
+      key: 'name',
+      direction: 'asc',
     });
   });
 
@@ -1123,14 +1149,16 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       const order = () =>
         [...document.querySelectorAll('.ui-row__title')].map((name) => name.textContent);
       expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
+      // The prototype's four choices; the list opens by value, largest first.
       const sort = screen.getByRole('combobox', { name: 'Sort by' });
+      expect(sort).toHaveValue('value');
+      expect(
+        within(sort)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Value', 'Unrealized P&L', '24h change', 'Name']);
       await user.selectOptions(sort, 'Name');
       expect(order()).toEqual(['Bitcoin', 'Toncoin', 'US dollar']);
-      // The direction button turns the order around; Default order clears the sort.
-      await user.click(screen.getByRole('button', { name: 'Ascending' }));
-      expect(order()).toEqual(['US dollar', 'Toncoin', 'Bitcoin']);
-      await user.selectOptions(sort, 'Default order');
-      expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
       // An unknown change sorts last.
       await user.selectOptions(sort, '24h change');
       expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);

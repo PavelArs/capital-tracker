@@ -40,9 +40,13 @@ export default function PeriodFilter({
   };
   return (
     <>
-      <label className="transactions-filter">
+      <label className="ui-filter">
         <span>Period</span>
-        <select value={choice} onChange={(event) => choose(event.target.value)}>
+        <select
+          className="ui-input ui-input--sm"
+          value={choice}
+          onChange={(event) => choose(event.target.value)}
+        >
           <option value={ALL}>All time</option>
           {presets.map(({ key, label }) => (
             <option key={key} value={key}>
@@ -54,18 +58,20 @@ export default function PeriodFilter({
       </label>
       {choice === CUSTOM && (
         <>
-          <label className="transactions-filter">
+          <label className="ui-filter">
             <span>From</span>
             <input
+              className="ui-input ui-input--sm"
               type="date"
               value={period?.from ?? ''}
               max={period?.to}
               onChange={(event) => edit('from', event.target.value)}
             />
           </label>
-          <label className="transactions-filter">
+          <label className="ui-filter">
             <span>To</span>
             <input
+              className="ui-input ui-input--sm"
               type="date"
               value={period?.to ?? ''}
               min={period?.from}

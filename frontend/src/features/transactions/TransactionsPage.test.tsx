@@ -848,6 +848,13 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
   });
 
+  it('offers Add transaction while the list is still loading', async () => {
+    vi.spyOn(operationsApi, 'list').mockReturnValue(new Promise(() => {}));
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No transactions yet' })).toBeNull();
+  });
+
   it('offers a retry when loading fails and never shows numbers it does not have', async () => {
     const user = userEvent.setup();
     const read = vi
@@ -857,6 +864,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your transactions');
     expect(screen.queryByRole('table')).toBeNull();
+    // Recording a transaction does not need the list, so the button stays.
+    expect(screen.getByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     expect(read).toHaveBeenCalledTimes(2);
@@ -993,7 +1002,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(fact(buy, 'Paid from cash')).toBe('400 USDT');
   });
 
-  it('opens the one Add/Edit window from the drawer and from the page header', async () => {
+  it('opens the one Add/Edit window from the drawer and from the page', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Edit' }));
