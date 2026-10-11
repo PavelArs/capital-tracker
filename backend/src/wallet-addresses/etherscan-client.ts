@@ -9,6 +9,11 @@ const DEFAULT_BASE_URL = 'https://api.etherscan.io/v2/api';
 const MAINNET = 1;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_REDIRECTS = 2;
+// BLOCKSCOUT-KEY: Blockscout's own multi-chain API, which asks for a free key and takes the chain as a
+// parameter. A public explorer answers 429 (OP Mainnet) or 403 (Base) to requests without one.
+const BLOCKSCOUT_PRO_URL = 'https://api.blockscout.com/v2/api';
+// A reset time above a day is not a duration (some APIs send a clock time instead).
+const MAX_RESET_MS = 24 * 60 * 60_000;
 const MAX_UNIX_SECONDS = 253402300799;
 
 /** A transaction the address sent or received (action txlist). */
@@ -239,6 +244,12 @@ interface ClientOptions {
   chainId?: number;
   /** BLOCKSCOUT: another explorer answering Etherscan's calls: no key, no `chainid`. */
   keyless?: boolean;
+  /** BLOCKSCOUT-KEY: the free Blockscout key; with it a chain is read through Blockscout's PRO API. */
+  blockscoutKey?: string | null;
+  /** BLOCKSCOUT-KEY: where that PRO API answers (the tests point it at a local server). */
+  proUrl?: string;
+  /** BLOCKSCOUT-KEY: parameters sent with every call of a keyless client (the chain and the key). */
+  extraParams?: Record<string, string>;
 }
 
 export class EtherscanClient {
@@ -248,6 +259,9 @@ export class EtherscanClient {
   private readonly pauseMs: number;
   private readonly chainId: number;
   private readonly keyless: boolean;
+  private readonly blockscoutKey: string | null;
+  private readonly proUrl: string;
+  private readonly extraParams: Record<string, string> | null;
   // The key's rate limit is shared by every chain, so the views of one client share the pause.
   private readonly pace: { lastRequestAt: number };
 
@@ -259,19 +273,35 @@ export class EtherscanClient {
     this.pauseMs = options.pauseMs ?? 400;
     this.chainId = options.chainId ?? MAINNET;
     this.keyless = options.keyless ?? false;
+    this.blockscoutKey = options.blockscoutKey?.trim() || null;
+    this.proUrl = options.proUrl ?? BLOCKSCOUT_PRO_URL;
+    this.extraParams = options.extraParams ?? null;
     this.pace = pace;
   }
 
   /**
    * BLOCKSCOUT: the same questions put to a chain's Blockscout explorer (`baseUrl` ends in /api),
-   * which needs no key. It paces itself: its limit is its own.
+   * which needs no key. It paces itself: its limit is its own. BLOCKSCOUT-KEY: with the free
+   * Blockscout key set, the chain is read through Blockscout's PRO API instead, whose limits are
+   * the key's, not the public explorer's.
    */
-  blockscout(baseUrl: string): EtherscanClient {
+  blockscout(baseUrl: string, chainId?: number): EtherscanClient {
+    const pro = this.blockscoutKey !== null && chainId !== undefined;
     return new EtherscanClient({
-      baseUrl,
+      baseUrl: pro ? this.proUrl : baseUrl,
       keyless: true,
       timeoutMs: this.timeoutMs,
       pauseMs: this.pauseMs,
+      // The PRO API names the chain `chain_id` in its own guide and `chainid` in some pages: both go.
+      ...(pro
+        ? {
+            extraParams: {
+              chain_id: String(chainId),
+              chainid: String(chainId),
+              apikey: this.blockscoutKey as string,
+            },
+          }
+        : {}),
     });
   }
 
@@ -355,6 +385,28 @@ export class EtherscanClient {
     }
   }
 
+  /**
+   * RATE-LIMIT: what a 429 says. A public Blockscout explorer counts requests without a key and
+   * names the time its limit lifts in x-ratelimit-reset (milliseconds); retry-after is in seconds.
+   */
+  private limitDetail(headers: unknown): string {
+    const header = (name: string): number | null => {
+      const value = (headers as Record<string, unknown> | undefined)?.[name];
+      const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+    };
+    const seconds = header('retry-after');
+    const reset = header('x-ratelimit-reset');
+    const ms = seconds !== null ? seconds * 1000 : reset;
+    const lifts =
+      ms !== null && ms > 0 && ms <= MAX_RESET_MS
+        ? `, its limit lifts in about ${Math.max(1, Math.ceil(ms / 60_000))} min`
+        : '';
+    const key =
+      this.keyless && this.extraParams === null ? ' without a key (BLOCKSCOUT_API_KEY)' : '';
+    return `${this.host} limits requests${key}${lifts}`;
+  }
+
   private async get<T>(
     params: Record<string, string>,
     parse: (body: unknown) => T,
@@ -362,7 +414,7 @@ export class EtherscanClient {
     if (!this.configured) return { ok: false, reason: 'not_configured' };
     const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    let response: { status: number; data: string };
+    let response: { status: number; data: string; headers: unknown };
     // REDIRECT: an explorer may answer with a redirect (301) to the same address in another form.
     // Only one that stays on the same host and scheme is followed; a request carries the key in
     // its query, so it never goes to another host.
@@ -371,7 +423,7 @@ export class EtherscanClient {
     try {
       response = await axios.get<string>(this.baseUrl, {
         params: this.keyless
-          ? params
+          ? { ...this.extraParams, ...params }
           : { chainid: String(this.chainId), ...params, apikey: this.apiKey },
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
@@ -408,7 +460,9 @@ export class EtherscanClient {
     } finally {
       this.pace.lastRequestAt = Date.now();
     }
-    if (response.status === 429) return { ok: false, reason: 'rate_limited' };
+    if (response.status === 429) {
+      return { ok: false, reason: 'rate_limited', detail: this.limitDetail(response.headers) };
+    }
     if (response.status !== 200) {
       return {
         ok: false,

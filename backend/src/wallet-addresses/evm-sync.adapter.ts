@@ -75,7 +75,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     this.name = chain.name;
     this.etherscan = new EvmReader(
       etherscan.forChain(chain.chainId),
-      chain.blockscout ? etherscan.blockscout(chain.blockscout) : null,
+      chain.blockscout ? etherscan.blockscout(chain.blockscout, chain.chainId) : null,
     );
     this.stake = chain.network === 'ethereum';
   }
