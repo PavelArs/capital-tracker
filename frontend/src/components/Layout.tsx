@@ -102,7 +102,7 @@ export default function Layout() {
           <SyncIndicator onFollow={followLink} />
         </div>
         <div className="shell-owner">
-          <span className="shell-owner__avatar" aria-hidden="true" title={email}>
+          <span className="shell-owner__avatar" aria-hidden="true">
             {email.charAt(0).toUpperCase()}
           </span>
           <span className="shell-owner__who">
