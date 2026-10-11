@@ -5,6 +5,7 @@ import {
   type Instrument,
   ManualApi,
   type Opening,
+  accountRows,
   backendLogs,
   businessState,
   foreignOwner,
@@ -242,9 +243,21 @@ test('OPEN-004-A: anonymous, pending, forged writes and foreign identities leave
     ...input,
     positions: [{ ...input.positions[0], instrumentName: 'Forged label' }],
   });
+  // WALLET-REMOVE: an account that holds no record can be removed (it only leaves the lists, its
+  // row stays with removedAt set), but neither a foreign nor an unknown identity can reach one.
   const beforeDelete = businessState();
-  expect((await api.send('DELETE', `/accounts/${account.id}`)).status()).toBe(404);
+  const foreignRows = accountRows(foreign.accountId);
+  for (const id of [foreign.accountId, randomUUID()])
+    expect((await api.send('DELETE', `/accounts/${id}`)).status()).toBe(404);
   expect(businessState()).toBe(beforeDelete);
+  expect(accountRows(foreign.accountId)).toEqual(foreignRows);
+  expect((await api.send('DELETE', `/accounts/${account.id}`)).status()).toBe(204);
+  expect(
+    rows<{ removedAt: string | null }>(
+      `SELECT "removedAt" FROM manual_accounts WHERE id = '${account.id}'`,
+    )[0].removedAt,
+  ).not.toBeNull();
+  expect((await api.send('GET', `/accounts/${account.id}`)).status()).toBe(404);
 });
 
 test('OPEN-001-B: duplicate symbols, bounded discovery and labels beyond the first page preserve explicit identity', async ({
@@ -267,7 +280,7 @@ test('OPEN-001-B: duplicate symbols, bounded discovery and labels beyond the fir
     `SELECT id FROM accounting_instruments WHERE "ownerId" = '${owner.id}' ORDER BY id`,
   ).map((row) => row.id);
   const expectedAccounts = rows<{ id: string }>(
-    `SELECT id FROM manual_accounts WHERE "ownerId" = '${owner.id}' ORDER BY id`,
+    `SELECT id FROM manual_accounts WHERE "ownerId" = '${owner.id}' AND "removedAt" IS NULL ORDER BY id`,
   ).map((row) => row.id);
   for (const [resource, ids, read] of [
     ['/accounts', expectedAccounts, readAccount],
