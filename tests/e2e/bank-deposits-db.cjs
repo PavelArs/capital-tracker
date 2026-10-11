@@ -249,6 +249,16 @@ async function checks(db, service, owner, ids) {
   assert.equal(checked.lastCheck.calculated, '5052.07');
   assert.equal(checked.lastCheck.difference, '0.03');
   assert.equal(checked.checks.length, 1);
+  const corrected = await service.addCheck(owner, ids.usd, {
+    checkedOn: '2026-10-04',
+    bankBalance: '5052.09',
+  });
+  assert.deepEqual(
+    corrected.checks.map((check) => check.bankBalance),
+    ['5052.09', '5052.10'],
+    'Checks of the same day are listed newest first, in the order they were entered',
+  );
+  assert.equal(corrected.lastCheck.bankBalance, '5052.09');
   assert.equal(
     (await service.get(owner, ids.usd, '2026-10-02')).lastCheck,
     null,

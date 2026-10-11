@@ -193,12 +193,14 @@ export function projectDeposit(
               const interest = roundToCents(accrued);
               due += interest;
               posted += interest;
-              periods.push({
-                from: periodStart,
-                to: date,
-                interest: centsText(interest),
-                treatment: 'payable',
-              });
+              // A payout date has just posted the period; nothing is left to show for today.
+              if (periodStart < date)
+                periods.push({
+                  from: periodStart,
+                  to: date,
+                  interest: centsText(interest),
+                  treatment: 'payable',
+                });
             }
             accrued = 0n;
           }

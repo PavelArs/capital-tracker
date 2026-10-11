@@ -184,6 +184,19 @@ describe('projectDeposit', () => {
     });
   });
 
+  it('shows no empty period when the deposit is closed on a payout date', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-01', kind: 'withdrawal', amount: '100000' },
+    ];
+    const result = projectDeposit(terms({ earlyClose: 'keeps-interest' }), movements, '2026-03-01');
+    expect(result.closedOn).toBe('2026-02-01');
+    expect(result.periods.map((period) => [period.from, period.to])).toEqual([
+      ['2026-01-01', '2026-02-01'],
+    ]);
+    expect(result.due).toBe('1019.18');
+  });
+
   it('lets the owner record the payout of interest kept on an early closure', () => {
     const closing: DepositMovement[] = [
       topup('2026-01-01', '100000'),

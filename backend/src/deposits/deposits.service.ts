@@ -292,8 +292,9 @@ export class DepositsService {
       if (input.checkedOn < stored.deposit.startDate)
         throw new UnprocessableEntityException('The date is before the deposit started');
       await manager.query(
-        `INSERT INTO bank_deposit_checks (id, "ownerId", "depositId", "checkedOn", "bankBalance")
-         VALUES ($1,$2,$3,$4,$5)`,
+        `INSERT INTO bank_deposit_checks (id, "ownerId", "depositId", "checkedOn", "bankBalance", "position")
+         VALUES ($1,$2,$3,$4,$5,
+           (SELECT coalesce(max("position"), 0) + 1 FROM bank_deposit_checks WHERE "depositId"=$3))`,
         [randomUUID(), owner, depositId, input.checkedOn, input.bankBalance],
       );
     });
@@ -359,7 +360,7 @@ export class DepositsService {
     const checks: CheckRow[] = await manager.query(
       `SELECT id, "depositId", to_char("checkedOn", 'YYYY-MM-DD') AS "checkedOn", "bankBalance"::text AS "bankBalance"
        FROM bank_deposit_checks WHERE "ownerId"=$1 AND "depositId" = ANY($2)
-       ORDER BY "checkedOn", "createdAt", id`,
+       ORDER BY "checkedOn", "position"`,
       [owner, ids],
     );
     return deposits.map((deposit) => ({

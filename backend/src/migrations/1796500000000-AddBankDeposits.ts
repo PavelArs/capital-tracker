@@ -60,12 +60,13 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
       "depositId" uuid NOT NULL,
       "checkedOn" date NOT NULL,
       "bankBalance" numeric(30, 2) NOT NULL CHECK ("bankBalance" >= 0),
-      "createdAt" timestamptz(3) NOT NULL DEFAULT clock_timestamp(),
+      "position" integer NOT NULL,
+      UNIQUE ("depositId", "position"),
       FOREIGN KEY ("ownerId", "depositId")
         REFERENCES bank_deposits ("ownerId", id) ON DELETE CASCADE
     )`);
     await runner.query(
-      `CREATE INDEX bank_deposit_checks_deposit ON bank_deposit_checks ("depositId", "checkedOn", "createdAt")`,
+      `CREATE INDEX bank_deposit_checks_deposit ON bank_deposit_checks ("depositId", "checkedOn", "position")`,
     );
   }
 
