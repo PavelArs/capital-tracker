@@ -591,3 +591,30 @@ test('ENG-007-D merge CLI accepts exactly one receipt file per shard and never l
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('ENG-008-A full acceptance shard value is exactly "i/n" with i within n', () => {
+  assert.deepEqual(shards.parseFullShard('1/4'), { index: 1, count: 4, playwrightShard: '1/4' });
+  assert.deepEqual(shards.parseFullShard('4/4'), { index: 4, count: 4, playwrightShard: '4/4' });
+  for (const bad of ['0/4', '5/4', '1/0', '1', '1/4/2', 'x', '', '01/4', undefined]) {
+    assert.throws(() => shards.parseFullShard(bad), /Unknown full acceptance shard/, String(bad));
+  }
+});
+
+test('ENG-008-B only the first full acceptance shard runs the containerized probes', () => {
+  const steps = shards.plan('run');
+  assert.ok(steps.some((step) => step.startsWith('check:')));
+  const first = shards.fullShardPlan(steps, shards.parseFullShard('1/4'));
+  assert.deepEqual(first, steps);
+  for (const index of [2, 3, 4]) {
+    const other = shards.fullShardPlan(steps, shards.parseFullShard(`${index}/4`));
+    assert.equal(
+      other.some((step) => step.startsWith('check:')),
+      false,
+    );
+    assert.deepEqual(
+      other,
+      steps.filter((step) => !step.startsWith('check:')),
+    );
+    assert.ok(other.includes('browser:full'));
+  }
+});

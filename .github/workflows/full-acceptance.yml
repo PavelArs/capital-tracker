@@ -58,12 +58,18 @@ jobs:
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
-  full-acceptance:
-    name: Full acceptance
+  # The browser files are split over four runners (Playwright `--shard`); runner 1 also runs the
+  # containerized probes. Every runner has its own synthetic stack, so the slices do not share state.
+  acceptance-shard:
+    name: Acceptance shard ${{ matrix.index }}
     needs: new-commits
     if: needs.new-commits.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,7 +91,9 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install the Playwright browser
         run: pnpm exec playwright install --with-deps chromium
-      - name: Run the full acceptance suite
+      - name: Run this slice of the full acceptance suite
+        env:
+          ACCEPTANCE_FULL_SHARD: ${{ matrix.index }}/4
         run: pnpm test:e2e
       - name: Stop the synthetic stack
         if: always()
@@ -93,8 +101,37 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: full-acceptance-report
+          name: full-acceptance-report-${{ matrix.index }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+
+  # One stable result for the whole run: "Full acceptance" passes when the guard skipped the
+  # suite or all four slices passed, and fails when the guard or any slice failed or was cancelled.
+  full-acceptance:
+    name: Full acceptance
+    needs: [new-commits, acceptance-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GUARD: ${{ needs.new-commits.result }}
+          RUN: ${{ needs.new-commits.outputs.run }}
+          SHARDS: ${{ needs.acceptance-shard.result }}
+        run: |
+          set -euo pipefail
+          if [ "$GUARD" != success ]; then
+            echo "The new-commits check ended as $GUARD." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$RUN" != true ]; then
+            echo "Skipped: no new commits on main since the previous run." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$SHARDS" != success ]; then
+            echo "The acceptance slices ended as $SHARDS." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "All four acceptance slices passed." | tee -a "$GITHUB_STEP_SUMMARY"
