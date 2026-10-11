@@ -1,5 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
+import { announceSyncChange } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { useEffect, useState } from 'react';
 
@@ -46,6 +47,7 @@ export default function HiddenAssets() {
         }
       }
       await hiddenAssetsApi.show(asset.instrumentId);
+      announceSyncChange();
       setItems((current) =>
         current ? current.filter((item) => item.instrumentId !== asset.instrumentId) : current,
       );
