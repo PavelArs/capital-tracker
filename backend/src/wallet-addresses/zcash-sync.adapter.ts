@@ -69,13 +69,13 @@ export class ZcashSyncAdapter implements ChainSyncAdapter {
       if (Date.now() - started > SYNC_TIME_BUDGET_MS) break;
       const read = await this.client.page(state.address, from, walk.to, walk.page);
       if (!read.ok) return failed(read.reason);
-      if (walk.pages !== null && read.totalPages !== walk.pages) {
+      if (walk.pages !== null && read.totalPages !== null && read.totalPages !== walk.pages) {
         // The range holds other transactions than when the walk began (the instance followed
         // a reorganisation or reindexed): read it again from its first page.
         walk = { ...walk, page: 1, pages: null };
         continue;
       }
-      const last = walk.page >= read.totalPages;
+      const last = read.last;
       const next: Walk | null = last
         ? null
         : { ...walk, page: walk.page + 1, pages: read.totalPages };

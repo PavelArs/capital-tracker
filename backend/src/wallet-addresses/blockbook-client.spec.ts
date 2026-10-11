@@ -146,29 +146,59 @@ describe('ZCASH-SYNC Blockbook pages', () => {
     expect(parsePage(wallet, range, body(1, 13, txs(10)))).toMatchObject({
       page: 1,
       totalPages: 2,
-      total: 13,
+      last: false,
       legs: expect.arrayContaining([expect.objectContaining({ receivedUnits: 100_000n })]),
     });
-    expect(parsePage(wallet, { ...range, page: 2 }, body(2, 13, txs(3))).legs).toHaveLength(3);
+    expect(parsePage(wallet, { ...range, page: 2 }, body(2, 13, txs(3)))).toMatchObject({
+      last: true,
+      legs: expect.arrayContaining([expect.anything()]),
+    });
   });
 
   it('reads an empty range', () => {
     expect(
       parsePage(wallet, range, { page: 1, totalPages: 0, address: wallet, txs: 0 }),
-    ).toMatchObject({ totalPages: 0, legs: [] });
+    ).toMatchObject({ totalPages: null, last: true, legs: [] });
   });
 
-  it('refuses a page that is not the one asked for or holds the wrong transactions', () => {
+  it('reads a filtered range whose page count is -1 and whose txs is the whole address', () => {
+    const filtered = (page: number, items: unknown[]) => ({
+      ...body(page, 400, items),
+      totalPages: -1,
+    });
+    expect(parsePage(wallet, range, filtered(1, txs(10)))).toMatchObject({
+      totalPages: null,
+      last: false,
+    });
+    expect(parsePage(wallet, { ...range, page: 2 }, filtered(2, txs(4)))).toMatchObject({
+      last: true,
+    });
+    expect(
+      parsePage(wallet, range, { ...filtered(1, txs(3)), totalPages: undefined }),
+    ).toMatchObject({ last: true });
+  });
+
+  it('ends at a short page even when the reported page count says more follow', () => {
+    expect(parsePage(wallet, range, { ...body(1, 400, txs(4)), totalPages: 40 })).toMatchObject({
+      last: true,
+    });
+  });
+
+  it('ends at a page past the end that the instance moved back to the last one', () => {
+    expect(parsePage(wallet, { ...range, page: 3 }, body(2, 13, txs(3)))).toMatchObject({
+      page: 3,
+      last: true,
+      legs: [],
+    });
+  });
+
+  it('refuses a page that holds the wrong transactions', () => {
     for (const [ask, bad] of [
-      // Blockbook moved a page past the end back to the last one.
-      [{ ...range, page: 3 }, body(2, 13, txs(3))],
-      [range, body(1, 13, txs(9))],
-      [{ ...range, page: 2 }, body(2, 13, txs(4))],
-      [range, { ...body(1, 13, txs(10)), totalPages: 5 }],
+      [{ ...range, page: 2 }, body(3, 25, txs(5))],
+      [range, body(1, 13, txs(11))],
       [range, { ...body(1, 13, txs(10)), address: other }],
       [range, body(1, 13, [...txs(9), tx({ txid: hash('0') })])],
       [range, body(1, 3, [tx(), tx({ txid: hash('2') }), tx({ blockHeight: HEIGHT + 1 })])],
-      [range, body(1, 0, txs(1))],
     ] as const)
       expect(() => parsePage(wallet, ask, bad)).toThrow();
   });
@@ -321,6 +351,19 @@ describe('ZCASH-SYNC Blockbook client', () => {
     replies[0].push(json({ blockbook: { bestHeight: HEIGHT, inSync: true } }));
     await client([baseUrls[0]]).status();
     expect(requests[0].headers['api-key']).toBeUndefined();
+  });
+
+  it('logs which field of an answer it could not read, never a value', async () => {
+    replies[0].push(
+      json({ page: 1, address: wallet, transactions: [{ ...tx(), blockHash: 'nope' }] }),
+    );
+    await expect(client([baseUrls[0]]).page(wallet, 0, HEIGHT, 1)).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_response',
+    });
+    expect(warn.mock.calls).toEqual([
+      ['Blockbook /api/v2/address/<id> was not understood: bad blockHash'],
+    ]);
   });
 
   it('reports an unreachable instance as unavailable', async () => {
