@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { useDialogFocus } from './useDialogFocus';
 import './modal.css';
 
@@ -23,6 +23,20 @@ interface Props {
   children: ReactNode;
 }
 
+// Open modals; the page behind them does not scroll while any is open.
+let open = 0;
+
+function useScrollLock() {
+  useEffect(() => {
+    open += 1;
+    document.documentElement.classList.add('ui-scroll-locked');
+    return () => {
+      open -= 1;
+      if (open === 0) document.documentElement.classList.remove('ui-scroll-locked');
+    };
+  }, []);
+}
+
 /** The one modal dialog: a scrim, a box that keeps focus, and the head, body and foot slots. */
 export default function Modal({
   titleId,
@@ -39,6 +53,7 @@ export default function Modal({
   const own = useRef<HTMLDivElement>(null);
   const box = boxRef ?? own;
   useDialogFocus(box, { onEscape, initialFocus });
+  useScrollLock();
   const classes = ['ui-modal', size === 'default' ? '' : `ui-modal--${size}`, className ?? '']
     .filter(Boolean)
     .join(' ');

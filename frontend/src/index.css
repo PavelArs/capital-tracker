@@ -44,6 +44,12 @@
   box-sizing: border-box;
 }
 
+/* The scrollbar's room is kept on every page, so a short page and a long one, or a page under
+   an open dialog, put their content in the same place. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell",

@@ -31,6 +31,28 @@ function Page({ onEscape }: { onEscape?: () => void }) {
 }
 
 describe('Modal', () => {
+  it('keeps the page behind still while any dialog is open', async () => {
+    const user = userEvent.setup();
+    const locked = () => document.documentElement.classList.contains('ui-scroll-locked');
+    const { rerender } = render(<Page />);
+    expect(locked()).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(locked()).toBe(true);
+    // A second dialog over the first: closing it leaves the first one's lock.
+    rerender(
+      <>
+        <Page />
+        <Modal titleId="c">
+          <h2 id="c">Confirm</h2>
+        </Modal>
+      </>,
+    );
+    rerender(<Page />);
+    expect(locked()).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Last' }));
+    expect(locked()).toBe(false);
+  });
+
   it('names the dialog by its heading and starts on the first control', async () => {
     const user = userEvent.setup();
     render(<Page />);

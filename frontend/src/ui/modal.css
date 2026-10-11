@@ -6,7 +6,14 @@
   place-items: center;
   padding: 24px 16px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(4, 6, 10, 0.62);
+}
+
+/* The page behind an open dialog stays put; the reserved scrollbar gutter (index.css) keeps it
+   from shifting sideways. */
+:root.ui-scroll-locked {
+  overflow: hidden;
 }
 
 :root[data-theme="light"] .ui-scrim {
