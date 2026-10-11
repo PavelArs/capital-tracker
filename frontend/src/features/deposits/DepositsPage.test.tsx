@@ -233,6 +233,19 @@ describe('DEP-DETAIL: one deposit', () => {
     );
   });
 
+  it('keeps the interest a capitalizing deposit owes after an early closure visible', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(
+        { ...dollars, status: 'closed', closedOn: '2026-10-05', due: '12.30', nextPayout: null },
+        { interestPosted: '62.71' },
+      ),
+    );
+    open(`/deposits/${dollars.id}?currency=USD`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
+    expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$62.71');
+    expect(screen.getByText('Interest to be paid out').parentElement).toHaveTextContent('$12.30');
+  });
+
   it('records a movement and shows the new figures', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));

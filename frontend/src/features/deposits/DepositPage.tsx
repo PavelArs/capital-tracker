@@ -154,13 +154,15 @@ export default function DepositPage() {
               value={money(deposit.accrued, own)}
               hint="Until the next interest date"
             />
-            {deposit.capitalized ? (
+            {deposit.capitalized && (
               <Stat
                 label="Interest added so far"
                 value={money(deposit.interestPosted, own)}
                 hint="Already part of the deposit"
               />
-            ) : (
+            )}
+            {/* A capitalizing deposit closed early can still owe the interest it kept. */}
+            {(!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
               <Stat
                 label="Interest to be paid out"
                 value={money(deposit.due, own)}
