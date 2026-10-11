@@ -11,7 +11,7 @@ import {
   rows,
   uuid,
 } from './manual-opening-fixtures';
-import { fingerprint, loginWithMfa, query } from './mfa-fixtures';
+import { fingerprint, loginWithMfa, origin, query } from './mfa-fixtures';
 import { restartBackends, selectBackend, upstreamMark, upstreamsSince } from './replicas';
 
 export const tradeTables = ['account_trade_journals', 'account_trades', 'account_trade_versions'];
@@ -410,6 +410,20 @@ export class TradeApi extends ManualApi {
 export async function tradeApi(page: Page): Promise<TradeApi> {
   const { csrfToken } = await loginWithMfa(page);
   return new TradeApi(page.context().request, csrfToken);
+}
+/**
+ * The API changed the books behind the browser's back (as another device would). The browser
+ * keeps recent answers across a reload, so a page that must show what the server says now starts
+ * from an emptied store.
+ */
+export async function forgetBrowserReads(page: Page): Promise<void> {
+  await page.goto('about:blank');
+  const session = await page.context().newCDPSession(page);
+  await session.send('Storage.clearDataForOrigin', {
+    origin,
+    storageTypes: 'indexeddb',
+  });
+  await session.detach();
 }
 export function tradeInput(
   instrumentId: string,

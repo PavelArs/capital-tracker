@@ -279,7 +279,7 @@ isolated(
     await expect(drawer.getByRole('link', { name: 'All in Transactions' })).toBeVisible();
     await drawer.getByLabel(/^Address name/).fill('Cold');
     await drawer.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(drawer.getByRole('status')).toHaveText('Saved.');
+    await expect(drawer.getByRole('status').filter({ hasText: 'Saved.' })).toHaveText('Saved.');
     await drawer.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(card.getByRole('button', { name: `Cold ${address}`, exact: true })).toBeVisible();
     expect(

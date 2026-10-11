@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type Page } from '@playwright/test';
 import { origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and prices are synthetic. The shared acceptance database holds other
 // cases' holdings too, so this case checks what its own backdated buy adds to the history
@@ -123,6 +123,7 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   }
 
   // DASH-MAIN: the dashboard opens on one month and shows exactly what the backend returned.
+  await forgetBrowserReads(page);
   const first = historyResponse(page, '1M');
   const valued = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/accounting/portfolio',
