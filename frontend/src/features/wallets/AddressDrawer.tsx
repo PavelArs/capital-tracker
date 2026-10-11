@@ -13,7 +13,9 @@ import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
+import CopyValue from '../shell/CopyValue';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import type { WalletAccount } from './AddWalletDialog';
 import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
@@ -339,14 +341,10 @@ export default function AddressDrawer({
             <div>
               <dt>{key ? 'Public key' : exchange ? 'Bybit UID' : 'Address'}</dt>
               <dd>
-                <span className="wallets-mono">{address.address}</span>{' '}
-                <button
-                  type="button"
-                  className="portfolio-link"
-                  onClick={() => void navigator.clipboard?.writeText(address.address)}
-                >
-                  Copy
-                </button>
+                <CopyValue
+                  value={address.address}
+                  label={key ? 'Copy public key' : exchange ? 'Copy UID' : 'Copy address'}
+                />
               </dd>
             </div>
             {key && (
@@ -618,6 +616,7 @@ export default function AddressDrawer({
             disabled={running}
             onClick={onSync}
           >
+            <Icon name="refresh" className="shell-icon shell-icon--sm" />
             {running ? 'Syncing…' : 'Sync now'}
           </button>
         </div>

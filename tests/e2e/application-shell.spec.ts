@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { nextFactor, origin, owner, passwordStep, test } from './mfa-fixtures';
 
 async function fitsViewport(page: Page) {
@@ -118,7 +118,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await expect(syncStatus).toHaveAttribute('href', '/wallets');
   await expect(syncStatus).not.toContainText('Checking sync');
   await expect(syncStatus).not.toContainText('Sync status unavailable');
-  await expect(nav.getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(nav.getByTitle(owner.email, { exact: true })).toBeVisible();
 
   // WAL-LIST: Wallets is a real page that reads the owner's wallets, no longer a placeholder.
   await nav.getByRole('link', { name: 'Wallets', exact: true }).click();

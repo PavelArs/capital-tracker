@@ -153,11 +153,14 @@ a.wallets-asset:hover {
   border-top: 1px solid var(--line);
 }
 
+.wallets-source {
+  --wallets-columns: minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr)
+    minmax(90px, 0.8fr) minmax(170px, 1.2fr);
+}
+
 .wallets-source__open {
   display: grid;
-  grid-template-columns:
-    minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr) minmax(90px, 0.8fr)
-    minmax(170px, 1.2fr);
+  grid-template-columns: var(--wallets-columns);
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -201,6 +204,44 @@ button.wallets-source__open:focus-visible {
   outline-offset: -2px;
 }
 
+/* W4: the copy button lies over the address column of the row, on the same grid. */
+.wallets-source--copy {
+  display: grid;
+}
+
+.wallets-source--copy > .wallets-source__open,
+.wallets-source--copy > .wallets-source__copy {
+  grid-area: 1 / 1;
+}
+
+.wallets-source__copy {
+  display: grid;
+  grid-template-columns: var(--wallets-columns);
+  align-items: center;
+  gap: 12px;
+  padding: 13px 22px;
+  pointer-events: none;
+}
+
+.wallets-source__copy-cell {
+  display: flex;
+  grid-column: 2;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Takes the width of the address it follows, so the button sits right after the text. */
+.wallets-source__copy-cell > span {
+  min-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.wallets-source__copy-cell .copy-value__button {
+  pointer-events: auto;
+}
+
 .wallets-source--manual .wallets-source__open {
   color: var(--ink-2);
 }
@@ -225,7 +266,10 @@ button.wallets-source__open:focus-visible {
 .wallets-asset__name {
   overflow: hidden;
   font-weight: 500;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -334,6 +378,51 @@ button.wallets-source__open:focus-visible {
   background: var(--warn-soft);
 }
 
+/* W5: the difference on one line; the sums and what to do about it are behind Details. */
+.wallets-diff {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.wallets-diff summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.wallets-diff summary::-webkit-details-marker {
+  display: none;
+}
+
+.wallets-diff__line {
+  min-width: 0;
+}
+
+.wallets-diff__more {
+  flex: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.wallets-diff[open] .wallets-diff__more::after {
+  content: " ▴";
+}
+
+.wallets-diff:not([open]) .wallets-diff__more::after {
+  content: " ▾";
+}
+
+.wallets-diff > p {
+  margin: 8px 0 0;
+}
+
+.wallets-diff > .shell-button {
+  margin-top: 10px;
+}
+
 .wallets-message--error {
   background: color-mix(in srgb, var(--neg) 12%, transparent);
 }
@@ -394,6 +483,15 @@ button.wallets-source__open:focus-visible {
   margin-left: 6px;
 }
 
+.wallets-networks__title {
+  margin: 0 0 -4px;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .wallets-networks {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -402,6 +500,7 @@ button.wallets-source__open:focus-visible {
 
 .wallets-network {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: 10px;
   padding: 16px;
@@ -537,6 +636,11 @@ button.wallets-source__open:focus-visible {
 @media (max-width: 1100px) {
   .wallets-source__open {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* Two columns have no room for it; the address is copied from the drawer. */
+  .wallets-source__copy {
+    display: none;
   }
 
   .wallets-right {

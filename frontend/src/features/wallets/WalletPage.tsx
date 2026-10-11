@@ -291,6 +291,7 @@ export default function WalletPage() {
                 className="shell-button shell-button--ghost"
                 onClick={() => setEditing(true)}
               >
+                <Icon name="edit" className="shell-icon shell-icon--sm" />
                 Edit
               </button>
               <button
@@ -307,6 +308,7 @@ export default function WalletPage() {
                   disabled={syncing}
                   onClick={() => void syncAll()}
                 >
+                  <Icon name="refresh" className="shell-icon shell-icon--sm" />
                   {syncing ? 'Syncing…' : 'Sync now'}
                 </button>
               )}

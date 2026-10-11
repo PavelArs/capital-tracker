@@ -18,6 +18,8 @@ import { useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { CopyButton } from '../shell/CopyValue';
+import { Icon } from '../shell/icons';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
 import {
@@ -497,6 +499,7 @@ export function AddressRow({
     <div className="wallets-message wallets-message--error">
       <span>{problem}</span>
       <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
+        <Icon name="refresh" className="shell-icon shell-icon--sm" />
         Retry now
       </button>
     </div>
@@ -546,8 +549,11 @@ export function AddressRow({
       </li>
     );
   }
+  // W4: an address can be copied from its row. The button is not inside the row's own button, so
+  // it sits over the address column, right after the text.
+  const copyable = !network.exchange;
   return (
-    <li className="wallets-source">
+    <li className={copyable ? 'wallets-source wallets-source--copy' : 'wallets-source'}>
       <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
         <span className="wallets-asset">
           <AssetIcon {...networkIcon(network)} size="sm" />
@@ -564,6 +570,16 @@ export function AddressRow({
           {when && <span className="wallets-muted">{when}</span>}
         </span>
       </button>
+      {copyable && (
+        <div className="wallets-source__copy">
+          <span className="wallets-source__copy-cell">
+            <span className="wallets-mono wallets-soft" aria-hidden="true">
+              {place(address)}
+            </span>
+            <CopyButton value={address.address} label={`Copy address of ${name}`} />
+          </span>
+        </div>
+      )}
       {more}
       {message}
     </li>
@@ -647,10 +663,9 @@ export function ReconcileNote({
   // One request id per coin and difference, kept for a retry after a lost answer.
   const attempts = useRef(new Map<string, string>());
   if (result.state !== 'differs') return null;
-  const lines = result.assets.map(({ symbol, chain, recorded, difference, exchange }) => {
-    const by = quantity(difference.replace(/^-/, ''));
+  const lines = result.assets.map(({ symbol, chain, recorded, exchange }) => {
     const source = exchange ? 'Bybit reports' : 'The blockchain shows';
-    return `Balance differs by ${by} ${symbol}. ${source} ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
+    return `${source} ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
   });
   // BYBIT-GAPS: what the API never lists, such as P2P purchases, is entered by hand.
   const advice = result.assets.every((item) => item.exchange)
@@ -683,33 +698,42 @@ export function ReconcileNote({
       setCounting(false);
     }
   };
+  const headline = `Balance differs by ${result.assets
+    .map(({ symbol, difference }) => `${quantity(difference.replace(/^-/, ''))} ${symbol}`)
+    .join(', ')}`;
   return (
     <div className="wallets-message wallets-message--warn" role="note">
-      <p>
-        {lines.join(' ')} {advice}
-      </p>
-      {countable && (
-        <>
-          <p>
-            Or count the difference now: each coin becomes one record of this account, without a
-            purchase price, that you can answer later as a purchase, a deposit or anything else.
-          </p>
-          <button
-            type="button"
-            className="shell-button shell-button--secondary"
-            disabled={counting}
-            onClick={() => void count()}
-          >
-            {counting ? 'Counting…' : 'Count the difference'}
-          </button>
-          {failed && (
-            <p role="alert">
-              Could not count every coin. Bybit may have reported another balance; reload and try
-              again.
+      <details className="wallets-diff">
+        <summary>
+          <span className="wallets-diff__line">{headline}</span>
+          <span className="wallets-diff__more">Details</span>
+        </summary>
+        <p>
+          {lines.join(' ')} {advice}
+        </p>
+        {countable && (
+          <>
+            <p>
+              Or count the difference now: each coin becomes one record of this account, without a
+              purchase price, that you can answer later as a purchase, a deposit or anything else.
             </p>
-          )}
-        </>
-      )}
+            <button
+              type="button"
+              className="shell-button shell-button--secondary"
+              disabled={counting}
+              onClick={() => void count()}
+            >
+              {counting ? 'Counting…' : 'Count the difference'}
+            </button>
+            {failed && (
+              <p role="alert">
+                Could not count every coin. Bybit may have reported another balance; reload and try
+                again.
+              </p>
+            )}
+          </>
+        )}
+      </details>
     </div>
   );
 }

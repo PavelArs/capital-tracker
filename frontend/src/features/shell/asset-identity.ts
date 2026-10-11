@@ -25,12 +25,19 @@ const known: Record<string, AssetIdentity> = {
   AVAX: { color: 'var(--c-avax)', glyph: 'A' },
   TRX: { color: 'var(--c-trx)', glyph: 'T' },
   XLM: { color: 'var(--c-xlm)', glyph: 'X' },
-  USDT: { color: cash, glyph: '₮' },
-  USDC: { color: cash, glyph: '$' },
+  USDT: { color: 'var(--c-usdt)', glyph: '₮' },
+  USDC: { color: 'var(--c-usdc)', glyph: '$' },
   USD: { color: cash, glyph: '$' },
   EUR: { color: cash, glyph: '€' },
   RUB: { color: cash, glyph: '₽' },
 };
+
+/** A token with no colour of its own takes one of six by its ticker, the same one every time. */
+function paletteColor(ticker: string): string {
+  let hash = 0;
+  for (const char of ticker) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return `var(--c-p${(hash % 6) + 1})`;
+}
 
 export function assetIdentity(asset: {
   symbol: string | null;
@@ -41,7 +48,12 @@ export function assetIdentity(asset: {
   const found = ticker ? known[ticker] : undefined;
   if (found) return found;
   return {
-    color: asset.assetType === 'fiat' ? cash : other,
+    color:
+      asset.assetType === 'fiat'
+        ? cash
+        : asset.assetType === 'crypto' && ticker
+          ? paletteColor(ticker)
+          : other,
     glyph: (ticker || asset.name.trim()).slice(0, 1).toUpperCase() || '?',
   };
 }

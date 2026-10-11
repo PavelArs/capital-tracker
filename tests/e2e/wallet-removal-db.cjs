@@ -48,7 +48,9 @@ function services(db) {
     make('asset-reward.service', 'AssetRewardService'),
     make('owned-transfer.service', 'OwnedTransferService'),
   );
-  const { WalletSyncService } = require('/app/backend/dist/wallet-addresses/wallet-sync.service.js');
+  const {
+    WalletSyncService,
+  } = require('/app/backend/dist/wallet-addresses/wallet-sync.service.js');
   const {
     WalletAddressService,
   } = require('/app/backend/dist/wallet-addresses/wallet-address.service.js');
@@ -108,8 +110,7 @@ async function raw(db, owner, addressId, n, received, sent, blockTime) {
     ],
   );
 }
-const listed = async (s, owner) =>
-  (await s.addresses.list(owner)).map((item) => item.id).sort();
+const listed = async (s, owner) => (await s.addresses.list(owner)).map((item) => item.id).sort();
 const count = async (s, owner) => (await s.classifications.needsClassificationCount(owner)).count;
 const rows = async (s, owner) =>
   (await s.operations.read(owner, {}, now)).operations.filter((operation) => operation.chain);
@@ -151,7 +152,11 @@ async function removeAddress(db, s, owner) {
   await s.addresses.remove(owner, b);
   assert.deepEqual(await listed(s, owner), [a, c].sort(), 'B left the list');
   assert.equal(await count(s, owner), 0, 'Nothing is left to classify');
-  assert.deepEqual((await rows(s, owner)).map((row) => row.wallet.id), [a], "B's row is gone");
+  assert.deepEqual(
+    (await rows(s, owner)).map((row) => row.wallet.id),
+    [a],
+    "B's row is gone",
+  );
   assert.deepEqual(await held(s, owner, trust), ['0.6'], "B's coins are not counted");
   assert.equal(await rawFingerprint(db, owner), before, 'Stored transactions are untouched');
   assert.equal(
@@ -177,7 +182,11 @@ async function removeAddress(db, s, owner) {
 
   stage = 'WALLET-REMOVE an answered address keeps its entry; only the unanswered rows go';
   await s.addresses.remove(owner, a);
-  assert.deepEqual((await rows(s, owner)).map((row) => row.wallet.id), [a], "A's answered row stays");
+  assert.deepEqual(
+    (await rows(s, owner)).map((row) => row.wallet.id),
+    [a],
+    "A's answered row stays",
+  );
   const trade = (await s.operations.read(owner, {}, now)).operations.find(
     (operation) => operation.chain?.txid === txid(1),
   );
@@ -215,7 +224,8 @@ async function removeWallet(db, s, owner, f) {
   await rejected(() => s.accounting.getAccount(owner, f.empty), 404);
   await rejected(() => s.accounting.renameAccount(owner, f.empty, { name: 'Back' }), 404);
   await rejected(
-    () => s.addresses.register(owner, { network: 'bitcoin', address: ADDRESS.c, accountId: f.empty }),
+    () =>
+      s.addresses.register(owner, { network: 'bitcoin', address: ADDRESS.c, accountId: f.empty }),
     404,
   );
   await rejected(() => s.accounting.removeAccount(randomUUID(), f.trust), 404);

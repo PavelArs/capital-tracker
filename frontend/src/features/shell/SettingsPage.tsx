@@ -12,6 +12,7 @@ import { money, rateText } from '../portfolio/format';
 import SecuritySettings from '../security/SecuritySettings';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
+import { Bone } from './Skeleton';
 import '../portfolio/portfolio.css';
 import './shell-page.css';
 
@@ -28,8 +29,20 @@ const rateDate = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
-function ratesHint(report: FxRatesReport | null | 'failed'): string {
-  if (report === null) return 'Loading Bank of Russia rates…';
+/** The room a hint takes once it arrives, held empty so the cards below do not move. */
+function PendingHint({ id, long }: { id?: string; long?: boolean }) {
+  return (
+    <p
+      id={id}
+      className={`shell-setting__hint shell-setting__hint--pending${long ? ' shell-setting__hint--long' : ''}`}
+      aria-busy="true"
+    >
+      <Bone width="70%" height={12} />
+    </p>
+  );
+}
+
+function ratesHint(report: FxRatesReport | 'failed'): string {
   if (report === 'failed') return 'Could not load the Bank of Russia rates.';
   const known = report.rates.flatMap((rate) =>
     rate.rubPerUnit && rate.date
@@ -114,7 +127,11 @@ function MainCurrency() {
         >
           {hint}
         </p>
-        <p className="shell-setting__hint">{ratesHint(rates)}</p>
+        {rates === null ? (
+          <PendingHint />
+        ) : (
+          <p className="shell-setting__hint">{ratesHint(rates)}</p>
+        )}
       </div>
       <div
         className="shell-seg"
@@ -193,7 +210,7 @@ function DustThreshold() {
     }
   };
   const hint = {
-    loading: 'Loading…',
+    loading: '',
     ready:
       saved === null
         ? 'Off: every incoming wallet transaction asks to be classified.'
@@ -215,13 +232,17 @@ function DustThreshold() {
         <label htmlFor="settings-dust" className="shell-setting__label">
           Dust threshold
         </label>
-        <p
-          id="settings-dust-hint"
-          className="shell-setting__hint"
-          role={alert ? 'alert' : undefined}
-        >
-          {hint}
-        </p>
+        {state === 'loading' ? (
+          <PendingHint id="settings-dust-hint" long />
+        ) : (
+          <p
+            id="settings-dust-hint"
+            className="shell-setting__hint"
+            role={alert ? 'alert' : undefined}
+          >
+            {hint}
+          </p>
+        )}
         <p className="shell-setting__hint">
           They still count in your balances, so wallets stay in step with the blockchain.
         </p>

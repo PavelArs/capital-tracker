@@ -15,7 +15,7 @@ const items = Array.from({ length: 63 }, (_, index) => ({
   journalRevision: index + 1,
   createdAt: from,
   amountUsd: '1',
-  occurredAt: new Date(Number(first + (last - first) * BigInt(index) / 63n)).toISOString(),
+  occurredAt: new Date(Number(first + ((last - first) * BigInt(index)) / 63n)).toISOString(),
   direction: 'contribution',
   kind: 'create',
 }));
@@ -25,14 +25,27 @@ async function main() {
   const timer = setInterval(() => timerTicks++, 1);
   const start = performance.now();
   try {
-    const result = await projectXirr({ from, to, openingValueUsd: '0', closingValueUsd: '100', assertReviewed: true }, items);
+    const result = await projectXirr(
+      { from, to, openingValueUsd: '0', closingValueUsd: '100', assertReviewed: true },
+      items,
+    );
     assert.equal(result.status, 'available');
     assert.equal(result.cashFlowDateCount, 64);
     assert.equal(result.shortPeriod, false);
     assert.ok(timerTicks > 0, 'Other event-loop timers progress during the real computation');
-    console.log(JSON.stringify({ node: process.version, elapsedMs: Math.round(performance.now() - start), timerTicks, result }));
+    console.log(
+      JSON.stringify({
+        node: process.version,
+        elapsedMs: Math.round(performance.now() - start),
+        timerTicks,
+        result,
+      }),
+    );
   } finally {
     clearInterval(timer);
   }
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

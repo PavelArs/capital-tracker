@@ -54,7 +54,9 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
       dustThresholdUsd: null,
     });
     expect(
-      (await settings.put('/api/owner-settings', { data: { mainCurrency: 'GBP' }, headers })).status(),
+      (
+        await settings.put('/api/owner-settings', { data: { mainCurrency: 'GBP' }, headers })
+      ).status(),
     ).toBe(400);
     expect(
       (await settings.put('/api/owner-settings', { data: { mainCurrency: 'EUR' } })).status(),
@@ -93,14 +95,22 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
       return report.assets.find((item) => item.instrumentId === created.id);
     };
     // CUR-PNL-RUB style: cost at the purchase date's rate, value at today's.
-    expect(await asset('USD')).toMatchObject({ value: '1000', costBasis: '800', unrealizedPnl: '200' });
+    expect(await asset('USD')).toMatchObject({
+      value: '1000',
+      costBasis: '800',
+      unrealizedPnl: '200',
+    });
     expect(await asset('EUR')).toMatchObject({
       price: { value: '920' },
       value: '920',
       costBasis: '640',
       unrealizedPnl: '280',
     });
-    expect(await asset('RUB')).toMatchObject({ value: '92000', costBasis: '64000', unrealizedPnl: '28000' });
+    expect(await asset('RUB')).toMatchObject({
+      value: '92000',
+      costBasis: '64000',
+      unrealizedPnl: '28000',
+    });
     expect((await api.send('GET', '/portfolio?currency=GBP')).status()).toBe(400);
 
     // CUR-SWITCH: choose EUR in Settings.
@@ -109,7 +119,9 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     const currency = main.getByRole('radiogroup', { name: 'Main currency' });
     await expect(currency.getByRole('radio', { name: 'USD' })).toBeChecked();
     await expect(
-      main.getByText('Bank of Russia: 1 USD = 92.00 RUB (Jan 1, 2026), 1 EUR = 100.00 RUB (Jan 1, 2026).'),
+      main.getByText(
+        'Bank of Russia: 1 USD = 92.00 RUB (Jan 1, 2026), 1 EUR = 100.00 RUB (Jan 1, 2026).',
+      ),
     ).toBeVisible();
     const saved = page.waitForResponse(
       (response) =>
@@ -121,12 +133,17 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     await expect(currency.getByRole('radio', { name: 'EUR' })).toBeChecked();
 
     // The choice belongs to the owner, not the browser session.
-    await page.getByRole('navigation').getByRole('button', { name: 'Log out', exact: true }).click();
+    await page
+      .getByRole('navigation')
+      .getByRole('button', { name: 'Log out', exact: true })
+      .click();
     await expect(page).toHaveURL(`${origin}/login`);
     expect((await request.get('/api/owner-settings')).status()).toBe(401);
     await loginWithMfa(page);
     await page.goto('/portfolio');
-    await expect(main.getByRole('heading', { level: 1, name: 'Portfolio', exact: true })).toBeVisible();
+    await expect(
+      main.getByRole('heading', { level: 1, name: 'Portfolio', exact: true }),
+    ).toBeVisible();
     const switcher = main.getByRole('radiogroup', { name: 'Currency' });
     await expect(switcher.getByRole('radio', { name: 'EUR' })).toBeChecked();
     const row = main.getByRole('row', { name: new RegExp(`^${assetName}`) });
@@ -135,8 +152,13 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     await expect(cells.nth(3)).toHaveText('€920.00');
     await expect(cells.nth(5)).toHaveText('€640.00');
     await expect(cells.nth(6)).toHaveText('+€280.00+43.75%');
-    await expect(main.getByText(/1 USD = 92\.00 RUB \(Jan 1, 2026\), 1 EUR = 100\.00 RUB/)).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath('portfolio-eur-1440-dark.png'), fullPage: true });
+    await expect(
+      main.getByText(/1 USD = 92\.00 RUB \(Jan 1, 2026\), 1 EUR = 100\.00 RUB/),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath('portfolio-eur-1440-dark.png'),
+      fullPage: true,
+    });
 
     // The other two currencies stay one click away.
     await switcher.getByRole('radio', { name: 'RUB' }).check();

@@ -55,7 +55,7 @@ const transfer = {
 describe('ETH-SYNC Etherscan client', () => {
   let server: Server;
   let baseUrl: string;
-  let replies: { status: number; body: string }[];
+  let replies: { status: number; body: string; location?: string }[];
   let requests: URL[];
   const client = (apiKey: string | null = key) =>
     new EtherscanClient({ apiKey, baseUrl, timeoutMs: 500, pauseMs: 0 });
@@ -66,7 +66,10 @@ describe('ETH-SYNC Etherscan client', () => {
     server = createServer((request, response) => {
       requests.push(new URL(request.url ?? '/', 'http://localhost'));
       const reply = replies.shift() ?? { status: 500, body: '' };
-      response.writeHead(reply.status, { 'content-type': 'application/json' });
+      response.writeHead(reply.status, {
+        'content-type': 'application/json',
+        ...(reply.location ? { location: reply.location } : {}),
+      });
       response.end(reply.body);
     });
     server.listen(0, '127.0.0.1');
@@ -253,6 +256,23 @@ describe('ETH-SYNC Etherscan client', () => {
       reason: 'invalid_response',
       detail: `${host} sent an unexpected answer`,
     });
+  });
+
+  it('REDIRECT follows a redirect that stays on the same host and refuses one that leaves it', async () => {
+    replies.push({ status: 301, body: '', location: `${baseUrl}/` }, ok([normal]), {
+      status: 301,
+      body: '',
+      location: 'http://localhost:1/api',
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    const left = await client().normal(owned, 1, 2);
+    expect(left).toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: '127.0.0.1 moved to localhost',
+    });
+    // The request that would have carried the key left for no other host.
+    expect(requests).toHaveLength(3);
   });
 
   it('reads an empty range', async () => {

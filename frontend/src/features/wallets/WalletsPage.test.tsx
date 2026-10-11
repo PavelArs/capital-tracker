@@ -11,6 +11,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { shortValue } from '../shell/CopyValue';
 import WalletsPage from './WalletsPage';
 
 // Synthetic ids, names, addresses and amounts only.
@@ -229,8 +230,10 @@ describe('WAL-LIST: wallets grouped by account', () => {
     // Each coin is its own piece of a wrapping cell, so a long list never runs into the value.
     expect(within(trustCard).getByText('1,000 USDT').parentElement).toHaveClass('wallets-amounts');
     // SYNC-RECONCILE: 0.01 BTC on the chain against 0.0098 BTC recorded.
-    expect(within(trustCard).getByRole('note')).toHaveTextContent(
-      'Balance differs by 0.0002 BTC. The blockchain shows 0.01 BTC; your transactions in this wallet give 0.0098 BTC.',
+    const note = within(trustCard).getByRole('note');
+    expect(note).toHaveTextContent('Balance differs by 0.0002 BTC');
+    expect(note).toHaveTextContent(
+      'The blockchain shows 0.01 BTC; your transactions in this wallet give 0.0098 BTC.',
     );
 
     const loose = card('Not in a wallet yet');
@@ -241,6 +244,20 @@ describe('WAL-LIST: wallets grouped by account', () => {
       within(card('Cold storage')).getByText('Nothing in this wallet yet.'),
     ).toBeInTheDocument();
     expect(within(card('Cold storage')).getByText('Tracked by hand')).toBeInTheDocument();
+  });
+
+  it('W4 copies an address from its row without opening the wallet', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    setup([wallet(1, {})]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    await user.click(
+      within(trustCard).getByRole('button', { name: 'Copy address of Trust Wallet BTC' }),
+    );
+    expect(writeText).toHaveBeenCalledWith(addresses.trust);
+    expect(await within(trustCard).findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('says nothing when the chain agrees and waits for a partly loaded history', async () => {
@@ -532,7 +549,7 @@ describe('WAL-ACCOUNT: an address drawer', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: `Bitcoin ${addresses.loose}` }));
     const drawer = screen.getByRole('dialog', { name: 'Bitcoin address' });
-    expect(drawer).toHaveTextContent(addresses.loose);
+    expect(drawer).toHaveTextContent(shortValue(addresses.loose));
     expect(drawer).toHaveTextContent('Blockstream Esplora');
     await user.selectOptions(within(drawer).getByLabelText('Wallet'), 'Cold storage');
     await user.type(within(drawer).getByLabelText(/Address name/), 'Spare');
@@ -1355,7 +1372,7 @@ describe('M21: Bitcoin wallets by account public key', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: `Trezor BTC ${zpub}` }));
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
-    expect(drawer).toHaveTextContent(`Public key${zpub}`);
+    expect(drawer).toHaveTextContent(`Public key${shortValue(zpub)}`);
     expect(drawer).toHaveTextContent('5 used · new ones are found automatically');
     expect(within(drawer).getByRole('alert')).toHaveTextContent(
       'One address of this key is also tracked as its own wallet (Old Trezor address), so their coins count twice.',
@@ -1548,8 +1565,10 @@ describe('M22: Bybit accounts', () => {
     expect(row).toHaveTextContent('0.50999 BTC · 599 USDT');
     expect(row).not.toHaveTextContent('ETH');
     expect(account).toHaveTextContent('Bybit · 1 account');
-    expect(within(account).getByRole('note')).toHaveTextContent(
-      'Balance differs by 200 USDT. Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
+    const gap = within(account).getByRole('note');
+    expect(gap).toHaveTextContent('Balance differs by 200 USDT');
+    expect(gap).toHaveTextContent(
+      'Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
     );
   });
 

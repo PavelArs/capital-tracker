@@ -985,7 +985,12 @@ async function storageConstraints(source, _flows, owner) {
     'portfolio_flow_versions_ownerId_fkey',
   );
   stage = 'FLOW-MIG-001 referenced user deletion RESTRICT refusal';
-  await reject('DELETE FROM users WHERE id=$1', [owner.timeline], ['23001'], 'portfolio_flow_journals_ownerId_fkey');
+  await reject(
+    'DELETE FROM users WHERE id=$1',
+    [owner.timeline],
+    ['23001'],
+    'portfolio_flow_journals_ownerId_fkey',
+  );
   stage = 'FLOW-MIG-001 referenced version deletion RESTRICT refusal';
   await reject(
     'DELETE FROM portfolio_flow_versions WHERE "ownerId"=$1 AND "flowId"=$2 AND version=1',

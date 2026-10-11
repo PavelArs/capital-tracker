@@ -10,6 +10,7 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -156,28 +157,35 @@ function ValueChart({
   return (
     <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
       <div className="portfolio-toolbar">
-        <div className="dashboard-legend" aria-label="Chart legend">
-          <span>
-            <i className="dashboard-legend__line" aria-hidden="true" />
-            Position value
-          </span>
-          {history && costUnknown(history.points) ? (
-            <span>Cost basis unknown</span>
-          ) : (
-            <>
-              <span>
-                <i
-                  className="dashboard-legend__line dashboard-legend__line--invested"
-                  aria-hidden="true"
-                />
-                Cost basis
-              </span>
-              <span>
-                <i className="dashboard-legend__deposit" aria-hidden="true" />
-                Purchase
-              </span>
-            </>
-          )}
+        <div className="dashboard-chart-card__name">
+          <div className="dashboard-legend" aria-label="Chart legend">
+            <span>
+              <i className="dashboard-legend__line" aria-hidden="true" />
+              Position value
+            </span>
+            {history && costUnknown(history.points) ? (
+              <span>Cost basis unknown</span>
+            ) : (
+              <>
+                <span>
+                  <i
+                    className="dashboard-legend__line dashboard-legend__line--invested"
+                    aria-hidden="true"
+                  />
+                  Cost basis
+                </span>
+                <span>
+                  <i className="dashboard-legend__deposit" aria-hidden="true" />
+                  Purchase
+                </span>
+              </>
+            )}
+          </div>
+          <AboutChart>
+            Value of what you held at stored prices and Bank of Russia rates in{' '}
+            {history?.currency ?? currency}: hourly for the last week, daily since Jan 1, 2025.
+            Times are UTC. Cost basis counts the coins with a known purchase price.
+          </AboutChart>
         </div>
         <div className="dashboard-periods" role="tablist" aria-label="Chart period">
           {historyPeriods.map((value) => (
@@ -213,11 +221,6 @@ function ValueChart({
           label={`${asset.name} position value and cost basis, ${periodNames[history.period]}, in ${history.currency}`}
         />
       )}
-      <p className="shell-note dashboard-note">
-        Value of what you held at stored prices and Bank of Russia rates in{' '}
-        {history?.currency ?? currency}: hourly for the last week, daily since Jan 1, 2025. Times
-        are UTC. Cost basis counts the coins with a known purchase price.
-      </p>
     </section>
   );
 }
