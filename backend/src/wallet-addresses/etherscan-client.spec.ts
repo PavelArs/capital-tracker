@@ -330,6 +330,7 @@ describe('ETH-SYNC Etherscan client', () => {
       ok: false,
       reason: 'unavailable',
       detail: `${host} said: Some internal transactions within this block range have not yet been processed`,
+      unprocessed: true,
     });
     // Any other status 2 is still not understood.
     replies.push(json({ message: 'Something else', result: [], status: '2' }));

@@ -59,7 +59,13 @@ export interface TokenTransfer {
 }
 
 /** Why a read failed, and (SYNC-DETAIL) what the source itself said, for the owner's message. */
-export type Failed = { ok: false; reason: StepFailure; detail?: string };
+export type Failed = {
+  ok: false;
+  reason: StepFailure;
+  detail?: string;
+  /** UNPROCESSED: the explorer has not indexed every block of the range asked for yet. */
+  unprocessed?: true;
+};
 export type ListResult<T> = { ok: true; items: T[] } | Failed;
 export type BlockResult = { ok: true; block: number } | Failed;
 /** What a read-only contract call returned; null when the call reverted. */
@@ -70,6 +76,7 @@ class Refused extends Error {
   constructor(
     readonly reason: StepFailure,
     readonly said?: string,
+    readonly unprocessed?: true,
   ) {
     super(reason);
   }
@@ -176,7 +183,7 @@ export function parseList<T>(body: unknown, parse: (item: unknown) => T): T[] {
   // yet. An empty list here would lose them for good once the scan moves on, so the pass stops and
   // asks again later instead of reading it as "none".
   if (status === '2' && /not yet been processed/i.test(text(message)))
-    throw new Refused('unavailable', said(text(message)));
+    throw new Refused('unavailable', said(text(message)), true);
   if (status !== '0') return invalid();
   // An empty range: Etherscan says "No transactions found"; Blockscout names what is missing, as
   // in "No token transfers found" or "No internal transactions found".
@@ -480,7 +487,12 @@ export class EtherscanClient {
     } catch (error) {
       if (error instanceof Refused) {
         const detail = error.said ? `${this.host} said: ${error.said}` : undefined;
-        return { ok: false, reason: error.reason, ...(detail ? { detail } : {}) };
+        return {
+          ok: false,
+          reason: error.reason,
+          ...(detail ? { detail } : {}),
+          ...(error.unprocessed ? { unprocessed: true as const } : {}),
+        };
       }
       return {
         ok: false,
