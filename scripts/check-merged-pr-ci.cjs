@@ -138,7 +138,7 @@ function githubRequest(token, api = 'https://api.github.com') {
   };
 }
 
-module.exports = { REQUIRED_JOBS, PendingError, check, waitForCheck };
+module.exports = { REQUIRED_JOBS, PendingError, check, waitForCheck, githubRequest };
 
 if (require.main === module) {
   const { GITHUB_REPOSITORY, GITHUB_SHA, GH_TOKEN, GITHUB_API_URL, GITHUB_STEP_SUMMARY } =

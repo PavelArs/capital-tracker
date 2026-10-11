@@ -282,6 +282,63 @@ describe('ETH-SYNC Etherscan client', () => {
     });
   });
 
+  it('BLOCKSCOUT-KEY reads a PRO API token transfer, which carries transaction fields and no log index', async () => {
+    // The shape Blockscout's PRO API answered for tokentx (synthetic values).
+    const item = {
+      value: '0',
+      blockHash: hash('b'),
+      blockNumber: '13904874',
+      confirmations: '144170172',
+      contractAddress: usdc,
+      cumulativeGasUsed: '146327',
+      from: other,
+      functionName: '',
+      gas: '185233',
+      gasPrice: '1000000',
+      gasUsed: '146327',
+      hash: hash('4'),
+      input: '0xa9059cbb',
+      methodId: '',
+      nonce: '11',
+      timeStamp: '1657045484',
+      to: owned,
+      tokenDecimal: '18',
+      tokenName: 'Synthetic token',
+      tokenSymbol: 'SYN',
+      transactionIndex: '0',
+    };
+    replies.push(json({ message: 'OK', result: [item], status: '1' }));
+    const read = await client(null).blockscout(baseUrl).tokens(owned, 1, 2);
+    expect(read.ok && read.items[0]).toMatchObject({
+      hash: hash('4'),
+      blockNumber: 13_904_874,
+      logIndex: null,
+      value: 0n,
+    });
+  });
+
+  it('BLOCKSCOUT stops and says so when the explorer has not processed the range yet (status 2)', async () => {
+    replies.push(
+      json({
+        message: 'Some internal transactions within this block range have not yet been processed',
+        result: [],
+        status: '2',
+      }),
+    );
+    const host = new URL(baseUrl).hostname;
+    await expect(client(null).blockscout(baseUrl).internal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: Some internal transactions within this block range have not yet been processed`,
+    });
+    // Any other status 2 is still not understood.
+    replies.push(json({ message: 'Something else', result: [], status: '2' }));
+    await expect(client(null).blockscout(baseUrl).internal(owned, 1, 2)).resolves.toMatchObject({
+      ok: false,
+      reason: 'invalid_response',
+    });
+  });
+
   it('BLOCKSCOUT reads an empty range however it words it', async () => {
     replies.push(
       json({ status: '0', message: 'No token transfers found', result: [] }),
