@@ -3387,7 +3387,9 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
 
   // jsdom has no IntersectionObserver: a stand-in lets a test bring the end of the list in view.
   const observers: Array<{ callback: IntersectionObserverCallback; node: Element | null }> = [];
-  const reachEnd = () =>
+  // The page watches its end from an effect, which may run a moment after the rows are on screen.
+  const reachEnd = async () => {
+    await waitFor(() => expect(observers.length).toBeGreaterThan(0));
     act(() => {
       for (const watching of observers.splice(0))
         watching.callback(
@@ -3395,6 +3397,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
           {} as IntersectionObserver,
         );
     });
+  };
   beforeEach(() => {
     observers.length = 0;
     vi.stubGlobal(
@@ -3430,11 +3433,11 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
     expect(shownIds()).toEqual(idsOf(0, 20));
     expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 45 transactions');
-    reachEnd();
+    await reachEnd();
     expect(shownIds()).toEqual(idsOf(0, 40));
     // The day headings continue under the rows that were already there.
     expect(dayHeadings()).toHaveLength(40);
-    reachEnd();
+    await reachEnd();
     expect(shownIds()).toEqual(idsOf(0, 45));
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
     expect(screen.getByText(/45 transactions, newest first/)).toBeInTheDocument();
@@ -3446,7 +3449,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     vi.stubGlobal('scrollTo', scrollTo);
     const first = renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
-    reachEnd();
+    await reachEnd();
     expect(bodyRows()).toHaveLength(40);
     window.sessionStorage.setItem(
       'infinite:transactions',
@@ -3497,7 +3500,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
     await user.click(within(bodyRows()[3]).getByRole('button', { name: 'Buy' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    reachEnd();
+    await reachEnd();
     expect(shownIds()).toEqual(idsOf(0, 40));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(bodyRows()[3]).toHaveAttribute('aria-current', 'true');
@@ -3524,7 +3527,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     renderPage();
     const rows = await screen.findByRole('list', { name: 'Transactions' });
     expect(within(rows).getAllByRole('button').length).toBe(20);
-    reachEnd();
+    await reachEnd();
     expect(within(rows).getAllByRole('button').length).toBe(40);
   });
 });
