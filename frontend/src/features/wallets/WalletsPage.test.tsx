@@ -1604,6 +1604,37 @@ describe('M22: Bybit accounts', () => {
     expect(within(account).queryByRole('note')).not.toBeInTheDocument();
   });
 
+  it('ASSET-HIDE: a later refresh that cannot read the hidden list stops the comparison', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const now = new Date().toISOString();
+      const loading = wallet(1, {
+        chainBalance: null,
+        sync: {
+          state: 'partial',
+          completedAt: null,
+          status: 'syncing',
+          lastAttemptAt: now,
+          lastSuccessAt: null,
+          nextRunAt: now,
+          errorMessage: null,
+        },
+      });
+      setup([exchangeAccount({}), loading], withBybit(), {}, []);
+      const account = await screen.findByRole('region', { name: 'Bybit' });
+      expect(await within(account).findByRole('note')).toHaveTextContent(
+        'Balance differs by 200 USDT',
+      );
+      // The owner hid USDT elsewhere; the next refresh cannot read the list.
+      vi.mocked(hiddenAssetsApi.list).mockRejectedValue(new Error('unavailable'));
+      forgetReads();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await waitFor(() => expect(within(account).queryByRole('note')).not.toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('BYBIT-ANY-COIN compares any coin Bybit reports or the records hold', async () => {
     const valuation = withBybit();
     const ton = (accountId: string, quantity: string) =>

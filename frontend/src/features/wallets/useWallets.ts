@@ -66,7 +66,8 @@ export function useWallets() {
         cachedReads.hiddenAssets
           .load()
           .then((items) => request === latest.current && setHiddenAssets(items))
-          .catch(() => undefined);
+          // Unread again: the balances wait rather than trust a list the owner may have changed.
+          .catch(() => request === latest.current && setHiddenAssets(null));
         const [nextPortfolio, nextAddresses] = await Promise.all([
           cachedReads.portfolio.load(asked),
           cachedReads.wallets.load(),
