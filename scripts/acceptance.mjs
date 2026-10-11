@@ -48,6 +48,11 @@ if (command === 'critical' && options.length === 4) {
   throw new Error(usage);
 }
 // Prebuilt images are bound to one CI run; the serial modes remain available locally.
+// ACCEPTANCE_FULL_SHARD="i/n" runs one slice of the browser files of the full `run`.
+const fullShard = process.env.ACCEPTANCE_FULL_SHARD
+  ? shards.parseFullShard(process.env.ACCEPTANCE_FULL_SHARD)
+  : undefined;
+if (fullShard && command !== 'run') throw new Error('ACCEPTANCE_FULL_SHARD only splits `run`');
 const runId = process.env.GITHUB_RUN_ID ?? 'local';
 if ((shard || command === 'images') && !/^[1-9][0-9]*$/.test(runId)) {
   throw new Error('Prebuilt-image acceptance requires the CI run id; use `critical` locally');
@@ -88,7 +93,8 @@ if (command === 'down') {
   const shardReceiptPath = shard && join(root, 'test-results', shards.receiptFile(shard));
   const outputPath = shardReceiptPath ?? receiptPath;
   if (existsSync(outputPath)) unlinkSync(outputPath);
-  const steps = shards.plan(command, shard);
+  const planned = shards.plan(command, shard);
+  const steps = fullShard ? shards.fullShardPlan(planned, fullShard) : planned;
   const built = imagesPath && readJson(imagesPath);
   const browserShard = shard && shards.parseShard(shard).kind === 'browser';
   let selection;
@@ -314,7 +320,12 @@ if (command === 'down') {
             throw new Error('Synthetic HTTPS proxy is not reachable from the browser host');
         } else if (kind === 'artifacts') run('node', ['tests/e2e/artifacts.cjs']);
         else if (kind === 'browser' && argument === 'full')
-          run('pnpm', ['exec', 'playwright', 'test']);
+          run('pnpm', [
+            'exec',
+            'playwright',
+            'test',
+            ...(fullShard ? [`--shard=${fullShard.playwrightShard}`] : []),
+          ]);
         else if (kind === 'browser') {
           const reportPath = join(root, 'tests/e2e/.runtime/critical-playwright.json');
           if (existsSync(reportPath)) unlinkSync(reportPath);
