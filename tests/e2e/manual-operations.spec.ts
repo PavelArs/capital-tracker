@@ -41,8 +41,16 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   ).toBeVisible();
   const openDialog = async (name: string) => {
     const dialog = page.getByRole('dialog', { name, exact: true });
-    await expect(dialog.getByRole('group', { name: 'Asset' })).toBeVisible();
-    await dialog.getByRole('button', { name: symbol, exact: true }).click();
+    const assets = dialog.getByRole('group', { name: 'Asset' });
+    await expect(assets).toBeVisible();
+    // With more than six assets only the held and priced ones are chips and the rest sit behind
+    // "More assets"; the shared acceptance database holds many, and this coin is new and unpriced.
+    const chip = assets.getByRole('button', { name: symbol, exact: true });
+    const more = assets.getByRole('combobox', { name: 'More assets' });
+    await expect(chip.or(more)).toBeVisible();
+    if (await chip.count()) await chip.click();
+    else await more.selectOption({ label: `${symbol} · MANUAL-OPS coin ${suffix}` });
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
     await dialog.getByRole('combobox', { name: 'Wallet or account' }).selectOption({
       label: accountName,
     });
