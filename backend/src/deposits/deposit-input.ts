@@ -44,6 +44,9 @@ export interface CheckInput {
   bankBalance: string;
 }
 
+/** The longest term accepted, in years. */
+const MAX_TERM_YEARS = 30;
+
 const bad = (): never => {
   throw new BadRequestException('Invalid deposit input');
 };
@@ -130,6 +133,12 @@ export function parseDeposit(input: unknown): DepositInput {
   const endDate = record.endDate === null ? null : parseDate(record.endDate);
   const payout = member(record.payout, payoutSchedules);
   if (endDate !== null && endDate <= startDate) return bad();
+  // A bank term never runs this long; the figures are replayed day by day to the end date.
+  if (
+    endDate !== null &&
+    endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
+  )
+    return bad();
   if (payout === 'at-end' && endDate === null) return bad();
   if (typeof record.capitalized !== 'boolean') return bad();
   return {

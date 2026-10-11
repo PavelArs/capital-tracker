@@ -143,6 +143,9 @@ async function accrual(db, service, owner) {
   assert.deepEqual(early.items, [], 'Deposits that had not started are not in an earlier snapshot');
   assert.deepEqual(early.totals, { USD: '0.00', EUR: '0.00', RUB: '0.00' });
   await rejected(() => service.create(owner, { ...savings, amount: '1000000000000' }), 400);
+  await rejected(() => service.create(owner, { ...savings, endDate: '2999-01-01' }), 400);
+  await rejected(() => service.create(owner, { ...savings, endDate: '2056-07-02' }), 400);
+  await service.remove(owner, (await service.create(owner, { ...savings, endDate: '2056-07-01' })).id);
   const same = await service.create(owner, { ...savings, name: 'Same day', amount: '100.00' });
   await service.addMovement(owner, same.id, { date: '2026-07-01', kind: 'topup', amount: '100.00' });
   const ordered = await service.addMovement(owner, same.id, {
@@ -323,6 +326,10 @@ async function checks(db, service, owner, ids) {
   );
   await rejected(
     () => service.addRate(owner, ids.rub, { effectiveFrom: '2026-10-01', ratePercent: '5' }),
+    422,
+  );
+  await rejected(
+    () => service.addRate(owner, ids.usd, { effectiveFrom: '2999-01-01', ratePercent: '5' }),
     422,
   );
   const lowered = await service.addRate(owner, ids.rub, { effectiveFrom: '2026-09-01', ratePercent: '6' });

@@ -16,6 +16,8 @@ import { movementText, today } from './deposit-format';
 import '../transactions/transactions.css';
 
 const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/;
+/** The longest term the server accepts, in years. */
+const MAX_TERM_YEARS = 30;
 const RATE = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -304,6 +306,9 @@ export function AddDepositDialog({
     dateProblem(startDate, 'Start date') ??
     (endDate ? dateProblem(endDate, 'End date') : null) ??
     (endDate && endDate <= startDate ? 'End date: must be after the start date' : null) ??
+    (endDate && endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
+      ? `End date: a term is at most ${MAX_TERM_YEARS} years`
+      : null) ??
     (payout === 'at-end' && !endDate ? 'Interest at the end of the term needs an end date' : null);
 
   return (

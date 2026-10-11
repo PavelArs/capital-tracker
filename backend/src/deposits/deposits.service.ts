@@ -289,6 +289,8 @@ export class DepositsService {
     const input = parseRateChange(raw);
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
+      if (input.effectiveFrom > moscowDate(new Date()))
+        throw new UnprocessableEntityException('The rate change date is in the future');
       if (
         input.effectiveFrom <= stored.deposit.startDate ||
         (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
