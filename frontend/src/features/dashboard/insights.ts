@@ -76,10 +76,13 @@ export function collectInsights(
           unchecked += 1;
           continue;
         }
+        // Hundredths of a point as whole numbers, so a limit such as 0.06 is not missed by
+        // binary rounding (0.01 - 0.07 is not exactly -0.06).
         const actual = Number(held.allocationPercent ?? 0);
         const target = Number(percent);
-        const gap = actual - target;
-        if (Math.abs(gap) <= Number(rules.driftPoints)) continue;
+        const gapHundredths = Math.round(actual * 100) - Math.round(target * 100);
+        if (Math.abs(gapHundredths) <= Math.round(Number(rules.driftPoints) * 100)) continue;
+        const gap = gapHundredths / 100;
         const over = gap > 0;
         const amount = money(String((Math.abs(gap) / 100) * total), portfolio.currency);
         drift.push({

@@ -232,4 +232,12 @@ describe('collectInsights', () => {
       '2 assets have no price or exchange rate yet, so their returns on cost are not checked.',
     );
   });
+
+  it('INS-DRIFT: treats a gap exactly at the tolerance as within the rules', () => {
+    const { items } = collectInsights(
+      portfolio([asset(btc, 'BTC', { allocationPercent: '0.01' })]),
+      rules({ targets: [{ instrumentId: btc, percent: '0.07' }], driftPoints: '0.06' }),
+    );
+    expect(items).toEqual([]);
+  });
 });
