@@ -69,8 +69,10 @@ asked for with the server's cursor), the Portfolio assets table, Wallets, a wall
 assets and transactions, an asset's transactions, the proposals above Transactions, a wallet's
 sync history, its token lists and the transactions in the address drawer. The rows already on
 screen never go away while the list is open, so an open row and the scroll position stay put; a
-changed filter or search starts again at twenty, and a reload does too. A list that fits twenty
-has no control. The server API is unchanged: the lists are cut in the browser, because the
+changed filter or search starts again at twenty. A reload of the tab brings Transactions back with
+the rows that were on screen and at the same scroll position (kept per tab in `sessionStorage`,
+counts and offsets only); the other lists start again at twenty. A list that fits twenty has no
+control. The server API is unchanged: the lists are cut in the browser, because the
 filters, the chip counts and the classification flow need the whole list.
 
 The last answer of each read is kept in memory for the session and, for the signed-in owner, in

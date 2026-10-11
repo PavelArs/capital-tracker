@@ -23,6 +23,30 @@ export interface Infinite<T> {
   reveal: (index: number) => void;
 }
 
+const remembered = (name: string): { key: string; count: number; scroll: number } | null => {
+  try {
+    const parsed: unknown = JSON.parse(window.sessionStorage.getItem(`infinite:${name}`) ?? 'null');
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { key, count, scroll } = parsed as Record<string, unknown>;
+    return typeof key === 'string' && Number.isInteger(count) && typeof scroll === 'number'
+      ? { key, count: count as number, scroll }
+      : null;
+  } catch {
+    return null;
+  }
+};
+const remember = (
+  name: string,
+  change: Partial<{ key: string; count: number; scroll: number }>,
+) => {
+  try {
+    const kept = remembered(name) ?? { key: '', count: 0, scroll: 0 };
+    window.sessionStorage.setItem(`infinite:${name}`, JSON.stringify({ ...kept, ...change }));
+  } catch {
+    // Storage is refused: a reload starts at twenty rows, as before.
+  }
+};
+
 /**
  * Shows a long list twenty rows at a time. The list grows as the owner reaches its end and
  * never shrinks while it is open, so a row opened in a drawer and the scroll position stay where
@@ -30,10 +54,15 @@ export interface Infinite<T> {
  */
 export function useInfinite<T>(
   items: T[],
-  options: { size?: number; resetKey?: string } = {},
+  options: { size?: number; resetKey?: string; keep?: string } = {},
 ): Infinite<T> {
-  const { size = PAGE_SIZE, resetKey = '' } = options;
-  const [grown, setGrown] = useState({ count: size, key: resetKey });
+  const { size = PAGE_SIZE, resetKey = '', keep } = options;
+  // `keep` names a list whose length survives a reload of the tab (sessionStorage): the same
+  // filters come back with as many rows as were on screen.
+  const [grown, setGrown] = useState(() => {
+    const kept = keep ? remembered(keep) : null;
+    return { count: kept?.key === resetKey ? Math.max(size, kept.count) : size, key: resetKey };
+  });
   const count = grown.key === resetKey ? grown.count : size;
   const grow = (to: (current: number) => number) =>
     setGrown((kept) => {
@@ -41,6 +70,10 @@ export function useInfinite<T>(
       const next = to(current);
       return next === current && kept.key === resetKey ? kept : { key: resetKey, count: next };
     });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of length or filters is written.
+  useEffect(() => {
+    if (keep) remember(keep, { key: resetKey, count });
+  }, [keep, resetKey, count]);
   const rows = items.slice(0, count);
   return {
     rows,
@@ -94,4 +127,33 @@ export default function LoadMore({
       </button>
     </div>
   );
+}
+
+/**
+ * Brings a reloaded page back to where it was: the scroll position is kept for the tab and set
+ * once `ready` (the rows are on screen). Whatever the position, it is only ever set once.
+ */
+export function useScrollMemory(name: string, ready: boolean): void {
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!ready || restored.current) return;
+    restored.current = true;
+    const kept = remembered(name);
+    if (kept && kept.scroll > 0) window.scrollTo(0, kept.scroll);
+  }, [name, ready]);
+  useEffect(() => {
+    let frame = 0;
+    const save = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        // Before the first restore the page is still at the top: that is no position to keep.
+        if (restored.current) remember(name, { scroll: window.scrollY });
+      });
+    };
+    window.addEventListener('scroll', save, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', save);
+    };
+  }, [name]);
 }

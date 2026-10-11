@@ -7,7 +7,7 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
-import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
+import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { hiddenTokenSymbols } from '../wallets/WalletParts';
@@ -483,7 +483,12 @@ export default function TransactionsPage() {
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
   // INFINITE: twenty rows first, twenty more each time the end of the list is reached; a
   // changed filter or search starts again at twenty.
-  const paged = useInfinite(visible, { resetKey: `${view}|${asset}|${place}|${query}` });
+  const paged = useInfinite(visible, {
+    resetKey: `${view}|${asset}|${place}|${query}`,
+    keep: 'transactions',
+  });
+  // A reload comes back to the rows and the place the owner was at.
+  useScrollMemory('transactions', list !== null && !failed);
   const filtered = view !== 'all' || asset || place || query;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {

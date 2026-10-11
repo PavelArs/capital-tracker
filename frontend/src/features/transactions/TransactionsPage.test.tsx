@@ -3440,6 +3440,27 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     expect(screen.getByText(/45 transactions, newest first/)).toBeInTheDocument();
   });
 
+  it('comes back after a reload with the rows that were on screen and the place the owner was at', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const scrollTo = vi.fn();
+    vi.stubGlobal('scrollTo', scrollTo);
+    const first = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    reachEnd();
+    expect(bodyRows()).toHaveLength(40);
+    window.sessionStorage.setItem(
+      'infinite:transactions',
+      JSON.stringify({
+        ...JSON.parse(window.sessionStorage.getItem('infinite:transactions') ?? '{}'),
+        scroll: 900,
+      }),
+    );
+    first.unmount();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(40));
+    expect(scrollTo).toHaveBeenCalledWith(0, 900);
+  });
+
   it('adds the rows with the button too, for a keyboard or a browser without the observer', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
     const user = userEvent.setup();

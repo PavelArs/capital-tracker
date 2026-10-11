@@ -1,7 +1,7 @@
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import LoadMore, { PAGE_SIZE, useInfinite } from './InfiniteScroll';
+import LoadMore, { PAGE_SIZE, useInfinite, useScrollMemory } from './InfiniteScroll';
 
 afterEach(() => {
   cleanup();
@@ -58,6 +58,73 @@ describe('useInfinite', () => {
     expect(result.current.rows).toHaveLength(60);
     act(() => result.current.reveal(10));
     expect(result.current.rows).toHaveLength(60);
+  });
+});
+
+describe('a list kept across a reload', () => {
+  it('comes back with as many rows as were on screen, for the same filters only', () => {
+    const first = renderHook(
+      ({ key }) => useInfinite(items(100), { resetKey: key, keep: 'list' }),
+      {
+        initialProps: { key: 'all' },
+      },
+    );
+    act(() => first.result.current.more?.onMore());
+    act(() => first.result.current.more?.onMore());
+    expect(first.result.current.rows).toHaveLength(60);
+    first.unmount();
+    // A reload of the tab: the same filters get their rows back.
+    const same = renderHook(() => useInfinite(items(100), { resetKey: 'all', keep: 'list' }));
+    expect(same.result.current.rows).toHaveLength(60);
+    same.unmount();
+    // Other filters start again at twenty.
+    const other = renderHook(() => useInfinite(items(100), { resetKey: 'search', keep: 'list' }));
+    expect(other.result.current.rows).toHaveLength(20);
+  });
+
+  it('forgets nothing it was not asked to keep', () => {
+    const first = renderHook(() => useInfinite(items(100), { resetKey: 'all' }));
+    act(() => first.result.current.more?.onMore());
+    first.unmount();
+    expect(
+      renderHook(() => useInfinite(items(100), { resetKey: 'all' })).result.current.rows,
+    ).toHaveLength(20);
+  });
+
+  it('puts the scroll position back once the rows are on screen', () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal('scrollTo', scrollTo);
+    window.sessionStorage.setItem(
+      'infinite:list',
+      JSON.stringify({ key: 'all', count: 40, scroll: 1234 }),
+    );
+    const { rerender } = renderHook(({ ready }) => useScrollMemory('list', ready), {
+      initialProps: { ready: false },
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+    rerender({ ready: true });
+    expect(scrollTo).toHaveBeenCalledWith(0, 1234);
+    rerender({ ready: true });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the scroll position once it was restored, and not before', async () => {
+    vi.stubGlobal('scrollTo', vi.fn());
+    vi.stubGlobal('requestAnimationFrame', (run: () => void) => {
+      run();
+      return 1;
+    });
+    const { rerender } = renderHook(({ ready }) => useScrollMemory('list', ready), {
+      initialProps: { ready: false },
+    });
+    vi.stubGlobal('scrollY', 300);
+    window.dispatchEvent(new Event('scroll'));
+    expect(window.sessionStorage.getItem('infinite:list')).toBeNull();
+    rerender({ ready: true });
+    window.dispatchEvent(new Event('scroll'));
+    expect(JSON.parse(window.sessionStorage.getItem('infinite:list') ?? '{}')).toMatchObject({
+      scroll: 300,
+    });
   });
 });
 
