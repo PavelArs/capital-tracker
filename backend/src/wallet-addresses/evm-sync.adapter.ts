@@ -87,6 +87,8 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
       outcome,
       reason,
       imported,
+      // SYNC-DETAIL: what the source said, so "temporarily unavailable" can be told apart.
+      detail: reason === null ? null : this.etherscan.detail,
     });
     if (!this.etherscan.configured) return finish('provider_error', 'not_configured');
     const tip = await this.etherscan.blockNumber();
