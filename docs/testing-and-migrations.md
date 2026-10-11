@@ -194,7 +194,10 @@ results.
 Pull request and main CI run only the critical subset (`critical-acceptance` shards).
 The full `pnpm test:e2e` suite runs in `.github/workflows/full-acceptance.yml`: nightly
 on main, on demand (Run workflow), and on a pull request that changes that file. It is
-not a required check; a red nightly run is a regression to fix.
+not a required check; a red nightly run is a regression to fix. The nightly run first
+compares main's head with the head of the previous completed run of that workflow (cancelled
+runs excluded) and skips the suite when they match, writing "No new commits" to the run
+summary; manual and pull request runs always execute.
 The ninth required CI job runs `pnpm audit:production` after a frozen install.
 It fails on high/critical production advisories and registry errors; lower-severity
 findings remain visible in [the dependency security record](dependency-security.md).
