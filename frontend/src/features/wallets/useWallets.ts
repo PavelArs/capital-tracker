@@ -1,13 +1,14 @@
 import type { WalletKind } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
+import type { HiddenAsset } from '@api/hidden-assets.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
 import { failureMessage, type SyncRun } from './SyncStatus';
-import { kindsOf } from './wallets';
+import { hiddenSymbolsOf, kindsOf } from './wallets';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
@@ -30,6 +31,11 @@ export function useWallets() {
   // W1: how each wallet is held; a failed read leaves the labels out, not the page.
   const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
     kindsOf(cachedReads.accounts.last()),
+  );
+  // ASSET-HIDE: the coins the owner hid are no difference to explain. Until the list is read
+  // (or when its read fails) it is unknown, and no balance is compared.
+  const [hiddenAssets, setHiddenAssets] = useState<HiddenAsset[] | null>(
+    () => cachedReads.hiddenAssets.last() ?? null,
   );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
@@ -57,13 +63,17 @@ export function useWallets() {
           .load()
           .then((accounts) => request === latest.current && setKinds(kindsOf(accounts)))
           .catch(() => undefined);
-        const [nextPortfolio, nextAddresses] = await Promise.all([
+        // ASSET-HIDE: the hidden list lands with the balances it is compared against; one that
+        // cannot be read leaves the comparison unknown rather than trusting an older list.
+        const [nextPortfolio, nextAddresses, nextHidden] = await Promise.all([
           cachedReads.portfolio.load(asked),
           cachedReads.wallets.load(),
+          cachedReads.hiddenAssets.load().catch(() => null),
         ]);
         if (request !== latest.current) return;
         setPortfolio(nextPortfolio);
         setAddresses(nextAddresses);
+        setHiddenAssets(nextHidden);
       } catch {
         if (request === latest.current && !quiet && !(kept && keptAddresses)) setFailed(true);
       }
@@ -146,5 +156,21 @@ export function useWallets() {
     return () => window.clearInterval(timer);
   }, [backgroundSyncing, load]);
 
-  return { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked };
+  const hiddenSymbols = useMemo(
+    () => (hiddenAssets ? hiddenSymbolsOf(hiddenAssets) : null),
+    [hiddenAssets],
+  );
+  return {
+    portfolio,
+    addresses,
+    kinds,
+    hiddenSymbols,
+    failed,
+    load,
+    replace,
+    forget,
+    runs,
+    sync,
+    asked,
+  };
 }
