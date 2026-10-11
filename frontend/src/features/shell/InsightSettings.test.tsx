@@ -178,4 +178,20 @@ describe('insight rules in Settings', () => {
     expect(select.value).toBe(hidden);
     expect(select.selectedOptions[0].text).toBe('Hidden or removed asset');
   });
+
+  it('INS-SETTINGS: keeps Add target available for a visible asset beside a hidden target', async () => {
+    get.mockResolvedValue(
+      settings({
+        targets: [{ instrumentId: '00000000-0000-4000-8000-000000000009', percent: '20' }],
+        driftPoints: '5',
+        gainReviewPercent: null,
+        lossReviewPercent: null,
+      }),
+    );
+    valued.mockResolvedValue({
+      assets: [{ instrumentId: btc, symbol: 'BTC', name: 'Bitcoin', holdings: [] }],
+    } as unknown as PortfolioValuation);
+    render(<InsightSettings />);
+    expect(await screen.findByRole('button', { name: 'Add target' })).toBeEnabled();
+  });
 });

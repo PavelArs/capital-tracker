@@ -54,14 +54,15 @@ export function collectInsights(
   const drift: { gap: number; item: InsightItem }[] = [];
   if (rules.targets.length > 0) {
     if (!portfolio.allocation.complete || portfolio.totalValue === null) {
+      const noRate = portfolio.assets.some((asset) => asset.missingPrice === 'no-rate');
+      const noPrice = portfolio.assets.some((asset) => asset.missingPrice === 'no-price');
       const history = portfolio.unavailableAccountCount > 0;
-      const prices = portfolio.missingPriceCount > 0 || !history;
-      const reason =
-        prices && history
-          ? "Some holdings have no price yet and an account's history starts later"
-          : history
-            ? "An account's history starts later"
-            : 'Some holdings have no price yet';
+      const reasons = [
+        (noPrice || (!noRate && !history)) && 'some holdings have no price yet',
+        noRate && 'some values have no exchange rate yet',
+        history && "an account's history starts later",
+      ].filter((reason): reason is string => reason !== false);
+      const reason = reasons.join(' and ').replace(/^./, (letter) => letter.toUpperCase());
       note = `${reason}, so shares are not compared.`;
     } else if (Number(portfolio.totalValue) <= 0) {
       note = 'The portfolio has no value yet, so shares are not compared.';

@@ -194,18 +194,20 @@ describe('collectInsights', () => {
     expect(items[0].title).toContain('USDT · Tether · #');
   });
 
-  it('INS-DRIFT-UNPRICED: names an account history that starts later as its own reason', () => {
-    const later = (missingPriceCount: number) =>
+  it('INS-DRIFT-UNPRICED: names each reason shares cannot be compared', () => {
+    const note = (missingPrice: AssetValuation['missingPrice'], unavailableAccountCount: number) =>
       collectInsights(
-        portfolio([asset(btc, 'BTC', { allocationPercent: '90' })], {
+        portfolio([asset(btc, 'BTC', { allocationPercent: '90', missingPrice })], {
           allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
-          missingPriceCount,
-          unavailableAccountCount: 1,
+          unavailableAccountCount,
         }),
         rules({ targets: [{ instrumentId: btc, percent: '50' }] }),
       ).note;
-    expect(later(0)).toBe("An account's history starts later, so shares are not compared.");
-    expect(later(2)).toBe(
+    expect(note(null, 1)).toBe("An account's history starts later, so shares are not compared.");
+    expect(note('no-rate', 0)).toBe(
+      'Some values have no exchange rate yet, so shares are not compared.',
+    );
+    expect(note('no-price', 1)).toBe(
       "Some holdings have no price yet and an account's history starts later, so shares are not compared.",
     );
   });

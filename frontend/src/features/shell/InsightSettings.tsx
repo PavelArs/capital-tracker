@@ -244,7 +244,7 @@ export default function InsightSettings() {
             <button
               type="button"
               className="shell-button shell-button--secondary"
-              disabled={rows.length >= Math.min(assets.length, 50)}
+              disabled={rows.length >= 50 || free('').length === 0}
               onClick={() => {
                 setRows([...rows, { key: counter, instrumentId: '', percent: '' }]);
                 setCounter(counter + 1);
