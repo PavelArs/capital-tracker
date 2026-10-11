@@ -36,6 +36,7 @@ import { assetCaption, Change, Signed } from './PortfolioPage';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
+import EmptyState from '@/ui/EmptyState';
 
 /** Where the price came from and how fresh it is. */
 function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: Date): string {
@@ -580,10 +581,9 @@ export default function AssetPage() {
           now={new Date()}
         />
       ) : (
-        <section className="shell-card shell-empty" aria-labelledby="asset-missing">
-          <h2 id="asset-missing">Asset not found</h2>
-          <p>It may belong to another owner or the link is wrong.</p>
-        </section>
+        <EmptyState id="asset-missing" title="Asset not found">
+          It may belong to another owner or the link is wrong.
+        </EmptyState>
       )}
     </div>
   );

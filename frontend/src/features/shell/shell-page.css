@@ -47,40 +47,6 @@
   font-weight: 600;
 }
 
-.shell-empty {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 56px 24px;
-  text-align: center;
-}
-
-.shell-empty__ill {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 6px;
-  border-radius: 18px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.shell-empty__ill .shell-icon {
-  width: 28px;
-  height: 28px;
-}
-
-.shell-empty h2 {
-  font-size: var(--fs-xl);
-}
-
-.shell-empty p {
-  max-width: 46ch;
-  margin: 0;
-  color: var(--ink-2);
-}
-
 .shell-button {
   display: inline-flex;
   align-items: center;

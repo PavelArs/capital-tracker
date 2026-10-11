@@ -20,6 +20,7 @@ import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
 import './portfolio.css';
+import EmptyState from '@/ui/EmptyState';
 
 export const typeLabels: Record<AssetType, string> = {
   crypto: 'Crypto',
@@ -543,11 +544,9 @@ export default function PortfolioPage() {
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
       ) : assets.length === 0 ? (
-        <section className="shell-card shell-empty" aria-labelledby="portfolio-empty">
-          <h2 id="portfolio-empty">No assets yet</h2>
-          <p>Add a coin, cash or anything else you want to track.</p>
-          {addButton(true)}
-        </section>
+        <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
+          Add a coin, cash or anything else you want to track.
+        </EmptyState>
       ) : (
         <>
           {refreshFailed && (

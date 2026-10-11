@@ -36,6 +36,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
+import EmptyState from '@/ui/EmptyState';
 
 type OperationsState = OperationList | 'loading' | 'failed';
 
@@ -280,13 +281,17 @@ export default function WalletPage() {
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
       ) : !account ? (
-        <section className="shell-card shell-empty" aria-labelledby="wallet-missing">
-          <h2 id="wallet-missing">Wallet not found</h2>
-          <p>It may belong to another owner or the link is wrong.</p>
-          <Link className="shell-button" to={withCurrency('/wallets', asked)}>
-            Open Wallets
-          </Link>
-        </section>
+        <EmptyState
+          id="wallet-missing"
+          title="Wallet not found"
+          actions={
+            <Link className="shell-button" to={withCurrency('/wallets', asked)}>
+              Open Wallets
+            </Link>
+          }
+        >
+          It may belong to another owner or the link is wrong.
+        </EmptyState>
       ) : (
         <>
           <div className="portfolio-head">

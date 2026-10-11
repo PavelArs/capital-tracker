@@ -239,13 +239,6 @@
   margin: 0;
 }
 
-.transactions-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-
 .transactions-hero {
   display: grid;
   gap: 6px;

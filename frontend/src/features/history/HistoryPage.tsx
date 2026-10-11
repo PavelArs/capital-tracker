@@ -30,6 +30,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './history.css';
+import EmptyState from '@/ui/EmptyState';
 
 const changes = Object.keys(changeLabels) as AuditChange[];
 const entities = Object.keys(entityLabels) as AuditEntity[];
@@ -250,13 +251,10 @@ export default function HistoryPage() {
       ) : history === null ? (
         <PageSkeleton label="Loading the change history" show={['rows']} rows={8} />
       ) : events.length === 0 && !filtered ? (
-        <section className="shell-card shell-empty" aria-labelledby="history-empty">
-          <h2 id="history-empty">Nothing has changed yet</h2>
-          <p>
-            Every transaction you add, correct or delete, and every answer to a blockchain
-            transaction, is listed here with the time it happened.
-          </p>
-        </section>
+        <EmptyState id="history-empty" title="Nothing has changed yet">
+          Every transaction you add, correct or delete, and every answer to a blockchain
+          transaction, is listed here with the time it happened.
+        </EmptyState>
       ) : (
         <section className="shell-card" aria-label="Change history">
           <div className="portfolio-toolbar">

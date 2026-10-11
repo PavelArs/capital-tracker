@@ -342,17 +342,6 @@
   line-height: 1.5;
 }
 
-.dashboard-empty__actions .shell-button {
-  font-family: inherit;
-}
-
-.dashboard-empty__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-
 /* Loading: grey blocks in the place of the net worth and the chart. */
 .dashboard-loading {
   display: grid;

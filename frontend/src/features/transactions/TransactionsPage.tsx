@@ -39,6 +39,7 @@ import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
+import EmptyState from '@/ui/EmptyState';
 
 type StatusView = 'needs-classification' | 'hidden' | 'dust';
 type View = 'all' | StatusView | Operation['source'];
@@ -721,19 +722,19 @@ export default function TransactionsPage() {
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
       ) : operations.length === 0 && !period ? (
-        <section className="shell-card shell-empty" aria-labelledby="transactions-empty">
-          <h2 id="transactions-empty">No transactions yet</h2>
-          <p>
-            Purchases, sales and transfers you record and transactions found in your wallets appear
-            here.
-          </p>
-          {/* Add transaction is in the page header. */}
-          <div className="transactions-actions">
+        // Add transaction is in the page header.
+        <EmptyState
+          id="transactions-empty"
+          title="No transactions yet"
+          actions={
             <Link className="shell-button" to="/wallets">
               Open wallets
             </Link>
-          </div>
-        </section>
+          }
+        >
+          Purchases, sales and transfers you record and transactions found in your wallets appear
+          here.
+        </EmptyState>
       ) : (
         <section className="shell-card" aria-label="All transactions" ref={listRef}>
           <div className="portfolio-toolbar">

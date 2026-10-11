@@ -57,10 +57,6 @@
   color: var(--ink-2);
 }
 
-.shell-empty .shell-button--primary {
-  margin-top: 10px;
-}
-
 .portfolio-state {
   display: flex;
   flex-wrap: wrap;

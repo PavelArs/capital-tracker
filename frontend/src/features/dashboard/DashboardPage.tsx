@@ -21,6 +21,7 @@ import TopAssets from './TopAssets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './dashboard.css';
+import EmptyState from '@/ui/EmptyState';
 
 const periodLabels: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
@@ -179,25 +180,25 @@ function Loading() {
 
 function Empty({ onAdd }: { onAdd: () => void }) {
   return (
-    <section className="shell-card shell-empty" aria-labelledby="dashboard-empty">
-      <span className="shell-empty__ill" aria-hidden="true">
-        <Icon name="wallets" />
-      </span>
-      <h2 id="dashboard-empty">Your portfolio is empty</h2>
-      <p>
-        Add your first wallet or asset to start tracking your capital. Wallet balances and history
-        load automatically.
-      </p>
-      <div className="dashboard-empty__actions">
-        <Link className="shell-button shell-button--primary" to="/wallets">
-          <Icon name="plus" className="shell-icon shell-icon--sm" />
-          Add wallet
-        </Link>
-        <button type="button" className="shell-button" onClick={onAdd}>
-          Add transaction
-        </button>
-      </div>
-    </section>
+    <EmptyState
+      id="dashboard-empty"
+      title="Your portfolio is empty"
+      icon={<Icon name="wallets" />}
+      actions={
+        <>
+          <Link className="shell-button shell-button--primary" to="/wallets">
+            <Icon name="plus" className="shell-icon shell-icon--sm" />
+            Add wallet
+          </Link>
+          <button type="button" className="shell-button" onClick={onAdd}>
+            Add transaction
+          </button>
+        </>
+      }
+    >
+      Add your first wallet or asset to start tracking your capital. Wallet balances and history
+      load automatically.
+    </EmptyState>
   );
 }
 

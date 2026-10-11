@@ -25,6 +25,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
+import EmptyState from '@/ui/EmptyState';
 
 /** The addresses of one wallet, twenty to a page; the page is only shown when there are more. */
 function PagedSources({
@@ -138,17 +139,15 @@ export default function WalletsPage() {
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallets" show={['cards']} />
       ) : cards.length === 0 && list.length === 0 ? (
-        <section className="shell-card shell-empty" aria-labelledby="wallets-empty">
-          <span className="shell-empty__ill" aria-hidden="true">
-            <Icon name="wallets" />
-          </span>
-          <h2 id="wallets-empty">No wallets connected</h2>
-          <p>
-            Add a Bitcoin, Ethereum or Solana address. The app only reads public data and never asks
-            for a seed phrase.
-          </p>
-          {addButton}
-        </section>
+        <EmptyState
+          id="wallets-empty"
+          title="No wallets connected"
+          icon={<Icon name="wallets" />}
+          actions={addButton}
+        >
+          Add a Bitcoin, Ethereum or Solana address. The app only reads public data and never asks
+          for a seed phrase.
+        </EmptyState>
       ) : (
         <>
           <div className="wallets-intro">
