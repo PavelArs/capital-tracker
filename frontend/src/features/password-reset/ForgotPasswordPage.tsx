@@ -2,7 +2,7 @@ import { passwordResetApi } from '@api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AuthFrame, { FieldError, Notice } from './AuthFrame';
+import AuthFrame, { FieldError, focusOnMount, Notice } from './AuthFrame';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -98,6 +98,7 @@ export default function ForgotPasswordPage() {
         <input
           className="auth-input"
           id="reset-email"
+          ref={focusOnMount}
           type="email"
           autoComplete="username"
           placeholder="you@example.com"

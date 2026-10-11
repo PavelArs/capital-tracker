@@ -3,6 +3,7 @@ import { operationsApi } from '@api/operations.api';
 import { isAxiosError } from 'axios';
 import { useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
+import { Icon } from '../shell/icons';
 import { isCountedGap } from './operation-format';
 
 interface Props {
@@ -63,6 +64,7 @@ export default function RemoveCounted({ operation, disabled = false, onDeleted }
           disabled={disabled}
           onClick={() => setAsking(true)}
         >
+          <Icon name="trash" className="shell-icon shell-icon--sm" />
           Delete
         </button>
       </>

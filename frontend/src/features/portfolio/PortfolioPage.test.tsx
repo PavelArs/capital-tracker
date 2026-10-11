@@ -356,7 +356,7 @@ describe('PV-UI Portfolio values every asset', () => {
     await user.click(within(grouping).getByRole('radio', { name: 'Type' }));
     expect(slices()).toEqual(['Crypto$96,000.0096.00%', 'Cash$4,000.004.00%']);
     expect(swatches()).toEqual(['var(--c-eth)', 'var(--c-cash)']);
-    await user.click(within(grouping).getByRole('radio', { name: 'Account' }));
+    await user.click(within(grouping).getByRole('radio', { name: 'Wallets' }));
     expect(slices()).toEqual(['Trust Wallet$80,000.0080.00%', 'Bybit$20,000.0020.00%']);
     expect(allocation).toHaveTextContent('Assets without a price are not included.');
   });

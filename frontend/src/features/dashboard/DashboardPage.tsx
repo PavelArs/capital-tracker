@@ -5,12 +5,13 @@ import {
   type PortfolioHistory,
 } from '@api/portfolio-history.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency } from '../portfolio/currency';
 import { money, percent, quantity, tone } from '../portfolio/format';
+import AboutChart from '../shell/AboutChart';
 import { useAttention } from '../shell/attention-context';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
@@ -198,40 +199,6 @@ function Empty({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-// How the chart is built, behind an info button instead of a paragraph under the chart.
-function AboutChart() {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  return (
-    <div className="dashboard-about">
-      <button
-        type="button"
-        className="dashboard-about__button"
-        aria-label="About this chart"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen((shown) => !shown)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') setOpen(false);
-        }}
-        onBlur={() => setOpen(false)}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 11v5M12 8h.01" />
-        </svg>
-      </button>
-      {open && (
-        <p id={id} className="dashboard-about__note" role="note">
-          Snapshots at stored prices and Bank of Russia rates: hourly for the last week, daily since
-          Jan 1, 2025, in UTC. Net invested is the money put in minus the money taken out; the gap
-          to the value line is your profit or loss.
-        </p>
-      )}
-    </div>
-  );
-}
-
 // Net worth, change for the period and the capital chart from portfolio snapshots
 // (record-portfolio-snapshots); top assets and allocation from the current valuation. What
 // needs the owner lives in the header bell (ATTN-BELL).
@@ -320,7 +287,11 @@ export default function DashboardPage() {
               <div className="dashboard-chart-card__title">
                 <div className="dashboard-chart-card__name">
                   <h2>Capital</h2>
-                  <AboutChart />
+                  <AboutChart>
+                    Snapshots at stored prices and Bank of Russia rates: hourly for the last week,
+                    daily since Jan 1, 2025, in UTC. Net invested is the money put in minus the
+                    money taken out; the gap to the value line is your profit or loss.
+                  </AboutChart>
                 </div>
                 <div className="dashboard-legend" aria-label="Chart legend">
                   <span>

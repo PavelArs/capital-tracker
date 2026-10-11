@@ -62,6 +62,12 @@ describe('Owner second-factor login (prototype Sign-in)', () => {
     vi.restoreAllMocks();
   });
 
+  it('opens with the cursor in the email field', async () => {
+    await renderLogin();
+
+    expect(screen.getByLabelText('Email')).toHaveFocus();
+  });
+
   it('links the password step to the emailed reset', async () => {
     await renderLogin();
 

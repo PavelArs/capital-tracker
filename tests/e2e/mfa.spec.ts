@@ -187,7 +187,7 @@ test('MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable f
   expect(await page.evaluate(() => Object.keys(localStorage))).not.toContain('token');
   await restartBackend(request);
   await page.reload();
-  await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(owner.email, { exact: true })).toBeVisible();
   expect((await page.context().request.get('/api/auth/me')).status()).toBe(200);
   await expectHostAdmissions(1, 1);
   expect(
