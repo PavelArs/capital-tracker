@@ -18,6 +18,7 @@ import { useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { CopyButton } from '../shell/CopyValue';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
 import {
@@ -546,8 +547,11 @@ export function AddressRow({
       </li>
     );
   }
+  // W4: an address can be copied from its row. The button is not inside the row's own button, so
+  // it sits over the address column, right after the text.
+  const copyable = !network.exchange;
   return (
-    <li className="wallets-source">
+    <li className={copyable ? 'wallets-source wallets-source--copy' : 'wallets-source'}>
       <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
         <span className="wallets-asset">
           <AssetIcon {...networkIcon(network)} size="sm" />
@@ -564,6 +568,16 @@ export function AddressRow({
           {when && <span className="wallets-muted">{when}</span>}
         </span>
       </button>
+      {copyable && (
+        <div className="wallets-source__copy">
+          <span className="wallets-source__copy-cell">
+            <span className="wallets-mono wallets-soft" aria-hidden="true">
+              {place(address)}
+            </span>
+            <CopyButton value={address.address} label={`Copy address of ${name}`} />
+          </span>
+        </div>
+      )}
       {more}
       {message}
     </li>

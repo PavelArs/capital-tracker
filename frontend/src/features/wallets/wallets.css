@@ -153,11 +153,14 @@ a.wallets-asset:hover {
   border-top: 1px solid var(--line);
 }
 
+.wallets-source {
+  --wallets-columns: minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr)
+    minmax(90px, 0.8fr) minmax(170px, 1.2fr);
+}
+
 .wallets-source__open {
   display: grid;
-  grid-template-columns:
-    minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr) minmax(90px, 0.8fr)
-    minmax(170px, 1.2fr);
+  grid-template-columns: var(--wallets-columns);
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -199,6 +202,44 @@ button.wallets-source__open:hover {
 button.wallets-source__open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* W4: the copy button lies over the address column of the row, on the same grid. */
+.wallets-source--copy {
+  display: grid;
+}
+
+.wallets-source--copy > .wallets-source__open,
+.wallets-source--copy > .wallets-source__copy {
+  grid-area: 1 / 1;
+}
+
+.wallets-source__copy {
+  display: grid;
+  grid-template-columns: var(--wallets-columns);
+  align-items: center;
+  gap: 12px;
+  padding: 13px 22px;
+  pointer-events: none;
+}
+
+.wallets-source__copy-cell {
+  display: flex;
+  grid-column: 2;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Takes the width of the address it follows, so the button sits right after the text. */
+.wallets-source__copy-cell > span {
+  min-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.wallets-source__copy-cell .copy-value__button {
+  pointer-events: auto;
 }
 
 .wallets-source--manual .wallets-source__open {
@@ -595,6 +636,11 @@ button.wallets-source__open:focus-visible {
 @media (max-width: 1100px) {
   .wallets-source__open {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* Two columns have no room for it; the address is copied from the drawer. */
+  .wallets-source__copy {
+    display: none;
   }
 
   .wallets-right {

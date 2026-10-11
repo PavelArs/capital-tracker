@@ -246,6 +246,20 @@ describe('WAL-LIST: wallets grouped by account', () => {
     expect(within(card('Cold storage')).getByText('Tracked by hand')).toBeInTheDocument();
   });
 
+  it('W4 copies an address from its row without opening the wallet', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    setup([wallet(1, {})]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    await user.click(
+      within(trustCard).getByRole('button', { name: 'Copy address of Trust Wallet BTC' }),
+    );
+    expect(writeText).toHaveBeenCalledWith(addresses.trust);
+    expect(await within(trustCard).findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('says nothing when the chain agrees and waits for a partly loaded history', async () => {
     setup([wallet(1, {})], portfolio('0.01'));
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
