@@ -60,6 +60,24 @@ function inView(operation: Operation, view: View): boolean {
   return view === 'all' || operation.source === view;
 }
 
+/**
+ * COST-UNKNOWN: a row that brings coins in without a purchase price, so the asset's cost basis
+ * and profit leave them out: an incoming wallet transaction nobody has answered, or a recorded
+ * receipt, reward, opening balance or swap whose cost is missing. Hidden and dust rows do not
+ * count in the balances. A transfer between own wallets carries the cost of its source row,
+ * which is listed here when that one is unknown.
+ */
+export function lacksCost(operation: Operation, asset: string): boolean {
+  if (operation.status === 'hidden' || operation.status === 'dust') return false;
+  const brings = operation.direction === 'in' || operation.type === 'swap';
+  // A purchase or an answered receipt costs what was paid; a reward or an opening balance
+  // carries its own cost basis, which may be missing while the value is known.
+  const known =
+    operation.costBasisUsd !== null ||
+    (operation.kind !== 'reward' && operation.kind !== 'opening' && operation.valueUsd !== null);
+  return brings && !known && assetKey(operation.asset) === asset;
+}
+
 /** Where a row happened; a blockchain row's suggested other side is not a place yet (M13). */
 function places(operation: Operation) {
   const moved = operation.type === 'transfer' || operation.type === 'swap';
@@ -453,6 +471,8 @@ export default function TransactionsPage() {
     : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all');
   const asset = params.get('asset') ?? '';
   const place = params.get('account') ?? '';
+  // COST-UNKNOWN: the asset page links the rows that leave its cost basis empty.
+  const unknownCost = params.get('cost') === 'unknown' && asset !== '';
   const kind = params.get('type') ?? '';
   const replaceParams = (next: URLSearchParams) => {
     pending.current = { from: params, next };
@@ -538,18 +558,19 @@ export default function TransactionsPage() {
   const matches = (operation: Operation) =>
     (!asset || assetKeys(operation).includes(asset)) &&
     (!place || placeKeys(operation).includes(place)) &&
+    (!unknownCost || lacksCost(operation, asset)) &&
     (!kind || typeKey(operation) === kind) &&
     (!query || searchable(operation).includes(query));
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
   // INFINITE: twenty rows first, twenty more each time the end of the list is reached; a
   // changed filter, period or search starts again at twenty.
   const paged = useInfinite(visible, {
-    resetKey: `${view}|${asset}|${place}|${kind}|${from ?? ''}|${to ?? ''}|${query}`,
+    resetKey: `${view}|${asset}|${place}|${kind}|${from ?? ''}|${to ?? ''}|${query}|${unknownCost}`,
     keep: 'transactions',
   });
   // A reload comes back to the rows and the place the owner was at.
   useScrollMemory('transactions', list !== null && !failed);
-  const filtered = view !== 'all' || asset || place || kind || query || period;
+  const filtered = view !== 'all' || asset || place || kind || query || period || unknownCost;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
@@ -788,6 +809,16 @@ export default function TransactionsPage() {
               />
             </div>
           </div>
+          {unknownCost && (
+            <p className="transactions-info">
+              Incoming transactions without a purchase price, which leave the cost basis and profit
+              of this asset incomplete. Open one and answer it as a purchase, income or a transfer
+              from your own wallet to give it a cost.{' '}
+              <button type="button" className="shell-link" onClick={() => update({ cost: '' })}>
+                Show all of this asset
+              </button>
+            </p>
+          )}
           {view === 'dust' && (
             <p className="transactions-info transactions-dust-note">
               {list.dustThresholdUsd === null
