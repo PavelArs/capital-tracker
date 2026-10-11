@@ -674,11 +674,20 @@ describe('TransactionsPage (list-all-operations)', () => {
       expect(within(rows).getAllByRole('button')).toHaveLength(1);
       // The button counts the filters that are set; Reset in the sheet clears them.
       await user.click(screen.getByRole('button', { name: 'Filters, 1 set' }));
-      await user.click(
-        within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('button', {
-          name: 'Reset',
-        }),
+      const again = screen.getByRole('dialog', { name: 'Filters' });
+      await user.selectOptions(
+        within(again).getByRole('combobox', { name: 'Period' }),
+        'Custom range',
       );
+      fireEvent.change(within(again).getByLabelText('From'), { target: { value: '2025-06-01' } });
+      await user.click(screen.getByRole('button', { name: 'Reset' }));
+      // A range being picked clears with the rest.
+      expect(
+        within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('combobox', {
+          name: 'Period',
+        }),
+      ).toHaveValue('all');
+      expect(screen.queryByLabelText('From')).toBeNull();
       await user.keyboard('{Escape}');
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
