@@ -147,7 +147,10 @@ export class DepositsService {
     return this.read(async (manager) => {
       const [stored] = await this.load(manager, owner, depositId);
       if (!stored) throw new NotFoundException('Deposit not found');
-      return this.detail(stored, asOf ?? moscowDate(new Date()), await this.converters(manager));
+      const date = asOf ?? moscowDate(new Date());
+      if (stored.deposit.startDate > date)
+        throw new NotFoundException('The deposit had not started on that date');
+      return this.detail(stored, date, await this.converters(manager));
     });
   }
 
@@ -259,6 +262,13 @@ export class DepositsService {
           input,
         ].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
       };
+      const closedOn = projectDeposit(
+        termsOf(stored),
+        movementsOf(stored),
+        stored.deposit.endDate ?? moscowDate(new Date()),
+      ).closedOn;
+      if (closedOn !== null && input.effectiveFrom >= closedOn)
+        throw new UnprocessableEntityException('The deposit was closed before that date');
       if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
         throw new ConflictException('A recorded movement depends on the earlier rate');
       await manager.query(

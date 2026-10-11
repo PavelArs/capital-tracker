@@ -158,6 +158,22 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     });
     expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
   });
+
+  it('refuses an amount the server would not accept before sending it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Amount put in'), '1000000000000');
+    await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Amount put in');
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe('DEP-DETAIL: one deposit', () => {

@@ -8,7 +8,7 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
     // these rows and never stored; the rows only hold what the owner told the app.
     await runner.query(`CREATE TABLE bank_deposits (
       id uuid PRIMARY KEY,
-      "ownerId" uuid NOT NULL,
+      "ownerId" uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
       name varchar(120) NOT NULL CHECK (btrim(name) <> ''),
       bank varchar(120) NOT NULL CHECK (btrim(bank) <> ''),
       currency text NOT NULL CHECK (currency IN ('RUB', 'USD', 'EUR')),

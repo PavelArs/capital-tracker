@@ -14,7 +14,7 @@ import CloseButton from '../shell/CloseButton';
 import { movementText, today } from './deposit-format';
 import '../transactions/transactions.css';
 
-const MONEY = /^(0|[1-9]\d{0,14})(\.\d{1,2})?$/;
+const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/;
 const RATE = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

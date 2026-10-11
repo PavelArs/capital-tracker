@@ -155,6 +155,18 @@ async function accrual(db, service, owner) {
     'The same day is replayed in the order it was entered',
   );
   assert.equal(ordered.principal, '50.00');
+  await rejected(() => service.get(owner, same.id, '2026-06-15'), 404);
+  const withdrawnAll = await service.addMovement(owner, same.id, {
+    date: '2026-08-10',
+    kind: 'withdrawal',
+    amount: '50.00',
+  });
+  assert.equal(withdrawnAll.closedOn, '2026-08-10');
+  await rejected(
+    () => service.addRate(owner, same.id, { effectiveFrom: '2026-09-01', ratePercent: '5' }),
+    422,
+  );
+  await service.addRate(owner, same.id, { effectiveFrom: '2026-08-01', ratePercent: '5' });
   await service.remove(owner, same.id);
   console.log('PASS DEP-ORDER');
   return { rub: rub.id, usd: usd.id };
