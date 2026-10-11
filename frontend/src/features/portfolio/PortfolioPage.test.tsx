@@ -969,7 +969,10 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^All(?!o)/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^All(?!o)/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.getByRole('searchbox', { name: 'Search assets' })).toHaveValue('');
   });
 
