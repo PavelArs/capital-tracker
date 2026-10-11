@@ -698,8 +698,9 @@ export default function TransactionsPage() {
     <div className="shell-page">
       {/* The header's switch sets ?currency=; the list reloads in that currency. */}
       <PageHeader title="Transactions" currency={list?.quoteCurrency} />
-      {/* A failed read keeps the button: the dialog saves without the list. */}
-      {(failed || (list !== null && !empty)) && (
+      {/* The dialog saves without the list, so the button is there while it loads or fails too;
+          only an empty list moves it into the empty-state card. */}
+      {(failed || list === null || !empty) && (
         <PageIntro action={addButton}>
           Every purchase, sale, transfer and income in one list. Wallets and exchanges add theirs on
           their own; record the rest here.

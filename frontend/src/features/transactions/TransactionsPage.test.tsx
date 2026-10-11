@@ -845,6 +845,13 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
   });
 
+  it('offers Add transaction while the list is still loading', async () => {
+    vi.spyOn(operationsApi, 'list').mockReturnValue(new Promise(() => {}));
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No transactions yet' })).toBeNull();
+  });
+
   it('offers a retry when loading fails and never shows numbers it does not have', async () => {
     const user = userEvent.setup();
     const read = vi
