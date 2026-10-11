@@ -162,4 +162,20 @@ describe('insight rules in Settings', () => {
       `USDT · Tether · #${eth.slice(-6)}`,
     ]);
   });
+
+  it('INS-SETTINGS: shows a saved target whose asset is hidden instead of an empty choice', async () => {
+    const hidden = '00000000-0000-4000-8000-000000000009';
+    get.mockResolvedValue(
+      settings({
+        targets: [{ instrumentId: hidden, percent: '20' }],
+        driftPoints: '5',
+        gainReviewPercent: null,
+        lossReviewPercent: null,
+      }),
+    );
+    render(<InsightSettings />);
+    const select = (await screen.findByLabelText('Target asset 1')) as HTMLSelectElement;
+    expect(select.value).toBe(hidden);
+    expect(select.selectedOptions[0].text).toBe('Hidden or removed asset');
+  });
 });

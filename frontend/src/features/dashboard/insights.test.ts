@@ -193,4 +193,20 @@ describe('collectInsights', () => {
     expect(new Set(items.map((item) => item.title)).size).toBe(2);
     expect(items[0].title).toContain('USDT · Tether · #');
   });
+
+  it('INS-DRIFT-UNPRICED: names an account history that starts later as its own reason', () => {
+    const later = (missingPriceCount: number) =>
+      collectInsights(
+        portfolio([asset(btc, 'BTC', { allocationPercent: '90' })], {
+          allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+          missingPriceCount,
+          unavailableAccountCount: 1,
+        }),
+        rules({ targets: [{ instrumentId: btc, percent: '50' }] }),
+      ).note;
+    expect(later(0)).toBe("An account's history starts later, so shares are not compared.");
+    expect(later(2)).toBe(
+      "Some holdings have no price yet and an account's history starts later, so shares are not compared.",
+    );
+  });
 });

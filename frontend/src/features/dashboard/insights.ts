@@ -54,7 +54,15 @@ export function collectInsights(
   const drift: { gap: number; item: InsightItem }[] = [];
   if (rules.targets.length > 0) {
     if (!portfolio.allocation.complete || portfolio.totalValue === null) {
-      note = 'Some holdings have no price yet, so shares are not compared.';
+      const history = portfolio.unavailableAccountCount > 0;
+      const prices = portfolio.missingPriceCount > 0 || !history;
+      const reason =
+        prices && history
+          ? "Some holdings have no price yet and an account's history starts later"
+          : history
+            ? "An account's history starts later"
+            : 'Some holdings have no price yet';
+      note = `${reason}, so shares are not compared.`;
     } else if (Number(portfolio.totalValue) <= 0) {
       note = 'The portfolio has no value yet, so shares are not compared.';
     } else {

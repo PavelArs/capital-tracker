@@ -202,6 +202,10 @@ export default function InsightSettings() {
                 }}
               >
                 <option value="">Choose an asset</option>
+                {row.instrumentId !== '' &&
+                  !assets.some((asset) => asset.instrumentId === row.instrumentId) && (
+                    <option value={row.instrumentId}>Hidden or removed asset</option>
+                  )}
                 {free(row.instrumentId).map((asset) => (
                   <option key={asset.instrumentId} value={asset.instrumentId}>
                     {labels.get(asset.instrumentId)}
