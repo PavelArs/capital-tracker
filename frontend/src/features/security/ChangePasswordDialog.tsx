@@ -95,13 +95,13 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
     set: (value: string) => void,
     extra: { type?: string; autoComplete: string; hint?: string; otp?: boolean },
   ) => (
-    <div className="portfolio-field">
-      <label className="portfolio-field__label" htmlFor={id}>
+    <div className="ui-field">
+      <label className="ui-field__label" htmlFor={id}>
         {label}
       </label>
       <input
         id={id}
-        className={extra.otp ? 'portfolio-input security-otp' : 'portfolio-input'}
+        className={extra.otp ? 'ui-input security-otp' : 'ui-input'}
         type={extra.type ?? 'password'}
         inputMode={extra.otp ? 'numeric' : undefined}
         maxLength={extra.otp ? 7 : 1024}
@@ -114,7 +114,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
       />
       {extra.hint && !problems[field] && <p className="shell-note">{extra.hint}</p>}
       {problems[field] && (
-        <p id={`${id}-error`} className="portfolio-dialog__error" role="alert">
+        <p id={`${id}-error`} className="ui-banner ui-banner--neg" role="alert">
           {problems[field]}
         </p>
       )}
@@ -128,7 +128,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
       onEscape={busy ? undefined : onClose}
     >
       <form onSubmit={submit} noValidate>
-        <div className="portfolio-dialog__body">
+        <div className="ui-modal__body">
           <p className="security-dialog__text">
             Every other browser is signed out. This one stays signed in.
           </p>
@@ -155,12 +155,12 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
             },
           )}
           {problems.form && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {problems.form}
             </p>
           )}
         </div>
-        <div className="portfolio-dialog__foot">
+        <div className="ui-modal__foot">
           <button
             type="button"
             className="shell-button shell-button--ghost"

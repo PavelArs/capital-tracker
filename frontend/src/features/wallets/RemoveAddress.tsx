@@ -69,7 +69,7 @@ export default function RemoveAddress({ id, exchange, onRemoved }: Props) {
             {exchange ? ' The stored API key is deleted.' : ''}
           </p>
           {error && (
-            <p className="wallets-message wallets-message--error" role="alert">
+            <p className="ui-banner ui-banner--neg wallets-message" role="alert">
               {error}
             </p>
           )}

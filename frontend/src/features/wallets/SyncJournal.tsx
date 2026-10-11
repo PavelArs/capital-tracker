@@ -4,18 +4,12 @@ import {
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
 import { useEffect, useState } from 'react';
+import Badge, { type BadgeTone } from '@/ui/Badge';
+import { dayClockText } from '@/utils/dates';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { failureMessage, type SyncRun } from './SyncStatus';
 
-const timeFormat = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  timeZone: 'UTC',
-});
-
-const badges: Record<SyncRunEntry['state'], { label: string; tone: string }> = {
+const badges: Record<SyncRunEntry['state'], { label: string; tone: BadgeTone }> = {
   synced: { label: 'Synced', tone: 'pos' },
   partial: { label: 'Partly loaded', tone: 'info' },
   delayed: { label: 'Delayed', tone: 'warn' },
@@ -82,11 +76,11 @@ export default function SyncJournal({ address, run }: Props) {
         <ul className="wallets-journal">
           {paged.rows.map((entry) => (
             <li key={entry.at}>
-              <span className={`wallets-badge wallets-badge--${badges[entry.state].tone}`}>
+              <Badge tone={badges[entry.state].tone} dot>
                 {badges[entry.state].label}
-              </span>
+              </Badge>
               <time className="wallets-muted" dateTime={entry.at}>
-                {timeFormat.format(new Date(entry.at))} UTC
+                {dayClockText(entry.at)} UTC
               </time>
               <span className="wallets-journal__text">{explain(entry, address)}</span>
             </li>

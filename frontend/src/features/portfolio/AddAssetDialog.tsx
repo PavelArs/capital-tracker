@@ -9,6 +9,9 @@ import {
 import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import Modal from '@/ui/Modal';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { type Account, journalAccounts } from './AddTransactionDialog';
@@ -52,21 +55,19 @@ const problemText: Record<AssetProblem, string> = {
   notes: `Keep the notes within ${MAX_COMMENT_LENGTH} characters`,
   'no-accounts': '',
 };
-// Tab order inside the modal: a radio group is one stop, at its checked radio.
-const focusableFields =
-  'a[href], button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="radio"]), input[type="radio"]:checked:not([disabled])';
-
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
 
-function assetFailure(error: unknown): string {
-  const code = status(error);
-  if (code === undefined)
-    return 'Could not reach the server. Try again; the same request will not add the asset twice.';
-  if (code === 400) return 'Check the fields and try again.';
-  if (code === 409) return 'This request conflicts with an asset already saved. Reload the page.';
-  if (code === 401) return 'Your session has ended. Sign in again.';
-  return 'Could not add the asset. Try again.';
-}
+const assetFailure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable:
+      'Could not reach the server. Try again; the same request will not add the asset twice.',
+    status: {
+      400: 'Check the fields and try again.',
+      409: 'This request conflicts with an asset already saved. Reload the page.',
+      401: 'Your session has ended. Sign in again.',
+    },
+    fallback: 'Could not add the asset. Try again.',
+  });
 
 function balanceFailure(error: unknown): string {
   const code = status(error);
@@ -125,32 +126,8 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const id = useId();
   const nameField = useRef<HTMLInputElement>(null);
 
-  const dialog = useRef<HTMLDivElement>(null);
-  const finish = useRef<() => void>(onClose);
-  finish.current = () => (created ? onAdded(created) : onClose());
-  const busy = useRef(false);
-  busy.current = saving;
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    nameField.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      // Closing mid-save would let a reopened form send a second request id.
-      if (event.key === 'Escape' && !busy.current) finish.current();
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const focusable = [...dialog.current.querySelectorAll<HTMLElement>(focusableFields)];
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-        event.preventDefault();
-        (event.shiftKey ? last : first)?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, []);
+  // Closing mid-save would let a reopened form send a second request id.
+  const finish = () => (created ? onAdded(created) : onClose());
 
   const loadAccounts = () =>
     journalAccounts().then(
@@ -184,7 +161,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const fieldError = (problem: AssetProblem, text = problemText[problem]) =>
     found.has(problem) && (
-      <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
+      <span className="ui-field__error" id={`${id}-${problem}-error`}>
         {text}
       </span>
     );
@@ -336,256 +313,239 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const locked = created !== null;
   const noAccounts = accounts !== null && accounts.length === 0;
   return (
-    <div className="portfolio-scrim">
-      <div
-        ref={dialog}
-        className="portfolio-dialog portfolio-dialog--wide"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-title`}
-      >
-        <form onSubmit={submit} noValidate>
-          <div className="portfolio-dialog__head">
-            <h2 id={`${id}-title`}>Add asset</h2>
-            <CloseButton onClick={() => finish.current()} disabled={saving} />
-            <p className="shell-note">
-              For things the app can't track by itself: cash, a bank deposit, an unsupported coin or
-              anything else.
-            </p>
+    <Modal
+      titleId={`${id}-title`}
+      size="wide"
+      onEscape={saving ? undefined : finish}
+      initialFocus={() => nameField.current}
+    >
+      <form onSubmit={submit} noValidate>
+        <div className="ui-modal__head">
+          <h2 id={`${id}-title`}>Add asset</h2>
+          <CloseButton onClick={finish} disabled={saving} />
+          <p className="shell-note">
+            For things the app can't track by itself: cash, a bank deposit, an unsupported coin or
+            anything else.
+          </p>
+        </div>
+        <div className="ui-modal__body">
+          <div className="ui-field">
+            <span id={`${id}-type`} className="ui-field__label">
+              Type
+            </span>
+            <SegmentedControl
+              name={`${id}-kind`}
+              labelledBy={`${id}-type`}
+              options={assetKinds}
+              value={kind}
+              disabled={locked}
+              onChange={(value) => update({ kind: value })}
+            />
+            <span className="ui-field__hint">{kindHints[kind]}</span>
           </div>
-          <div className="portfolio-dialog__body">
-            <div className="portfolio-field">
-              <span id={`${id}-type`} className="portfolio-field__label">
-                Type
-              </span>
-              <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-type`}>
-                {assetKinds.map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name={`${id}-kind`}
-                      value={value}
-                      checked={kind === value}
-                      disabled={locked}
-                      onChange={() => update({ kind: value })}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              <span className="portfolio-field__hint">{kindHints[kind]}</span>
-            </div>
-            <div className="portfolio-row">
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-name`}>
-                  Name
-                </label>
-                <input
-                  id={`${id}-name`}
-                  ref={nameField}
-                  className="portfolio-input"
-                  maxLength={120}
-                  placeholder={namePlaceholders[kind]}
-                  value={entry.name}
-                  disabled={locked}
-                  onChange={(event) => update({ name: event.target.value })}
-                  onBlur={leave('name')}
-                  {...invalid('name')}
-                />
-                {fieldError('name')}
-              </div>
-              {kind !== 'cash' && (
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-ticker`}>
-                    {crypto ? 'Ticker' : 'Ticker (optional)'}
-                  </label>
-                  <input
-                    id={`${id}-ticker`}
-                    className="portfolio-input"
-                    maxLength={32}
-                    placeholder={crypto ? 'e.g. BTC' : ''}
-                    value={entry.ticker}
-                    disabled={locked}
-                    onChange={(event) => update({ ticker: event.target.value })}
-                    onBlur={leave('ticker')}
-                    {...invalid('ticker')}
-                  />
-                  {fieldError('ticker')}
-                </div>
-              )}
-            </div>
-            <div className="portfolio-row">
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-amount`}>
-                  {amountRequired(kind) ? 'Amount' : 'Amount (optional)'}
-                </label>
-                <input
-                  id={`${id}-amount`}
-                  className="portfolio-input"
-                  inputMode="decimal"
-                  placeholder="e.g. 150000"
-                  value={entry.amount}
-                  disabled={balanceUnsure}
-                  onChange={(event) => update({ amount: event.target.value })}
-                  onBlur={leave('amount')}
-                  {...invalid('amount')}
-                />
-                {fieldError('amount')}
-              </div>
-              {kind !== 'cash' && (
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-value`}>
-                    {crypto ? 'Total cost' : 'Current value'}
-                  </label>
-                  <span className="portfolio-affix">
-                    <input
-                      id={`${id}-value`}
-                      className="portfolio-input"
-                      inputMode="decimal"
-                      placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
-                      value={entry.value}
-                      disabled={balanceUnsure}
-                      onChange={(event) => update({ value: event.target.value })}
-                      onBlur={leave('value')}
-                      {...invalid('value')}
-                    />
-                    <span className="portfolio-affix__suffix">{entry.currency}</span>
-                  </span>
-                  {fieldError('value', crypto ? 'Enter what it cost' : problemText.value)}
-                </div>
-              )}
-            </div>
-            <div className="portfolio-field">
-              <span id={`${id}-currency`} className="portfolio-field__label">
-                {kind === 'cash' ? 'Currency' : crypto ? 'Paid in' : 'Value currency'}
-              </span>
-              <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-currency`}>
-                {currencies.map((code) => (
-                  <label key={code}>
-                    <input
-                      type="radio"
-                      name={`${id}-currency`}
-                      value={code}
-                      checked={entry.currency === code}
-                      disabled={(locked && !crypto) || balanceUnsure}
-                      onChange={() => update({ currency: code })}
-                    />
-                    {code}
-                  </label>
-                ))}
-              </div>
-              <span className="portfolio-field__hint">
-                {kind === 'cash'
-                  ? 'The amount is in this currency; it is also the ticker.'
-                  : crypto
-                    ? 'RUB and EUR are converted at the Bank of Russia rate of today.'
-                    : 'For cash in the same currency, the amount and the value are the same number.'}
-              </span>
-            </div>
-            <div className="portfolio-field">
-              <label
-                className="portfolio-field__label"
-                htmlFor={noAccounts ? `${id}-account-name` : `${id}-account`}
-              >
-                Wallet or account
+          <div className="ui-field-row">
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-name`}>
+                Name
               </label>
-              {accounts === null ? (
-                <span className="portfolio-field__hint" role="status">
-                  Loading your accounts…
-                </span>
-              ) : loadFailed ? (
-                <p className="portfolio-field__error" id={`${id}-no-accounts-error`}>
-                  Could not load your accounts, so a balance cannot be added. Close this window and
-                  try again.
-                </p>
-              ) : noAccounts ? null : (
-                <select
-                  id={`${id}-account`}
-                  className="portfolio-input"
-                  value={entry.accountId}
-                  disabled={balanceUnsure}
-                  onChange={(event) => update({ accountId: event.target.value })}
-                  onBlur={leave('account')}
-                  {...invalid('account')}
-                >
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                  <option value={NEW_ACCOUNT}>New account…</option>
-                </select>
-              )}
-              {entry.accountId === NEW_ACCOUNT && !loadFailed && accounts !== null && (
-                <>
-                  <input
-                    id={`${id}-account-name`}
-                    className="portfolio-input"
-                    aria-label={noAccounts ? undefined : 'Name of the new account'}
-                    placeholder="e.g. Home safe, Bank"
-                    maxLength={MAX_ACCOUNT_NAME}
-                    autoComplete="off"
-                    value={entry.accountName}
-                    disabled={balanceUnsure}
-                    onChange={(event) => update({ accountName: event.target.value })}
-                    onBlur={leave('account-name')}
-                    {...invalid('account-name')}
-                  />
-                  <span className="portfolio-field__hint">
-                    {noAccounts
-                      ? 'You have no account yet. The balance is kept in this one.'
-                      : 'The balance is kept in a new account you can use for more assets later.'}
-                  </span>
-                  {fieldError('account-name')}
-                </>
-              )}
-              {fieldError('account')}
-            </div>
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-notes`}>
-                Notes (optional)
-              </label>
-              <textarea
-                id={`${id}-notes`}
-                className="portfolio-input portfolio-textarea"
-                value={entry.notes}
-                disabled={balanceUnsure}
-                onChange={(event) => update({ notes: event.target.value })}
-                onBlur={leave('notes')}
-                {...invalid('notes')}
+              <input
+                id={`${id}-name`}
+                ref={nameField}
+                className="ui-input"
+                maxLength={120}
+                placeholder={namePlaceholders[kind]}
+                value={entry.name}
+                disabled={locked}
+                onChange={(event) => update({ name: event.target.value })}
+                onBlur={leave('name')}
+                {...invalid('name')}
               />
-              {fieldError('notes')}
+              {fieldError('name')}
             </div>
-            <p className="portfolio-dialog__info" role="note">
-              {crypto
-                ? 'An amount entered here is recorded as a buy today and counts as a deposit. For past purchases, leave it empty and use Add transaction.'
-                : 'Adding it counts as a deposit. Later price changes count as market movement.'}
-            </p>
-            {error && (
-              <p className="portfolio-dialog__error" role="alert">
-                {error}
-              </p>
+            {kind !== 'cash' && (
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-ticker`}>
+                  {crypto ? 'Ticker' : 'Ticker (optional)'}
+                </label>
+                <input
+                  id={`${id}-ticker`}
+                  className="ui-input"
+                  maxLength={32}
+                  placeholder={crypto ? 'e.g. BTC' : ''}
+                  value={entry.ticker}
+                  disabled={locked}
+                  onChange={(event) => update({ ticker: event.target.value })}
+                  onBlur={leave('ticker')}
+                  {...invalid('ticker')}
+                />
+                {fieldError('ticker')}
+              </div>
             )}
           </div>
-          <div className="portfolio-dialog__foot">
-            <button
-              type="button"
-              className="shell-button shell-button--ghost"
-              onClick={() => finish.current()}
-              disabled={saving}
-            >
-              {created ? 'Close' : 'Cancel'}
-            </button>
-            <button
-              type="submit"
-              className="shell-button shell-button--primary"
-              disabled={saving || accounts === null}
-            >
-              Add asset
-            </button>
+          <div className="ui-field-row">
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-amount`}>
+                {amountRequired(kind) ? 'Amount' : 'Amount (optional)'}
+              </label>
+              <input
+                id={`${id}-amount`}
+                className="ui-input"
+                inputMode="decimal"
+                placeholder="e.g. 150000"
+                value={entry.amount}
+                disabled={balanceUnsure}
+                onChange={(event) => update({ amount: event.target.value })}
+                onBlur={leave('amount')}
+                {...invalid('amount')}
+              />
+              {fieldError('amount')}
+            </div>
+            {kind !== 'cash' && (
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-value`}>
+                  {crypto ? 'Total cost' : 'Current value'}
+                </label>
+                <span className="ui-affix">
+                  <input
+                    id={`${id}-value`}
+                    className="ui-input"
+                    inputMode="decimal"
+                    placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
+                    value={entry.value}
+                    disabled={balanceUnsure}
+                    onChange={(event) => update({ value: event.target.value })}
+                    onBlur={leave('value')}
+                    {...invalid('value')}
+                  />
+                  <span className="ui-affix__suffix">{entry.currency}</span>
+                </span>
+                {fieldError('value', crypto ? 'Enter what it cost' : problemText.value)}
+              </div>
+            )}
           </div>
-        </form>
-      </div>
-    </div>
+          <div className="ui-field">
+            <span id={`${id}-currency`} className="ui-field__label">
+              {kind === 'cash' ? 'Currency' : crypto ? 'Paid in' : 'Value currency'}
+            </span>
+            <SegmentedControl
+              name={`${id}-currency`}
+              labelledBy={`${id}-currency`}
+              options={currencies}
+              value={entry.currency}
+              disabled={(locked && !crypto) || balanceUnsure}
+              onChange={(code) => update({ currency: code })}
+            />
+            <span className="ui-field__hint">
+              {kind === 'cash'
+                ? 'The amount is in this currency; it is also the ticker.'
+                : crypto
+                  ? 'RUB and EUR are converted at the Bank of Russia rate of today.'
+                  : 'For cash in the same currency, the amount and the value are the same number.'}
+            </span>
+          </div>
+          <div className="ui-field">
+            <label
+              className="ui-field__label"
+              htmlFor={noAccounts ? `${id}-account-name` : `${id}-account`}
+            >
+              Wallet or account
+            </label>
+            {accounts === null ? (
+              <span className="ui-field__hint" role="status">
+                Loading your accounts…
+              </span>
+            ) : loadFailed ? (
+              <p className="ui-field__error" id={`${id}-no-accounts-error`}>
+                Could not load your accounts, so a balance cannot be added. Close this window and
+                try again.
+              </p>
+            ) : noAccounts ? null : (
+              <select
+                id={`${id}-account`}
+                className="ui-input"
+                value={entry.accountId}
+                disabled={balanceUnsure}
+                onChange={(event) => update({ accountId: event.target.value })}
+                onBlur={leave('account')}
+                {...invalid('account')}
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+                <option value={NEW_ACCOUNT}>New account…</option>
+              </select>
+            )}
+            {entry.accountId === NEW_ACCOUNT && !loadFailed && accounts !== null && (
+              <>
+                <input
+                  id={`${id}-account-name`}
+                  className="ui-input"
+                  aria-label={noAccounts ? undefined : 'Name of the new account'}
+                  placeholder="e.g. Home safe, Bank"
+                  maxLength={MAX_ACCOUNT_NAME}
+                  autoComplete="off"
+                  value={entry.accountName}
+                  disabled={balanceUnsure}
+                  onChange={(event) => update({ accountName: event.target.value })}
+                  onBlur={leave('account-name')}
+                  {...invalid('account-name')}
+                />
+                <span className="ui-field__hint">
+                  {noAccounts
+                    ? 'You have no account yet. The balance is kept in this one.'
+                    : 'The balance is kept in a new account you can use for more assets later.'}
+                </span>
+                {fieldError('account-name')}
+              </>
+            )}
+            {fieldError('account')}
+          </div>
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor={`${id}-notes`}>
+              Notes (optional)
+            </label>
+            <textarea
+              id={`${id}-notes`}
+              className="ui-input ui-textarea"
+              value={entry.notes}
+              disabled={balanceUnsure}
+              onChange={(event) => update({ notes: event.target.value })}
+              onBlur={leave('notes')}
+              {...invalid('notes')}
+            />
+            {fieldError('notes')}
+          </div>
+          <p className="ui-modal__info" role="note">
+            {crypto
+              ? 'An amount entered here is recorded as a buy today and counts as a deposit. For past purchases, leave it empty and use Add transaction.'
+              : 'Adding it counts as a deposit. Later price changes count as market movement.'}
+          </p>
+          {error && (
+            <p className="ui-banner ui-banner--neg" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="ui-modal__foot">
+          <button
+            type="button"
+            className="shell-button shell-button--ghost"
+            onClick={finish}
+            disabled={saving}
+          >
+            {created ? 'Close' : 'Cancel'}
+          </button>
+          <button
+            type="submit"
+            className="shell-button shell-button--primary"
+            disabled={saving || accounts === null}
+          >
+            Add asset
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -7,6 +7,9 @@ import { type TradeVersion, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Badge from '@/ui/Badge';
+import Drawer from '@/ui/Drawer';
+import Modal from '@/ui/Modal';
 import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
@@ -450,8 +453,6 @@ function facts(
 
 const essential = new Set(['Date', 'Network', 'Wallet', 'From', 'To']);
 
-const focusable = 'a[href], button:not([disabled])';
-
 const versionLabels: Record<TradeVersion['kind'], string> = {
   create: 'Added',
   correct: 'Changed',
@@ -501,7 +502,6 @@ export default function OperationDrawer({
   notice = null,
 }: Props) {
   const pages = useAssetPages(currency);
-  const drawer = useRef<HTMLDivElement>(null);
   const modal = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const deleteButton = useRef<HTMLButtonElement>(null);
@@ -521,37 +521,13 @@ export default function OperationDrawer({
     busy: false,
     error: null,
   });
-  const close = useRef(onClose);
-  close.current = onClose;
-  const dismiss = useRef<() => void>(() => undefined);
-  dismiss.current = () => {
+  // Cancel or OK closes the confirmation and gives the keyboard back to Delete; a deletion in
+  // flight cannot be dismissed.
+  const dismiss = () => {
     if (confirm?.step === 'deleting') return;
-    if (confirm) {
-      setConfirm(null);
-      deleteButton.current?.focus();
-    } else close.current();
+    setConfirm(null);
+    deleteButton.current?.focus();
   };
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButton.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss.current();
-      const scope = modal.current ?? drawer.current;
-      if (event.key !== 'Tab' || !scope) return;
-      const items = [...scope.querySelectorAll<HTMLElement>(focusable)];
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-        event.preventDefault();
-        (event.shiftKey ? last : first)?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, []);
   const step = confirm?.step;
   useEffect(() => {
     if (step) modal.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
@@ -694,18 +670,16 @@ export default function OperationDrawer({
   const summary = (
     <>
       {notice && (
-        <p className="transactions-notice" role="status">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
         </p>
       )}
       <div className="transactions-hero">
-        <span
-          className={`transactions-badge${needs ? ' transactions-badge--warn' : hidden || dust ? ' transactions-badge--muted' : ''}`}
-        >
+        <Badge tone={needs ? 'warn' : hidden || dust ? 'muted' : 'neutral'} dot={needs}>
           {needs || hidden || dust
             ? statusLabels[operation.status]
             : `${sourceLabel(operation)} · ${typeLabel(operation)}`}
-        </span>
+        </Badge>
         <span className="transactions-hero__amount">{signedAmount(operation)}</span>
         {operation.counterAsset && operation.counterQuantity && (
           <span className="transactions-hero__amount">
@@ -715,7 +689,7 @@ export default function OperationDrawer({
         <span className="transactions-hero__value">{value ?? `Value ${DASH}`}</span>
       </div>
       {stakeMove && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           {operation.type === 'stake'
             ? `Moved into ${stakePlace(operation)}: the coins stay yours and keep their purchase price.`
             : `Returned from ${stakePlace(operation)}: not income and not a deposit, rewards count as they are earned.`}{' '}
@@ -723,13 +697,13 @@ export default function OperationDrawer({
         </p>
       )}
       {operation.status === 'recorded' && operation.type === 'pool-deposit' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Moved into a liquidity pool: the coins stay yours and keep their purchase price until a
           pool withdrawal returns them. Only the network fee is a cost.
         </p>
       )}
       {operation.status === 'recorded' && operation.type === 'pool-withdrawal' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Returned from a liquidity pool:{' '}
           {operation.pool?.partial ? 'a part of the deposit' : 'the deposit'} comes back as your own
           coins, not income and not a deposit.
@@ -746,20 +720,20 @@ export default function OperationDrawer({
         </p>
       )}
       {record && operation.status === 'recorded' && operation.type !== 'transfer' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Already recorded by hand or from CSV: this transaction doesn't count on its own, so its
           coins are not counted twice. Change the classification if it is wrong.
         </p>
       )}
       {record && operation.status === 'recorded' && operation.type === 'transfer' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           These coins moved to {record.account?.name ?? 'that account'} and paid for the purchase
           you added there, so the purchase is not new money. Change the classification if it is
           wrong.
         </p>
       )}
       {dust && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Worth less than your dust threshold, or a token no price source lists, so it doesn't ask
           to be classified. It still counts in your balance. Classify it if it matters, or hide it.
         </p>
@@ -767,7 +741,7 @@ export default function OperationDrawer({
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
         (operation.type === 'buy' || operation.type === 'sell') && (
-          <p className="transactions-notice" role="note">
+          <p className="ui-banner ui-banner--pos transactions-notice" role="note">
             Recognised automatically from Bybit's{' '}
             {operation.chain?.txid.startsWith('bybit-trade-convert-')
               ? 'convert history'
@@ -784,7 +758,7 @@ export default function OperationDrawer({
         operation.status === 'recorded' &&
         operation.type === 'staking-reward' &&
         operation.wallet?.network === 'bybit' && (
-          <p className="transactions-notice" role="note">
+          <p className="ui-banner ui-banner--pos transactions-notice" role="note">
             Recognised automatically from Bybit's Earn yield history: counts as staking income at
             the coin's price when Bybit paid it. Change the classification if it is wrong.
           </p>
@@ -792,7 +766,7 @@ export default function OperationDrawer({
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
         operation.counterAccount && (
-          <p className="transactions-notice" role="note">
+          <p className="ui-banner ui-banner--pos transactions-notice" role="note">
             Recognised automatically: both addresses belong to your wallets and{' '}
             {operation.counterAccount.name} received the same amount minus the network fee. Counts
             as a transfer, not a sale or a deposit.
@@ -829,16 +803,13 @@ export default function OperationDrawer({
   );
   return (
     <>
-      <div className="transactions-scrim" aria-hidden="true" onClick={() => dismiss.current()} />
-      <div
-        ref={drawer}
-        className="transactions-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="operation-title"
-        aria-hidden={confirm ? true : undefined}
+      <Drawer
+        titleId="operation-title"
+        onClose={onClose}
+        initialFocus={() => closeButton.current}
+        covered={confirm !== null}
       >
-        <div className="transactions-drawer__head">
+        <div className="ui-drawer__head">
           <h2 id="operation-title">{title(operation, pages)}</h2>
           <CloseButton buttonRef={closeButton} onClick={onClose} />
         </div>
@@ -859,7 +830,7 @@ export default function OperationDrawer({
           </ClassifyForm>
         ) : (
           <>
-            <div className="transactions-drawer__body">
+            <div className="ui-drawer__body">
               {summary}
               {trade && history && history.length > 1 && (
                 <section aria-labelledby="operation-history">
@@ -893,13 +864,13 @@ export default function OperationDrawer({
                 </p>
               )}
               {toggling.error && (
-                <p className="portfolio-dialog__error" role="alert">
+                <p className="ui-banner ui-banner--neg" role="alert">
                   {toggling.error}
                 </p>
               )}
             </div>
             {chain ? (
-              <div className="transactions-drawer__foot">
+              <div className="ui-drawer__foot">
                 {!stakeMove && (
                   <button
                     type="button"
@@ -929,7 +900,7 @@ export default function OperationDrawer({
                 </button>
               </div>
             ) : changeable ? (
-              <div className="transactions-drawer__foot">
+              <div className="ui-drawer__foot">
                 <button
                   ref={deleteButton}
                   type="button"
@@ -952,68 +923,67 @@ export default function OperationDrawer({
             ) : null}
           </>
         )}
-      </div>
+      </Drawer>
       {confirm && (
-        <div className="portfolio-scrim transactions-confirm">
-          <div
-            ref={modal}
-            className="portfolio-dialog portfolio-dialog--narrow"
-            role={confirm.step === 'blocked' ? 'alertdialog' : 'dialog'}
-            aria-modal="true"
-            aria-labelledby="operation-confirm-title"
-            aria-describedby="operation-confirm-text"
-          >
-            <div className="portfolio-dialog__head">
-              <h2 id="operation-confirm-title">
-                {confirm.step === 'blocked'
-                  ? `This ${purchase ? 'purchase' : 'transaction'} can't be deleted`
-                  : 'Delete this transaction?'}
-              </h2>
-            </div>
-            <div className="portfolio-dialog__body">
-              <p id="operation-confirm-text" className="transactions-confirm__text">
-                {confirm.step === 'blocked'
-                  ? `${confirm.dependent} spends these ${ticker(operation.asset)}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
-                  : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
+        <Modal
+          titleId="operation-confirm-title"
+          size="narrow"
+          role={confirm.step === 'blocked' ? 'alertdialog' : 'dialog'}
+          describedBy="operation-confirm-text"
+          onEscape={dismiss}
+          overDrawer
+          boxRef={modal}
+        >
+          <div className="ui-modal__head">
+            <h2 id="operation-confirm-title">
+              {confirm.step === 'blocked'
+                ? `This ${purchase ? 'purchase' : 'transaction'} can't be deleted`
+                : 'Delete this transaction?'}
+            </h2>
+          </div>
+          <div className="ui-modal__body">
+            <p id="operation-confirm-text" className="transactions-confirm__text">
+              {confirm.step === 'blocked'
+                ? `${confirm.dependent} spends these ${ticker(operation.asset)}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
+                : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
+            </p>
+            {confirm.step === 'ask' && confirm.error && (
+              <p className="ui-banner ui-banner--neg" role="alert">
+                {confirm.error}
               </p>
-              {confirm.step === 'ask' && confirm.error && (
-                <p className="portfolio-dialog__error" role="alert">
-                  {confirm.error}
-                </p>
-              )}
-            </div>
-            <div className="portfolio-dialog__foot">
-              {confirm.step === 'blocked' ? (
+            )}
+          </div>
+          <div className="ui-modal__foot">
+            {confirm.step === 'blocked' ? (
+              <button
+                type="button"
+                className="shell-button shell-button--primary"
+                onClick={dismiss}
+              >
+                OK
+              </button>
+            ) : (
+              <>
                 <button
                   type="button"
-                  className="shell-button shell-button--primary"
-                  onClick={() => dismiss.current()}
+                  className="shell-button shell-button--ghost"
+                  disabled={confirm.step === 'deleting'}
+                  onClick={dismiss}
                 >
-                  OK
+                  Cancel
                 </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="shell-button shell-button--ghost"
-                    disabled={confirm.step === 'deleting'}
-                    onClick={() => dismiss.current()}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="shell-button shell-button--danger"
-                    disabled={confirm.step === 'deleting'}
-                    onClick={() => void remove()}
-                  >
-                    {confirm.step === 'deleting' ? 'Deleting…' : 'Delete transaction'}
-                  </button>
-                </>
-              )}
-            </div>
+                <button
+                  type="button"
+                  className="shell-button shell-button--danger"
+                  disabled={confirm.step === 'deleting'}
+                  onClick={() => void remove()}
+                >
+                  {confirm.step === 'deleting' ? 'Deleting…' : 'Delete transaction'}
+                </button>
+              </>
+            )}
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );

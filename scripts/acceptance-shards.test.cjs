@@ -72,6 +72,7 @@ const legacyChecks = [
   'zcash-wallets-db',
   'evm-chains-db',
   'wallet-removal-db',
+  'bank-deposits-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',

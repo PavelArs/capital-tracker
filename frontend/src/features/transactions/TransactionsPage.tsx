@@ -3,6 +3,8 @@ import type { Operation, OperationList, OperationRange } from '@api/operations.a
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import Badge from '@/ui/Badge';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
@@ -34,10 +36,11 @@ import PeriodFilter from './PeriodFilter';
 import { periodOf } from './period';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
-import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
+import EmptyState from '@/ui/EmptyState';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 
 type StatusView = 'needs-classification' | 'hidden' | 'dust';
 type View = 'all' | StatusView | Operation['source'];
@@ -202,11 +205,9 @@ function StatusCell({ operation }: { operation: Operation }) {
   return (
     <td>
       {needs || muted ? (
-        <span
-          className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
-        >
+        <Badge tone={needs ? 'warn' : 'muted'} dot={needs}>
           {needs ? 'To classify' : statusLabels[operation.status]}
-        </span>
+        </Badge>
       ) : (
         <span className="transactions-status">
           <Glyph name="check" />
@@ -282,7 +283,7 @@ function OperationRow({
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
       </td>
-      <td className="portfolio-num">
+      <td className="ui-num">
         {signedQuantity(operation)}
         {operation.counterAsset && operation.counterQuantity && (
           <span className="portfolio-sub">
@@ -290,7 +291,7 @@ function OperationRow({
           </span>
         )}
       </td>
-      <td className="portfolio-num">
+      <td className="ui-num">
         <ValueCell operation={operation} currency={currency} />
       </td>
       <td className="transactions-wrap transactions-place">
@@ -347,35 +348,33 @@ function OperationItem({
   ].join(' ');
   return (
     <li data-operation={operation.id} aria-current={current || undefined}>
-      <button
-        type="button"
-        className={`transactions-item${needs ? ' transactions-item--needs' : ''}${current ? ' transactions-item--open' : ''}`}
-        onClick={onOpen}
-      >
+      <button type="button" className={rowClass({ warn: needs, open: current })} onClick={onOpen}>
         <AssetIcon
           symbol={operation.asset.symbol}
           name={operation.asset.name}
           network={operation.asset.network}
         />
-        <span className="transactions-item__main">
-          <span className="transactions-item__title">{title}</span>
-          {needs ? (
-            <span className="transactions-badge transactions-badge--warn transactions-item__badge">
-              To classify
-            </span>
-          ) : (
-            <span className="transactions-item__detail">
-              {(operation.status === 'hidden' || operation.status === 'dust') &&
-                `${statusLabels[operation.status]} · `}
-              {placeLabel(operation)}
-              {at !== 'No time' && ` · ${at}`}
-            </span>
-          )}
-        </span>
-        <span className="transactions-item__side">
-          <span className="transactions-item__amount">{signedQuantity(operation)}</span>
-          <span className="transactions-item__value">{phoneValue(operation, currency)}</span>
-        </span>
+        <ListRowText
+          title={title}
+          detail={
+            needs ? (
+              <Badge tone="warn" dot>
+                To classify
+              </Badge>
+            ) : (
+              [
+                (operation.status === 'hidden' || operation.status === 'dust') &&
+                  statusLabels[operation.status],
+                placeLabel(operation),
+                at !== 'No time' && at,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            )
+          }
+          amount={signedQuantity(operation)}
+          value={phoneValue(operation, currency)}
+        />
       </button>
     </li>
   );
@@ -682,13 +681,9 @@ export default function TransactionsPage() {
   return (
     <div className="shell-page">
       {/* The header's switch sets ?currency=; the list reloads in that currency. */}
-      <PageHeader
-        title="Transactions"
-        currency={list?.quoteCurrency}
-        onTransactionSaved={changed}
-      />
+      <PageHeader title="Transactions" currency={list?.quoteCurrency} onAddTransaction={changed} />
       {notice && !opened && (
-        <p className="transactions-notice" role="status">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
         </p>
       )}
@@ -722,23 +717,23 @@ export default function TransactionsPage() {
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
       ) : operations.length === 0 && !period ? (
-        <section className="shell-card shell-empty" aria-labelledby="transactions-empty">
-          <h2 id="transactions-empty">No transactions yet</h2>
-          <p>
-            Purchases, sales and transfers you record and transactions found in your wallets appear
-            here.
-          </p>
-          {/* Add transaction is in the page header. */}
-          <div className="transactions-actions">
+        // Add transaction is in the page header.
+        <EmptyState
+          id="transactions-empty"
+          title="No transactions yet"
+          actions={
             <Link className="shell-button" to="/wallets">
               Open wallets
             </Link>
-          </div>
-        </section>
+          }
+        >
+          Purchases, sales and transfers you record and transactions found in your wallets appear
+          here.
+        </EmptyState>
       ) : (
         <section className="shell-card" aria-label="All transactions" ref={listRef}>
-          <div className="portfolio-toolbar">
-            <div className="portfolio-chips" role="group" aria-label="Filter transactions">
+          <div className="ui-toolbar">
+            <div className="ui-chips" role="group" aria-label="Filter transactions">
               {views.map(([key, label]) => {
                 // OPS-COUNTS: what the chip would show with the other filters as they are.
                 const count = operations.filter(
@@ -751,12 +746,12 @@ export default function TransactionsPage() {
                   <button
                     key={key}
                     type="button"
-                    className={`portfolio-chip${key === 'needs-classification' && count > 0 ? ' transactions-chip--warn' : ''}`}
+                    className={`ui-chip${key === 'needs-classification' && count > 0 ? ' transactions-chip--warn' : ''}`}
                     aria-pressed={view === key}
                     onClick={() => setView(key)}
                   >
                     {label}
-                    <span className="portfolio-chip__count"> {count}</span>
+                    <span className="ui-chip__count"> {count}</span>
                   </button>
                 );
               })}
@@ -840,7 +835,7 @@ export default function TransactionsPage() {
               </button>
             </div>
           ) : narrow ? (
-            <ol className="transactions-list" aria-label="Transactions">
+            <ol className="ui-rows transactions-list" aria-label="Transactions">
               {days.map((group) => (
                 <li key={group.heading} className="transactions-list__day">
                   <h2 className="transactions-list__heading">{group.heading}</h2>
@@ -859,8 +854,8 @@ export default function TransactionsPage() {
               ))}
             </ol>
           ) : (
-            <div className="portfolio-table-wrap">
-              <table className="portfolio-table transactions-table" aria-label="Transactions">
+            <div className="ui-table-wrap">
+              <table className="ui-table transactions-table" aria-label="Transactions">
                 <colgroup>
                   {columns.map((column) => (
                     <col key={column} className={`transactions-col--${column}`} />
@@ -870,10 +865,10 @@ export default function TransactionsPage() {
                   <tr>
                     <th scope="col">Type</th>
                     <th scope="col">Asset</th>
-                    <th scope="col" className="portfolio-num">
+                    <th scope="col" className="ui-num">
                       Amount
                     </th>
-                    <th scope="col" className="portfolio-num">
+                    <th scope="col" className="ui-num">
                       Value
                     </th>
                     <th scope="col">Account</th>

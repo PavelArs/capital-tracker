@@ -53,8 +53,8 @@ function renderAt(path: string, page = <PageHeader title="Transactions" />) {
 const switcher = () => screen.getByRole('radiogroup', { name: 'Currency' });
 
 describe('Shared page header', () => {
-  it('shows the title, the main currency and Add transaction on any page', async () => {
-    renderAt('/wallets');
+  it('shows the title, the main currency and Add transaction where the page asks for it', async () => {
+    renderAt('/transactions', <PageHeader title="Transactions" onAddTransaction={() => {}} />);
     expect(screen.getByRole('heading', { level: 1, name: 'Transactions' })).toBeInTheDocument();
     await waitFor(() =>
       expect(within(switcher()).getByRole('radio', { name: 'EUR' })).toBeChecked(),
@@ -64,6 +64,12 @@ describe('Shared page header', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Add transaction' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('leaves Add transaction to the Transactions page', () => {
+    renderAt('/wallets', <PageHeader title="Wallets" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add transaction' })).toBeNull();
   });
 
   it('switches the currency in the address and keeps the other parameters', async () => {

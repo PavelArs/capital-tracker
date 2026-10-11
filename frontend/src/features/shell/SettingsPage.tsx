@@ -7,6 +7,8 @@ import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { dayText } from '@/utils/dates';
 import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
 import HiddenAssets from '../portfolio/HiddenAssets';
@@ -23,13 +25,6 @@ const themeChoices = [
   ['dark', 'Dark'],
   ['light', 'Light'],
 ] as const;
-
-const rateDate = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
 
 /** The room a hint takes once it arrives, held empty so the cards below do not move. */
 function PendingHint({ id, long }: { id?: string; long?: boolean }) {
@@ -48,7 +43,7 @@ function ratesHint(report: FxRatesReport | 'failed'): string {
   if (report === 'failed') return 'Could not load the Bank of Russia rates.';
   const known = report.rates.flatMap((rate) =>
     rate.rubPerUnit && rate.date
-      ? [`${rateText(rate.currency, rate.rubPerUnit)} (${rateDate.format(new Date(rate.date))})`]
+      ? [`${rateText(rate.currency, rate.rubPerUnit)} (${dayText(rate.date)})`]
       : [],
   );
   const text = known.length
@@ -135,26 +130,15 @@ function MainCurrency() {
           <p className="shell-setting__hint">{ratesHint(rates)}</p>
         )}
       </div>
-      <div
-        className="shell-seg"
-        role="radiogroup"
-        aria-labelledby="settings-currency"
-        aria-describedby="settings-currency-hint"
-      >
-        {accountingCurrencies.map((currency) => (
-          <label key={currency}>
-            <input
-              type="radio"
-              name="main-currency"
-              value={currency}
-              checked={saved === currency}
-              disabled={saved === null}
-              onChange={() => void choose(currency)}
-            />
-            {currency}
-          </label>
-        ))}
-      </div>
+      <SegmentedControl
+        name="main-currency"
+        labelledBy="settings-currency"
+        describedBy="settings-currency-hint"
+        options={accountingCurrencies}
+        value={saved}
+        disabled={saved === null}
+        onChange={(currency) => void choose(currency)}
+      />
     </div>
   );
 }
@@ -318,25 +302,14 @@ export default function SettingsPage() {
                   : 'Saved in this browser'}
               </p>
             </div>
-            <div
-              className="shell-seg"
-              role="radiogroup"
-              aria-labelledby="settings-theme"
-              aria-describedby="settings-theme-hint"
-            >
-              {themeChoices.map(([value, label]) => (
-                <label key={value}>
-                  <input
-                    type="radio"
-                    name="theme"
-                    value={value}
-                    checked={theme === value}
-                    onChange={() => setTheme(value)}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
+            <SegmentedControl
+              name="theme"
+              labelledBy="settings-theme"
+              describedBy="settings-theme-hint"
+              options={themeChoices}
+              value={theme}
+              onChange={setTheme}
+            />
           </div>
           <MainCurrency />
         </section>

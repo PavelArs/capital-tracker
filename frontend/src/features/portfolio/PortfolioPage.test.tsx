@@ -1118,10 +1118,10 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
       // The whole row opens the asset; price, allocation, average and 24h live on its page.
       expect(row).toHaveAttribute('href', `/portfolio/${bitcoin.instrumentId}`);
-      expect(row).toHaveTextContent('Bitcoin$96,000.001.2 BTC+$30,000.00 · +45.45%');
+      expect(row).toHaveTextContent('Bitcoin1.2 BTC$96,000.00+$30,000.00 · +45.45%');
       expect(screen.queryByRole('table')).toBeNull();
       const order = () =>
-        [...document.querySelectorAll('.portfolio-list__name')].map((name) => name.textContent);
+        [...document.querySelectorAll('.ui-row__title')].map((name) => name.textContent);
       expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
       const sort = screen.getByRole('combobox', { name: 'Sort by' });
       await user.selectOptions(sort, 'Name');

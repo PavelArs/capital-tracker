@@ -1,7 +1,7 @@
 import type { Operation } from '@api/operations.api';
 import { operationsApi } from '@api/operations.api';
-import { isAxiosError } from 'axios';
 import { useState } from 'react';
+import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { Icon } from '../shell/icons';
 import { isCountedGap } from './operation-format';
@@ -13,15 +13,15 @@ interface Props {
   onDeleted: () => void;
 }
 
-function failure(error: unknown): string {
-  const status = isAxiosError(error) ? error.response?.status : undefined;
-  if (status === undefined) return 'Could not reach the server. Nothing was deleted; try again.';
-  if (status === 409)
-    return 'This record was changed elsewhere. Close this window, reload and try again.';
-  if (status === 422)
-    return 'This record has an answer. Change it to "Needs classification" first, then delete it.';
-  return 'Could not delete the record. Try again.';
-}
+const failure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable: 'Could not reach the server. Nothing was deleted; try again.',
+    status: {
+      409: 'This record was changed elsewhere. Close this window, reload and try again.',
+      422: 'This record has an answer. Change it to "Needs classification" first, then delete it.',
+    },
+    fallback: 'Could not delete the record. Try again.',
+  });
 
 /**
  * BYBIT-GAP-DELETE: a record the owner made by counting a Bybit balance difference is their own
@@ -54,7 +54,7 @@ export default function RemoveCounted({ operation, disabled = false, onDeleted }
     return (
       <>
         {error && (
-          <span className="portfolio-dialog__error" role="alert">
+          <span className="ui-banner ui-banner--neg" role="alert">
             {error}
           </span>
         )}

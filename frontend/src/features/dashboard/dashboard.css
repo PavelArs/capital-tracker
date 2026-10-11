@@ -74,7 +74,7 @@
   padding: 18px 22px 14px;
 }
 
-.dashboard-chart-card .portfolio-toolbar {
+.dashboard-chart-card .ui-toolbar {
   margin-bottom: var(--sp-4);
 }
 
@@ -340,17 +340,6 @@
   color: var(--ink-2);
   font-size: var(--fs-xs);
   line-height: 1.5;
-}
-
-.dashboard-empty__actions .shell-button {
-  font-family: inherit;
-}
-
-.dashboard-empty__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
 }
 
 /* Loading: grey blocks in the place of the net worth and the chart. */

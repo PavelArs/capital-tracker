@@ -1,4 +1,5 @@
 import type { ProviderFailure, WalletAddress } from '@api/wallet-addresses.api';
+import Badge from '@/ui/Badge';
 import { age } from '../portfolio/format';
 import { networkOf } from './networks';
 
@@ -37,10 +38,10 @@ export function failureMessage(
   }
 }
 
-type Badge = { label: string; tone: 'pos' | 'info' | 'warn' | 'neg' | 'neutral' };
+type SyncState = { label: string; tone: 'pos' | 'info' | 'warn' | 'neg' | 'neutral' };
 
 /** The background job's view first (M11), then what the page itself is doing. */
-export function syncBadge(address: WalletAddress, run: SyncRun | undefined): Badge {
+export function syncBadge(address: WalletAddress, run: SyncRun | undefined): SyncState {
   if (run?.state === 'running') return { label: 'Syncing', tone: 'info' };
   if (run?.state === 'failed') return { label: 'Sync failed', tone: 'neg' };
   const { status, state } = address.sync;
@@ -54,7 +55,11 @@ export function syncBadge(address: WalletAddress, run: SyncRun | undefined): Bad
 
 export function SyncBadge({ address, run }: { address: WalletAddress; run?: SyncRun }) {
   const { label, tone } = syncBadge(address, run);
-  return <span className={`wallets-badge wallets-badge--${tone}`}>{label}</span>;
+  return (
+    <Badge tone={tone} dot>
+      {label}
+    </Badge>
+  );
 }
 
 /** The last time the whole history was up to date, if ever. */

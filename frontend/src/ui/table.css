@@ -1,0 +1,91 @@
+/* The desktop table on a card. The wrap reaches 8 px past the card's text and scrolls sideways
+   only when the columns cannot fit. */
+.ui-table-wrap {
+  margin: 0 -8px;
+  overflow-x: auto;
+}
+
+/* The prototype table sits on the card: no fill, no header band, no underlines of the old
+   global table rules (index.css). */
+.ui-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: transparent;
+}
+
+.ui-table tr:hover {
+  background: transparent;
+}
+
+.ui-table th {
+  padding: 8px 12px;
+  background: transparent;
+  border-bottom: 0;
+  color: var(--ink-3);
+  font-weight: 500;
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ui-th-sort {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ui-th-sort:hover,
+.ui-th-sort[data-active="true"] {
+  color: var(--ink);
+}
+
+/* The arrow hangs beside the label, so choosing a column does not move the columns. */
+.ui-th-sort__arrow {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  margin-right: 2px;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+th:first-child .ui-th-sort__arrow {
+  right: auto;
+  left: 100%;
+  margin: 0 0 0 2px;
+}
+
+.ui-th-sort:hover .ui-th-sort__arrow {
+  opacity: 0.4;
+}
+
+.ui-th-sort[data-active="true"] .ui-th-sort__arrow {
+  opacity: 1;
+}
+
+.ui-th-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.ui-table td {
+  padding: 11px 12px;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  white-space: nowrap;
+}
+
+.ui-table tbody tr:hover td {
+  background: var(--raised);
+}
+
+.ui-table .ui-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

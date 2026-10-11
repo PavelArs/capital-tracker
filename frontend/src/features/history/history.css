@@ -28,34 +28,8 @@
   text-align: left;
 }
 
-.history-table th.portfolio-num {
+.history-table th.ui-num {
   text-align: left;
-}
-
-.history-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--raised);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.history-badge--created {
-  background: var(--pos-soft);
-  box-shadow: none;
-  color: var(--pos);
-}
-
-.history-badge--deleted {
-  background: var(--neg-soft);
-  box-shadow: none;
-  color: var(--neg);
 }
 
 .history-date {
@@ -85,12 +59,8 @@
   padding-top: var(--sp-4);
 }
 
-.transactions-hero .history-badge {
-  justify-self: start;
-}
-
 /* A mark that is no asset (deposit, price) lines up with the 32 px asset icons on phones. */
-.transactions-item > .transactions-type-icon {
+.ui-row > .transactions-type-icon {
   width: 32px;
   height: 32px;
 }

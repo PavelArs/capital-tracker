@@ -74,18 +74,18 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
       onEscape={busy ? undefined : onClose}
     >
       <form onSubmit={generate} noValidate>
-        <div className="portfolio-dialog__body">
+        <div className="ui-modal__body">
           <p className="security-dialog__text">
             Your {unused} unused {unused === 1 ? 'code stops' : 'codes stop'} working as soon as the
             new ones are made. You see the new codes only once.
           </p>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="security-totp">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="security-totp">
               Code from your authenticator app
             </label>
             <input
               id="security-totp"
-              className="portfolio-input security-otp"
+              className="ui-input security-otp"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={7}
@@ -96,12 +96,12 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
             />
           </div>
           {error && (
-            <p id="security-totp-error" className="portfolio-dialog__error" role="alert">
+            <p id="security-totp-error" className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}
         </div>
-        <div className="portfolio-dialog__foot">
+        <div className="ui-modal__foot">
           <button
             type="button"
             className="shell-button shell-button--ghost"
@@ -154,7 +154,7 @@ export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownC
 
   return (
     <SecurityDialog title={title} titleId={titleId}>
-      <div className="portfolio-dialog__body">
+      <div className="ui-modal__body">
         {lead}
         <p className="security-note security-note--warn">
           <Icon name="alert" className="shell-icon shell-icon--sm" />
@@ -185,12 +185,12 @@ export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownC
           I have saved these codes
         </label>
         {error && (
-          <p className="portfolio-dialog__error" role="alert">
+          <p className="ui-banner ui-banner--neg" role="alert">
             {error}
           </p>
         )}
       </div>
-      <div className="portfolio-dialog__foot">
+      <div className="ui-modal__foot">
         <button type="button" className="shell-button shell-button--primary" onClick={done}>
           Done
         </button>

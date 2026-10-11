@@ -10,6 +10,7 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
@@ -35,13 +36,7 @@ import { assetCaption, Change, Signed } from './PortfolioPage';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
-
-const dateFormat = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
+import EmptyState from '@/ui/EmptyState';
 
 /** Where the price came from and how fresh it is. */
 function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: Date): string {
@@ -58,7 +53,7 @@ function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: D
       ? `Fixed: one unit is one ${currency}`
       : `Fixed: one ${asset.valuationCurrency} at today's Bank of Russia rate`;
   if (current.status === 'manual')
-    return `Manual price set for ${dateFormat.format(new Date(current.observedAt ?? ''))}`;
+    return `Manual price set for ${dayText(current.observedAt ?? '')}`;
   const when = current.observedAt ? age(current.observedAt, now) : '';
   return `${sourceName(current.source)} · ${current.status === 'stale' ? 'stale, ' : ''}updated ${when}`;
 }
@@ -156,7 +151,7 @@ function ValueChart({
   const unit = asset.symbol ?? asset.name;
   return (
     <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <div className="dashboard-chart-card__name">
           <div className="dashboard-legend" aria-label="Chart legend">
             <span>
@@ -249,7 +244,7 @@ function AssetTransactions({
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id="asset-transactions">Transactions</h2>
         {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
       </div>
@@ -279,7 +274,7 @@ function AssetTransactions({
                     {day(operation.occurredAt)} · {placeLabel(operation)}
                   </span>
                 </span>
-                <span className="portfolio-num">
+                <span className="ui-num">
                   {movedAmount(operation, key)}
                   {operation.value !== null && typeof operations === 'object' && (
                     <span className="portfolio-sub">
@@ -409,7 +404,7 @@ function AssetDetails({
           </Stat>
         </dl>
         {unknown && (
-          <p className="portfolio-warn portfolio-warn--action" role="note">
+          <p className="ui-banner ui-banner--warn ui-banner--action portfolio-warn" role="note">
             <Icon name="alert" className="shell-icon shell-icon--sm" />
             <span>
               {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
@@ -425,14 +420,14 @@ function AssetDetails({
           </p>
         )}
         {missingRate && (
-          <p className="portfolio-warn" role="note">
+          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
             {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
             rates, so its cost in {currency} is unknown. Known cost:{' '}
             {amount(asset.knownCostSubtotal)}.
           </p>
         )}
         {asset.unknownRealizedCount > 0 && (
-          <p className="portfolio-warn" role="note">
+          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
             A sale used coins without a purchase price or a stored rate, so realized P&amp;L is
             unknown. Known part: {amount(asset.knownRealizedSubtotal, true)}.
           </p>
@@ -441,7 +436,7 @@ function AssetDetails({
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
       <div className="portfolio-split">
         <section className="shell-card" aria-labelledby="asset-holdings">
-          <div className="portfolio-toolbar">
+          <div className="ui-toolbar">
             <h2 id="asset-holdings">Holdings</h2>
             <span className="portfolio-sub">Where this balance sits</span>
           </div>
@@ -462,7 +457,7 @@ function AssetDetails({
                       </Link>
                       {kind && <span className="portfolio-sub">{kindLabels[kind]}</span>}
                     </span>
-                    <span className="portfolio-num">
+                    <span className="ui-num">
                       {quantity(holding.quantity)} {unit}
                       <span className="portfolio-sub">{amount(holding.value)}</span>
                     </span>
@@ -545,14 +540,7 @@ export default function AssetPage() {
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
     <div className="shell-page">
-      <PageHeader
-        title={asset?.name ?? 'Asset'}
-        currency={portfolio?.currency}
-        onTransactionSaved={() => {
-          void load();
-          void loadOperations();
-        }}
-      />
+      <PageHeader title={asset?.name ?? 'Asset'} currency={portfolio?.currency} />
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
@@ -586,10 +574,9 @@ export default function AssetPage() {
           now={new Date()}
         />
       ) : (
-        <section className="shell-card shell-empty" aria-labelledby="asset-missing">
-          <h2 id="asset-missing">Asset not found</h2>
-          <p>It may belong to another owner or the link is wrong.</p>
-        </section>
+        <EmptyState id="asset-missing" title="Asset not found">
+          It may belong to another owner or the link is wrong.
+        </EmptyState>
       )}
     </div>
   );
