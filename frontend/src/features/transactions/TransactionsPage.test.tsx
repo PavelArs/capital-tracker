@@ -3235,12 +3235,12 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(within(card).getByRole('button', { name: 'Join as one transfer' })).toBeEnabled();
   });
 
-  it('shows nothing without a proposal, and three of many until asked', async () => {
+  it('shows nothing without a proposal, and twenty a page of many', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
-    const many = [1, 2, 3, 4].map((n) => ({
+    const many = Array.from({ length: 22 }, (_, n) => ({
       ...proposal,
-      outgoing: { ...proposal.outgoing, txid: txid(90 + n) },
+      outgoing: { ...proposal.outgoing, txid: txid(100 + n) },
     }));
     vi.spyOn(operationsApi, 'transferProposals')
       .mockResolvedValueOnce(found([]))
@@ -3253,11 +3253,11 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     cleanup();
     renderPage();
     const card = await screen.findByRole('region', {
-      name: '4 possible transfers between your accounts',
+      name: '22 possible transfers between your accounts',
     });
-    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(3);
-    await user.click(within(card).getByRole('button', { name: 'Show all 4' }));
-    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(4);
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(20);
+    await user.click(within(card).getByRole('button', { name: 'Next' }));
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(2);
   });
 });
 
@@ -3366,5 +3366,97 @@ describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', 
     const card = await screen.findByRole('region', { name: 'One possible duplicate' });
     expect(card).toHaveTextContent('You added: Sell 0.4 ETH, Oct 1, 2026, 10:00 UTC');
     expect(card).toHaveTextContent('Main sent 0.4 ETH');
+  });
+});
+
+describe('PAGES: twenty transactions a page', () => {
+  // 45 purchases, one a day, newest first; every ninth is a CSV import.
+  const day = 24 * 60 * 60 * 1000;
+  const many = Array.from({ length: 45 }, (_, index) =>
+    operation({
+      id: `trade:${id(500 + index)}`,
+      occurredAt: new Date(Date.UTC(2025, 5, 30) - index * day).toISOString(),
+      quantity: String(index + 1),
+      valueUsd: String(100 + index),
+      source: index % 9 === 8 ? 'csv' : 'manual',
+    }),
+  );
+  const shownIds = () => bodyRows().map((row) => row.getAttribute('data-operation'));
+  const idsOf = (from: number, to: number) => many.slice(from, to).map((item) => item.id);
+  const renderWithAddress = (path = '/transactions') =>
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+  const pager = () => screen.getByRole('navigation', { name: 'Pages of transactions' });
+
+  it('shows the first twenty and walks through the pages, keeping the page in the address', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const user = userEvent.setup();
+    renderWithAddress();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    expect(shownIds()).toEqual(idsOf(0, 20));
+    expect(pager()).toHaveTextContent('1–20 of 45Page 1 of 3');
+    expect(within(pager()).getByRole('button', { name: 'Previous' })).toBeDisabled();
+    expect(screen.getByText(/45 transactions, newest first/)).toBeInTheDocument();
+
+    await user.click(within(pager()).getByRole('button', { name: 'Next' }));
+    expect(shownIds()).toEqual(idsOf(20, 40));
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?page=2$/);
+    await user.click(within(pager()).getByRole('button', { name: 'Next' }));
+    expect(shownIds()).toEqual(idsOf(40, 45));
+    expect(pager()).toHaveTextContent('41–45 of 45Page 3 of 3');
+    expect(within(pager()).getByRole('button', { name: 'Next' })).toBeDisabled();
+
+    await user.click(within(pager()).getByRole('button', { name: 'Previous' }));
+    await user.click(within(pager()).getByRole('button', { name: 'Previous' }));
+    expect(shownIds()).toEqual(idsOf(0, 20));
+    // The first page needs no mark in the address.
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^$/);
+  });
+
+  it('comes back to the page in the address after a reload, and to the last page past the end', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const first = renderWithAddress('/transactions?page=3');
+    await waitFor(() => expect(bodyRows()).toHaveLength(5));
+    expect(shownIds()).toEqual(idsOf(40, 45));
+    first.unmount();
+    renderWithAddress('/transactions?page=9');
+    await waitFor(() => expect(shownIds()).toEqual(idsOf(40, 45)));
+    cleanup();
+    renderWithAddress('/transactions?page=nonsense');
+    await waitFor(() => expect(shownIds()).toEqual(idsOf(0, 20)));
+  });
+
+  it('goes back to the first page when a filter or the search changes', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const user = userEvent.setup();
+    renderWithAddress('/transactions?page=2');
+    await waitFor(() => expect(shownIds()).toEqual(idsOf(20, 40)));
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?source=manual$/),
+    );
+    expect(shownIds()[0]).toBe(many[0].id);
+    await user.click(within(pager()).getByRole('button', { name: 'Next' }));
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/page=2/);
+    // Five rows are CSV imports: they fit on one page, so there is no pager.
+    await user.click(screen.getByRole('button', { name: /^CSV/ }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(5));
+    expect(screen.queryByRole('navigation', { name: 'Pages of transactions' })).toBeNull();
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?source=csv$/);
+  });
+
+  it('turns to the page of a transaction opened from another page', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    renderWithAddress(`/transactions?open=${encodeURIComponent(many[33].id)}`);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(shownIds()).toEqual(idsOf(20, 40)));
+    expect(
+      bodyRows().find((row) => row.getAttribute('data-operation') === many[33].id),
+    ).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?page=2$/);
   });
 });

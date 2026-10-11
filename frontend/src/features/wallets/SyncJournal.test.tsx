@@ -55,20 +55,22 @@ describe('W3 sync journal', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toBe('Failed10 Oct, 10:00 UTCEthereum data is gone.');
     expect(rows[1].textContent).toBe('Synced10 Oct, 09:00 UTCStored 3 new transactions.');
-    expect(screen.queryByRole('button', { name: /Show/ })).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
   });
 
-  it('shows the latest five and the rest on request', async () => {
+  it('PAGES: shows twenty passes a page, newest first', async () => {
     const user = userEvent.setup();
     vi.spyOn(walletAddressesApi, 'syncRuns').mockResolvedValue(
-      Array.from({ length: 8 }, (_, index) => entry({ at: `2026-10-10T0${8 - index}:00:00.000Z` })),
+      Array.from({ length: 23 }, (_, index) =>
+        entry({ at: `2026-10-10T00:${String(59 - index).padStart(2, '0')}:00.000Z` }),
+      ),
     );
     render(<SyncJournal address={wallet()} run={undefined} />);
-    expect(await screen.findAllByRole('listitem')).toHaveLength(5);
-    await user.click(screen.getByRole('button', { name: 'Show all 8' }));
-    expect(screen.getAllByRole('listitem')).toHaveLength(8);
-    await user.click(screen.getByRole('button', { name: 'Show fewer' }));
-    expect(screen.getAllByRole('listitem')).toHaveLength(5);
+    expect(await screen.findAllByRole('listitem')).toHaveLength(20);
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    await user.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(20);
   });
 
   it('says so when nothing is recorded yet or the read fails', async () => {

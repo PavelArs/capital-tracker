@@ -58,6 +58,26 @@ action per problem, or "Everything is up to date". The shell reads the sources o
 pages (`features/shell/attention-context.tsx`) and again every minute and after a sync or an
 answer.
 
+## Pages of twenty and answers kept across a reload
+
+Every list shows twenty rows a page with **Previous** and **Next** (`features/shell/Pager.tsx`):
+Transactions (the page is in the address, `?page=2`, so a reload stays on it; a transaction
+opened from another page turns the list to its page), History (read page by page with the
+server's cursor), the Portfolio assets table, Wallets, a wallet's addresses, assets and
+transactions, an asset's transactions, the proposals above Transactions, a wallet's sync
+history, its token lists and the transactions in the address drawer. A list that fits one page
+has no pager. The server API is unchanged: the lists are cut in the browser, because the filters,
+the chip counts and the classification flow need the whole list.
+
+The last answer of each read is kept in memory for the session and, for the signed-in owner, in
+the browser's IndexedDB (`api/read-cache.ts`, `api/read-store.ts`). After a reload the pages
+paint those answers at once, and an answer fetched less than five minutes ago is used as it is
+without asking the server. Anything older than fifteen minutes is dropped. Every change the
+owner makes, a classification, a sync, a background sync that finished since the last status
+read, a sign-in, a sign-out or a refused session empties it, in memory and in the browser. An
+answer kept for another owner is never used and is deleted. Where the browser has no IndexedDB
+or refuses it, the cache stays in memory as before.
+
 The earlier Russian shell is described in the archived change
 `2026-09-26-redesign-application-shell`. Verification for this change is in
 `openspec/changes/archive/2026-10-04-add-app-shell/verification.md` (hosted CI run

@@ -2215,6 +2215,34 @@ describe('DRAWER-DUST: dust stays out of the blockchain transactions of an addre
     expect(section).not.toHaveTextContent('SPAM');
   });
 
+  it('PAGES: lists twenty transactions a page and reads the next server page when asked', async () => {
+    const many = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        ...row(3, 'in', '1'),
+        txid: `0x${String(from + index).padStart(64, '0')}`,
+      }));
+    const seen: number[] = [];
+    const { user, drawer } = await open((offset) => {
+      seen.push(offset);
+      // The server hands out its history in pages of 30 here: 30, then 15.
+      return offset === 0 ? page(many(0, 30), 30) : page(many(30, 15));
+    }, []);
+    const section = within(drawer).getByRole('region', { name: 'Blockchain transactions' });
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(20));
+    const pages = within(section).getByRole('navigation', { name: 'Pages of transactions' });
+    expect(within(pages).getByRole('button', { name: 'Previous' })).toBeDisabled();
+    await user.click(within(pages).getByRole('button', { name: 'Next' }));
+    expect(within(section).getAllByRole('listitem')).toHaveLength(20);
+    expect(pages).toHaveTextContent('Page 2');
+    // Page 3 holds the last five, so the history was read to its end.
+    await waitFor(() => expect(within(pages).getByRole('button', { name: 'Next' })).toBeEnabled());
+    await user.click(within(pages).getByRole('button', { name: 'Next' }));
+    expect(within(section).getAllByRole('listitem')).toHaveLength(5);
+    expect(pages).toHaveTextContent('41–45 of 45');
+    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(seen).toEqual([0, 30]);
+  });
+
   it('opens a listed transaction in Transactions and shows the rest without a link', async () => {
     const { drawer } = await open(() => page([sent, received]), [listed(sent, 'recorded')]);
     const section = within(drawer).getByRole('region', { name: 'Blockchain transactions' });

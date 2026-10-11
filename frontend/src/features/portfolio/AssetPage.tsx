@@ -13,6 +13,7 @@ import { Link, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import Pager, { usePaged } from '../shell/Pager';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
 import {
@@ -60,7 +61,6 @@ function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: D
   return `${sourceName(current.source)} · ${current.status === 'stale' ? 'stale, ' : ''}updated ${when}`;
 }
 
-const SHOWN_OPERATIONS = 10;
 const periodNames: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
   '7D': 'past 7 days',
@@ -228,7 +228,7 @@ function movedAmount(operation: Operation, key: string): string {
   return operationAmount(operation.counterQuantity, operation.counterAsset, '+');
 }
 
-// The asset's own operations: the latest ten, then a link to all of them (prototype).
+// The asset's own operations, twenty a page, then a link to all of them in Transactions.
 function AssetTransactions({
   asset,
   operations,
@@ -240,6 +240,8 @@ function AssetTransactions({
 }) {
   const key = keyOf(asset);
   const own = typeof operations === 'object' ? assetOperations(operations.operations, key) : [];
+  // PAGES: twenty transactions a page.
+  const pagedOwn = usePaged(own);
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
@@ -261,7 +263,7 @@ function AssetTransactions({
       ) : (
         <>
           <ul className="portfolio-holdings portfolio-operations">
-            {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
+            {pagedOwn.rows.map((operation) => (
               <li key={operation.id}>
                 <span>
                   {operation.status === 'needs-classification' ? (
@@ -284,8 +286,9 @@ function AssetTransactions({
               </li>
             ))}
           </ul>
+          {pagedOwn.pager && <Pager {...pagedOwn.pager} label="transactions" />}
           <Link className="portfolio-link portfolio-operations__all" to={all}>
-            {own.length > SHOWN_OPERATIONS ? `Show all ${own.length}` : 'Open in Transactions'}
+            Open in Transactions
           </Link>
         </>
       )}

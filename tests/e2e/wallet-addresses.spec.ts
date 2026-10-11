@@ -413,7 +413,9 @@ isolated(
       name: /^Transactions/,
     });
     await expect(walletTransactions.getByText('Needs classification').first()).toBeVisible();
-    await expect(walletTransactions.getByRole('link', { name: /^Show all \d+$/ })).toBeVisible();
+    await expect(
+      walletTransactions.getByRole('link', { name: 'Open in Transactions', exact: true }),
+    ).toBeVisible();
 
     // WAL-RENAME: only the name changes; the address stays in the wallet.
     const renamed = `${walletName} renamed`;
@@ -437,7 +439,9 @@ isolated(
     await page.setViewportSize({ width: 1440, height: 1000 });
 
     // WAL-ACCOUNT: in Transactions the chain rows name the wallet and the address.
-    await walletTransactions.getByRole('link', { name: /^Show all \d+$/ }).click();
+    await walletTransactions
+      .getByRole('link', { name: 'Open in Transactions', exact: true })
+      .click();
     await expect(page).toHaveURL(/\/transactions\?account=[0-9a-f-]{36}$/);
     await expect(main.getByText(`${renamed} · Cold`).first()).toBeVisible();
   },

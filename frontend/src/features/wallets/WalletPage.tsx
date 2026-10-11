@@ -13,6 +13,7 @@ import ConfirmDialog from '../security/ConfirmDialog';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import Pager, { usePaged } from '../shell/Pager';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
 import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
@@ -35,8 +36,6 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
-
-const SHOWN_OPERATIONS = 10;
 
 type OperationsState = OperationList | 'loading' | 'failed';
 
@@ -112,6 +111,8 @@ function WalletTransactions({
 }) {
   const own =
     typeof operations === 'object' ? accountOperations(operations.operations, accountId) : [];
+  // PAGES: twenty transactions a page.
+  const pagedOwn = usePaged(own);
   return (
     <section className="shell-card" aria-labelledby="wallet-transactions">
       <div className="portfolio-toolbar">
@@ -132,7 +133,7 @@ function WalletTransactions({
       ) : (
         <>
           <ul className="portfolio-holdings portfolio-operations">
-            {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
+            {pagedOwn.rows.map((operation) => (
               <li key={operation.id}>
                 <Link
                   className="portfolio-operation"
@@ -163,11 +164,12 @@ function WalletTransactions({
               </li>
             ))}
           </ul>
+          {pagedOwn.pager && <Pager {...pagedOwn.pager} label="transactions" />}
           <Link
             className="portfolio-link portfolio-operations__all"
             to={`/transactions?account=${encodeURIComponent(accountId)}`}
           >
-            {own.length > SHOWN_OPERATIONS ? `Show all ${own.length}` : 'Open in Transactions'}
+            Open in Transactions
           </Link>
         </>
       )}
@@ -232,6 +234,9 @@ export default function WalletPage() {
   const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
+  // PAGES: twenty addresses and twenty assets a page.
+  const pagedAddresses = usePaged(own);
+  const pagedHoldings = usePaged(holdings);
   const refresh = () => {
     void load(true);
     void loadOperations();
@@ -336,7 +341,7 @@ export default function WalletPage() {
                 </button>
               </div>
               <ul className="wallets-sources">
-                {own.map((address) => (
+                {pagedAddresses.rows.map((address) => (
                   <AddressRow
                     key={address.id}
                     address={address}
@@ -349,6 +354,7 @@ export default function WalletPage() {
                   />
                 ))}
               </ul>
+              {pagedAddresses.pager && <Pager {...pagedAddresses.pager} label="addresses" />}
             </section>
           )}
           <div className="portfolio-split">
@@ -360,7 +366,7 @@ export default function WalletPage() {
                 <p className="portfolio-none">No assets in this wallet.</p>
               ) : (
                 <ul className="portfolio-holdings">
-                  {holdings.map((holding) => (
+                  {pagedHoldings.rows.map((holding) => (
                     <li key={holding.asset.instrumentId}>
                       <Link
                         className="wallets-asset"
@@ -396,6 +402,7 @@ export default function WalletPage() {
                   ))}
                 </ul>
               )}
+              {pagedHoldings.pager && <Pager {...pagedHoldings.pager} label="assets" />}
             </section>
             <WalletTransactions
               accountId={accountId}

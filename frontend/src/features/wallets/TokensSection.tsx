@@ -5,6 +5,7 @@ import {
 } from '@api/wallet-addresses.api';
 import { useState } from 'react';
 import { quantity } from '../portfolio/format';
+import Pager, { usePaged } from '../shell/Pager';
 
 // TOKEN-HIDE: the other tokens of an Ethereum or Solana address. Anyone can send a wallet any
 // token, so most of them are spam: the owner hides the ones they do not want, and a token that
@@ -32,6 +33,9 @@ export default function TokensSection({
   const [listed, setListed] = useState(false);
   const shown = (address.balances ?? []).filter((balance) => balance.name !== undefined);
   const hidden = address.hiddenTokens ?? [];
+  // PAGES: twenty tokens a page in each list.
+  const shownPages = usePaged(shown);
+  const hiddenPages = usePaged(hidden);
   if (shown.length === 0 && hidden.length === 0) return null;
   const unlisted = shown.filter((balance) => balance.listed === false);
 
@@ -55,7 +59,7 @@ export default function TokensSection({
             Other tokens
           </h3>
           <ul className="wallets-tokens">
-            {shown.map((balance) => (
+            {shownPages.rows.map((balance) => (
               <li key={balance.symbol}>
                 <span className="wallets-tokens__name">
                   <span>{balance.symbol}</span>
@@ -77,6 +81,7 @@ export default function TokensSection({
               </li>
             ))}
           </ul>
+          {shownPages.pager && <Pager {...shownPages.pager} label="tokens" />}
           {unlisted.length > 1 && (
             <button
               type="button"
@@ -105,7 +110,7 @@ export default function TokensSection({
           </h3>
           {listed && (
             <ul className="wallets-tokens">
-              {hidden.map((token) => (
+              {hiddenPages.rows.map((token) => (
                 <li key={token.symbol}>
                   <span className="wallets-tokens__name">
                     <span>{token.symbol}</span>
@@ -125,6 +130,7 @@ export default function TokensSection({
               ))}
             </ul>
           )}
+          {listed && hiddenPages.pager && <Pager {...hiddenPages.pager} label="hidden tokens" />}
           <button
             type="button"
             className="portfolio-link"

@@ -60,6 +60,8 @@ export interface AuditQuery {
   /** Inclusive UTC days, "YYYY-MM-DD". */
   from?: string;
   to?: string;
+  /** Changes per page (1 to 200); the server's own page when absent. */
+  limit?: number;
 }
 
 export const auditHistoryApi = {

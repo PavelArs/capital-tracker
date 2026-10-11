@@ -1265,7 +1265,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     expect(within(chart).queryByText(/No value can be shown/)).toBeNull();
   });
 
-  it('lists the latest ten operations of the asset and links to all of them', async () => {
+  it('lists the operations of the asset and links to all of them in Transactions', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     const buys = Array.from({ length: 11 }, (_, index) => operation(index + 1));
     const unclassified = operation(28, {
@@ -1299,16 +1299,39 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const card = await screen.findByRole('region', { name: 'Transactions' });
     const rows = await within(card).findAllByRole('listitem');
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(12);
     expect(rows[0]).toHaveTextContent(
       'Needs classificationSep 28, 2026 · Bitcoin wallet bc1qsy…0000+0.0087 BTC',
     );
     expect(rows[1]).toHaveTextContent('BuySep 11, 2026 · Trust Wallet+0.01 BTC$800.00');
     expect(card).toHaveTextContent('12');
-    expect(within(card).getByRole('link', { name: 'Show all 12' })).toHaveAttribute(
+    // Twelve fit on one page: no pager.
+    expect(within(card).queryByRole('navigation')).toBeNull();
+    expect(within(card).getByRole('link', { name: 'Open in Transactions' })).toHaveAttribute(
       'href',
       '/transactions?asset=BTC',
     );
+  });
+
+  it('PAGES: lists twenty operations of the asset a page', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      dustThresholdUsd: null,
+      operations: Array.from({ length: 25 }, (_, index) => operation(index + 1)),
+    });
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const card = await screen.findByRole('region', { name: 'Transactions' });
+    expect(await within(card).findAllByRole('listitem')).toHaveLength(20);
+    const pages = within(card).getByRole('navigation', { name: 'Pages of transactions' });
+    expect(pages).toHaveTextContent('1–20 of 25');
+    await user.click(within(pages).getByRole('button', { name: 'Next' }));
+    expect(within(card).getAllByRole('listitem')).toHaveLength(5);
+    expect(pages).toHaveTextContent('21–25 of 25Page 2 of 2');
+    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
   });
 
   it('reports a chart or transactions failure and recovers on retry', async () => {

@@ -5,13 +5,13 @@ import {
   type AuditEvent,
   type AuditHistory,
   type AuditQuery,
-  auditHistoryApi,
 } from '@api/audit-history.api';
 import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
+import Pager, { PAGE_SIZE } from '../shell/Pager';
 import { PageSkeleton } from '../shell/Skeleton';
 import { dayHeading, time } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
@@ -138,56 +138,68 @@ export default function HistoryPage() {
       ...(actor && { actor }),
       ...(from && { from }),
       ...(to && { to }),
+      limit: PAGE_SIZE,
     }),
     [entity, change, actor, from, to],
   );
+  const queryKey = JSON.stringify(query);
   // Coming back shows the newest page last seen for this filter while a fresh one loads.
   const [history, setHistory] = useState<AuditHistory | null>(
     () => cachedReads.audit.last(query) ?? null,
   );
-  const [events, setEvents] = useState<AuditEvent[]>(
-    () => cachedReads.audit.last(query)?.events ?? [],
-  );
+  // PAGES: the server hands out each page's successor; `cursors[n]` opens page n + 2, so the
+  // pages already seen can be walked back.
+  const [position, setPosition] = useState<{ key: string; cursors: string[]; page: number }>({
+    key: queryKey,
+    cursors: [],
+    page: 1,
+  });
+  const here = position.key === queryKey ? position : { key: queryKey, cursors: [], page: 1 };
+  const events = history?.events ?? [];
   const [failed, setFailed] = useState<'load' | 'more' | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const latest = useRef(0);
+  const retry = useRef<() => void>(() => undefined);
   const narrow = useNarrowScreen();
 
   // A changed filter keeps the rows on screen until the new ones arrive, so the filters stay
-  // under the owner's hand.
-  const load = useCallback(async () => {
-    const request = ++latest.current;
-    setFailed(null);
-    setLoadingMore(false);
-    try {
-      const page = await cachedReads.audit.load(query);
-      if (request !== latest.current) return;
-      setHistory(page);
-      setEvents(page.events);
-    } catch {
-      if (request === latest.current) setFailed('load');
-    }
-  }, [query]);
+  // under the owner's hand. A page the owner walks to is shown only once it has arrived.
+  const show = useCallback(
+    async (page: number, cursors: string[]) => {
+      const request = ++latest.current;
+      retry.current = () => void show(page, cursors);
+      setFailed(null);
+      setLoading(true);
+      const before = page > 1 ? cursors[page - 2] : undefined;
+      // A page seen a moment ago is on screen at once while a fresh one loads.
+      const kept = cachedReads.audit.last(query, before);
+      if (kept && page > 1) {
+        setHistory(kept);
+        setPosition({ key: queryKey, cursors, page });
+        setOpenId(null);
+      }
+      try {
+        const next = await cachedReads.audit.load(query, before);
+        if (request !== latest.current) return;
+        setHistory(next);
+        setPosition({ key: queryKey, cursors, page });
+        if (page > 1) setOpenId(null);
+      } catch {
+        if (request === latest.current) setFailed(page > 1 ? 'more' : 'load');
+      } finally {
+        if (request === latest.current) setLoading(false);
+      }
+    },
+    [query, queryKey],
+  );
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const more = async () => {
-    if (!history?.next) return;
-    const request = ++latest.current;
-    setLoadingMore(true);
-    setFailed(null);
-    try {
-      const page = await auditHistoryApi.list(query, history.next);
-      if (request !== latest.current) return;
-      setHistory(page);
-      setEvents((shown) => [...shown, ...page.events]);
-    } catch {
-      if (request === latest.current) setFailed('more');
-    } finally {
-      if (request === latest.current) setLoadingMore(false);
-    }
+    void show(1, []);
+  }, [show]);
+  const walk = (page: number) => {
+    if (page === here.page + 1 && history?.next)
+      void show(page, [...here.cursors.slice(0, here.page - 1), history.next]);
+    else void show(page, here.cursors);
   };
 
   // The router commits an address change later; a second change before that builds on the
@@ -232,7 +244,7 @@ export default function HistoryPage() {
       {failed === 'load' && history === null ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load the change history. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
+          <button type="button" className="shell-button" onClick={() => retry.current()}>
             Try again
           </button>
         </section>
@@ -402,28 +414,25 @@ export default function HistoryPage() {
               <button
                 type="button"
                 className="shell-button shell-button--ghost"
-                onClick={() => void (failed === 'more' ? more() : load())}
+                onClick={() => retry.current()}
               >
                 Try again
               </button>
             </p>
           )}
-          {history.next && (
-            <div className="history-more">
-              <button
-                type="button"
-                className="shell-button"
-                disabled={loadingMore}
-                onClick={() => void more()}
-              >
-                {loadingMore ? 'Loading…' : 'Show older changes'}
-              </button>
-            </div>
+          {(here.page > 1 || history.next) && (
+            <Pager
+              page={here.page}
+              hasNext={history.next !== null}
+              onPage={walk}
+              label="changes"
+              busy={loading}
+            />
           )}
           <p className="shell-note portfolio-note">
-            {events.length} {events.length === 1 ? 'change' : 'changes'} shown, newest first. Every
-            change is kept as a new version, so nothing is overwritten; deleting a transaction adds
-            a version that removes it from your calculations. Blockchain transactions are never
+            {events.length} {events.length === 1 ? 'change' : 'changes'} on this page, newest first.
+            Every change is kept as a new version, so nothing is overwritten; deleting a transaction
+            adds a version that removes it from your calculations. Blockchain transactions are never
             deleted, only classified or hidden. Times are in UTC.
           </p>
         </section>

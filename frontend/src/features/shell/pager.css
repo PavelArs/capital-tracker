@@ -1,0 +1,32 @@
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+}
+
+.pager__button {
+  margin-top: 0;
+}
+
+.pager__button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.pager__where {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.pager__range {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}

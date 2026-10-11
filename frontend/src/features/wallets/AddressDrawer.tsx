@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
+import Pager, { PAGE_SIZE } from '../shell/Pager';
 import type { WalletAccount } from './AddWalletDialog';
 import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
@@ -63,10 +64,8 @@ const dayFormat = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
 });
 
-/** The newest transactions the drawer lists, once dust is left out. */
-const SHOWN_TRANSACTIONS = 10;
-/** Pages of the address's history read to find them: a spammed address has long runs of dust. */
-const MAX_PAGES = 6;
+/** Pages of the address's history read to fill the list: a spammed address has long runs of dust. */
+const MAX_PAGES = 10;
 
 /**
  * This address's rows of the Transactions list by txid: the row to open and whether it is dust
@@ -125,6 +124,8 @@ export default function AddressDrawer({
     { items: AddressTransaction[]; next: number | null } | null | undefined
   >(undefined);
   const [showDust, setShowDust] = useState(false);
+  // PAGES: the page of the list below, twenty to a page, newest first.
+  const [txPage, setTxPage] = useState(1);
   // The Transactions list says which of them are dust and where each one opens; undefined while
   // it loads, null when it cannot be read (every row then shows, none opens).
   const [listed, setListed] = useState<ReadonlyMap<string, Operation> | null | undefined>(() => {
@@ -185,19 +186,22 @@ export default function AddressDrawer({
 
   const isDust = (item: AddressTransaction) => listed?.get(item.txid)?.status === 'dust';
   const rows = history?.items ?? [];
-  const shown = (showDust ? rows : rows.filter((item) => !isDust(item))).slice(
-    0,
-    SHOWN_TRANSACTIONS,
-  );
+  const listedRows = showDust ? rows : rows.filter((item) => !isDust(item));
+  const shown = listedRows.slice((txPage - 1) * PAGE_SIZE, txPage * PAGE_SIZE);
+  // Whether a page after this one has rows: older pages are read until it does, or until
+  // the history, or the number of pages read for one list, runs out.
+  const more = listedRows.length > txPage * PAGE_SIZE;
+  const exhausted = history?.next === null || rows.length >= MAX_PAGES * 50;
   const dust = rows.filter(isDust).length;
   // Older pages may hold more dust than the ones read.
   const dustLabel = `${dust}${history?.next ? '+' : ''} dust ${dust === 1 && !history?.next ? 'transaction' : 'transactions'}`;
   const waiting =
     history === undefined || (history !== null && rows.length > 0 && listed === undefined);
-  // Dust takes no place in the list, so older pages are read until it is full.
+  // Dust takes no place in the list, so older pages are read until the page and the one after
+  // it are known.
   useEffect(() => {
     if (!history || history.next === null || listed === undefined || reading.current) return;
-    if (shown.length >= SHOWN_TRANSACTIONS || rows.length >= MAX_PAGES * 50) return;
+    if (more || rows.length >= MAX_PAGES * 50) return;
     reading.current = true;
     const offset = history.next;
     walletAddressesApi
@@ -213,7 +217,7 @@ export default function AddressDrawer({
       .finally(() => {
         reading.current = false;
       });
-  }, [history, listed, shown.length, rows.length, address.id]);
+  }, [history, listed, more, rows.length, address.id]);
 
   const wallet = accounts.find((account) => account.accountId === address.accountId);
   // M21: a Bitcoin account public key and the addresses it derives.
@@ -565,13 +569,26 @@ export default function AddressDrawer({
                 })}
               </ul>
             )}
+            {(txPage > 1 || more || !exhausted) && !waiting && shown.length > 0 && (
+              <Pager
+                page={txPage}
+                total={history?.next === null ? listedRows.length : undefined}
+                hasNext={more}
+                busy={!more && !exhausted}
+                onPage={setTxPage}
+                label="transactions"
+              />
+            )}
             <div className="wallets-recent__more">
               {dust > 0 && (
                 <button
                   type="button"
                   className="portfolio-link"
                   aria-expanded={showDust}
-                  onClick={() => setShowDust((current) => !current)}
+                  onClick={() => {
+                    setShowDust((current) => !current);
+                    setTxPage(1);
+                  }}
                 >
                   {showDust ? 'Hide dust' : `Show ${dustLabel}`}
                 </button>

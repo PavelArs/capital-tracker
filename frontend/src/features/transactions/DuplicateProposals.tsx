@@ -11,10 +11,8 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
+import Pager, { usePaged } from '../shell/Pager';
 import { moment, shortAddress, typeLabels } from './operation-format';
-
-// CLS-DUPLICATE: how many proposals are listed before "Show all".
-const SHOWN = 3;
 
 const place = (item: DuplicateProposal) =>
   item.transaction.wallet.label ??
@@ -48,7 +46,6 @@ export default function DuplicateProposals({
   const [found, setFound] = useState<Proposals | null>(
     () => cachedReads.duplicateProposals.last() ?? null,
   );
-  const [all, setAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ key: string; text: string } | null>(null);
 
@@ -70,6 +67,8 @@ export default function DuplicateProposals({
   }, [load]);
 
   const proposals = found?.proposals ?? [];
+  // PAGES: twenty proposals a page.
+  const paged = usePaged(proposals);
   if (proposals.length === 0) return null;
   const replace = async (item: DuplicateProposal) => {
     const key = keyOf(item);
@@ -95,7 +94,6 @@ export default function DuplicateProposals({
     }
   };
 
-  const listed = all ? proposals : proposals.slice(0, SHOWN);
   return (
     <section className="shell-card transactions-proposals" aria-labelledby="duplicate-proposals">
       <h2 id="duplicate-proposals">
@@ -109,7 +107,7 @@ export default function DuplicateProposals({
         amount, and the price or purpose you entered moves over to it. Nothing changes until you do.
       </p>
       <ul className="transactions-proposals__list">
-        {listed.map((item) => {
+        {paged.rows.map((item) => {
           const key = keyOf(item);
           const received = item.direction === 'in';
           return (
@@ -152,11 +150,7 @@ export default function DuplicateProposals({
           );
         })}
       </ul>
-      {proposals.length > SHOWN && (
-        <button type="button" className="shell-link" onClick={() => setAll((current) => !current)}>
-          {all ? 'Show fewer' : `Show all ${proposals.length}`}
-        </button>
-      )}
+      {paged.pager && <Pager {...paged.pager} label="proposals" />}
       <p className="shell-note">
         Offered when the same coin moved the same way in the same account within{' '}
         {found?.windowHours} hours, and the amounts differ by at most {found?.amountPercent}%.
