@@ -3,6 +3,7 @@ import type { Operation, OperationList, OperationRange } from '@api/operations.a
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import Badge from '@/ui/Badge';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
@@ -202,11 +203,9 @@ function StatusCell({ operation }: { operation: Operation }) {
   return (
     <td>
       {needs || muted ? (
-        <span
-          className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
-        >
+        <Badge tone={needs ? 'warn' : 'muted'} dot={needs}>
           {needs ? 'To classify' : statusLabels[operation.status]}
-        </span>
+        </Badge>
       ) : (
         <span className="transactions-status">
           <Glyph name="check" />
@@ -360,9 +359,9 @@ function OperationItem({
         <span className="transactions-item__main">
           <span className="transactions-item__title">{title}</span>
           {needs ? (
-            <span className="transactions-badge transactions-badge--warn transactions-item__badge">
+            <Badge tone="warn" dot className="transactions-item__badge">
               To classify
-            </span>
+            </Badge>
           ) : (
             <span className="transactions-item__detail">
               {(operation.status === 'hidden' || operation.status === 'dust') &&
@@ -688,7 +687,7 @@ export default function TransactionsPage() {
         onTransactionSaved={changed}
       />
       {notice && !opened && (
-        <p className="transactions-notice" role="status">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
         </p>
       )}

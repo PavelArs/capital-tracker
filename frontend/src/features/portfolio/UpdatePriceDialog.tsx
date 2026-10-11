@@ -2,22 +2,25 @@ import { manualPricesApi } from '@api/manual-prices.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
+import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { numberProblem, positive } from './add-transaction';
 
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
 
-function failure(error: unknown): string {
-  const code = status(error);
-  if (code === undefined)
-    return 'Could not reach the server. Try again; the same request will not save the price twice.';
-  if (code === 400) return 'Check the price and try again.';
-  if (code === 404) return 'This asset no longer exists. Reload the page.';
-  if (code === 409) return 'The price was changed elsewhere. Try again.';
-  if (code === 401) return 'Your session has ended. Sign in again.';
-  return 'Could not save the price. Try again.';
-}
+const failure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable:
+      'Could not reach the server. Try again; the same request will not save the price twice.',
+    status: {
+      400: 'Check the price and try again.',
+      404: 'This asset no longer exists. Reload the page.',
+      409: 'The price was changed elsewhere. Try again.',
+      401: 'Your session has ended. Sign in again.',
+    },
+    fallback: 'Could not save the price. Try again.',
+  });
 
 interface Props {
   instrumentId: string;
@@ -125,7 +128,7 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
             )}
           </div>
           {error && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}

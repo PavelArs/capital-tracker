@@ -9,6 +9,7 @@ import {
 import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import Badge from '@/ui/Badge';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
@@ -17,7 +18,14 @@ import { dayHeading, time } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import HistoryDrawer from './HistoryDrawer';
-import { actorLabels, changeLabels, entityLabels, glyphOf, summary } from './history-format';
+import {
+  actorLabels,
+  changeLabels,
+  changeTones,
+  entityLabels,
+  glyphOf,
+  summary,
+} from './history-format';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -41,8 +49,8 @@ function Mark({ event }: { event: AuditEvent }) {
   );
 }
 
-function Badge({ change }: { change: AuditChange }) {
-  return <span className={`history-badge history-badge--${change}`}>{changeLabels[change]}</span>;
+function ChangeBadge({ change }: { change: AuditChange }) {
+  return <Badge tone={changeTones[change]}>{changeLabels[change]}</Badge>;
 }
 
 function Row({
@@ -63,7 +71,7 @@ function Row({
     >
       <td className="portfolio-num history-when">{time(event.at).replace(' UTC', '')}</td>
       <td>
-        <Badge change={event.change} />
+        <ChangeBadge change={event.change} />
       </td>
       <td className="transactions-wrap">
         <span className="transactions-type">
@@ -398,7 +406,7 @@ export default function HistoryPage() {
             </div>
           )}
           {failed && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {failed === 'more'
                 ? 'Could not load older changes.'
                 : 'Could not load the changes for these filters.'}{' '}

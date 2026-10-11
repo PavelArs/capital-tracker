@@ -7,6 +7,7 @@ import {
 import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { newRequestId } from '../accounting/feedback';
 import {
   type Account,
@@ -827,7 +828,10 @@ export default function ClassifyForm({
       <div className="ui-drawer__body">
         {children}
         {!operation.account && (
-          <p className="portfolio-warn transactions-classify__warn" role="note">
+          <p
+            className="ui-banner ui-banner--warn portfolio-warn transactions-classify__warn"
+            role="note"
+          >
             This address is not in a wallet yet. Choose its wallet first; until then the transaction
             can only be hidden. <Link to="/wallets">Open Wallets</Link>
           </p>
@@ -881,20 +885,13 @@ export default function ClassifyForm({
                 <span className="portfolio-field__label" id={`${id}-currency`}>
                   Currency
                 </span>
-                <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-currency`}>
-                  {currencies.map((currency) => (
-                    <label key={currency}>
-                      <input
-                        type="radio"
-                        name={`${id}-currency`}
-                        value={currency}
-                        checked={draft.currency === currency}
-                        onChange={() => change({ currency, rate: '' })}
-                      />
-                      {currency}
-                    </label>
-                  ))}
-                </div>
+                <SegmentedControl
+                  name={`${id}-currency`}
+                  labelledBy={`${id}-currency`}
+                  options={currencies}
+                  value={draft.currency}
+                  onChange={(currency) => change({ currency, rate: '' })}
+                />
               </div>
             </div>
             {rated ? (
@@ -1156,7 +1153,7 @@ export default function ClassifyForm({
           </label>
         </details>
         {error && (
-          <p className="portfolio-dialog__error" role="alert">
+          <p className="ui-banner ui-banner--neg" role="alert">
             {error}
           </p>
         )}

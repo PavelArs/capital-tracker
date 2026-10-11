@@ -1,6 +1,7 @@
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { type ReactNode, useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { SegmentedPlaceholder } from '@/ui/SegmentedControl';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
 import { useAttention } from './attention-context';
@@ -45,11 +46,7 @@ export default function PageHeader({
         <CurrencySwitch value={shown} onChange={setAsked} />
       ) : (
         // The switch's room is held until the main currency is known, so the buttons do not step aside.
-        <div className="shell-seg shell-seg--hold" aria-hidden="true">
-          {accountingCurrencies.map((currency) => (
-            <label key={currency}>{currency}</label>
-          ))}
-        </div>
+        <SegmentedPlaceholder labels={accountingCurrencies} />
       )}
       {!compact && bell}
       {compact && slot && createPortal(bell, slot)}

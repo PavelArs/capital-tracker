@@ -1,11 +1,12 @@
 import type { AuditEvent } from '@api/audit-history.api';
 import { useRef } from 'react';
+import Badge from '@/ui/Badge';
 import Drawer from '@/ui/Drawer';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
 import { moment } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
-import { actorLabels, changeLabels, glyphOf, valueText } from './history-format';
+import { actorLabels, changeLabels, changeTones, glyphOf, valueText } from './history-format';
 import '../transactions/transactions.css';
 import './history.css';
 
@@ -31,9 +32,7 @@ export default function HistoryDrawer({
       </div>
       <div className="ui-drawer__body">
         <div className="transactions-hero">
-          <span className={`history-badge history-badge--${event.change}`}>
-            {changeLabels[event.change]}
-          </span>
+          <Badge tone={changeTones[event.change]}>{changeLabels[event.change]}</Badge>
           <span className="history-hero">
             {event.asset ? (
               <AssetIcon symbol={event.asset} name={event.asset} />

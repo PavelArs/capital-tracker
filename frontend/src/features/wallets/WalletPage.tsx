@@ -4,9 +4,9 @@ import type { Operation, OperationList } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { isAxiosError } from 'axios';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { requestFailure } from '@/utils/request-failure';
 import { withCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import ConfirmDialog from '../security/ConfirmDialog';
@@ -178,14 +178,15 @@ function WalletTransactions({
 }
 
 /** WALLET-REMOVE: the reason the server gave, or a plain sentence for what went wrong. */
-function removalFailure(error: unknown): string {
-  const response = isAxiosError(error) ? error.response : undefined;
-  if (!response) return 'Could not reach the server. Nothing was changed; try again.';
-  if (response.status === 409 && typeof response.data?.message === 'string')
-    return response.data.message;
-  if (response.status === 404) return 'This wallet no longer exists. Reload the page.';
-  return 'Could not remove the wallet. Nothing was changed; try again.';
-}
+const removalFailure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable: 'Could not reach the server. Nothing was changed; try again.',
+    status: {
+      409: (message) => message ?? 'Could not remove the wallet. Nothing was changed; try again.',
+      404: 'This wallet no longer exists. Reload the page.',
+    },
+    fallback: 'Could not remove the wallet. Nothing was changed; try again.',
+  });
 
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {

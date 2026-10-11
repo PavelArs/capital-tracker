@@ -96,7 +96,7 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
             />
           </div>
           {error && (
-            <p id="security-totp-error" className="portfolio-dialog__error" role="alert">
+            <p id="security-totp-error" className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}
@@ -185,7 +185,7 @@ export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownC
           I have saved these codes
         </label>
         {error && (
-          <p className="portfolio-dialog__error" role="alert">
+          <p className="ui-banner ui-banner--neg" role="alert">
             {error}
           </p>
         )}

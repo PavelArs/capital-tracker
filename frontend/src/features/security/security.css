@@ -1,29 +1,4 @@
 /* Settings → Security (prototype "Security" card, list rows, badges and recovery codes). */
-.security-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--pos-soft);
-  color: var(--pos);
-  font-weight: 600;
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-
-.security-badge::before {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  content: "";
-}
-
-.security-badge--plain::before {
-  display: none;
-}
 
 .security-sessions .security-list {
   flex-basis: 100%;

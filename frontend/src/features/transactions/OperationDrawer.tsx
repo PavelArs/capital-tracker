@@ -7,6 +7,7 @@ import { type TradeVersion, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Badge from '@/ui/Badge';
 import Drawer from '@/ui/Drawer';
 import Modal from '@/ui/Modal';
 import { newRequestId } from '../accounting/feedback';
@@ -669,18 +670,16 @@ export default function OperationDrawer({
   const summary = (
     <>
       {notice && (
-        <p className="transactions-notice" role="status">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
         </p>
       )}
       <div className="transactions-hero">
-        <span
-          className={`transactions-badge${needs ? ' transactions-badge--warn' : hidden || dust ? ' transactions-badge--muted' : ''}`}
-        >
+        <Badge tone={needs ? 'warn' : hidden || dust ? 'muted' : 'neutral'} dot={needs}>
           {needs || hidden || dust
             ? statusLabels[operation.status]
             : `${sourceLabel(operation)} · ${typeLabel(operation)}`}
-        </span>
+        </Badge>
         <span className="transactions-hero__amount">{signedAmount(operation)}</span>
         {operation.counterAsset && operation.counterQuantity && (
           <span className="transactions-hero__amount">
@@ -690,7 +689,7 @@ export default function OperationDrawer({
         <span className="transactions-hero__value">{value ?? `Value ${DASH}`}</span>
       </div>
       {stakeMove && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           {operation.type === 'stake'
             ? `Moved into ${stakePlace(operation)}: the coins stay yours and keep their purchase price.`
             : `Returned from ${stakePlace(operation)}: not income and not a deposit, rewards count as they are earned.`}{' '}
@@ -698,13 +697,13 @@ export default function OperationDrawer({
         </p>
       )}
       {operation.status === 'recorded' && operation.type === 'pool-deposit' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Moved into a liquidity pool: the coins stay yours and keep their purchase price until a
           pool withdrawal returns them. Only the network fee is a cost.
         </p>
       )}
       {operation.status === 'recorded' && operation.type === 'pool-withdrawal' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Returned from a liquidity pool:{' '}
           {operation.pool?.partial ? 'a part of the deposit' : 'the deposit'} comes back as your own
           coins, not income and not a deposit.
@@ -721,20 +720,20 @@ export default function OperationDrawer({
         </p>
       )}
       {record && operation.status === 'recorded' && operation.type !== 'transfer' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Already recorded by hand or from CSV: this transaction doesn't count on its own, so its
           coins are not counted twice. Change the classification if it is wrong.
         </p>
       )}
       {record && operation.status === 'recorded' && operation.type === 'transfer' && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           These coins moved to {record.account?.name ?? 'that account'} and paid for the purchase
           you added there, so the purchase is not new money. Change the classification if it is
           wrong.
         </p>
       )}
       {dust && (
-        <p className="transactions-notice" role="note">
+        <p className="ui-banner ui-banner--pos transactions-notice" role="note">
           Worth less than your dust threshold, or a token no price source lists, so it doesn't ask
           to be classified. It still counts in your balance. Classify it if it matters, or hide it.
         </p>
@@ -742,7 +741,7 @@ export default function OperationDrawer({
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
         (operation.type === 'buy' || operation.type === 'sell') && (
-          <p className="transactions-notice" role="note">
+          <p className="ui-banner ui-banner--pos transactions-notice" role="note">
             Recognised automatically from Bybit's{' '}
             {operation.chain?.txid.startsWith('bybit-trade-convert-')
               ? 'convert history'
@@ -759,7 +758,7 @@ export default function OperationDrawer({
         operation.status === 'recorded' &&
         operation.type === 'staking-reward' &&
         operation.wallet?.network === 'bybit' && (
-          <p className="transactions-notice" role="note">
+          <p className="ui-banner ui-banner--pos transactions-notice" role="note">
             Recognised automatically from Bybit's Earn yield history: counts as staking income at
             the coin's price when Bybit paid it. Change the classification if it is wrong.
           </p>
@@ -767,7 +766,7 @@ export default function OperationDrawer({
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
         operation.counterAccount && (
-          <p className="transactions-notice" role="note">
+          <p className="ui-banner ui-banner--pos transactions-notice" role="note">
             Recognised automatically: both addresses belong to your wallets and{' '}
             {operation.counterAccount.name} received the same amount minus the network fee. Counts
             as a transfer, not a sale or a deposit.
@@ -865,7 +864,7 @@ export default function OperationDrawer({
                 </p>
               )}
               {toggling.error && (
-                <p className="portfolio-dialog__error" role="alert">
+                <p className="ui-banner ui-banner--neg" role="alert">
                   {toggling.error}
                 </p>
               )}
@@ -949,7 +948,7 @@ export default function OperationDrawer({
                 : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
             </p>
             {confirm.step === 'ask' && confirm.error && (
-              <p className="portfolio-dialog__error" role="alert">
+              <p className="ui-banner ui-banner--neg" role="alert">
                 {confirm.error}
               </p>
             )}

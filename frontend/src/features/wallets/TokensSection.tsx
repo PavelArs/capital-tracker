@@ -142,7 +142,7 @@ export default function TokensSection({
         </section>
       )}
       {failed && (
-        <p className="wallets-message wallets-message--error" role="alert">
+        <p className="ui-banner ui-banner--neg wallets-message" role="alert">
           Could not change the tokens. Nothing was changed; try again.
         </p>
       )}

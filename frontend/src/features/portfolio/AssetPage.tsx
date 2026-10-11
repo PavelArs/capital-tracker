@@ -10,6 +10,7 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
@@ -36,13 +37,6 @@ import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
-const dateFormat = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
 /** Where the price came from and how fresh it is. */
 function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: Date): string {
   const current = asset.price;
@@ -58,7 +52,7 @@ function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: D
       ? `Fixed: one unit is one ${currency}`
       : `Fixed: one ${asset.valuationCurrency} at today's Bank of Russia rate`;
   if (current.status === 'manual')
-    return `Manual price set for ${dateFormat.format(new Date(current.observedAt ?? ''))}`;
+    return `Manual price set for ${dayText(current.observedAt ?? '')}`;
   const when = current.observedAt ? age(current.observedAt, now) : '';
   return `${sourceName(current.source)} · ${current.status === 'stale' ? 'stale, ' : ''}updated ${when}`;
 }
@@ -409,7 +403,7 @@ function AssetDetails({
           </Stat>
         </dl>
         {unknown && (
-          <p className="portfolio-warn portfolio-warn--action" role="note">
+          <p className="ui-banner ui-banner--warn ui-banner--action portfolio-warn" role="note">
             <Icon name="alert" className="shell-icon shell-icon--sm" />
             <span>
               {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
@@ -425,14 +419,14 @@ function AssetDetails({
           </p>
         )}
         {missingRate && (
-          <p className="portfolio-warn" role="note">
+          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
             {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
             rates, so its cost in {currency} is unknown. Known cost:{' '}
             {amount(asset.knownCostSubtotal)}.
           </p>
         )}
         {asset.unknownRealizedCount > 0 && (
-          <p className="portfolio-warn" role="note">
+          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
             A sale used coins without a purchase price or a stored rate, so realized P&amp;L is
             unknown. Known part: {amount(asset.knownRealizedSubtotal, true)}.
           </p>

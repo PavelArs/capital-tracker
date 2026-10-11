@@ -4,6 +4,7 @@ import App from './App';
 import './utils/axiosConfig'; // Initialize axios interceptors
 import './i18n/config'; // Initialize i18n
 import './index.css';
+import './ui/banner.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import reportWebVitals from './utils/reportWebVitals';
 

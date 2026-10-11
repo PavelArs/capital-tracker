@@ -11,8 +11,8 @@
   justify-content: space-between;
 }
 
-.portfolio-actions .shell-seg,
-.portfolio-crumbs .shell-seg {
+.portfolio-actions .ui-seg,
+.portfolio-crumbs .ui-seg {
   margin: 0;
 }
 
@@ -353,38 +353,6 @@
 
 .portfolio-warn {
   margin: var(--sp-4) 0 0;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--warn-soft);
-  color: var(--ink);
-  font-size: var(--fs-sm);
-}
-
-.portfolio-warn--action {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.portfolio-warn--action > span {
-  flex: 1;
-  min-width: 0;
-}
-
-.portfolio-warn--action .shell-icon {
-  flex: none;
-  color: var(--warn);
-}
-
-.portfolio-warn--action .shell-button {
-  flex: none;
-  text-decoration: none;
-}
-
-@media (max-width: 559.98px) {
-  .portfolio-warn--action {
-    flex-wrap: wrap;
-  }
 }
 
 .portfolio-warn-text {
@@ -652,15 +620,6 @@ a.portfolio-asset__name:hover {
   text-align: right;
 }
 
-.portfolio-dialog__error {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--neg-soft);
-  color: var(--ink);
-  font-size: var(--fs-sm);
-}
-
 .portfolio-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -674,7 +633,7 @@ a.portfolio-asset__name:hover {
   min-width: 0;
 }
 
-.portfolio-field .shell-seg {
+.portfolio-field .ui-seg {
   justify-self: start;
 }
 
@@ -686,8 +645,8 @@ a.portfolio-asset__name:hover {
   gap: var(--sp-2);
 }
 
-.portfolio-field .shell-seg,
-.portfolio-types .shell-seg {
+.portfolio-field .ui-seg,
+.portfolio-types .ui-seg {
   flex-wrap: wrap;
 }
 
@@ -986,13 +945,13 @@ a.portfolio-asset__name:hover {
     gap: 4px;
   }
 
-  .portfolio-types .shell-seg {
+  .portfolio-types .ui-seg {
     flex: 1 1 auto;
     flex-wrap: nowrap;
     min-width: 0;
   }
 
-  .portfolio-types .shell-seg label {
+  .portfolio-types .ui-seg label {
     padding: 6px 7px;
     font-size: var(--fs-sm);
   }
@@ -1005,7 +964,7 @@ a.portfolio-asset__name:hover {
 }
 
 @media (max-width: 380px) {
-  .portfolio-types .shell-seg label {
+  .portfolio-types .ui-seg label {
     padding: 6px 5px;
     font-size: var(--fs-xs);
   }

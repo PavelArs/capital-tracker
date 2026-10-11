@@ -142,7 +142,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
   }
 
   const errorBlock = error && (
-    <p id="security-authenticator-error" className="portfolio-dialog__error" role="alert">
+    <p id="security-authenticator-error" className="ui-banner ui-banner--neg" role="alert">
       {error}
     </p>
   );

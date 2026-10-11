@@ -537,7 +537,7 @@ export default function AddWalletDialog({
             </>
           )}
           {error && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}

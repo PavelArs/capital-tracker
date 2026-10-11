@@ -40,7 +40,7 @@ export default function ConfirmDialog({
       <div className="ui-modal__body">
         <p className="security-dialog__text">{text}</p>
         {error && (
-          <p className="portfolio-dialog__error" role="alert">
+          <p className="ui-banner ui-banner--neg" role="alert">
             {error}
           </p>
         )}

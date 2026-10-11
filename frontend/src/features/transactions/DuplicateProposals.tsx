@@ -7,8 +7,8 @@ import {
   type DuplicateProposals as Proposals,
 } from '@api/operations.api';
 import { SYNC_CHANGED } from '@api/sync-status.api';
-import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
+import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
@@ -22,16 +22,17 @@ const place = (item: DuplicateProposal) =>
 
 const keyOf = (item: DuplicateProposal) => `${item.transaction.addressId}:${item.transaction.txid}`;
 
-function failure(error: unknown): string {
-  if (!isAxiosError(error) || error.response === undefined)
-    return 'Could not reach the server. Nothing was saved; try again.';
-  const body = error.response.data as { message?: unknown } | undefined;
-  if (error.response.status === 409 || error.response.status === 422)
-    return typeof body?.message === 'string'
-      ? `This cannot be replaced: ${body.message.charAt(0).toLowerCase()}${body.message.slice(1)}. Open the transaction to classify it yourself.`
-      : 'This cannot be replaced now. Open the transaction to classify it yourself.';
-  return 'Could not replace it. Nothing was saved; try again.';
-}
+const refused = (message: string | undefined) =>
+  message
+    ? `This cannot be replaced: ${message.charAt(0).toLowerCase()}${message.slice(1)}. Open the transaction to classify it yourself.`
+    : 'This cannot be replaced now. Open the transaction to classify it yourself.';
+
+const failure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable: 'Could not reach the server. Nothing was saved; try again.',
+    status: { 409: refused, 422: refused },
+    fallback: 'Could not replace it. Nothing was saved; try again.',
+  });
 
 /**
  * CLS-DUPLICATE: a record the owner added by hand or from CSV and a wallet's transaction in the

@@ -1,0 +1,52 @@
+.ui-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--sunken);
+}
+
+.ui-seg label {
+  position: relative;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ui-seg label:hover {
+  color: var(--ink);
+}
+
+/* The native radio covers its label so pointer and keyboard both reach it. */
+.ui-seg input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ui-seg label:has(input:checked) {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px var(--line);
+}
+
+.ui-seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ui-seg--hold {
+  visibility: hidden;
+}

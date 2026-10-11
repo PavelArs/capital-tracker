@@ -10,6 +10,8 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Modal from '@/ui/Modal';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
@@ -69,15 +71,6 @@ const problemText: Record<EntryProblem, string> = {
   comment: `Keep the comment within ${MAX_COMMENT_LENGTH} characters`,
 };
 
-const shortDate = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'UTC',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-});
-/** Mar 1, 2026, as the prototype and the Transactions list write dates. */
-export const dateText = (iso: string) => shortDate.format(new Date(iso));
-
 /** The message of a 409 that names the transfer itself as the first operation left short. */
 const OWN_SHORTFALL = 'An account does not hold enough for this transfer';
 
@@ -115,7 +108,7 @@ export function coverageOf(
 
 /** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
 export const shortText = (account: string, coin: string, date: string) =>
-  `${account} does not hold enough ${coin} on ${dateText(date)} for this transfer.`;
+  `${account} does not hold enough ${coin} on ${dayText(date)} for this transfer.`;
 /**
  * The account's records start later than the transaction, so nothing can move in or out; with no
  * start date its records have not started: it was opened with balances.
@@ -123,7 +116,7 @@ export const shortText = (account: string, coin: string, date: string) =>
 export const coverageText = (account: string, from: string | null, date: string) =>
   from === null
     ? `The records of ${account} have not started: it was opened with balances, so start them on Manual accounts first.`
-    : `The records of ${account} start on ${dateText(from)}, after this transaction on ${dateText(date)}.`;
+    : `The records of ${account} start on ${dayText(from)}, after this transaction on ${dayText(date)}.`;
 
 function failure(
   error: unknown,
@@ -148,7 +141,7 @@ function failure(
       ? coverageText(name(coverage.accountId), null, date)
       : `${coverageText(name(coverage.accountId), coverage.coverageFrom, date)} Choose a later date.`;
   if (dependent)
-    return `A later transaction on ${dateText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
+    return `A later transaction on ${dayText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
   if (status === 409 || status === 422)
     return 'This transaction does not fit the saved history: the account may not hold that much on this date, or it was changed elsewhere. Close this window and try again.';
   if (status === 400) return 'Check the fields and try again.';
@@ -199,6 +192,10 @@ const moreKinds = [
   ['airdrop', 'Airdrop'],
   ['gift-received', 'Gift'],
   ['fee', 'Fee'],
+] as const satisfies readonly (readonly [EntryKind, string])[];
+const giftKinds = [
+  ['gift-received', 'Received'],
+  ['gift-sent', 'Sent'],
 ] as const satisfies readonly (readonly [EntryKind, string])[];
 const isMoreKind = (kind: EntryKind) =>
   kind === 'reward' || kind === 'airdrop' || kind === 'fee' || kind.startsWith('gift');
@@ -705,21 +702,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               Type
             </span>
             <div className="portfolio-types">
-              <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-type`}>
-                {mainKinds.map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name={`${id}-kind`}
-                      value={value}
-                      checked={kind === value}
-                      disabled={Boolean(editing) && family(value) !== family(kind)}
-                      onChange={() => choose(value)}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
+              <SegmentedControl
+                name={`${id}-kind`}
+                labelledBy={`${id}-type`}
+                options={mainKinds}
+                value={kind}
+                disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
+                onChange={choose}
+              />
               <button
                 type="button"
                 className="portfolio-types__more"
@@ -731,51 +721,31 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               </button>
             </div>
             {moreShown && (
-              <div
+              <SegmentedControl
                 id={`${id}-more-types`}
-                className="shell-seg"
-                role="radiogroup"
-                aria-label="More types"
-              >
-                {moreKinds.map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name={`${id}-kind`}
-                      value={value}
-                      checked={value === 'gift-received' ? kind.startsWith('gift') : kind === value}
-                      disabled={Boolean(editing) && family(value) !== family(kind)}
-                      onChange={() => choose(value)}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
+                name={`${id}-kind`}
+                label="More types"
+                options={moreKinds}
+                value={kind}
+                isChecked={(value) =>
+                  value === 'gift-received' ? kind.startsWith('gift') : kind === value
+                }
+                disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
+                onChange={choose}
+              />
             )}
             {kind.startsWith('gift') && (
-              <div className="shell-seg" role="radiogroup" aria-label="Gift">
-                {(
-                  [
-                    ['gift-received', 'Received'],
-                    ['gift-sent', 'Sent'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name={`${id}-gift`}
-                      value={value}
-                      checked={kind === value}
-                      onChange={() => choose(value)}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
+              <SegmentedControl
+                name={`${id}-gift`}
+                label="Gift"
+                options={giftKinds}
+                value={kind}
+                onChange={choose}
+              />
             )}
           </div>
           {loadFailed ? (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               Could not load your assets and accounts. Close this window and try again.
             </p>
           ) : !ready ? (
@@ -995,20 +965,15 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     <span id={`${id}-currency`} className="portfolio-field__label">
                       {buy ? 'Paid in' : 'Received in'}
                     </span>
-                    <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-currency`}>
-                      {paidIn.map((code: PaidIn) => (
-                        <label key={code}>
-                          <input
-                            type="radio"
-                            name={`${id}-currency`}
-                            value={code}
-                            checked={entry.currency === code}
-                            onChange={() => update({ currency: code, rate: '', rateEdited: false })}
-                          />
-                          {code}
-                        </label>
-                      ))}
-                    </div>
+                    <SegmentedControl
+                      name={`${id}-currency`}
+                      labelledBy={`${id}-currency`}
+                      options={paidIn}
+                      value={entry.currency}
+                      onChange={(code: PaidIn) =>
+                        update({ currency: code, rate: '', rateEdited: false })
+                      }
+                    />
                     {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
                       <span className="portfolio-field__hint">
                         {entry.currency} is counted 1:1 with USD.
@@ -1262,7 +1227,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             </>
           )}
           {error && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}
@@ -1334,7 +1299,7 @@ function Availability({
         id={id}
         role={over ? 'alert' : undefined}
       >
-        {account} has no {symbol} on {dateText(date)}
+        {account} has no {symbol} on {dayText(date)}
       </span>
     );
   const useAll = (
@@ -1344,7 +1309,7 @@ function Availability({
   );
   return over ? (
     <span className="portfolio-field__error" id={id} role="alert">
-      Only {held} is available in {account} on {dateText(date)} · {useAll}
+      Only {held} is available in {account} on {dayText(date)} · {useAll}
     </span>
   ) : (
     <span className="portfolio-field__hint" id={id}>

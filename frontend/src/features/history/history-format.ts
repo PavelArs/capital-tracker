@@ -6,6 +6,7 @@ import type {
   AuditField,
   AuditValue,
 } from '@api/audit-history.api';
+import type { BadgeTone } from '@/ui/Badge';
 import { money, quantity } from '../portfolio/format';
 import { moment } from '../transactions/operation-format';
 
@@ -13,6 +14,12 @@ export const changeLabels: Record<AuditChange, string> = {
   created: 'Created',
   changed: 'Changed',
   deleted: 'Deleted',
+};
+
+export const changeTones: Record<AuditChange, BadgeTone> = {
+  created: 'pos',
+  changed: 'neutral',
+  deleted: 'neg',
 };
 
 export const actorLabels: Record<AuditActor, string> = {

@@ -1,19 +1,21 @@
 import { accountingApi, type WalletKind } from '@api/accounting.api';
-import { isAxiosError } from 'axios';
 import { type FormEvent, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
+import { requestFailure } from '@/utils/request-failure';
 import { kindLabels, walletKinds } from './wallets';
 
 const MAX_NAME = 120;
 
-function failure(error: unknown): string {
-  const status = isAxiosError(error) ? error.response?.status : undefined;
-  if (status === undefined) return 'Could not reach the server. Try again.';
-  if (status === 400) return 'Use a name of 1 to 120 characters on one line.';
-  if (status === 404) return 'This wallet no longer exists. Reload the page.';
-  if (status === 401) return 'Your session has ended. Sign in again.';
-  return 'Could not save the wallet. Try again.';
-}
+const failure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable: 'Could not reach the server. Try again.',
+    status: {
+      400: 'Use a name of 1 to 120 characters on one line.',
+      404: 'This wallet no longer exists. Reload the page.',
+      401: 'Your session has ended. Sign in again.',
+    },
+    fallback: 'Could not save the wallet. Try again.',
+  });
 
 interface Props {
   accountId: string;
@@ -112,7 +114,7 @@ export default function EditWalletDialog({ accountId, name, kind, onClose, onSav
             </select>
           </div>
           {error && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}

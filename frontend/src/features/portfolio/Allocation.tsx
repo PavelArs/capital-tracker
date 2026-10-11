@@ -1,6 +1,7 @@
 import type { AssetType } from '@api/portfolio-assets.api';
 import type { AllocationSlice, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useId, useState } from 'react';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
 import { sum } from '../wallets/wallets';
 import { money, percent } from './format';
@@ -78,20 +79,13 @@ export default function Allocation({
     <section className="shell-card" aria-labelledby={heading}>
       <div className="portfolio-toolbar">
         <h2 id={heading}>Allocation</h2>
-        <div className="shell-seg" role="radiogroup" aria-label="Group allocation by">
-          {groupings.map(([value, label]) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name={`${heading}-grouping`}
-                value={value}
-                checked={grouping === value}
-                onChange={() => setGrouping(value)}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
+        <SegmentedControl
+          name={`${heading}-grouping`}
+          label="Group allocation by"
+          options={groupings}
+          value={grouping}
+          onChange={setGrouping}
+        />
       </div>
       {slices.length === 0 ? (
         <p className="portfolio-none">Nothing with a price yet.</p>

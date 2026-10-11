@@ -10,6 +10,8 @@ import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { type Account, journalAccounts } from './AddTransactionDialog';
@@ -55,15 +57,17 @@ const problemText: Record<AssetProblem, string> = {
 };
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
 
-function assetFailure(error: unknown): string {
-  const code = status(error);
-  if (code === undefined)
-    return 'Could not reach the server. Try again; the same request will not add the asset twice.';
-  if (code === 400) return 'Check the fields and try again.';
-  if (code === 409) return 'This request conflicts with an asset already saved. Reload the page.';
-  if (code === 401) return 'Your session has ended. Sign in again.';
-  return 'Could not add the asset. Try again.';
-}
+const assetFailure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable:
+      'Could not reach the server. Try again; the same request will not add the asset twice.',
+    status: {
+      400: 'Check the fields and try again.',
+      409: 'This request conflicts with an asset already saved. Reload the page.',
+      401: 'Your session has ended. Sign in again.',
+    },
+    fallback: 'Could not add the asset. Try again.',
+  });
 
 function balanceFailure(error: unknown): string {
   const code = status(error);
@@ -329,21 +333,14 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             <span id={`${id}-type`} className="portfolio-field__label">
               Type
             </span>
-            <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-type`}>
-              {assetKinds.map(([value, label]) => (
-                <label key={value}>
-                  <input
-                    type="radio"
-                    name={`${id}-kind`}
-                    value={value}
-                    checked={kind === value}
-                    disabled={locked}
-                    onChange={() => update({ kind: value })}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
+            <SegmentedControl
+              name={`${id}-kind`}
+              labelledBy={`${id}-type`}
+              options={assetKinds}
+              value={kind}
+              disabled={locked}
+              onChange={(value) => update({ kind: value })}
+            />
             <span className="portfolio-field__hint">{kindHints[kind]}</span>
           </div>
           <div className="portfolio-row">
@@ -430,21 +427,14 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             <span id={`${id}-currency`} className="portfolio-field__label">
               {kind === 'cash' ? 'Currency' : crypto ? 'Paid in' : 'Value currency'}
             </span>
-            <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-currency`}>
-              {currencies.map((code) => (
-                <label key={code}>
-                  <input
-                    type="radio"
-                    name={`${id}-currency`}
-                    value={code}
-                    checked={entry.currency === code}
-                    disabled={(locked && !crypto) || balanceUnsure}
-                    onChange={() => update({ currency: code })}
-                  />
-                  {code}
-                </label>
-              ))}
-            </div>
+            <SegmentedControl
+              name={`${id}-currency`}
+              labelledBy={`${id}-currency`}
+              options={currencies}
+              value={entry.currency}
+              disabled={(locked && !crypto) || balanceUnsure}
+              onChange={(code) => update({ currency: code })}
+            />
             <span className="portfolio-field__hint">
               {kind === 'cash'
                 ? 'The amount is in this currency; it is also the ticker.'
@@ -533,7 +523,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               : 'Adding it counts as a deposit. Later price changes count as market movement.'}
           </p>
           {error && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {error}
             </p>
           )}

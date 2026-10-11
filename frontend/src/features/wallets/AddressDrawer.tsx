@@ -11,6 +11,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Drawer from '@/ui/Drawer';
+import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
@@ -59,12 +60,6 @@ const recordLabel = (item: AddressTransaction) =>
         : item.direction === 'out'
           ? 'Withdrawal'
           : 'Deposit';
-const dayFormat = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
 
 /** Pages of the address's history read to fill the list: a spammed address has long runs of dust. */
 const MAX_PAGES = 10;
@@ -336,13 +331,13 @@ export default function AddressDrawer({
                   {exchange.ipBound
                     ? 'Never: bound to an IP address'
                     : exchange.keyExpiresAt
-                      ? `${dayFormat.format(new Date(exchange.keyExpiresAt))}. Bind it to the server's IP address in Bybit to keep it.`
+                      ? `${dayText(exchange.keyExpiresAt)}. Bind it to the server's IP address in Bybit to keep it.`
                       : 'Unknown'}
                 </dd>
               </div>
               <div>
                 <dt>History from</dt>
-                <dd>{dayFormat.format(new Date(exchange.historyFrom))}</dd>
+                <dd>{dayText(exchange.historyFrom)}</dd>
               </div>
               {exchange.reportedAt && (
                 <div>
@@ -384,7 +379,7 @@ export default function AddressDrawer({
           </div>
         </dl>
         {key && key.alsoTracked.length > 0 && (
-          <p className="wallets-message wallets-message--warn" role="alert">
+          <p className="ui-banner ui-banner--warn wallets-message" role="alert">
             {key.alsoTracked.length === 1
               ? 'One address of this key is also tracked as its own wallet'
               : `${key.alsoTracked.length} addresses of this key are also tracked as their own wallets`}{' '}
@@ -397,7 +392,7 @@ export default function AddressDrawer({
         {address.staking && <StakingSection address={address} staking={address.staking} />}
         {address.pools && <PoolsSection pools={address.pools} />}
         {address.network === 'stellar' && address.reportedBalance && (
-          <p className="wallets-message wallets-message--warn" role="note">
+          <p className="ui-banner ui-banner--warn wallets-message" role="note">
             Stellar reports {quantity(address.reportedBalance)} {network.symbol}; the transactions
             read give {quantity(address.chainBalance ?? '0')} {network.symbol}. The app does not
             read offers on the Stellar exchange, claimable balances or liquidity pools, and the
@@ -413,7 +408,7 @@ export default function AddressDrawer({
         {exchange && <EarnSection exchange={exchange} />}
         {exchange && <ConvertNote exchange={exchange} />}
         {syncProblem(address, run) && (
-          <p className="wallets-message wallets-message--error" role="alert">
+          <p className="ui-banner ui-banner--neg wallets-message" role="alert">
             {syncProblem(address, run)}
           </p>
         )}
@@ -472,7 +467,7 @@ export default function AddressDrawer({
           </div>
           {message && (
             <p
-              className={`wallets-message${message.error ? ' wallets-message--error' : ''}`}
+              className={`ui-banner wallets-message ${message.error ? 'ui-banner--neg' : 'ui-banner--info'}`}
               role={message.error ? 'alert' : 'status'}
             >
               {message.text}
@@ -509,7 +504,7 @@ export default function AddressDrawer({
                     <span>
                       {exchange ? recordLabel(item) : directionLabels[item.direction]}{' '}
                       <span className="wallets-muted">
-                        {dayFormat.format(new Date(item.blockTime))}
+                        {dayText(item.blockTime)}
                         {operation?.status === 'dust' && ' · dust'}
                       </span>
                     </span>

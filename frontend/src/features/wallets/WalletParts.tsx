@@ -15,6 +15,8 @@ import type {
 } from '@api/wallet-addresses.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { useRef, useState } from 'react';
+import Badge from '@/ui/Badge';
+import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
@@ -137,7 +139,7 @@ const earnProducts: Record<EarnHolding['product'], string> = {
 export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
   if (exchange.earnAllowed === false)
     return (
-      <p className="wallets-message wallets-message--warn" role="note">
+      <p className="ui-banner ui-banner--warn wallets-message" role="note">
         This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key,
         tick Earn under Read-Only and press Sync now; no need to add the account again.
       </p>
@@ -175,7 +177,7 @@ export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
 export function ConvertNote({ exchange }: { exchange: ExchangeAccount }) {
   if (exchange.convertAllowed !== false) return null;
   return (
-    <p className="wallets-message wallets-message--warn" role="note">
+    <p className="ui-banner ui-banner--warn wallets-message" role="note">
       This key cannot read convert history, so coins converted on Bybit are missing from the
       records. In Bybit, edit the key, tick Exchange History under Read-Only and press Sync now; no
       need to add the account again.
@@ -202,13 +204,6 @@ function stakeDetail(item: StakeAccount, pools: boolean): string {
     : 'Not delegated to a validator';
 }
 
-const dayFormat = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
 /** TRON-STAKE-STATE: staked TRX has no account of its own; the row names what it is for. */
 function tronStake(item: StakeAccount): { name: string; detail: string } {
   if (item.kind === 'energy')
@@ -219,7 +214,7 @@ function tronStake(item: StakeAccount): { name: string; detail: string } {
     return {
       name: 'Unstaking',
       detail: item.availableAt
-        ? `Back to the balance on ${dayFormat.format(new Date(item.availableAt))}`
+        ? `Back to the balance on ${dayText(item.availableAt)}`
         : 'Back to the balance after 14 days',
     };
   return { name: 'Staked TRX', detail: 'Split by resource after the next sync' };
@@ -236,7 +231,7 @@ export function ReportedBalanceNote({ address }: { address: WalletAddress }) {
   const missing = sum([reported, `-${address.chainBalance}`]);
   const more = !missing.startsWith('-');
   return (
-    <p className="wallets-message wallets-message--warn">
+    <p className="ui-banner ui-banner--warn wallets-message">
       Tron reports {quantity(reported)} {symbol} at this address, staked included; its transactions
       explain {quantity(address.chainBalance)} {symbol}.{' '}
       {more
@@ -316,9 +311,9 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
                   {quantity(item.quantity)} {symbol}
                 </span>
                 {state ? (
-                  <span className={`wallets-badge wallets-badge--${state.tone}`}>
+                  <Badge tone={state.tone} dot>
                     {state.label}
-                  </span>
+                  </Badge>
                 ) : (
                   <span className="wallets-muted">Checked on the next sync</span>
                 )}
@@ -491,12 +486,12 @@ export function AddressRow({
     address.sync.state !== 'complete' &&
     (run?.state === 'running' || (run === undefined && address.sync.status === 'syncing'));
   const message = loading ? (
-    <div className="wallets-message">
+    <div className="ui-banner ui-banner--info wallets-message">
       Loading the transaction history. A long history takes a few minutes; it keeps loading in the
       background, so you can leave this page.
     </div>
   ) : problem ? (
-    <div className="wallets-message wallets-message--error">
+    <div className="ui-banner ui-banner--neg wallets-message">
       <span>{problem}</span>
       <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
         <Icon name="refresh" className="shell-icon shell-icon--sm" />
@@ -504,7 +499,7 @@ export function AddressRow({
       </button>
     </div>
   ) : run === undefined && address.sync.state !== 'complete' ? (
-    <div className="wallets-message">
+    <div className="ui-banner ui-banner--info wallets-message">
       <span>
         {address.sync.state === 'partial'
           ? 'Part of the history is loaded; the balance appears when the rest is.'
@@ -702,7 +697,7 @@ export function ReconcileNote({
     .map(({ symbol, difference }) => `${quantity(difference.replace(/^-/, ''))} ${symbol}`)
     .join(', ')}`;
   return (
-    <div className="wallets-message wallets-message--warn" role="note">
+    <div className="ui-banner ui-banner--warn wallets-message" role="note">
       <details className="wallets-diff">
         <summary>
           <span className="wallets-diff__line">{headline}</span>

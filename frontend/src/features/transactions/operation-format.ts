@@ -1,4 +1,5 @@
 import type { Operation, OperationAsset, OperationType } from '@api/operations.api';
+import { clockText, dayText } from '@/utils/dates';
 import { DASH, quantity } from '../portfolio/format';
 import { isEvm } from '../shell/evm-networks';
 
@@ -244,32 +245,20 @@ export function placeLabel(operation: Operation): string {
   return operation.account?.name ?? 'Whole portfolio';
 }
 
-const dateFormat = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'UTC',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-});
-const timeFormat = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'UTC',
-  hour: '2-digit',
-  minute: '2-digit',
-});
-
 /** Dates and times are shown in UTC, as stored. */
 export function day(iso: string): string {
-  return dateFormat.format(new Date(iso));
+  return dayText(iso);
 }
 
 export function time(iso: string): string {
-  return `${timeFormat.format(new Date(iso))} UTC`;
+  return `${clockText(iso)} UTC`;
 }
 
 /** The time under a row's type; a transaction entered without one says so (M9 stores 00:00). */
 export function rowTime(operation: Operation): string {
   const at = operation.occurredAt;
   if (operation.kind !== 'chain' && at.endsWith('T00:00:00.000Z')) return 'No time';
-  return timeFormat.format(new Date(at));
+  return clockText(at);
 }
 
 /** The UTC day a row is listed under: Today, Yesterday or "Oct 2, 2026". */

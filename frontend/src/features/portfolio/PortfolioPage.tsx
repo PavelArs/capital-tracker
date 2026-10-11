@@ -217,14 +217,14 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         </div>
       </dl>
       {portfolio.stalePriceCount > 0 && (
-        <p className="portfolio-warn" role="note">
+        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
           {portfolio.stalePriceCount === 1
             ? '1 price is older than 2 hours; the last stored price is used.'
             : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
         </p>
       )}
       {portfolio.missingRateCount > 0 && (
-        <p className="portfolio-warn" role="note">
+        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
           {portfolio.missingRateCount === 1
             ? '1 asset has'
             : `${portfolio.missingRateCount} assets have`}{' '}
@@ -487,7 +487,7 @@ export default function PortfolioPage() {
       ) : (
         <>
           {refreshFailed && (
-            <p className="portfolio-warn" role="alert">
+            <p className="ui-banner ui-banner--warn portfolio-warn" role="alert">
               Could not refresh the values; showing the last loaded ones.{' '}
               <button type="button" className="shell-button" onClick={() => void load(true)}>
                 Refresh

@@ -114,7 +114,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
       />
       {extra.hint && !problems[field] && <p className="shell-note">{extra.hint}</p>}
       {problems[field] && (
-        <p id={`${id}-error`} className="portfolio-dialog__error" role="alert">
+        <p id={`${id}-error`} className="ui-banner ui-banner--neg" role="alert">
           {problems[field]}
         </p>
       )}
@@ -155,7 +155,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
             },
           )}
           {problems.form && (
-            <p className="portfolio-dialog__error" role="alert">
+            <p className="ui-banner ui-banner--neg" role="alert">
               {problems.form}
             </p>
           )}
