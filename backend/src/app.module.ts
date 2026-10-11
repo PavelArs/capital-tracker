@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module';
 import { RedisCacheModule } from './cache/cache.module';
 import { validateEnvironment } from './config/env.validation';
 import { TypeOrmConfigService } from './config/typeorm.config';
+import { DepositsModule } from './deposits/deposits.module';
 import { FxRatesModule } from './fx-rates/fx-rates.module';
 import { HealthModule } from './health/health.module';
 import { pinoHttpOptions } from './observability/logging';
@@ -49,6 +50,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     RedisCacheModule,
     AuthModule,
     AccountingModule,
+    DepositsModule,
     FxRatesModule,
     OwnerExportModule,
     OwnerSettingsModule,

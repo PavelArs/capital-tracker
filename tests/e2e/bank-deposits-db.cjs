@@ -1,0 +1,276 @@
+'use strict';
+// bank-deposits (DEP-ACCRUAL, DEP-CHECK) against fresh synthetic PostgreSQL: a deposit entered
+// once earns computed interest, is worth its balance in USD, EUR and RUB at the Bank of Russia
+// rate of the day, refuses movements it could not have had, and compares a balance read in the
+// bank's app with the computed one. All data is synthetic.
+const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const { ConfigService } = require('@nestjs/config');
+const { Client } = require('pg');
+const { DataSource } = require('typeorm');
+const settings = {
+  DB_HOST: 'postgres',
+  DB_PORT: '5432',
+  DB_USERNAME: 'capital_e2e',
+  DB_PASSWORD: 'capital_e2e',
+  DB_NAME: 'capital_tracker_e2e',
+};
+const database = 'capital_tracker_bank_deposits_e2e';
+const modulePath = '/app/backend/dist/deposits/deposits.service.js';
+const MIGRATIONS = 59;
+let stage = 'synthetic configuration';
+
+function source() {
+  const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
+  const options = new TypeOrmConfigService(
+    new ConfigService({ ...settings, DB_NAME: database }),
+  ).createTypeOrmOptions();
+  assert.equal(options.synchronize, false);
+  assert.equal(options.migrationsRun, false);
+  return new DataSource({ ...options, extra: { ...options.extra, max: 2 } });
+}
+const rejected = (action, status) =>
+  assert.rejects(
+    async () => action(),
+    (error) => error.getStatus?.() === status,
+  );
+const savings = {
+  name: 'Savings A',
+  bank: 'Synthetic Bank',
+  currency: 'RUB',
+  startDate: '2026-07-01',
+  endDate: '2026-10-01',
+  payout: 'monthly',
+  capitalized: false,
+  dayBasis: 'actual-365',
+  earlyClose: 'forfeits-interest',
+  ratePercent: '12',
+  amount: '100000.00',
+};
+const dollars = {
+  name: 'Dollar B',
+  bank: 'Synthetic Bank',
+  currency: 'USD',
+  startDate: '2026-07-01',
+  endDate: null,
+  payout: 'quarterly',
+  capitalized: true,
+  dayBasis: 'actual-365',
+  earlyClose: 'keeps-interest',
+  ratePercent: '4',
+  amount: '5000',
+};
+
+async function accrual(db, service, owner) {
+  stage = 'synthetic deposits: 12% on 100000 RUB, monthly, and 4% on 5000 USD, quarterly capitalized';
+  await db.query(`INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit")
+    SELECT c.currency,'cbr',d::date,c.rate FROM (VALUES ('USD',90),('EUR',100)) c(currency,rate)
+    CROSS JOIN generate_series(date '2026-06-01', date '2026-10-04', interval '1 day') d
+    WHERE extract(isodow FROM d) < 6`);
+  const rub = await service.create(owner, savings);
+  const usd = await service.create(owner, dollars);
+  assert.equal(rub.principal, '100000.00');
+  assert.equal(rub.status, 'matured', 'Read today, its term is over');
+
+  const listed = await service.list(owner, '2026-10-01');
+  const matured = listed.items.find((item) => item.id === rub.id);
+  assert.equal(matured.status, 'matured');
+  assert.equal(matured.due, '3024.66', 'Three postings: 1019.18, 1019.18 and 986.30');
+  assert.equal(matured.balance, '103024.66');
+  assert.deepEqual(matured.values, { USD: '1144.72', EUR: '1030.25', RUB: '103024.66' });
+  assert.equal(matured.atMaturity.interest, '3024.66');
+  console.log('PASS DEP-ACCRUAL-RUB');
+
+  const later = (await service.list(owner, '2026-10-02')).items.find((item) => item.id === usd.id);
+  assert.equal(later.principal, '5050.41', 'The quarter ending 1 October was capitalized');
+  assert.equal(later.accrued, '0.55', 'One day, 1 October, on the capitalized sum');
+  const day4 = (await service.list(owner, '2026-10-04')).items.find((item) => item.id === usd.id);
+  assert.equal(day4.balance, '5052.07');
+  assert.equal(day4.values.RUB, '454686.30', 'At 90 rubles on a working day');
+  assert.deepEqual(day4.nextPayout.date, '2027-01-01');
+  console.log('PASS DEP-ACCRUAL-USD');
+
+  const totals = (await service.list(owner, '2026-10-04')).totals;
+  assert.deepEqual(totals, { USD: '6196.79', EUR: '5577.11', RUB: '557710.96' });
+  console.log('PASS DEP-TOTALS');
+  return { rub: rub.id, usd: usd.id };
+}
+
+async function movements(db, service, owner, other, ids) {
+  stage = 'synthetic movements: payouts, withdrawals and what a deposit could not have had';
+  await rejected(
+    () => service.addMovement(owner, ids.rub, { date: '2026-06-30', kind: 'topup', amount: '10' }),
+    422,
+  );
+  await rejected(
+    () =>
+      service.addMovement(owner, ids.rub, {
+        date: '2026-08-01',
+        kind: 'interest-payout',
+        amount: '1019.19',
+      }),
+    422,
+  );
+  await rejected(
+    () =>
+      service.addMovement(owner, ids.rub, {
+        date: '2026-08-15',
+        kind: 'withdrawal',
+        amount: '100000.01',
+      }),
+    422,
+  );
+  await rejected(() => service.addMovement(owner, ids.rub, { date: '2999-01-01', kind: 'topup', amount: '1' }), 422);
+  await rejected(() => service.addMovement(other, ids.rub, { date: '2026-08-01', kind: 'topup', amount: '1' }), 404);
+  await rejected(() => service.addMovement(owner, ids.rub, { date: '2026-08-01', kind: 'topup', amount: '1.005' }), 400);
+  console.log('PASS DEP-MOVEMENT-REFUSED');
+
+  const paid = await service.addMovement(owner, ids.rub, {
+    date: '2026-08-01',
+    kind: 'interest-payout',
+    amount: '1019.18',
+    comment: 'To the card',
+  });
+  assert.equal(paid.interestPaidOut, '1019.18');
+  assert.equal(paid.due, '2005.48');
+  const topped = await service.addMovement(owner, ids.rub, {
+    date: '2026-08-16',
+    kind: 'topup',
+    amount: '50000',
+  });
+  assert.equal(topped.principal, '150000.00');
+  const withdrawn = await service.addMovement(owner, ids.rub, {
+    date: '2026-09-10',
+    kind: 'withdrawal',
+    amount: '150000',
+  });
+  assert.equal(withdrawn.status, 'closed');
+  assert.equal(withdrawn.closedOn, '2026-09-10');
+  assert.notEqual(withdrawn.interestForfeited, '0.00', 'Closing before the end forfeits the rest');
+  console.log('PASS DEP-MOVEMENT-RECORDED');
+
+  const topup = topped.movements.find((movement) => movement.kind === 'topup' && movement.amount === '50000.00');
+  await rejected(() => service.removeMovement(owner, ids.rub, topup.id), 409);
+  const first = topped.movements[0];
+  await rejected(() => service.removeMovement(owner, ids.rub, first.id), 422);
+  const removed = await service.removeMovement(
+    owner,
+    ids.rub,
+    withdrawn.movements.find((movement) => movement.kind === 'withdrawal').id,
+  );
+  assert.equal(removed.status, 'matured');
+  console.log('PASS DEP-MOVEMENT-DEPENDS');
+}
+
+async function checks(db, service, owner, ids) {
+  stage = 'synthetic balance check against the balance read in the bank';
+  const before = await service.get(owner, ids.usd, '2026-10-04');
+  assert.equal(before.lastCheck, null);
+  const checked = await service.addCheck(owner, ids.usd, {
+    checkedOn: '2026-10-04',
+    bankBalance: '5052.10',
+  });
+  assert.equal(checked.lastCheck.calculated, '5052.07');
+  assert.equal(checked.lastCheck.difference, '0.03');
+  assert.equal(checked.checks.length, 1);
+  await rejected(
+    () => service.addCheck(owner, ids.usd, { checkedOn: '2026-06-30', bankBalance: '1' }),
+    422,
+  );
+  await rejected(
+    () => service.addCheck(owner, ids.usd, { checkedOn: '2026-10-04', bankBalance: '-1' }),
+    400,
+  );
+  console.log('PASS DEP-CHECK');
+
+  stage = 'synthetic rate change inside the term';
+  await rejected(
+    () => service.addRate(owner, ids.rub, { effectiveFrom: '2026-07-01', ratePercent: '5' }),
+    422,
+  );
+  await rejected(
+    () => service.addRate(owner, ids.rub, { effectiveFrom: '2026-10-01', ratePercent: '5' }),
+    422,
+  );
+  const lowered = await service.addRate(owner, ids.rub, { effectiveFrom: '2026-09-01', ratePercent: '6' });
+  assert.equal(lowered.ratePercent, '6');
+  assert.deepEqual(lowered.rates.map((rate) => rate.ratePercent), ['12', '6']);
+  console.log('PASS DEP-RATE');
+}
+
+async function owners(db, service, owner, other, ids) {
+  stage = 'synthetic second owner';
+  assert.deepEqual((await service.list(other, undefined)).items, []);
+  await rejected(() => service.get(other, ids.rub, undefined), 404);
+  await rejected(() => service.remove(other, ids.rub), 404);
+  await service.remove(owner, ids.rub);
+  const left = await db.query(
+    `SELECT (SELECT count(*)::int FROM bank_deposit_rates WHERE "depositId"=$1) AS rates,
+       (SELECT count(*)::int FROM bank_deposit_movements WHERE "depositId"=$1) AS movements`,
+    [ids.rub],
+  );
+  assert.deepEqual(left[0], { rates: 0, movements: 0 }, 'Deleting a deposit deletes its rows');
+  assert.equal((await service.list(owner, undefined)).items.length, 1);
+  console.log('PASS DEP-OWNER');
+}
+
+async function main() {
+  for (const [key, value] of Object.entries(settings))
+    assert.equal(process.env[key], value, 'Exact isolated settings required');
+  assert.ok(
+    require('node:fs').existsSync(modulePath),
+    'Missing implementation is prerequisite failure, not RED',
+  );
+  const admin = new Client({
+    host: settings.DB_HOST,
+    port: 5432,
+    user: settings.DB_USERNAME,
+    password: settings.DB_PASSWORD,
+    database: settings.DB_NAME,
+  });
+  await admin.connect();
+  try {
+    assert.equal(
+      (await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount,
+      0,
+      'Never reuse or drop an existing database',
+    );
+    await admin.query(`CREATE DATABASE "${database}"`);
+  } finally {
+    await admin.end();
+  }
+  const migrated = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], {
+    cwd: '/app/backend',
+    env: { ...settings, ...process.env, DB_NAME: database },
+    encoding: 'utf8',
+    timeout: 60000,
+  });
+  assert.equal(migrated.status, 0, 'Actual schema migration');
+  assert.match(migrated.stdout, new RegExp(`Migrations applied: ${MIGRATIONS}`));
+  const db = source();
+  try {
+    await db.initialize();
+    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+      ('deposit-owner@example.invalid','synthetic-not-a-hash',true),
+      ('deposit-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const { DepositsService } = require(modulePath);
+    const service = new DepositsService(db);
+    const ids = await accrual(db, service, owner.id);
+    await movements(db, service, owner.id, other.id, ids);
+    await checks(db, service, owner.id, ids);
+    await owners(db, service, owner.id, other.id, ids);
+  } finally {
+    if (db.isInitialized) await db.destroy();
+  }
+}
+const watchdog = setTimeout(() => {
+  console.error(`FAIL timeout at ${stage}`);
+  process.exit(1);
+}, 180000);
+watchdog.unref();
+main()
+  .catch((error) => {
+    console.error(`FAIL ${stage}: ${error.message}`);
+    process.exitCode = 1;
+  })
+  .finally(() => clearTimeout(watchdog));

@@ -63,14 +63,15 @@ describe('SHELL-002 navigation presentation', () => {
   });
 });
 
-describe('SHELL-001 the five sections, no Legacy group', () => {
-  it('lists the five new sections in order', async () => {
+describe('SHELL-001 the sections, no Legacy group', () => {
+  it('lists the sections in order', async () => {
     const document = await markup();
     expect(linksOf(document.querySelector('[data-nav-group="sections"]'))).toEqual([
       ['Dashboard', '/dashboard'],
       ['Portfolio', '/portfolio'],
       ['Transactions', '/transactions'],
       ['Wallets', '/wallets'],
+      ['Deposits', '/deposits'],
       ['Settings', '/preferences'],
     ]);
   });

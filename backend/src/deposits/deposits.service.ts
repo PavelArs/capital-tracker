@@ -1,0 +1,480 @@
+import { randomUUID } from 'node:crypto';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { DataSource, EntityManager } from 'typeorm';
+import { canonicalDecimalToAtoms } from '../accounting/money';
+import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import { readFxRates } from '../fx-rates/fx-rates.service';
+import {
+  parseAsOfDate,
+  parseCheck,
+  parseDeposit,
+  parseMovement,
+  parseRateChange,
+  parseUuid,
+} from './deposit-input';
+import {
+  centsText,
+  type DepositCurrency,
+  type DepositMovement,
+  type DepositTerms,
+  firstImpossibleMovement,
+  nextPayout,
+  projectDeposit,
+} from './deposit-interest';
+
+interface DepositRow {
+  id: string;
+  name: string;
+  bank: string;
+  currency: DepositCurrency;
+  startDate: string;
+  endDate: string | null;
+  payout: DepositTerms['payout'];
+  capitalized: boolean;
+  dayBasis: DepositTerms['dayBasis'];
+  earlyClose: DepositTerms['earlyClose'];
+}
+interface RateRow {
+  depositId: string;
+  effectiveFrom: string;
+  ratePercent: string;
+}
+interface MovementRow {
+  id: string;
+  depositId: string;
+  occurredOn: string;
+  kind: DepositMovement['kind'];
+  amount: string;
+  comment: string | null;
+}
+interface CheckRow {
+  id: string;
+  depositId: string;
+  checkedOn: string;
+  bankBalance: string;
+}
+interface Stored {
+  deposit: DepositRow;
+  rates: RateRow[];
+  movements: MovementRow[];
+  checks: CheckRow[];
+}
+
+const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
+
+const columns = `id, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+  to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis", "earlyClose"`;
+
+const termsOf = (stored: Stored): DepositTerms => ({
+  startDate: stored.deposit.startDate,
+  endDate: stored.deposit.endDate,
+  payout: stored.deposit.payout,
+  capitalized: stored.deposit.capitalized,
+  dayBasis: stored.deposit.dayBasis,
+  earlyClose: stored.deposit.earlyClose,
+  rates: stored.rates.map((rate) => ({
+    effectiveFrom: rate.effectiveFrom,
+    ratePercent: rate.ratePercent,
+  })),
+});
+const movementsOf = (stored: Stored): DepositMovement[] =>
+  stored.movements.map((row) => ({ date: row.occurredOn, kind: row.kind, amount: row.amount }));
+
+const ratePercentText = (value: string) => {
+  const [whole, fraction = ''] = value.split('.');
+  const trimmed = fraction.replace(/0+$/, '');
+  return trimmed ? `${whole}.${trimmed}` : whole;
+};
+
+/**
+ * DEP-ACCRUAL, DEP-CHECK: bank deposits the owner entered once. What a deposit has earned and
+ * what it is worth are computed from its terms and movements on every read.
+ */
+@Injectable()
+export class DepositsService {
+  constructor(private readonly source: DataSource) {}
+
+  async list(ownerId: string, rawAsOf: unknown) {
+    const owner = parseUuid(ownerId);
+    const asOf = parseAsOfDate(rawAsOf);
+    return this.read(async (manager) => {
+      const today = moscowDate(new Date());
+      const date = asOf ?? today;
+      const all = await this.load(manager, owner);
+      const converters = await this.converters(manager);
+      const items = all.map((stored) => this.view(stored, date, converters));
+      const open = items.filter((item) => item.status !== 'closed');
+      return {
+        asOf: date,
+        items,
+        totals: Object.fromEntries(
+          accountingCurrencies.map((currency) => {
+            const values = open.map((item) => item.values[currency]);
+            return [
+              currency,
+              values.some((value) => value === null)
+                ? null
+                : centsText(
+                    values.reduce((sum, value) => sum + canonicalDecimalToAtoms(value ?? '0'), 0n),
+                  ),
+            ];
+          }),
+        ),
+      };
+    });
+  }
+
+  async get(ownerId: string, id: string, rawAsOf: unknown) {
+    const owner = parseUuid(ownerId);
+    const depositId = parseUuid(id);
+    const asOf = parseAsOfDate(rawAsOf);
+    return this.read(async (manager) => {
+      const [stored] = await this.load(manager, owner, depositId);
+      if (!stored) throw new NotFoundException('Deposit not found');
+      return this.detail(stored, asOf ?? moscowDate(new Date()), await this.converters(manager));
+    });
+  }
+
+  async create(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseDeposit(raw);
+    if (input.startDate > moscowDate(new Date()))
+      throw new UnprocessableEntityException('Start date is in the future');
+    const id = randomUUID();
+    await this.source.transaction(async (manager) => {
+      await manager.query(
+        `INSERT INTO bank_deposits (id, "ownerId", name, bank, currency, "startDate", "endDate",
+           payout, capitalized, "dayBasis", "earlyClose")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          id,
+          owner,
+          input.name,
+          input.bank,
+          input.currency,
+          input.startDate,
+          input.endDate,
+          input.payout,
+          input.capitalized,
+          input.dayBasis,
+          input.earlyClose,
+        ],
+      );
+      await manager.query(
+        'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',
+        [owner, id, input.startDate, input.ratePercent],
+      );
+      await manager.query(
+        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount)
+         VALUES ($1,$2,$3,$4,'topup',$5)`,
+        [randomUUID(), owner, id, input.startDate, input.amount],
+      );
+    });
+    return this.get(owner, id, undefined);
+  }
+
+  async addMovement(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const depositId = parseUuid(id);
+    const input = parseMovement(raw);
+    if (input.date > moscowDate(new Date()))
+      throw new UnprocessableEntityException('Date is in the future');
+    await this.source.transaction(async (manager) => {
+      const stored = await this.locked(manager, owner, depositId);
+      // A movement goes after the ones already recorded for its day, as the database orders them.
+      const next = stableByDate([
+        ...movementsOf(stored),
+        { date: input.date, kind: input.kind, amount: input.amount },
+      ]);
+      if (firstImpossibleMovement(termsOf(stored), next) !== -1)
+        throw new UnprocessableEntityException('The deposit could not have had this movement');
+      await manager.query(
+        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount, comment)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [randomUUID(), owner, depositId, input.date, input.kind, input.amount, input.comment],
+      );
+    });
+    return this.get(owner, depositId, undefined);
+  }
+
+  async removeMovement(ownerId: string, id: string, movementId: string) {
+    const owner = parseUuid(ownerId);
+    const depositId = parseUuid(id);
+    const moveId = parseUuid(movementId);
+    await this.source.transaction(async (manager) => {
+      const stored = await this.locked(manager, owner, depositId);
+      const index = stored.movements.findIndex((row) => row.id === moveId);
+      if (index === -1) throw new NotFoundException('Movement not found');
+      const remaining = movementsOf(stored).filter((_, position) => position !== index);
+      if (
+        index === 0 &&
+        stored.movements[0].occurredOn === stored.deposit.startDate &&
+        stored.movements[0].kind === 'topup'
+      )
+        throw new UnprocessableEntityException(
+          'The first deposit cannot be removed; delete the deposit instead',
+        );
+      if (firstImpossibleMovement(termsOf(stored), remaining) !== -1)
+        throw new ConflictException('A later movement depends on this one');
+      await manager.query('DELETE FROM bank_deposit_movements WHERE "ownerId"=$1 AND id=$2', [
+        owner,
+        moveId,
+      ]);
+    });
+    return this.get(owner, depositId, undefined);
+  }
+
+  async addRate(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const depositId = parseUuid(id);
+    const input = parseRateChange(raw);
+    await this.source.transaction(async (manager) => {
+      const stored = await this.locked(manager, owner, depositId);
+      if (
+        input.effectiveFrom <= stored.deposit.startDate ||
+        (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
+      )
+        throw new UnprocessableEntityException('The rate must change inside the term');
+      const next: DepositTerms = {
+        ...termsOf(stored),
+        rates: [
+          ...stored.rates.filter((rate) => rate.effectiveFrom !== input.effectiveFrom),
+          input,
+        ].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
+      };
+      if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
+        throw new ConflictException('A recorded movement depends on the earlier rate');
+      await manager.query(
+        `INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent")
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT ("depositId", "effectiveFrom") DO UPDATE SET "ratePercent" = EXCLUDED."ratePercent"`,
+        [owner, depositId, input.effectiveFrom, input.ratePercent],
+      );
+    });
+    return this.get(owner, depositId, undefined);
+  }
+
+  async addCheck(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const depositId = parseUuid(id);
+    const input = parseCheck(raw);
+    if (input.checkedOn > moscowDate(new Date()))
+      throw new UnprocessableEntityException('Date is in the future');
+    await this.source.transaction(async (manager) => {
+      const stored = await this.locked(manager, owner, depositId);
+      if (input.checkedOn < stored.deposit.startDate)
+        throw new UnprocessableEntityException('The date is before the deposit started');
+      await manager.query(
+        `INSERT INTO bank_deposit_checks (id, "ownerId", "depositId", "checkedOn", "bankBalance")
+         VALUES ($1,$2,$3,$4,$5)`,
+        [randomUUID(), owner, depositId, input.checkedOn, input.bankBalance],
+      );
+    });
+    return this.get(owner, depositId, undefined);
+  }
+
+  async remove(ownerId: string, id: string) {
+    const owner = parseUuid(ownerId);
+    const depositId = parseUuid(id);
+    await this.source.transaction(async (manager) => {
+      await this.locked(manager, owner, depositId);
+      await manager.query('DELETE FROM bank_deposits WHERE "ownerId"=$1 AND id=$2', [
+        owner,
+        depositId,
+      ]);
+    });
+    return { id: depositId, deleted: true };
+  }
+
+  private async converters(manager: EntityManager) {
+    const rates = await readFxRates(manager);
+    return new Map(
+      accountingCurrencies.map((currency) => [currency, new FxConverter(rates, currency)]),
+    );
+  }
+
+  private read<T>(action: (manager: EntityManager) => Promise<T>): Promise<T> {
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      return action(manager);
+    });
+  }
+
+  private async locked(manager: EntityManager, owner: string, id: string): Promise<Stored> {
+    const found: { id: string }[] = await manager.query(
+      'SELECT id FROM bank_deposits WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
+      [owner, id],
+    );
+    if (found.length === 0) throw new NotFoundException('Deposit not found');
+    return (await this.load(manager, owner, id))[0];
+  }
+
+  private async load(manager: EntityManager, owner: string, id?: string): Promise<Stored[]> {
+    const filter = id ? 'AND id=$2' : '';
+    const args = id ? [owner, id] : [owner];
+    const deposits: DepositRow[] = await manager.query(
+      `SELECT ${columns} FROM bank_deposits WHERE "ownerId"=$1 ${filter} ORDER BY "startDate", "createdAt", id`,
+      args,
+    );
+    if (deposits.length === 0) return [];
+    const ids = deposits.map((row) => row.id);
+    const rates: RateRow[] = await manager.query(
+      `SELECT "depositId", to_char("effectiveFrom", 'YYYY-MM-DD') AS "effectiveFrom", "ratePercent"::text AS "ratePercent"
+       FROM bank_deposit_rates WHERE "ownerId"=$1 AND "depositId" = ANY($2) ORDER BY "effectiveFrom"`,
+      [owner, ids],
+    );
+    const movements: MovementRow[] = await manager.query(
+      `SELECT id, "depositId", to_char("occurredOn", 'YYYY-MM-DD') AS "occurredOn", kind, amount::text AS amount, comment
+       FROM bank_deposit_movements WHERE "ownerId"=$1 AND "depositId" = ANY($2)
+       ORDER BY "occurredOn", "createdAt", id`,
+      [owner, ids],
+    );
+    const checks: CheckRow[] = await manager.query(
+      `SELECT id, "depositId", to_char("checkedOn", 'YYYY-MM-DD') AS "checkedOn", "bankBalance"::text AS "bankBalance"
+       FROM bank_deposit_checks WHERE "ownerId"=$1 AND "depositId" = ANY($2)
+       ORDER BY "checkedOn", "createdAt", id`,
+      [owner, ids],
+    );
+    return deposits.map((deposit) => ({
+      deposit,
+      rates: rates
+        .filter((row) => row.depositId === deposit.id)
+        .map((row) => ({ ...row, ratePercent: ratePercentText(row.ratePercent) })),
+      movements: movements.filter((row) => row.depositId === deposit.id),
+      checks: checks.filter((row) => row.depositId === deposit.id),
+    }));
+  }
+
+  /** The balance stated in each accounting currency at the Bank of Russia rate of that day. */
+  private values(
+    amount: string,
+    currency: DepositCurrency,
+    date: string,
+    converters: Map<AccountingCurrency, FxConverter>,
+  ) {
+    const atoms = canonicalDecimalToAtoms(amount);
+    return Object.fromEntries(
+      accountingCurrencies.map((target) => {
+        const converted = converters.get(target)?.convert(atoms, currency, date) ?? null;
+        return [target, converted === null ? null : centsText(converted)];
+      }),
+    ) as Record<AccountingCurrency, string | null>;
+  }
+
+  private view(stored: Stored, asOf: string, converters: Map<AccountingCurrency, FxConverter>) {
+    const terms = termsOf(stored);
+    const movements = movementsOf(stored);
+    const now = projectDeposit(terms, movements, asOf);
+    const ended = terms.endDate !== null && terms.endDate <= asOf;
+    const status =
+      now.closedOn !== null
+        ? ('closed' as const)
+        : ended
+          ? ('matured' as const)
+          : ('active' as const);
+    const maturity =
+      terms.endDate !== null && now.closedOn === null
+        ? projectDeposit(terms, movements, terms.endDate)
+        : null;
+    const last = stored.checks[stored.checks.length - 1];
+    const lastCheck = last
+      ? (() => {
+          const calculated = projectDeposit(terms, movements, last.checkedOn).balance;
+          return {
+            checkedOn: last.checkedOn,
+            bankBalance: last.bankBalance,
+            calculated,
+            difference: centsText(
+              canonicalDecimalToAtoms(last.bankBalance) - canonicalDecimalToAtoms(calculated),
+            ),
+          };
+        })()
+      : null;
+    return {
+      id: stored.deposit.id,
+      name: stored.deposit.name,
+      bank: stored.deposit.bank,
+      currency: stored.deposit.currency,
+      startDate: terms.startDate,
+      endDate: terms.endDate,
+      payout: terms.payout,
+      capitalized: terms.capitalized,
+      dayBasis: terms.dayBasis,
+      earlyClose: terms.earlyClose,
+      ratePercent:
+        [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf)?.ratePercent ??
+        terms.rates[0]?.ratePercent ??
+        '0',
+      status,
+      closedOn: now.closedOn,
+      principal: now.principal,
+      accrued: now.accrued,
+      due: now.due,
+      balance: now.balance,
+      values: this.values(now.balance, stored.deposit.currency, asOf, converters),
+      nextPayout: status === 'active' ? nextPayout(terms, movements, asOf) : null,
+      atMaturity: maturity
+        ? {
+            date: terms.endDate as string,
+            balance: maturity.balance,
+            interest: centsText(canonicalDecimalToAtoms(maturity.interestPosted)),
+          }
+        : null,
+      lastCheck,
+    };
+  }
+
+  private detail(stored: Stored, asOf: string, converters: Map<AccountingCurrency, FxConverter>) {
+    const terms = termsOf(stored);
+    const projection = projectDeposit(terms, movementsOf(stored), asOf);
+    return {
+      ...this.view(stored, asOf, converters),
+      asOf,
+      rates: stored.rates.map(({ effectiveFrom, ratePercent }) => ({ effectiveFrom, ratePercent })),
+      movements: stored.movements.map((row) => ({
+        id: row.id,
+        date: row.occurredOn,
+        kind: row.kind,
+        amount: row.amount,
+        comment: row.comment,
+      })),
+      periods: projection.periods,
+      interestPosted: projection.interestPosted,
+      interestPaidOut: projection.interestPaidOut,
+      interestForfeited: projection.interestForfeited,
+      checks: stored.checks
+        .map((check) => {
+          const calculated = projectDeposit(terms, movementsOf(stored), check.checkedOn).balance;
+          return {
+            id: check.id,
+            checkedOn: check.checkedOn,
+            bankBalance: check.bankBalance,
+            calculated,
+            difference: centsText(
+              canonicalDecimalToAtoms(check.bankBalance) - canonicalDecimalToAtoms(calculated),
+            ),
+          };
+        })
+        .reverse(),
+    };
+  }
+}
+
+/** Movements in date order, equal dates keeping the order they were given. */
+function stableByDate(movements: DepositMovement[]): DepositMovement[] {
+  return movements
+    .map((movement, index) => ({ movement, index }))
+    .sort((a, b) =>
+      a.movement.date < b.movement.date
+        ? -1
+        : a.movement.date > b.movement.date
+          ? 1
+          : a.index - b.index,
+    )
+    .map(({ movement }) => movement);
+}

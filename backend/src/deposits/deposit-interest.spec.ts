@@ -1,0 +1,212 @@
+import {
+  type DepositMovement,
+  type DepositTerms,
+  nextPayout,
+  payoutDates,
+  projectDeposit,
+} from './deposit-interest';
+
+const terms = (change: Partial<DepositTerms> = {}): DepositTerms => ({
+  startDate: '2026-01-01',
+  endDate: '2026-04-01',
+  payout: 'monthly',
+  capitalized: false,
+  dayBasis: 'actual-365',
+  earlyClose: 'forfeits-interest',
+  rates: [{ effectiveFrom: '2026-01-01', ratePercent: '12' }],
+  ...change,
+});
+const topup = (date: string, amount: string): DepositMovement => ({
+  date,
+  kind: 'topup',
+  amount,
+});
+
+describe('payoutDates', () => {
+  it('lists monthly dates and the end date', () => {
+    expect(payoutDates(terms(), '2026-12-31')).toEqual(['2026-02-01', '2026-03-01', '2026-04-01']);
+  });
+
+  it('keeps the day of the month, clamped to the last day of short months', () => {
+    expect(payoutDates(terms({ startDate: '2026-01-31', endDate: null }), '2026-04-30')).toEqual([
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+    ]);
+  });
+
+  it('lists quarterly dates and only the end date for at-end', () => {
+    expect(
+      payoutDates(terms({ payout: 'quarterly', endDate: '2026-12-01' }), '2026-12-31'),
+    ).toEqual(['2026-04-01', '2026-07-01', '2026-10-01', '2026-12-01']);
+    expect(payoutDates(terms({ payout: 'at-end' }), '2026-12-31')).toEqual(['2026-04-01']);
+    expect(payoutDates(terms({ payout: 'at-end', endDate: null }), '2026-12-31')).toEqual([]);
+  });
+
+  it('stops at the asked day', () => {
+    expect(payoutDates(terms(), '2026-02-15')).toEqual(['2026-02-01']);
+  });
+});
+
+describe('projectDeposit', () => {
+  it('accrues a single period at the end of the term (31 days of 12% on 100000)', () => {
+    const result = projectDeposit(
+      terms({ payout: 'at-end', endDate: '2026-02-01' }),
+      [topup('2026-01-01', '100000')],
+      '2026-02-01',
+    );
+    expect(result.periods).toEqual([
+      { from: '2026-01-01', to: '2026-02-01', interest: '1019.18', treatment: 'payable' },
+    ]);
+    expect(result.principal).toBe('100000.00');
+    expect(result.due).toBe('1019.18');
+    expect(result.accrued).toBe('0.00');
+    expect(result.balance).toBe('101019.18');
+  });
+
+  it('does not earn the day it is asked about', () => {
+    const result = projectDeposit(terms(), [topup('2026-01-01', '100000')], '2026-01-11');
+    // Ten days: 1 to 10 January.
+    expect(result.accrued).toBe('328.77');
+    expect(result.periods).toEqual([]);
+  });
+
+  it('capitalizes monthly interest into the next month', () => {
+    const result = projectDeposit(
+      terms({ capitalized: true }),
+      [topup('2026-01-01', '100000')],
+      '2026-04-01',
+    );
+    expect(result.periods.map((period) => period.interest)).toEqual([
+      '1019.18',
+      '929.93',
+      '1039.04',
+    ]);
+    expect(result.principal).toBe('102988.15');
+    expect(result.balance).toBe('102988.15');
+    expect(result.interestPosted).toBe('2988.15');
+  });
+
+  it('leaves payable interest due until a payout takes it out', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-01', kind: 'interest-payout', amount: '1019.18' },
+    ];
+    const result = projectDeposit(terms(), movements, '2026-03-01');
+    expect(result.interestPosted).toBe('1939.73');
+    expect(result.interestPaidOut).toBe('1019.18');
+    expect(result.due).toBe('920.55');
+    expect(result.principal).toBe('100000.00');
+  });
+
+  it('accrues on a top-up from the day it is made', () => {
+    const result = projectDeposit(
+      terms({ payout: 'at-end', endDate: '2026-02-01' }),
+      [topup('2026-01-01', '100000'), topup('2026-01-16', '50000')],
+      '2026-02-01',
+    );
+    // 15 days on 100000 (493.15) plus 16 days on 150000 (789.04).
+    expect(result.periods[0].interest).toBe('1282.19');
+  });
+
+  it('follows a change of rate', () => {
+    const result = projectDeposit(
+      terms({
+        payout: 'at-end',
+        endDate: '2026-02-01',
+        rates: [
+          { effectiveFrom: '2026-01-01', ratePercent: '12' },
+          { effectiveFrom: '2026-01-16', ratePercent: '6' },
+        ],
+      }),
+      [topup('2026-01-01', '100000')],
+      '2026-02-01',
+    );
+    // 15 days at 12% (493.15) plus 16 days at 6% (263.01).
+    expect(result.periods[0].interest).toBe('756.16');
+  });
+
+  it('counts 366 days in a leap year on actual-actual', () => {
+    const leap = projectDeposit(
+      terms({
+        startDate: '2028-01-01',
+        endDate: '2028-01-31',
+        payout: 'at-end',
+        dayBasis: 'actual-actual',
+      }),
+      [topup('2028-01-01', '100000')],
+      '2028-01-31',
+    );
+    const plain = projectDeposit(
+      terms({
+        startDate: '2028-01-01',
+        endDate: '2028-01-31',
+        payout: 'at-end',
+        dayBasis: 'actual-365',
+      }),
+      [topup('2028-01-01', '100000')],
+      '2028-01-31',
+    );
+    expect(leap.periods[0].interest).toBe('983.61');
+    expect(plain.periods[0].interest).toBe('986.30');
+  });
+
+  it('forfeits the interest not yet posted when the whole deposit is closed early', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-11', kind: 'withdrawal', amount: '100000' },
+    ];
+    const result = projectDeposit(terms(), movements, '2026-03-01');
+    expect(result.closedOn).toBe('2026-02-11');
+    expect(result.principal).toBe('0.00');
+    expect(result.accrued).toBe('0.00');
+    expect(result.interestForfeited).toBe('328.77');
+    // The January interest was posted on 1 February and stays due.
+    expect(result.due).toBe('1019.18');
+  });
+
+  it('keeps the interest when the rule says so', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-11', kind: 'withdrawal', amount: '100000' },
+    ];
+    const result = projectDeposit(terms({ earlyClose: 'keeps-interest' }), movements, '2026-03-01');
+    expect(result.interestForfeited).toBe('0.00');
+  });
+
+  it('keeps accruing after a partial withdrawal, on what is left', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-01-16', kind: 'withdrawal', amount: '50000' },
+    ];
+    const result = projectDeposit(
+      terms({ payout: 'at-end', endDate: '2026-02-01' }),
+      movements,
+      '2026-02-01',
+    );
+    expect(result.closedOn).toBeNull();
+    // 15 days on 100000 (493.15) plus 16 days on 50000 (263.01).
+    expect(result.periods[0].interest).toBe('756.16');
+    expect(result.principal).toBe('50000.00');
+  });
+
+  it('stops at the end date whatever the asked day', () => {
+    const result = projectDeposit(
+      terms({ payout: 'at-end', endDate: '2026-02-01' }),
+      [topup('2026-01-01', '100000')],
+      '2027-01-01',
+    );
+    expect(result.balance).toBe('101019.18');
+  });
+});
+
+describe('nextPayout', () => {
+  it('estimates the next posting from what is held now', () => {
+    const next = nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-02-10');
+    expect(next).toEqual({ date: '2026-03-01', interest: '920.55', treatment: 'payable' });
+  });
+
+  it('is null once the term is over', () => {
+    expect(nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-04-01')).toBeNull();
+  });
+});

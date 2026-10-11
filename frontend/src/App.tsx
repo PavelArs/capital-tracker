@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import DashboardPage from '@features/dashboard/DashboardPage';
+import DepositPage from '@features/deposits/DepositPage';
+import DepositsPage from '@features/deposits/DepositsPage';
 import HistoryPage from '@features/history/HistoryPage';
 import ForgotPasswordPage from '@features/password-reset/ForgotPasswordPage';
 import ResetPasswordPage from '@features/password-reset/ResetPasswordPage';
@@ -61,6 +63,8 @@ function AppRoutes() {
         <Route path="transactions" element={<TransactionsPage />} />
         <Route path="wallets" element={<WalletsPage />} />
         <Route path="wallets/:accountId" element={<WalletPage />} />
+        <Route path="deposits" element={<DepositsPage />} />
+        <Route path="deposits/:depositId" element={<DepositPage />} />
         <Route path="preferences" element={<SettingsPage />} />
         <Route path="history" element={<HistoryPage />} />
         {retiredPaths.map(([from, to]) => (

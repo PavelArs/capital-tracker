@@ -95,6 +95,7 @@ apiClient.interceptors.response.use(
         error.config?.url || '',
       ) ||
       error.config?.url?.startsWith('/accounting/') === true ||
+      error.config?.url?.startsWith('/deposits') === true ||
       error.config?.url?.startsWith('/auth/password-reset') === true ||
       error.config?.url?.startsWith('/auth/security') === true ||
       error.config?.url?.startsWith('/export/') === true;
