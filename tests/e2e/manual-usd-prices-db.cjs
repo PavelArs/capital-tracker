@@ -193,7 +193,7 @@ async function main() {
       ],
     });
     const beforeUpgrade = await fingerprint(source, ['migrations'], true);
-    assert.match(migrate(database), /Migrations applied: 41/);
+    assert.match(migrate(database), /Migrations applied: 42/);
     assert.equal(
       await fingerprint(
         source,
