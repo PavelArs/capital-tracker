@@ -14,6 +14,7 @@ import { newRequestId } from '../accounting/feedback';
 import { quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress } from './operation-format';
+import { takeHandover } from './proposals-handover';
 
 const place = (leg: ProposedLeg) =>
   leg.wallet.label ??
@@ -52,7 +53,8 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
     }
   }, []);
   useEffect(() => {
-    void load();
+    // The page read it together with the list a moment ago; asking again would only repeat it.
+    if (!takeHandover('transfer')) void load();
     window.addEventListener(CLASSIFICATION_CHANGED, load);
     window.addEventListener(SYNC_CHANGED, load);
     return () => {

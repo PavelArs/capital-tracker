@@ -34,6 +34,7 @@ import {
 } from './operation-format';
 import PeriodFilter from './PeriodFilter';
 import { periodOf } from './period';
+import { handOver } from './proposals-handover';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import '../shell/shell-page.css';
@@ -392,6 +393,20 @@ function reveal(row: Element) {
 // (no period) and this one's share what they share.
 const lastList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.last(currency, range) : cachedReads.operations.last(currency);
+// The cards above the list (joined transfers, duplicates) are read with the list, so they are
+// there when it appears instead of pushing it down a moment later. An answer already kept is
+// painted at once and needs no wait, and a slow answer never holds the list back for long.
+const PROPOSALS_WAIT_MS = 1500;
+const proposalsArrived = (): Promise<unknown> => {
+  if (cachedReads.transferProposals.last() && cachedReads.duplicateProposals.last()) {
+    return Promise.resolve();
+  }
+  const read = Promise.allSettled([
+    cachedReads.transferProposals.load().then(() => handOver('transfer')),
+    cachedReads.duplicateProposals.load().then(() => handOver('duplicate')),
+  ]);
+  return Promise.race([read, new Promise((resolve) => setTimeout(resolve, PROPOSALS_WAIT_MS))]);
+};
 const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.load(currency, range) : cachedReads.operations.load(currency);
 
@@ -438,7 +453,7 @@ export default function TransactionsPage() {
       setFailed(false);
       if (fresh) setList(lastList(currency, range) ?? null);
       try {
-        const next = await loadList(currency, range);
+        const [next] = await Promise.all([loadList(currency, range), proposalsArrived()]);
         if (request !== latest.current) return null;
         setList(next);
         return next;

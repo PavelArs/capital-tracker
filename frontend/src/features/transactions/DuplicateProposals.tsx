@@ -13,6 +13,7 @@ import { newRequestId } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress, typeLabels } from './operation-format';
+import { takeHandover } from './proposals-handover';
 
 const place = (item: DuplicateProposal) =>
   item.transaction.wallet.label ??
@@ -58,7 +59,8 @@ export default function DuplicateProposals({
     }
   }, []);
   useEffect(() => {
-    void load();
+    // The page read it together with the list a moment ago; asking again would only repeat it.
+    if (!takeHandover('duplicate')) void load();
     window.addEventListener(CLASSIFICATION_CHANGED, load);
     window.addEventListener(SYNC_CHANGED, load);
     return () => {

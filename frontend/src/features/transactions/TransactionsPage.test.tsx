@@ -10,6 +10,7 @@ import {
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
+import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -3446,6 +3447,30 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(20);
     await user.click(within(card).getByRole('button', { name: 'Show more' }));
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(22);
+  });
+
+  it('SMOOTH-JUMP: the cards are there when the list appears, so the list is not pushed down', async () => {
+    forgetReads();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue({
+      windowHours: 24,
+      amountPercent: 5,
+      proposals: [],
+    });
+    // The offer arrives well after the list would have.
+    const offer = vi
+      .spyOn(operationsApi, 'transferProposals')
+      .mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(found([proposal])), 150)),
+      );
+    renderPage();
+    // The first row is never on screen without the card above it.
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    expect(
+      screen.getByRole('region', { name: 'One possible transfer between your accounts' }),
+    ).toBeInTheDocument();
+    // And it asked once: the card used what the page read.
+    expect(offer).toHaveBeenCalledTimes(1);
   });
 });
 
