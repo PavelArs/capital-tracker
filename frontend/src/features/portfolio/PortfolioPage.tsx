@@ -92,16 +92,16 @@ export type SortDirection = 'desc' | 'asc';
 /** The chosen order; null is the default one. */
 export type AssetSort = { key: SortKey; direction: SortDirection } | null;
 
-// The columns, left to right, in the table and in the phone's Sort by list.
-const sortColumns: [SortKey, string][] = [
-  ['name', 'Asset'],
-  ['amount', 'Amount'],
-  ['price', 'Price'],
-  ['value', 'Value'],
-  ['allocation', 'Allocation'],
-  ['avgBuy', 'Avg buy price'],
-  ['pnl', 'Unrealized P&L'],
-  ['change', '24h'],
+// The columns, left to right: the header's label and the phone list's Sort by label.
+const sortColumns: [SortKey, string, string][] = [
+  ['name', 'Asset', 'Name'],
+  ['amount', 'Amount', 'Amount'],
+  ['price', 'Price', 'Price'],
+  ['value', 'Value', 'Value'],
+  ['allocation', 'Allocation', 'Allocation'],
+  ['avgBuy', 'Avg buy price', 'Avg buy price'],
+  ['pnl', 'Unrealized P&L', 'Unrealized P&L'],
+  ['change', '24h', '24h change'],
 ];
 
 /** Names run A to Z first; every number column starts with the largest. */
@@ -613,7 +613,7 @@ export default function PortfolioPage() {
                     }
                   >
                     <option value="">Default order</option>
-                    {sortColumns.map(([value, label]) => (
+                    {sortColumns.map(([value, , label]) => (
                       <option key={value} value={value}>
                         {label}
                       </option>

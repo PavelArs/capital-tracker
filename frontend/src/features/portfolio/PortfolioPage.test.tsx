@@ -1124,7 +1124,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
         [...document.querySelectorAll('.portfolio-list__name')].map((name) => name.textContent);
       expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
       const sort = screen.getByRole('combobox', { name: 'Sort by' });
-      await user.selectOptions(sort, 'Asset');
+      await user.selectOptions(sort, 'Name');
       expect(order()).toEqual(['Bitcoin', 'Toncoin', 'US dollar']);
       // The direction button turns the order around; Default order clears the sort.
       await user.click(screen.getByRole('button', { name: 'Ascending' }));
@@ -1132,7 +1132,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       await user.selectOptions(sort, 'Default order');
       expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
       // An unknown change sorts last.
-      await user.selectOptions(sort, '24h');
+      await user.selectOptions(sort, '24h change');
       expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
       await user.type(screen.getByRole('searchbox', { name: 'Search assets' }), 'coin');
       expect(order()).toEqual(['Bitcoin', 'Toncoin']);
