@@ -1,4 +1,5 @@
 import { cachedReads } from '@api/cached-reads';
+import type { HiddenAsset } from '@api/hidden-assets.api';
 import { CLASSIFICATION_CHANGED } from '@api/operations.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
@@ -35,6 +36,7 @@ interface Sources {
   sources: SyncSource[] | null;
   wallets: WalletAddress[] | null;
   portfolio: PortfolioValuation | null;
+  hiddenAssets: HiddenAsset[] | null;
   now: Date;
 }
 
@@ -56,17 +58,19 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
     sources: null,
     wallets: null,
     portfolio: null,
+    hiddenAssets: null,
     now: new Date(),
   });
   const latest = useRef(0);
 
   const load = useCallback(async () => {
     const request = ++latest.current;
-    const [toClassify, sources, wallets, portfolio] = await Promise.allSettled([
+    const [toClassify, sources, wallets, portfolio, hiddenAssets] = await Promise.allSettled([
       cachedReads.toClassify.load(),
       cachedReads.sources.load(),
       cachedReads.wallets.load(),
       cachedReads.portfolio.load(),
+      cachedReads.hiddenAssets.load(),
     ]);
     if (request !== latest.current) return;
     setState({
@@ -75,6 +79,7 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
       sources: settled(sources),
       wallets: settled(wallets),
       portfolio: settled(portfolio),
+      hiddenAssets: settled(hiddenAssets),
       now: new Date(),
     });
   }, []);

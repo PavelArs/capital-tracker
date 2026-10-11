@@ -1,4 +1,5 @@
 import { accountingApi, type WalletKind } from '@api/accounting.api';
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import {
   type AssetValuation,
@@ -225,6 +226,7 @@ function setup({
   });
   vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio());
   vi.spyOn(walletAddressesApi, 'list').mockResolvedValue(list);
+  vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
   vi.spyOn(operationsApi, 'list').mockResolvedValue(operations(items));
   render(
     <MemoryRouter initialEntries={[`/wallets/${account}`]}>
