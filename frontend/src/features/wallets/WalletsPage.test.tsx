@@ -2215,7 +2215,7 @@ describe('DRAWER-DUST: dust stays out of the blockchain transactions of an addre
     expect(section).not.toHaveTextContent('SPAM');
   });
 
-  it('PAGES: lists twenty transactions a page and reads the next server page when asked', async () => {
+  it('INFINITE: lists twenty transactions and twenty more on request, reading the server on demand', async () => {
     const many = (from: number, count: number) =>
       Array.from({ length: count }, (_, index) => ({
         ...row(3, 'in', '1'),
@@ -2224,22 +2224,17 @@ describe('DRAWER-DUST: dust stays out of the blockchain transactions of an addre
     const seen: number[] = [];
     const { user, drawer } = await open((offset) => {
       seen.push(offset);
-      // The server hands out its history in pages of 30 here: 30, then 15.
+      // The server hands out its history in pieces of 30 here: 30, then 15.
       return offset === 0 ? page(many(0, 30), 30) : page(many(30, 15));
     }, []);
     const section = within(drawer).getByRole('region', { name: 'Blockchain transactions' });
     await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(20));
-    const pages = within(section).getByRole('navigation', { name: 'Pages of transactions' });
-    expect(within(pages).getByRole('button', { name: 'Previous' })).toBeDisabled();
-    await user.click(within(pages).getByRole('button', { name: 'Next' }));
-    expect(within(section).getAllByRole('listitem')).toHaveLength(20);
-    expect(pages).toHaveTextContent('Page 2');
-    // Page 3 holds the last five, so the history was read to its end.
-    await waitFor(() => expect(within(pages).getByRole('button', { name: 'Next' })).toBeEnabled());
-    await user.click(within(pages).getByRole('button', { name: 'Next' }));
-    expect(within(section).getAllByRole('listitem')).toHaveLength(5);
-    expect(pages).toHaveTextContent('41–45 of 45');
-    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(within(section).getByRole('status')).toHaveTextContent('Showing 20 transactions');
+    await user.click(within(section).getByRole('button', { name: 'Show more' }));
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(40));
+    await user.click(within(section).getByRole('button', { name: 'Show more' }));
+    expect(within(section).getAllByRole('listitem')).toHaveLength(45);
+    expect(within(section).queryByRole('button', { name: 'Show more' })).toBeNull();
     expect(seen).toEqual([0, 30]);
   });
 

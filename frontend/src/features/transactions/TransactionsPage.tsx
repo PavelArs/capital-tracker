@@ -7,8 +7,8 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
-import Pager, { usePaged } from '../shell/Pager';
 import { PageSkeleton } from '../shell/Skeleton';
 import { hiddenTokenSymbols } from '../wallets/WalletParts';
 import DuplicateProposals from './DuplicateProposals';
@@ -432,12 +432,9 @@ export default function TransactionsPage() {
     next.delete('open');
     replaceParams(next);
   });
-  // PAGES: the page is in the address too, so a reload stays on it. Any other change of the
-  // filters starts again from the first page.
   const update = (changes: Record<string, string>) => {
     const base = pending.current?.from === params ? pending.current.next : params;
     const next = new URLSearchParams(base);
-    if (!('page' in changes)) next.delete('page');
     for (const [key, value] of Object.entries(changes)) {
       if (value) next.set(key, value);
       else next.delete(key);
@@ -484,10 +481,9 @@ export default function TransactionsPage() {
     (!place || placeKeys(operation).includes(place)) &&
     (!query || searchable(operation).includes(query));
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
-  const paged = usePaged(visible, {
-    page: Number(params.get('page')) || 1,
-    onPage: (next) => update({ page: next > 1 ? String(next) : '' }),
-  });
+  // INFINITE: twenty rows first, twenty more each time the end of the list is reached; a
+  // changed filter or search starts again at twenty.
+  const paged = useInfinite(visible, { resetKey: `${view}|${asset}|${place}|${query}` });
   const filtered = view !== 'all' || asset || place || query;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
@@ -520,8 +516,8 @@ export default function TransactionsPage() {
       ),
     [],
   );
-  // PAGES: a transaction opened from elsewhere, or the next one to classify, may be on another
-  // page: the list turns to it once, when it is first found, and then scrolls to it.
+  // A transaction opened from elsewhere, or the next one to classify, may be further down than
+  // the rows on screen: the list grows to it once, when it is first found, and then scrolls to it.
   const turned = useRef<string | null>(null);
   useEffect(() => {
     if (!openId) {
@@ -532,15 +528,15 @@ export default function TransactionsPage() {
     const at = visible.findIndex((operation) => operation.id === openId);
     if (at < 0) return;
     turned.current = openId;
-    if (paged.pageOf(at) !== paged.page) paged.setPage(paged.pageOf(at));
+    paged.reveal(at);
   });
-  const shownPage = paged.page;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: turning the page puts the row on screen.
+  const shown = paged.rows.length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: growing the list puts the row on screen.
   useEffect(() => {
     if (!openId) return;
     const row = rowOf(openId);
     if (row) reveal(row);
-  }, [openId, rowOf, shownPage]);
+  }, [openId, rowOf, shown]);
   const [notice, setNotice] = useState<string | null>(null);
   const open = (id: string) => {
     setNotice(null);
@@ -703,10 +699,7 @@ export default function TransactionsPage() {
                 placeholder="Search asset, account, type"
                 aria-label="Search transactions"
                 value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  if (params.get('page')) update({ page: '' });
-                }}
+                onChange={(event) => setSearch(event.target.value)}
               />
             </div>
           </div>
@@ -791,7 +784,7 @@ export default function TransactionsPage() {
               </table>
             </div>
           )}
-          {paged.pager && <Pager {...paged.pager} label="transactions" />}
+          {paged.more && <LoadMore {...paged.more} label="transactions" />}
           <p className="shell-note portfolio-note">
             {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
             {operations.length === 1 ? 'transaction' : 'transactions'}, newest first.{' '}

@@ -3,9 +3,9 @@ import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
-import Pager, { usePaged } from '../shell/Pager';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
@@ -38,14 +38,14 @@ function PagedSources({
   row: (address: WalletAddress) => ReactNode;
   children?: ReactNode;
 }) {
-  const paged = usePaged(items);
+  const paged = useInfinite(items);
   return (
     <>
       <ul className="wallets-sources">
         {paged.rows.map(row)}
         {children}
       </ul>
-      {paged.pager && <Pager {...paged.pager} label={label} />}
+      {paged.more && <LoadMore {...paged.more} label={label} />}
     </>
   );
 }
@@ -86,7 +86,7 @@ export default function WalletsPage() {
     : [];
 
   // PAGES: twenty wallets a page.
-  const pagedCards = usePaged(cards);
+  const pagedCards = useInfinite(cards);
   const addButton = (
     <button
       type="button"
@@ -212,7 +212,7 @@ export default function WalletsPage() {
               </section>
             );
           })}
-          {pagedCards.pager && <Pager {...pagedCards.pager} label="wallets" />}
+          {pagedCards.more && <LoadMore {...pagedCards.more} label="wallets" />}
         </>
       )}
       {adding && (

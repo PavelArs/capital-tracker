@@ -12,7 +12,7 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import { quantity } from '../portfolio/format';
-import Pager, { usePaged } from '../shell/Pager';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress } from './operation-format';
 
 const place = (leg: ProposedLeg) =>
@@ -62,7 +62,7 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
 
   const proposals = found?.proposals ?? [];
   // PAGES: twenty proposals a page.
-  const paged = usePaged(proposals);
+  const paged = useInfinite(proposals);
   if (proposals.length === 0) return null;
   const keyOf = (item: TransferProposal) => `${item.outgoing.addressId}:${item.outgoing.txid}`;
   const join = async (item: TransferProposal) => {
@@ -139,7 +139,7 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
           );
         })}
       </ul>
-      {paged.pager && <Pager {...paged.pager} label="proposals" />}
+      {paged.more && <LoadMore {...paged.more} label="proposals" />}
       <p className="shell-note">
         Offered when the same coin arrives within {found?.windowHours} hours of the withdrawal and
         at most {found?.feePercent}% less. Anything less certain stays to classify.

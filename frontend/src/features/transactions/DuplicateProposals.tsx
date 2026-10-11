@@ -11,7 +11,7 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
-import Pager, { usePaged } from '../shell/Pager';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress, typeLabels } from './operation-format';
 
 const place = (item: DuplicateProposal) =>
@@ -68,7 +68,7 @@ export default function DuplicateProposals({
 
   const proposals = found?.proposals ?? [];
   // PAGES: twenty proposals a page.
-  const paged = usePaged(proposals);
+  const paged = useInfinite(proposals);
   if (proposals.length === 0) return null;
   const replace = async (item: DuplicateProposal) => {
     const key = keyOf(item);
@@ -150,7 +150,7 @@ export default function DuplicateProposals({
           );
         })}
       </ul>
-      {paged.pager && <Pager {...paged.pager} label="proposals" />}
+      {paged.more && <LoadMore {...paged.more} label="proposals" />}
       <p className="shell-note">
         Offered when the same coin moved the same way in the same account within{' '}
         {found?.windowHours} hours, and the amounts differ by at most {found?.amountPercent}%.

@@ -4,7 +4,7 @@ import {
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
 import { useEffect, useState } from 'react';
-import Pager, { usePaged } from '../shell/Pager';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { failureMessage, type SyncRun } from './SyncStatus';
 
 const timeFormat = new Intl.DateTimeFormat('en-GB', {
@@ -64,7 +64,7 @@ export default function SyncJournal({ address, run }: Props) {
   }, [address.id, lastAttemptAt, running]);
 
   // PAGES: twenty passes a page.
-  const paged = usePaged(entries ?? []);
+  const paged = useInfinite(entries ?? []);
   return (
     <section aria-labelledby="address-sync-journal">
       <h3 id="address-sync-journal" className="transactions-section">
@@ -93,7 +93,7 @@ export default function SyncJournal({ address, run }: Props) {
           ))}
         </ul>
       )}
-      {paged.pager && <Pager {...paged.pager} label="sync passes" />}
+      {paged.more && <LoadMore {...paged.more} label="sync passes" />}
     </section>
   );
 }

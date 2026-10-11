@@ -11,9 +11,9 @@ import type {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
-import Pager, { usePaged } from '../shell/Pager';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
 import {
@@ -241,7 +241,7 @@ function AssetTransactions({
   const key = keyOf(asset);
   const own = typeof operations === 'object' ? assetOperations(operations.operations, key) : [];
   // PAGES: twenty transactions a page.
-  const pagedOwn = usePaged(own);
+  const pagedOwn = useInfinite(own);
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
@@ -286,7 +286,7 @@ function AssetTransactions({
               </li>
             ))}
           </ul>
-          {pagedOwn.pager && <Pager {...pagedOwn.pager} label="transactions" />}
+          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
           <Link className="portfolio-link portfolio-operations__all" to={all}>
             Open in Transactions
           </Link>

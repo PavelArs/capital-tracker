@@ -5,7 +5,7 @@ import {
 } from '@api/wallet-addresses.api';
 import { useState } from 'react';
 import { quantity } from '../portfolio/format';
-import Pager, { usePaged } from '../shell/Pager';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 
 // TOKEN-HIDE: the other tokens of an Ethereum or Solana address. Anyone can send a wallet any
 // token, so most of them are spam: the owner hides the ones they do not want, and a token that
@@ -34,8 +34,8 @@ export default function TokensSection({
   const shown = (address.balances ?? []).filter((balance) => balance.name !== undefined);
   const hidden = address.hiddenTokens ?? [];
   // PAGES: twenty tokens a page in each list.
-  const shownPages = usePaged(shown);
-  const hiddenPages = usePaged(hidden);
+  const shownPages = useInfinite(shown);
+  const hiddenPages = useInfinite(hidden);
   if (shown.length === 0 && hidden.length === 0) return null;
   const unlisted = shown.filter((balance) => balance.listed === false);
 
@@ -81,7 +81,7 @@ export default function TokensSection({
               </li>
             ))}
           </ul>
-          {shownPages.pager && <Pager {...shownPages.pager} label="tokens" />}
+          {shownPages.more && <LoadMore {...shownPages.more} label="tokens" />}
           {unlisted.length > 1 && (
             <button
               type="button"
@@ -130,7 +130,7 @@ export default function TokensSection({
               ))}
             </ul>
           )}
-          {listed && hiddenPages.pager && <Pager {...hiddenPages.pager} label="hidden tokens" />}
+          {listed && hiddenPages.more && <LoadMore {...hiddenPages.more} label="hidden tokens" />}
           <button
             type="button"
             className="portfolio-link"

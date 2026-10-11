@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
-import Pager, { PAGE_SIZE } from '../shell/Pager';
+import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
 import type { WalletAccount } from './AddWalletDialog';
 import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
@@ -124,8 +124,9 @@ export default function AddressDrawer({
     { items: AddressTransaction[]; next: number | null } | null | undefined
   >(undefined);
   const [showDust, setShowDust] = useState(false);
-  // PAGES: the page of the list below, twenty to a page, newest first.
-  const [txPage, setTxPage] = useState(1);
+  // INFINITE: how many of the transactions below are on screen, twenty more each time the end
+  // of the list is reached.
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
   // The Transactions list says which of them are dust and where each one opens; undefined while
   // it loads, null when it cannot be read (every row then shows, none opens).
   const [listed, setListed] = useState<ReadonlyMap<string, Operation> | null | undefined>(() => {
@@ -187,10 +188,10 @@ export default function AddressDrawer({
   const isDust = (item: AddressTransaction) => listed?.get(item.txid)?.status === 'dust';
   const rows = history?.items ?? [];
   const listedRows = showDust ? rows : rows.filter((item) => !isDust(item));
-  const shown = listedRows.slice((txPage - 1) * PAGE_SIZE, txPage * PAGE_SIZE);
-  // Whether a page after this one has rows: older pages are read until it does, or until
+  const shown = listedRows.slice(0, shownCount);
+  // Whether rows wait beyond those on screen: older pages are read until some do, or until
   // the history, or the number of pages read for one list, runs out.
-  const more = listedRows.length > txPage * PAGE_SIZE;
+  const more = listedRows.length > shownCount;
   const exhausted = history?.next === null || rows.length >= MAX_PAGES * 50;
   const dust = rows.filter(isDust).length;
   // Older pages may hold more dust than the ones read.
@@ -569,13 +570,12 @@ export default function AddressDrawer({
                 })}
               </ul>
             )}
-            {(txPage > 1 || more || !exhausted) && !waiting && shown.length > 0 && (
-              <Pager
-                page={txPage}
+            {(more || !exhausted) && !waiting && shown.length > 0 && (
+              <LoadMore
+                shown={shown.length}
                 total={history?.next === null ? listedRows.length : undefined}
-                hasNext={more}
                 busy={!more && !exhausted}
-                onPage={setTxPage}
+                onMore={() => setShownCount((current) => current + PAGE_SIZE)}
                 label="transactions"
               />
             )}
@@ -587,7 +587,7 @@ export default function AddressDrawer({
                   aria-expanded={showDust}
                   onClick={() => {
                     setShowDust((current) => !current);
-                    setTxPage(1);
+                    setShownCount(PAGE_SIZE);
                   }}
                 >
                   {showDust ? 'Hide dust' : `Show ${dustLabel}`}

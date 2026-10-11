@@ -11,9 +11,9 @@ import { withCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import ConfirmDialog from '../security/ConfirmDialog';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
-import Pager, { usePaged } from '../shell/Pager';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
 import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
@@ -112,7 +112,7 @@ function WalletTransactions({
   const own =
     typeof operations === 'object' ? accountOperations(operations.operations, accountId) : [];
   // PAGES: twenty transactions a page.
-  const pagedOwn = usePaged(own);
+  const pagedOwn = useInfinite(own);
   return (
     <section className="shell-card" aria-labelledby="wallet-transactions">
       <div className="portfolio-toolbar">
@@ -164,7 +164,7 @@ function WalletTransactions({
               </li>
             ))}
           </ul>
-          {pagedOwn.pager && <Pager {...pagedOwn.pager} label="transactions" />}
+          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
           <Link
             className="portfolio-link portfolio-operations__all"
             to={`/transactions?account=${encodeURIComponent(accountId)}`}
@@ -235,8 +235,8 @@ export default function WalletPage() {
   const open = list.find((address) => address.id === openId);
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
   // PAGES: twenty addresses and twenty assets a page.
-  const pagedAddresses = usePaged(own);
-  const pagedHoldings = usePaged(holdings);
+  const pagedAddresses = useInfinite(own);
+  const pagedHoldings = useInfinite(holdings);
   const refresh = () => {
     void load(true);
     void loadOperations();
@@ -354,7 +354,7 @@ export default function WalletPage() {
                   />
                 ))}
               </ul>
-              {pagedAddresses.pager && <Pager {...pagedAddresses.pager} label="addresses" />}
+              {pagedAddresses.more && <LoadMore {...pagedAddresses.more} label="addresses" />}
             </section>
           )}
           <div className="portfolio-split">
@@ -402,7 +402,7 @@ export default function WalletPage() {
                   ))}
                 </ul>
               )}
-              {pagedHoldings.pager && <Pager {...pagedHoldings.pager} label="assets" />}
+              {pagedHoldings.more && <LoadMore {...pagedHoldings.more} label="assets" />}
             </section>
             <WalletTransactions
               accountId={accountId}

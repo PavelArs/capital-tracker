@@ -1305,15 +1305,15 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     );
     expect(rows[1]).toHaveTextContent('BuySep 11, 2026 · Trust Wallet+0.01 BTC$800.00');
     expect(card).toHaveTextContent('12');
-    // Twelve fit on one page: no pager.
-    expect(within(card).queryByRole('navigation')).toBeNull();
+    // Twelve fit in the first twenty: nothing more to show.
+    expect(within(card).queryByRole('button', { name: 'Show more' })).toBeNull();
     expect(within(card).getByRole('link', { name: 'Open in Transactions' })).toHaveAttribute(
       'href',
       '/transactions?asset=BTC',
     );
   });
 
-  it('PAGES: lists twenty operations of the asset a page', async () => {
+  it('INFINITE: lists twenty operations of the asset and twenty more on request', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     vi.mocked(operationsApi.list).mockResolvedValue({
       at: '2026-10-05T12:00:00.000Z',
@@ -1326,12 +1326,10 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const card = await screen.findByRole('region', { name: 'Transactions' });
     expect(await within(card).findAllByRole('listitem')).toHaveLength(20);
-    const pages = within(card).getByRole('navigation', { name: 'Pages of transactions' });
-    expect(pages).toHaveTextContent('1–20 of 25');
-    await user.click(within(pages).getByRole('button', { name: 'Next' }));
-    expect(within(card).getAllByRole('listitem')).toHaveLength(5);
-    expect(pages).toHaveTextContent('21–25 of 25Page 2 of 2');
-    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(within(card).getByRole('status')).toHaveTextContent('Showing 20 of 25 transactions');
+    await user.click(within(card).getByRole('button', { name: 'Show more' }));
+    expect(within(card).getAllByRole('listitem')).toHaveLength(25);
+    expect(within(card).queryByRole('button', { name: 'Show more' })).toBeNull();
   });
 
   it('reports a chart or transactions failure and recovers on retry', async () => {

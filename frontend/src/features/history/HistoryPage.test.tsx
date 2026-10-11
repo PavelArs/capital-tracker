@@ -5,10 +5,10 @@ import {
   auditHistoryApi,
 } from '@api/audit-history.api';
 import { forgetReads } from '@api/read-cache';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import HistoryPage from './HistoryPage';
 
 // Synthetic accounts, assets and amounts only.
@@ -146,7 +146,7 @@ describe('audit history screen (BR 14)', () => {
       ['18:00', 'Created', 'Buy BTCBybit', 'Side Buy · Quantity 0.02 BTC', 'CSV import'],
       ['08:00', 'Created', 'Transfer BTCCold storage', 'Quantity 0.005 BTC', 'Automatic'],
     ]);
-    expect(screen.getByText(/4 changes on this page, newest first/)).toBeInTheDocument();
+    expect(screen.getByText(/4 changes shown, newest first/)).toBeInTheDocument();
     expect(screen.getByText(/nothing is overwritten/)).toBeInTheDocument();
   });
 
@@ -227,38 +227,60 @@ describe('audit history screen (BR 14)', () => {
     expect(screen.getByLabelText('Source')).toHaveValue('automatic');
   });
 
-  it('HIST-PAGE: twenty changes a page; Next asks with the cursor and Previous walks back', async () => {
+  it('HIST-PAGE: twenty changes first; older ones are asked for with the cursor and join the list', async () => {
     const user = userEvent.setup();
     const list = vi
       .spyOn(auditHistoryApi, 'list')
       .mockResolvedValueOnce(page([correction], 'cursor-1'))
       .mockResolvedValueOnce(page([removal], 'cursor-2'))
-      .mockResolvedValueOnce(page([imported]))
-      .mockResolvedValueOnce(page([removal], 'cursor-2'));
+      .mockResolvedValueOnce(page([imported]));
     renderPage();
     await screen.findByRole('table', { name: 'Changes' });
     expect(list).toHaveBeenLastCalledWith({ limit: 20 });
-    const pages = screen.getByRole('navigation', { name: 'Pages of changes' });
-    expect(within(pages).getByText('Page 1')).toBeInTheDocument();
-    expect(within(pages).getByRole('button', { name: 'Previous' })).toBeDisabled();
-    await user.click(within(pages).getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(within(pages).getByText('Page 2')).toBeInTheDocument());
-    expect(list).toHaveBeenLastCalledWith({ limit: 20 }, 'cursor-1');
-    // The older page replaces the newer one; it does not join it.
     expect(bodyRows()).toHaveLength(1);
-    await user.click(within(pages).getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(within(pages).getByText('Page 3')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(list).toHaveBeenLastCalledWith({ limit: 20 }, 'cursor-1');
+    expect(screen.getByText('Showing 2 changes')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
     expect(list).toHaveBeenLastCalledWith({ limit: 20 }, 'cursor-2');
-    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
-    // A page already seen is on screen at once; the page is asked for again behind it.
-    await user.click(within(pages).getByRole('button', { name: 'Previous' }));
-    expect(within(pages).getByText('Page 2')).toBeInTheDocument();
-    expect(bodyRows()).toHaveLength(1);
-    await waitFor(() => expect(list).toHaveBeenCalledTimes(4));
-    expect(list).toHaveBeenLastCalledWith({ limit: 20 }, 'cursor-1');
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(screen.getByText(/3 changes shown/)).toBeInTheDocument();
   });
 
-  it('HIST-PAGE: a failed page keeps what is shown and offers to try again', async () => {
+  it('HIST-PAGE: reaching the end of the list asks for the older changes', async () => {
+    const callbacks: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+      },
+    );
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    vi.spyOn(auditHistoryApi, 'list')
+      .mockResolvedValueOnce(page([correction], 'cursor-1'))
+      .mockResolvedValueOnce(page([removal]));
+    renderPage();
+    await screen.findByRole('table', { name: 'Changes' });
+    await waitFor(() => expect(callbacks.length).toBeGreaterThan(0));
+    act(() => {
+      callbacks.at(-1)?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as never);
+    });
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+  });
+
+  it('HIST-PAGE: a failed batch keeps what is shown and offers to try again', async () => {
     const user = userEvent.setup();
     const list = vi
       .spyOn(auditHistoryApi, 'list')
@@ -267,12 +289,11 @@ describe('audit history screen (BR 14)', () => {
       .mockResolvedValueOnce(page([removal]));
     renderPage();
     await screen.findByRole('table', { name: 'Changes' });
-    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load older changes.');
     expect(bodyRows()).toHaveLength(1);
-    expect(screen.getByText('Page 1')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
-    await waitFor(() => expect(screen.getByText('Page 2')).toBeInTheDocument());
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
     expect(list).toHaveBeenCalledTimes(3);
   });
 

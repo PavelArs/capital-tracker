@@ -58,16 +58,20 @@ action per problem, or "Everything is up to date". The shell reads the sources o
 pages (`features/shell/attention-context.tsx`) and again every minute and after a sync or an
 answer.
 
-## Pages of twenty and answers kept across a reload
+## Lists of twenty that grow, and answers kept across a reload
 
-Every list shows twenty rows a page with **Previous** and **Next** (`features/shell/Pager.tsx`):
-Transactions (the page is in the address, `?page=2`, so a reload stays on it; a transaction
-opened from another page turns the list to its page), History (read page by page with the
-server's cursor), the Portfolio assets table, Wallets, a wallet's addresses, assets and
-transactions, an asset's transactions, the proposals above Transactions, a wallet's sync
-history, its token lists and the transactions in the address drawer. A list that fits one page
-has no pager. The server API is unchanged: the lists are cut in the browser, because the filters,
-the chip counts and the classification flow need the whole list.
+Every long list shows twenty rows and adds twenty more as the owner nears its end
+(`features/shell/InfiniteScroll.tsx`: an IntersectionObserver, with a **Show more** button for a
+keyboard and a screen reader, and "Showing 20 of 63" under the rows): Transactions (the day
+headings and the phone layout continue under the rows already there; a transaction opened from
+another page, or the next one to classify, grows the list to it), History (older changes are
+asked for with the server's cursor), the Portfolio assets table, Wallets, a wallet's addresses,
+assets and transactions, an asset's transactions, the proposals above Transactions, a wallet's
+sync history, its token lists and the transactions in the address drawer. The rows already on
+screen never go away while the list is open, so an open row and the scroll position stay put; a
+changed filter or search starts again at twenty, and a reload does too. A list that fits twenty
+has no control. The server API is unchanged: the lists are cut in the browser, because the
+filters, the chip counts and the classification flow need the whole list.
 
 The last answer of each read is kept in memory for the session and, for the signed-in owner, in
 the browser's IndexedDB (`api/read-cache.ts`, `api/read-store.ts`). After a reload the pages

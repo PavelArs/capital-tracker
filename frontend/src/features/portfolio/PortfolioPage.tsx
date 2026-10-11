@@ -8,8 +8,8 @@ import type {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
-import Pager, { usePaged } from '../shell/Pager';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
@@ -376,7 +376,9 @@ export default function PortfolioPage() {
   );
   // PAGES: twenty assets a page; the phone list is sorted first, so its pages follow the order.
   const ordered = phone ? sortAssets(visible, sortKey) : visible;
-  const paged = usePaged(ordered, { resetKey: `${filter}|${search.trim()}|${sortKey}|${phone}` });
+  const paged = useInfinite(ordered, {
+    resetKey: `${filter}|${search.trim()}|${sortKey}|${phone}`,
+  });
   const added = (asset: PortfolioAsset) => {
     // The new row must be visible, so a filter or search that would hide it is cleared.
     setFilter((current) => (current === 'all' || current === asset.assetType ? current : 'all'));
@@ -492,7 +494,7 @@ export default function PortfolioPage() {
                 chains={chains}
               />
             )}
-            {paged.pager && <Pager {...paged.pager} label="assets" />}
+            {paged.more && <LoadMore {...paged.more} label="assets" />}
             {visible.length === 0 && (
               <p className="portfolio-none">
                 {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this type.'}

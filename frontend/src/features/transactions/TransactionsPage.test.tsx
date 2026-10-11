@@ -3235,7 +3235,7 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(within(card).getByRole('button', { name: 'Join as one transfer' })).toBeEnabled();
   });
 
-  it('shows nothing without a proposal, and twenty a page of many', async () => {
+  it('shows nothing without a proposal, and twenty at a time of many', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     const many = Array.from({ length: 22 }, (_, n) => ({
@@ -3256,8 +3256,8 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
       name: '22 possible transfers between your accounts',
     });
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(20);
-    await user.click(within(card).getByRole('button', { name: 'Next' }));
-    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(2);
+    await user.click(within(card).getByRole('button', { name: 'Show more' }));
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(22);
   });
 });
 
@@ -3369,7 +3369,7 @@ describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', 
   });
 });
 
-describe('PAGES: twenty transactions a page', () => {
+describe('INFINITE: twenty transactions, twenty more as the end is reached', () => {
   // 45 purchases, one a day, newest first; every ninth is a CSV import.
   const day = 24 * 60 * 60 * 1000;
   const many = Array.from({ length: 45 }, (_, index) =>
@@ -3383,80 +3383,127 @@ describe('PAGES: twenty transactions a page', () => {
   );
   const shownIds = () => bodyRows().map((row) => row.getAttribute('data-operation'));
   const idsOf = (from: number, to: number) => many.slice(from, to).map((item) => item.id);
-  const renderWithAddress = (path = '/transactions') =>
-    render(
-      <MemoryRouter initialEntries={[path]}>
-        <TransactionsPage />
-        <Where />
-      </MemoryRouter>,
-    );
-  const pager = () => screen.getByRole('navigation', { name: 'Pages of transactions' });
+  const more = () => screen.getByRole('button', { name: 'Show more' });
 
-  it('shows the first twenty and walks through the pages, keeping the page in the address', async () => {
+  // jsdom has no IntersectionObserver: a stand-in lets a test bring the end of the list in view.
+  const observers: Array<{ callback: IntersectionObserverCallback; node: Element | null }> = [];
+  const reachEnd = () =>
+    act(() => {
+      for (const watching of observers.splice(0))
+        watching.callback(
+          [{ isIntersecting: true, target: watching.node } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+    });
+  beforeEach(() => {
+    observers.length = 0;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        node: Element | null = null;
+        entry: { callback: IntersectionObserverCallback; node: Element | null };
+        constructor(callback: IntersectionObserverCallback) {
+          this.entry = { callback, node: null };
+          observers.push(this.entry);
+        }
+        observe(node: Element) {
+          this.entry.node = node;
+        }
+        disconnect() {
+          const at = observers.indexOf(this.entry);
+          if (at >= 0) observers.splice(at, 1);
+        }
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+      },
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the first twenty and adds twenty each time the end is reached', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
-    const user = userEvent.setup();
-    renderWithAddress();
+    renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
     expect(shownIds()).toEqual(idsOf(0, 20));
-    expect(pager()).toHaveTextContent('1–20 of 45Page 1 of 3');
-    expect(within(pager()).getByRole('button', { name: 'Previous' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 45 transactions');
+    reachEnd();
+    expect(shownIds()).toEqual(idsOf(0, 40));
+    // The day headings continue under the rows that were already there.
+    expect(dayHeadings()).toHaveLength(40);
+    reachEnd();
+    expect(shownIds()).toEqual(idsOf(0, 45));
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
     expect(screen.getByText(/45 transactions, newest first/)).toBeInTheDocument();
-
-    await user.click(within(pager()).getByRole('button', { name: 'Next' }));
-    expect(shownIds()).toEqual(idsOf(20, 40));
-    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?page=2$/);
-    await user.click(within(pager()).getByRole('button', { name: 'Next' }));
-    expect(shownIds()).toEqual(idsOf(40, 45));
-    expect(pager()).toHaveTextContent('41–45 of 45Page 3 of 3');
-    expect(within(pager()).getByRole('button', { name: 'Next' })).toBeDisabled();
-
-    await user.click(within(pager()).getByRole('button', { name: 'Previous' }));
-    await user.click(within(pager()).getByRole('button', { name: 'Previous' }));
-    expect(shownIds()).toEqual(idsOf(0, 20));
-    // The first page needs no mark in the address.
-    expect(screen.getByLabelText('Address')).toHaveTextContent(/^$/);
   });
 
-  it('comes back to the page in the address after a reload, and to the last page past the end', async () => {
-    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
-    const first = renderWithAddress('/transactions?page=3');
-    await waitFor(() => expect(bodyRows()).toHaveLength(5));
-    expect(shownIds()).toEqual(idsOf(40, 45));
-    first.unmount();
-    renderWithAddress('/transactions?page=9');
-    await waitFor(() => expect(shownIds()).toEqual(idsOf(40, 45)));
-    cleanup();
-    renderWithAddress('/transactions?page=nonsense');
-    await waitFor(() => expect(shownIds()).toEqual(idsOf(0, 20)));
-  });
-
-  it('goes back to the first page when a filter or the search changes', async () => {
+  it('adds the rows with the button too, for a keyboard or a browser without the observer', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
     const user = userEvent.setup();
-    renderWithAddress('/transactions?page=2');
-    await waitFor(() => expect(shownIds()).toEqual(idsOf(20, 40)));
-    await user.click(screen.getByRole('button', { name: /^Manual/ }));
-    await waitFor(() =>
-      expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?source=manual$/),
-    );
-    expect(shownIds()[0]).toBe(many[0].id);
-    await user.click(within(pager()).getByRole('button', { name: 'Next' }));
-    expect(screen.getByLabelText('Address')).toHaveTextContent(/page=2/);
-    // Five rows are CSV imports: they fit on one page, so there is no pager.
-    await user.click(screen.getByRole('button', { name: /^CSV/ }));
-    await waitFor(() => expect(bodyRows()).toHaveLength(5));
-    expect(screen.queryByRole('navigation', { name: 'Pages of transactions' })).toBeNull();
-    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?source=csv$/);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await user.click(more());
+    expect(bodyRows()).toHaveLength(40);
   });
 
-  it('turns to the page of a transaction opened from another page', async () => {
+  it('starts again at twenty when a filter or the search changes', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
-    renderWithAddress(`/transactions?open=${encodeURIComponent(many[33].id)}`);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await user.click(more());
+    expect(bodyRows()).toHaveLength(40);
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 40');
+    await user.click(more());
+    await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'buy');
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    // Five rows are CSV imports: they fit in the first twenty.
+    await user.clear(screen.getByRole('searchbox', { name: 'Search transactions' }));
+    await user.click(screen.getByRole('button', { name: /^CSV/ }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(5));
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
+  it('keeps the open row and the rows on screen when more rows arrive', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(20));
+    await user.click(within(bodyRows()[3]).getByRole('button', { name: 'Buy' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    reachEnd();
+    expect(shownIds()).toEqual(idsOf(0, 40));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(bodyRows()[3]).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('grows the list to a transaction opened from another page', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    renderPage(`/transactions?open=${encodeURIComponent(many[33].id)}`);
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    await waitFor(() => expect(shownIds()).toEqual(idsOf(20, 40)));
+    await waitFor(() => expect(shownIds()).toEqual(idsOf(0, 40)));
     expect(
       bodyRows().find((row) => row.getAttribute('data-operation') === many[33].id),
     ).toHaveAttribute('aria-current', 'true');
-    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?page=2$/);
+  });
+
+  it('on the phone layout adds rows under the same day headings', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(many));
+    renderPage();
+    const rows = await screen.findByRole('list', { name: 'Transactions' });
+    expect(within(rows).getAllByRole('button').length).toBe(20);
+    reachEnd();
+    expect(within(rows).getAllByRole('button').length).toBe(40);
   });
 });
