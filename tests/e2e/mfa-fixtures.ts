@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { type APIRequestContext, type Page, test as base, expect } from '@playwright/test';
+import { type APIRequestContext, test as base, expect, type Page } from '@playwright/test';
 import { ledgerState, observeBrowserCsrf, resetAdmissionsBetweenCases } from './admission-fixtures';
 import { restartBackends, selectBackend } from './replicas';
 
@@ -294,9 +294,7 @@ export async function passwordStep(page: Page, password = owner.password) {
 
 export async function completeFactor(page: Page, factor = nextFactor()) {
   if (factor.kind === 'recovery') {
-    await page
-      .getByRole('button', { name: 'Use a recovery code instead', exact: true })
-      .click();
+    await page.getByRole('button', { name: 'Use a recovery code instead', exact: true }).click();
   }
   await page
     .getByLabel(factor.kind === 'totp' ? 'Code from your authenticator app' : 'Recovery code', {

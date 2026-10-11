@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { compose, fingerprint, loginWithMfa, origin, owner, test } from './mfa-fixtures';
 
 // Maintained acceptance on the actual predecessor image: no future trade table,
@@ -36,7 +36,13 @@ async function realEmptyAccount(page: Page) {
   });
   expect(created.status(), 'The predecessor already supports real empty manual accounts').toBe(201);
   const account = (await created.json()) as Account;
-  expect(Object.keys(account).sort()).toEqual(['createdAt', 'currentRevision', 'id', 'kind', 'name']);
+  expect(Object.keys(account).sort()).toEqual([
+    'createdAt',
+    'currentRevision',
+    'id',
+    'kind',
+    'name',
+  ]);
   expect(account.id).toMatch(uuidV4);
   expect(account.name).toBe(name);
   expect(account.currentRevision).toBe(0);

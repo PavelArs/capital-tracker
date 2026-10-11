@@ -12,9 +12,9 @@ import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
+import CopyValue from '../shell/CopyValue';
 import { Icon } from '../shell/icons';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
-import MiddleEllipsis from './MiddleEllipsis';
 import {
   amount,
   assetNetwork,
@@ -27,7 +27,6 @@ import {
   moment,
   networkName,
   placeLabel,
-  shortAddress,
   signedAmount,
   sourceLabel,
   statusLabel,
@@ -166,37 +165,29 @@ function networkFee(fee: NonNullable<Operation['fee']>, currency: AccountingCurr
 }
 
 /** A transaction hash: copied in one click, opened on its network's explorer when it has one. */
-function TxHash({ hash, network }: { hash: string; network: string | undefined }) {
-  const [copied, setCopied] = useState(false);
+function TxHash({
+  hash,
+  network,
+  record,
+}: {
+  hash: string;
+  network: string | undefined;
+  /** A Bybit record name such as "Trade 2100…": it reads as it is, not as a hash. */
+  record?: boolean;
+}) {
   const url = explorerUrl(hash, network);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 2000);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
   return (
     <span className="transactions-hash">
-      <MiddleEllipsis text={hash} />
-      <span className="transactions-hash__actions">
-        <button
-          type="button"
-          className="portfolio-link"
-          aria-label="Copy transaction hash"
-          onClick={() =>
-            void navigator.clipboard?.writeText(hash).then(
-              () => setCopied(true),
-              () => undefined,
-            )
-          }
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-        {url && (
-          <a className="portfolio-link" href={url} target="_blank" rel="noopener noreferrer">
-            View in explorer
-          </a>
-        )}
-      </span>
+      <CopyValue
+        value={hash}
+        text={record ? hash : undefined}
+        label={record ? 'Copy record' : 'Copy transaction hash'}
+      />
+      {url && (
+        <a className="portfolio-link" href={url} target="_blank" rel="noopener noreferrer">
+          View in explorer
+        </a>
+      )}
     </span>
   );
 }
@@ -204,7 +195,7 @@ function TxHash({ hash, network }: { hash: string; network: string | undefined }
 const addressLine = (wallet: NonNullable<Operation['wallet']>) => (
   <span className="transactions-mono transactions-line">
     {networkName(wallet)} · {wallet.label ? `${wallet.label} · ` : ''}
-    <MiddleEllipsis text={wallet.address} />
+    <CopyValue value={wallet.address} label="Copy address" />
   </span>
 );
 
@@ -296,7 +287,11 @@ function facts(
       exchange ? 'Account' : 'Address',
       <span key="wallet" className="transactions-mono transactions-line">
         {wallet.label ? `${wallet.label} · ` : ''}
-        {exchange ? `UID ${wallet.address}` : <MiddleEllipsis text={wallet.address} />}
+        {exchange ? (
+          <CopyValue value={wallet.address} text={`UID ${wallet.address}`} label="Copy UID" />
+        ) : (
+          <CopyValue value={wallet.address} label="Copy address" />
+        )}
       </span>,
     ]);
     const other = operation.counterWallet;
@@ -305,7 +300,7 @@ function facts(
         moved ? 'Other address' : 'Your other address',
         <span key="other" className="transactions-mono transactions-line">
           {other.label ? `${other.label} · ` : ''}
-          {moved ? <MiddleEllipsis text={other.address} /> : shortAddress(other.address)}
+          <CopyValue value={other.address} label="Copy address" />
         </span>,
       ]);
     // BYBIT-CHAIN-FACTS: the address a Bybit withdrawal went to, or its deposit came to.
@@ -313,7 +308,7 @@ function facts(
       rows.push([
         onChain.address ? onChain.addressLabel : 'Sending address',
         <span key="onchain" className="transactions-mono transactions-line">
-          <MiddleEllipsis text={onChain.address ?? onChain.fromAddress ?? ''} />
+          <CopyValue value={onChain.address ?? onChain.fromAddress ?? ''} label="Copy address" />
         </span>,
       ]);
     // A Bybit record has no block; its id stands in for a hash it does not have (M22).
@@ -324,6 +319,7 @@ function facts(
         key="txid"
         hash={chainHash ?? exchangeRecord(operation) ?? chain.txid}
         network={onChain?.hash ? (onChain.network ?? undefined) : wallet.network}
+        record={exchange && !chainHash}
       />,
     ]);
     if (chain.call) rows.push(callFact(chain.call));
@@ -354,7 +350,11 @@ function facts(
     if (operation.type === 'pool-withdrawal' && chain.pairedTxid)
       rows.push([
         'Deposit transaction',
-        <MiddleEllipsis key="deposit" text={hashOf(chain.pairedTxid, wallet.network)} />,
+        <CopyValue
+          key="deposit"
+          value={hashOf(chain.pairedTxid, wallet.network)}
+          label="Copy transaction hash"
+        />,
       ]);
     // CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no
     // value of its own, only the network fee (XFER-CAPITAL).

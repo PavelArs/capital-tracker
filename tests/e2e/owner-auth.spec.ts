@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import { resolve } from 'node:path';
-import { type APIRequestContext, type Page, expect } from '@playwright/test';
+import { type APIRequestContext, expect, type Page } from '@playwright/test';
 import { expectHostAdmissions, ledgerState, ownerCount } from './admission-fixtures';
 import { derivedCacheTables, loginWithMfa, orderedFingerprintSql, test } from './mfa-fixtures';
 

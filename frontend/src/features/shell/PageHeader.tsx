@@ -1,4 +1,4 @@
-import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { type ReactNode, useState } from 'react';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
@@ -34,7 +34,16 @@ export default function PageHeader({
     <header className="shell-page__head">
       <h1>{title}</h1>
       {actions ? <div className="shell-page__actions">{actions}</div> : null}
-      {shown && <CurrencySwitch value={shown} onChange={setAsked} />}
+      {shown ? (
+        <CurrencySwitch value={shown} onChange={setAsked} />
+      ) : (
+        // The switch's room is held until the main currency is known, so the buttons do not step aside.
+        <div className="shell-seg shell-seg--hold" aria-hidden="true">
+          {accountingCurrencies.map((currency) => (
+            <label key={currency}>{currency}</label>
+          ))}
+        </div>
+      )}
       <NotificationsBell asked={asked} />
       <button
         type="button"

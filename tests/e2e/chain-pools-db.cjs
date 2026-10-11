@@ -46,7 +46,9 @@ function services(db) {
   const make = (file, name, ...rest) =>
     new (require(`/app/backend/dist/accounting/${file}.js`)[name])(db, ...rest);
   const trades = make('trade.service', 'TradeService');
-  const { WalletAddressService } = require('/app/backend/dist/wallet-addresses/wallet-address.service.js');
+  const {
+    WalletAddressService,
+  } = require('/app/backend/dist/wallet-addresses/wallet-address.service.js');
   return {
     accounting: make('accounting.service', 'AccountingService'),
     trades,
@@ -62,7 +64,10 @@ function services(db) {
     ),
     // Listing reads only; no sync runs in this probe.
     addresses: new WalletAddressService(db, null),
-    exports: new (require('/app/backend/dist/owner-export/owner-export.service.js').OwnerExportService)(db),
+    exports:
+      new (require('/app/backend/dist/owner-export/owner-export.service.js').OwnerExportService)(
+        db,
+      ),
   };
 }
 const rejected = (action, status, message) =>
@@ -128,7 +133,8 @@ const withdrawalOf = (addressId, txid, valueUsd = null, partial = false) => ({
 });
 const count = async (s, owner) => (await s.classifications.needsClassificationCount(owner)).count;
 const listed = async (s, owner) => (await s.operations.read(owner, {}, now)).operations;
-const row = async (s, owner, txid) => (await listed(s, owner)).find((item) => item.chain?.txid === txid);
+const row = async (s, owner, txid) =>
+  (await listed(s, owner)).find((item) => item.chain?.txid === txid);
 const journal = async (s, owner, accountId) =>
   (await s.trades.getJournal(owner, accountId)).journal;
 const answer = async (db, addressId, txid) =>
@@ -198,19 +204,130 @@ async function setup(db, s, owner) {
   // transaction; 25 USDC of pool fees arrive; the pool returns 0.9 ETH (the withdrawal's fee
   // 0.0005 ETH) and 3400 USDC; Cold storage puts 0.5 ETH in and takes 0.6 ETH out; 10 more
   // USDC arrive; 100 USDC go into a pool after that; Bybit withdraws 50 USDC.
-  await raw(db, owner, eth, { txid: legs.usdcIn, asset: 'USDC', height: 1, at: at('08-01', '09:00'), received: '5000000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, eth, { txid: legs.ethIn, height: 2, at: at('08-01', '09:30'), received: '2000000000000000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, eth, { txid: legs.ethDeposit, height: 3, at: at('08-10', '10:00'), received: '0', sent: '1001000000000000000', fee: '1000000000000000', direction: 'out' });
-  await raw(db, owner, eth, { txid: legs.usdcDeposit, asset: 'USDC', height: 3, at: at('08-10', '10:00'), received: '0', sent: '3000000000', fee: '0', direction: 'out' });
-  await raw(db, owner, eth, { txid: legs.usdcReward, asset: 'USDC', height: 4, at: at('08-20', '10:00'), received: '25000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, eth, { txid: legs.ethWithdrawal, height: 5, at: at('09-01', '10:00'), received: '900000000000000000', sent: '500000000000000', fee: '500000000000000', direction: 'in' });
-  await raw(db, owner, eth, { txid: legs.usdcWithdrawal, asset: 'USDC', height: 5, at: at('09-01', '10:00'), received: '3400000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, vault, { txid: legs.coldIn, height: 6, at: at('08-02', '09:00'), received: '1000000000000000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, vault, { txid: legs.coldDeposit, height: 7, at: at('08-12', '09:00'), received: '0', sent: '500000000000000000', fee: '0', direction: 'out' });
-  await raw(db, owner, vault, { txid: legs.coldWithdrawal, height: 8, at: at('09-10', '12:00'), received: '600000000000000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, eth, { txid: legs.lateDeposit, asset: 'USDC', height: 9, at: at('09-25', '10:00'), received: '0', sent: '100000000', fee: '0', direction: 'out' });
-  await raw(db, owner, eth, { txid: legs.usdcExtra, asset: 'USDC', height: 10, at: at('09-20', '10:00'), received: '10000000', sent: '0', fee: '0', direction: 'in' });
-  await raw(db, owner, bybit, { txid: legs.bybitOut, asset: 'USDC', height: 0, at: at('09-21', '10:00'), received: '0', sent: '50000000', fee: '0', direction: 'out' });
+  await raw(db, owner, eth, {
+    txid: legs.usdcIn,
+    asset: 'USDC',
+    height: 1,
+    at: at('08-01', '09:00'),
+    received: '5000000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.ethIn,
+    height: 2,
+    at: at('08-01', '09:30'),
+    received: '2000000000000000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.ethDeposit,
+    height: 3,
+    at: at('08-10', '10:00'),
+    received: '0',
+    sent: '1001000000000000000',
+    fee: '1000000000000000',
+    direction: 'out',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.usdcDeposit,
+    asset: 'USDC',
+    height: 3,
+    at: at('08-10', '10:00'),
+    received: '0',
+    sent: '3000000000',
+    fee: '0',
+    direction: 'out',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.usdcReward,
+    asset: 'USDC',
+    height: 4,
+    at: at('08-20', '10:00'),
+    received: '25000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.ethWithdrawal,
+    height: 5,
+    at: at('09-01', '10:00'),
+    received: '900000000000000000',
+    sent: '500000000000000',
+    fee: '500000000000000',
+    direction: 'in',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.usdcWithdrawal,
+    asset: 'USDC',
+    height: 5,
+    at: at('09-01', '10:00'),
+    received: '3400000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, vault, {
+    txid: legs.coldIn,
+    height: 6,
+    at: at('08-02', '09:00'),
+    received: '1000000000000000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, vault, {
+    txid: legs.coldDeposit,
+    height: 7,
+    at: at('08-12', '09:00'),
+    received: '0',
+    sent: '500000000000000000',
+    fee: '0',
+    direction: 'out',
+  });
+  await raw(db, owner, vault, {
+    txid: legs.coldWithdrawal,
+    height: 8,
+    at: at('09-10', '12:00'),
+    received: '600000000000000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.lateDeposit,
+    asset: 'USDC',
+    height: 9,
+    at: at('09-25', '10:00'),
+    received: '0',
+    sent: '100000000',
+    fee: '0',
+    direction: 'out',
+  });
+  await raw(db, owner, eth, {
+    txid: legs.usdcExtra,
+    asset: 'USDC',
+    height: 10,
+    at: at('09-20', '10:00'),
+    received: '10000000',
+    sent: '0',
+    fee: '0',
+    direction: 'in',
+  });
+  await raw(db, owner, bybit, {
+    txid: legs.bybitOut,
+    asset: 'USDC',
+    height: 0,
+    at: at('09-21', '10:00'),
+    received: '0',
+    sent: '50000000',
+    fee: '0',
+    direction: 'out',
+  });
   stage = 'synthetic stored ETH prices: 3000 an hour before the cold withdrawal, 3100 after it';
   await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
     VALUES ('ETH','USD','kraken','2026-09-10T11:00:00Z',3000,'hourly-close'),
@@ -232,14 +349,20 @@ async function setup(db, s, owner) {
 }
 
 async function deposits(db, s, owner, f) {
-  stage = 'POOL-DEPOSIT 1 ETH and 3000 USDC go into the pool and stay the owner\'s coins';
+  stage = "POOL-DEPOSIT 1 ETH and 3000 USDC go into the pool and stay the owner's coins";
   // Before an answer the deposit counts as coins that left (D1), as every unanswered leg does.
   const ethBefore = await held(s, owner, 'ETH', f.trust);
   const usdcBefore = await held(s, owner, 'USDC', f.trust);
-  const saved = await classify(s, owner, f.eth, legs.ethDeposit, { expectedVersion: 0, classification: deposit });
+  const saved = await classify(s, owner, f.eth, legs.ethDeposit, {
+    expectedVersion: 0,
+    classification: deposit,
+  });
   assert.equal(saved.value.type, 'pool-deposit');
   assert.equal(saved.value.operation, null, 'A pool deposit records no journal entry');
-  await classify(s, owner, f.eth, legs.usdcDeposit, { expectedVersion: 0, classification: deposit });
+  await classify(s, owner, f.eth, legs.usdcDeposit, {
+    expectedVersion: 0,
+    classification: deposit,
+  });
   assert.equal(await count(s, owner), 8, 'Both legs of the deposit stop asking');
   const eth = await held(s, owner, 'ETH', f.trust);
   const usdc = await held(s, owner, 'USDC', f.trust);
@@ -253,15 +376,29 @@ async function deposits(db, s, owner, f) {
   const summary = await card(s, owner, f.eth);
   assert.deepEqual(
     summary.pools.map((item) => [item.symbol, scaled(item.quantity)]),
-    [['ETH', coins('1')], ['USDC', coins('3000')]],
+    [
+      ['ETH', coins('1')],
+      ['USDC', coins('3000')],
+    ],
   );
-  assert.equal(balance(summary, 'ETH'), eth, 'The chain balance and 1 ETH in the pool match the books');
+  assert.equal(
+    balance(summary, 'ETH'),
+    eth,
+    'The chain balance and 1 ETH in the pool match the books',
+  );
   assert.equal(balance(summary, 'USDC'), usdc, 'The chain balance and 3000 USDC in the pool');
-  assert.equal((await card(s, owner, f.vault)).pools, null, 'Cold storage has nothing in a pool yet');
+  assert.equal(
+    (await card(s, owner, f.vault)).pools,
+    null,
+    'Cold storage has nothing in a pool yet',
+  );
 
   stage = 'POOL-DEPOSIT the list shows both legs as pool deposits between own places';
   const ethRow = await row(s, owner, legs.ethDeposit);
-  assert.deepEqual([ethRow.type, ethRow.status, ethRow.direction, ethRow.chain.direction], ['pool-deposit', 'recorded', 'internal', 'out']);
+  assert.deepEqual(
+    [ethRow.type, ethRow.status, ethRow.direction, ethRow.chain.direction],
+    ['pool-deposit', 'recorded', 'internal', 'out'],
+  );
   same(ethRow.quantity, '1', 'The principal, the fee apart');
   same(ethRow.fee.quantity, '0.001');
   const usdcRow = await row(s, owner, legs.usdcDeposit);
@@ -298,7 +435,10 @@ async function withdrawals(db, s, owner, f) {
   assert.equal(usdc.value.operation.kind, 'reward', 'The gain is recorded as income');
   assert.deepEqual(usdc.value.paired, { addressId: f.eth, txid: legs.usdcDeposit });
   const stored = await answer(db, f.eth, legs.usdcWithdrawal);
-  assert.deepEqual([stored.type, stored.pairedAddressId, stored.pairedTxid], ['pool-withdrawal', f.eth, legs.usdcDeposit]);
+  assert.deepEqual(
+    [stored.type, stored.pairedAddressId, stored.pairedTxid],
+    ['pool-withdrawal', f.eth, legs.usdcDeposit],
+  );
   let books = await journal(s, owner, f.trust);
   same(books.rewardSummary.knownIncomeSubtotalUsd, '425', 'USDC counts 1:1 with USD');
   same(books.summary.remainingCostUsd, '10425');
@@ -308,7 +448,8 @@ async function withdrawals(db, s, owner, f) {
     'Chain: 5000 − 3000 + 25 + 3400, and the unanswered −100 and +10 (D1)',
   );
 
-  stage = 'POOL-WITHDRAW 0.9 ETH return 1 ETH less 0.1 ETH of impermanent loss and the 0.0005 ETH fee';
+  stage =
+    'POOL-WITHDRAW 0.9 ETH return 1 ETH less 0.1 ETH of impermanent loss and the 0.0005 ETH fee';
   const eth = await classify(s, owner, f.eth, legs.ethWithdrawal, {
     expectedVersion: 0,
     classification: withdrawalOf(f.eth, legs.ethDeposit),
@@ -316,7 +457,11 @@ async function withdrawals(db, s, owner, f) {
   assert.equal(eth.value.operation, null, 'A loss records no income');
   books = await journal(s, owner, f.trust);
   same(books.rewardSummary.knownIncomeSubtotalUsd, '425', 'A loss is not negative income');
-  assert.equal(await held(s, owner, 'ETH', f.trust), coins('1.8985'), 'Chain: 2 − 1.001 + 0.9 − 0.0005');
+  assert.equal(
+    await held(s, owner, 'ETH', f.trust),
+    coins('1.8985'),
+    'Chain: 2 − 1.001 + 0.9 − 0.0005',
+  );
   assert.equal(await count(s, owner), 5);
 
   stage = 'POOL-WITHDRAW the address card shows no pool any more and matches the books';
@@ -328,7 +473,10 @@ async function withdrawals(db, s, owner, f) {
   stage = 'POOL-WITHDRAW the list shows both receipts with what was deposited and the difference';
   const operations = await listed(s, owner);
   const usdcRow = operations.find((item) => item.chain?.txid === legs.usdcWithdrawal);
-  assert.deepEqual([usdcRow.type, usdcRow.status, usdcRow.direction, usdcRow.chain.pairedTxid], ['pool-withdrawal', 'recorded', 'internal', legs.usdcDeposit]);
+  assert.deepEqual(
+    [usdcRow.type, usdcRow.status, usdcRow.direction, usdcRow.chain.pairedTxid],
+    ['pool-withdrawal', 'recorded', 'internal', legs.usdcDeposit],
+  );
   same(usdcRow.quantity, '3400');
   same(usdcRow.pool.deposited, '3000');
   same(usdcRow.pool.difference, '400');
@@ -346,7 +494,10 @@ async function withdrawals(db, s, owner, f) {
   );
 
   stage = 'POOL-WITHDRAW Cold storage: 0.1 ETH more than deposited, at the stored price of 3000';
-  await classify(s, owner, f.vault, legs.coldDeposit, { expectedVersion: 0, classification: deposit });
+  await classify(s, owner, f.vault, legs.coldDeposit, {
+    expectedVersion: 0,
+    classification: deposit,
+  });
   await classify(s, owner, f.vault, legs.coldWithdrawal, {
     expectedVersion: 0,
     classification: withdrawalOf(f.vault, legs.coldDeposit),
@@ -356,9 +507,13 @@ async function withdrawals(db, s, owner, f) {
   assert.equal(await held(s, owner, 'ETH', f.cold), coins('1.1'));
 
   stage = 'POOL-WITHDRAW the export names the income produced by the withdrawal';
-  const exported = (await s.exports.chain(db.manager, owner))
-    .find((leg) => leg.txid === legs.usdcWithdrawal);
-  assert.deepEqual([exported.classificationType, exported.operationId], ['pool-withdrawal', `reward:${stored.rewardId}`]);
+  const exported = (await s.exports.chain(db.manager, owner)).find(
+    (leg) => leg.txid === legs.usdcWithdrawal,
+  );
+  assert.deepEqual(
+    [exported.classificationType, exported.operationId],
+    ['pool-withdrawal', `reward:${stored.rewardId}`],
+  );
   console.log('PASS POOL-WITHDRAW');
   return stored.rewardId;
 }
@@ -367,17 +522,30 @@ async function undo(db, s, owner, f, rewardId) {
   stage = 'POOL-UNDO a deposit that a withdrawal names cannot be hidden or changed';
   const message = 'A pool withdrawal names this deposit; change the withdrawal first';
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcDeposit, { expectedVersion: 1, hidden: true, classification: deposit }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcDeposit, {
+        expectedVersion: 1,
+        hidden: true,
+        classification: deposit,
+      }),
     422,
     message,
   );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcDeposit, { expectedVersion: 1, classification: { type: 'other' } }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcDeposit, {
+        expectedVersion: 1,
+        classification: { type: 'other' },
+      }),
     422,
     message,
   );
   // A comment on the deposit changes nothing else.
-  await classify(s, owner, f.eth, legs.usdcDeposit, { expectedVersion: 1, classification: deposit, comment: 'Uniswap' });
+  await classify(s, owner, f.eth, legs.usdcDeposit, {
+    expectedVersion: 1,
+    classification: deposit,
+    comment: 'Uniswap',
+  });
 
   stage = 'POOL-UNDO hiding the withdrawal voids its income and puts the deposit back in the pool';
   await classify(s, owner, f.eth, legs.usdcWithdrawal, {
@@ -387,7 +555,10 @@ async function undo(db, s, owner, f, rewardId) {
   });
   assert.equal(await rewardKind(db, rewardId), 'void');
   const summary = await card(s, owner, f.eth);
-  assert.deepEqual(summary.pools.map((item) => [item.symbol, scaled(item.quantity)]), [['USDC', coins('3000')]]);
+  assert.deepEqual(
+    summary.pools.map((item) => [item.symbol, scaled(item.quantity)]),
+    [['USDC', coins('3000')]],
+  );
   assert.equal(
     await held(s, owner, 'USDC', f.trust),
     coins('4935'),
@@ -406,46 +577,79 @@ async function undo(db, s, owner, f, rewardId) {
 
 async function invalid(db, s, owner, f) {
   stage = 'POOL-INVALID what does not fit is refused and nothing changes';
-  const before = await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions');
-  await classify(s, owner, f.eth, legs.lateDeposit, { expectedVersion: 0, classification: deposit });
-  const after = await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions');
+  const before = await db.query(
+    'SELECT count(*)::int AS n FROM chain_transaction_classification_versions',
+  );
+  await classify(s, owner, f.eth, legs.lateDeposit, {
+    expectedVersion: 0,
+    classification: deposit,
+  });
+  const after = await db.query(
+    'SELECT count(*)::int AS n FROM chain_transaction_classification_versions',
+  );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: withdrawalOf(f.eth, legs.usdcIn) }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcExtra, {
+        expectedVersion: 0,
+        classification: withdrawalOf(f.eth, legs.usdcIn),
+      }),
     422,
     'Choose a pool deposit',
   );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: withdrawalOf(f.eth, legs.ethDeposit) }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcExtra, {
+        expectedVersion: 0,
+        classification: withdrawalOf(f.eth, legs.ethDeposit),
+      }),
     422,
     'A pool withdrawal returns the coin of its deposit',
   );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: withdrawalOf(f.eth, legs.usdcDeposit) }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcExtra, {
+        expectedVersion: 0,
+        classification: withdrawalOf(f.eth, legs.usdcDeposit),
+      }),
     422,
     'That pool deposit was already withdrawn',
   );
   await rejected(
-    () => classify(s, owner, f.vault, legs.coldWithdrawal, { expectedVersion: 1, classification: withdrawalOf(f.eth, legs.ethDeposit) }),
+    () =>
+      classify(s, owner, f.vault, legs.coldWithdrawal, {
+        expectedVersion: 1,
+        classification: withdrawalOf(f.eth, legs.ethDeposit),
+      }),
     422,
     'Choose a pool deposit of this wallet',
   );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: withdrawalOf(f.eth, legs.lateDeposit) }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcExtra, {
+        expectedVersion: 0,
+        classification: withdrawalOf(f.eth, legs.lateDeposit),
+      }),
     422,
     'Choose a pool deposit made before this withdrawal',
   );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: deposit }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: deposit }),
     422,
     'This type does not fit the direction of the transaction',
   );
   await rejected(
-    () => classify(s, owner, f.bybit, legs.bybitOut, { expectedVersion: 0, classification: deposit }),
+    () =>
+      classify(s, owner, f.bybit, legs.bybitOut, { expectedVersion: 0, classification: deposit }),
     422,
     'This type does not fit the direction of the transaction',
   );
   await rejected(
-    () => classify(s, owner, f.eth, legs.usdcExtra, { expectedVersion: 0, classification: { type: 'pool-withdrawal', deposit: { addressId: f.eth } } }),
+    () =>
+      classify(s, owner, f.eth, legs.usdcExtra, {
+        expectedVersion: 0,
+        classification: { type: 'pool-withdrawal', deposit: { addressId: f.eth } },
+      }),
     400,
   );
   assert.ok(before[0].n < after[0].n);
@@ -481,7 +685,15 @@ async function partial(db, s) {
   const out = (txid, height, when, sent, fee = '0') =>
     raw(db, ownerId, eth, { txid, height, at: when, received: '0', sent, fee, direction: 'out' });
   const into = (txid, height, when, received) =>
-    raw(db, ownerId, eth, { txid, height, at: when, received, sent: '0', fee: '0', direction: 'in' });
+    raw(db, ownerId, eth, {
+      txid,
+      height,
+      at: when,
+      received,
+      sent: '0',
+      fee: '0',
+      direction: 'in',
+    });
   await into(parts.in, 21, at('08-01', '09:00'), '2000000000000000000');
   await out(parts.depositA, 22, at('08-10', '10:00'), '1001000000000000000', '1000000000000000');
   await into(parts.early, 23, at('09-03', '10:00'), '50000000000000000');
@@ -503,13 +715,18 @@ async function partial(db, s) {
     ((await card(s, ownerId, eth)).pools ?? []).map((item) => [item.symbol, scaled(item.quantity)]);
   // The address card and the books count the same coins, at every step.
   const matches = async (message) =>
-    assert.equal(balance(await card(s, ownerId, eth), 'ETH'), await held(s, ownerId, 'ETH', ledger), message);
+    assert.equal(
+      balance(await card(s, ownerId, eth), 'ETH'),
+      await held(s, ownerId, 'ETH', ledger),
+      message,
+    );
   const income = async () =>
     (await journal(s, ownerId, ledger)).rewardSummary?.knownIncomeSubtotalUsd ?? '0';
   await matches('Both deposits stay held');
   assert.deepEqual(await pools(), [['ETH', coins('1.5')]]);
 
-  stage = 'POOL-PARTIAL a part returns 0.4 ETH of the deposit: no income, no loss, 0.6 ETH stay in the pool';
+  stage =
+    'POOL-PARTIAL a part returns 0.4 ETH of the deposit: no income, no loss, 0.6 ETH stay in the pool';
   const one = await classify(s, ownerId, eth, parts.partOne, {
     expectedVersion: 0,
     classification: withdrawalOf(eth, parts.depositA, null, true),
@@ -522,13 +739,20 @@ async function partial(db, s) {
   same(await income(), '0', 'Nothing is income yet');
   const first = await row(s, ownerId, parts.partOne);
   assert.deepEqual([first.type, first.status], ['pool-withdrawal', 'recorded']);
-  assert.deepEqual([first.pool.partial, scaled(first.pool.remaining), scaled(first.pool.difference)], [true, coins('0.6'), 0n]);
+  assert.deepEqual(
+    [first.pool.partial, scaled(first.pool.remaining), scaled(first.pool.difference)],
+    [true, coins('0.6'), 0n],
+  );
   same(first.pool.deposited, '1');
 
   stage = 'POOL-PARTIAL a withdrawal cannot be added before one that comes after it';
   const later = 'A later withdrawal already returns part of this deposit; change it first';
   await rejected(
-    () => classify(s, ownerId, eth, parts.early, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositA, null, true) }),
+    () =>
+      classify(s, ownerId, eth, parts.early, {
+        expectedVersion: 0,
+        classification: withdrawalOf(eth, parts.depositA, null, true),
+      }),
     422,
     later,
   );
@@ -549,29 +773,50 @@ async function partial(db, s) {
 
   stage = 'POOL-PARTIAL a deposit returned in full takes no further withdrawal';
   await rejected(
-    () => classify(s, ownerId, eth, parts.extra, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositA, null, true) }),
+    () =>
+      classify(s, ownerId, eth, parts.extra, {
+        expectedVersion: 0,
+        classification: withdrawalOf(eth, parts.depositA, null, true),
+      }),
     422,
     'That pool deposit was already returned in full',
   );
   await rejected(
-    () => classify(s, ownerId, eth, parts.extra, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositA) }),
+    () =>
+      classify(s, ownerId, eth, parts.extra, {
+        expectedVersion: 0,
+        classification: withdrawalOf(eth, parts.depositA),
+      }),
     422,
     'That pool deposit was already returned in full',
   );
 
   stage = 'POOL-PARTIAL an earlier part cannot change or be hidden under a later one';
   await rejected(
-    () => classify(s, ownerId, eth, parts.partOne, { expectedVersion: 1, hidden: true, classification: withdrawalOf(eth, parts.depositA, null, true) }),
+    () =>
+      classify(s, ownerId, eth, parts.partOne, {
+        expectedVersion: 1,
+        hidden: true,
+        classification: withdrawalOf(eth, parts.depositA, null, true),
+      }),
     422,
     later,
   );
   await rejected(
-    () => classify(s, ownerId, eth, parts.partOne, { expectedVersion: 1, classification: withdrawalOf(eth, parts.depositA) }),
+    () =>
+      classify(s, ownerId, eth, parts.partOne, {
+        expectedVersion: 1,
+        classification: withdrawalOf(eth, parts.depositA),
+      }),
     422,
     later,
   );
   await rejected(
-    () => classify(s, ownerId, eth, parts.partOne, { expectedVersion: 1, classification: { type: 'other' } }),
+    () =>
+      classify(s, ownerId, eth, parts.partOne, {
+        expectedVersion: 1,
+        classification: { type: 'other' },
+      }),
     422,
     later,
   );
@@ -584,12 +829,18 @@ async function partial(db, s) {
   same(await income(), '300');
   // The deposit stays put while parts name it (POOL-UNDO).
   await rejected(
-    () => classify(s, ownerId, eth, parts.depositA, { expectedVersion: 1, hidden: true, classification: deposit }),
+    () =>
+      classify(s, ownerId, eth, parts.depositA, {
+        expectedVersion: 1,
+        hidden: true,
+        classification: deposit,
+      }),
     422,
     'A pool withdrawal names this deposit; change the withdrawal first',
   );
 
-  stage = 'POOL-PARTIAL the withdrawal that is not a part closes the deposit and takes its shortfall';
+  stage =
+    'POOL-PARTIAL the withdrawal that is not a part closes the deposit and takes its shortfall';
   await classify(s, ownerId, eth, parts.partB, {
     expectedVersion: 0,
     classification: withdrawalOf(eth, parts.depositB, null, true),
@@ -610,12 +861,21 @@ async function partial(db, s) {
   const middle = await row(s, ownerId, parts.partB);
   same(middle.pool.remaining, '0.3');
   await rejected(
-    () => classify(s, ownerId, eth, parts.lateB, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositB, null, true) }),
+    () =>
+      classify(s, ownerId, eth, parts.lateB, {
+        expectedVersion: 0,
+        classification: withdrawalOf(eth, parts.depositB, null, true),
+      }),
     422,
     'That pool deposit was already withdrawn',
   );
   await rejected(
-    () => classify(s, ownerId, eth, parts.partB, { expectedVersion: 1, hidden: true, classification: withdrawalOf(eth, parts.depositB, null, true) }),
+    () =>
+      classify(s, ownerId, eth, parts.partB, {
+        expectedVersion: 1,
+        hidden: true,
+        classification: withdrawalOf(eth, parts.depositB, null, true),
+      }),
     422,
     later,
   );
