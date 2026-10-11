@@ -393,7 +393,8 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(cells(rowOf('Bitcoin'))[2]).toBe('$80,000.00Market price · stale, 3 h ago');
-    expect(cells(rowOf('Bitcoin'))[6]).toBe('—');
+    // The table shows the profit of the coins with a known purchase price, not a dash.
+    expect(cells(rowOf('Bitcoin'))[6]).toBe('+$30,000.00+60.00%');
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
     // The known part stands on its own instead of emptying cost basis and profit.
     expect(summary).toHaveTextContent('Cost basis$50,000.00Unrealized P&L+$30,000.00+60.00%');

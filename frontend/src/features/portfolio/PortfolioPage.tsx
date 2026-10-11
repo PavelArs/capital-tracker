@@ -87,6 +87,16 @@ const sortKeys: [SortKey, string][] = [
   ['name', 'Name'],
 ];
 
+/**
+ * The asset's unrealized P&L: over the coins whose purchase price is known when others have
+ * none, instead of a dash (PV-KNOWN-PART).
+ */
+export function shownProfit(asset: AssetValuation): { pnl: string | null; ratio: string | null } {
+  return asset.unrealizedPnl === null && asset.knownUnrealizedPnl !== null
+    ? { pnl: asset.knownUnrealizedPnl, ratio: asset.knownUnrealizedReturnPercent }
+    : { pnl: asset.unrealizedPnl, ratio: asset.unrealizedReturnPercent };
+}
+
 /** Assets in the phone list's order: numbers largest first with unknowns last, names A to Z. */
 export function sortAssets(assets: readonly AssetValuation[], key: SortKey): AssetValuation[] {
   if (key === 'name')
@@ -95,7 +105,7 @@ export function sortAssets(assets: readonly AssetValuation[], key: SortKey): Ass
     key === 'value'
       ? asset.value
       : key === 'pnl'
-        ? asset.unrealizedPnl
+        ? shownProfit(asset).pnl
         : asset.priceChange24hPercent;
   const number = (asset: AssetValuation) => {
     const value = field(asset);
@@ -313,9 +323,9 @@ function AssetsTable({
               </td>
               <td className="portfolio-num">
                 <Signed
-                  value={asset.unrealizedPnl}
+                  value={shownProfit(asset).pnl}
                   currency={currency}
-                  ratio={asset.unrealizedReturnPercent}
+                  ratio={shownProfit(asset).ratio}
                   inline
                 />
               </td>
@@ -367,14 +377,14 @@ function AssetsList({
               )}
             </span>
             <span
-              className={`portfolio-list__pnl${tone(asset.unrealizedPnl) ? ` portfolio-${tone(asset.unrealizedPnl)}` : ''}`}
+              className={`portfolio-list__pnl${tone(shownProfit(asset).pnl) ? ` portfolio-${tone(shownProfit(asset).pnl)}` : ''}`}
             >
-              {asset.unrealizedPnl === null
+              {shownProfit(asset).pnl === null
                 ? DASH
-                : `${money(asset.unrealizedPnl, currency, true)}${
-                    asset.unrealizedReturnPercent === null
+                : `${money(shownProfit(asset).pnl, currency, true)}${
+                    shownProfit(asset).ratio === null
                       ? ''
-                      : ` · ${percent(asset.unrealizedReturnPercent)}`
+                      : ` · ${percent(shownProfit(asset).ratio)}`
                   }`}
             </span>
           </Link>
