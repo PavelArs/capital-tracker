@@ -464,7 +464,7 @@ test('SES-001-C: activity and backend restart retain a session without extending
   expect(touched.expiresAt).toBe(before.expiresAt);
   await restartBackend(request);
   await page.reload();
-  await expect(page.getByRole('navigation').getByText(ownerEmail, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(ownerEmail, { exact: true })).toBeVisible();
   expect((await sessionCookie(page)) === token).toBe(true);
   expect(sessionRows(token)[0].expiresAt).toBe(before.expiresAt);
 });
@@ -480,7 +480,7 @@ test('SES-001-C: a session unused for most of a day still works without re-login
     WHERE "tokenHash" = '${tokenHash(token)}'`);
   const before = sessionRows(token)[0];
   await page.reload();
-  await expect(page.getByRole('navigation').getByText(ownerEmail, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(ownerEmail, { exact: true })).toBeVisible();
   expect((await sessionCookie(page)) === token).toBe(true);
   expect(sessionRows(token)[0].expiresAt).toBe(before.expiresAt);
 });
