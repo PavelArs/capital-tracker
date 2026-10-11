@@ -419,11 +419,14 @@ export async function tradeApi(page: Page): Promise<TradeApi> {
 export async function forgetBrowserReads(page: Page): Promise<void> {
   await page.goto('about:blank');
   const session = await page.context().newCDPSession(page);
-  await session.send('Storage.clearDataForOrigin', {
-    origin,
-    storageTypes: 'indexeddb',
-  });
+  await session.send('Storage.clearDataForOrigin', { origin, storageTypes: 'indexeddb' });
   await session.detach();
+}
+/** A reload that starts from an emptied read store (see forgetBrowserReads). */
+export async function reloadFresh(page: Page): Promise<void> {
+  const url = page.url();
+  await forgetBrowserReads(page);
+  await page.goto(url);
 }
 export function tradeInput(
   instrumentId: string,
