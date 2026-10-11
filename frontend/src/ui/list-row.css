@@ -74,8 +74,7 @@ button.ui-row:hover {
   white-space: nowrap;
 }
 
-.ui-row__title,
-.ui-row__detail {
+.ui-row__title {
   max-width: 100%;
   overflow: hidden;
   /* Text that does not fit fades out at the end instead of ending in "…". */
@@ -92,6 +91,13 @@ button.ui-row:hover {
 .ui-row__amount {
   font-size: var(--fs-md);
   font-weight: 600;
+}
+
+/* Details wrap at " · " rather than fade, so the sync status or time after an address stays
+   readable on a narrow phone. */
+.ui-row__detail {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .ui-row__detail,
