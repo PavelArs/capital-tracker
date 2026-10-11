@@ -236,7 +236,8 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   // Since M9 a buy or sell is edited and deleted right in the drawer.
   await expect(tradeDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await expect(tradeDrawer.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
-  await expect(tradeDrawer.getByRole('link')).toHaveCount(0);
+  // Only the ticker in the title is a link (to the asset's page).
+  await expect(tradeDrawer.getByRole('link')).toHaveText(['BTC']);
   await tradeDrawer.getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog', { name: 'Edit transaction', exact: true });
   await expect(edit.getByLabel('Amount')).toHaveValue('0.00918359');

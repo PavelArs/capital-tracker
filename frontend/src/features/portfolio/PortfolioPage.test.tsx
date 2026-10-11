@@ -11,6 +11,7 @@ import {
 } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -1151,6 +1152,47 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     complete: value !== null,
     cost,
     costComplete: true,
+  });
+
+  const tokenWallet = (n: number, symbol: string, other: boolean) =>
+    ({
+      id: id(n),
+      balances: [{ symbol, quantity: '1', ...(other ? { name: symbol } : {}) }],
+    }) as unknown as WalletAddress;
+
+  it('TOKEN-HIDE hides a token asset from its own page in every wallet that holds it', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
+      tokenWallet(601, 'TON', true),
+      tokenWallet(602, 'TON', true),
+      tokenWallet(603, 'BTC', false),
+    ]);
+    const hide = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue({} as WalletAddress);
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${toncoin.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
+    expect(hide).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'Hide this asset' })).toHaveTextContent(
+      'Bring it back with Restore under Hidden tokens on the wallet.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Hide TON' }));
+    await waitFor(() =>
+      expect(hide.mock.calls).toEqual([
+        [id(601), ['TON'], 'hidden'],
+        [id(602), ['TON'], 'hidden'],
+      ]),
+    );
+    // The asset is gone from the portfolio, so the owner lands on it.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
+  });
+
+  it('TOKEN-HIDE offers no Hide for a coin no wallet holds as one of its other tokens', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([tokenWallet(603, 'BTC', false)]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    expect(await screen.findByRole('heading', { name: 'Holdings' })).toBeInTheDocument();
+    await waitFor(() => expect(walletAddressesApi.list).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Hide asset' })).toBeNull();
   });
 
   it('shows the price change today, the value against cost chart and its periods', async () => {

@@ -9,6 +9,7 @@ import {
 } from '@api/operations.api';
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
+import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -572,6 +573,32 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(opener).toHaveFocus();
   });
 
+  it('ASSET-LINK opens the asset page from the ticker in the drawer title', async () => {
+    const user = userEvent.setup();
+    // A blockchain leg names its coin by ticker only; the portfolio's assets find its page.
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([receipt, tether]));
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [{ instrumentId: id(1), symbol: 'BTC', name: 'Bitcoin' }],
+    } as PortfolioValuation);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    await waitFor(() =>
+      expect(within(drawer).getByRole('link', { name: 'BTC' })).toHaveAttribute(
+        'href',
+        `/portfolio/${id(1)}`,
+      ),
+    );
+    // A journal row carries its asset's id itself, so it needs no lookup.
+    await user.keyboard('{Escape}');
+    await user.click(within(bodyRows()[1]).getByRole('button'));
+    expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'USDT' })).toHaveAttribute(
+      'href',
+      `/portfolio/${id(2)}`,
+    );
+  });
+
   it('shows a recorded trade with its fee and comment, and Edit and Delete', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
@@ -597,7 +624,12 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(within(drawer).queryByText('Version')).toBeNull();
     expect(within(drawer).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-    expect(within(drawer).queryByRole('link')).toBeNull();
+    // Only the ticker in the title is a link (to the asset's page).
+    expect(
+      within(drawer)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['BTC']);
     await user.click(within(drawer).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -634,7 +666,12 @@ describe('TransactionsPage (list-all-operations)', () => {
     await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Transfer' }));
     drawer = screen.getByRole('dialog', { name: 'Transfer · BTC' });
     expect(within(drawer).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-    expect(within(drawer).queryByRole('link')).toBeNull();
+    // Only the ticker in the title is a link (to the asset's page).
+    expect(
+      within(drawer)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['BTC']);
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     await waitFor(() =>
