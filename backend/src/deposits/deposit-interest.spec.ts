@@ -173,6 +173,30 @@ describe('projectDeposit', () => {
     ];
     const result = projectDeposit(terms({ earlyClose: 'keeps-interest' }), movements, '2026-03-01');
     expect(result.interestForfeited).toBe('0.00');
+    // The 10 days since the 1 February posting become due when the deposit is closed.
+    expect(result.accrued).toBe('0.00');
+    expect(result.due).toBe('1347.95');
+    expect(result.periods[result.periods.length - 1]).toEqual({
+      from: '2026-02-01',
+      to: '2026-02-11',
+      interest: '328.77',
+      treatment: 'payable',
+    });
+  });
+
+  it('lets the owner record the payout of interest kept on an early closure', () => {
+    const closing: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-11', kind: 'withdrawal', amount: '100000' },
+    ];
+    const early = terms({ earlyClose: 'keeps-interest' });
+    const payout: DepositMovement = {
+      date: '2026-02-12',
+      kind: 'interest-payout',
+      amount: '1347.95',
+    };
+    expect(firstImpossibleMovement(early, [...closing, payout])).toBe(-1);
+    expect(projectDeposit(early, [...closing, payout], '2026-03-01').due).toBe('0.00');
   });
 
   it('keeps accruing after a partial withdrawal, on what is left', () => {

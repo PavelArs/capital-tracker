@@ -186,11 +186,20 @@ export function projectDeposit(
         principal -= amount < principal ? amount : principal;
         if (principal === 0n) {
           closedOn = date;
-          if (
-            terms.earlyClose === 'forfeits-interest' &&
-            (terms.endDate === null || date < terms.endDate)
-          ) {
-            forfeited = accrued;
+          if (terms.endDate === null || date < terms.endDate) {
+            if (terms.earlyClose === 'forfeits-interest') forfeited = accrued;
+            else {
+              // Closing pays what was earned since the last payout date: it is due now.
+              const interest = roundToCents(accrued);
+              due += interest;
+              posted += interest;
+              periods.push({
+                from: periodStart,
+                to: date,
+                interest: centsText(interest),
+                treatment: 'payable',
+              });
+            }
             accrued = 0n;
           }
         }
