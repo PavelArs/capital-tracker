@@ -100,9 +100,9 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
     expect(within(card).getByText('₽100,328.77')).toBeInTheDocument();
     expect(
-      within(card).getByText('12% · interest paid monthly · until 1 Dec 2026'),
+      within(card).getByText('12% · interest paid monthly · until Dec 1, 2026'),
     ).toBeInTheDocument();
-    expect(within(card).getByText(/₽1,019\.18 on 1 Nov 2026/)).toBeInTheDocument();
+    expect(within(card).getByText(/₽1,019\.18 on Nov 1, 2026/)).toBeInTheDocument();
     expect(within(card).getByText('Not checked against the bank yet')).toBeInTheDocument();
     const usd = screen.getByRole('link', { name: /Dollar B/ });
     expect(within(usd).getByText('₽454,686.30')).toBeInTheDocument();
@@ -132,6 +132,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    expect(within(dialog).getByLabelText('Name')).toHaveFocus();
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Name');
     await user.type(within(dialog).getByLabelText('Name'), 'Savings A');

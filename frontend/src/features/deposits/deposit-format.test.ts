@@ -29,12 +29,12 @@ const deposit = (change: Partial<Deposit> = {}): Deposit => ({
 
 describe('deposit text', () => {
   it('writes a calendar date without moving it across time zones', () => {
-    expect(dateText('2026-10-01')).toBe('1 Oct 2026');
+    expect(dateText('2026-10-01')).toBe('Oct 1, 2026');
     expect(daysBetween('2026-10-01', '2026-10-08')).toBe(7);
   });
 
   it('describes the terms in one line', () => {
-    expect(termText(deposit())).toBe('12% · interest paid monthly · until 1 Dec 2026');
+    expect(termText(deposit())).toBe('12% · interest paid monthly · until Dec 1, 2026');
     expect(
       termText(deposit({ capitalized: true, payout: 'at-end', endDate: null, ratePercent: '4.5' })),
     ).toBe('4.5% · interest added at the end of the term · no end date');
