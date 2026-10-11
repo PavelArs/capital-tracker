@@ -472,6 +472,38 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Fee')).toBe('₽98.76');
   });
 
+  it('OPS-TYPE: filters by what a transaction is, keeps the other filters and counts the chips by it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    render(
+      <MemoryRouter initialEntries={['/transactions']}>
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    const type = screen.getByRole('combobox', { name: 'Type' });
+    expect(
+      within(type)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All types', 'Buy', 'Incoming', 'Outgoing', 'Transfer']);
+    await user.selectOptions(type, 'Buy');
+    expect(bodyRows().map(typeOf)).toEqual(['Buy', 'Buy', 'Buy']);
+    expect(screen.getByLabelText('Address')).toHaveTextContent('?type=buy');
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 3');
+    expect(screen.getByRole('button', { name: /^CSV/ })).toHaveTextContent('CSV 1');
+    expect(screen.getByText(/3 of 6 transactions/)).toBeInTheDocument();
+    // An unclassified wallet transaction is told by its direction.
+    await user.selectOptions(type, 'Incoming');
+    expect(bodyRows().map(typeOf)).toEqual(['Incoming']);
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    expect(screen.getByText('No transactions match')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(bodyRows()).toHaveLength(6);
+    expect(type).toHaveValue('');
+  });
+
   it('OPS-PERIOD: the period is asked of the server, lives in the address and keeps the other filters', async () => {
     const user = userEvent.setup();
     const read = vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) =>

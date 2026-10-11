@@ -77,6 +77,9 @@ function placeKeys(operation: Operation): string[] {
   ].filter((key): key is string => key !== undefined);
 }
 
+/** Filter key of a row's type; a wallet transaction nobody classified is told by its direction. */
+const typeKey = (operation: Operation) => operation.type ?? `direction:${operation.direction}`;
+
 function assetKeys(operation: Operation): string[] {
   return [operation.asset, operation.counterAsset].flatMap((asset) =>
     asset ? [assetKey(asset)] : [],
@@ -449,6 +452,7 @@ export default function TransactionsPage() {
     : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all');
   const asset = params.get('asset') ?? '';
   const place = params.get('account') ?? '';
+  const kind = params.get('type') ?? '';
   const replaceParams = (next: URLSearchParams) => {
     pending.current = { from: params, next };
     setParams(next, { replace: true });
@@ -482,6 +486,7 @@ export default function TransactionsPage() {
   // OPS-PERIOD: the options are those of the period shown.
   const seenAssets = useRef(new Map<string, string>());
   const seenPlaces = useRef(new Map<string, string>());
+  const seenKinds = useRef(new Map<string, string>());
   const assetOptions = useMemo(
     () =>
       options(
@@ -517,14 +522,25 @@ export default function TransactionsPage() {
       ),
     [operations, place],
   );
+  const kindOptions = useMemo(
+    () =>
+      options(
+        operations,
+        (operation) => [[typeKey(operation), typeLabel(operation)] as [string, string]],
+        kind,
+        seenKinds.current,
+      ),
+    [operations, kind],
+  );
   const query = search.trim().toLowerCase();
   // Asset, account and search; the chips choose the view on top of them.
   const matches = (operation: Operation) =>
     (!asset || assetKeys(operation).includes(asset)) &&
     (!place || placeKeys(operation).includes(place)) &&
+    (!kind || typeKey(operation) === kind) &&
     (!query || searchable(operation).includes(query));
   const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
-  const filtered = view !== 'all' || asset || place || query || period;
+  const filtered = view !== 'all' || asset || place || kind || query || period;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
@@ -721,6 +737,17 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
+              <label className="transactions-filter">
+                <span>Type</span>
+                <select value={kind} onChange={(event) => update({ type: event.target.value })}>
+                  <option value="">All types</option>
+                  {kindOptions.map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <PeriodFilter
                 period={period}
                 today={new Date().toISOString().slice(0, 10)}
@@ -747,7 +774,7 @@ export default function TransactionsPage() {
           {visible.length === 0 ? (
             <div className="portfolio-none transactions-none">
               <p>
-                {view === 'needs-classification' && !asset && !place && !query && !period
+                {view === 'needs-classification' && !asset && !place && !kind && !query && !period
                   ? 'All caught up'
                   : 'No transactions match'}
               </p>

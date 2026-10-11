@@ -40,7 +40,7 @@ export default function PeriodFilter({
   };
   return (
     <>
-      <label className="transactions-filter transactions-filter--period">
+      <label className="transactions-filter">
         <span>Period</span>
         <select value={choice} onChange={(event) => choose(event.target.value)}>
           <option value={ALL}>All time</option>
