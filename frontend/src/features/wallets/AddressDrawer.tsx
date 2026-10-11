@@ -14,6 +14,7 @@ import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import type { WalletAccount } from './AddWalletDialog';
 import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
@@ -618,6 +619,7 @@ export default function AddressDrawer({
             disabled={running}
             onClick={onSync}
           >
+            <Icon name="refresh" className="shell-icon shell-icon--sm" />
             {running ? 'Syncing…' : 'Sync now'}
           </button>
         </div>

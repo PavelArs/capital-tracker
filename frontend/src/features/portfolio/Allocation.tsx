@@ -7,9 +7,9 @@ import { money, percent } from './format';
 
 type Grouping = 'byAsset' | 'byType' | 'byAccount';
 const groupings: [Grouping, string][] = [
-  ['byAsset', 'Asset'],
+  ['byAsset', 'Assets'],
+  ['byAccount', 'Wallets'],
   ['byType', 'Type'],
-  ['byAccount', 'Account'],
 ];
 
 /** Slice colour: the asset's own or its type's; accounts keep the positional palette. */

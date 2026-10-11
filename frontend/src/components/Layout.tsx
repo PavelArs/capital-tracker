@@ -106,10 +106,10 @@ export default function Layout() {
             {email.charAt(0).toUpperCase()}
           </span>
           <span className="shell-owner__who">
-            <span className="shell-owner__email" title={email}>
-              {email}
+            <span className="shell-owner__name" title={email}>
+              Owner
             </span>
-            <small>Owner · 2FA on</small>
+            <small>2FA on</small>
           </span>
           <button
             type="button"

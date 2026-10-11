@@ -12,6 +12,7 @@ import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
+import { Icon } from '../shell/icons';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
 import MiddleEllipsis from './MiddleEllipsis';
 import {
@@ -935,6 +936,7 @@ export default function OperationDrawer({
                   className="shell-button shell-button--ghost transactions-delete"
                   onClick={() => setConfirm({ step: 'ask', error: null })}
                 >
+                  <Icon name="trash" className="shell-icon shell-icon--sm" />
                   Delete
                 </button>
                 <span className="transactions-grow" />
@@ -943,6 +945,7 @@ export default function OperationDrawer({
                   className="shell-button shell-button--secondary"
                   onClick={() => onEdit?.(operation)}
                 >
+                  <Icon name="edit" className="shell-icon shell-icon--sm" />
                   Edit
                 </button>
               </div>
