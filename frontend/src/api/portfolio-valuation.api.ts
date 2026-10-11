@@ -38,9 +38,14 @@ export interface AssetValuation {
   knownCostSubtotal: string;
   unknownCostQuantity: string;
   missingRateQuantity: string;
+  /** The quantity whose cost is known, the part that known-part figures below cover. */
+  knownCostQuantity: string;
   averageBuyPrice: string | null;
   unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;
+  /** Value less cost over the coins whose cost is known; the rest is left out. */
+  knownUnrealizedPnl: string | null;
+  knownUnrealizedReturnPercent: string | null;
   realizedPnl: string | null;
   knownRealizedSubtotal: string;
   unknownRealizedCount: number;
@@ -77,6 +82,8 @@ export interface PortfolioValuation {
   missingRateCount: number;
   unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;
+  knownUnrealizedPnl: string | null;
+  knownUnrealizedReturnPercent: string | null;
   realizedPnl: string | null;
   knownRealizedSubtotal: string;
   unknownRealizedCount: number;

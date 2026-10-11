@@ -43,9 +43,12 @@ const valued = (
   knownCostSubtotal: '0',
   unknownCostQuantity: '0',
   missingRateQuantity: '0',
+  knownCostQuantity: '0',
   averageBuyPrice: null,
   unrealizedPnl: null,
   unrealizedReturnPercent: null,
+  knownUnrealizedPnl: null,
+  knownUnrealizedReturnPercent: null,
   realizedPnl: '0',
   knownRealizedSubtotal: '0',
   unknownRealizedCount: 0,
@@ -139,6 +142,8 @@ function portfolio(assets: AssetValuation[], changes: Partial<PortfolioValuation
     missingRateCount: 0,
     unrealizedPnl: '30000',
     unrealizedReturnPercent: '42.86',
+    knownUnrealizedPnl: '30000',
+    knownUnrealizedReturnPercent: '42.86',
     realizedPnl: '-250.5',
     knownRealizedSubtotal: '-250.5',
     unknownRealizedCount: 0,
@@ -366,6 +371,9 @@ describe('PV-UI Portfolio values every asset', () => {
       averageBuyPrice: '50000',
       unrealizedPnl: null,
       unrealizedReturnPercent: null,
+      knownCostQuantity: '1',
+      knownUnrealizedPnl: '30000',
+      knownUnrealizedReturnPercent: '60.00',
     };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([stale], {
@@ -375,6 +383,8 @@ describe('PV-UI Portfolio values every asset', () => {
         unknownCostCount: 1,
         unrealizedPnl: null,
         unrealizedReturnPercent: null,
+        knownUnrealizedPnl: '30000',
+        knownUnrealizedReturnPercent: '60.00',
       }),
     );
     renderAt('/portfolio');
@@ -382,8 +392,11 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(cells(rowOf('Bitcoin'))[2]).toBe('$80,000.00Market price · stale, 3 h ago');
     expect(cells(rowOf('Bitcoin'))[6]).toBe('—');
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
-    expect(summary).toHaveTextContent('Cost basis—$50,000.00 known, part has no purchase price');
-    expect(summary).toHaveTextContent('Unrealized P&L—');
+    // The known part stands on its own instead of emptying cost basis and profit.
+    expect(summary).toHaveTextContent(
+      'Cost basis$50,000.00known part only, the rest has no purchase price',
+    );
+    expect(summary).toHaveTextContent('Unrealized P&L+$30,000.00+60.00%known part only');
     expect(within(summary).getByRole('note')).toHaveTextContent(
       '1 price is older than 2 hours; the last stored price is used.',
     );

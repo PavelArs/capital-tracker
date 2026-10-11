@@ -112,7 +112,8 @@ async function wholePortfolio(db, s, f) {
   const report = await read(s, owner);
   assert.deepEqual(Object.keys(report).sort(), ['at', 'currency', 'mainCurrency', 'rates', 'completeness', 'totalValue',
     'pricedSubtotal', 'missingPriceCount', 'stalePriceCount', 'unavailableAccountCount', 'costBasis',
-    'knownCostSubtotal', 'unknownCostCount', 'missingRateCount', 'unrealizedPnl', 'unrealizedReturnPercent', 'realizedPnl',
+    'knownCostSubtotal', 'unknownCostCount', 'missingRateCount', 'unrealizedPnl', 'unrealizedReturnPercent', 'knownUnrealizedPnl',
+    'knownUnrealizedReturnPercent', 'realizedPnl',
     'knownRealizedSubtotal', 'unknownRealizedCount', 'assets', 'allocation', 'accounts'].sort());
   // No Bank of Russia rate is stored here: USD is the default main currency and needs none.
   assert.deepEqual([report.currency, report.mainCurrency, report.rates, report.missingRateCount], ['USD', 'USD', [], 0]);
