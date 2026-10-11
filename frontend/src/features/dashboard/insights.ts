@@ -109,11 +109,11 @@ export function collectInsights(
     if (Number(asset.knownCostQuantity) <= 0) continue;
     // Known cost but no current price or rate: the return cannot be checked yet.
     if (asset.knownUnrealizedReturnPercent === null) {
-      if (
+      const checkable =
         Number(asset.quantity) !== 0 &&
-        (rules.gainReviewPercent !== null || rules.lossReviewPercent !== null)
-      )
-        asset.missingPrice === 'no-rate' ? (unrated += 1) : (unpriced += 1);
+        (rules.gainReviewPercent !== null || rules.lossReviewPercent !== null);
+      if (checkable && asset.missingPrice === 'no-rate') unrated += 1;
+      else if (checkable) unpriced += 1;
       continue;
     }
     const change = Number(asset.knownUnrealizedReturnPercent);
