@@ -227,7 +227,9 @@ function etherscan(response, url) {
     .filter((item) => [item.from, item.to].includes(address) && Number(item.blockNumber) >= from && Number(item.blockNumber) <= to)
     .sort((left, right) => Number(left.blockNumber) - Number(right.blockNumber))
     .slice(0, offset);
-  if (items.length === 0) return respond(response, 200, { status: '0', message: 'No transactions found', result: [] });
+  // Blockscout words an empty range after what is missing; Etherscan always says "No transactions found".
+  const empty = scout ? { normal: 'No transactions found', internal: 'No internal transactions found', tokens: 'No token transfers found' }[list] : 'No transactions found';
+  if (items.length === 0) return respond(response, 200, { status: '0', message: empty, result: [] });
   return respond(response, 200, { status: '1', message: 'OK', result: items });
 }
 

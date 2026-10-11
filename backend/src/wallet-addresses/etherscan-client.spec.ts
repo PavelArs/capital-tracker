@@ -222,6 +222,39 @@ describe('ETH-SYNC Etherscan client', () => {
     expect(requests[1].searchParams.get('action')).toBe('eth_block_number');
   });
 
+  it('BLOCKSCOUT reads an empty range however it words it', async () => {
+    replies.push(
+      json({ status: '0', message: 'No token transfers found', result: [] }),
+      json({ status: '0', message: 'No internal transactions found', result: [] }),
+    );
+    await expect(client().tokens(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
+    await expect(client().internal(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
+  });
+
+  it('SYNC-DETAIL says which source failed and how, without address-like text', async () => {
+    replies.push(
+      json({}, 404),
+      json({ status: '0', message: 'NOTOK', result: `Invalid address ${owned} format` }),
+      { status: 200, body: 'not json' },
+    );
+    const host = new URL(baseUrl).hostname;
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} answered HTTP 404`,
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: Invalid address 0x… format`,
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_response',
+      detail: `${host} sent an unexpected answer`,
+    });
+  });
+
   it('reads an empty range', async () => {
     replies.push(json({ status: '0', message: 'No transactions found', result: [] }));
     await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
@@ -267,8 +300,8 @@ describe('ETH-SYNC Etherscan client', () => {
     ],
   ] as const)('maps %s', async (_case, body, reason) => {
     replies.push(json(body), json(body));
-    await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: false, reason });
-    await expect(client().blockNumber()).resolves.toEqual({ ok: false, reason });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({ ok: false, reason });
+    await expect(client().blockNumber()).resolves.toMatchObject({ ok: false, reason });
   });
 
   it.each([
@@ -277,7 +310,7 @@ describe('ETH-SYNC Etherscan client', () => {
     [403, 'unavailable'],
   ] as const)('maps HTTP %d to %s', async (status, reason) => {
     replies.push(json({}, status));
-    await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: false, reason });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({ ok: false, reason });
   });
 
   const invalid: [string, unknown][] = [
@@ -300,7 +333,7 @@ describe('ETH-SYNC Etherscan client', () => {
   ];
   it.each(invalid)('refuses %s', async (_case, body) => {
     replies.push(json(body));
-    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({
       ok: false,
       reason: 'invalid_response',
     });
@@ -308,11 +341,11 @@ describe('ETH-SYNC Etherscan client', () => {
 
   it('refuses a block number that is not one', async () => {
     replies.push(json({ jsonrpc: '2.0', id: 83, result: 'latest' }), { status: 200, body: 'x' });
-    await expect(client().blockNumber()).resolves.toEqual({
+    await expect(client().blockNumber()).resolves.toMatchObject({
       ok: false,
       reason: 'invalid_response',
     });
-    await expect(client().blockNumber()).resolves.toEqual({
+    await expect(client().blockNumber()).resolves.toMatchObject({
       ok: false,
       reason: 'invalid_response',
     });
@@ -359,6 +392,9 @@ describe('ETH-SYNC Etherscan client', () => {
     ],
   ] as const)('maps %s of a contract call', async (_case, body, reason) => {
     replies.push(json(body));
-    await expect(client().call(other, '0x3af9e669', 1)).resolves.toEqual({ ok: false, reason });
+    await expect(client().call(other, '0x3af9e669', 1)).resolves.toMatchObject({
+      ok: false,
+      reason,
+    });
   });
 });
