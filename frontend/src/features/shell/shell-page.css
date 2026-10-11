@@ -636,3 +636,7 @@
 .shell-setting__hint--pending .shell-bone {
   margin-top: 0.4em;
 }
+
+.shell-seg--hold {
+  visibility: hidden;
+}
