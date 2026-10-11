@@ -36,7 +36,10 @@ jobs:
     if: >-
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main')
       || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))
-    runs-on: ubuntu-latest
+    # Owner decision 2026-10-06: with the repository variable DEPLOY_SELF_HOSTED set to 'true'
+    # both jobs run on the owner's dedicated deploy runner (label deploy), which never runs CI
+    # jobs, so code from branches cannot reach the dispatcher key (docs/self-hosted-runner.md).
+    runs-on: ${{ vars.DEPLOY_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","deploy"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     # Holds DEPLOY_DISPATCH_SSH_KEY. Its required reviewer is the release approval button;
     # without that protection rule an automatic release deploys without a click.
@@ -99,6 +102,11 @@ jobs:
           set -euo pipefail
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
+          # A candidate built on the owner's CI runners left its archive in the shared image
+          # store (read-only here); the artifact's checksum below still proves it unchanged.
+          if [[ ! -e candidate/images.tar.gz && $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            ln -s "/srv/ci-images/$RUN_ID/images.tar.gz" candidate/images.tar.gz
+          fi
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
         if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
@@ -220,7 +228,7 @@ jobs:
   tag:
     needs: deploy
     if: needs.deploy.outputs.version != ''
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.DEPLOY_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","deploy"]') || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: write
