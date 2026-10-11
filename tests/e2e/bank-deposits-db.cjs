@@ -93,6 +93,49 @@ async function accrual(db, service, owner) {
   const totals = (await service.list(owner, '2026-10-04')).totals;
   assert.deepEqual(totals, { USD: '6196.79', EUR: '5577.11', RUB: '557710.96' });
   console.log('PASS DEP-TOTALS');
+
+  stage = 'synthetic rate freshness: the last rate is from 2 October';
+  const recent = (await service.list(owner, '2026-10-12')).items.find((item) => item.id === usd.id);
+  assert.notEqual(recent.values.RUB, null, 'Ten days after the last rate it is still used');
+  const stale = await service.list(owner, '2026-10-25');
+  const staleUsd = stale.items.find((item) => item.id === usd.id);
+  assert.notEqual(staleUsd.values.USD, null, 'The deposit currency needs no rate');
+  assert.equal(staleUsd.values.RUB, null, 'A rate 23 days old is not stated as the rate of the day');
+  assert.equal(staleUsd.values.EUR, null);
+  assert.equal(stale.totals.RUB, null);
+  console.log('PASS DEP-FX-FRESH');
+
+  stage = 'synthetic early closure: interest kept and not yet paid out still counts in the totals';
+  const before = (await service.list(owner, '2026-10-02')).totals;
+  const kept = await service.create(owner, {
+    ...savings,
+    name: 'Savings kept',
+    endDate: '2027-07-01',
+    earlyClose: 'keeps-interest',
+  });
+  const closed = await service.addMovement(owner, kept.id, {
+    date: '2026-08-16',
+    kind: 'withdrawal',
+    amount: '100000.00',
+  });
+  assert.equal(closed.status, 'closed');
+  assert.equal(closed.accrued, '0.00');
+  assert.equal(closed.due, '1512.33', 'The 1 August posting and the 15 days after it');
+  const after = await service.list(owner, '2026-10-02');
+  assert.equal(
+    (Number(after.totals.RUB) - Number(before.RUB)).toFixed(2),
+    '1512.33',
+    'The unpaid interest of a closed deposit is part of the totals',
+  );
+  await service.addMovement(owner, kept.id, {
+    date: '2026-08-20',
+    kind: 'interest-payout',
+    amount: '1512.33',
+  });
+  const settled = await service.list(owner, '2026-10-02');
+  assert.deepEqual(settled.totals, before, 'Once paid out, the closed deposit counts for nothing');
+  await service.remove(owner, kept.id);
+  console.log('PASS DEP-CLOSED-DUE');
   return { rub: rub.id, usd: usd.id };
 }
 

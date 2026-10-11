@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { canonicalDecimalToAtoms } from '../accounting/money';
-import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import {
+  type AccountingCurrency,
+  FxConverter,
+  MAX_RATE_AGE_DAYS,
+  moscowDate,
+} from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import {
   parseAsOfDate,
@@ -108,7 +113,10 @@ export class DepositsService {
       const all = await this.load(manager, owner);
       const converters = await this.converters(manager);
       const items = all.map((stored) => this.view(stored, date, converters));
-      const open = items.filter((item) => item.status !== 'closed');
+      // A closed deposit still counts while interest posted before the closure is unpaid.
+      const open = items.filter(
+        (item) => item.status !== 'closed' || canonicalDecimalToAtoms(item.balance) > 0n,
+      );
       return {
         asOf: date,
         items,
@@ -360,7 +368,12 @@ export class DepositsService {
     const atoms = canonicalDecimalToAtoms(amount);
     return Object.fromEntries(
       accountingCurrencies.map((target) => {
-        const converted = converters.get(target)?.convert(atoms, currency, date) ?? null;
+        const converter = converters.get(target);
+        // A stopped rate collection must not state a value at a weeks-old rate as today's.
+        const converted =
+          converter && (currency === target || ratesAreFresh(converter, [currency, target], date))
+            ? converter.convert(atoms, currency, date)
+            : null;
         return [target, converted === null ? null : centsText(converted)];
       }),
     ) as Record<AccountingCurrency, string | null>;
@@ -463,6 +476,23 @@ export class DepositsService {
         .reverse(),
     };
   }
+}
+
+/** Whether the rate of every foreign currency involved is at most `MAX_RATE_AGE_DAYS` old. */
+function ratesAreFresh(
+  converter: FxConverter,
+  currencies: readonly AccountingCurrency[],
+  date: string,
+): boolean {
+  const rates = converter.ratesOn(date);
+  return currencies.every((currency) => {
+    if (currency === 'RUB') return true;
+    const rate = rates.find((entry) => entry.currency === currency);
+    if (!rate) return false;
+    const age =
+      (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${rate.date}T00:00:00Z`)) / 86_400_000;
+    return age <= MAX_RATE_AGE_DAYS;
+  });
 }
 
 /** Movements in date order, equal dates keeping the order they were given. */
