@@ -378,24 +378,24 @@ async function hiddenAssets(db, s, f) {
   const { fourth, other } = f;
   const first = await instrument(s, fourth, {
     name: 'Hide A',
-    symbol: 'HIDA',
+    symbol: 'ZEC',
     assetType: 'crypto',
   });
   const second = await instrument(s, fourth, {
     name: 'Hide B',
-    symbol: 'HIDB',
+    symbol: 'TRX',
     assetType: 'crypto',
   });
   const exchange = await account(s, fourth, 'Exchange');
   await trade(s, fourth, exchange, first, 'buy', '2025-01-02T00:00:00.000Z', '2', '150');
   await trade(s, fourth, exchange, second, 'buy', '2025-01-02T01:00:00.000Z', '3', '24');
-  await observe(db, 'HIDA', '100', ago(30));
-  await observe(db, 'HIDB', '10', ago(30));
+  await observe(db, 'ZEC', '100', ago(30));
+  await observe(db, 'TRX', '10', ago(30));
   assert.equal((await read(s, fourth)).totalValue, '230');
   assert.deepEqual(await s.hidden.list(fourth), { items: [] });
 
   const hid = await s.hidden.hide(fourth, second);
-  assert.deepEqual([hid.instrumentId, hid.symbol, hid.name], [second, 'HIDB', 'Hide B']);
+  assert.deepEqual([hid.instrumentId, hid.symbol, hid.name], [second, 'TRX', 'Hide B']);
   assert.equal(
     (await s.hidden.hide(fourth, second)).hiddenAt,
     hid.hiddenAt,
