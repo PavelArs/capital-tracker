@@ -416,13 +416,13 @@ export default function AddressDrawer({
           <h3 id="address-wallet" className="transactions-section">
             Wallet and name
           </h3>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="address-account">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="address-account">
               Wallet
             </label>
             <select
               id="address-account"
-              className="portfolio-input"
+              className="ui-input"
               value={choice}
               onChange={(event) => setChoice(event.target.value)}
             >
@@ -437,13 +437,13 @@ export default function AddressDrawer({
           </div>
           {choice === NEW && (
             <>
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="address-new-wallet">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor="address-new-wallet">
                   New wallet name
                 </label>
                 <input
                   id="address-new-wallet"
-                  className="portfolio-input"
+                  className="ui-input"
                   maxLength={120}
                   value={newName}
                   onChange={(event) => setNewName(event.target.value)}
@@ -452,14 +452,14 @@ export default function AddressDrawer({
               <KindField id="address-new-kind" value={kind} onChange={setPickedKind} />
             </>
           )}
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="address-label">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="address-label">
               {exchange ? 'Account name' : 'Address name'}{' '}
               <span className="wallets-muted">(optional)</span>
             </label>
             <input
               id="address-label"
-              className="portfolio-input"
+              className="ui-input"
               maxLength={40}
               value={label}
               onChange={(event) => setLabel(event.target.value)}

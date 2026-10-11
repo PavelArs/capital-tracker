@@ -73,21 +73,6 @@
   margin-top: 0;
 }
 
-.portfolio-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-3);
-}
-
-.portfolio-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .portfolio-tools {
   display: flex;
   flex-wrap: wrap;
@@ -126,144 +111,6 @@
   height: 100%;
   border-radius: 2px;
   background: var(--accent);
-}
-
-.portfolio-search {
-  width: 240px;
-  max-width: 100%;
-  height: 36px;
-  padding: 0 12px 0 36px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
-  background-position: 11px 50%;
-  background-repeat: no-repeat;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background-color: var(--sunken);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--fs-sm);
-}
-
-.portfolio-search:focus-visible {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent-soft);
-}
-
-.portfolio-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-2);
-  font-weight: 500;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.portfolio-chip:hover {
-  border-color: var(--ink-3);
-  color: var(--ink);
-}
-
-.portfolio-chip[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--ink);
-}
-
-.portfolio-chip__count {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.portfolio-table-wrap {
-  margin: 0 -8px;
-  overflow-x: auto;
-}
-
-/* The prototype table sits on the card: no fill, no header band, no underlines of the old
-   global table rules (index.css). */
-.portfolio-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  background: transparent;
-}
-
-.portfolio-table tr:hover {
-  background: transparent;
-}
-
-.portfolio-table th {
-  padding: 8px 12px;
-  background: transparent;
-  border-bottom: 0;
-  color: var(--ink-3);
-  font-weight: 500;
-  font-size: var(--fs-xs);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.portfolio-th-sort {
-  position: relative;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.portfolio-th-sort:hover,
-.portfolio-th-sort[data-active="true"] {
-  color: var(--ink);
-}
-
-/* The arrow hangs beside the label, so choosing a column does not move the columns. */
-.portfolio-th-sort__arrow {
-  position: absolute;
-  top: 50%;
-  right: 100%;
-  margin-right: 2px;
-  transform: translateY(-50%);
-  opacity: 0;
-}
-
-th:first-child .portfolio-th-sort__arrow {
-  right: auto;
-  left: 100%;
-  margin: 0 0 0 2px;
-}
-
-.portfolio-th-sort:hover .portfolio-th-sort__arrow {
-  opacity: 0.4;
-}
-
-.portfolio-th-sort[data-active="true"] .portfolio-th-sort__arrow {
-  opacity: 1;
-}
-
-.portfolio-th-sort:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.portfolio-table td {
-  padding: 11px 12px;
-  border-top: 1px solid var(--line);
-  border-bottom: 0;
-  white-space: nowrap;
-}
-
-.portfolio-table tbody tr:hover td {
-  background: var(--raised);
 }
 
 .portfolio-asset {
@@ -489,11 +336,6 @@ th:first-child .portfolio-th-sort__arrow {
   text-align: right;
 }
 
-.portfolio-table .portfolio-num {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
 .portfolio-strong {
   font-weight: 600;
 }
@@ -656,26 +498,9 @@ a.portfolio-asset__name:hover {
   border-top: 0;
 }
 
-.portfolio-holdings .portfolio-num {
+.portfolio-holdings .ui-num {
   font-variant-numeric: tabular-nums;
   text-align: right;
-}
-
-.portfolio-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--sp-3);
-}
-
-.portfolio-field {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-}
-
-.portfolio-field .ui-seg {
-  justify-self: start;
 }
 
 /* Add transaction types: five in a segmented control, then More for the other four. */
@@ -686,7 +511,6 @@ a.portfolio-asset__name:hover {
   gap: var(--sp-2);
 }
 
-.portfolio-field .ui-seg,
 .portfolio-types .ui-seg {
   flex-wrap: wrap;
 }
@@ -713,93 +537,15 @@ a.portfolio-asset__name:hover {
   outline-offset: 2px;
 }
 
-.portfolio-field__label {
-  color: var(--ink-2);
-  font-weight: 500;
-  font-size: var(--fs-sm);
-}
-
-.portfolio-field__hint {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-}
-
-.portfolio-field__error {
-  color: var(--neg);
-  font-size: var(--fs-xs);
-}
-
-.portfolio-input {
-  width: 100%;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  outline: none;
-  background: var(--sunken);
-  color: var(--ink);
-  font: inherit;
-}
-
-.portfolio-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.portfolio-input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.portfolio-more .portfolio-row + .portfolio-field {
+.portfolio-more .ui-field-row + .ui-field {
   margin-top: var(--sp-4);
 }
 
-.portfolio-input[aria-invalid="true"] {
-  border-color: var(--neg);
-}
-
-@media (max-width: 560px) {
-  .portfolio-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* "Add transaction" dialog (prototype modal: affix inputs, asset chips, more options). */
-.portfolio-affix {
-  position: relative;
-  display: block;
-}
-
-.portfolio-textarea {
-  height: 76px;
-  padding: 10px 12px;
-  resize: vertical;
-}
-
-.portfolio-affix .portfolio-input {
-  padding-right: 64px;
-}
-
-.portfolio-affix--wide .portfolio-input {
-  padding-right: 118px;
-}
-
-.portfolio-affix__suffix {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.portfolio-chip--asset {
+.portfolio-asset-chip {
   padding-left: 4px;
 }
 
-.portfolio-input.portfolio-chip-select {
+.ui-input.portfolio-chip-select {
   width: auto;
   max-width: 100%;
   min-height: 0;
@@ -835,7 +581,7 @@ a.portfolio-asset__name:hover {
   text-decoration: underline;
 }
 
-.portfolio-operations .portfolio-num {
+.portfolio-operations .ui-num {
   white-space: nowrap;
 }
 
@@ -854,7 +600,7 @@ a.portfolio-asset__name:hover {
   padding: 6px;
 }
 
-.portfolio-sort .portfolio-input {
+.portfolio-sort .ui-input {
   width: auto;
   min-width: 160px;
 }
@@ -875,7 +621,7 @@ a.portfolio-asset__name:hover {
     margin-left: 0;
   }
 
-  .portfolio-tools .portfolio-search {
+  .portfolio-tools .ui-search {
     flex: 1 1 160px;
     width: auto;
   }

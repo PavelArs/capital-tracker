@@ -95,13 +95,13 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
     set: (value: string) => void,
     extra: { type?: string; autoComplete: string; hint?: string; otp?: boolean },
   ) => (
-    <div className="portfolio-field">
-      <label className="portfolio-field__label" htmlFor={id}>
+    <div className="ui-field">
+      <label className="ui-field__label" htmlFor={id}>
         {label}
       </label>
       <input
         id={id}
-        className={extra.otp ? 'portfolio-input security-otp' : 'portfolio-input'}
+        className={extra.otp ? 'ui-input security-otp' : 'ui-input'}
         type={extra.type ?? 'password'}
         inputMode={extra.otp ? 'numeric' : undefined}
         maxLength={extra.otp ? 7 : 1024}

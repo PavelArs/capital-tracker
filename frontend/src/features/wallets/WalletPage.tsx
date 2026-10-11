@@ -116,7 +116,7 @@ function WalletTransactions({
   const pagedOwn = useInfinite(own);
   return (
     <section className="shell-card" aria-labelledby="wallet-transactions">
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id="wallet-transactions">Transactions</h2>
         {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
       </div>
@@ -153,7 +153,7 @@ function WalletTransactions({
                         : ''}
                     </span>
                   </span>
-                  <span className="portfolio-num">
+                  <span className="ui-num">
                     {signedAmount(operation)}
                     {operation.value !== null && typeof operations === 'object' && (
                       <span className="portfolio-sub">
@@ -350,7 +350,7 @@ export default function WalletPage() {
           </section>
           {own.length > 0 && (
             <section className="shell-card wallets-card" aria-labelledby="wallet-addresses">
-              <div className="portfolio-toolbar wallets-card__toolbar">
+              <div className="ui-toolbar wallets-card__toolbar">
                 <h2 id="wallet-addresses">Addresses</h2>
                 <button
                   type="button"
@@ -380,7 +380,7 @@ export default function WalletPage() {
           )}
           <div className="portfolio-split">
             <section className="shell-card" aria-labelledby="wallet-assets">
-              <div className="portfolio-toolbar">
+              <div className="ui-toolbar">
                 <h2 id="wallet-assets">Assets</h2>
               </div>
               {holdings.length === 0 ? (
@@ -411,7 +411,7 @@ export default function WalletPage() {
                           </span>
                         </span>
                       </Link>
-                      <span className="portfolio-num">
+                      <span className="ui-num">
                         {holding.value === null ? DASH : money(holding.value, currency)}
                         {holding.value !== null && total !== null && Number(total) > 0 && (
                           <span className="portfolio-sub">

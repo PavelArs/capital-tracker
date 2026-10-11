@@ -79,13 +79,13 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
             Your {unused} unused {unused === 1 ? 'code stops' : 'codes stop'} working as soon as the
             new ones are made. You see the new codes only once.
           </p>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="security-totp">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="security-totp">
               Code from your authenticator app
             </label>
             <input
               id="security-totp"
-              className="portfolio-input security-otp"
+              className="ui-input security-otp"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={7}

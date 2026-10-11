@@ -286,7 +286,7 @@ export default function DashboardPage() {
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"
           >
-            <div className="portfolio-toolbar">
+            <div className="ui-toolbar">
               <div className="dashboard-chart-card__title">
                 <div className="dashboard-chart-card__name">
                   <h2>Capital</h2>

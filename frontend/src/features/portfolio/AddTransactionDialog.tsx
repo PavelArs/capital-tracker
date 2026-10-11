@@ -668,7 +668,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   const fieldError = (problem: EntryProblem, text = problemText[problem]) =>
     found.has(problem) && (
-      <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
+      <span className="ui-field__error" id={`${id}-${problem}-error`}>
         {text}
       </span>
     );
@@ -697,8 +697,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           <CloseButton onClick={onClose} disabled={saving} />
         </div>
         <div className="ui-modal__body">
-          <div className="portfolio-field">
-            <span id={`${id}-type`} className="portfolio-field__label">
+          <div className="ui-field">
+            <span id={`${id}-type`} className="ui-field__label">
               Type
             </span>
             <div className="portfolio-types">
@@ -749,7 +749,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               Could not load your assets and accounts. Close this window and try again.
             </p>
           ) : !ready ? (
-            <p className="portfolio-field__hint" role="status">
+            <p className="ui-field__hint" role="status">
               Loading your assets and accounts…
             </p>
           ) : accounts.length === 0 || assets.length === 0 ? (
@@ -765,16 +765,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             </p>
           ) : (
             <>
-              <div className="portfolio-field">
-                <span id={`${id}-asset`} className="portfolio-field__label">
+              <div className="ui-field">
+                <span id={`${id}-asset`} className="ui-field__label">
                   Asset
                 </span>
-                <div className="portfolio-chips" role="group" aria-labelledby={`${id}-asset`}>
+                <div className="ui-chips" role="group" aria-labelledby={`${id}-asset`}>
                   {shownAssets.map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      className="portfolio-chip portfolio-chip--asset"
+                      className="ui-chip portfolio-asset-chip"
                       aria-pressed={!other && entry.instrumentId === item.id}
                       onClick={() => {
                         setOther(null);
@@ -792,7 +792,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   ))}
                   {moreAssets.length > 0 && (
                     <select
-                      className="portfolio-input portfolio-chip-select"
+                      className="ui-input portfolio-chip-select"
                       aria-label="More assets"
                       value=""
                       onChange={(event) => {
@@ -811,7 +811,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   {!sell && !editing && (
                     <button
                       type="button"
-                      className="portfolio-chip portfolio-chip--asset"
+                      className="ui-chip portfolio-asset-chip"
                       aria-pressed={other !== null}
                       onClick={() => setOther(other ?? { ticker: '', name: '' })}
                     >
@@ -822,14 +822,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                 {other ? null : fieldError('instrument')}
               </div>
               {other && (
-                <div className="portfolio-row">
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-ticker`}>
+                <div className="ui-field-row">
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-ticker`}>
                       Ticker
                     </label>
                     <input
                       id={`${id}-ticker`}
-                      className="portfolio-input"
+                      className="ui-input"
                       placeholder="e.g. TON"
                       autoComplete="off"
                       value={other.ticker}
@@ -839,13 +839,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     />
                     {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
                   </div>
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-name`}>
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-name`}>
                       Name (optional)
                     </label>
                     <input
                       id={`${id}-name`}
-                      className="portfolio-input"
+                      className="ui-input"
                       placeholder={otherTicker || 'Toncoin'}
                       autoComplete="off"
                       maxLength={120}
@@ -855,15 +855,15 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   </div>
                 </div>
               )}
-              <div className="portfolio-row">
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-amount`}>
+              <div className="ui-field-row">
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-amount`}>
                     Amount
                   </label>
-                  <span className="portfolio-affix">
+                  <span className="ui-affix">
                     <input
                       id={`${id}-amount`}
-                      className="portfolio-input"
+                      className="ui-input"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={entry.amount}
@@ -873,7 +873,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
                         : invalid('amount'))}
                     />
-                    <span className="portfolio-affix__suffix">{symbol}</span>
+                    <span className="ui-affix__suffix">{symbol}</span>
                   </span>
                   {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
                     (sell && (
@@ -889,13 +889,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       />
                     ))}
                 </div>
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-date`}>
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-date`}>
                     Date
                   </label>
                   <input
                     id={`${id}-date`}
-                    className="portfolio-input"
+                    className="ui-input"
                     type="date"
                     max={today()}
                     value={entry.date}
@@ -908,24 +908,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               </div>
               {priced && (
                 <>
-                  <div className="portfolio-row">
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-unit`}>
+                  <div className="ui-field-row">
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-unit`}>
                         Price per {unitSymbol}
                       </label>
-                      <span className="portfolio-affix">
+                      <span className="ui-affix">
                         <input
                           id={`${id}-unit`}
-                          className="portfolio-input"
+                          className="ui-input"
                           inputMode="decimal"
                           placeholder="0.00"
                           value={unit}
                           onChange={(event) => setUnitPrice(event.target.value)}
                         />
-                        <span className="portfolio-affix__suffix">{entry.currency}</span>
+                        <span className="ui-affix__suffix">{entry.currency}</span>
                       </span>
                       {marketPrice && (
-                        <span className="portfolio-field__hint">
+                        <span className="ui-field__hint">
                           Market today{' '}
                           {needsRate(entry.currency)
                             ? `${quantity(marketPrice)} ${entry.currency}`
@@ -941,14 +941,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         </span>
                       )}
                     </div>
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-total`}>
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-total`}>
                         {buy ? 'Total paid' : 'Total received'}
                       </label>
-                      <span className="portfolio-affix">
+                      <span className="ui-affix">
                         <input
                           id={`${id}-total`}
-                          className="portfolio-input"
+                          className="ui-input"
                           inputMode="decimal"
                           placeholder="0.00"
                           value={entry.total}
@@ -956,13 +956,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           onBlur={leave('total')}
                           {...invalid('total')}
                         />
-                        <span className="portfolio-affix__suffix">{entry.currency}</span>
+                        <span className="ui-affix__suffix">{entry.currency}</span>
                       </span>
                       {fieldError('total', buy ? 'Enter what you paid' : 'Enter what you received')}
                     </div>
                   </div>
-                  <div className="portfolio-field">
-                    <span id={`${id}-currency`} className="portfolio-field__label">
+                  <div className="ui-field">
+                    <span id={`${id}-currency`} className="ui-field__label">
                       {buy ? 'Paid in' : 'Received in'}
                     </span>
                     <SegmentedControl
@@ -975,19 +975,19 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       }
                     />
                     {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
-                      <span className="portfolio-field__hint">
+                      <span className="ui-field__hint">
                         {entry.currency} is counted 1:1 with USD.
                       </span>
                     )}
                     {sell
                       ? !(asset && isCashOf(asset, entry.currency)) && (
-                          <span className="portfolio-field__hint">
+                          <span className="ui-field__hint">
                             The {entry.currency} received stays in {accountName} as cash.
                           </span>
                         )
                       : fromCash !== null &&
                         totalTyped !== null && (
-                          <span className="portfolio-field__hint">
+                          <span className="ui-field__hint">
                             {compareDecimal(fromCash, totalTyped) === 0
                               ? `Paid from the ${entry.currency} cash in ${accountName}.`
                               : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
@@ -995,14 +995,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         )}
                   </div>
                   {needsRate(entry.currency) && (
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-rate`}>
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-rate`}>
                         Exchange rate
                       </label>
-                      <span className="portfolio-affix portfolio-affix--wide">
+                      <span className="ui-affix ui-affix--wide">
                         <input
                           id={`${id}-rate`}
-                          className="portfolio-input"
+                          className="ui-input"
                           inputMode="decimal"
                           placeholder={rateLoading ? 'Loading…' : ''}
                           value={shown.rate}
@@ -1013,10 +1013,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           onBlur={leave('rate')}
                           {...invalid('rate')}
                         />
-                        <span className="portfolio-affix__suffix">{entry.currency} per 1 USD</span>
+                        <span className="ui-affix__suffix">{entry.currency} per 1 USD</span>
                       </span>
                       {fieldError('rate')}
-                      <span className="portfolio-field__hint" id={`${id}-rate-hint`}>
+                      <span className="ui-field__hint" id={`${id}-rate-hint`}>
                         {entry.rateEdited
                           ? 'Your rate is used for this transaction. '
                           : prefill
@@ -1040,14 +1040,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                 </>
               )}
               {valued(kind) && (
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-total`}>
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-total`}>
                     Value{valueOptional(kind) ? ' (optional)' : ''}
                   </label>
-                  <span className="portfolio-affix">
+                  <span className="ui-affix">
                     <input
                       id={`${id}-total`}
-                      className="portfolio-input"
+                      className="ui-input"
                       inputMode="decimal"
                       placeholder={marketValue ?? '0.00'}
                       value={entry.total}
@@ -1056,13 +1056,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       onBlur={leave('total')}
                       {...invalid('total')}
                     />
-                    <span className="portfolio-affix__suffix">USD</span>
+                    <span className="ui-affix__suffix">USD</span>
                   </span>
                   {fieldError(
                     'total',
                     numberProblem(entry.total, 'Enter what it was worth on that date'),
                   )}
-                  <span className="portfolio-field__hint" id={`${id}-value-hint`}>
+                  <span className="ui-field__hint" id={`${id}-value-hint`}>
                     What it was worth on that date. {valueHints[kind]}
                     {marketValue && (
                       <>
@@ -1082,14 +1082,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               )}
               {transfer ? (
                 <>
-                  <div className="portfolio-row">
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+                  <div className="ui-field-row">
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-account`}>
                         From
                       </label>
                       <select
                         id={`${id}-account`}
-                        className="portfolio-input"
+                        className="ui-input"
                         value={accountId}
                         disabled={Boolean(editing)}
                         onChange={(event) => setAccountId(event.target.value)}
@@ -1101,13 +1101,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         ))}
                       </select>
                     </div>
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-to`}>
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-to`}>
                         To
                       </label>
                       <select
                         id={`${id}-to`}
-                        className="portfolio-input"
+                        className="ui-input"
                         value={toAccountId}
                         disabled={Boolean(editing)}
                         onChange={(event) => setToAccountId(event.target.value)}
@@ -1122,26 +1122,26 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         ))}
                       </select>
                       {tried && sameAccount && (
-                        <span className="portfolio-field__error" id={`${id}-to-error`}>
+                        <span className="ui-field__error" id={`${id}-to-error`}>
                           Choose a different wallet
                         </span>
                       )}
                     </div>
                   </div>
-                  <p className="portfolio-field__hint">
+                  <p className="ui-field__hint">
                     {fewAccounts
                       ? 'Add a second wallet or account to move coins between them.'
                       : 'Transfers move coins between your wallets and keep their purchase price. No price needed.'}
                   </p>
                 </>
               ) : (
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-account`}>
                     Wallet or account
                   </label>
                   <select
                     id={`${id}-account`}
-                    className="portfolio-input"
+                    className="ui-input"
                     value={accountId}
                     disabled={Boolean(editing)}
                     onChange={(event) => setAccountId(event.target.value)}
@@ -1168,14 +1168,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     ? 'More options: time, fee, comment'
                     : 'More options: time, comment'}
                 </summary>
-                <div className="portfolio-row">
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-time`}>
+                <div className="ui-field-row">
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-time`}>
                       Time, UTC (optional)
                     </label>
                     <input
                       id={`${id}-time`}
-                      className="portfolio-input"
+                      className="ui-input"
                       type="time"
                       value={entry.time}
                       onChange={(event) => update({ time: event.target.value })}
@@ -1185,14 +1185,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     {fieldError('time')}
                   </div>
                   {(priced || transfer) && (
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-fee`}>
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-fee`}>
                         Fee (optional)
                       </label>
-                      <span className="portfolio-affix">
+                      <span className="ui-affix">
                         <input
                           id={`${id}-fee`}
-                          className="portfolio-input"
+                          className="ui-input"
                           inputMode="decimal"
                           placeholder="0.00"
                           value={entry.fee}
@@ -1200,7 +1200,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           onBlur={leave('fee')}
                           {...invalid('fee')}
                         />
-                        <span className="portfolio-affix__suffix">
+                        <span className="ui-affix__suffix">
                           {transfer ? symbol : entry.currency}
                         </span>
                       </span>
@@ -1208,13 +1208,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     </div>
                   )}
                 </div>
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-comment`}>
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-comment`}>
                     Comment
                   </label>
                   <textarea
                     id={`${id}-comment`}
-                    className="portfolio-input portfolio-textarea"
+                    className="ui-input ui-textarea"
                     placeholder="Optional"
                     value={entry.comment}
                     onChange={(event) => update({ comment: event.target.value })}
@@ -1289,13 +1289,13 @@ function Availability({
   over,
   onUseAll,
 }: AvailabilityProps) {
-  if (loading) return <span className="portfolio-field__hint">Checking what {account} holds…</span>;
+  if (loading) return <span className="ui-field__hint">Checking what {account} holds…</span>;
   if (available === null) return null;
   const held = `${quantity(available)} ${symbol}`;
   if (Number(available) === 0)
     return (
       <span
-        className={over ? 'portfolio-field__error' : 'portfolio-field__hint'}
+        className={over ? 'ui-field__error' : 'ui-field__hint'}
         id={id}
         role={over ? 'alert' : undefined}
       >
@@ -1308,11 +1308,11 @@ function Availability({
     </button>
   );
   return over ? (
-    <span className="portfolio-field__error" id={id} role="alert">
+    <span className="ui-field__error" id={id} role="alert">
       Only {held} is available in {account} on {dayText(date)} · {useAll}
     </span>
   ) : (
-    <span className="portfolio-field__hint" id={id}>
+    <span className="ui-field__hint" id={id}>
       Available in {account}: {held} · {useAll}
     </span>
   );

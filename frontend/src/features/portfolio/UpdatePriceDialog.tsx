@@ -105,14 +105,14 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
           </p>
         </div>
         <div className="ui-modal__body">
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor={`${id}-price`}>
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor={`${id}-price`}>
               Price of one unit, USD
             </label>
             <input
               ref={input}
               id={`${id}-price`}
-              className="portfolio-input"
+              className="ui-input"
               inputMode="decimal"
               autoComplete="off"
               value={value}
@@ -122,7 +122,7 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
               onBlur={() => setLeft(true)}
             />
             {shown && (
-              <span className="portfolio-field__error" id={`${id}-price-error`}>
+              <span className="ui-field__error" id={`${id}-price-error`}>
                 {problem}
               </span>
             )}

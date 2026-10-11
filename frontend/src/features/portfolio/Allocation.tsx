@@ -77,7 +77,7 @@ export default function Allocation({
   });
   return (
     <section className="shell-card" aria-labelledby={heading}>
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id={heading}>Allocation</h2>
         <SegmentedControl
           name={`${heading}-grouping`}

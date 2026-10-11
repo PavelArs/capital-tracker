@@ -161,7 +161,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const fieldError = (problem: AssetProblem, text = problemText[problem]) =>
     found.has(problem) && (
-      <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
+      <span className="ui-field__error" id={`${id}-${problem}-error`}>
         {text}
       </span>
     );
@@ -329,8 +329,8 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
           </p>
         </div>
         <div className="ui-modal__body">
-          <div className="portfolio-field">
-            <span id={`${id}-type`} className="portfolio-field__label">
+          <div className="ui-field">
+            <span id={`${id}-type`} className="ui-field__label">
               Type
             </span>
             <SegmentedControl
@@ -341,17 +341,17 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               disabled={locked}
               onChange={(value) => update({ kind: value })}
             />
-            <span className="portfolio-field__hint">{kindHints[kind]}</span>
+            <span className="ui-field__hint">{kindHints[kind]}</span>
           </div>
-          <div className="portfolio-row">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-name`}>
+          <div className="ui-field-row">
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-name`}>
                 Name
               </label>
               <input
                 id={`${id}-name`}
                 ref={nameField}
-                className="portfolio-input"
+                className="ui-input"
                 maxLength={120}
                 placeholder={namePlaceholders[kind]}
                 value={entry.name}
@@ -363,13 +363,13 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               {fieldError('name')}
             </div>
             {kind !== 'cash' && (
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-ticker`}>
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-ticker`}>
                   {crypto ? 'Ticker' : 'Ticker (optional)'}
                 </label>
                 <input
                   id={`${id}-ticker`}
-                  className="portfolio-input"
+                  className="ui-input"
                   maxLength={32}
                   placeholder={crypto ? 'e.g. BTC' : ''}
                   value={entry.ticker}
@@ -382,14 +382,14 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               </div>
             )}
           </div>
-          <div className="portfolio-row">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-amount`}>
+          <div className="ui-field-row">
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-amount`}>
                 {amountRequired(kind) ? 'Amount' : 'Amount (optional)'}
               </label>
               <input
                 id={`${id}-amount`}
-                className="portfolio-input"
+                className="ui-input"
                 inputMode="decimal"
                 placeholder="e.g. 150000"
                 value={entry.amount}
@@ -401,14 +401,14 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               {fieldError('amount')}
             </div>
             {kind !== 'cash' && (
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-value`}>
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-value`}>
                   {crypto ? 'Total cost' : 'Current value'}
                 </label>
-                <span className="portfolio-affix">
+                <span className="ui-affix">
                   <input
                     id={`${id}-value`}
-                    className="portfolio-input"
+                    className="ui-input"
                     inputMode="decimal"
                     placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
                     value={entry.value}
@@ -417,14 +417,14 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                     onBlur={leave('value')}
                     {...invalid('value')}
                   />
-                  <span className="portfolio-affix__suffix">{entry.currency}</span>
+                  <span className="ui-affix__suffix">{entry.currency}</span>
                 </span>
                 {fieldError('value', crypto ? 'Enter what it cost' : problemText.value)}
               </div>
             )}
           </div>
-          <div className="portfolio-field">
-            <span id={`${id}-currency`} className="portfolio-field__label">
+          <div className="ui-field">
+            <span id={`${id}-currency`} className="ui-field__label">
               {kind === 'cash' ? 'Currency' : crypto ? 'Paid in' : 'Value currency'}
             </span>
             <SegmentedControl
@@ -435,7 +435,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               disabled={(locked && !crypto) || balanceUnsure}
               onChange={(code) => update({ currency: code })}
             />
-            <span className="portfolio-field__hint">
+            <span className="ui-field__hint">
               {kind === 'cash'
                 ? 'The amount is in this currency; it is also the ticker.'
                 : crypto
@@ -443,26 +443,26 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   : 'For cash in the same currency, the amount and the value are the same number.'}
             </span>
           </div>
-          <div className="portfolio-field">
+          <div className="ui-field">
             <label
-              className="portfolio-field__label"
+              className="ui-field__label"
               htmlFor={noAccounts ? `${id}-account-name` : `${id}-account`}
             >
               Wallet or account
             </label>
             {accounts === null ? (
-              <span className="portfolio-field__hint" role="status">
+              <span className="ui-field__hint" role="status">
                 Loading your accounts…
               </span>
             ) : loadFailed ? (
-              <p className="portfolio-field__error" id={`${id}-no-accounts-error`}>
+              <p className="ui-field__error" id={`${id}-no-accounts-error`}>
                 Could not load your accounts, so a balance cannot be added. Close this window and
                 try again.
               </p>
             ) : noAccounts ? null : (
               <select
                 id={`${id}-account`}
-                className="portfolio-input"
+                className="ui-input"
                 value={entry.accountId}
                 disabled={balanceUnsure}
                 onChange={(event) => update({ accountId: event.target.value })}
@@ -481,7 +481,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               <>
                 <input
                   id={`${id}-account-name`}
-                  className="portfolio-input"
+                  className="ui-input"
                   aria-label={noAccounts ? undefined : 'Name of the new account'}
                   placeholder="e.g. Home safe, Bank"
                   maxLength={MAX_ACCOUNT_NAME}
@@ -492,7 +492,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   onBlur={leave('account-name')}
                   {...invalid('account-name')}
                 />
-                <span className="portfolio-field__hint">
+                <span className="ui-field__hint">
                   {noAccounts
                     ? 'You have no account yet. The balance is kept in this one.'
                     : 'The balance is kept in a new account you can use for more assets later.'}
@@ -502,13 +502,13 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             )}
             {fieldError('account')}
           </div>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor={`${id}-notes`}>
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor={`${id}-notes`}>
               Notes (optional)
             </label>
             <textarea
               id={`${id}-notes`}
-              className="portfolio-input portfolio-textarea"
+              className="ui-input ui-textarea"
               value={entry.notes}
               disabled={balanceUnsure}
               onChange={(event) => update({ notes: event.target.value })}

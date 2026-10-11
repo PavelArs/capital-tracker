@@ -1,0 +1,96 @@
+/* Form fields: a label over an input, its hint or error under it; two fields side by side in a row. */
+.ui-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+
+.ui-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ui-field .ui-seg {
+  flex-wrap: wrap;
+  justify-self: start;
+}
+
+.ui-field__label {
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+}
+
+.ui-field__hint {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.ui-field__error {
+  color: var(--neg);
+  font-size: var(--fs-xs);
+}
+
+.ui-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  outline: none;
+  background: var(--sunken);
+  color: var(--ink);
+  font: inherit;
+}
+
+.ui-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.ui-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ui-input[aria-invalid="true"] {
+  border-color: var(--neg);
+}
+
+@media (max-width: 560px) {
+  .ui-field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* "Add transaction" dialog (prototype modal: affix inputs, asset chips, more options). */
+.ui-affix {
+  position: relative;
+  display: block;
+}
+
+.ui-textarea {
+  height: 76px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.ui-affix .ui-input {
+  padding-right: 64px;
+}
+
+.ui-affix--wide .ui-input {
+  padding-right: 118px;
+}
+
+.ui-affix__suffix {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  transform: translateY(-50%);
+  pointer-events: none;
+}

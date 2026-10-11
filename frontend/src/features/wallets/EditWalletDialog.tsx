@@ -78,30 +78,30 @@ export default function EditWalletDialog({ accountId, name, kind, onClose, onSav
           <h2 id="edit-wallet">Edit wallet</h2>
         </div>
         <div className="ui-modal__body">
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="wallet-new-name">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="wallet-new-name">
               Name
             </label>
             <input
               ref={input}
               id="wallet-new-name"
-              className="portfolio-input"
+              className="ui-input"
               maxLength={MAX_NAME}
               value={value}
               aria-invalid={error ? true : undefined}
               onChange={(event) => setValue(event.target.value)}
             />
-            <span className="portfolio-field__hint">
+            <span className="ui-field__hint">
               Transactions, addresses and balances stay as they are.
             </span>
           </div>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="wallet-kind">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="wallet-kind">
               How you hold it
             </label>
             <select
               id="wallet-kind"
-              className="portfolio-input"
+              className="ui-input"
               value={chosen}
               onChange={(event) => setChosen(event.target.value as WalletKind | typeof NOT_CHOSEN)}
             >

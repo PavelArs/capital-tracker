@@ -48,21 +48,21 @@ function Table({
   chains: TokenChains;
 }) {
   return (
-    <div className="portfolio-table-wrap">
-      <table className="portfolio-table">
+    <div className="ui-table-wrap">
+      <table className="ui-table">
         <thead>
           <tr>
             <th scope="col">Asset</th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               Price
             </th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               24h
             </th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               Value
             </th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               Share
             </th>
           </tr>
@@ -89,14 +89,14 @@ function Table({
                   </span>
                 </span>
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 <Change value={asset.priceChange24hPercent} />
               </td>
-              <td className="portfolio-num portfolio-strong">{money(asset.value, currency)}</td>
-              <td className="portfolio-num">{percent(asset.allocationPercent, false)}</td>
+              <td className="ui-num portfolio-strong">{money(asset.value, currency)}</td>
+              <td className="ui-num">{percent(asset.allocationPercent, false)}</td>
             </tr>
           ))}
         </tbody>
@@ -177,7 +177,7 @@ export default function TopAssets({
   const assets = portfolio ? topAssets(portfolio) : [];
   return (
     <section className="shell-card dashboard-assets" aria-labelledby={heading}>
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id={heading}>Top assets</h2>
         <Link className="dashboard-link" to={withCurrency('/portfolio', asked)}>
           All assets

@@ -283,7 +283,7 @@ function OperationRow({
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
       </td>
-      <td className="portfolio-num">
+      <td className="ui-num">
         {signedQuantity(operation)}
         {operation.counterAsset && operation.counterQuantity && (
           <span className="portfolio-sub">
@@ -291,7 +291,7 @@ function OperationRow({
           </span>
         )}
       </td>
-      <td className="portfolio-num">
+      <td className="ui-num">
         <ValueCell operation={operation} currency={currency} />
       </td>
       <td className="transactions-wrap transactions-place">
@@ -736,8 +736,8 @@ export default function TransactionsPage() {
         </EmptyState>
       ) : (
         <section className="shell-card" aria-label="All transactions" ref={listRef}>
-          <div className="portfolio-toolbar">
-            <div className="portfolio-chips" role="group" aria-label="Filter transactions">
+          <div className="ui-toolbar">
+            <div className="ui-chips" role="group" aria-label="Filter transactions">
               {views.map(([key, label]) => {
                 // OPS-COUNTS: what the chip would show with the other filters as they are.
                 const count = operations.filter(
@@ -750,12 +750,12 @@ export default function TransactionsPage() {
                   <button
                     key={key}
                     type="button"
-                    className={`portfolio-chip${key === 'needs-classification' && count > 0 ? ' transactions-chip--warn' : ''}`}
+                    className={`ui-chip${key === 'needs-classification' && count > 0 ? ' transactions-chip--warn' : ''}`}
                     aria-pressed={view === key}
                     onClick={() => setView(key)}
                   >
                     {label}
-                    <span className="portfolio-chip__count"> {count}</span>
+                    <span className="ui-chip__count"> {count}</span>
                   </button>
                 );
               })}
@@ -858,8 +858,8 @@ export default function TransactionsPage() {
               ))}
             </ol>
           ) : (
-            <div className="portfolio-table-wrap">
-              <table className="portfolio-table transactions-table" aria-label="Transactions">
+            <div className="ui-table-wrap">
+              <table className="ui-table transactions-table" aria-label="Transactions">
                 <colgroup>
                   {columns.map((column) => (
                     <col key={column} className={`transactions-col--${column}`} />
@@ -869,10 +869,10 @@ export default function TransactionsPage() {
                   <tr>
                     <th scope="col">Type</th>
                     <th scope="col">Asset</th>
-                    <th scope="col" className="portfolio-num">
+                    <th scope="col" className="ui-num">
                       Amount
                     </th>
-                    <th scope="col" className="portfolio-num">
+                    <th scope="col" className="ui-num">
                       Value
                     </th>
                     <th scope="col">Account</th>

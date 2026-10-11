@@ -73,7 +73,7 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.transactions-chip--warn .portfolio-chip__count {
+.transactions-chip--warn .ui-chip__count {
   color: var(--warn);
   font-weight: 700;
 }
@@ -484,7 +484,7 @@
   margin-top: var(--sp-3);
 }
 
-.transactions-more > .portfolio-field {
+.transactions-more > .ui-field {
   margin-bottom: var(--sp-4);
 }
 

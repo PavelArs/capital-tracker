@@ -305,13 +305,13 @@ export default function AddWalletDialog({
                   Bind it to this server's IP address: an unbound key stops working after 90 days.
                 </li>
               </ol>
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="bybit-key">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor="bybit-key">
                   API key
                 </label>
                 <input
                   id="bybit-key"
-                  className="portfolio-input wallets-mono"
+                  className="ui-input wallets-mono"
                   autoComplete="off"
                   spellCheck={false}
                   value={apiKey}
@@ -321,19 +321,17 @@ export default function AddWalletDialog({
                   onBlur={leave('key')}
                 />
                 <span id="bybit-key-help">
-                  {showKeyError && (
-                    <span className="portfolio-field__error">{keyCheck.message}</span>
-                  )}
+                  {showKeyError && <span className="ui-field__error">{keyCheck.message}</span>}
                 </span>
               </div>
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="bybit-secret">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor="bybit-secret">
                   API secret
                 </label>
                 <input
                   id="bybit-secret"
                   type="password"
-                  className="portfolio-input wallets-mono"
+                  className="ui-input wallets-mono"
                   autoComplete="off"
                   spellCheck={false}
                   value={apiSecret}
@@ -344,13 +342,13 @@ export default function AddWalletDialog({
                 />
                 <span id="bybit-secret-help">
                   {secretMessage ? (
-                    <span className="portfolio-field__error" role="alert">
+                    <span className="ui-field__error" role="alert">
                       {secretMessage} It was not saved.
                     </span>
                   ) : showSecretError ? (
-                    <span className="portfolio-field__error">{secretCheck.message}</span>
+                    <span className="ui-field__error">{secretCheck.message}</span>
                   ) : (
-                    <span className="portfolio-field__hint">
+                    <span className="ui-field__hint">
                       Stored encrypted on the server and never shown again.
                     </span>
                   )}
@@ -368,13 +366,13 @@ export default function AddWalletDialog({
           )}
           {step === 2 && !exchange && (
             <>
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="wallet-address">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor="wallet-address">
                   {chosen.name} wallet address
                 </label>
                 <input
                   id="wallet-address"
-                  className="portfolio-input wallets-mono"
+                  className="ui-input wallets-mono"
                   autoComplete="off"
                   spellCheck={false}
                   placeholder={chosen.placeholder}
@@ -386,11 +384,11 @@ export default function AddWalletDialog({
                 />
                 <span id="wallet-address-help">
                   {secretMessage ? (
-                    <span className="portfolio-field__error" role="alert">
+                    <span className="ui-field__error" role="alert">
                       {secretMessage} It was not saved.
                     </span>
                   ) : existing ? (
-                    <span className="portfolio-field__error">
+                    <span className="ui-field__error">
                       {isKey ? 'This key is already tracked' : 'This address is already tracked'}
                       {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
                       <button
@@ -404,9 +402,9 @@ export default function AddWalletDialog({
                   ) : check.ok ? (
                     <span className="wallets-ok">{check.kind}</span>
                   ) : showError ? (
-                    <span className="portfolio-field__error">{check.message}</span>
+                    <span className="ui-field__error">{check.message}</span>
                   ) : (
-                    <span className="portfolio-field__hint">
+                    <span className="ui-field__hint">
                       {network === 'bitcoin'
                         ? 'Paste a public address from Receive in your wallet app, or the account public key.'
                         : 'Paste the public address. You can find it under Receive in your wallet app.'}
@@ -461,19 +459,19 @@ export default function AddWalletDialog({
           )}
           {step === 3 && (exchange ? keyReady : check.ok) && (
             <>
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="wallet-name">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor="wallet-name">
                   Wallet <span className="wallets-muted">(optional)</span>
                 </label>
                 <input
                   id="wallet-name"
-                  className="portfolio-input"
+                  className="ui-input"
                   maxLength={120}
                   placeholder={chosen.defaultWallet}
                   value={walletName}
                   onChange={(event) => setWalletName(event.target.value)}
                 />
-                <span className="portfolio-field__hint">
+                <span className="ui-field__hint">
                   {match
                     ? `The ${exchange ? 'account' : 'address'} joins your wallet ${match.name}.`
                     : `A new wallet named ${chosenName} is created.`}{' '}
@@ -482,12 +480,12 @@ export default function AddWalletDialog({
                 </span>
               </div>
               {accounts.length > 0 && (
-                <div className="portfolio-chips" role="group" aria-label="Your wallets">
+                <div className="ui-chips" role="group" aria-label="Your wallets">
                   {accounts.map((account) => (
                     <button
                       key={account.accountId}
                       type="button"
-                      className="portfolio-chip"
+                      className="ui-chip"
                       aria-pressed={match?.accountId === account.accountId}
                       onClick={() => setWalletName(account.name)}
                     >
@@ -497,14 +495,14 @@ export default function AddWalletDialog({
                 </div>
               )}
               {!match && <KindField id="wallet-kind" value={kind} onChange={setPickedKind} />}
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="wallet-label">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor="wallet-label">
                   {exchange ? 'Account name' : 'Address name'}{' '}
                   <span className="wallets-muted">(optional)</span>
                 </label>
                 <input
                   id="wallet-label"
-                  className="portfolio-input"
+                  className="ui-input"
                   maxLength={MAX_LABEL}
                   placeholder={`e.g. ${chosen.labelExample}`}
                   value={label}

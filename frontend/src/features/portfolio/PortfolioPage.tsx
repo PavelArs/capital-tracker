@@ -310,8 +310,8 @@ function AssetsTable({
   onSort: (key: SortKey) => void;
 }) {
   return (
-    <div className="portfolio-table-wrap">
-      <table className="portfolio-table">
+    <div className="ui-table-wrap">
+      <table className="ui-table">
         <thead>
           <tr>
             {sortColumns.map(([key, label]) => {
@@ -320,20 +320,20 @@ function AssetsTable({
                 <th
                   key={key}
                   scope="col"
-                  className={key === 'name' ? undefined : 'portfolio-num'}
+                  className={key === 'name' ? undefined : 'ui-num'}
                   aria-sort={
                     active === null ? undefined : active === 'asc' ? 'ascending' : 'descending'
                   }
                 >
                   <button
                     type="button"
-                    className="portfolio-th-sort"
+                    className="ui-th-sort"
                     data-active={active !== null}
                     onClick={() => onSort(key)}
                   >
                     <Icon
                       name={active === 'asc' ? 'arrowUp' : 'arrowDown'}
-                      className="shell-icon shell-icon--sm portfolio-th-sort__arrow"
+                      className="shell-icon shell-icon--sm ui-th-sort__arrow"
                     />
                     {label}
                   </button>
@@ -364,13 +364,13 @@ function AssetsTable({
                   </span>
                 </span>
               </td>
-              <td className="portfolio-num">{quantity(asset.quantity)}</td>
-              <td className="portfolio-num">
+              <td className="ui-num">{quantity(asset.quantity)}</td>
+              <td className="ui-num">
                 {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
                 <span className="portfolio-sub">{priceNote(asset, now)}</span>
               </td>
-              <td className="portfolio-num portfolio-strong">{money(asset.value, currency)}</td>
-              <td className="portfolio-num">
+              <td className="ui-num portfolio-strong">{money(asset.value, currency)}</td>
+              <td className="ui-num">
                 <span className="portfolio-share">
                   <span className="portfolio-share__bar" aria-hidden="true">
                     <i
@@ -382,10 +382,10 @@ function AssetsTable({
                   </span>
                 </span>
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 <Signed
                   value={shownProfit(asset).pnl}
                   currency={currency}
@@ -393,7 +393,7 @@ function AssetsTable({
                   inline
                 />
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 <Change value={asset.priceChange24hPercent} />
               </td>
             </tr>
@@ -560,19 +560,19 @@ export default function PortfolioPage() {
           )}
           <Summary portfolio={portfolio} />
           <section className="shell-card" aria-labelledby="portfolio-assets">
-            <div className="portfolio-toolbar">
+            <div className="ui-toolbar">
               <h2 id="portfolio-assets">Assets</h2>
-              <div className="portfolio-chips" role="group" aria-label="Filter assets">
+              <div className="ui-chips" role="group" aria-label="Filter assets">
                 {filters.map(([value, label]) => (
                   <button
                     key={value}
                     type="button"
-                    className="portfolio-chip"
+                    className="ui-chip"
                     aria-pressed={filter === value}
                     onClick={() => setFilter(value)}
                   >
                     {label}
-                    <span className="portfolio-chip__count">
+                    <span className="ui-chip__count">
                       {' '}
                       {value === 'all'
                         ? assets.length
@@ -584,7 +584,7 @@ export default function PortfolioPage() {
               <div className="portfolio-tools">
                 <input
                   type="search"
-                  className="portfolio-search"
+                  className="ui-search"
                   placeholder="Search assets"
                   aria-label="Search assets"
                   value={search}
@@ -599,7 +599,7 @@ export default function PortfolioPage() {
                   <label htmlFor="portfolio-sort-key">Sort by</label>
                   <select
                     id="portfolio-sort-key"
-                    className="portfolio-input"
+                    className="ui-input"
                     value={sort?.key ?? ''}
                     onChange={(event) =>
                       setSort(

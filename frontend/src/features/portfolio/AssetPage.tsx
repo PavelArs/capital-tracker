@@ -151,7 +151,7 @@ function ValueChart({
   const unit = asset.symbol ?? asset.name;
   return (
     <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <div className="dashboard-chart-card__name">
           <div className="dashboard-legend" aria-label="Chart legend">
             <span>
@@ -244,7 +244,7 @@ function AssetTransactions({
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id="asset-transactions">Transactions</h2>
         {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
       </div>
@@ -274,7 +274,7 @@ function AssetTransactions({
                     {day(operation.occurredAt)} · {placeLabel(operation)}
                   </span>
                 </span>
-                <span className="portfolio-num">
+                <span className="ui-num">
                   {movedAmount(operation, key)}
                   {operation.value !== null && typeof operations === 'object' && (
                     <span className="portfolio-sub">
@@ -436,7 +436,7 @@ function AssetDetails({
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
       <div className="portfolio-split">
         <section className="shell-card" aria-labelledby="asset-holdings">
-          <div className="portfolio-toolbar">
+          <div className="ui-toolbar">
             <h2 id="asset-holdings">Holdings</h2>
             <span className="portfolio-sub">Where this balance sits</span>
           </div>
@@ -457,7 +457,7 @@ function AssetDetails({
                       </Link>
                       {kind && <span className="portfolio-sub">{kindLabels[kind]}</span>}
                     </span>
-                    <span className="portfolio-num">
+                    <span className="ui-num">
                       {quantity(holding.quantity)} {unit}
                       <span className="portfolio-sub">{amount(holding.value)}</span>
                     </span>

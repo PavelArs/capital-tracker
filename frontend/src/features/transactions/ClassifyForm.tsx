@@ -724,7 +724,7 @@ export default function ClassifyForm({
     shows(problem) ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` } : {};
   const fieldError = (problem: Problem, text: string) =>
     shows(problem) && (
-      <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
+      <span className="ui-field__error" id={`${id}-${problem}-error`}>
         {text}
       </span>
     );
@@ -807,13 +807,13 @@ export default function ClassifyForm({
   const other = draft.type === 'other';
   // Other asks only for a comment, so it shows up front rather than under "More options".
   const commentField = (
-    <div className="portfolio-field">
-      <label className="portfolio-field__label" htmlFor={`${id}-comment`}>
+    <div className="ui-field">
+      <label className="ui-field__label" htmlFor={`${id}-comment`}>
         Comment
       </label>
       <textarea
         id={`${id}-comment`}
-        className="portfolio-input portfolio-textarea"
+        className="ui-input ui-textarea"
         placeholder="Optional"
         value={draft.comment}
         onChange={(event) => change({ comment: event.target.value })}
@@ -856,15 +856,15 @@ export default function ClassifyForm({
         </section>
         {priced && (
           <div className="transactions-subform">
-            <div className="portfolio-row">
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-amount`}>
+            <div className="ui-field-row">
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-amount`}>
                   {draft.type === 'buy' ? 'You paid' : 'You received'}
                 </label>
-                <span className="portfolio-affix">
+                <span className="ui-affix">
                   <input
                     id={`${id}-amount`}
-                    className="portfolio-input"
+                    className="ui-input"
                     inputMode="decimal"
                     placeholder="0.00"
                     value={draft.amount}
@@ -872,7 +872,7 @@ export default function ClassifyForm({
                     onBlur={leave('amount')}
                     {...invalid('amount')}
                   />
-                  <span className="portfolio-affix__suffix">{draft.currency}</span>
+                  <span className="ui-affix__suffix">{draft.currency}</span>
                 </span>
                 {fieldError(
                   'amount',
@@ -881,8 +881,8 @@ export default function ClassifyForm({
                     : 'Enter the amount you received',
                 )}
               </div>
-              <div className="portfolio-field">
-                <span className="portfolio-field__label" id={`${id}-currency`}>
+              <div className="ui-field">
+                <span className="ui-field__label" id={`${id}-currency`}>
                   Currency
                 </span>
                 <SegmentedControl
@@ -895,14 +895,14 @@ export default function ClassifyForm({
               </div>
             </div>
             {rated ? (
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-rate`}>
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-rate`}>
                   Exchange rate
                 </label>
-                <span className="portfolio-affix">
+                <span className="ui-affix">
                   <input
                     id={`${id}-rate`}
-                    className="portfolio-input"
+                    className="ui-input"
                     inputMode="decimal"
                     placeholder="Bank of Russia rate"
                     value={draft.rate}
@@ -910,32 +910,30 @@ export default function ClassifyForm({
                     onBlur={leave('rate')}
                     {...invalid('rate')}
                   />
-                  <span className="portfolio-affix__suffix">{draft.currency} per 1 USD</span>
+                  <span className="ui-affix__suffix">{draft.currency} per 1 USD</span>
                 </span>
                 {fieldError('rate', 'Enter a rate above zero, or leave it empty') || (
-                  <span className="portfolio-field__hint">
+                  <span className="ui-field__hint">
                     Empty means the Bank of Russia rate of {day(operation.occurredAt)}.
                   </span>
                 )}
               </div>
             ) : (
               draft.currency !== 'USD' && (
-                <span className="portfolio-field__hint">
-                  {draft.currency} is counted 1:1 with USD.
-                </span>
+                <span className="ui-field__hint">{draft.currency} is counted 1:1 with USD.</span>
               )
             )}
           </div>
         )}
         {transfer && (
           <div className="transactions-subform">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-account`}>
                 {legDirection(operation) === 'out' ? 'Sent to' : 'Received from'}
               </label>
               <select
                 id={`${id}-account`}
-                className="portfolio-input"
+                className="ui-input"
                 value={draft.account}
                 onChange={(event) => change({ account: event.target.value, partner: '' })}
                 onBlur={leave('account')}
@@ -952,19 +950,19 @@ export default function ClassifyForm({
               </select>
               {fieldError('account', 'Choose the other wallet') ||
                 (accountsFailed && (
-                  <span className="portfolio-field__error">
+                  <span className="ui-field__error">
                     Could not load your wallets. Close this window and try again.
                   </span>
                 ))}
             </div>
             {choosesAddress && (
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor={`${id}-partner`}>
+              <div className="ui-field">
+                <label className="ui-field__label" htmlFor={`${id}-partner`}>
                   {legDirection(operation) === 'out' ? 'Received at' : 'Sent from'}
                 </label>
                 <select
                   id={`${id}-partner`}
-                  className="portfolio-input"
+                  className="ui-input"
                   value={draft.partner}
                   onChange={(event) => change({ partner: event.target.value })}
                   onBlur={leave('partner')}
@@ -978,13 +976,13 @@ export default function ClassifyForm({
                   ))}
                 </select>
                 {fieldError('partner', 'Choose the address of that wallet')}
-                <span className="portfolio-field__hint">
+                <span className="ui-field__hint">
                   Several addresses of that wallet took part in this transaction. Choose the one
                   that {legDirection(operation) === 'out' ? 'received' : 'sent'} these coins.
                 </span>
               </div>
             )}
-            <span className="portfolio-field__hint">
+            <span className="ui-field__hint">
               Transfers between your wallets don't change your capital. Only the network fee
               {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
               counted as a cost.
@@ -993,13 +991,13 @@ export default function ClassifyForm({
         )}
         {swap && (
           <div className="transactions-subform">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-pair`}>
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-pair`}>
                 {legDirection(operation) === 'out' ? 'Received in exchange' : 'Paid with'}
               </label>
               <select
                 id={`${id}-pair`}
-                className="portfolio-input"
+                className="ui-input"
                 value={draft.pair}
                 onChange={(event) => change({ pair: event.target.value })}
                 onBlur={leave('pair')}
@@ -1023,7 +1021,7 @@ export default function ClassifyForm({
                 )}
               </select>
               {fieldError('pair', 'Choose the transaction on the other side') || (
-                <span className="portfolio-field__hint">
+                <span className="ui-field__hint">
                   {replacing
                     ? `The ${legDirection(operation) === 'out' ? 'purchase' : 'sale'} you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.`
                     : recorded
@@ -1038,7 +1036,7 @@ export default function ClassifyForm({
         )}
         {poolDeposit && (
           <div className="transactions-subform">
-            <span className="portfolio-field__hint">
+            <span className="ui-field__hint">
               The coins stay yours while they are in the pool: they keep their purchase price and
               count in your balance. This is not a sale and not a withdrawal. Only the network fee
               {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
@@ -1048,13 +1046,13 @@ export default function ClassifyForm({
         )}
         {poolWithdrawal && (
           <div className="transactions-subform">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-deposit`}>
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-deposit`}>
                 Returns the deposit
               </label>
               <select
                 id={`${id}-deposit`}
-                className="portfolio-input"
+                className="ui-input"
                 value={draft.deposit}
                 onChange={(event) => change({ deposit: event.target.value })}
                 onBlur={leave('deposit')}
@@ -1068,7 +1066,7 @@ export default function ClassifyForm({
                 ))}
               </select>
               {fieldError('deposit', 'Choose the pool deposit this withdrawal returns') || (
-                <span className="portfolio-field__hint">
+                <span className="ui-field__hint">
                   Your pool deposits of {legAsset(operation).symbol ?? 'this coin'} from this wallet
                   made before it. Classify the deposit as Pool deposit first.
                 </span>
@@ -1082,7 +1080,7 @@ export default function ClassifyForm({
               />
               Part of the deposit
             </label>
-            <span className="portfolio-field__hint">
+            <span className="ui-field__hint">
               {draft.partial
                 ? 'The rest is still in the pool: it stays in your balance with its purchase price. Classify the other parts in the order they happened.'
                 : 'The last or only withdrawal of this deposit: what is missing from it counts as impermanent loss.'}
@@ -1091,7 +1089,7 @@ export default function ClassifyForm({
         )}
         {other && (
           <div className="transactions-subform">
-            <span className="portfolio-field__hint">
+            <span className="ui-field__hint">
               {legDirection(operation) === 'out'
                 ? 'The amount leaves your balance without a sale price and is not a withdrawal. Add a comment so you remember what it was.'
                 : 'The amount stays in your balance without a purchase price. Add a comment so you remember what it was.'}
@@ -1101,15 +1099,15 @@ export default function ClassifyForm({
         )}
         {draft.type && !priced && !transfer && !other && !poolDeposit && !recorded && (
           <div className="transactions-subform">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-value`}>
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor={`${id}-value`}>
                 {poolWithdrawal ? 'Value of the gain' : 'Value at the time'}
                 {optional ? ' (optional)' : ''}
               </label>
-              <span className="portfolio-affix">
+              <span className="ui-affix">
                 <input
                   id={`${id}-value`}
-                  className="portfolio-input"
+                  className="ui-input"
                   inputMode="decimal"
                   placeholder="0.00"
                   value={draft.value}
@@ -1117,13 +1115,13 @@ export default function ClassifyForm({
                   onBlur={leave('value')}
                   {...invalid('value')}
                 />
-                <span className="portfolio-affix__suffix">USD</span>
+                <span className="ui-affix__suffix">USD</span>
               </span>
               {fieldError(
                 'value',
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
               ) || (
-                <span className="portfolio-field__hint">
+                <span className="ui-field__hint">
                   {replacing
                     ? 'Empty: the value of the record you added.'
                     : swap || draft.type === 'fee'

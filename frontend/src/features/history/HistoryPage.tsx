@@ -71,7 +71,7 @@ function Row({
       aria-current={current || undefined}
       onClick={onOpen}
     >
-      <td className="portfolio-num history-when">{time(event.at).replace(' UTC', '')}</td>
+      <td className="ui-num history-when">{time(event.at).replace(' UTC', '')}</td>
       <td>
         <ChangeBadge change={event.change} />
       </td>
@@ -250,11 +250,11 @@ export default function HistoryPage() {
         </EmptyState>
       ) : (
         <section className="shell-card" aria-label="Change history">
-          <div className="portfolio-toolbar">
-            <div className="portfolio-chips" role="group" aria-label="Filter by change">
+          <div className="ui-toolbar">
+            <div className="ui-chips" role="group" aria-label="Filter by change">
               <button
                 type="button"
-                className="portfolio-chip"
+                className="ui-chip"
                 aria-pressed={!change}
                 onClick={() => update({ change: '' })}
               >
@@ -264,7 +264,7 @@ export default function HistoryPage() {
                 <button
                   key={key}
                   type="button"
-                  className="portfolio-chip"
+                  className="ui-chip"
                   aria-pressed={change === key}
                   onClick={() => update({ change: key })}
                 >
@@ -353,11 +353,8 @@ export default function HistoryPage() {
               ))}
             </ol>
           ) : (
-            <div className="portfolio-table-wrap">
-              <table
-                className="portfolio-table transactions-table history-table"
-                aria-label="Changes"
-              >
+            <div className="ui-table-wrap">
+              <table className="ui-table transactions-table history-table" aria-label="Changes">
                 <colgroup>
                   <col className="history-col--when" />
                   <col className="history-col--change" />
@@ -367,7 +364,7 @@ export default function HistoryPage() {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th scope="col" className="portfolio-num">
+                    <th scope="col" className="ui-num">
                       Time
                     </th>
                     <th scope="col">Change</th>
