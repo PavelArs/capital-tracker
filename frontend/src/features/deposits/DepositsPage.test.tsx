@@ -47,8 +47,8 @@ const dollars: Deposit = {
   atMaturity: null,
   lastCheck: {
     checkedOn: '2026-10-04',
-    bankBalance: '5052.10',
-    calculated: '5052.07',
+    bankBalance: '5050.44',
+    calculated: '5050.41',
     difference: '0.03',
   },
 };
@@ -215,6 +215,24 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(within(movements).getAllByRole('button', { name: /^Remove/ })).toHaveLength(1);
   });
 
+  it('shows what a capitalizing deposit has added instead of interest to be paid out', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars, { interestPosted: '50.41' }));
+    open(`/deposits/${dollars.id}?currency=USD`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
+    expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
+    expect(screen.queryByText('Interest to be paid out')).not.toBeInTheDocument();
+  });
+
+  it('tells a capitalizing deposit that the bank balance leaves out the interest not yet added', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars));
+    open(`/deposits/${dollars.id}?currency=USD`);
+    await user.click(await screen.findByRole('button', { name: 'Check balance' }));
+    expect(screen.getByRole('dialog', { name: 'Check against the bank' })).toHaveTextContent(
+      'without the interest earned since the last interest date',
+    );
+  });
+
   it('records a movement and shows the new figures', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
@@ -297,6 +315,7 @@ describe('DEP-DETAIL: one deposit', () => {
     open(`/deposits/${savings.id}`);
     await user.click(await screen.findByRole('button', { name: 'Check balance' }));
     const dialog = screen.getByRole('dialog', { name: 'Check against the bank' });
+    expect(dialog).toHaveTextContent('and all the interest earned so far');
     await user.clear(within(dialog).getByLabelText('Date'));
     await user.type(within(dialog).getByLabelText('Date'), '2026-10-11');
     await user.type(within(dialog).getByLabelText('Balance in the bank, RUB'), '100330');

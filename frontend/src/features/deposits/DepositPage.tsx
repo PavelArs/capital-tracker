@@ -154,11 +154,19 @@ export default function DepositPage() {
               value={money(deposit.accrued, own)}
               hint="Until the next interest date"
             />
-            <Stat
-              label="Interest to be paid out"
-              value={money(deposit.due, own)}
-              hint="Posted by the bank, not recorded as paid"
-            />
+            {deposit.capitalized ? (
+              <Stat
+                label="Interest added so far"
+                value={money(deposit.interestPosted, own)}
+                hint="Already part of the deposit"
+              />
+            ) : (
+              <Stat
+                label="Interest to be paid out"
+                value={money(deposit.due, own)}
+                hint="Posted by the bank, not recorded as paid"
+              />
+            )}
             {deposit.nextPayout && (
               <Stat
                 label={
@@ -343,6 +351,7 @@ export default function DepositPage() {
             <CheckDialog
               id={deposit.id}
               currency={own}
+              capitalized={deposit.capitalized}
               onClose={() => setDialog(null)}
               onSaved={saved}
             />
