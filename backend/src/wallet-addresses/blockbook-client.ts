@@ -26,32 +26,35 @@ const MAX_UNIX_SECONDS = 253402300799;
 // not a fee the wallet paid.
 export const MAX_ZCASH_FEE = 1_000_000n;
 
+// The message names the field that failed, so the log says what to adjust (no values).
 class InvalidResponse extends Error {}
-function invalid(): never {
-  throw new InvalidResponse();
+function invalid(what = 'value'): never {
+  throw new InvalidResponse(what);
 }
-function record(value: unknown): Record<string, unknown> {
+function record(value: unknown, what = 'object'): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
-    : invalid();
+    : invalid(what);
 }
-function list(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : invalid();
+function list(value: unknown, what = 'list'): unknown[] {
+  return Array.isArray(value) ? value : invalid(what);
 }
-function integer(value: unknown, minimum = 0, maximum = MAX_HEIGHT): number {
+function integer(value: unknown, minimum = 0, maximum = MAX_HEIGHT, what = 'integer'): number {
   return Number.isSafeInteger(value) && (value as number) >= minimum && (value as number) <= maximum
     ? (value as number)
-    : invalid();
+    : invalid(what);
 }
 /** A non-negative zatoshi amount string. */
-export function zatoshi(value: unknown): bigint {
+export function zatoshi(value: unknown, what = 'amount'): bigint {
   return typeof value === 'string' && /^(0|[1-9][0-9]{0,24})$/.test(value)
     ? BigInt(value)
-    : invalid();
+    : invalid(what);
 }
 function addresses(value: Record<string, unknown>): string[] {
   if (value.addresses === undefined || value.addresses === null) return [];
-  return list(value.addresses).map((item) => (typeof item === 'string' ? item : invalid()));
+  return list(value.addresses, 'addresses').map((item) =>
+    typeof item === 'string' ? item : invalid('address'),
+  );
 }
 
 /** What one confirmed transaction did to a transparent address. */
@@ -74,30 +77,33 @@ export interface ZcashLeg {
  * pool shows only as the transparent side of that move.
  */
 export function parseTransaction(address: string, value: unknown): ZcashLeg | null {
-  const tx = record(value);
-  const txid = typeof tx.txid === 'string' && /^[0-9a-f]{64}$/.test(tx.txid) ? tx.txid : invalid();
+  const tx = record(value, 'transaction');
+  const txid =
+    typeof tx.txid === 'string' && /^[0-9a-f]{64}$/.test(tx.txid) ? tx.txid : invalid('txid');
   // Unconfirmed transactions have height -1; the range of a walk never holds one.
-  const blockHeight = integer(tx.blockHeight);
+  const blockHeight = integer(tx.blockHeight, 0, MAX_HEIGHT, 'blockHeight');
   const blockHash =
     typeof tx.blockHash === 'string' && /^[0-9a-f]{64}$/.test(tx.blockHash)
       ? tx.blockHash
-      : invalid();
-  const blockTime = new Date(integer(tx.blockTime, 1, MAX_UNIX_SECONDS) * 1000).toISOString();
+      : invalid('blockHash');
+  const blockTime = new Date(
+    integer(tx.blockTime, 1, MAX_UNIX_SECONDS, 'blockTime') * 1000,
+  ).toISOString();
   let received = 0n;
   let sent = 0n;
   let foreign = false;
-  for (const output of list(tx.vout).map(record)) {
-    const units = output.value === undefined ? 0n : zatoshi(output.value);
+  for (const output of list(tx.vout, 'vout').map((item) => record(item, 'output'))) {
+    const units = output.value === undefined ? 0n : zatoshi(output.value, 'output value');
     const to = addresses(output);
     if (to.length === 1 && to[0] === address) received += units;
     else if (units > 0n) foreign = true;
   }
   let theirs = false;
-  for (const input of list(tx.vin).map(record)) {
+  for (const input of list(tx.vin, 'vin').map((item) => record(item, 'input'))) {
     // A coinbase input spends no previous output.
     if (input.coinbase !== undefined) continue;
     const from = addresses(input);
-    const units = input.value === undefined ? 0n : zatoshi(input.value);
+    const units = input.value === undefined ? 0n : zatoshi(input.value, 'input value');
     if (from.length === 1 && from[0] === address) sent += units;
     else theirs = true;
   }
@@ -127,54 +133,61 @@ export function parseTransaction(address: string, value: unknown): ZcashLeg | nu
 /** One page of an address's history within a block range, newest first. */
 export interface ZcashPage {
   page: number;
-  totalPages: number;
-  /** Transactions in the whole range. */
-  total: number;
+  /** The page count the instance reports; null when it gives none (a filtered range). */
+  totalPages: number | null;
+  /** True when no page follows this one. */
+  last: boolean;
   legs: ZcashLeg[];
 }
 
-/** ZCASH-SYNC: a page must hold exactly the transactions its place in the range promises. */
+/**
+ * ZCASH-SYNC: a page of a block range. Blockbook counts a range's pages only on some instances
+ * (a filtered address answers `totalPages: -1` and its `txs` is the address's whole count), so
+ * the end is read from the page itself: fewer transactions than a full page, an empty page, or
+ * a page past the end that the instance moved back to the last one.
+ */
 export function parsePage(
   address: string,
   range: { from: number; to: number; page: number },
   value: unknown,
 ): ZcashPage {
   const body = record(value);
-  if (body.address !== address) invalid();
-  const total = integer(body.txs);
-  const totalPages = Math.ceil(total / BLOCKBOOK_PAGE_SIZE);
-  // Blockbook leaves totalPages out, or gives 1 or 0, for an empty range.
-  if (body.totalPages !== undefined && total > 0 && integer(body.totalPages) !== totalPages)
-    invalid();
-  const items = body.transactions === undefined ? [] : list(body.transactions);
-  if (total === 0) {
-    if (items.length > 0) invalid();
-    return { page: range.page, totalPages: 0, total, legs: [] };
+  if (body.address !== address) invalid('address');
+  const items = body.transactions === undefined ? [] : list(body.transactions, 'transactions');
+  if (items.length > BLOCKBOOK_PAGE_SIZE) invalid('page size');
+  // Past the end Blockbook answers the last page again: nothing new lives here.
+  const shown = body.page === undefined ? range.page : integer(body.page, 1, MAX_HEIGHT, 'page');
+  if (shown !== range.page) {
+    if (range.page > 1 && shown < range.page)
+      return { page: range.page, totalPages: null, last: true, legs: [] };
+    invalid('page');
   }
-  // Blockbook moves a page past the end back to the last one.
-  if (integer(body.page, 1) !== range.page) invalid();
-  const expected =
-    range.page < totalPages ? BLOCKBOOK_PAGE_SIZE : total - (totalPages - 1) * BLOCKBOOK_PAGE_SIZE;
-  if (items.length !== expected) invalid();
+  const reported =
+    body.totalPages === undefined || body.totalPages === -1
+      ? null
+      : integer(body.totalPages, 0, MAX_HEIGHT, 'totalPages');
   const legs: ZcashLeg[] = [];
   const seen = new Set<string>();
   for (const item of items) {
-    const tx = record(item);
-    const height = integer(tx.blockHeight);
-    if (height < range.from || height > range.to) invalid();
+    const tx = record(item, 'transaction');
+    const height = integer(tx.blockHeight, 0, MAX_HEIGHT, 'blockHeight');
+    if (height < range.from || height > range.to) invalid('blockHeight range');
     const leg = parseTransaction(address, tx);
     const txid = tx.txid as string;
-    if (seen.has(txid)) invalid();
+    if (seen.has(txid)) invalid('duplicate txid');
     seen.add(txid);
     if (leg) legs.push(leg);
   }
-  return { page: range.page, totalPages, total, legs };
+  const totalPages = reported === null || reported < 1 ? null : reported;
+  const last =
+    items.length < BLOCKBOOK_PAGE_SIZE || (totalPages !== null && range.page >= totalPages);
+  return { page: range.page, totalPages, last, legs };
 }
 
 /** ZCASH-SYNC: the newest block the instance has indexed, when it is caught up. */
 export function parseStatus(value: unknown): number {
-  const blockbook = record(record(value).blockbook);
-  if (blockbook.inSync !== true) invalid();
+  const blockbook = record(record(value).blockbook, 'blockbook');
+  if (blockbook.inSync !== true) invalid('inSync');
   return integer(blockbook.bestHeight, 1);
 }
 
@@ -293,7 +306,12 @@ export class BlockbookClient {
     if (response.status !== 200) return { ok: false, reason: 'unavailable' };
     try {
       return parse(JSON.parse(response.data));
-    } catch {
+    } catch (error) {
+      this.logRefusal(
+        path,
+        'was not understood',
+        error instanceof InvalidResponse ? `bad ${error.message}` : 'not JSON',
+      );
       return { ok: false, reason: 'invalid_response' };
     }
   }
