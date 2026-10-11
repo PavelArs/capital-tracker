@@ -248,18 +248,14 @@
   display: contents;
 }
 
-/* Phones: the title with the bell at its right, then the currency and "Add transaction" on
-   one row, then the page's own actions on a row of their own. */
+/* Phones: the title on a row of its own (the bell sits in the top bar next to the owner),
+   then the currency and "Add transaction" on one row, then the page's own actions on a row
+   of their own. */
 @media (max-width: 560px) {
   .shell-page__head h1 {
     order: -2;
-    /* Leaves just enough room for the bell, so the currency switch starts the next row. */
-    flex: 1 1 calc(100% - 48px);
+    flex: 1 1 100%;
     min-width: 0;
-  }
-
-  .shell-page__head > .shell-bell {
-    order: -1;
   }
 
   .shell-page__head > .shell-button--primary {
@@ -474,14 +470,19 @@
 }
 
 .shell-bell__head h2 {
-  margin: 0;
+  margin: 0 auto 0 0;
   font-size: var(--fs-md);
   font-weight: 600;
 }
 
-.shell-bell__head span {
+.shell-bell__head > span:not(.shell-bell__close) {
   color: var(--ink-3);
   font-size: var(--fs-xs);
+}
+
+/* The ✕ is for the phone sheet; the popover closes on a click outside or Escape. */
+.shell-bell__close {
+  display: none;
 }
 
 .shell-bell__list {
@@ -596,6 +597,14 @@
 
   :root[data-theme="light"] .shell-bell__scrim {
     background: rgba(18, 23, 38, 0.35);
+  }
+
+  .shell-bell__head {
+    align-items: center;
+  }
+
+  .shell-bell__close {
+    display: grid;
   }
 
   .shell-bell__panel {
