@@ -55,6 +55,11 @@ if(tool==='docker'){
   if(mode==='fresh-container-inventory')process.exit(1);
   if(mode==='fresh-container')process.stdout.write('capital_tracker_db');
  }
+ if(a[0]==='images'&&mode==='old-images'){
+  const id=(c)=>'sha256:'+c.repeat(64);
+  const backendRepo='ghcr.io/pavelars/capital-tracker-backend',frontendRepo='ghcr.io/pavelars/capital-tracker-frontend';
+  process.stdout.write([[id('9'),backendRepo],[id('8'),frontendRepo],[id('b'),backendRepo],[id('c'),frontendRepo],[id('1'),backendRepo],[id('2'),backendRepo],[id('3'),frontendRepo],[id('4'),frontendRepo],[id('a'),'ghcr.io/pavelars/capital-tracker-postgres'],[id('5'),'redis']].map(row=>row.join(' ')).join('\\n')+'\\n');
+ }
  if(a[0]==='volume'&&a[1]==='ls'){
   const labeled=a.includes('--filter');
   if(mode===(labeled?'fresh-label-inventory':'fresh-volume-inventory'))process.exit(1);
@@ -71,6 +76,7 @@ if(tool==='docker'){
    if(q.includes('Config.Labels'))v='capital_tracker';
    else if(q.includes('.Image'))v='sha256:'+('b'.repeat(64));
    if(q.includes('.Image')&&a[1]==='capital_tracker_frontend')v='sha256:'+('c'.repeat(64));
+   if(mode==='old-images'&&fs.existsSync(candidate)&&q.includes('.Image'))v='sha256:'+((a[1]==='capital_tracker_frontend'?'8':'9').repeat(64));
    process.stdout.write(v);
   }else process.stdout.write('[]');
  }
@@ -389,6 +395,25 @@ if sys.argv[1] == 'preflight':
       calls.some((call) => appUp(call) && call.backend === backend && call.frontend === frontend),
     ).toBe(true);
     expect(calls.some((call) => call.tool === 'docker' && call.args.includes('down'))).toBe(false);
+  }, 20000);
+});
+
+describe('REL-IMG-001: old application images do not pile up on the server', () => {
+  it('removes application images older than the running pair and the pair it replaced, nothing else', () => {
+    const { result, calls } = release('old-images');
+    expect(result.status).toBe(0);
+    const removal = calls.filter((call) => call.tool === 'docker' && call.args[0] === 'rmi');
+    expect(removal).toHaveLength(1);
+    expect(removal[0].args.slice(1).sort()).toEqual(
+      ['1', '2', '3', '4'].map((digit) => `sha256:${digit.repeat(64)}`),
+    );
+    expect(removal[0].args).not.toContain('-f');
+    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('prune'))).toBe(false);
+  }, 20000);
+  it('keeps every image when the release fails before activation', () => {
+    const { result, calls } = release('migration');
+    expect(result.status).not.toBe(0);
+    expect(calls.some((call) => call.tool === 'docker' && call.args[0] === 'rmi')).toBe(false);
   }, 20000);
 });
 

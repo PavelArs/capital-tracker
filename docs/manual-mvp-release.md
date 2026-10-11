@@ -306,7 +306,11 @@ For manual restore, first preserve current DB/new writes, verify the selected en
 backup checksum, and restore into a NEW isolated PostgreSQL instance using the same
 major version. Compare schema/data and confirm the intended data-loss boundary before
 any separately authorized switch. Never pipe recovery into the active owner database.
-Keep prior images and backup generations; these scripts perform no image/volume pruning.
+Keep backup generations; these scripts never prune volumes or backups. After a verified deploy the
+script removes application images (`capital-tracker-{backend,frontend}`) older than the running pair
+and the pair it replaced (the recovery pair), without `-f`, so Docker refuses any image a container
+still uses. Infrastructure and other projects' images are never touched; a failure here does not
+fail the release. Older pairs are not kept: restoring one means pulling it again by digest.
 
 ## Operator access and restart
 
