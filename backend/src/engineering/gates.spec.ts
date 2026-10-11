@@ -405,6 +405,15 @@ describe('ENG-004: release work runs beside the early gates and the aggregate re
   });
 });
 
+// A push to main takes the images and the acceptance result of the pull request run that tested
+// the same tree: the heavy steps of the release jobs are skipped through these two conditions,
+// never through a job-level condition, so every release job still has to end in success.
+const ghExpr = (inner: string) => `\${{ ${inner} }}`;
+const unlessReused = "steps.reuse.outputs.reuse != 'true'";
+const whenReused = "steps.reuse.outputs.reuse == 'true'";
+const unlessReusedNeeds = "needs.release-images.outputs.reuse != 'true'";
+const whenReusedNeeds = "needs.release-images.outputs.reuse == 'true'";
+
 const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3', 'browser-4'];
 const shardJobNames = shardNames.map((shard) => `Critical acceptance (${shard})`);
 const mergedPrStep = 'Require a successful full pull request CI run';
@@ -476,7 +485,9 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     const browser = steps.filter((step) => step.run?.includes('playwright install'));
     expect(browser).toHaveLength(1);
     expect(browser[0].run?.trim()).toBe('pnpm exec playwright install --with-deps chromium');
-    expect(expression(browser[0].if)).toBe("startsWith(matrix.shard, 'browser-')");
+    expect(expression(browser[0].if)).toBe(
+      `startsWith(matrix.shard, 'browser-') && ${unlessReusedNeeds}`,
+    );
     // The browser comes from a cache keyed on the installed Playwright version; the install
     // still runs after it, so a stale or missing cache only costs the download.
     const version = steps.find((step) => step.id === 'playwright');
@@ -489,7 +500,9 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
       key: 'playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}',
     });
     for (const step of [version, cache[0]]) {
-      expect(expression(step?.if)).toBe("startsWith(matrix.shard, 'browser-')");
+      expect(expression(step?.if)).toBe(
+        `startsWith(matrix.shard, 'browser-') && ${unlessReusedNeeds}`,
+      );
     }
     expect(steps.indexOf(version as WorkflowStep)).toBeLessThan(steps.indexOf(cache[0]));
     expect(steps.indexOf(cache[0])).toBeLessThan(steps.indexOf(browser[0]));
@@ -501,7 +514,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(acceptance[0].env).toEqual({ SHARD: '${{ matrix.shard }}' });
     expect(acceptance[0].id).toBe('critical-release-acceptance');
     expect(acceptance[0].name).toBe('Run critical real release acceptance');
-    expect(acceptance[0].if).toBeUndefined();
+    expect(expression(acceptance[0].if)).toBe(unlessReusedNeeds);
     expect(acceptance[0]['continue-on-error'] ?? false).toBe(false);
     const scripts = JSON.parse(
       readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'),
@@ -512,7 +525,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     const report = steps.find(
       (step) => step.with?.name === 'synthetic-acceptance-report-${{ matrix.shard }}',
     );
-    expect(expression(report?.if)).toBe('always()');
+    expect(expression(report?.if)).toBe(`always() && ${unlessReusedNeeds}`);
   });
 
   it('ENG-005-A retains all four image scans and security enforcement without pause conditions', () => {
@@ -527,7 +540,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
       'redis:8.10.2-alpine3.23',
     ]);
     for (const step of scans) {
-      expect(step.if).toBeUndefined();
+      expect(expression(step.if)).toBe(unlessReusedNeeds);
       expect(step['continue-on-error'] ?? false).toBe(false);
     }
     // Scans inspect the loaded build-artifact images whose identities were just verified.
@@ -542,13 +555,13 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     ]) {
       const step = steps.find((item) => item.name === name);
       expect(step).toBeDefined();
-      expect(step?.if).toBeUndefined();
+      expect(expression(step?.if)).toBe(unlessReusedNeeds);
       expect(step?.['continue-on-error'] ?? false).toBe(false);
     }
     const pull = (workflow('ci').jobs['release-images'].steps ?? []).find(
       (item) => item.name === 'Pull exact reviewed PostgreSQL and Redis images',
     );
-    expect(pull?.if).toBeUndefined();
+    expect(expression(pull?.if)).toBe(unlessReused);
     expect(pull?.run).toContain('validateInfrastructurePins(pins);');
     expect(pull?.run).toContain('docker pull "$postgres"');
     expect(pull?.run).toContain(
@@ -599,7 +612,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(steps.indexOf(merge as WorkflowStep)).toBeLessThan(
       steps.indexOf(verify as WorkflowStep),
     );
-    expect(verify?.if).toBeUndefined();
+    expect(expression(verify?.if)).toBe(unlessReusedNeeds);
     expect(verify?.run).toContain(
       'node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
     );
@@ -711,17 +724,19 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       path: 'release-images/manifest.json',
       'if-no-files-found': 'error',
     });
-    // Both events hand the images to the shards; a push to main also exports them.
-    for (const position of [order[2], order[3], manifest]) {
-      expect(steps[position].if).toBeUndefined();
+    // Pull requests and pushes without a proven pull request run build, save and hand the
+    // images to the shards; a push to main also exports them.
+    for (const position of [order[0], order[1], order[2], order[3], manifest]) {
+      expect(expression(steps[position].if)).toBe(unlessReused);
     }
     for (const step of steps) {
-      if (
-        ![steps[order[2]], steps[order[3]], steps[manifest]].includes(step) &&
-        !step.if?.includes('push')
-      ) {
-        expect(step.if).toBeUndefined();
-      }
+      expect([
+        '',
+        pushCondition,
+        `${pushCondition} && vars.REUSE_PR_IMAGES != 'false'`,
+        unlessReused,
+        whenReused,
+      ]).toContain(expression(step.if));
       expect(step.run ?? '').not.toMatch(/playwright|test:e2e|--shard/);
     }
   });
@@ -748,14 +763,15 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       expect(download).toBeGreaterThanOrEqual(0);
       expect(download).toBeLessThan(load);
       expect(load).toBeLessThan(use);
-      expect(steps[load].if).toBeUndefined();
+      expect(expression(steps[load].if)).toBe(unlessReusedNeeds);
       expect(steps[load].run?.trim().split('\n')).toEqual(loadImages);
     }
     // The receipt job reads only the manifest the images were verified against.
     const receiptSteps = ci.jobs['docker-build'].steps ?? [];
     const manifest = receiptSteps.filter(
       (step) =>
-        step.uses?.startsWith('actions/download-artifact@') && typeof step.with?.name === 'string',
+        step.uses?.startsWith('actions/download-artifact@') &&
+        step.with?.name === 'release-images-manifest',
     );
     expect(manifest).toHaveLength(1);
     expect(manifest[0].uses).toMatch(/^actions\/download-artifact@[a-f0-9]{40}$/);
@@ -808,7 +824,7 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       (step) => step.with?.name === 'critical-shard-receipt-${{ matrix.shard }}',
     );
     expect(upload).toBeGreaterThan(acceptance);
-    expect(steps[upload].if).toBeUndefined();
+    expect(expression(steps[upload].if)).toBe(unlessReusedNeeds);
     expect(steps[upload].with).toMatchObject({
       path: 'test-results/critical-shard-${{ matrix.shard }}.json',
       'if-no-files-found': 'error',
@@ -825,11 +841,11 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
         step.with?.pattern === 'critical-shard-receipt-*',
     );
     expect(receipts?.with).toMatchObject({ path: 'shard-receipts', 'merge-multiple': true });
-    expect(receipts?.if).toBeUndefined();
+    expect(expression(receipts?.if)).toBe(unlessReusedNeeds);
     const merge = steps.filter((step) => step.id === 'critical-release-acceptance');
     expect(merge).toHaveLength(1);
     expect(merge[0].name).toBe('Merge verified critical acceptance shards');
-    expect(merge[0].if).toBeUndefined();
+    expect(expression(merge[0].if)).toBe(unlessReusedNeeds);
     expect(merge[0].run?.trim()).toBe(
       'node scripts/acceptance-shards.cjs merge release-images/manifest.json shard-receipts "$GITHUB_SHA" "$GITHUB_RUN_ID" test-results/critical-release-acceptance.json',
     );
@@ -928,6 +944,146 @@ else process.exit(9);
     expect(step.run).toContain(
       'test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"',
     );
+  });
+});
+
+describe('ENG-008: a push to main reuses what its pull request run already tested', () => {
+  type JobWithOutputs = WorkflowJob & {
+    permissions?: Record<string, string>;
+    outputs?: Record<string, string>;
+  };
+  let ci: Workflow;
+
+  beforeAll(() => {
+    ci = workflow('ci');
+  });
+
+  it('ENG-008-A looks for a reusable pull request run first, on a push only, and never fails the job', () => {
+    const job = ci.jobs['release-images'] as JobWithOutputs;
+    const steps = job.steps ?? [];
+    const detect = steps.filter((step) => step.id === 'reuse');
+    expect(detect).toHaveLength(1);
+    expect(expression(detect[0].if)).toBe(`${pushCondition} && vars.REUSE_PR_IMAGES != 'false'`);
+    expect(detect[0].run?.trim()).toBe('node scripts/reuse-pr-images.cjs');
+    expect(detect[0].env).toEqual({ GH_TOKEN: ghExpr('github.token') });
+    expect(detect[0]['continue-on-error'] ?? false).toBe(false);
+    // Everything that builds or tests comes after the decision.
+    for (const step of steps) {
+      if (expression(step.if) === unlessReused || expression(step.if) === whenReused) {
+        expect(steps.indexOf(step)).toBeGreaterThan(steps.indexOf(detect[0]));
+      }
+    }
+    expect(job.permissions).toEqual({
+      contents: 'read',
+      packages: 'read',
+      actions: 'read',
+      'pull-requests': 'read',
+    });
+    expect(job.outputs).toEqual({
+      reuse: ghExpr('steps.reuse.outputs.reuse'),
+      run_id: ghExpr('steps.reuse.outputs.run_id'),
+      tested_commit: ghExpr('steps.reuse.outputs.tested_commit'),
+    });
+  });
+
+  it('ENG-008-B loads the pull request images and verifies them against the tested commit and run', () => {
+    const steps = ci.jobs['release-images'].steps ?? [];
+    const download = steps.find(
+      (step) =>
+        step.uses?.startsWith('actions/download-artifact@') && step.with?.name === 'release-images',
+    );
+    expect(expression(download?.if)).toBe(whenReused);
+    expect(download?.with).toEqual({
+      name: 'release-images',
+      path: 'release-images',
+      'run-id': ghExpr('steps.reuse.outputs.run_id'),
+      'github-token': ghExpr('github.token'),
+    });
+    const load = steps.find(
+      (step) => step.name === 'Load and verify the images the pull request tested',
+    );
+    expect(expression(load?.if)).toBe(whenReused);
+    expect(load?.env).toEqual({
+      TESTED_COMMIT: ghExpr('steps.reuse.outputs.tested_commit'),
+      TESTED_RUN_ID: ghExpr('steps.reuse.outputs.run_id'),
+    });
+    expect(load?.run?.trim().split('\n')).toEqual([
+      ...loadImages.slice(0, -1),
+      'node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$TESTED_COMMIT" "$TESTED_RUN_ID"',
+    ]);
+    // The candidate is exported for this commit and this run from the loaded, verified images.
+    const exportStep = steps.find((step) => step.name === exportStepName);
+    expect(steps.indexOf(exportStep as WorkflowStep)).toBeGreaterThan(
+      steps.indexOf(load as WorkflowStep),
+    );
+    expect(exportStep?.env).toEqual({
+      CANDIDATE_COMMIT: ghExpr('github.sha'),
+      CANDIDATE_RUN_ID: ghExpr('github.run_id'),
+    });
+  });
+
+  it('ENG-008-C skips the shards and the scan only step by step; each job still ends in success', () => {
+    for (const name of ['critical-acceptance', 'image-security']) {
+      const job = ci.jobs[name];
+      expect(job.if).toBeUndefined();
+      expect(dependencies(job)).toContain('release-images');
+      const steps = job.steps ?? [];
+      const record = steps.filter((step) => expression(step.if) === whenReusedNeeds);
+      expect(record).toHaveLength(1);
+      expect(record[0].run).toContain('GITHUB_STEP_SUMMARY');
+      expect(record[0].run).not.toMatch(/docker|playwright|acceptance\.mjs/);
+      for (const step of steps.filter((item) => item !== record[0])) {
+        // Either skipped as a whole when reused, or an upload that follows a skipped step.
+        const condition = expression(step.if);
+        expect(
+          condition.includes(unlessReusedNeeds) ||
+            condition === "always() && steps.redact-image-security.conclusion == 'success'",
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('ENG-008-D the receipt job verifies the pull request run receipt for its own commit and run', () => {
+    const job = ci.jobs['docker-build'] as JobWithOutputs;
+    expect(job.if).toBeUndefined();
+    expect(job.permissions).toEqual({ contents: 'read', actions: 'read' });
+    const steps = job.steps ?? [];
+    const download = steps.find(
+      (step) =>
+        step.uses?.startsWith('actions/download-artifact@') &&
+        step.with?.name === 'critical-release-acceptance',
+    );
+    expect(expression(download?.if)).toBe(whenReusedNeeds);
+    expect(download?.with).toEqual({
+      name: 'critical-release-acceptance',
+      path: 'reused-acceptance',
+      'run-id': ghExpr('needs.release-images.outputs.run_id'),
+      'github-token': ghExpr('github.token'),
+    });
+    const verify = steps.find((step) => step.id === 'verify-reused-receipt');
+    expect(expression(verify?.if)).toBe(whenReusedNeeds);
+    expect(verify?.env).toEqual({
+      TESTED_COMMIT: ghExpr('needs.release-images.outputs.tested_commit'),
+      TESTED_RUN_ID: ghExpr('needs.release-images.outputs.run_id'),
+    });
+    expect(verify?.run?.trim()).toBe(
+      'node scripts/critical-release-profile.cjs verify reused-acceptance/critical-release-acceptance.json "$TESTED_COMMIT" "$TESTED_RUN_ID"',
+    );
+    expect(steps.indexOf(download as WorkflowStep)).toBeLessThan(
+      steps.indexOf(verify as WorkflowStep),
+    );
+    // Only the verified receipt is published again, after its verification succeeded.
+    const upload = steps.find(
+      (step) => step.with?.path === 'reused-acceptance/critical-release-acceptance.json',
+    );
+    expect(expression(upload?.if)).toBe(
+      "always() && steps.verify-reused-receipt.conclusion == 'success'",
+    );
+    // The jobs that decide stay the unchanged ones.
+    expect(
+      ci.jobs['merged-pr-ci'].steps?.some((step) => step.run?.includes('check-merged-pr-ci')),
+    ).toBe(true);
+    expect(gateStep(ci).run).toContain('release-images merged-pr-ci');
   });
 });
 
