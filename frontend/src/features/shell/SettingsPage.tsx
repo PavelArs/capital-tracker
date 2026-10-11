@@ -11,6 +11,7 @@ import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
 import HiddenAssets from '../portfolio/HiddenAssets';
 import SecuritySettings from '../security/SecuritySettings';
+import InsightSettings from './InsightSettings';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
 import { Bone } from './Skeleton';
@@ -342,6 +343,10 @@ export default function SettingsPage() {
         <section className="shell-card" aria-labelledby="settings-wallets">
           <h2 id="settings-wallets">Wallets</h2>
           <DustThreshold />
+        </section>
+        <section className="shell-card" aria-labelledby="settings-insights">
+          <h2 id="settings-insights">Insights</h2>
+          <InsightSettings />
         </section>
         <HiddenAssets />
         <section className="shell-card" aria-labelledby="settings-history">

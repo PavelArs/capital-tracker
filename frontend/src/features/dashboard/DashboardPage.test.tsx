@@ -248,6 +248,12 @@ beforeEach(() => {
   sources.mockResolvedValue([pricesSource()]);
   wallets.mockReset();
   wallets.mockResolvedValue([]);
+  // No rules unless a case sets some; nothing here may reach the network.
+  vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+    mainCurrency: 'USD',
+    dustThresholdUsd: null,
+    insightRules: null,
+  });
   get.mockReset();
   get.mockImplementation(async (period: HistoryPeriod, currency?: AccountingCurrency) =>
     history({ period, currency: currency ?? 'USD' }),
@@ -725,5 +731,64 @@ describe('show-dashboard-top-assets', () => {
     expect(wallets).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledTimes(1);
     expect(settings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('dashboard insights', () => {
+  const renderWithRules = () =>
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <MainCurrencyProvider>
+          <AttentionProvider>
+            <DashboardPage />
+          </AttentionProvider>
+        </MainCurrencyProvider>
+      </MemoryRouter>,
+    );
+  const settings = (insightRules: unknown) =>
+    vi
+      .spyOn(ownerSettingsApi, 'get')
+      .mockResolvedValue({ mainCurrency: 'USD', dustThresholdUsd: null, insightRules } as never);
+
+  it('INS-CARD lists what strays from the owner’s rules and links each to its asset', async () => {
+    settings({
+      targets: [{ instrumentId: id(1), percent: '30' }],
+      driftPoints: '5',
+      gainReviewPercent: null,
+      lossReviewPercent: null,
+    });
+    renderWithRules();
+    const card = await screen.findByRole('region', { name: 'Insights' });
+    expect(within(card).getByRole('link', { name: 'BTC is above its target' })).toHaveAttribute(
+      'href',
+      `/portfolio/${id(1)}`,
+    );
+    expect(card).toHaveTextContent(
+      '42% of your portfolio against a 30% target: 12 points over, about $1,200.00.',
+    );
+    expect(card).toHaveTextContent('not financial advice');
+    expect(within(card).getByRole('link', { name: 'Rules' })).toHaveAttribute(
+      'href',
+      '/preferences',
+    );
+  });
+
+  it('INS-QUIET says everything is within the rules when nothing strays', async () => {
+    settings({
+      targets: [{ instrumentId: id(1), percent: '40' }],
+      driftPoints: '5',
+      gainReviewPercent: null,
+      lossReviewPercent: null,
+    });
+    renderWithRules();
+    const card = await screen.findByRole('region', { name: 'Insights' });
+    expect(card).toHaveTextContent('Everything is within your rules.');
+  });
+
+  it('INS-OFF has no card without rules', async () => {
+    settings(null);
+    renderWithRules();
+    await screen.findByRole('region', { name: 'Top assets' });
+    expect(screen.queryByRole('region', { name: 'Insights' })).toBeNull();
   });
 });

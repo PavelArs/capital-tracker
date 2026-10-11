@@ -649,3 +649,46 @@
 .shell-seg--hold {
   visibility: hidden;
 }
+
+.insight-settings__fields {
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.insight-settings__fields fieldset {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.insight-settings__fields legend {
+  margin-bottom: var(--sp-2);
+  padding: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.insight-settings__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.insight-settings__row input {
+  width: 6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.insight-settings__row select {
+  width: 10rem;
+  max-width: 100%;
+}
+
+.insight-settings__row input {
+  width: 5rem;
+}
