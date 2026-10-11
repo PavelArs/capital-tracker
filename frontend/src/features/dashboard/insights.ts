@@ -49,7 +49,8 @@ export function collectInsights(
   const labels = assetLabels(portfolio);
   const label = (instrumentId: string) => labels.get(instrumentId) ?? 'An asset';
 
-  let note: string | null = null;
+  // Every rule that could not be checked says why, so one gap never hides another.
+  const notes: string[] = [];
   let unchecked = 0;
   const drift: { gap: number; item: InsightItem }[] = [];
   if (rules.targets.length > 0) {
@@ -65,9 +66,9 @@ export function collectInsights(
         history && "an account's history starts later",
       ].filter((reason): reason is string => reason !== false);
       const reason = reasons.join(' and ').replace(/^./, (letter) => letter.toUpperCase());
-      note = `${reason}, so shares are not compared.`;
+      notes.push(`${reason}, so shares are not compared.`);
     } else if (Number(portfolio.totalValue) <= 0) {
-      note = 'The portfolio has no value yet, so shares are not compared.';
+      notes.push('The portfolio has no value yet, so shares are not compared.');
     } else {
       const total = Number(portfolio.totalValue);
       for (const { instrumentId, percent } of rules.targets) {
@@ -100,24 +101,29 @@ export function collectInsights(
     }
   }
 
-  if (unchecked > 0 && note === null) {
-    note =
+  if (unchecked > 0) {
+    notes.push(
       unchecked === 1
         ? '1 target is not checked: its asset is hidden or no longer held.'
-        : `${unchecked} targets are not checked: their assets are hidden or no longer held.`;
+        : `${unchecked} targets are not checked: their assets are hidden or no longer held.`,
+    );
   }
 
   let unpriced = 0;
   let unrated = 0;
   let zeroCost = 0;
   const review: { size: number; item: InsightItem }[] = [];
-  for (const asset of portfolio.assets) {
+  const levels = rules.gainReviewPercent !== null || rules.lossReviewPercent !== null;
+  // With an account whose history starts later, every return covers only part of the portfolio.
+  const partial = portfolio.unavailableAccountCount > 0;
+  if (levels && partial) {
+    notes.push("An account's history starts later, so returns on cost are not checked.");
+  }
+  for (const asset of levels && !partial ? portfolio.assets : []) {
     if (Number(asset.knownCostQuantity) <= 0) continue;
     // Known cost but no current price or rate: the return cannot be checked yet.
     if (asset.knownUnrealizedReturnPercent === null) {
-      const checkable =
-        Number(asset.quantity) !== 0 &&
-        (rules.gainReviewPercent !== null || rules.lossReviewPercent !== null);
+      const checkable = Number(asset.quantity) !== 0;
       if (checkable && asset.missingPrice === 'no-rate') unrated += 1;
       else if (checkable && asset.missingPrice === 'no-price') unpriced += 1;
       // Priced, but a cost of zero leaves no percentage to compare.
@@ -152,26 +158,28 @@ export function collectInsights(
   }
 
   const notChecked = unpriced + unrated;
-  if (notChecked > 0 && note === null) {
+  if (notChecked > 0) {
     const missing =
       unrated === 0 ? 'price' : unpriced === 0 ? 'exchange rate' : 'price or exchange rate';
-    note =
+    notes.push(
       notChecked === 1
         ? `1 asset has no ${missing} yet, so its return on cost is not checked.`
-        : `${notChecked} assets have no ${missing} yet, so their returns on cost are not checked.`;
+        : `${notChecked} assets have no ${missing} yet, so their returns on cost are not checked.`,
+    );
   }
 
-  if (zeroCost > 0 && note === null) {
-    note =
+  if (zeroCost > 0) {
+    notes.push(
       zeroCost === 1
         ? '1 asset has a cost of zero, so its return is not compared.'
-        : `${zeroCost} assets have a cost of zero, so their returns are not compared.`;
+        : `${zeroCost} assets have a cost of zero, so their returns are not compared.`,
+    );
   }
 
   const widest = (a: { gap?: number; size?: number }, b: { gap?: number; size?: number }) =>
     (b.gap ?? b.size ?? 0) - (a.gap ?? a.size ?? 0);
   return {
     items: [...drift.sort(widest), ...review.sort(widest)].map(({ item }) => item),
-    note,
+    note: notes.length > 0 ? notes.join(' ') : null,
   };
 }

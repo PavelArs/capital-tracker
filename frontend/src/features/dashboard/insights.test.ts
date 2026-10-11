@@ -269,4 +269,32 @@ describe('collectInsights', () => {
     );
     expect(note).toBe("An account's history starts later, so shares are not compared.");
   });
+
+  it('INS-NOTES: reports every rule that could not be checked, not only the first', () => {
+    const { note } = collectInsights(
+      portfolio([
+        asset(btc, 'BTC', { allocationPercent: '50', knownUnrealizedReturnPercent: '10' }),
+        asset(eth, 'ETH', { knownUnrealizedReturnPercent: null, missingPrice: 'no-price' }),
+      ]),
+      rules({
+        targets: [{ instrumentId: sol, percent: '10' }],
+        gainReviewPercent: '100',
+      }),
+    );
+    expect(note).toBe(
+      '1 target is not checked: its asset is hidden or no longer held. ' +
+        '1 asset has no price yet, so its return on cost is not checked.',
+    );
+  });
+
+  it('INS-REVIEW-PARTIAL: skips return rules while an account history starts later', () => {
+    const { items, note } = collectInsights(
+      portfolio([asset(btc, 'BTC', { knownUnrealizedReturnPercent: '500' })], {
+        unavailableAccountCount: 1,
+      }),
+      rules({ gainReviewPercent: '100' }),
+    );
+    expect(items).toEqual([]);
+    expect(note).toBe("An account's history starts later, so returns on cost are not checked.");
+  });
 });
