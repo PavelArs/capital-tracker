@@ -10,6 +10,7 @@ import {
 } from '@api/deposits.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { movementText, today } from './deposit-format';
 import '../transactions/transactions.css';
@@ -28,6 +29,19 @@ const dateProblem = (value: string, label: string) =>
   DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
     ? null
     : `${label}: pick a date`;
+
+/**
+ * The id of this attempt. A retry of the same entries after a lost answer keeps it, so the
+ * server records it once; changed entries are a new attempt with a new id.
+ */
+function useAttempt() {
+  const last = useRef<{ key: string; id: string } | null>(null);
+  return (entries: unknown) => {
+    const key = JSON.stringify(entries);
+    if (last.current?.key !== key) last.current = { key, id: newRequestId() };
+    return last.current.id;
+  };
+}
 
 /** The server's own words for a refusal it explained, else a general line. */
 function failure(error: unknown): string {
@@ -280,6 +294,7 @@ export function AddDepositDialog({
   const [capitalized, setCapitalized] = useState(false);
   const [dayBasis, setDayBasis] = useState<DayBasis>('actual-365');
   const [earlyClose, setEarlyClose] = useState<EarlyClose>('forfeits-interest');
+  const attempt = useAttempt();
 
   const problem = () =>
     (!name.trim() ? 'Name: give the deposit a name' : null) ??
@@ -300,7 +315,7 @@ export function AddDepositDialog({
       onClose={onClose}
       wide
       onSubmit={async () => {
-        const body: NewDeposit = {
+        const entries = {
           name: name.trim(),
           bank: bank.trim(),
           currency,
@@ -313,6 +328,7 @@ export function AddDepositDialog({
           ratePercent: rate.trim(),
           amount: amount.trim(),
         };
+        const body: NewDeposit = { requestId: attempt(entries), ...entries };
         onSaved(await depositsApi.create(body));
       }}
     >
@@ -428,6 +444,7 @@ export function MovementDialog({
   const [date, setDate] = useState(today());
   const [amount, setAmount] = useState('');
   const [comment, setComment] = useState('');
+  const attempt = useAttempt();
   const hints: Record<MovementKind, string> = {
     topup: 'Money you put into the deposit.',
     withdrawal: 'Money you took out of the deposit. Taking all of it closes the deposit.',
@@ -440,16 +457,15 @@ export function MovementDialog({
       submit="Record"
       problem={() => dateProblem(date, 'Date') ?? amountProblem(amount, `Amount, ${currency}`)}
       onClose={onClose}
-      onSubmit={async () =>
-        onSaved(
-          await depositsApi.addMovement(id, {
-            date,
-            kind,
-            amount: amount.trim(),
-            ...(comment.trim() ? { comment: comment.trim() } : {}),
-          }),
-        )
-      }
+      onSubmit={async () => {
+        const entries = {
+          date,
+          kind,
+          amount: amount.trim(),
+          ...(comment.trim() ? { comment: comment.trim() } : {}),
+        };
+        onSaved(await depositsApi.addMovement(id, { requestId: attempt(entries), ...entries }));
+      }}
     >
       <Select label="What happened" value={kind} options={movementOptions} onChange={setKind} />
       <div className="portfolio-row">

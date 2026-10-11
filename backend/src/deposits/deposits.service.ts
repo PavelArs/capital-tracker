@@ -156,18 +156,22 @@ export class DepositsService {
 
   async create(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
-    const input = parseDeposit(raw);
+    const { requestId, ...input } = parseDeposit(raw);
+    const payload = JSON.stringify(input);
     if (input.startDate > moscowDate(new Date()))
       throw new UnprocessableEntityException('Start date is in the future');
-    const id = randomUUID();
-    await this.source.transaction(async (manager) => {
-      await manager.query(
-        `INSERT INTO bank_deposits (id, "ownerId", name, bank, currency, "startDate", "endDate",
-           payout, capitalized, "dayBasis", "earlyClose")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    const id = await this.source.transaction(async (manager) => {
+      const created: { id: string }[] = await manager.query(
+        `INSERT INTO bank_deposits (id, "ownerId", "requestId", "canonicalPayload", name, bank, currency,
+           "startDate", "endDate", payout, capitalized, "dayBasis", "earlyClose")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT ("ownerId", "requestId") DO NOTHING
+         RETURNING id`,
         [
-          id,
+          randomUUID(),
           owner,
+          requestId,
+          payload,
           input.name,
           input.bank,
           input.currency,
@@ -179,15 +183,28 @@ export class DepositsService {
           input.earlyClose,
         ],
       );
+      if (created.length === 0) {
+        // The same request again, e.g. a retry after a lost answer: the deposit it made.
+        const [earlier]: { id: string; canonicalPayload: string }[] = await manager.query(
+          'SELECT id, "canonicalPayload" FROM bank_deposits WHERE "ownerId"=$1 AND "requestId"=$2',
+          [owner, requestId],
+        );
+        if (earlier.canonicalPayload !== payload)
+          throw new ConflictException('This request was already used for a different deposit');
+        return earlier.id;
+      }
+      const depositId = created[0].id;
       await manager.query(
         'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',
-        [owner, id, input.startDate, input.ratePercent],
+        [owner, depositId, input.startDate, input.ratePercent],
       );
       await manager.query(
-        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount, "position")
-         VALUES ($1,$2,$3,$4,'topup',$5,1)`,
-        [randomUUID(), owner, id, input.startDate, input.amount],
+        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "requestId", "canonicalPayload",
+           "occurredOn", kind, amount, "position")
+         VALUES ($1,$2,$3,$4,'opening',$5,'topup',$6,1)`,
+        [randomUUID(), owner, depositId, randomUUID(), input.startDate, input.amount],
       );
+      return depositId;
     });
     return this.get(owner, id, undefined);
   }
@@ -195,11 +212,22 @@ export class DepositsService {
   async addMovement(ownerId: string, id: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const depositId = parseUuid(id);
-    const input = parseMovement(raw);
+    const { requestId, ...input } = parseMovement(raw);
+    const payload = JSON.stringify({ depositId, ...input });
     if (input.date > moscowDate(new Date()))
       throw new UnprocessableEntityException('Date is in the future');
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
+      const [earlier]: { canonicalPayload: string }[] = await manager.query(
+        'SELECT "canonicalPayload" FROM bank_deposit_movements WHERE "ownerId"=$1 AND "requestId"=$2',
+        [owner, requestId],
+      );
+      if (earlier) {
+        // The same request again, e.g. a retry after a lost answer: already recorded.
+        if (earlier.canonicalPayload !== payload)
+          throw new ConflictException('This request was already used for a different movement');
+        return;
+      }
       // A movement goes after the ones already recorded for its day, as the database orders them.
       const next = stableByDate([
         ...movementsOf(stored),
@@ -208,10 +236,21 @@ export class DepositsService {
       if (firstImpossibleMovement(termsOf(stored), next) !== -1)
         throw new UnprocessableEntityException('The deposit could not have had this movement');
       await manager.query(
-        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount, comment, "position")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,
+        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "requestId", "canonicalPayload",
+           "occurredOn", kind, amount, comment, "position")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
            (SELECT coalesce(max("position"), 0) + 1 FROM bank_deposit_movements WHERE "depositId"=$3))`,
-        [randomUUID(), owner, depositId, input.date, input.kind, input.amount, input.comment],
+        [
+          randomUUID(),
+          owner,
+          depositId,
+          requestId,
+          payload,
+          input.date,
+          input.kind,
+          input.amount,
+          input.comment,
+        ],
       );
     });
     return this.get(owner, depositId, undefined);

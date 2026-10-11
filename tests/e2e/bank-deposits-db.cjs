@@ -4,6 +4,7 @@
 // rate of the day, refuses movements it could not have had, and compares a balance read in the
 // bank's app with the computed one. All data is synthetic.
 const assert = require('node:assert/strict');
+const { randomUUID } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
@@ -156,6 +157,31 @@ async function accrual(db, service, owner) {
   );
   assert.equal(ordered.principal, '50.00');
   await rejected(() => service.get(owner, same.id, '2026-06-15'), 404);
+  const requestId = randomUUID();
+  const once = await service.create(owner, { ...savings, name: 'Replay', requestId });
+  const again = await service.create(owner, { ...savings, name: 'Replay', requestId });
+  assert.equal(again.id, once.id, 'The same request again returns the deposit it made');
+  assert.equal(
+    (await service.list(owner, undefined)).items.filter((item) => item.name === 'Replay').length,
+    1,
+    'A retried creation makes no second deposit',
+  );
+  await rejected(() => service.create(owner, { ...savings, name: 'Other', requestId }), 409);
+  const topup = { date: '2026-07-02', kind: 'topup', amount: '10.00', requestId: randomUUID() };
+  const first = await service.addMovement(owner, once.id, topup);
+  const second = await service.addMovement(owner, once.id, topup);
+  assert.equal(second.principal, first.principal, 'A retried movement is recorded once');
+  assert.equal(second.movements.length, 2);
+  await rejected(() => service.addMovement(owner, once.id, { ...topup, amount: '11.00' }), 409);
+  await rejected(() => Object.getPrototypeOf(service).create(owner, savings), 400);
+  const both = randomUUID();
+  const racing = await Promise.all([
+    service.create(owner, { ...savings, name: 'Race', requestId: both }),
+    service.create(owner, { ...savings, name: 'Race', requestId: both }),
+  ]);
+  assert.equal(racing[0].id, racing[1].id, 'Two retries at once still make one deposit');
+  await service.remove(owner, racing[0].id);
+  await service.remove(owner, once.id);
   const withdrawnAll = await service.addMovement(owner, same.id, {
     date: '2026-08-10',
     kind: 'withdrawal',
@@ -347,7 +373,13 @@ async function main() {
       ('deposit-owner@example.invalid','synthetic-not-a-hash',true),
       ('deposit-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const { DepositsService } = require(modulePath);
-    const service = new DepositsService(db);
+    const plain = new DepositsService(db);
+    // Every call carries a fresh request id unless a stage names one to test a replay.
+    const service = Object.assign(Object.create(plain), {
+      create: (owner, body) => plain.create(owner, { requestId: randomUUID(), ...body }),
+      addMovement: (owner, id, body) =>
+        plain.addMovement(owner, id, { requestId: randomUUID(), ...body }),
+    });
     const ids = await accrual(db, service, owner.id);
     await movements(db, service, owner.id, other.id, ids);
     await checks(db, service, owner.id, ids);

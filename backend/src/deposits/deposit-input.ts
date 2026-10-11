@@ -14,6 +14,7 @@ import {
 export { parseUuid };
 
 export interface DepositInput {
+  requestId: string;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -27,6 +28,7 @@ export interface DepositInput {
   amount: string;
 }
 export interface MovementInput {
+  requestId: string;
   date: string;
   kind: 'topup' | 'withdrawal' | 'interest-payout';
   amount: string;
@@ -109,6 +111,7 @@ function member<T extends string>(value: unknown, allowed: readonly T[]): T {
 
 export function parseDeposit(input: unknown): DepositInput {
   const keys = [
+    'requestId',
     'name',
     'bank',
     'currency',
@@ -129,6 +132,7 @@ export function parseDeposit(input: unknown): DepositInput {
   if (payout === 'at-end' && endDate === null) return bad();
   if (typeof record.capitalized !== 'boolean') return bad();
   return {
+    requestId: parseUuid(record.requestId),
     name: text(record.name, 120),
     bank: text(record.bank, 120),
     currency: member(record.currency, depositCurrencies),
@@ -144,8 +148,13 @@ export function parseDeposit(input: unknown): DepositInput {
 }
 
 export function parseMovement(input: unknown): MovementInput {
-  const record = object(input, ['date', 'kind', 'amount', 'comment'], ['date', 'kind', 'amount']);
+  const record = object(
+    input,
+    ['requestId', 'date', 'kind', 'amount', 'comment'],
+    ['requestId', 'date', 'kind', 'amount'],
+  );
   return {
+    requestId: parseUuid(record.requestId),
     date: parseDate(record.date),
     kind: member(record.kind, ['topup', 'withdrawal', 'interest-payout'] as const),
     amount: parseAmount(record.amount),

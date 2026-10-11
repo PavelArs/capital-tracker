@@ -144,6 +144,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create).toHaveBeenCalledWith({
+      requestId: expect.any(String),
       name: 'Savings A',
       bank: 'Synthetic Bank',
       currency: 'RUB',
@@ -209,6 +210,7 @@ describe('DEP-DETAIL: one deposit', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Record' }));
     await waitFor(() =>
       expect(add).toHaveBeenCalledWith(savings.id, {
+        requestId: expect.any(String),
         date: '2026-10-10',
         kind: 'topup',
         amount: '10000',
@@ -216,6 +218,29 @@ describe('DEP-DETAIL: one deposit', () => {
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getByText('In the deposit').parentElement).toHaveTextContent('₽110,000.00');
+  });
+
+  it('sends the same request id when the same movement is retried and a new one when it changed', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    const add = vi
+      .spyOn(depositsApi, 'addMovement')
+      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}?currency=RUB`);
+    await user.click(await screen.findByRole('button', { name: 'Record movement' }));
+    const dialog = screen.getByRole('dialog', { name: 'Record a movement' });
+    await user.type(within(dialog).getByLabelText('Amount, RUB'), '10');
+    await user.click(within(dialog).getByRole('button', { name: 'Record' }));
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
+    await user.click(within(dialog).getByRole('button', { name: 'Record' }));
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(2));
+    expect(add.mock.calls[1][1].requestId).toBe(add.mock.calls[0][1].requestId);
+    await user.type(within(dialog).getByLabelText('Amount, RUB'), '5');
+    await user.click(within(dialog).getByRole('button', { name: 'Record' }));
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(3));
+    expect(add.mock.calls[2][1].requestId).not.toBe(add.mock.calls[0][1].requestId);
   });
 
   it('shows the explanation the server gives for a movement the deposit could not have had', async () => {

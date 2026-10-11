@@ -71,6 +71,8 @@ export interface DepositList {
 }
 
 export interface NewDeposit {
+  /** One per attempt; a retry of the same attempt returns the deposit it made. */
+  requestId: string;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -102,7 +104,13 @@ export const depositsApi = {
 
   addMovement: async (
     id: string,
-    movement: { date: string; kind: MovementKind; amount: string; comment?: string },
+    movement: {
+      requestId: string;
+      date: string;
+      kind: MovementKind;
+      amount: string;
+      comment?: string;
+    },
   ): Promise<DepositDetail> =>
     (await apiClient.post<DepositDetail>(`${one(id)}/movements`, movement)).data,
 

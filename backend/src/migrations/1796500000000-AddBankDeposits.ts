@@ -9,6 +9,8 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
     await runner.query(`CREATE TABLE bank_deposits (
       id uuid PRIMARY KEY,
       "ownerId" uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      "requestId" uuid NOT NULL,
+      "canonicalPayload" text NOT NULL,
       name varchar(120) NOT NULL CHECK (btrim(name) <> ''),
       bank varchar(120) NOT NULL CHECK (btrim(bank) <> ''),
       currency text NOT NULL CHECK (currency IN ('RUB', 'USD', 'EUR')),
@@ -20,6 +22,7 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
       "earlyClose" text NOT NULL CHECK ("earlyClose" IN ('forfeits-interest', 'keeps-interest')),
       "createdAt" timestamptz(3) NOT NULL DEFAULT now(),
       UNIQUE ("ownerId", id),
+      UNIQUE ("ownerId", "requestId"),
       CHECK (payout <> 'at-end' OR "endDate" IS NOT NULL)
     )`);
     // The annual rate in percent from a date on; the bank may change it during the term.
@@ -37,6 +40,9 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
       id uuid PRIMARY KEY,
       "ownerId" uuid NOT NULL,
       "depositId" uuid NOT NULL,
+      -- A retry of the same request returns the movement it recorded instead of a second one.
+      "requestId" uuid NOT NULL,
+      "canonicalPayload" text NOT NULL,
       "occurredOn" date NOT NULL,
       kind text NOT NULL CHECK (kind IN ('topup', 'withdrawal', 'interest-payout')),
       amount numeric(30, 2) NOT NULL CHECK (amount > 0),
@@ -46,6 +52,7 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
       -- lock); the same-day order is replayed by it.
       "position" integer NOT NULL,
       UNIQUE ("depositId", "position"),
+      UNIQUE ("ownerId", "requestId"),
       FOREIGN KEY ("ownerId", "depositId")
         REFERENCES bank_deposits ("ownerId", id) ON DELETE CASCADE
     )`);
