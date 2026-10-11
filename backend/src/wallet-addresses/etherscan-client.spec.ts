@@ -282,6 +282,28 @@ describe('ETH-SYNC Etherscan client', () => {
     });
   });
 
+  it('BLOCKSCOUT stops and says so when the explorer has not processed the range yet (status 2)', async () => {
+    replies.push(
+      json({
+        message: 'Some internal transactions within this block range have not yet been processed',
+        result: [],
+        status: '2',
+      }),
+    );
+    const host = new URL(baseUrl).hostname;
+    await expect(client(null).blockscout(baseUrl).internal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: Some internal transactions within this block range have not yet been processed`,
+    });
+    // Any other status 2 is still not understood.
+    replies.push(json({ message: 'Something else', result: [], status: '2' }));
+    await expect(client(null).blockscout(baseUrl).internal(owned, 1, 2)).resolves.toMatchObject({
+      ok: false,
+      reason: 'invalid_response',
+    });
+  });
+
   it('BLOCKSCOUT reads an empty range however it words it', async () => {
     replies.push(
       json({ status: '0', message: 'No token transfers found', result: [] }),
