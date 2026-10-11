@@ -195,6 +195,7 @@ export default function InsightSettings() {
           {rows.map((row, index) => (
             <div className="insight-settings__row" key={row.key}>
               <select
+                className="ui-input"
                 aria-label={`Target asset ${index + 1}`}
                 value={row.instrumentId}
                 onChange={(event) => {
@@ -218,6 +219,7 @@ export default function InsightSettings() {
                 ))}
               </select>
               <input
+                className="ui-input"
                 type="text"
                 inputMode="decimal"
                 autoComplete="off"
@@ -278,6 +280,7 @@ export default function InsightSettings() {
           <label className="insight-settings__row">
             <span>Tolerance, points from a target</span>
             <input
+              className="ui-input"
               type="text"
               inputMode="decimal"
               autoComplete="off"
@@ -291,6 +294,7 @@ export default function InsightSettings() {
           <label className="insight-settings__row">
             <span>Review an asset up by, percent on cost</span>
             <input
+              className="ui-input"
               type="text"
               inputMode="decimal"
               autoComplete="off"
@@ -305,6 +309,7 @@ export default function InsightSettings() {
           <label className="insight-settings__row">
             <span>Review an asset down by, percent on cost</span>
             <input
+              className="ui-input"
               type="text"
               inputMode="decimal"
               autoComplete="off"

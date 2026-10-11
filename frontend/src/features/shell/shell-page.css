@@ -598,16 +598,19 @@
 }
 
 .insight-settings__row input {
-  width: 6rem;
+  width: 5rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .insight-settings__row select {
-  width: 10rem;
+  width: 14rem;
   max-width: 100%;
 }
 
-.insight-settings__row input {
-  width: 5rem;
+@media (max-width: 560px) {
+  .insight-settings__row select {
+    flex: 1 1 100%;
+    width: auto;
+  }
 }
