@@ -58,14 +58,18 @@ export async function selectBackend(mode: Backend | 'both'): Promise<void> {
   docker(...compose, 'exec', '-T', 'proxy', 'nginx', '-t');
   const mark = await upstreamMark();
   docker(...compose, 'exec', '-T', 'proxy', 'nginx', '-s', 'reload');
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
+  let lastTimeout: Error | undefined;
   // A real harmless HTTPS probe proves the reloaded route; no arbitrary sleep or
   // auth request is used. Client B keeps client A's exact routing evidence separate.
   do {
-    const result = await sendFrom('client-b', {
-      requests: [{ method: 'GET', path: '/api/health' }],
-    });
-    assert.equal(result.responses[0].status, 200);
+    const probe = await probeHealth();
+    if (probe instanceof Error) {
+      lastTimeout = probe;
+      await delay(100);
+      continue;
+    }
+    assert.equal(probe.status, 200);
     const observed = (await upstreamsSince(mark)).filter((row) => row.source === '172.30.90.11');
     const reached = new Set(observed.map((row) => row.backend));
     if (mode === 'both' ? reached.has('primary') && reached.has('replica') : reached.has(mode)) {
@@ -74,7 +78,30 @@ export async function selectBackend(mode: Backend | 'both'): Promise<void> {
     }
     await delay(100);
   } while (Date.now() < deadline);
-  throw new Error('Synthetic Nginx selection did not reach its expected actual backend');
+  throw new Error(
+    `Synthetic Nginx selection did not reach its expected actual backend${
+      lastTimeout ? ` (last probe: ${lastTimeout.message})` : ''
+    }`,
+  );
+}
+
+/**
+ * A harmless health probe through the edge. The client gives up on a request after 8 s; right
+ * after a reload or a restart on a loaded runner that is a not-ready edge, so it reads as a
+ * failed probe to retry until the caller's deadline. Only the status and the upstream evidence
+ * of a probe that answered are asserted.
+ */
+async function probeHealth(): Promise<{ status: number; body: { status?: string } } | Error> {
+  try {
+    const result = await sendFrom('client-b', {
+      requests: [{ method: 'GET', path: '/api/health' }],
+    });
+    return result.responses[0];
+  } catch (error) {
+    if (error instanceof Error && /Source client request timed out/.test(String(error)))
+      return error;
+    throw error;
+  }
 }
 
 function state(service: (typeof services)[number]) {
@@ -123,12 +150,17 @@ export async function restartBackends(): Promise<void> {
   // auth assertion; retry only harmless health requests, never credentials.
   const expected: Backend[] = selectedMode === 'both' ? ['primary', 'replica'] : [selectedMode];
   const reached = new Set<Backend>();
+  let lastTimeout: Error | undefined;
   do {
     const mark = await upstreamMark();
-    const result = await sendFrom('client-b', {
-      requests: [{ method: 'GET', path: '/api/health' }],
-    });
-    const response = result.responses[0];
+    const response = await probeHealth();
+    if (response instanceof Error) {
+      lastTimeout = response;
+      // The abandoned request is logged by the edge as soon as it sees the client leave; let that
+      // line land before the next probe takes its mark, which expects exactly one upstream row.
+      await delay(1_000);
+      continue;
+    }
     if (response.status === 200) {
       assert.equal(response.body.status, 'ok');
       const observed = (await upstreamsSince(mark)).filter((row) => row.source === '172.30.90.11');
@@ -146,5 +178,9 @@ export async function restartBackends(): Promise<void> {
     }
     await delay(100);
   } while (Date.now() < deadline);
-  throw new Error(`HTTPS restart readiness failed for selected backend pool: ${selectedMode}`);
+  throw new Error(
+    `HTTPS restart readiness failed for selected backend pool: ${selectedMode}${
+      lastTimeout ? ` (last probe: ${lastTimeout.message})` : ''
+    }`,
+  );
 }
