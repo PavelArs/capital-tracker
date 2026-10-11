@@ -4,9 +4,8 @@ import {
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
 import { useEffect, useState } from 'react';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { failureMessage, type SyncRun } from './SyncStatus';
-
-const SHOWN = 5;
 
 const timeFormat = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
@@ -47,7 +46,6 @@ interface Props {
 export default function SyncJournal({ address, run }: Props) {
   // undefined while loading, null when the read failed.
   const [entries, setEntries] = useState<SyncRunEntry[] | null | undefined>(undefined);
-  const [all, setAll] = useState(false);
   const running = run?.state === 'running';
   const lastAttemptAt = address.sync.lastAttemptAt;
 
@@ -65,7 +63,8 @@ export default function SyncJournal({ address, run }: Props) {
     };
   }, [address.id, lastAttemptAt, running]);
 
-  const shown = entries ? (all ? entries : entries.slice(0, SHOWN)) : [];
+  // PAGES: twenty passes a page.
+  const paged = useInfinite(entries ?? []);
   return (
     <section aria-labelledby="address-sync-journal">
       <h3 id="address-sync-journal" className="transactions-section">
@@ -81,7 +80,7 @@ export default function SyncJournal({ address, run }: Props) {
         </p>
       ) : (
         <ul className="wallets-journal">
-          {shown.map((entry) => (
+          {paged.rows.map((entry) => (
             <li key={entry.at}>
               <span className={`wallets-badge wallets-badge--${badges[entry.state].tone}`}>
                 {badges[entry.state].label}
@@ -94,16 +93,7 @@ export default function SyncJournal({ address, run }: Props) {
           ))}
         </ul>
       )}
-      {entries && entries.length > SHOWN && (
-        <button
-          type="button"
-          className="shell-button shell-button--ghost"
-          aria-expanded={all}
-          onClick={() => setAll(!all)}
-        >
-          {all ? 'Show fewer' : `Show all ${entries.length}`}
-        </button>
-      )}
+      {paged.more && <LoadMore {...paged.more} label="sync passes" />}
     </section>
   );
 }

@@ -1,5 +1,7 @@
 import { authApi } from '@api';
 import { setUnauthorizedHandler } from '@api/client';
+import { generationNow, recall, releaseReads, remember, setReadStore } from '@api/read-cache';
+import type { ReadStore, StoredRead } from '@api/read-store';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from './AuthContext';
@@ -246,5 +248,126 @@ describe('cookie-backed auth state', () => {
     expect(result.current.user).toBeNull();
     unmount();
     expect(unauthorized).toBeNull();
+  });
+});
+
+describe('answers kept by the browser follow the session', () => {
+  const kept = (owner: string, key = 'portfolio:[]'): StoredRead => ({
+    key,
+    owner,
+    at: Date.now(),
+    value: { total: 1 },
+  });
+  const storeOf = (rows: StoredRead[]) => {
+    const held = new Map(rows.map((row) => [row.key, row]));
+    const store: ReadStore = {
+      load: async () => [...held.values()],
+      save: async (row) => {
+        held.set(row.key, row);
+      },
+      clear: async () => {
+        held.clear();
+      },
+    };
+    return { held, store };
+  };
+
+  beforeEach(() => {
+    unauthorized = null;
+    vi.mocked(setUnauthorizedHandler).mockImplementation((handler) => {
+      unauthorized = handler;
+      return () => {
+        if (unauthorized === handler) unauthorized = null;
+      };
+    });
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue(owner);
+  });
+  afterEach(() => {
+    cleanup();
+    setReadStore(null);
+    releaseReads();
+  });
+
+  it('puts the owner’s kept answers in memory before the first page can paint', async () => {
+    setReadStore(storeOf([kept(owner.id)]).store);
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.user).toEqual(owner));
+    expect(recall('portfolio:[]')).toEqual({ total: 1 });
+  });
+
+  it('does not use answers kept for another owner', async () => {
+    const { held, store } = storeOf([kept('someone-else')]);
+    setReadStore(store);
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.user).toEqual(owner));
+    expect(recall('portfolio:[]')).toBeUndefined();
+    await waitFor(() => expect(held.size).toBe(0));
+  });
+
+  it('forgets them when there is no session', async () => {
+    const { held, store } = storeOf([kept(owner.id)]);
+    setReadStore(store);
+    vi.mocked(authApi.getCurrentUser).mockRejectedValueOnce(new Error('Unauthorized'));
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(recall('portfolio:[]')).toBeUndefined();
+    await waitFor(() => expect(held.size).toBe(0));
+  });
+
+  it('forgets them on logout, and keeps nothing more until someone signs in', async () => {
+    const { held, store } = storeOf([kept(owner.id)]);
+    setReadStore(store);
+    vi.mocked(authApi.logout).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.user).toEqual(owner));
+    await act(() => result.current.logout());
+    await waitFor(() => expect(held.size).toBe(0));
+    remember('after-logout', 1, generationNow());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(held.size).toBe(0);
+  });
+
+  it('forgets them when the session is refused', async () => {
+    const { held, store } = storeOf([kept(owner.id)]);
+    setReadStore(store);
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.user).toEqual(owner));
+    act(notifyUnauthorized);
+    await waitFor(() => expect(held.size).toBe(0));
+    expect(recall('portfolio:[]')).toBeUndefined();
+  });
+
+  it('keeps answers again once a sign-in completes', async () => {
+    const { held, store } = storeOf([]);
+    setReadStore(store);
+    vi.mocked(authApi.getCurrentUser).mockRejectedValueOnce(new Error('Unauthorized'));
+    vi.mocked(authApi.login).mockResolvedValueOnce({ mfaRequired: true, csrfToken: 'pending' });
+    vi.mocked(authApi.verifyFactor).mockResolvedValueOnce({ user: owner, csrfToken: 'full' });
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.login(owner.email, 'Synthetic-password-42!'));
+    await act(() => result.current.verifyFactor('totp', '012345'));
+    remember('portfolio:[]', { total: 2 }, generationNow());
+    await waitFor(() => expect(held.get('portfolio:[]')?.owner).toBe(owner.id));
+  });
+
+  it('does not adopt a profile that arrived after the session was refused', async () => {
+    const { held, store } = storeOf([]);
+    setReadStore(store);
+    let finish: (value: typeof owner) => void = () => {};
+    vi.mocked(authApi.getCurrentUser).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    act(notifyUnauthorized);
+    await act(async () => {
+      finish(owner);
+    });
+    remember('portfolio:[]', { total: 3 }, generationNow());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(result.current.user).toBeNull();
+    expect(held.size).toBe(0);
   });
 });

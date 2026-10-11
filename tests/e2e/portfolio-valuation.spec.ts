@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and prices are synthetic. The shared acceptance database holds other
 // cases' assets too, so this case asserts its own uniquely named asset and account.
@@ -77,6 +77,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   });
   expect((await api.send('GET', '/portfolio?at=2025-01-01T00:00:00.000Z')).status()).toBe(400);
 
+  await forgetBrowserReads(page);
   await page.goto('/portfolio');
   const main = page.getByRole('main');
   await expect(

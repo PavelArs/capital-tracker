@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, type Locator } from '@playwright/test';
 import { compose, origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and the address are synthetic. The shared acceptance database holds
 // other cases' operations too, so this case finds its own rows by account and wallet.
@@ -99,6 +99,7 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   expect(listed.needsClassificationCount).toBeGreaterThanOrEqual(1);
   expect((await api.send('GET', '/operations?asset=BTC')).status()).toBe(400);
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   await expect(
