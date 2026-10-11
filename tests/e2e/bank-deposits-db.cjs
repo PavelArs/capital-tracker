@@ -160,6 +160,8 @@ async function accrual(db, service, owner) {
   );
   assert.equal(ordered.principal, '50.00');
   await rejected(() => service.get(owner, same.id, '2026-06-15'), 404);
+  await rejected(() => service.get(owner, same.id, '2999-12-31'), 422);
+  await rejected(() => service.list(owner, '2999-12-31'), 422);
   const requestId = randomUUID();
   const once = await service.create(owner, { ...savings, name: 'Replay', requestId });
   const again = await service.create(owner, { ...savings, name: 'Replay', requestId });
@@ -335,6 +337,19 @@ async function checks(db, service, owner, ids) {
   const lowered = await service.addRate(owner, ids.rub, { effectiveFrom: '2026-09-01', ratePercent: '6' });
   assert.equal(lowered.ratePercent, '6');
   assert.deepEqual(lowered.rates.map((rate) => rate.ratePercent), ['12', '6']);
+  const twin = await service.create(owner, { ...savings, name: 'Twin' });
+  const changed = await service.create(owner, { ...savings, name: 'Changed' });
+  await service.addRate(owner, changed.id, { effectiveFrom: '2026-09-01', ratePercent: '6' });
+  const thenTwin = await service.get(owner, twin.id, '2026-08-15');
+  const thenChanged = await service.get(owner, changed.id, '2026-08-15');
+  assert.deepEqual(
+    thenChanged.atMaturity,
+    thenTwin.atMaturity,
+    'A past snapshot forecasts at the rates known then',
+  );
+  assert.notDeepEqual((await service.get(owner, changed.id, undefined)).atMaturity, thenTwin.atMaturity);
+  await service.remove(owner, twin.id);
+  await service.remove(owner, changed.id);
   console.log('PASS DEP-RATE');
 }
 

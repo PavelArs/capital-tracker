@@ -109,6 +109,8 @@ export class DepositsService {
     const asOf = parseAsOfDate(rawAsOf);
     return this.read(async (manager) => {
       const today = moscowDate(new Date());
+      if (asOf !== undefined && asOf > latestSnapshot(today))
+        throw new UnprocessableEntityException('The date is too far in the future');
       const date = asOf ?? today;
       const all = await this.load(manager, owner);
       const converters = await this.converters(manager);
@@ -148,6 +150,8 @@ export class DepositsService {
       const [stored] = await this.load(manager, owner, depositId);
       if (!stored) throw new NotFoundException('Deposit not found');
       const date = asOf ?? moscowDate(new Date());
+      if (date > latestSnapshot(moscowDate(new Date())))
+        throw new UnprocessableEntityException('The date is too far in the future');
       if (stored.deposit.startDate > date)
         throw new NotFoundException('The deposit had not started on that date');
       return this.detail(stored, date, await this.converters(manager));
@@ -460,9 +464,13 @@ export class DepositsService {
           : ('active' as const);
     // A snapshot forecasts from what was known on that day, not from movements saved since.
     const known = movements.filter((movement) => movement.date <= asOf);
+    const knownTerms = {
+      ...terms,
+      rates: terms.rates.filter((rate) => rate.effectiveFrom <= asOf),
+    };
     const maturity =
       terms.endDate !== null && now.closedOn === null
-        ? projectDeposit(terms, known, terms.endDate)
+        ? projectDeposit(knownTerms, known, terms.endDate)
         : null;
     // Only checks made by the asked day: a later one says nothing about this day.
     const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
@@ -501,7 +509,7 @@ export class DepositsService {
       due: now.due,
       balance: now.balance,
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
-      nextPayout: status === 'active' ? nextPayout(terms, known, asOf) : null,
+      nextPayout: status === 'active' ? nextPayout(knownTerms, known, asOf) : null,
       atMaturity: maturity
         ? {
             date: terms.endDate as string,
@@ -554,6 +562,9 @@ export class DepositsService {
     };
   }
 }
+
+/** A snapshot may look one year ahead; the figures are replayed day by day up to it. */
+const latestSnapshot = (today: string) => `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`;
 
 /** Whether the rate of every foreign currency involved is at most `MAX_RATE_AGE_DAYS` old. */
 function ratesAreFresh(
