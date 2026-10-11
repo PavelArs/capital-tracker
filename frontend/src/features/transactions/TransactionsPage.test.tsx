@@ -652,6 +652,39 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
   });
 
+  it('COST-UNKNOWN lists only the incoming rows of the asset that have no purchase price', async () => {
+    const user = userEvent.setup();
+    const bought = operation({
+      id: `trade:${id(50)}`,
+      occurredAt: '2025-06-10T00:00:00.000Z',
+      valueUsd: '900',
+    });
+    const reward = operation({
+      id: `reward:${id(51)}`,
+      kind: 'reward',
+      type: 'staking-reward',
+      occurredAt: '2025-06-11T00:00:00.000Z',
+      valueUsd: '5',
+      costBasisUsd: null,
+    });
+    const hiddenReceipt = chainOperation(3, {
+      occurredAt: '2025-06-12T08:00:00.000Z',
+      status: 'hidden',
+    });
+    const otherAsset = operation({ id: `trade:${id(52)}`, asset: usdt, valueUsd: null });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([receipt, outgoing, bought, reward, hiddenReceipt, otherAsset, transfer]),
+    );
+    renderPage('/transactions?asset=BTC&cost=unknown');
+    // The unanswered receipt and the reward without a cost basis; not the purchase, the
+    // outgoing row, the hidden receipt, the transfer or another asset.
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.getByText(/Incoming transactions without a purchase price/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show all of this asset' }));
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(2));
+    expect(screen.queryByText(/Incoming transactions without a purchase price/)).toBeNull();
+  });
+
   it('opens a side drawer with the raw chain facts and closes it with Escape', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
