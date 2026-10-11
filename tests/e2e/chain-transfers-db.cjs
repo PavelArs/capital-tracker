@@ -236,7 +236,8 @@ async function capital(db, s, owner, f, transferId) {
   same(sender.summary.realizedUsd, '0', 'A transfer realises nothing');
   assert.equal(await transferKind(db, transferId), 'create');
 
-  stage = 'XFER-CAPITAL / FLOW-SPLIT-TRANSFER at BTC 60000 the transfer changes the week by its fee';
+  stage =
+    'XFER-CAPITAL / FLOW-SPLIT-TRANSFER at BTC 60000 the transfer changes the week by its fee';
   const history = await week(s, owner);
   assert.equal(history.points[0].at, '2026-09-28T00:00:00.000Z');
   same(history.points[0].value, '36000');
@@ -364,7 +365,12 @@ async function refused(db, s) {
   const owner = other.id;
   const sender = await account(s, owner, 'Sender');
   const receiver = await account(s, owner, 'Receiver');
-  const a = await wallet(db, owner, sender, 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3');
+  const a = await wallet(
+    db,
+    owner,
+    sender,
+    'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3',
+  );
   const b = await wallet(db, owner, receiver, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
   await raw(db, owner, a, 21, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
   await raw(db, owner, a, 22, 'out', '9990000', '60000000', '10000', '2026-10-01T10:00:00.000Z');
@@ -405,7 +411,10 @@ async function refused(db, s) {
   });
   const late = await refusal();
   assert.equal(late.message, 'The records of an account start after this entry');
-  assert.deepEqual(late.coverage, { accountId: receiver, coverageFrom: '2026-10-05T00:00:00.000Z' });
+  assert.deepEqual(late.coverage, {
+    accountId: receiver,
+    coverageFrom: '2026-10-05T00:00:00.000Z',
+  });
   assert.equal(late.dependent, undefined);
   assert.equal(await count(s, owner), 2, 'Neither leg of the refused send was answered');
 
@@ -421,7 +430,9 @@ async function refused(db, s) {
     requestId: randomUUID(),
     expectedRevision: 0,
     asOf: '2026-01-01T00:00:00.000Z',
-    positions: [{ instrumentId: ether.id, quantity: '5', costStatus: 'known', totalCostUsd: '9000' }],
+    positions: [
+      { instrumentId: ether.id, quantity: '5', costStatus: 'known', totalCostUsd: '9000' },
+    ],
   });
   const c = await wallet(db, owner, legacy, 'bc1q9h6yz4cl2y7p8v6kgsz3vurmk4vqq9a63k6ctw');
   await raw(db, owner, c, 23, 'out', '0', '1010000', '10000', '2026-10-02T10:00:00.000Z');
@@ -458,7 +469,6 @@ async function refused(db, s) {
   console.log('PASS XFER-REFUSED');
 }
 
-
 // XFER-PROPOSED: a withdrawal and a receipt that name different transactions are proposed, not
 // linked; accepting answers the withdrawal as a transfer naming the receipt, and the fee is
 // what went missing between them.
@@ -491,12 +501,10 @@ async function proposed(db, s) {
   assert.deepEqual([seen.windowHours, seen.feePercent], [24, 2]);
   assert.equal(seen.proposals.length, 1);
   const [proposal] = seen.proposals;
-  assert.deepEqual([proposal.coin, proposal.sent, proposal.arrived, proposal.fee], [
-    'BTC',
-    '0.5001',
-    '0.4999',
-    '0.0002',
-  ]);
+  assert.deepEqual(
+    [proposal.coin, proposal.sent, proposal.arrived, proposal.fee],
+    ['BTC', '0.5001', '0.4999', '0.0002'],
+  );
   assert.deepEqual(
     [proposal.outgoing.addressId, proposal.outgoing.txid, proposal.outgoing.accountName],
     [a, txid(42), 'Exchange'],
@@ -522,7 +530,10 @@ async function proposed(db, s) {
   stage = 'XFER-PROPOSED two equally good receipts leave the choice to the owner';
   await raw(db, owner, c, 45, 'in', '49990000', '0', '10000', '2026-10-01T10:12:00.000Z');
   assert.deepEqual((await s.classifications.transferProposals(owner)).proposals, []);
-  await db.query(`DELETE FROM wallet_address_transactions WHERE txid IN ($1,$2)`, [txid(44), txid(45)]);
+  await db.query(`DELETE FROM wallet_address_transactions WHERE txid IN ($1,$2)`, [
+    txid(44),
+    txid(45),
+  ]);
   assert.equal((await s.classifications.transferProposals(owner)).proposals.length, 1);
 
   stage = 'XFER-PROPOSED accepting joins the two legs as one transfer with the missing part as fee';
@@ -531,15 +542,18 @@ async function proposed(db, s) {
   assert.equal(joined.value.linkedAddressId, null, 'The link column is for legs of one hash');
   assert.equal(joined.value.automatic, false);
   assert.equal(await count(s, owner), 0);
-  const legs = (await db.query(
+  const legs = await db.query(
     `SELECT "addressId", txid, version, status, "transferId", "linkedAddressId"
       FROM chain_transaction_classification_versions
       WHERE txid IN ($1,$2) AND status='classified' ORDER BY "addressId"`,
     [txid(42), txid(43)],
-  ));
+  );
   assert.equal(legs.length, 2);
   assert.equal(legs[0].transferId, legs[1].transferId);
-  assert.deepEqual(legs.map((leg) => leg.linkedAddressId), [null, null]);
+  assert.deepEqual(
+    legs.map((leg) => leg.linkedAddressId),
+    [null, null],
+  );
   assert.deepEqual(legs.map((leg) => leg.addressId).sort(), [a, b].sort());
   const mine = (await s.operations.read(owner, {}, now)).operations.filter(
     (operation) => operation.chain?.txid === txid(42) || operation.chain?.txid === txid(43),
@@ -624,7 +638,7 @@ async function addressChoice(db, s) {
   const mine = (await rows(s, owner, 62)).filter((operation) => operation.type === 'transfer');
   assert.equal(mine.length, 1, 'The pair is listed once');
   same(mine[0].quantity, '0.3', 'B received 0.3 BTC');
-  same(mine[0].fee.quantity, '0.0001', 'The fee is the sender\'s own');
+  same(mine[0].fee.quantity, '0.0001', "The fee is the sender's own");
   same(
     (await journal(s, owner, receiver)).summary.remainingCostUsd,
     '15000',
@@ -648,7 +662,10 @@ async function addressChoice(db, s) {
       }),
     422,
   );
-  assert.equal((await rows(s, owner, 63)).filter((operation) => operation.type === 'transfer').length, 0);
+  assert.equal(
+    (await rows(s, owner, 63)).filter((operation) => operation.type === 'transfer').length,
+    0,
+  );
   console.log('PASS XFER-ADDRESS');
 }
 
@@ -718,11 +735,21 @@ async function bybitHash(db, s) {
     );
 
   stage = 'BYBIT-LINK-HASH Bybit holds 0.5 ETH bought at 2000 each';
-  await leg(uid, 'bybit-deposit-fund1', 'in', 50_000_000, 0, 0, '2026-10-09T08:00:00.000Z', {
-    kind: 'deposit',
-    internal: false,
-    record: { chain: 'ETH', txID: `0x${hash(0)}` },
-  }, true);
+  await leg(
+    uid,
+    'bybit-deposit-fund1',
+    'in',
+    50_000_000,
+    0,
+    0,
+    '2026-10-09T08:00:00.000Z',
+    {
+      kind: 'deposit',
+      internal: false,
+      record: { chain: 'ETH', txID: `0x${hash(0)}` },
+    },
+    true,
+  );
   await answer(uid, 'bybit-deposit-fund1', {
     expectedVersion: 0,
     classification: { type: 'buy', currency: 'USD', amount: '1000' },
@@ -730,9 +757,28 @@ async function bybitHash(db, s) {
 
   stage = 'BYBIT-LINK-HASH the withdrawal and the wallet receipt of its hash are linked at once';
   // 0.02212814 ETH leave Bybit (0.00004 of it Bybit's fee); 0.02208814 arrive two minutes later.
-  await leg(uid, 'bybit-withdrawal-7000001', 'out', 0, 2_212_814, 4_000, '2026-10-10T17:56:00.000Z',
-    withdrawal(1), true);
-  await leg(arbitrum, hash(1), 'in', 2_208_814, 0, 0, '2026-10-10T17:58:00.000Z', { hash: hash(1) }, false);
+  await leg(
+    uid,
+    'bybit-withdrawal-7000001',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T17:56:00.000Z',
+    withdrawal(1),
+    true,
+  );
+  await leg(
+    arbitrum,
+    hash(1),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T17:58:00.000Z',
+    { hash: hash(1) },
+    false,
+  );
   assert.equal(await count(s, owner), 2);
   assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 1 });
   assert.equal(await count(s, owner), 0);
@@ -740,7 +786,10 @@ async function bybitHash(db, s) {
   const got = await heads(hash(1));
   assert.deepEqual(
     [...sent, ...got].map((row) => [row.status, row.type, row.automatic]),
-    [['classified', 'transfer', true], ['classified', 'transfer', true]],
+    [
+      ['classified', 'transfer', true],
+      ['classified', 'transfer', true],
+    ],
   );
   assert.equal(sent[0].transferId, got[0].transferId);
   const [row, ...rest] = await listed('bybit-withdrawal-7000001', hash(1));
@@ -759,7 +808,17 @@ async function bybitHash(db, s) {
   console.log('PASS BYBIT-LINK-HASH');
 
   stage = 'XFER-REJOIN the receipt was answered alone first: the withdrawal that follows joins it';
-  await leg(arbitrum, hash(2), 'in', 2_208_814, 0, 0, '2026-10-10T18:58:00.000Z', { hash: hash(2) }, false);
+  await leg(
+    arbitrum,
+    hash(2),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T18:58:00.000Z',
+    { hash: hash(2) },
+    false,
+  );
   const alone = await answer(arbitrum, hash(2), {
     expectedVersion: 0,
     comment: 'from the exchange',
@@ -768,8 +827,17 @@ async function bybitHash(db, s) {
   assert.equal(alone.value.linkedAddressId, null);
   same((await journal(s, owner, metamask)).summary.remainingCostUsd, '88.35256');
   assert.equal(await count(s, owner), 0);
-  await leg(uid, 'bybit-withdrawal-7000002', 'out', 0, 2_212_814, 4_000, '2026-10-10T18:56:00.000Z',
-    withdrawal(2), true);
+  await leg(
+    uid,
+    'bybit-withdrawal-7000002',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T18:56:00.000Z',
+    withdrawal(2),
+    true,
+  );
   assert.equal(await count(s, owner), 1, 'The withdrawal counts as new until it is joined');
   assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 1 });
   assert.equal(await count(s, owner), 0);
@@ -791,37 +859,90 @@ async function bybitHash(db, s) {
   same((await journal(s, owner, metamask)).summary.remainingCostUsd, '88.35256');
   same((await journal(s, owner, exchange)).summary.remainingCostUsd, '911.48744');
   assert.equal(
-    (await db.query(`SELECT count(*)::int AS n FROM owned_transfers t JOIN owned_transfer_versions v
+    (
+      await db.query(
+        `SELECT count(*)::int AS n FROM owned_transfers t JOIN owned_transfer_versions v
       ON v."transferId"=t.id AND v.version=t."currentVersion" WHERE t."ownerId"=$1 AND v.kind<>'void'`,
-      [owner]))[0].n,
+        [owner],
+      )
+    )[0].n,
     2,
     'Two transfers stand, no third',
   );
   assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
   console.log('PASS XFER-REJOIN');
 
-  stage = 'BYBIT-LINK-HASH a record naming another hash, or an answer to another account, is left alone';
+  stage =
+    'BYBIT-LINK-HASH a record naming another hash, or an answer to another account, is left alone';
   const savings = await account(s, owner, 'Savings');
   const vault = await place('arbitrum', `0x${'cd'.repeat(20)}`, savings);
-  await leg(vault, hash(5), 'in', 50_000_000, 0, 0, '2026-10-09T09:00:00.000Z', { hash: hash(5) }, false);
+  await leg(
+    vault,
+    hash(5),
+    'in',
+    50_000_000,
+    0,
+    0,
+    '2026-10-09T09:00:00.000Z',
+    { hash: hash(5) },
+    false,
+  );
   await answer(vault, hash(5), {
     expectedVersion: 0,
     classification: { type: 'buy', currency: 'USD', amount: '1000' },
   });
-  await leg(arbitrum, hash(3), 'in', 2_208_814, 0, 0, '2026-10-10T19:58:00.000Z', { hash: hash(3) }, false);
-  await leg(uid, 'bybit-withdrawal-7000003', 'out', 0, 2_212_814, 4_000, '2026-10-10T19:56:00.000Z',
-    withdrawal(3, hash(99)), true);
+  await leg(
+    arbitrum,
+    hash(3),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T19:58:00.000Z',
+    { hash: hash(3) },
+    false,
+  );
+  await leg(
+    uid,
+    'bybit-withdrawal-7000003',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T19:56:00.000Z',
+    withdrawal(3, hash(99)),
+    true,
+  );
   assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
   assert.equal(await count(s, owner), 2);
   // The receipt of hash 4 was moved from Savings by the owner: Bybit's withdrawal of that hash
   // is not the other side of that answer.
-  await leg(arbitrum, hash(4), 'in', 2_208_814, 0, 0, '2026-10-10T20:58:00.000Z', { hash: hash(4) }, false);
+  await leg(
+    arbitrum,
+    hash(4),
+    'in',
+    2_208_814,
+    0,
+    0,
+    '2026-10-10T20:58:00.000Z',
+    { hash: hash(4) },
+    false,
+  );
   await answer(arbitrum, hash(4), {
     expectedVersion: 0,
     classification: { type: 'transfer', accountId: savings },
   });
-  await leg(uid, 'bybit-withdrawal-7000004', 'out', 0, 2_212_814, 4_000, '2026-10-10T20:56:00.000Z',
-    withdrawal(4), true);
+  await leg(
+    uid,
+    'bybit-withdrawal-7000004',
+    'out',
+    0,
+    2_212_814,
+    4_000,
+    '2026-10-10T20:56:00.000Z',
+    withdrawal(4),
+    true,
+  );
   assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
   assert.equal((await heads('bybit-withdrawal-7000003')).length, 0, 'Still to classify');
   assert.equal((await heads('bybit-withdrawal-7000004')).length, 0, 'Still to classify');

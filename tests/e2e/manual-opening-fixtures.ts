@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { type APIRequestContext, type APIResponse, type Page, expect } from '@playwright/test';
+import { type APIRequestContext, type APIResponse, expect, type Page } from '@playwright/test';
 import { hostSubject } from './admission-fixtures';
 import { compose, fingerprint, loginWithMfa, origin, owner, query } from './mfa-fixtures';
 import { selectBackend, upstreamMark, upstreamsSince } from './replicas';

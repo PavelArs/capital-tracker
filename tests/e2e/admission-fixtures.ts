@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { upstreamsSince } from './replicas';
 
 export type Scope = 'csrf-ip' | 'login-ip' | 'mfa-ip' | 'login-account';

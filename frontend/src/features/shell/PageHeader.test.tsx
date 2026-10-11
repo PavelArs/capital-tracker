@@ -121,11 +121,22 @@ describe('Asset identity', () => {
     expect(assetIdentity({ symbol: 'ZEC', name: 'Zcash' }).color).toBe('var(--c-zec)');
     expect(assetIdentity({ symbol: 'TRX', name: 'TRON' }).color).toBe('var(--c-trx)');
     expect(assetIdentity({ symbol: 'XLM', name: 'Stellar' }).color).toBe('var(--c-xlm)');
+    // The two dollar tokens tell apart, and neither looks like cash.
     expect(assetIdentity({ symbol: 'USDT', name: 'Tether' })).toEqual({
-      color: 'var(--c-cash)',
+      color: 'var(--c-usdt)',
       glyph: '₮',
     });
+    expect(assetIdentity({ symbol: 'USDC', name: 'USD Coin' }).color).toBe('var(--c-usdc)');
     expect(assetIdentity({ symbol: 'RUB', name: 'Rubles' }).glyph).toBe('₽');
+  });
+
+  it('gives an unknown token one of six colours by its ticker, the same every time', () => {
+    const color = (symbol: string) =>
+      assetIdentity({ symbol, name: symbol, assetType: 'crypto' }).color;
+    expect(color('ORB')).toMatch(/^var\(--c-p[1-6]\)$/);
+    expect(color('ORB')).toBe(color('orb'));
+    const seen = new Set(['ORB', 'PEPE', 'SHIB', 'LINK', 'UNI', 'AAVE', 'MKR', 'LDO'].map(color));
+    expect(seen.size).toBeGreaterThan(2);
   });
 
   it('falls back to a neutral colour and the first letter', () => {

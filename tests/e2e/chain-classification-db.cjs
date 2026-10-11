@@ -197,7 +197,8 @@ async function buyAndCount(db, s, f) {
     400,
   );
   await rejected(
-    () => s.classifications.classify(owner, address, 'f'.repeat(64), {
+    () =>
+      s.classifications.classify(owner, address, 'f'.repeat(64), {
         ...body,
         hidden: false,
         requestId: randomUUID(),
@@ -311,13 +312,18 @@ async function hide(db, s, f, { address }) {
 async function provisional(db, s) {
   stage = 'CLS-PROVISIONAL an unanswered receipt counts at its price, cost unknown, no deposit';
   const { capitalFlows } = require('/app/backend/dist/portfolio-snapshots/capital-flows.js');
-  const { readValuationInputs } = require(
-    '/app/backend/dist/accounting/portfolio-valuation.service.js',
-  );
+  const {
+    readValuationInputs,
+  } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
   const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
     ('classification-provisional@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
   const cold = await account(s, owner, 'Cold storage');
-  const address = await wallet(db, owner, cold, 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3');
+  const address = await wallet(
+    db,
+    owner,
+    cold,
+    'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3',
+  );
   // Binding an address to an account creates its coin's asset (WalletAddressService).
   await require('/app/backend/dist/accounting/trade.service.js').findOrCreateInstrument(
     db.manager,
@@ -325,8 +331,11 @@ async function provisional(db, s) {
     { assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' },
     true,
   );
-  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-    VALUES ('BTC','USD','kraken',$1,80000,'hourly-close')`, [new Date(now.getTime() - 600000)]);
+  await db.query(
+    `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken',$1,80000,'hourly-close')`,
+    [new Date(now.getTime() - 600000)],
+  );
   await raw(db, owner, address, 21, 'in', '1000000', '0', '300', '2026-01-10T08:00:00.000Z');
   const btc = async () => {
     const report = await s.portfolio.read(owner, { currency: 'USD' }, now);
@@ -336,7 +345,12 @@ async function provisional(db, s) {
     db.transaction(async (manager) => capitalFlows(await readValuationInputs(manager, owner)));
   let asset = await btc();
   assert.deepEqual(
-    [Number(asset.quantity), Number(asset.value), asset.costBasis, Number(asset.unknownCostQuantity)],
+    [
+      Number(asset.quantity),
+      Number(asset.value),
+      asset.costBasis,
+      Number(asset.unknownCostQuantity),
+    ],
     [0.01, 800, null, 0.01],
   );
   assert.deepEqual(await flows(), [], 'No deposit before the receipt is classified');
@@ -501,16 +515,21 @@ async function feeValue(db, s, f, { address }) {
 
 async function dust(db, s) {
   stage = 'CLS-DUST receipts below the threshold leave the count, keep counting, stay unanswered';
-  const { OwnerSettingsService } = require('/app/backend/dist/owner-settings/owner-settings.service.js');
+  const {
+    OwnerSettingsService,
+  } = require('/app/backend/dist/owner-settings/owner-settings.service.js');
   const ownerSettings = new OwnerSettingsService(db);
   const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
     ('classification-dust@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
   const hot = await account(s, owner, 'Hot wallet');
   const address = await wallet(db, owner, hot, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
-  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+  await db.query(
+    `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
     VALUES ('BTC','USD','kraken','2026-02-01T07:00:00Z',100000,'hourly-close'),
       ('BTC','USD','kraken','2026-02-04T07:00:00Z',100000,'hourly-close'),
-      ('BTC','USD','kraken',$1,1000000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+      ('BTC','USD','kraken',$1,1000000,'hourly-close')`,
+    [new Date(now.getTime() - 300000)],
+  );
   // EST-AT-TIME: dust is judged at the price of each receipt's time, not today's ten times higher.
   // 546 sat and 100 sat at 100,000 USD: 0.546 and 0.1 USD; a real receipt; a tiny send.
   await raw(db, owner, address, 31, 'in', '546', '0', '200', '2026-02-01T08:00:00.000Z');
@@ -525,7 +544,10 @@ async function dust(db, s) {
   const before = await btc();
   const rawBefore = await rawFingerprint(db, address);
   assert.equal(await count(s, owner), 4, 'No threshold: every unanswered transaction asks');
-  assert.deepEqual(await ownerSettings.read(owner), { mainCurrency: 'USD', dustThresholdUsd: null });
+  assert.deepEqual(await ownerSettings.read(owner), {
+    mainCurrency: 'USD',
+    dustThresholdUsd: null,
+  });
 
   assert.deepEqual(await ownerSettings.update(owner, { mainCurrency: 'EUR' }), {
     mainCurrency: 'EUR',
@@ -552,7 +574,7 @@ async function dust(db, s) {
       address,
     ]),
     [],
-    'Nothing is answered on the owner\'s behalf',
+    "Nothing is answered on the owner's behalf",
   );
 
   // The owner can still answer a dust receipt; the answer stands over the threshold.
@@ -591,14 +613,25 @@ async function tokenFee(db, s) {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [owner, address, txid, 21000000, blockTime, received, sent, fee, direction, '{}', asset],
     );
-  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+  await db.query(
+    `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
     VALUES ('ETH','USD','kraken','2026-03-02T07:00:00Z',2500,'hourly-close'),
-      ('ETH','USD','kraken',$1,4000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+      ('ETH','USD','kraken',$1,4000,'hourly-close')`,
+    [new Date(now.getTime() - 300000)],
+  );
   const [received, paid] = [sha256('token-fee:1'), sha256('token-fee:2')];
   await leg(received, null, 'in', '1000000000000000000', '0', '0', '2026-03-01T08:00:00.000Z');
   await leg(`${received}-4`, 'USDC', 'in', '1000000000', '0', '0', '2026-03-01T08:00:00.000Z');
   // 250 USDC sent; 0.00042 ETH paid its gas.
-  await leg(paid, null, 'out', '0', '420000000000000', '420000000000000', '2026-03-02T08:00:00.000Z');
+  await leg(
+    paid,
+    null,
+    'out',
+    '0',
+    '420000000000000',
+    '420000000000000',
+    '2026-03-02T08:00:00.000Z',
+  );
   await leg(`${paid}-17`, 'USDC', 'out', '0', '250000000', '0', '2026-03-02T08:00:00.000Z');
   const { findOrCreateInstrument } = require('/app/backend/dist/accounting/trade.service.js');
   for (const [symbol, name] of [

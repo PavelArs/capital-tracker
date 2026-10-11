@@ -188,7 +188,16 @@ async function seed(db, s, f) {
   const usdt = await instrument(s, owner, { name: 'Tether', symbol: 'USDT', assetType: 'crypto' });
   const bybit = await account(s, owner, 'Bybit');
   const cold = await account(s, owner, 'Cold storage');
-  const first = await trade(s, owner, bybit, btc, 'buy', '2025-06-13T00:00:00.000Z', '0.01', '1000');
+  const first = await trade(
+    s,
+    owner,
+    bybit,
+    btc,
+    'buy',
+    '2025-06-13T00:00:00.000Z',
+    '0.01',
+    '1000',
+  );
   await s.trades.correct(owner, bybit, first.tradeId, {
     requestId: randomUUID(),
     expectedJournalRevision: await revision(s, owner, bybit),
@@ -201,7 +210,16 @@ async function seed(db, s, f) {
     feeUsd: '0',
     comment: 'Corrected amount',
   });
-  const dropped = await trade(s, owner, bybit, btc, 'buy', '2025-06-15T00:00:00.000Z', '0.5', '40000');
+  const dropped = await trade(
+    s,
+    owner,
+    bybit,
+    btc,
+    'buy',
+    '2025-06-15T00:00:00.000Z',
+    '0.5',
+    '40000',
+  );
   await s.trades.void(owner, bybit, dropped.tradeId, {
     requestId: randomUUID(),
     expectedJournalRevision: await revision(s, owner, bybit),
@@ -325,7 +343,11 @@ async function seed(db, s, f) {
   assert.deepEqual(created.map((event) => event.actor).sort(), ['csv', 'owner', 'owner']);
   const [correction] = find(history, 'Buy BTC', 'changed');
   assert.deepEqual(
-    correction.fields.map((field) => [field.label, field.before?.value ?? null, field.after?.value]),
+    correction.fields.map((field) => [
+      field.label,
+      field.before?.value ?? null,
+      field.after?.value,
+    ]),
     [
       ['Amount', '1000', '1010'],
       ['Comment', null, 'Corrected amount'],
@@ -366,7 +388,9 @@ async function seed(db, s, f) {
     ['Other', 'Staking'],
   );
   assert.deepEqual(
-    ['created', 'changed', 'deleted'].map((change) => find(history, 'Manual price USDT', change).length),
+    ['created', 'changed', 'deleted'].map(
+      (change) => find(history, 'Manual price USDT', change).length,
+    ),
     [1, 1, 1],
   );
   assert.deepEqual(
@@ -442,7 +466,9 @@ async function filters(db, s, f, { total, history }) {
   const days = [history.events.at(-1), history.events[0]].map((event) => event.at.slice(0, 10));
   assert.equal((await only({ from: days[0], to: days[1] })).length, total);
   const newest = history.events[0].at.slice(0, 10);
-  assert.ok((await only({ from: newest, to: newest })).every((event) => event.at.startsWith(newest)));
+  assert.ok(
+    (await only({ from: newest, to: newest })).every((event) => event.at.startsWith(newest)),
+  );
   assert.equal((await only({ from: '2999-01-01' })).length, 0);
   assert.equal((await only({ to: '2000-01-01' })).length, 0);
   const combined = await only({ entity: 'trade', change: 'changed' });

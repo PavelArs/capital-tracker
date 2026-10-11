@@ -230,8 +230,10 @@ describe('WAL-LIST: wallets grouped by account', () => {
     // Each coin is its own piece of a wrapping cell, so a long list never runs into the value.
     expect(within(trustCard).getByText('1,000 USDT').parentElement).toHaveClass('wallets-amounts');
     // SYNC-RECONCILE: 0.01 BTC on the chain against 0.0098 BTC recorded.
-    expect(within(trustCard).getByRole('note')).toHaveTextContent(
-      'Balance differs by 0.0002 BTC. The blockchain shows 0.01 BTC; your transactions in this wallet give 0.0098 BTC.',
+    const note = within(trustCard).getByRole('note');
+    expect(note).toHaveTextContent('Balance differs by 0.0002 BTC');
+    expect(note).toHaveTextContent(
+      'The blockchain shows 0.01 BTC; your transactions in this wallet give 0.0098 BTC.',
     );
 
     const loose = card('Not in a wallet yet');
@@ -1549,8 +1551,10 @@ describe('M22: Bybit accounts', () => {
     expect(row).toHaveTextContent('0.50999 BTC · 599 USDT');
     expect(row).not.toHaveTextContent('ETH');
     expect(account).toHaveTextContent('Bybit · 1 account');
-    expect(within(account).getByRole('note')).toHaveTextContent(
-      'Balance differs by 200 USDT. Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
+    const gap = within(account).getByRole('note');
+    expect(gap).toHaveTextContent('Balance differs by 200 USDT');
+    expect(gap).toHaveTextContent(
+      'Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
     );
   });
 

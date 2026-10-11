@@ -10,10 +10,10 @@ import {
   sourceU,
 } from './admission-fixtures';
 import {
-  type Enrollment,
-  type Factor,
   cookieName,
   databaseCounter,
+  type Enrollment,
+  type Factor,
   fingerprint,
   hashToken,
   owner,
