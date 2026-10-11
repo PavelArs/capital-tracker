@@ -282,6 +282,58 @@
   font-size: var(--fs-xs);
 }
 
+.portfolio-summary {
+  position: relative;
+}
+
+/* PV-KNOWN-PART: one tooltip says the figures leave out coins without a price. */
+.portfolio-info {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: inline-flex;
+  color: var(--ink-3);
+  cursor: help;
+}
+
+.portfolio-info::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  display: none;
+  width: min(320px, 70vw);
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.portfolio-info--inline {
+  position: relative;
+  top: auto;
+  right: auto;
+  align-self: center;
+}
+
+.portfolio-info--inline::after {
+  right: auto;
+  left: 0;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+
+.portfolio-info:hover::after,
+.portfolio-info:focus::after {
+  display: block;
+}
+
 .portfolio-sub--inline {
   display: inline;
   margin-left: 6px;
@@ -1100,5 +1152,24 @@ a.portfolio-asset__name:hover {
   .portfolio-types__more {
     padding: 9px 8px;
     font-size: var(--fs-xs);
+  }
+}
+
+/* On a phone the hint spans the section it sits in, so it never runs off the screen. */
+@media (max-width: 640px) {
+  .dashboard-hero {
+    position: relative;
+  }
+
+  .dashboard-hero .portfolio-info--inline {
+    position: static;
+  }
+
+  .dashboard-hero .portfolio-info--inline::after {
+    top: auto;
+    right: 0;
+    left: 0;
+    width: auto;
+    margin-top: 28px;
   }
 }

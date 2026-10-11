@@ -61,7 +61,7 @@ function ChangeSplit({ history }: { history: PortfolioHistory }) {
 
 // Coins with no purchase price leave cost basis, net invested and profit incomplete
 // (prototype: "0.0087 BTC without purchase price" beside Market and Net deposits).
-export function UnknownCost({ portfolio }: { portfolio: PortfolioValuation | null }) {
+export function unknownCostNote(portfolio: PortfolioValuation | null): string | null {
   const coins = (portfolio?.assets ?? []).filter((asset) => Number(asset.unknownCostQuantity) > 0);
   if (coins.length === 0) return null;
   const shown = coins.slice(0, 2).map((asset) => {
@@ -69,17 +69,11 @@ export function UnknownCost({ portfolio }: { portfolio: PortfolioValuation | nul
     return `${quantity(asset.unknownCostQuantity)} ${unit}`;
   });
   const more = coins.length - shown.length;
-  return (
-    <p className="dashboard-unknown" role="note">
-      <Icon name="info" className="shell-icon shell-icon--sm" />
-      <span>
-        {shown.join(', ')}
-        {more > 0 && ` and ${more} more`} without purchase price, so cost basis and profit are
-        incomplete.
-      </span>
-    </p>
-  );
+  return `${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''} without purchase price, so cost basis and profit are incomplete.`;
 }
+
+const INCOMPLETE_NOTE =
+  'Incomplete: some assets had no price or rate in this period, so their value is not included. Add the missing prices on the Portfolio page.';
 
 // The prototype dims the cents of the big number: $42,738.84 with .84 muted.
 function Amount({ text }: { text: string }) {
@@ -104,6 +98,10 @@ function NetWorth({
 }) {
   const { currency, profit } = history;
   const direction = tone(profit);
+  // What is left out of these figures is said once, in a tooltip, not as lines of text.
+  const note = [unknownCostNote(portfolio), history.complete ? null : INCOMPLETE_NOTE]
+    .filter((text) => text !== null)
+    .join(' ');
   return (
     <section className="dashboard-hero" aria-label="Net worth">
       <div className="dashboard-hero__label">Total net worth · {currency}</div>
@@ -124,15 +122,19 @@ function NetWorth({
             on {money(history.invested, currency)} net invested
           </span>
         )}
+        {note !== '' && (
+          <span
+            className="portfolio-info portfolio-info--inline"
+            role="img"
+            tabIndex={0}
+            aria-label={note}
+            data-tip={note}
+          >
+            <Icon name="info" className="shell-icon shell-icon--sm" />
+          </span>
+        )}
       </div>
       <ChangeSplit history={history} />
-      <UnknownCost portfolio={portfolio} />
-      {!history.complete && (
-        <p className="portfolio-warn" role="note">
-          Incomplete: some assets had no price or rate in this period, so their value is not
-          included. Add the missing prices on the Portfolio page.
-        </p>
-      )}
     </section>
   );
 }

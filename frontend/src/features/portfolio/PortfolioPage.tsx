@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
@@ -86,6 +87,16 @@ const sortKeys: [SortKey, string][] = [
   ['name', 'Name'],
 ];
 
+/**
+ * The asset's unrealized P&L: over the coins whose purchase price is known when others have
+ * none, instead of a dash (PV-KNOWN-PART).
+ */
+export function shownProfit(asset: AssetValuation): { pnl: string | null; ratio: string | null } {
+  return asset.unrealizedPnl === null && asset.knownUnrealizedPnl !== null
+    ? { pnl: asset.knownUnrealizedPnl, ratio: asset.knownUnrealizedReturnPercent }
+    : { pnl: asset.unrealizedPnl, ratio: asset.unrealizedReturnPercent };
+}
+
 /** Assets in the phone list's order: numbers largest first with unknowns last, names A to Z. */
 export function sortAssets(assets: readonly AssetValuation[], key: SortKey): AssetValuation[] {
   if (key === 'name')
@@ -94,7 +105,7 @@ export function sortAssets(assets: readonly AssetValuation[], key: SortKey): Ass
     key === 'value'
       ? asset.value
       : key === 'pnl'
-        ? asset.unrealizedPnl
+        ? shownProfit(asset).pnl
         : asset.priceChange24hPercent;
   const number = (asset: AssetValuation) => {
     const value = field(asset);
@@ -113,32 +124,50 @@ export function matchesSearch(asset: AssetValuation, search: string): boolean {
   );
 }
 
+const PARTIAL_NOTE =
+  'Coins without a price or without a purchase price are left out: current value counts the priced assets, cost basis and P&L the coins whose purchase price is known. Open an asset to see what is missing.';
+
 function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   const unpriced = portfolio.missingPriceCount;
   const currency = portfolio.currency;
   const amount = (value: string | null) => money(value, currency);
-  // Coins without a purchase price or a stored rate stay out, named, instead of emptying the
-  // whole cost basis and profit: the known part is shown on its own.
+  // Coins without a price or a purchase price stay out of the figures instead of emptying
+  // them; one tooltip says so (PV-KNOWN-PART).
+  const partialValue = portfolio.totalValue === null;
   const partialCost =
     portfolio.costBasis === null &&
     (portfolio.unknownCostCount > 0 || portfolio.missingRateCount > 0) &&
     Number(portfolio.knownCostSubtotal) > 0;
   const partialProfit =
     portfolio.unrealizedPnl === null && partialCost && portfolio.knownUnrealizedPnl !== null;
+  const partialRealized =
+    portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
+  const partial = partialValue || partialCost || partialProfit || partialRealized;
   return (
     <section className="shell-card portfolio-summary" aria-label="Portfolio summary">
+      {partial && (
+        <span
+          className="portfolio-info"
+          role="img"
+          tabIndex={0}
+          aria-label={PARTIAL_NOTE}
+          data-tip={PARTIAL_NOTE}
+        >
+          <Icon name="info" className="shell-icon shell-icon--sm" />
+        </span>
+      )}
       <dl>
         <div>
           <dt>Current value</dt>
           <dd>
-            {portfolio.totalValue !== null ? amount(portfolio.totalValue) : 'Incomplete'}
-            {portfolio.totalValue === null && (
+            {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
+            {partialValue && (unpriced > 0 || portfolio.unavailableAccountCount > 0) && (
               <span className="portfolio-sub">
-                {amount(portfolio.pricedSubtotal)} priced
                 {unpriced > 0 &&
-                  `, ${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`}
+                  `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`}
+                {unpriced > 0 && portfolio.unavailableAccountCount > 0 && ', '}
                 {portfolio.unavailableAccountCount > 0 &&
-                  `, ${portfolio.unavailableAccountCount} account history starts later`}
+                  `${portfolio.unavailableAccountCount} account history starts later`}
               </span>
             )}
           </dd>
@@ -147,24 +176,14 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
           <dt>Cost basis</dt>
           <dd>
             {partialCost ? amount(portfolio.knownCostSubtotal) : amount(portfolio.costBasis)}
-            {portfolio.costBasis === null && (
+            {portfolio.costBasis === null && !partialCost && (
               <span className="portfolio-sub">
-                {partialCost ? (
-                  `known part only, the rest ${
-                    portfolio.unknownCostCount > 0
-                      ? 'has no purchase price'
-                      : 'predates the stored rates'
-                  }`
-                ) : (
-                  <>
-                    {amount(portfolio.knownCostSubtotal)} known,{' '}
-                    {portfolio.unknownCostCount > 0
-                      ? 'part has no purchase price'
-                      : portfolio.missingRateCount > 0
-                        ? 'part predates the stored rates'
-                        : 'an account history starts later'}
-                  </>
-                )}
+                {amount(portfolio.knownCostSubtotal)} known,{' '}
+                {portfolio.unknownCostCount > 0
+                  ? 'part has no purchase price'
+                  : portfolio.missingRateCount > 0
+                    ? 'part predates the stored rates'
+                    : 'an account history starts later'}
               </span>
             )}
           </dd>
@@ -173,14 +192,11 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
           <dt>Unrealized P&amp;L</dt>
           <dd>
             {partialProfit ? (
-              <>
-                <Signed
-                  value={portfolio.knownUnrealizedPnl}
-                  currency={currency}
-                  ratio={portfolio.knownUnrealizedReturnPercent}
-                />
-                <span className="portfolio-sub">known part only</span>
-              </>
+              <Signed
+                value={portfolio.knownUnrealizedPnl}
+                currency={currency}
+                ratio={portfolio.knownUnrealizedReturnPercent}
+              />
             ) : (
               <Signed
                 value={portfolio.unrealizedPnl}
@@ -193,7 +209,10 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         <div>
           <dt>Realized P&amp;L</dt>
           <dd>
-            <Signed value={portfolio.realizedPnl} currency={currency} />
+            <Signed
+              value={partialRealized ? portfolio.knownRealizedSubtotal : portfolio.realizedPnl}
+              currency={currency}
+            />
           </dd>
         </div>
       </dl>
@@ -304,9 +323,9 @@ function AssetsTable({
               </td>
               <td className="portfolio-num">
                 <Signed
-                  value={asset.unrealizedPnl}
+                  value={shownProfit(asset).pnl}
                   currency={currency}
-                  ratio={asset.unrealizedReturnPercent}
+                  ratio={shownProfit(asset).ratio}
                   inline
                 />
               </td>
@@ -358,14 +377,14 @@ function AssetsList({
               )}
             </span>
             <span
-              className={`portfolio-list__pnl${tone(asset.unrealizedPnl) ? ` portfolio-${tone(asset.unrealizedPnl)}` : ''}`}
+              className={`portfolio-list__pnl${tone(shownProfit(asset).pnl) ? ` portfolio-${tone(shownProfit(asset).pnl)}` : ''}`}
             >
-              {asset.unrealizedPnl === null
+              {shownProfit(asset).pnl === null
                 ? DASH
-                : `${money(asset.unrealizedPnl, currency, true)}${
-                    asset.unrealizedReturnPercent === null
+                : `${money(shownProfit(asset).pnl, currency, true)}${
+                    shownProfit(asset).ratio === null
                       ? ''
-                      : ` · ${percent(asset.unrealizedReturnPercent)}`
+                      : ` · ${percent(shownProfit(asset).ratio)}`
                   }`}
             </span>
           </Link>

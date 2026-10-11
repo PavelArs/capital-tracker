@@ -348,7 +348,11 @@ describe('record-portfolio-snapshots dashboard', () => {
     const loss = within(hero).getByLabelText('Profit or loss to date');
     expect(loss).toHaveTextContent('▼ -$500.00-0.50%on $100,000.00 net invested');
     expect(loss).toHaveClass('portfolio-neg');
-    expect(within(hero).getByRole('note')).toHaveTextContent(/Incomplete/);
+    expect(within(hero).getByRole('img', { name: /Incomplete/ })).toHaveAttribute(
+      'data-tip',
+      expect.stringContaining('Add the missing prices on the Portfolio page.'),
+    );
+    expect(within(hero).queryByRole('note')).toBeNull();
     cleanup();
     get.mockResolvedValue(
       history({
@@ -653,7 +657,7 @@ describe('show-dashboard-top-assets', () => {
     expect(document.body.textContent).not.toMatch(/blockchain transactions need classification/);
   });
 
-  it('DASH-UNKNOWN-COST names the coins without a purchase price under the net worth', async () => {
+  it('DASH-UNKNOWN-COST names the coins without a purchase price in a tooltip by the profit', async () => {
     valued.mockImplementation(async (currency?: AccountingCurrency) =>
       valuation({
         currency: currency ?? 'USD',
@@ -667,16 +671,19 @@ describe('show-dashboard-top-assets', () => {
     );
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
-    expect(await within(hero).findByRole('note')).toHaveTextContent(
+    const tip = await within(hero).findByRole('img', { name: /without purchase price/ });
+    expect(tip).toHaveAttribute(
+      'data-tip',
       '0.0087 BTC, 1.5 ETH and 1 more without purchase price, so cost basis and profit are incomplete.',
     );
+    expect(within(hero).queryByRole('note')).toBeNull();
   });
 
   it('DASH-UNKNOWN-COST stays quiet when every coin has a purchase price', async () => {
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     await screen.findByRole('region', { name: 'Top assets' });
-    expect(within(hero).queryByRole('note')).not.toBeInTheDocument();
+    expect(within(hero).queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('says when the assets cannot be loaded and keeps the net worth', async () => {
