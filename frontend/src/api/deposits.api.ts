@@ -14,6 +14,7 @@ export type Values = Record<AccountingCurrency, string | null>;
 export interface DepositCheck {
   checkedOn: string;
   bankBalance: string;
+  /** What the bank's screen should show: with a capitalizing deposit, without the interest earned since the last interest date. */
   calculated: string;
   difference: string;
 }

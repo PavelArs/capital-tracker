@@ -1,6 +1,14 @@
 import type { Deposit } from '@api/deposits.api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attention, dateText, daysBetween, money, termText, today } from './deposit-format';
+import {
+  attention,
+  capitalizedInterest,
+  dateText,
+  daysBetween,
+  money,
+  termText,
+  today,
+} from './deposit-format';
 
 const deposit = (change: Partial<Deposit> = {}): Deposit => ({
   id: 'd1',
@@ -83,5 +91,20 @@ describe('money', () => {
     expect(money('1.23', 'EUR', true)).toBe('+€1.23');
     expect(money('-0.01', 'EUR')).toBe('-€0.01');
     expect(money(null, 'EUR')).toBe('—');
+  });
+});
+
+describe('capitalizedInterest', () => {
+  it('sums only the interest that became part of the deposit, in exact cents', () => {
+    expect(
+      capitalizedInterest([
+        { interest: '1019.18', treatment: 'capitalized' },
+        { interest: '929.93', treatment: 'capitalized' },
+        { interest: '12.30', treatment: 'payable' },
+      ]),
+    ).toBe('1949.11');
+    expect(capitalizedInterest([])).toBe('0.00');
+    expect(capitalizedInterest([{ interest: '0.05', treatment: 'capitalized' }])).toBe('0.05');
+    expect(capitalizedInterest([{ interest: '12.30', treatment: 'payable' }])).toBe('0.00');
   });
 });

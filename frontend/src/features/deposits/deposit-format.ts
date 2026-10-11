@@ -1,4 +1,7 @@
-import type { Deposit, DepositStatus, MovementKind } from '@api/deposits.api';
+import type { Deposit, DepositDetail, DepositStatus, MovementKind } from '@api/deposits.api';
+
+type DepositPeriod = DepositDetail['periods'][number];
+
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import type { BadgeTone } from '@/ui/Badge';
 import { dayText } from '@/utils/dates';
@@ -86,4 +89,22 @@ export function money(value: string | null, currency: AccountingCurrency, signed
   const zero = /^0+$/.test(match[2] + cents);
   const mark = match[1] && !zero ? '-' : signed && !zero ? '+' : '';
   return `${mark}${currencySymbols[currency]}${whole}.${cents}`;
+}
+
+/**
+ * The interest added to a capitalizing deposit: the sum of the periods whose interest became part
+ * of it. Interest made payable by an early closure is not in it. Cents are summed as integers.
+ */
+export function capitalizedInterest(
+  periods: readonly Pick<DepositPeriod, 'interest' | 'treatment'>[],
+): string {
+  let cents = 0n;
+  for (const period of periods) {
+    if (period.treatment !== 'capitalized') continue;
+    const match = /^(\d+)(?:\.(\d+))?$/.exec(period.interest);
+    if (!match) continue;
+    cents += BigInt(match[1] + (match[2] ?? '').padEnd(2, '0').slice(0, 2));
+  }
+  const text = cents.toString().padStart(3, '0');
+  return `${text.slice(0, -2)}.${text.slice(-2)}`;
 }
