@@ -121,10 +121,6 @@ a.wallets-asset:hover {
   display: block;
 }
 
-.wallets-rename {
-  width: min(420px, 100%);
-}
-
 .wallets-card__title span,
 .wallets-card__total span {
   display: block;
@@ -789,4 +785,12 @@ button.wallets-source__open:focus-visible {
 
 .wallets-recent__more .portfolio-link {
   padding: 0;
+}
+
+/* Phones: the dialog is a sheet, so its steps sit under the head. */
+@media (max-width: 639.98px) {
+  .ui-modal--wide .wallets-steps {
+    flex: none;
+    padding: 12px 16px 0;
+  }
 }

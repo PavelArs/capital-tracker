@@ -128,7 +128,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
       onEscape={busy ? undefined : onClose}
     >
       <form onSubmit={submit} noValidate>
-        <div className="portfolio-dialog__body">
+        <div className="ui-modal__body">
           <p className="security-dialog__text">
             Every other browser is signed out. This one stays signed in.
           </p>
@@ -160,7 +160,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
             </p>
           )}
         </div>
-        <div className="portfolio-dialog__foot">
+        <div className="ui-modal__foot">
           <button
             type="button"
             className="shell-button shell-button--ghost"

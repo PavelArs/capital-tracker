@@ -954,23 +954,23 @@ export default function OperationDrawer({
         )}
       </div>
       {confirm && (
-        <div className="portfolio-scrim transactions-confirm">
+        <div className="ui-scrim transactions-confirm">
           <div
             ref={modal}
-            className="portfolio-dialog portfolio-dialog--narrow"
+            className="ui-modal ui-modal--narrow"
             role={confirm.step === 'blocked' ? 'alertdialog' : 'dialog'}
             aria-modal="true"
             aria-labelledby="operation-confirm-title"
             aria-describedby="operation-confirm-text"
           >
-            <div className="portfolio-dialog__head">
+            <div className="ui-modal__head">
               <h2 id="operation-confirm-title">
                 {confirm.step === 'blocked'
                   ? `This ${purchase ? 'purchase' : 'transaction'} can't be deleted`
                   : 'Delete this transaction?'}
               </h2>
             </div>
-            <div className="portfolio-dialog__body">
+            <div className="ui-modal__body">
               <p id="operation-confirm-text" className="transactions-confirm__text">
                 {confirm.step === 'blocked'
                   ? `${confirm.dependent} spends these ${ticker(operation.asset)}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
@@ -982,7 +982,7 @@ export default function OperationDrawer({
                 </p>
               )}
             </div>
-            <div className="portfolio-dialog__foot">
+            <div className="ui-modal__foot">
               {confirm.step === 'blocked' ? (
                 <button
                   type="button"

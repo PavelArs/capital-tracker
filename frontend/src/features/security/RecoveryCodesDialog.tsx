@@ -74,7 +74,7 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
       onEscape={busy ? undefined : onClose}
     >
       <form onSubmit={generate} noValidate>
-        <div className="portfolio-dialog__body">
+        <div className="ui-modal__body">
           <p className="security-dialog__text">
             Your {unused} unused {unused === 1 ? 'code stops' : 'codes stop'} working as soon as the
             new ones are made. You see the new codes only once.
@@ -101,7 +101,7 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
             </p>
           )}
         </div>
-        <div className="portfolio-dialog__foot">
+        <div className="ui-modal__foot">
           <button
             type="button"
             className="shell-button shell-button--ghost"
@@ -154,7 +154,7 @@ export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownC
 
   return (
     <SecurityDialog title={title} titleId={titleId}>
-      <div className="portfolio-dialog__body">
+      <div className="ui-modal__body">
         {lead}
         <p className="security-note security-note--warn">
           <Icon name="alert" className="shell-icon shell-icon--sm" />
@@ -190,7 +190,7 @@ export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownC
           </p>
         )}
       </div>
-      <div className="portfolio-dialog__foot">
+      <div className="ui-modal__foot">
         <button type="button" className="shell-button shell-button--primary" onClick={done}>
           Done
         </button>

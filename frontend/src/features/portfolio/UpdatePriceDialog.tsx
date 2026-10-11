@@ -1,6 +1,7 @@
 import { manualPricesApi } from '@api/manual-prices.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useId, useRef, useState } from 'react';
+import Modal from '@/ui/Modal';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { numberProblem, positive } from './add-transaction';
@@ -43,34 +44,6 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
   } | null>(null);
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
-  const dialog = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  const busy = useRef(false);
-  busy.current = saving;
-
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    input.current?.select();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy.current) close.current();
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const items = [
-        ...dialog.current.querySelectorAll<HTMLElement>('button:not([disabled]), input'),
-      ];
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-        event.preventDefault();
-        (event.shiftKey ? last : first)?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, []);
 
   const price = positive(value);
   const problem = price === null ? numberProblem(value, 'Enter a price greater than 0') : null;
@@ -110,67 +83,67 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
   };
 
   return (
-    <div className="portfolio-scrim">
-      <div
-        ref={dialog}
-        className="portfolio-dialog portfolio-dialog--narrow"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-title`}
-      >
-        <form onSubmit={save} noValidate>
-          <div className="portfolio-dialog__head">
-            <h2 id={`${id}-title`}>Update price</h2>
-            <CloseButton onClick={onClose} disabled={saving} />
-            <p className="shell-note">
-              {name} is valued by hand. The new price applies from now on; earlier days keep the
-              price they had.
-            </p>
-          </div>
-          <div className="portfolio-dialog__body">
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor={`${id}-price`}>
-                Price of one unit, USD
-              </label>
-              <input
-                ref={input}
-                id={`${id}-price`}
-                className="portfolio-input"
-                inputMode="decimal"
-                autoComplete="off"
-                value={value}
-                aria-invalid={shown ? true : undefined}
-                aria-describedby={shown ? `${id}-price-error` : undefined}
-                onChange={(event) => setValue(event.target.value)}
-                onBlur={() => setLeft(true)}
-              />
-              {shown && (
-                <span className="portfolio-field__error" id={`${id}-price-error`}>
-                  {problem}
-                </span>
-              )}
-            </div>
-            {error && (
-              <p className="portfolio-dialog__error" role="alert">
-                {error}
-              </p>
+    <Modal
+      titleId={`${id}-title`}
+      size="narrow"
+      onEscape={saving ? undefined : onClose}
+      initialFocus={() => {
+        input.current?.select();
+        return input.current;
+      }}
+    >
+      <form onSubmit={save} noValidate>
+        <div className="ui-modal__head">
+          <h2 id={`${id}-title`}>Update price</h2>
+          <CloseButton onClick={onClose} disabled={saving} />
+          <p className="shell-note">
+            {name} is valued by hand. The new price applies from now on; earlier days keep the price
+            they had.
+          </p>
+        </div>
+        <div className="ui-modal__body">
+          <div className="portfolio-field">
+            <label className="portfolio-field__label" htmlFor={`${id}-price`}>
+              Price of one unit, USD
+            </label>
+            <input
+              ref={input}
+              id={`${id}-price`}
+              className="portfolio-input"
+              inputMode="decimal"
+              autoComplete="off"
+              value={value}
+              aria-invalid={shown ? true : undefined}
+              aria-describedby={shown ? `${id}-price-error` : undefined}
+              onChange={(event) => setValue(event.target.value)}
+              onBlur={() => setLeft(true)}
+            />
+            {shown && (
+              <span className="portfolio-field__error" id={`${id}-price-error`}>
+                {problem}
+              </span>
             )}
           </div>
-          <div className="portfolio-dialog__foot">
-            <button
-              type="button"
-              className="shell-button shell-button--ghost"
-              disabled={saving}
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save price'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          {error && (
+            <p className="portfolio-dialog__error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="ui-modal__foot">
+          <button
+            type="button"
+            className="shell-button shell-button--ghost"
+            disabled={saving}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Save price'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

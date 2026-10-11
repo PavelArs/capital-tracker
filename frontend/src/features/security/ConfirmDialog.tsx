@@ -37,7 +37,7 @@ export default function ConfirmDialog({
   };
   return (
     <SecurityDialog title={title} titleId="security-confirm" onEscape={busy ? undefined : onClose}>
-      <div className="portfolio-dialog__body">
+      <div className="ui-modal__body">
         <p className="security-dialog__text">{text}</p>
         {error && (
           <p className="portfolio-dialog__error" role="alert">
@@ -45,7 +45,7 @@ export default function ConfirmDialog({
           </p>
         )}
       </div>
-      <div className="portfolio-dialog__foot">
+      <div className="ui-modal__foot">
         <button
           type="button"
           className="shell-button shell-button--ghost"

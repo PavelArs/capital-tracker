@@ -156,7 +156,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
         onEscape={busy ? undefined : onClose}
       >
         <form onSubmit={confirm} noValidate>
-          <div className="portfolio-dialog__body">
+          <div className="ui-modal__body">
             <p className="security-step">Step 1 of 2</p>
             <p className="security-dialog__text">
               Scan it with Google Authenticator, 1Password, Bitwarden or a similar app. Your current
@@ -198,7 +198,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             </div>
             {errorBlock}
           </div>
-          <div className="portfolio-dialog__foot">
+          <div className="ui-modal__foot">
             <button
               type="button"
               className="shell-button shell-button--ghost"
@@ -234,7 +234,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       onEscape={busy ? undefined : onClose}
     >
       <form onSubmit={prove} noValidate>
-        <div className="portfolio-dialog__body">
+        <div className="ui-modal__body">
           <p className="security-dialog__text">
             For a new phone, or when the old one is lost. First confirm it's you
             {kind === 'totp'
@@ -268,7 +268,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             {kind === 'totp' ? 'Lost the phone? Use a recovery code' : 'Use the authenticator code'}
           </button>
         </div>
-        <div className="portfolio-dialog__foot">
+        <div className="ui-modal__foot">
           <button
             type="button"
             className="shell-button shell-button--ghost"

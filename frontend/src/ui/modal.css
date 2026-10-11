@@ -1,0 +1,131 @@
+.ui-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+  background: rgba(4, 6, 10, 0.62);
+}
+
+:root[data-theme="light"] .ui-scrim {
+  background: rgba(18, 23, 38, 0.35);
+}
+
+.ui-modal {
+  width: min(520px, 100%);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+}
+
+.ui-modal--narrow {
+  width: min(420px, 100%);
+}
+
+.ui-modal--wide {
+  width: min(560px, 100%);
+}
+
+.ui-modal__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
+  padding: 18px 22px 0;
+}
+
+/* Two classes, so a heading style of the page that opened the dialog never wins. */
+.ui-modal .ui-modal__head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.ui-modal__head .shell-note {
+  flex-basis: 100%;
+  margin-top: 8px;
+}
+
+.ui-modal__info {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+
+.ui-modal__body {
+  display: grid;
+  gap: var(--sp-4);
+  padding: 18px 22px;
+}
+
+.ui-modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.ui-modal__summary {
+  margin-right: auto;
+  align-self: center;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Phones: a dialog is a full-screen sheet, so the form's footer with Save stays in reach
+   and only the fields scroll. */
+@media (max-width: 639.98px) {
+  .ui-scrim:has(> .ui-modal--wide) {
+    place-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .ui-modal--wide {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ui-modal--wide > form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .ui-modal--wide .ui-modal__head {
+    flex: none;
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ui-modal--wide .ui-modal__body {
+    flex: 1;
+    align-content: start;
+    min-height: 0;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  .ui-modal--wide .ui-modal__foot {
+    flex: none;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}

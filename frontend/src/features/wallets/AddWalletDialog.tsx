@@ -2,6 +2,7 @@ import { accountingApi } from '@api/accounting.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
+import Modal from '@/ui/Modal';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
@@ -75,8 +76,6 @@ const networkGroups = [
 ];
 const MAX_LABEL = 40;
 const isTracked = (key: string): key is Network => key in tracked;
-// Tab order inside the modal: every enabled control.
-const focusable = 'button:not([disabled]), input:not([disabled])';
 
 function failure(error: unknown, network: Network, key: boolean): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -142,35 +141,10 @@ export default function AddWalletDialog({
   // One request id per new wallet name and kind, so a retry after a lost answer cannot add it
   // twice and a changed kind is a new request.
   const attempt = useRef<{ key: string; requestId: string } | null>(null);
-  const dialog = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  const busy = useRef(false);
-  busy.current = saving;
-
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy.current) close.current();
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const items = [...dialog.current.querySelectorAll<HTMLElement>(focusable)];
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-        event.preventDefault();
-        (event.shiftKey ? last : first)?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, []);
-
+  const form = useRef<HTMLFormElement>(null);
   // Each step puts the keyboard on its first field.
   useEffect(() => {
-    dialog.current
+    form.current
       ?.querySelector<HTMLElement>(step === 1 ? '[aria-pressed]' : 'input:not([disabled])')
       ?.focus();
   }, [step]);
@@ -267,347 +241,343 @@ export default function AddWalletDialog({
   };
 
   return (
-    <div className="portfolio-scrim">
-      <div
-        ref={dialog}
-        className="portfolio-dialog portfolio-dialog--wide"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-wallet"
-      >
-        <form onSubmit={next} noValidate>
-          <div className="portfolio-dialog__head">
-            <h2 id="add-wallet">Add wallet</h2>
-            <CloseButton onClick={onClose} disabled={saving} />
-          </div>
-          <div className="wallets-steps" aria-label={`Step ${step} of 3`}>
-            {[1, 2, 3].map((item) => (
-              <i key={item} className={step >= item ? 'wallets-steps__on' : undefined} />
-            ))}
-            <span>Step {step} of 3</span>
-          </div>
-          <div className="portfolio-dialog__body">
-            {step === 1 && (
-              <>
-                <p className="wallets-soft">What do you want to connect?</p>
-                {networkGroups.map((group) => (
-                  <Fragment key={group.title}>
-                    <h3 className="wallets-networks__title">{group.title}</h3>
-                    <div className="wallets-networks">
-                      {group.items.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className="wallets-network"
-                          aria-pressed={network === item.key}
-                          disabled={!isTracked(item.key)}
-                          onClick={() => isTracked(item.key) && setNetwork(item.key)}
-                        >
-                          <AssetIcon {...networkIcon(tracked[item.key])} />
-                          <b>{item.name}</b>
-                          <small>{item.detail}</small>
-                        </button>
-                      ))}
-                    </div>
-                  </Fragment>
-                ))}
-                <p className="wallets-note">
-                  Read-only. The app never asks for a seed phrase, a private key or an exchange
-                  password.
-                </p>
-              </>
-            )}
-            {step === 2 && exchange && (
-              <>
-                <ol className="wallets-note wallets-howto">
-                  <li>
-                    In Bybit open <b>Account → API → Create New Key</b>, choose{' '}
-                    <b>System-generated API Keys</b> and <b>API Transaction</b>.
-                  </li>
-                  <li>
-                    Set permissions to <b>Read-Only</b> and tick <b>Earn</b> and{' '}
-                    <b>Exchange History</b> under it, so coins in Earn and converts count. Tick
-                    nothing that trades or withdraws.
-                  </li>
-                  <li>
-                    Bind it to this server's IP address: an unbound key stops working after 90 days.
-                  </li>
-                </ol>
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor="bybit-key">
-                    API key
-                  </label>
-                  <input
-                    id="bybit-key"
-                    className="portfolio-input wallets-mono"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={apiKey}
-                    aria-invalid={showKeyError ? true : undefined}
-                    aria-describedby="bybit-key-help"
-                    onChange={(event) => changeKey(event.target.value, 'key')}
-                    onBlur={leave('key')}
-                  />
-                  <span id="bybit-key-help">
-                    {showKeyError && (
-                      <span className="portfolio-field__error">{keyCheck.message}</span>
-                    )}
-                  </span>
-                </div>
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor="bybit-secret">
-                    API secret
-                  </label>
-                  <input
-                    id="bybit-secret"
-                    type="password"
-                    className="portfolio-input wallets-mono"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={apiSecret}
-                    aria-invalid={showSecretError ? true : undefined}
-                    aria-describedby="bybit-secret-help"
-                    onChange={(event) => changeKey(event.target.value, 'secret')}
-                    onBlur={leave('secret')}
-                  />
-                  <span id="bybit-secret-help">
-                    {secretMessage ? (
-                      <span className="portfolio-field__error" role="alert">
-                        {secretMessage} It was not saved.
-                      </span>
-                    ) : showSecretError ? (
-                      <span className="portfolio-field__error">{secretCheck.message}</span>
-                    ) : (
-                      <span className="portfolio-field__hint">
-                        Stored encrypted on the server and never shown again.
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <p className="wallets-note">
-                  The app checks with Bybit that the key is read-only and refuses one that can trade
-                  or withdraw. It reads spot trades, deposits and withdrawals of every coin for the
-                  last two years, the balances Bybit reports, with Earn ticked the coins in Earn and
-                  three months of their yield, and with Exchange History ticked every convert. Coins
-                  Kraken does not list are priced from Bybit's own market. P2P purchases are not in
-                  the API: add them by hand.
-                </p>
-              </>
-            )}
-            {step === 2 && !exchange && (
-              <>
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor="wallet-address">
-                    {chosen.name} wallet address
-                  </label>
-                  <input
-                    id="wallet-address"
-                    className="portfolio-input wallets-mono"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder={chosen.placeholder}
-                    value={input}
-                    aria-invalid={showError || existing ? true : undefined}
-                    aria-describedby="wallet-address-help"
-                    onChange={(event) => changeAddress(event.target.value)}
-                    onBlur={leave('address')}
-                  />
-                  <span id="wallet-address-help">
-                    {secretMessage ? (
-                      <span className="portfolio-field__error" role="alert">
-                        {secretMessage} It was not saved.
-                      </span>
-                    ) : existing ? (
-                      <span className="portfolio-field__error">
-                        {isKey ? 'This key is already tracked' : 'This address is already tracked'}
-                        {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
-                        <button
-                          type="button"
-                          className="portfolio-link"
-                          onClick={() => onOpenExisting(existing)}
-                        >
-                          Open it
-                        </button>
-                      </span>
-                    ) : check.ok ? (
-                      <span className="wallets-ok">{check.kind}</span>
-                    ) : showError ? (
-                      <span className="portfolio-field__error">{check.message}</span>
-                    ) : (
-                      <span className="portfolio-field__hint">
-                        {network === 'bitcoin'
-                          ? 'Paste a public address from Receive in your wallet app, or the account public key.'
-                          : 'Paste the public address. You can find it under Receive in your wallet app.'}
-                      </span>
-                    )}
-                  </span>
-                </div>
-                {network === 'ethereum' ? (
-                  <p className="wallets-note">
-                    One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20
-                    token on Ethereum mainnet, named as the chain names them. The same address on
-                    another chain (Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain or
-                    Avalanche) is added as a wallet of its own.
-                  </p>
-                ) : network !== null && isEvm(network) ? (
-                  <p className="wallets-note">
-                    Paste the same 0x address you use on Ethereum. The app tracks{' '}
-                    {tracked[network].symbol} and every token this address holds on{' '}
-                    {tracked[network].name}, named as the chain names them; its other chains are
-                    separate wallets.
-                  </p>
-                ) : network === 'solana' ? (
-                  <p className="wallets-note">
-                    Paste the wallet address, not a token account: the app finds its token accounts
-                    itself. It tracks SOL and every SPL token on Solana mainnet, named as the chain
-                    names them.
-                  </p>
-                ) : network === 'stellar' ? (
-                  <p className="wallets-note">
-                    Paste the account address that starts with G. The app tracks XLM on the Stellar
-                    public network; issued assets such as USDC on Stellar are not read. An exchange
-                    deposit address with a memo is not your wallet.
-                  </p>
-                ) : network === 'zcash' ? (
-                  <p className="wallets-note">
-                    Paste a transparent address that starts with t1 or t3. Shielded balances are
-                    private, so the app cannot read them: ZEC moved to a shielded address shows as
-                    sent, and ZEC from one shows as received.
-                  </p>
-                ) : network === 'tron' ? (
-                  <p className="wallets-note">
-                    Paste the address that starts with T. The app tracks TRX, USDT and USDC on Tron
-                    mainnet and the TRX you staked for energy or bandwidth; other tokens are not
-                    read.
-                  </p>
-                ) : (
-                  <p className="wallets-note">
-                    Hardware wallets like Trezor use a new address for every deposit. Paste the
-                    account public key (zpub) from Trezor Suite to track all of them at once.
-                  </p>
-                )}
-              </>
-            )}
-            {step === 3 && (exchange ? keyReady : check.ok) && (
-              <>
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor="wallet-name">
-                    Wallet <span className="wallets-muted">(optional)</span>
-                  </label>
-                  <input
-                    id="wallet-name"
-                    className="portfolio-input"
-                    maxLength={120}
-                    placeholder={chosen.defaultWallet}
-                    value={walletName}
-                    onChange={(event) => setWalletName(event.target.value)}
-                  />
-                  <span className="portfolio-field__hint">
-                    {match
-                      ? `The ${exchange ? 'account' : 'address'} joins your wallet ${match.name}.`
-                      : `A new wallet named ${chosenName} is created.`}{' '}
-                    Pick one of your wallets to group this {exchange ? 'account' : 'address'} with
-                    it, or type a new name.
-                  </span>
-                </div>
-                {accounts.length > 0 && (
-                  <div className="portfolio-chips" role="group" aria-label="Your wallets">
-                    {accounts.map((account) => (
+    <Modal
+      titleId="add-wallet"
+      size="wide"
+      onEscape={saving ? undefined : onClose}
+      initialFocus={(root) => root.querySelector<HTMLElement>('[aria-pressed]')}
+    >
+      <form ref={form} onSubmit={next} noValidate>
+        <div className="ui-modal__head">
+          <h2 id="add-wallet">Add wallet</h2>
+          <CloseButton onClick={onClose} disabled={saving} />
+        </div>
+        <div className="wallets-steps" aria-label={`Step ${step} of 3`}>
+          {[1, 2, 3].map((item) => (
+            <i key={item} className={step >= item ? 'wallets-steps__on' : undefined} />
+          ))}
+          <span>Step {step} of 3</span>
+        </div>
+        <div className="ui-modal__body">
+          {step === 1 && (
+            <>
+              <p className="wallets-soft">What do you want to connect?</p>
+              {networkGroups.map((group) => (
+                <Fragment key={group.title}>
+                  <h3 className="wallets-networks__title">{group.title}</h3>
+                  <div className="wallets-networks">
+                    {group.items.map((item) => (
                       <button
-                        key={account.accountId}
+                        key={item.key}
                         type="button"
-                        className="portfolio-chip"
-                        aria-pressed={match?.accountId === account.accountId}
-                        onClick={() => setWalletName(account.name)}
+                        className="wallets-network"
+                        aria-pressed={network === item.key}
+                        disabled={!isTracked(item.key)}
+                        onClick={() => isTracked(item.key) && setNetwork(item.key)}
                       >
-                        {account.name}
+                        <AssetIcon {...networkIcon(tracked[item.key])} />
+                        <b>{item.name}</b>
+                        <small>{item.detail}</small>
                       </button>
                     ))}
                   </div>
-                )}
-                {!match && <KindField id="wallet-kind" value={kind} onChange={setPickedKind} />}
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor="wallet-label">
-                    {exchange ? 'Account name' : 'Address name'}{' '}
-                    <span className="wallets-muted">(optional)</span>
-                  </label>
-                  <input
-                    id="wallet-label"
-                    className="portfolio-input"
-                    maxLength={MAX_LABEL}
-                    placeholder={`e.g. ${chosen.labelExample}`}
-                    value={label}
-                    onChange={(event) => setLabel(event.target.value)}
-                  />
-                </div>
-                <dl className="wallets-summary">
-                  <div>
-                    <dt>Network</dt>
-                    <dd>{chosen.name}</dd>
-                  </div>
-                  {exchange ? (
-                    <>
-                      <div>
-                        <dt>API key</dt>
-                        <dd className="wallets-mono">…{apiKey.trim().slice(-4)}</dd>
-                      </div>
-                      <div>
-                        <dt>Access</dt>
-                        <dd>Read-only, checked with Bybit when you add it</dd>
-                      </div>
-                    </>
-                  ) : (
-                    <div>
-                      <dt>{isKey ? 'Public key' : 'Address'}</dt>
-                      <dd className="wallets-mono">{check.ok && check.address}</dd>
-                    </div>
-                  )}
-                </dl>
-              </>
-            )}
-            {error && (
-              <p className="portfolio-dialog__error" role="alert">
-                {error}
+                </Fragment>
+              ))}
+              <p className="wallets-note">
+                Read-only. The app never asks for a seed phrase, a private key or an exchange
+                password.
               </p>
-            )}
-          </div>
-          <div className="portfolio-dialog__foot">
-            {step === 1 ? (
-              <button type="button" className="shell-button shell-button--ghost" onClick={onClose}>
-                Cancel
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="shell-button shell-button--ghost"
-                disabled={saving}
-                onClick={() => {
-                  setError(null);
-                  setStep(step === 3 ? 2 : 1);
-                }}
-              >
-                Back
-              </button>
-            )}
-            <span className="wallets-grow" />
-            <button
-              type="submit"
-              className="shell-button shell-button--primary"
-              disabled={(step === 1 && !network) || saving}
-            >
-              {step === 3
-                ? saving
-                  ? exchange
-                    ? 'Checking the key…'
-                    : 'Adding…'
-                  : exchange
-                    ? 'Add account'
-                    : 'Add wallet'
-                : 'Continue'}
+            </>
+          )}
+          {step === 2 && exchange && (
+            <>
+              <ol className="wallets-note wallets-howto">
+                <li>
+                  In Bybit open <b>Account → API → Create New Key</b>, choose{' '}
+                  <b>System-generated API Keys</b> and <b>API Transaction</b>.
+                </li>
+                <li>
+                  Set permissions to <b>Read-Only</b> and tick <b>Earn</b> and{' '}
+                  <b>Exchange History</b> under it, so coins in Earn and converts count. Tick
+                  nothing that trades or withdraws.
+                </li>
+                <li>
+                  Bind it to this server's IP address: an unbound key stops working after 90 days.
+                </li>
+              </ol>
+              <div className="portfolio-field">
+                <label className="portfolio-field__label" htmlFor="bybit-key">
+                  API key
+                </label>
+                <input
+                  id="bybit-key"
+                  className="portfolio-input wallets-mono"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={apiKey}
+                  aria-invalid={showKeyError ? true : undefined}
+                  aria-describedby="bybit-key-help"
+                  onChange={(event) => changeKey(event.target.value, 'key')}
+                  onBlur={leave('key')}
+                />
+                <span id="bybit-key-help">
+                  {showKeyError && (
+                    <span className="portfolio-field__error">{keyCheck.message}</span>
+                  )}
+                </span>
+              </div>
+              <div className="portfolio-field">
+                <label className="portfolio-field__label" htmlFor="bybit-secret">
+                  API secret
+                </label>
+                <input
+                  id="bybit-secret"
+                  type="password"
+                  className="portfolio-input wallets-mono"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={apiSecret}
+                  aria-invalid={showSecretError ? true : undefined}
+                  aria-describedby="bybit-secret-help"
+                  onChange={(event) => changeKey(event.target.value, 'secret')}
+                  onBlur={leave('secret')}
+                />
+                <span id="bybit-secret-help">
+                  {secretMessage ? (
+                    <span className="portfolio-field__error" role="alert">
+                      {secretMessage} It was not saved.
+                    </span>
+                  ) : showSecretError ? (
+                    <span className="portfolio-field__error">{secretCheck.message}</span>
+                  ) : (
+                    <span className="portfolio-field__hint">
+                      Stored encrypted on the server and never shown again.
+                    </span>
+                  )}
+                </span>
+              </div>
+              <p className="wallets-note">
+                The app checks with Bybit that the key is read-only and refuses one that can trade
+                or withdraw. It reads spot trades, deposits and withdrawals of every coin for the
+                last two years, the balances Bybit reports, with Earn ticked the coins in Earn and
+                three months of their yield, and with Exchange History ticked every convert. Coins
+                Kraken does not list are priced from Bybit's own market. P2P purchases are not in
+                the API: add them by hand.
+              </p>
+            </>
+          )}
+          {step === 2 && !exchange && (
+            <>
+              <div className="portfolio-field">
+                <label className="portfolio-field__label" htmlFor="wallet-address">
+                  {chosen.name} wallet address
+                </label>
+                <input
+                  id="wallet-address"
+                  className="portfolio-input wallets-mono"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={chosen.placeholder}
+                  value={input}
+                  aria-invalid={showError || existing ? true : undefined}
+                  aria-describedby="wallet-address-help"
+                  onChange={(event) => changeAddress(event.target.value)}
+                  onBlur={leave('address')}
+                />
+                <span id="wallet-address-help">
+                  {secretMessage ? (
+                    <span className="portfolio-field__error" role="alert">
+                      {secretMessage} It was not saved.
+                    </span>
+                  ) : existing ? (
+                    <span className="portfolio-field__error">
+                      {isKey ? 'This key is already tracked' : 'This address is already tracked'}
+                      {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
+                      <button
+                        type="button"
+                        className="portfolio-link"
+                        onClick={() => onOpenExisting(existing)}
+                      >
+                        Open it
+                      </button>
+                    </span>
+                  ) : check.ok ? (
+                    <span className="wallets-ok">{check.kind}</span>
+                  ) : showError ? (
+                    <span className="portfolio-field__error">{check.message}</span>
+                  ) : (
+                    <span className="portfolio-field__hint">
+                      {network === 'bitcoin'
+                        ? 'Paste a public address from Receive in your wallet app, or the account public key.'
+                        : 'Paste the public address. You can find it under Receive in your wallet app.'}
+                    </span>
+                  )}
+                </span>
+              </div>
+              {network === 'ethereum' ? (
+                <p className="wallets-note">
+                  One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20
+                  token on Ethereum mainnet, named as the chain names them. The same address on
+                  another chain (Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain or
+                  Avalanche) is added as a wallet of its own.
+                </p>
+              ) : network !== null && isEvm(network) ? (
+                <p className="wallets-note">
+                  Paste the same 0x address you use on Ethereum. The app tracks{' '}
+                  {tracked[network].symbol} and every token this address holds on{' '}
+                  {tracked[network].name}, named as the chain names them; its other chains are
+                  separate wallets.
+                </p>
+              ) : network === 'solana' ? (
+                <p className="wallets-note">
+                  Paste the wallet address, not a token account: the app finds its token accounts
+                  itself. It tracks SOL and every SPL token on Solana mainnet, named as the chain
+                  names them.
+                </p>
+              ) : network === 'stellar' ? (
+                <p className="wallets-note">
+                  Paste the account address that starts with G. The app tracks XLM on the Stellar
+                  public network; issued assets such as USDC on Stellar are not read. An exchange
+                  deposit address with a memo is not your wallet.
+                </p>
+              ) : network === 'zcash' ? (
+                <p className="wallets-note">
+                  Paste a transparent address that starts with t1 or t3. Shielded balances are
+                  private, so the app cannot read them: ZEC moved to a shielded address shows as
+                  sent, and ZEC from one shows as received.
+                </p>
+              ) : network === 'tron' ? (
+                <p className="wallets-note">
+                  Paste the address that starts with T. The app tracks TRX, USDT and USDC on Tron
+                  mainnet and the TRX you staked for energy or bandwidth; other tokens are not read.
+                </p>
+              ) : (
+                <p className="wallets-note">
+                  Hardware wallets like Trezor use a new address for every deposit. Paste the
+                  account public key (zpub) from Trezor Suite to track all of them at once.
+                </p>
+              )}
+            </>
+          )}
+          {step === 3 && (exchange ? keyReady : check.ok) && (
+            <>
+              <div className="portfolio-field">
+                <label className="portfolio-field__label" htmlFor="wallet-name">
+                  Wallet <span className="wallets-muted">(optional)</span>
+                </label>
+                <input
+                  id="wallet-name"
+                  className="portfolio-input"
+                  maxLength={120}
+                  placeholder={chosen.defaultWallet}
+                  value={walletName}
+                  onChange={(event) => setWalletName(event.target.value)}
+                />
+                <span className="portfolio-field__hint">
+                  {match
+                    ? `The ${exchange ? 'account' : 'address'} joins your wallet ${match.name}.`
+                    : `A new wallet named ${chosenName} is created.`}{' '}
+                  Pick one of your wallets to group this {exchange ? 'account' : 'address'} with it,
+                  or type a new name.
+                </span>
+              </div>
+              {accounts.length > 0 && (
+                <div className="portfolio-chips" role="group" aria-label="Your wallets">
+                  {accounts.map((account) => (
+                    <button
+                      key={account.accountId}
+                      type="button"
+                      className="portfolio-chip"
+                      aria-pressed={match?.accountId === account.accountId}
+                      onClick={() => setWalletName(account.name)}
+                    >
+                      {account.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!match && <KindField id="wallet-kind" value={kind} onChange={setPickedKind} />}
+              <div className="portfolio-field">
+                <label className="portfolio-field__label" htmlFor="wallet-label">
+                  {exchange ? 'Account name' : 'Address name'}{' '}
+                  <span className="wallets-muted">(optional)</span>
+                </label>
+                <input
+                  id="wallet-label"
+                  className="portfolio-input"
+                  maxLength={MAX_LABEL}
+                  placeholder={`e.g. ${chosen.labelExample}`}
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                />
+              </div>
+              <dl className="wallets-summary">
+                <div>
+                  <dt>Network</dt>
+                  <dd>{chosen.name}</dd>
+                </div>
+                {exchange ? (
+                  <>
+                    <div>
+                      <dt>API key</dt>
+                      <dd className="wallets-mono">…{apiKey.trim().slice(-4)}</dd>
+                    </div>
+                    <div>
+                      <dt>Access</dt>
+                      <dd>Read-only, checked with Bybit when you add it</dd>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <dt>{isKey ? 'Public key' : 'Address'}</dt>
+                    <dd className="wallets-mono">{check.ok && check.address}</dd>
+                  </div>
+                )}
+              </dl>
+            </>
+          )}
+          {error && (
+            <p className="portfolio-dialog__error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="ui-modal__foot">
+          {step === 1 ? (
+            <button type="button" className="shell-button shell-button--ghost" onClick={onClose}>
+              Cancel
             </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          ) : (
+            <button
+              type="button"
+              className="shell-button shell-button--ghost"
+              disabled={saving}
+              onClick={() => {
+                setError(null);
+                setStep(step === 3 ? 2 : 1);
+              }}
+            >
+              Back
+            </button>
+          )}
+          <span className="wallets-grow" />
+          <button
+            type="submit"
+            className="shell-button shell-button--primary"
+            disabled={(step === 1 && !network) || saving}
+          >
+            {step === 3
+              ? saving
+                ? exchange
+                  ? 'Checking the key…'
+                  : 'Adding…'
+                : exchange
+                  ? 'Add account'
+                  : 'Add wallet'
+              : 'Continue'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
