@@ -32,27 +32,6 @@
   text-align: left;
 }
 
-.history-date {
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: var(--sunken);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--fs-sm);
-  color-scheme: dark;
-}
-
-:root[data-theme="light"] .history-date {
-  color-scheme: light;
-}
-
-.history-date:focus-visible {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent-soft);
-}
-
 .history-more {
   display: flex;
   justify-content: center;
@@ -108,11 +87,6 @@
 }
 
 @media (max-width: 639.98px) {
-  .history-date {
-    flex: 1;
-    min-width: 0;
-  }
-
   .history-fields div {
     grid-template-columns: 96px minmax(0, 1fr);
     gap: 10px;

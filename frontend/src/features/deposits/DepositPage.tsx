@@ -11,6 +11,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
 import {
   attention,
+  capitalizedInterest,
   dateText,
   money,
   movementText,
@@ -154,11 +155,21 @@ export default function DepositPage() {
               value={money(deposit.accrued, own)}
               hint="Until the next interest date"
             />
-            <Stat
-              label="Interest to be paid out"
-              value={money(deposit.due, own)}
-              hint="Posted by the bank, not recorded as paid"
-            />
+            {deposit.capitalized && (
+              <Stat
+                label="Interest added so far"
+                value={money(capitalizedInterest(deposit.periods), own)}
+                hint="Already part of the deposit"
+              />
+            )}
+            {/* A capitalizing deposit closed early can still owe the interest it kept. */}
+            {(!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
+              <Stat
+                label="Interest to be paid out"
+                value={money(deposit.due, own)}
+                hint="Posted by the bank, not recorded as paid"
+              />
+            )}
             {deposit.nextPayout && (
               <Stat
                 label={
@@ -343,6 +354,7 @@ export default function DepositPage() {
             <CheckDialog
               id={deposit.id}
               currency={own}
+              capitalized={deposit.capitalized}
               onClose={() => setDialog(null)}
               onSaved={saved}
             />

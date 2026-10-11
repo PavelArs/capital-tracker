@@ -1,17 +1,4 @@
 /* Wallets page (prototype "wallets" cards, source rows, add-wallet steps and network tiles). */
-.wallets-intro {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.wallets-intro p {
-  max-width: 62ch;
-  margin: 0;
-}
-
 .wallets-soft {
   margin: 0;
   color: var(--ink-2);
@@ -585,10 +572,6 @@ button.wallets-source__open:focus-visible {
 
   .wallets-empty-row {
     padding: 13px 16px 16px;
-  }
-
-  .wallets-intro .shell-button {
-    width: 100%;
   }
 }
 

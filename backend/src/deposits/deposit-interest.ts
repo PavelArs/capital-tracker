@@ -59,6 +59,8 @@ export interface DepositProjection {
   due: string;
   /** What the bank would show today: principal, posted interest still due and accrued. */
   balance: string;
+  /** Principal and interest still due, without the interest earned since the last payout date. */
+  posted: string;
   interestPosted: string;
   interestPaidOut: string;
   interestForfeited: string;
@@ -231,11 +233,21 @@ export function projectDeposit(
     accrued: centsText(earned),
     due: centsText(due),
     balance: centsText(principal + due + earned),
+    posted: centsText(principal + due),
     interestPosted: centsText(posted),
     interestPaidOut: centsText(paidOut),
     interestForfeited: centsText(roundToCents(forfeited)),
     periods,
   };
+}
+
+/**
+ * The balance a bank's screen is compared with. A bank that adds interest to the deposit on the
+ * payout date (capitalization) shows only what it has posted; a deposit that pays interest out
+ * shows the balance with what was earned so far.
+ */
+export function bankBalanceOf(terms: DepositTerms, projection: DepositProjection): string {
+  return terms.capitalized ? projection.posted : projection.balance;
 }
 
 /** The next payout date after `asOf`, or null when none is left (or the deposit is closed). */

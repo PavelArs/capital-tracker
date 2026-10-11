@@ -9,7 +9,9 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { useAttention } from '../shell/attention-context';
 import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { leftOutSymbols } from '../wallets/WalletParts';
@@ -42,6 +44,7 @@ import '../portfolio/portfolio.css';
 import './transactions.css';
 import EmptyState from '@/ui/EmptyState';
 import { ListRowText, rowClass } from '@/ui/ListRow';
+import PageIntro from '@/ui/PageIntro';
 
 type StatusView = 'needs-classification' | 'hidden' | 'dust';
 type View = 'all' | StatusView | Operation['source'];
@@ -439,6 +442,7 @@ export default function TransactionsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   // The Edit window of the prototype (M9); new transactions open from the page header.
   const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
+  const attention = useAttention();
   // The router commits an address change later, in a transition; a second filter change
   // before that builds on the first one, not on the address it replaces.
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
@@ -622,8 +626,20 @@ export default function TransactionsPage() {
   const changed = () => {
     setDialog(null);
     setOpenId(null);
+    attention?.refresh();
     void load(asked, period, false);
   };
+  const empty = operations.length === 0 && !period;
+  const addButton = (
+    <button
+      type="button"
+      className="shell-button shell-button--primary"
+      onClick={() => setDialog({})}
+    >
+      <Icon name="plus" className="shell-icon shell-icon--sm" />
+      Add transaction
+    </button>
+  );
   // CLS-NEXT: the open transaction is marked in the list and brought into view, so the one
   // opened after a classification can be found when the drawer closes.
   const rowOf = useCallback(
@@ -712,7 +728,15 @@ export default function TransactionsPage() {
   return (
     <div className="shell-page">
       {/* The header's switch sets ?currency=; the list reloads in that currency. */}
-      <PageHeader title="Transactions" currency={list?.quoteCurrency} onAddTransaction={changed} />
+      <PageHeader title="Transactions" currency={list?.quoteCurrency} />
+      {/* The dialog saves without the list, so the button is there while it loads or fails too;
+          only an empty list moves it into the empty-state card. */}
+      {(failed || list === null || !empty) && (
+        <PageIntro action={addButton}>
+          Every purchase, sale, transfer and income in one list. Wallets and exchanges add theirs on
+          their own; record the rest here.
+        </PageIntro>
+      )}
       {notice && !opened && (
         <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
@@ -747,15 +771,17 @@ export default function TransactionsPage() {
         </section>
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
-      ) : operations.length === 0 && !period ? (
-        // Add transaction is in the page header.
+      ) : empty ? (
         <EmptyState
           id="transactions-empty"
           title="No transactions yet"
           actions={
-            <Link className="shell-button" to="/wallets">
-              Open wallets
-            </Link>
+            <>
+              {addButton}
+              <Link className="shell-button" to="/wallets">
+                Open wallets
+              </Link>
+            </>
           }
         >
           Purchases, sales and transfers you record and transactions found in your wallets appear
@@ -787,10 +813,14 @@ export default function TransactionsPage() {
                 );
               })}
             </div>
-            <div className="transactions-filters">
-              <label className="transactions-filter">
+            <div className="ui-filters">
+              <label className="ui-filter">
                 <span>Asset</span>
-                <select value={asset} onChange={(event) => update({ asset: event.target.value })}>
+                <select
+                  className="ui-input ui-input--sm"
+                  value={asset}
+                  onChange={(event) => update({ asset: event.target.value })}
+                >
                   <option value="">All assets</option>
                   {assetOptions.map(([key, label]) => (
                     <option key={key} value={key}>
@@ -799,9 +829,13 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>Account</span>
-                <select value={place} onChange={(event) => update({ account: event.target.value })}>
+                <select
+                  className="ui-input ui-input--sm"
+                  value={place}
+                  onChange={(event) => update({ account: event.target.value })}
+                >
                   <option value="">All accounts</option>
                   {placeOptions.map(([key, label]) => (
                     <option key={key} value={key}>
@@ -810,9 +844,13 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>Type</span>
-                <select value={kind} onChange={(event) => update({ type: event.target.value })}>
+                <select
+                  className="ui-input ui-input--sm"
+                  value={kind}
+                  onChange={(event) => update({ type: event.target.value })}
+                >
                   <option value="">All types</option>
                   {kindOptions.map(([key, label]) => (
                     <option key={key} value={key}>
@@ -827,7 +865,7 @@ export default function TransactionsPage() {
                 onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
               />
               <input
-                className="transactions-search"
+                className="ui-input ui-input--sm ui-search"
                 type="search"
                 placeholder="Search asset, account, type"
                 aria-label="Search transactions"

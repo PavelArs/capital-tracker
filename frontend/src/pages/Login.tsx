@@ -129,7 +129,7 @@ export default function Login() {
         <div className="auth-field">
           <label htmlFor="login-email">Email</label>
           <input
-            className="auth-input"
+            className="ui-input"
             id="login-email"
             ref={focusOnMount}
             type="email"
@@ -186,7 +186,7 @@ export default function Login() {
           <input
             key="recovery"
             ref={focusOnMount}
-            className="auth-input auth-mono"
+            className="ui-input auth-mono"
             id="login-recovery"
             autoComplete="off"
             autoCapitalize="none"
@@ -228,7 +228,7 @@ export default function Login() {
         <input
           key="totp"
           ref={focusOnMount}
-          className="auth-input auth-otp"
+          className="ui-input auth-otp"
           id="login-totp"
           inputMode="numeric"
           autoComplete="one-time-code"

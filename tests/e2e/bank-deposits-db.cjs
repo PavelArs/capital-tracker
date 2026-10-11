@@ -277,27 +277,27 @@ async function checks(db, service, owner, ids) {
   assert.equal(before.lastCheck, null);
   const checked = await service.addCheck(owner, ids.usd, {
     checkedOn: '2026-10-04',
-    bankBalance: '5052.10',
+    bankBalance: '5050.44',
   });
-  assert.equal(checked.lastCheck.calculated, '5052.07');
+  assert.equal(checked.lastCheck.calculated, '5050.41');
   assert.equal(checked.lastCheck.difference, '0.03');
   assert.equal(checked.checks.length, 1);
   const corrected = await service.addCheck(owner, ids.usd, {
     checkedOn: '2026-10-04',
-    bankBalance: '5052.09',
+    bankBalance: '5050.43',
   });
   assert.deepEqual(
     corrected.checks.map((check) => check.bankBalance),
-    ['5052.09', '5052.10'],
+    ['5050.43', '5050.44'],
     'Checks of the same day are listed newest first, in the order they were entered',
   );
-  assert.equal(corrected.lastCheck.bankBalance, '5052.09');
-  const reading = { checkedOn: '2026-10-04', bankBalance: '5052.08', requestId: randomUUID() };
+  assert.equal(corrected.lastCheck.bankBalance, '5050.43');
+  const reading = { checkedOn: '2026-10-04', bankBalance: '5050.42', requestId: randomUUID() };
   await service.addCheck(owner, ids.usd, reading);
   const retried = await service.addCheck(owner, ids.usd, reading);
   assert.equal(retried.checks.length, 3, 'A retried check is recorded once');
   await rejected(
-    () => service.addCheck(owner, ids.usd, { ...reading, bankBalance: '5052.07' }),
+    () => service.addCheck(owner, ids.usd, { ...reading, bankBalance: '5050.41' }),
     409,
   );
   const past = await service.get(owner, ids.usd, '2026-10-02');

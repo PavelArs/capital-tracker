@@ -23,7 +23,6 @@ beforeEach(() => {
     dustThresholdUsd: null,
     insightRules: null,
   });
-  // The Add transaction window only has to open here; its form has its own tests.
   vi.spyOn(portfolioAssetsApi, 'listAll').mockReturnValue(new Promise(() => {}));
   vi.spyOn(accountingApi, 'listAccounts').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
@@ -53,22 +52,12 @@ function renderAt(path: string, page = <PageHeader title="Transactions" />) {
 const switcher = () => screen.getByRole('radiogroup', { name: 'Currency' });
 
 describe('Shared page header', () => {
-  it('shows the title, the main currency and Add transaction where the page asks for it', async () => {
-    renderAt('/transactions', <PageHeader title="Transactions" onAddTransaction={() => {}} />);
+  it('shows the title and the main currency, and leaves Add transaction to the page below it', async () => {
+    renderAt('/transactions', <PageHeader title="Transactions" />);
     expect(screen.getByRole('heading', { level: 1, name: 'Transactions' })).toBeInTheDocument();
     await waitFor(() =>
       expect(within(switcher()).getByRole('radio', { name: 'EUR' })).toBeChecked(),
     );
-
-    await userEvent.click(screen.getByRole('button', { name: 'Add transaction' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Add transaction' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('leaves Add transaction to the Transactions page', () => {
-    renderAt('/wallets', <PageHeader title="Wallets" />);
-    expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add transaction' })).toBeNull();
   });
 

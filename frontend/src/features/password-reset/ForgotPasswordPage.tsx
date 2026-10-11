@@ -96,7 +96,7 @@ export default function ForgotPasswordPage() {
       <div className="auth-field">
         <label htmlFor="reset-email">Email</label>
         <input
-          className="auth-input"
+          className="ui-input"
           id="reset-email"
           ref={focusOnMount}
           type="email"
