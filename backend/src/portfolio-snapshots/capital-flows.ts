@@ -184,15 +184,18 @@ export function splitChange(
 
 /**
  * Profit or loss to date: net worth minus all-time net invested, and its share of net
- * invested; no percentage of nothing when more was taken out than put in. Unknown when the
- * value leaves out a held asset without a price.
+ * invested; no percentage of nothing when more was taken out than put in. When the value
+ * leaves out a held asset without a price the figure still counts the priced part; the page
+ * says what is left out. Unknown without a value or net invested, and when no held asset is
+ * priced at all (a value of nothing would read as losing everything).
  */
 export function profitToDate(
   value: string | null,
   invested: string | null,
   unpriced = false,
 ): { profit: string | null; profitPercent: string | null } {
-  if (value === null || invested === null || unpriced) return { profit: null, profitPercent: null };
+  if (value === null || invested === null) return { profit: null, profitPercent: null };
+  if (unpriced && valueAtoms(value) === 0n) return { profit: null, profitPercent: null };
   const base = valueAtoms(invested);
   const profit = valueAtoms(value) - base;
   return {

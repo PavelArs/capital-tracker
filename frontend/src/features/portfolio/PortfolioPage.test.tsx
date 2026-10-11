@@ -282,9 +282,10 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
 
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
-    expect(summary).toHaveTextContent(
-      'Current valueIncomplete$100,000.00 priced, 1 asset without a price',
-    );
+    // The priced assets are the value; the unpriced one is named under it, and one tooltip
+    // says the figures leave out coins without a price.
+    expect(summary).toHaveTextContent('Current value$100,000.001 asset without a price');
+    expect(within(summary).getByRole('img', { name: /Coins without a price/ })).toBeInTheDocument();
     expect(summary).toHaveTextContent('Cost basis$70,000.00');
     expect(summary).toHaveTextContent('Unrealized P&L+$30,000.00+42.86%');
     expect(summary).toHaveTextContent('Realized P&L-$250.50');
@@ -392,16 +393,38 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(cells(rowOf('Bitcoin'))[2]).toBe('$80,000.00Market price · stale, 3 h ago');
-    expect(cells(rowOf('Bitcoin'))[6]).toBe('—');
+    // The table shows the profit of the coins with a known purchase price, not a dash.
+    expect(cells(rowOf('Bitcoin'))[6]).toBe('+$30,000.00+60.00%');
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
     // The known part stands on its own instead of emptying cost basis and profit.
-    expect(summary).toHaveTextContent(
-      'Cost basis$50,000.00known part only, the rest has no purchase price',
-    );
-    expect(summary).toHaveTextContent('Unrealized P&L+$30,000.00+60.00%known part only');
+    expect(summary).toHaveTextContent('Cost basis$50,000.00Unrealized P&L+$30,000.00+60.00%');
+    expect(summary).not.toHaveTextContent('known part only');
+    expect(within(summary).getByRole('img', { name: /Coins without a price/ })).toBeInTheDocument();
     expect(within(summary).getByRole('note')).toHaveTextContent(
       '1 price is older than 2 hours; the last stored price is used.',
     );
+  });
+
+  it('PV-KNOWN-PART shows realized P&L of the sales with a known cost and no tooltip when complete', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], {
+        realizedPnl: null,
+        knownRealizedSubtotal: '-250.5',
+        unknownRealizedCount: 1,
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('Realized P&L-$250.50');
+    expect(within(summary).getByRole('img', { name: /Coins without a price/ })).toBeInTheDocument();
+    cleanup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(
+      within(screen.getByRole('region', { name: 'Portfolio summary' })).queryByRole('img'),
+    ).toBeNull();
   });
 
   it('names a later-starting account as the gap and shows a dust amount as non-zero', async () => {
