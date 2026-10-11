@@ -435,10 +435,10 @@ async function main() {
       ]),
       [
         ['api.etherscan.io', '10', 'eth_blockNumber', 'acceptance-etherscan-key'],
-        ['optimism.blockscout.com', null, 'eth_block_number', null],
-        ['optimism.blockscout.com', null, 'txlist', null],
-        ['optimism.blockscout.com', null, 'txlistinternal', null],
-        ['optimism.blockscout.com', null, 'tokentx', null],
+        ['explorer.optimism.io', null, 'eth_block_number', null],
+        ['explorer.optimism.io', null, 'txlist', null],
+        ['explorer.optimism.io', null, 'txlistinternal', null],
+        ['explorer.optimism.io', null, 'tokentx', null],
       ],
     );
     assert.deepEqual(
@@ -456,7 +456,7 @@ async function main() {
     // The next pass goes straight to Blockscout instead of asking the refusing plan again.
     const again2 = await fallbackCalls(() => s.addresses.sync(owner, ids.optimism));
     assert.equal(again2.result.outcome, 'complete');
-    assert.ok(again2.urls.every((url) => url.hostname === 'optimism.blockscout.com'));
+    assert.ok(again2.urls.every((url) => url.hostname === 'explorer.optimism.io'));
     await post('evm', { chainid: 43114, planRequired: true });
     const refused = await s.addresses.sync(owner, ids.avalanche);
     assert.deepEqual([refused.outcome, refused.reason], ['provider_error', 'plan_required']);

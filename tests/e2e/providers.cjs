@@ -10,7 +10,7 @@ const allowedHosts = new Set([
   'blockstream.info',
   'api.etherscan.io',
   'base.blockscout.com',
-  'optimism.blockscout.com',
+  'explorer.optimism.io',
   solanaHost,
   'api.coingecko.com',
   'api.exchangerate-api.com',
@@ -252,7 +252,7 @@ function cbrDynamic(response, url) {
 }
 
 // BLOCKSCOUT: the chains whose keyless Blockscout explorer the probes may read when Etherscan turns the chain away.
-const blockscoutChains = { 'base.blockscout.com': '8453', 'optimism.blockscout.com': '10' };
+const blockscoutChains = { 'base.blockscout.com': '8453', 'explorer.optimism.io': '10' };
 const noPlan =
   'Free API access is not supported for this chain. Please upgrade your api plan for full chain coverage. https://etherscan.io/apis';
 
