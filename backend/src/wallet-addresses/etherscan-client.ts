@@ -8,6 +8,7 @@ export const ETHERSCAN_PAGE_SIZE = 1000;
 const DEFAULT_BASE_URL = 'https://api.etherscan.io/v2/api';
 const MAINNET = 1;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
+const MAX_REDIRECTS = 2;
 const MAX_UNIX_SECONDS = 253402300799;
 
 /** A transaction the address sent or received (action txlist). */
@@ -362,6 +363,11 @@ export class EtherscanClient {
     const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     let response: { status: number; data: string };
+    // REDIRECT: an explorer may answer with a redirect (301) to the same address in another form.
+    // Only one that stays on the same host and scheme is followed; a request carries the key in
+    // its query, so it never goes to another host.
+    const origin = new URL(this.baseUrl);
+    let movedTo: string | null = null;
     try {
       response = await axios.get<string>(this.baseUrl, {
         params: this.keyless
@@ -370,7 +376,22 @@ export class EtherscanClient {
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
-        maxRedirects: 0,
+        maxRedirects: MAX_REDIRECTS,
+        beforeRedirect: (options: {
+          protocol?: string;
+          hostname?: string;
+          port?: string | number;
+        }) => {
+          const port = String(options.port ?? '');
+          const same =
+            options.protocol === origin.protocol &&
+            options.hostname === origin.hostname &&
+            (port === origin.port || (origin.port === '' && ['', '80', '443'].includes(port)));
+          if (!same) {
+            movedTo = options.hostname ?? null;
+            throw new Error('Redirected to another host');
+          }
+        },
         maxContentLength: MAX_BODY_BYTES,
         responseType: 'text',
         transformResponse: [(data: string) => data],
@@ -378,6 +399,10 @@ export class EtherscanClient {
         headers: { Accept: 'application/json' },
       });
     } catch (error) {
+      if (movedTo !== null) {
+        const target = said(movedTo);
+        return { ok: false, reason: 'unavailable', detail: `${this.host} moved to ${target}` };
+      }
       const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
       return { ok: false, reason: 'unavailable', detail: `${this.host} did not answer${code}` };
     } finally {
