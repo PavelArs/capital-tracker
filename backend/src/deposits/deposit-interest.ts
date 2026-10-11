@@ -262,10 +262,12 @@ export function firstImpossibleMovement(
 ): number {
   for (const [index, movement] of movements.entries()) {
     if (movement.date < terms.startDate) return index;
+    // Money can be taken out on the end date, but a top-up that day would earn nothing.
     if (
       terms.endDate !== null &&
-      movement.date > terms.endDate &&
-      movement.kind !== 'interest-payout'
+      movement.kind !== 'interest-payout' &&
+      (movement.date > terms.endDate ||
+        (movement.kind === 'topup' && movement.date >= terms.endDate))
     )
       return index;
     if (index > 0 && movements[index - 1].date > movement.date) return index;

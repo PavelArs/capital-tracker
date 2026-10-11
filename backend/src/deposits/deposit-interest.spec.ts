@@ -261,6 +261,24 @@ describe('interest paid out after the term or the closure', () => {
     expect(firstImpossibleMovement(atEnd, movements)).toBe(2);
   });
 
+  it('refuses a top-up on the end date but lets the money be taken out that day', () => {
+    const held: DepositMovement[] = [topup('2026-01-01', '100000')];
+    expect(firstImpossibleMovement(atEnd, [...held, topup('2026-02-01', '10')])).toBe(1);
+    expect(firstImpossibleMovement(atEnd, [...held, topup('2026-01-31', '10')])).toBe(-1);
+    expect(
+      firstImpossibleMovement(atEnd, [
+        ...held,
+        { date: '2026-02-01', kind: 'withdrawal', amount: '100000' },
+      ]),
+    ).toBe(-1);
+    expect(
+      firstImpossibleMovement(atEnd, [
+        ...held,
+        { date: '2026-02-02', kind: 'withdrawal', amount: '100000' },
+      ]),
+    ).toBe(1);
+  });
+
   it('refuses money moved on the day the whole deposit was withdrawn', () => {
     const closing: DepositMovement[] = [
       topup('2026-01-01', '100000'),
