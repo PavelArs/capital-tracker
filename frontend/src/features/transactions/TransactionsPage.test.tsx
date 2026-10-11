@@ -649,6 +649,35 @@ describe('TransactionsPage (list-all-operations)', () => {
     }
   });
 
+  it('OPS-FILTER-SHEET-COUNT: the sheet names no count while a new period is loading', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(operationsApi, 'list')
+        .mockResolvedValueOnce(all)
+        .mockReturnValueOnce(new Promise(() => {}));
+      renderPage();
+      await screen.findByRole('list', { name: 'Transactions' });
+      await user.click(screen.getByRole('button', { name: 'Filters' }));
+      const sheet = screen.getByRole('dialog', { name: 'Filters' });
+      expect(
+        within(sheet).getByRole('button', { name: 'Show 6 transactions' }),
+      ).toBeInTheDocument();
+      await user.selectOptions(
+        within(sheet).getByRole('combobox', { name: 'Period' }),
+        'Last 30 days',
+      );
+      expect(within(sheet).getByRole('button', { name: 'Show transactions' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('OPS-FILTER-SHEET: on a phone the filters wait behind a Filters button in a sheet', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
