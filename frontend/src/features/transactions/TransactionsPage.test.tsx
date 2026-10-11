@@ -854,6 +854,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your transactions');
     expect(screen.queryByRole('table')).toBeNull();
+    // Recording a transaction does not need the list, so the button stays.
+    expect(screen.getByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     expect(read).toHaveBeenCalledTimes(2);
