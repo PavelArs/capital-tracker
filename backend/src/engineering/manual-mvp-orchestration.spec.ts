@@ -58,7 +58,7 @@ if(tool==='docker'){
  if(a[0]==='images'&&mode==='old-images'){
   const id=(c)=>'sha256:'+c.repeat(64);
   const backendRepo='ghcr.io/pavelars/capital-tracker-backend',frontendRepo='ghcr.io/pavelars/capital-tracker-frontend';
-  process.stdout.write([[id('9'),backendRepo],[id('8'),frontendRepo],[id('b'),backendRepo],[id('c'),frontendRepo],[id('1'),backendRepo],[id('2'),backendRepo],[id('3'),frontendRepo],[id('4'),frontendRepo],[id('a'),'ghcr.io/pavelars/capital-tracker-postgres'],[id('5'),'redis']].map(row=>row.join(' ')).join('\\n')+'\\n');
+  process.stdout.write([[id('9'),backendRepo],[id('8'),frontendRepo],[id('b'),backendRepo],[id('c'),frontendRepo],[id('1'),backendRepo],[id('2'),backendRepo],[id('3'),frontendRepo],[id('4'),frontendRepo],[id('6'),backendRepo],[id('7'),frontendRepo],[id('a'),'ghcr.io/pavelars/capital-tracker-postgres'],[id('5'),'redis']].map(row=>row.join(' ')).join('\\n')+'\\n');
  }
  if(a[0]==='volume'&&a[1]==='ls'){
   const labeled=a.includes('--filter');
@@ -399,14 +399,26 @@ if sys.argv[1] == 'preflight':
 });
 
 describe('REL-IMG-001: old application images do not pile up on the server', () => {
-  it('removes application images older than the running pair and the pair it replaced, nothing else', () => {
+  it('keeps the running pair, the pair it replaced and the pair before that, removes the rest', () => {
+    const states = join(directory, 'releases', commit);
+    const id = (digit: string) => `sha256:${digit.repeat(64)}`;
+    // The last successful release replaced the 6/7 pair; a newer failed attempt has no receipt.
+    mkdirSync(join(states, '20261010T100000Z-1'), { recursive: true });
+    writeFileSync(
+      join(states, '20261010T100000Z-1', 'previous-images'),
+      `${id('6')}\n${id('7')}\n`,
+    );
+    writeFileSync(join(states, '20261010T100000Z-1', 'receipt'), 'health=passed\n');
+    mkdirSync(join(states, '20261010T110000Z-2'), { recursive: true });
+    writeFileSync(
+      join(states, '20261010T110000Z-2', 'previous-images'),
+      `${id('2')}\n${id('4')}\n`,
+    );
     const { result, calls } = release('old-images');
     expect(result.status).toBe(0);
     const removal = calls.filter((call) => call.tool === 'docker' && call.args[0] === 'rmi');
     expect(removal).toHaveLength(1);
-    expect(removal[0].args.slice(1).sort()).toEqual(
-      ['1', '2', '3', '4'].map((digit) => `sha256:${digit.repeat(64)}`),
-    );
+    expect(removal[0].args.slice(1).sort()).toEqual(['1', '2', '3', '4'].map(id));
     expect(removal[0].args).not.toContain('-f');
     expect(calls.some((call) => call.tool === 'docker' && call.args.includes('prune'))).toBe(false);
   }, 20000);
