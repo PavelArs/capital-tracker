@@ -1,6 +1,8 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { securityApi } from '@api/security.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -31,6 +33,7 @@ beforeEach(() => {
   vi.spyOn(ownerSettingsApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(hiddenAssetsApi, 'list').mockReturnValue(new Promise(() => {}));
   stored.clear();
   listeners.clear();
   vi.mocked(window.localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
@@ -276,5 +279,63 @@ describe('dust threshold (CLS-DUST)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not save the dust threshold; nothing changed.',
     );
+  });
+});
+
+describe('ASSET-HIDE hidden assets', () => {
+  const hidden = (n: number, symbol: string | null, name: string): HiddenAsset => ({
+    instrumentId: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    symbol,
+    name,
+    hiddenAt: '2026-10-11T09:00:00.000Z',
+  });
+
+  it('says so when nothing is hidden', async () => {
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
+    renderSettings();
+    const card = screen.getByRole('region', { name: 'Hidden assets' });
+    expect(await within(card).findByText(/Nothing is hidden/)).toBeInTheDocument();
+  });
+
+  it('lists the hidden assets and shows one again, its wallet tokens included', async () => {
+    const night = hidden(1, 'NIGHT', 'Midnight');
+    const gold = hidden(2, null, 'Gold bars');
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([night, gold]);
+    const show = vi.spyOn(hiddenAssetsApi, 'show').mockResolvedValue(undefined);
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
+      {
+        id: 'wallet-a',
+        hiddenTokens: [
+          { symbol: 'NIGHT', name: 'Midnight', quantity: '2', reason: 'owner' },
+          { symbol: 'SPAM', name: 'Spam', quantity: '1', reason: 'lookalike' },
+        ],
+      },
+      { id: 'wallet-b', hiddenTokens: [] },
+    ] as unknown as WalletAddress[]);
+    const tokens = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue({} as WalletAddress);
+    const user = userEvent.setup();
+    renderSettings();
+    const card = screen.getByRole('region', { name: 'Hidden assets' });
+    expect(await within(card).findByText('NIGHT')).toBeInTheDocument();
+    expect(within(card).getByText('Gold bars')).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Show NIGHT' }));
+    await waitFor(() => expect(show).toHaveBeenCalledWith(night.instrumentId));
+    // Only the address that hid the token by choice gets it back.
+    expect(tokens.mock.calls).toEqual([['wallet-a', ['NIGHT'], 'shown']]);
+    await waitFor(() => expect(within(card).queryByText('NIGHT')).toBeNull());
+    expect(within(card).getByText('Gold bars')).toBeInTheDocument();
+  });
+
+  it('keeps the asset listed and says so when showing it fails', async () => {
+    const gold = hidden(2, null, 'Gold bars');
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([gold]);
+    vi.spyOn(hiddenAssetsApi, 'show').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderSettings();
+    const card = screen.getByRole('region', { name: 'Hidden assets' });
+    await user.click(await within(card).findByRole('button', { name: 'Show Gold bars' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Could not show Gold bars');
+    expect(within(card).getByRole('button', { name: 'Show Gold bars' })).toBeEnabled();
   });
 });

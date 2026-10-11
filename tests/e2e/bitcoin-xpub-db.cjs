@@ -264,7 +264,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 57/);
+  assert.match(migrate(database), /Migrations applied: 58/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -672,7 +672,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS XPUB-MIGRATION fresh 57 applies once; down refuses');
+    console.log('PASS XPUB-MIGRATION fresh 58 applies once; down refuses');
   } finally {
     await db.destroy();
   }

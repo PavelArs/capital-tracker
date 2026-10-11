@@ -6,6 +6,7 @@
 export const backupTables = [
   'owner_settings',
   'accounting_instruments',
+  'hidden_assets',
   'manual_usd_price_versions',
   'manual_accounts',
   'account_opening_snapshots',

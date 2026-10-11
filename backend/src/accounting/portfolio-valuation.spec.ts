@@ -8,6 +8,7 @@ import {
   portfolioAccount,
   projectPortfolio,
   type StoredPrice,
+  withoutAssets,
 } from './portfolio-valuation';
 
 const now = new Date('2026-10-04T12:00:00.000Z');
@@ -556,5 +557,33 @@ describe('PV-24H price change over the last 24 hours', () => {
       prices({ BTC: ['80000', minutesAgo(30)] }),
     );
     expect(assetOf(without, btc).priceChange24hPercent).toBeNull();
+  });
+});
+
+describe('PV-HIDE an asset the owner hid', () => {
+  const accounts = [
+    account(1, 'Bybit', [
+      trade(btc, 'buy', '1', '50000'),
+      trade(eth, 'buy', '10', '20000'),
+      trade(eth, 'sell', '4', '10000'),
+    ]),
+  ];
+  const priced = prices({ BTC: ['80000', minutesAgo(30)], ETH: ['3000', minutesAgo(30)] });
+
+  it('leaves it out of the assets, the total and the realized sum, whatever the books hold', () => {
+    const all = projectPortfolio(now, [btc, eth], accounts, priced);
+    expect(all.totalValue).toBe('98000');
+    expect(all.realizedPnl).toBe('2000');
+    const hidden = new Set([eth.id]);
+    const result = projectPortfolio(now, [btc], withoutAssets(accounts, hidden), priced);
+    expect(result.assets.map((item) => item.instrumentId)).toEqual([btc.id]);
+    expect(result).toMatchObject({ totalValue: '80000', realizedPnl: '0' });
+    // The books themselves are not changed.
+    expect(accounts[0].lots.some((lot) => lot.instrumentId === eth.id)).toBe(true);
+    expect(accounts[0].realizations.some((item) => item.instrumentId === eth.id)).toBe(true);
+  });
+
+  it('changes nothing while no asset is hidden', () => {
+    expect(withoutAssets(accounts, new Set())).toEqual(accounts);
   });
 });

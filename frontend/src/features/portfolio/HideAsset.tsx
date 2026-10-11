@@ -1,11 +1,13 @@
 import { cachedReads } from '@api/cached-reads';
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { useEffect, useId, useState } from 'react';
 
-// TOKEN-HIDE: an asset that is one of the other tokens of Ethereum or Solana wallets can be
-// removed from the portfolio from its own page. It is the wallets' hiding, applied to every
-// address that holds the token: the asset leaves the lists, the filters and the totals the same
-// way a hidden token does, and Restore under Hidden tokens on the wallet brings it back.
+// ASSET-HIDE: any asset can be removed from the portfolio from its own page. It leaves the
+// portfolio, its totals and history and the filters; its transactions stay in the list. A token
+// that Ethereum or Solana wallets hold as one of their other tokens is also hidden in every
+// address that holds it (TOKEN-HIDE), so wallet balances and price requests leave it as well.
+// Settings → Hidden assets brings it back, wallet tokens included.
 
 /** The addresses that hold a token by this ticker, as one of their other tokens. */
 export function holdersOf(
@@ -21,9 +23,11 @@ export function holdersOf(
 }
 
 export default function HideAsset({
+  instrumentId,
   symbol,
   onHidden,
 }: {
+  instrumentId: string;
   symbol: string | null;
   onHidden: () => void;
 }) {
@@ -37,7 +41,7 @@ export default function HideAsset({
 
   useEffect(() => {
     let live = true;
-    // Without the wallets there is nothing to hide the asset in, so the button stays away.
+    // Without the wallets the asset is still hidden; only its wallet tokens are left as they are.
     cachedReads.wallets
       .load()
       .then((loaded) => live && setWallets(loaded))
@@ -48,14 +52,16 @@ export default function HideAsset({
   }, []);
 
   const holders = holdersOf(symbol, wallets);
-  if (!symbol || holders.length === 0) return null;
+  const name = symbol ?? 'this asset';
 
   const hide = async () => {
     setBusy(true);
     setFailed(false);
     try {
-      for (const address of holders)
-        await walletAddressesApi.tokens(address.id, [symbol], 'hidden');
+      if (symbol)
+        for (const address of holders)
+          await walletAddressesApi.tokens(address.id, [symbol], 'hidden');
+      await hiddenAssetsApi.hide(instrumentId);
       onHidden();
     } catch {
       setFailed(true);
@@ -77,13 +83,13 @@ export default function HideAsset({
       {asking && (
         <section id={id} className="shell-card portfolio-confirm" aria-label="Hide this asset">
           <p>
-            Hide {symbol}? It leaves the portfolio, the wallet balances, the totals and the filters.
-            Its transactions stay in the list under Dust. Bring it back with Restore under Hidden
-            tokens on the wallet.
+            Hide {name}? It leaves the portfolio, the totals and the filters. Its transactions stay
+            in the list.{holders.length > 0 && ' It also leaves the wallet balances.'} Bring it back
+            in Settings under Hidden assets.
           </p>
           {failed && (
             <p className="portfolio-warn-text" role="alert">
-              Could not hide {symbol}. Nothing may have changed; try again.
+              Could not hide {name}. Nothing may have changed; try again.
             </p>
           )}
           <div className="portfolio-confirm__actions">
@@ -93,7 +99,7 @@ export default function HideAsset({
               disabled={busy}
               onClick={() => void hide()}
             >
-              Hide {symbol}
+              Hide {name}
             </button>
             <button
               type="button"

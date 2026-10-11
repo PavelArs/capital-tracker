@@ -2,6 +2,7 @@ import { type AccountSummary, accountingApi } from './accounting.api';
 import { type AssetHistory, assetHistoryApi } from './asset-history.api';
 import { type AuditHistory, auditHistoryApi } from './audit-history.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from './hidden-assets.api';
 import {
   CLASSIFICATION_CHANGED,
   type DuplicateProposals,
@@ -131,6 +132,7 @@ export const cachedReads = {
     0,
   ),
   sources: cachedRead('sources', readSources, 0),
+  hiddenAssets: cachedRead('hidden-assets', (): Promise<HiddenAsset[]> => hiddenAssetsApi.list()),
   wallets: cachedRead('wallets', (): Promise<WalletAddress[]> => walletAddressesApi.list()),
   settings: cachedRead('settings', (): Promise<OwnerSettings> => ownerSettingsApi.get()),
   rates: cachedRead('rates', (): Promise<FxRatesReport> => fxRatesApi.get()),

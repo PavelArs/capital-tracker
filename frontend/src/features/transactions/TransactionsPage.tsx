@@ -10,7 +10,7 @@ import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
-import { hiddenTokenSymbols } from '../wallets/WalletParts';
+import { leftOutSymbols } from '../wallets/WalletParts';
 import DuplicateProposals from './DuplicateProposals';
 import OperationDrawer from './OperationDrawer';
 import {
@@ -411,8 +411,9 @@ export default function TransactionsPage() {
   const [list, setList] = useState<OperationList | null>(() => lastList(asked, period) ?? null);
   const [failed, setFailed] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
+  // ASSET-HIDE: so are the assets the owner hid from their own pages.
   const [hiddenTokens, setHiddenTokens] = useState<ReadonlySet<string>>(() =>
-    hiddenTokenSymbols(cachedReads.wallets.last() ?? []),
+    leftOutSymbols(cachedReads.wallets.last() ?? [], cachedReads.hiddenAssets.last() ?? []),
   );
   const [search, setSearch] = useState('');
   // OPS-OPEN: a link from another page (the wallet page) names the transaction to open.
@@ -454,11 +455,11 @@ export default function TransactionsPage() {
   }, [load, asked, period]);
   useEffect(() => {
     let live = true;
-    // Without the wallets the filter lists every asset, as before.
-    cachedReads.wallets
-      .load()
-      .then((wallets) => live && setHiddenTokens(hiddenTokenSymbols(wallets)))
-      .catch(() => undefined);
+    // Without the wallets or the hidden assets the filter lists every asset, as before.
+    Promise.all([
+      cachedReads.wallets.load().catch(() => []),
+      cachedReads.hiddenAssets.load().catch(() => []),
+    ]).then(([wallets, hidden]) => live && setHiddenTokens(leftOutSymbols(wallets, hidden)));
     return () => {
       live = false;
     };

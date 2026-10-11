@@ -10,6 +10,8 @@ import { CarryInService } from './carry-in.service';
 import { ChainClassificationController } from './chain-classification.controller';
 import { ChainClassificationService } from './chain-classification.service';
 import { CsvImportService } from './csv-import.service';
+import { HiddenAssetController } from './hidden-asset.controller';
+import { HiddenAssetService } from './hidden-asset.service';
 import { HistoricalAccountingService } from './historical-accounting.service';
 import { HistoricalValuationController } from './historical-valuation.controller';
 import { HistoricalValuationService } from './historical-valuation.service';
@@ -41,6 +43,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     OperationListController,
     AuditHistoryController,
     ChainClassificationController,
+    HiddenAssetController,
   ],
   providers: [
     AccountingService,
@@ -60,6 +63,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     OperationListService,
     AuditHistoryService,
     ChainClassificationService,
+    HiddenAssetService,
   ],
   // Wallet sync links own transfers after each pass (M13, D7).
   exports: [ChainClassificationService],

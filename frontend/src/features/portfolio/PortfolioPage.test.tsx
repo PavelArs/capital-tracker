@@ -1,6 +1,7 @@
 import { accountingApi } from '@api/accounting.api';
 import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type Operation, operationsApi } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
@@ -226,6 +227,7 @@ beforeEach(() => {
   createTrade.mockReset();
   setPrice.mockReset();
   vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates('90.12', '100.5'));
+  vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       {
@@ -1160,7 +1162,10 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       balances: [{ symbol, quantity: '1', ...(other ? { name: symbol } : {}) }],
     }) as unknown as WalletAddress;
 
-  it('TOKEN-HIDE hides a token asset from its own page in every wallet that holds it', async () => {
+  const hiddenAsset = (instrumentId: string, symbol: string) =>
+    ({ instrumentId, symbol, name: symbol, hiddenAt: '2026-10-11T09:00:00.000Z' }) as HiddenAsset;
+
+  it('ASSET-HIDE hides a token asset from its own page, in every wallet that holds it too', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
     vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
       tokenWallet(601, 'TON', true),
@@ -1168,13 +1173,17 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       tokenWallet(603, 'BTC', false),
     ]);
     const hide = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue({} as WalletAddress);
+    const hideAsset = vi
+      .spyOn(hiddenAssetsApi, 'hide')
+      .mockResolvedValue(hiddenAsset(toncoin.instrumentId, 'TON'));
     const user = userEvent.setup();
     renderAt(`/portfolio/${toncoin.instrumentId}`);
     await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
     expect(hide).not.toHaveBeenCalled();
-    expect(screen.getByRole('region', { name: 'Hide this asset' })).toHaveTextContent(
-      'Bring it back with Restore under Hidden tokens on the wallet.',
-    );
+    expect(hideAsset).not.toHaveBeenCalled();
+    const ask = screen.getByRole('region', { name: 'Hide this asset' });
+    expect(ask).toHaveTextContent('It also leaves the wallet balances.');
+    expect(ask).toHaveTextContent('Bring it back in Settings under Hidden assets.');
     await user.click(screen.getByRole('button', { name: 'Hide TON' }));
     await waitFor(() =>
       expect(hide.mock.calls).toEqual([
@@ -1182,17 +1191,40 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
         [id(602), ['TON'], 'hidden'],
       ]),
     );
+    await waitFor(() => expect(hideAsset).toHaveBeenCalledWith(toncoin.instrumentId));
     // The asset is gone from the portfolio, so the owner lands on it.
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
   });
 
-  it('TOKEN-HIDE offers no Hide for a coin no wallet holds as one of its other tokens', async () => {
+  it('ASSET-HIDE hides an asset no wallet holds as a token by itself, wallets untouched', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
     vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([tokenWallet(603, 'BTC', false)]);
+    const tokens = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue({} as WalletAddress);
+    const hideAsset = vi
+      .spyOn(hiddenAssetsApi, 'hide')
+      .mockResolvedValue(hiddenAsset(bitcoin.instrumentId, 'BTC'));
+    const user = userEvent.setup();
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
-    expect(await screen.findByRole('heading', { name: 'Holdings' })).toBeInTheDocument();
-    await waitFor(() => expect(walletAddressesApi.list).toHaveBeenCalled());
-    expect(screen.queryByRole('button', { name: 'Hide asset' })).toBeNull();
+    await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
+    expect(screen.getByRole('region', { name: 'Hide this asset' })).not.toHaveTextContent(
+      'wallet balances',
+    );
+    await user.click(screen.getByRole('button', { name: 'Hide BTC' }));
+    await waitFor(() => expect(hideAsset).toHaveBeenCalledWith(bitcoin.instrumentId));
+    expect(tokens).not.toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
+  });
+
+  it('ASSET-HIDE keeps the owner on the page and says so when hiding fails', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([]);
+    vi.spyOn(hiddenAssetsApi, 'hide').mockRejectedValue(new Error('network'));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
+    await user.click(screen.getByRole('button', { name: 'Hide BTC' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not hide BTC');
+    expect(screen.getByRole('button', { name: 'Hide BTC' })).toBeEnabled();
   });
 
   it('shows the price change today, the value against cost chart and its periods', async () => {

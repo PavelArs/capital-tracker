@@ -347,10 +347,21 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       .load()
       .then(hiddenTokenSymbols)
       .catch(() => new Set<string>());
+    // ASSET-HIDE: nor are the assets the owner hid from their own pages.
+    const hiddenAssets = cachedReads.hiddenAssets
+      .load()
+      .then((hidden) => new Set(hidden.map((asset) => asset.instrumentId)))
+      .catch(() => new Set<string>());
     // The valuation is optional: the market hint and the order by allocation need it, nothing else.
     const valuation = cachedReads.portfolio.load('USD').catch(() => null);
-    Promise.all([portfolioAssetsApi.listAll(), journalAccounts(), hiddenTokens, valuation])
-      .then(([allAssets, withJournal, hidden, report]) => {
+    Promise.all([
+      portfolioAssetsApi.listAll(),
+      journalAccounts(),
+      hiddenTokens,
+      hiddenAssets,
+      valuation,
+    ])
+      .then(([allAssets, withJournal, hidden, hiddenIds, report]) => {
         if (!live) return;
         const prices = new Map<string, string>();
         const shares = new Map<string, number>();
@@ -367,6 +378,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             (asset) =>
               asset.id === initial.instrumentId ||
               (asset.assetType !== 'fiat' &&
+                !hiddenIds.has(asset.id) &&
                 !(asset.assetType === 'crypto' && asset.symbol && hidden.has(asset.symbol))),
           ),
           shares,
