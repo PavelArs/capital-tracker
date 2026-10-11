@@ -156,8 +156,11 @@ export class WalletSyncService {
     const outcome = outcomeOf(name, step, now);
     await this.record(key, outcome, now);
     await this.journal(wallet, outcome, step, now);
-    // D7, XFER-AUTO: what this pass stored may complete a transfer between own wallets.
-    if (step.outcome !== 'provider_error') await this.linkOwnTransfers(wallet.ownerId);
+    // D7, XFER-AUTO: what this pass stored may complete a transfer between own wallets, also when
+    // it then stopped on a refusal after committing some ranges.
+    if (step.outcome !== 'provider_error' || step.imported > 0) {
+      await this.linkOwnTransfers(wallet.ownerId);
+    }
     return { ...outcome, step };
   }
 

@@ -180,9 +180,10 @@ export function parseList<T>(body: unknown, parse: (item: unknown) => T): T[] {
     return result.map(parse);
   }
   // BLOCKSCOUT: status "2" says the explorer has not indexed some internal transfers of this range
-  // yet. An empty list here would lose them for good once the scan moves on, so the pass stops and
-  // asks again later instead of reading it as "none".
-  if (status === '2' && /not yet been processed/i.test(text(message)))
+  // yet (some instances word the same warning with status "0" and the rows they have). The rows
+  // here would lose the rest for good once the scan moves on, so the pass reads a shorter range or
+  // asks again later instead of taking them for all.
+  if ((status === '2' || status === '0') && /not yet been processed/i.test(text(message)))
     throw new Refused('unavailable', said(text(message)), true);
   if (status !== '0') return invalid();
   // An empty range: Etherscan says "No transactions found"; Blockscout names what is missing, as
