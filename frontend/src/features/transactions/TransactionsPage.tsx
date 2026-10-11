@@ -43,6 +43,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
 import EmptyState from '@/ui/EmptyState';
+import FilterSheet from '@/ui/FilterSheet';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import PageIntro from '@/ui/PageIntro';
 
@@ -813,7 +814,23 @@ export default function TransactionsPage() {
                 );
               })}
             </div>
-            <div className="ui-filters">
+            <FilterSheet
+              active={[asset, place, kind, period].filter(Boolean).length}
+              onReset={() =>
+                update({ asset: '', account: '', type: '', from: '', to: '', cost: '' })
+              }
+              done={`Show ${visible.length} ${visible.length === 1 ? 'transaction' : 'transactions'}`}
+              search={
+                <input
+                  className="ui-input ui-input--sm ui-search"
+                  type="search"
+                  placeholder="Search asset, account, type"
+                  aria-label="Search transactions"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              }
+            >
               <label className="ui-filter">
                 <span>Asset</span>
                 <select
@@ -864,15 +881,7 @@ export default function TransactionsPage() {
                 today={new Date().toISOString().slice(0, 10)}
                 onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
               />
-              <input
-                className="ui-input ui-input--sm ui-search"
-                type="search"
-                placeholder="Search asset, account, type"
-                aria-label="Search transactions"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
+            </FilterSheet>
           </div>
           {unknownCost && (
             <p className="transactions-info">

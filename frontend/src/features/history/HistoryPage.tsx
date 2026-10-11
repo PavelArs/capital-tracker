@@ -10,6 +10,7 @@ import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import FilterSheet from '@/ui/FilterSheet';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
@@ -272,7 +273,10 @@ export default function HistoryPage() {
                 </button>
               ))}
             </div>
-            <div className="ui-filters">
+            <FilterSheet
+              active={[entity, actor, from, to].filter(Boolean).length}
+              onReset={() => update({ entity: '', actor: '', from: '', to: '' })}
+            >
               <label className="ui-filter">
                 <span>Type</span>
                 <select
@@ -323,7 +327,7 @@ export default function HistoryPage() {
                   onChange={(event) => update({ to: event.target.value })}
                 />
               </label>
-            </div>
+            </FilterSheet>
           </div>
           {events.length === 0 ? (
             <div className="portfolio-none transactions-none">

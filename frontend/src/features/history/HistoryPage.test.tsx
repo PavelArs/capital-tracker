@@ -324,10 +324,20 @@ describe('audit history screen (BR 14)', () => {
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     }));
-    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction, imported]));
+    const list = vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction, imported]));
     renderPage();
     const rows = await screen.findByRole('list', { name: 'Changes' });
     expect(screen.queryByRole('table')).toBeNull();
+    // The type, source and dates wait in a sheet behind the Filters button.
+    expect(screen.queryByLabelText('Source')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Filters' }));
+    const sheet = screen.getByRole('dialog', { name: 'Filters' });
+    await user.selectOptions(within(sheet).getByLabelText('Source'), 'csv');
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ actor: 'csv', limit: 20 }));
+    await user.click(within(sheet).getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ limit: 20 }));
+    await user.click(within(sheet).getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(
       within(rows)
         .getAllByRole('heading', { level: 2 })
