@@ -11,6 +11,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
 import {
   attention,
+  capitalizedInterest,
   dateText,
   money,
   movementText,
@@ -157,7 +158,7 @@ export default function DepositPage() {
             {deposit.capitalized && (
               <Stat
                 label="Interest added so far"
-                value={money(deposit.interestPosted, own)}
+                value={money(capitalizedInterest(deposit.periods), own)}
                 hint="Already part of the deposit"
               />
             )}

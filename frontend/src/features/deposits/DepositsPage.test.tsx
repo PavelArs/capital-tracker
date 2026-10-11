@@ -216,7 +216,14 @@ describe('DEP-DETAIL: one deposit', () => {
   });
 
   it('shows what a capitalizing deposit has added instead of interest to be paid out', async () => {
-    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars, { interestPosted: '50.41' }));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(dollars, {
+        interestPosted: '50.41',
+        periods: [
+          { from: '2026-07-01', to: '2026-10-01', interest: '50.41', treatment: 'capitalized' },
+        ],
+      }),
+    );
     open(`/deposits/${dollars.id}?currency=USD`);
     expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
@@ -237,12 +244,18 @@ describe('DEP-DETAIL: one deposit', () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(
       detail(
         { ...dollars, status: 'closed', closedOn: '2026-10-05', due: '12.30', nextPayout: null },
-        { interestPosted: '62.71' },
+        {
+          interestPosted: '62.71',
+          periods: [
+            { from: '2026-07-01', to: '2026-10-01', interest: '50.41', treatment: 'capitalized' },
+            { from: '2026-10-01', to: '2026-10-05', interest: '12.30', treatment: 'payable' },
+          ],
+        },
       ),
     );
     open(`/deposits/${dollars.id}?currency=USD`);
     expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
-    expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$62.71');
+    expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.getByText('Interest to be paid out').parentElement).toHaveTextContent('$12.30');
   });
 
