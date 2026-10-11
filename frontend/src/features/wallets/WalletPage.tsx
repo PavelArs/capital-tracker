@@ -31,7 +31,7 @@ import {
   subtitle,
   withoutHiddenTokens,
 } from './WalletParts';
-import { gapAddress, pricesOf, reconcile } from './wallets';
+import { gapAddress, PENDING, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -335,7 +335,9 @@ export default function WalletPage() {
               </Stat>
             </dl>
             <ReconcileNote
-              result={reconcile(list, portfolio, accountId, hiddenSymbols)}
+              result={
+                hiddenSymbols ? reconcile(list, portfolio, accountId, hiddenSymbols) : PENDING
+              }
               target={gapAddress(list, accountId)}
               onCounted={() => void load(true)}
             />

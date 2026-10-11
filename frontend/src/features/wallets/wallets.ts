@@ -81,6 +81,9 @@ export interface AssetDifference {
 
 const NO_SYMBOLS: ReadonlySet<string> = new Set();
 
+/** Nothing is compared yet: an input of the check is still unknown. */
+export const PENDING: Reconciliation = { state: 'pending' };
+
 export type Reconciliation =
   | { state: 'none' }
   | { state: 'pending' }

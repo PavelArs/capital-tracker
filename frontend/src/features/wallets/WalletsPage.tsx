@@ -20,7 +20,7 @@ import {
   trackedSymbols,
   withoutHiddenTokens,
 } from './WalletParts';
-import { gapAddress, isCoin, pricesOf, reconcile } from './wallets';
+import { gapAddress, isCoin, PENDING, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -216,7 +216,11 @@ export default function WalletsPage() {
                   <p className="wallets-empty-row">Nothing in this wallet yet.</p>
                 )}
                 <ReconcileNote
-                  result={reconcile(list, portfolio, account.accountId, hiddenSymbols)}
+                  result={
+                    hiddenSymbols
+                      ? reconcile(list, portfolio, account.accountId, hiddenSymbols)
+                      : PENDING
+                  }
                   target={gapAddress(list, account.accountId)}
                   onCounted={() => void load(true)}
                 />

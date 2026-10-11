@@ -1,4 +1,5 @@
 import { accountingApi, type WalletKind } from '@api/accounting.api';
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import {
   type AssetValuation,
@@ -161,7 +162,13 @@ function setup(
   list: WalletAddress[],
   valuation = portfolio(),
   kinds: Record<string, WalletKind | null> = {},
+  hidden:
+    | { instrumentId: string; name: string; symbol: string | null; hiddenAt: string }[]
+    | 'unread' = [],
 ) {
+  const hiddenList = vi.spyOn(hiddenAssetsApi, 'list');
+  if (hidden === 'unread') hiddenList.mockRejectedValue(new Error('unavailable'));
+  else hiddenList.mockResolvedValue(hidden);
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       account(trust, 'Trust Wallet', kinds[trust] ?? null),
@@ -1570,6 +1577,31 @@ describe('M22: Bybit accounts', () => {
     expect(gap).toHaveTextContent(
       'Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
     );
+  });
+
+  it('ASSET-HIDE: a coin the owner hid is no difference of the exchange', async () => {
+    const valuation = withBybit();
+    const hiddenUsdt = [
+      { instrumentId: id(9), name: 'Tether', symbol: 'USDT', hiddenAt: '2026-10-11T10:00:00.000Z' },
+    ];
+    setup(
+      [exchangeAccount({})],
+      { ...valuation, assets: valuation.assets.filter((item) => item.symbol !== 'USDT') },
+      {},
+      hiddenUsdt,
+    );
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    await waitFor(() => expect(hiddenAssetsApi.list).toHaveBeenCalled());
+    await screen.findByText('Bybit · 1 account');
+    expect(within(account).queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('ASSET-HIDE: no balance is compared while the hidden list cannot be read', async () => {
+    setup([exchangeAccount({})], withBybit(), {}, 'unread');
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    await waitFor(() => expect(hiddenAssetsApi.list).toHaveBeenCalled());
+    await screen.findByText('Bybit · 1 account');
+    expect(within(account).queryByRole('note')).not.toBeInTheDocument();
   });
 
   it('BYBIT-ANY-COIN compares any coin Bybit reports or the records hold', async () => {

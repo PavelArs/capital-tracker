@@ -32,9 +32,10 @@ export function useWallets() {
   const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
     kindsOf(cachedReads.accounts.last()),
   );
-  // ASSET-HIDE: the coins the owner hid are no difference to explain; a failed read hides none.
-  const [hiddenAssets, setHiddenAssets] = useState<HiddenAsset[]>(
-    () => cachedReads.hiddenAssets.last() ?? [],
+  // ASSET-HIDE: the coins the owner hid are no difference to explain. Until the list is read
+  // (or when its read fails) it is unknown, and no balance is compared.
+  const [hiddenAssets, setHiddenAssets] = useState<HiddenAsset[] | null>(
+    () => cachedReads.hiddenAssets.last() ?? null,
   );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
@@ -155,7 +156,10 @@ export function useWallets() {
     return () => window.clearInterval(timer);
   }, [backgroundSyncing, load]);
 
-  const hiddenSymbols = useMemo(() => hiddenSymbolsOf(hiddenAssets), [hiddenAssets]);
+  const hiddenSymbols = useMemo(
+    () => (hiddenAssets ? hiddenSymbolsOf(hiddenAssets) : null),
+    [hiddenAssets],
+  );
   return {
     portfolio,
     addresses,
