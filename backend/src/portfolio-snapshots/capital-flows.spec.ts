@@ -408,7 +408,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(profitToDate('95000', null)).toEqual({ profit: null, profitPercent: null });
   });
 
-  it('VAL-UNPRICED a held asset without a price is no market loss and no profit or loss', () => {
+  it('VAL-UNPRICED a held asset without a price is no market loss; the profit counts the priced part', () => {
     // 50000 of BTC bought from outside; BTC has no price, so the value leaves it out.
     const start = { at: at('2026-09-07T00:00:00.000Z'), value: '0' };
     const end = { at: at('2026-10-07T00:00:00.000Z'), value: '0', unpriced: true };
@@ -424,6 +424,11 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       splitChange({ ...start, unpriced: true }, { ...end, unpriced: false }, flows),
     ).toMatchObject({ netFlow: '50000', marketEffect: null });
     expect(profitToDate('0', '50000', true)).toEqual({ profit: null, profitPercent: null });
+    // Some assets priced, one left out: the profit counts the priced part.
+    expect(profitToDate('47000', '48500', true)).toEqual({
+      profit: '-1500',
+      profitPercent: '-3.09',
+    });
     expect(profitToDate('50000', '50000', false)).toEqual({ profit: '0', profitPercent: '0.00' });
   });
 });
