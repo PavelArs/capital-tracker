@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, type Locator } from '@playwright/test';
 import { compose, origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and the address are synthetic. The shared acceptance database holds
 // other cases' operations too, so this case finds its own rows by account and wallet.
@@ -99,6 +99,7 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   expect(listed.needsClassificationCount).toBeGreaterThanOrEqual(1);
   expect((await api.send('GET', '/operations?asset=BTC')).status()).toBe(400);
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   await expect(
@@ -235,7 +236,8 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   // Since M9 a buy or sell is edited and deleted right in the drawer.
   await expect(tradeDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await expect(tradeDrawer.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
-  await expect(tradeDrawer.getByRole('link')).toHaveCount(0);
+  // Only the ticker in the title is a link (to the asset's page).
+  await expect(tradeDrawer.getByRole('link')).toHaveText(['BTC']);
   await tradeDrawer.getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog', { name: 'Edit transaction', exact: true });
   await expect(edit.getByLabel('Amount')).toHaveValue('0.00918359');

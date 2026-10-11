@@ -21,4 +21,5 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Every test starts as a fresh visit: nothing kept from an earlier one.
   forgetReads();
+  window.sessionStorage.clear();
 });

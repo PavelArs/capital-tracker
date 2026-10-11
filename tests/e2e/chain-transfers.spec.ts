@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, type Locator } from '@playwright/test';
 import { compose, origin, query, test } from './mfa-fixtures';
-import { tradeApi } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi } from './usd-trades-fixtures';
 
 // All names, amounts and both addresses are synthetic (valid bech32 of hashed labels); no other
 // case uses them. The shared acceptance database holds other cases' rows too, so this case
@@ -135,6 +135,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   // XFER-CAPITAL: the receiver's 0.006 BTC keep the sender's 60000 USD per BTC.
   expect(await basis(receiver.id)).toBe(360);
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   const table = main.getByRole('table', { name: 'Transactions', exact: true });

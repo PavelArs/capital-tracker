@@ -11,6 +11,7 @@ import {
 } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -1153,6 +1154,47 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     costComplete: true,
   });
 
+  const tokenWallet = (n: number, symbol: string, other: boolean) =>
+    ({
+      id: id(n),
+      balances: [{ symbol, quantity: '1', ...(other ? { name: symbol } : {}) }],
+    }) as unknown as WalletAddress;
+
+  it('TOKEN-HIDE hides a token asset from its own page in every wallet that holds it', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
+      tokenWallet(601, 'TON', true),
+      tokenWallet(602, 'TON', true),
+      tokenWallet(603, 'BTC', false),
+    ]);
+    const hide = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue({} as WalletAddress);
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${toncoin.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
+    expect(hide).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'Hide this asset' })).toHaveTextContent(
+      'Bring it back with Restore under Hidden tokens on the wallet.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Hide TON' }));
+    await waitFor(() =>
+      expect(hide.mock.calls).toEqual([
+        [id(601), ['TON'], 'hidden'],
+        [id(602), ['TON'], 'hidden'],
+      ]),
+    );
+    // The asset is gone from the portfolio, so the owner lands on it.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
+  });
+
+  it('TOKEN-HIDE offers no Hide for a coin no wallet holds as one of its other tokens', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([tokenWallet(603, 'BTC', false)]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    expect(await screen.findByRole('heading', { name: 'Holdings' })).toBeInTheDocument();
+    await waitFor(() => expect(walletAddressesApi.list).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Hide asset' })).toBeNull();
+  });
+
   it('shows the price change today, the value against cost chart and its periods', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     vi.mocked(operationsApi.list).mockResolvedValue({
@@ -1278,7 +1320,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     expect(within(chart).queryByText(/No value can be shown/)).toBeNull();
   });
 
-  it('lists the latest ten operations of the asset and links to all of them', async () => {
+  it('lists the operations of the asset and links to all of them in Transactions', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     const buys = Array.from({ length: 11 }, (_, index) => operation(index + 1));
     const unclassified = operation(28, {
@@ -1312,16 +1354,37 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const card = await screen.findByRole('region', { name: 'Transactions' });
     const rows = await within(card).findAllByRole('listitem');
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(12);
     expect(rows[0]).toHaveTextContent(
       'Needs classificationSep 28, 2026 · Bitcoin wallet bc1qsy…0000+0.0087 BTC',
     );
     expect(rows[1]).toHaveTextContent('BuySep 11, 2026 · Trust Wallet+0.01 BTC$800.00');
     expect(card).toHaveTextContent('12');
-    expect(within(card).getByRole('link', { name: 'Show all 12' })).toHaveAttribute(
+    // Twelve fit in the first twenty: nothing more to show.
+    expect(within(card).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(within(card).getByRole('link', { name: 'Open in Transactions' })).toHaveAttribute(
       'href',
       '/transactions?asset=BTC',
     );
+  });
+
+  it('INFINITE: lists twenty operations of the asset and twenty more on request', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      dustThresholdUsd: null,
+      operations: Array.from({ length: 25 }, (_, index) => operation(index + 1)),
+    });
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const card = await screen.findByRole('region', { name: 'Transactions' });
+    expect(await within(card).findAllByRole('listitem')).toHaveLength(20);
+    expect(within(card).getByRole('status')).toHaveTextContent('Showing 20 of 25 transactions');
+    await user.click(within(card).getByRole('button', { name: 'Show more' }));
+    expect(within(card).getAllByRole('listitem')).toHaveLength(25);
+    expect(within(card).queryByRole('button', { name: 'Show more' })).toBeNull();
   });
 
   it('reports a chart or transactions failure and recovers on retry', async () => {

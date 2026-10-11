@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, reloadFresh, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and dates are synthetic. The shared acceptance database holds other
 // cases' operations too, so this case works in its own account and finds its own rows.
@@ -33,6 +33,7 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
       (operation) => operation.account?.id === account.id,
     );
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   await expect(
@@ -76,7 +77,7 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
       grossUsd: '76000',
     }),
   );
-  await page.reload();
+  await reloadFresh(page);
   await main.getByRole('button', { name: 'Add transaction', exact: true }).click();
   const sell = await openDialog('Add transaction');
   await sell.getByRole('radio', { name: 'Sell' }).check();

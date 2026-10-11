@@ -5,10 +5,10 @@ import {
   auditHistoryApi,
 } from '@api/audit-history.api';
 import { forgetReads } from '@api/read-cache';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import HistoryPage from './HistoryPage';
 
 // Synthetic accounts, assets and amounts only.
@@ -186,10 +186,10 @@ describe('audit history screen (BR 14)', () => {
     const list = vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction, removal]));
     renderPage();
     await screen.findByRole('table', { name: 'Changes' });
-    expect(list).toHaveBeenLastCalledWith({});
+    expect(list).toHaveBeenLastCalledWith({ limit: 20 });
     list.mockResolvedValue(page([removal]));
     await user.click(screen.getByRole('button', { name: 'Deleted' }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ change: 'deleted' }));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ change: 'deleted', limit: 20 }));
     expect(screen.getByRole('button', { name: 'Deleted' })).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(bodyRows()).toHaveLength(1));
     await user.selectOptions(screen.getByLabelText('Type'), 'trade');
@@ -203,6 +203,7 @@ describe('audit history screen (BR 14)', () => {
         actor: 'csv',
         from: '2026-10-01',
         to: '2026-10-09',
+        limit: 20,
       }),
     );
     expect(screen.getByLabelText('Address').textContent).toBe(
@@ -214,7 +215,7 @@ describe('audit history screen (BR 14)', () => {
     expect(await screen.findByText('No changes match')).toBeInTheDocument();
     list.mockResolvedValue(page([correction]));
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith({}));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ limit: 20 }));
     expect(screen.getByLabelText('Address').textContent).toBe('');
   });
 
@@ -222,27 +223,64 @@ describe('audit history screen (BR 14)', () => {
     const list = vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([removal]));
     renderPage('/history?change=deleted&entity=bogus&from=yesterday&actor=automatic');
     await screen.findByRole('table', { name: 'Changes' });
-    expect(list).toHaveBeenCalledWith({ change: 'deleted', actor: 'automatic' });
+    expect(list).toHaveBeenCalledWith({ change: 'deleted', actor: 'automatic', limit: 20 });
     expect(screen.getByLabelText('Source')).toHaveValue('automatic');
   });
 
-  it('HIST-PAGE: older changes are asked for with the cursor and join the list', async () => {
+  it('HIST-PAGE: twenty changes first; older ones are asked for with the cursor and join the list', async () => {
     const user = userEvent.setup();
     const list = vi
       .spyOn(auditHistoryApi, 'list')
       .mockResolvedValueOnce(page([correction], 'cursor-1'))
+      .mockResolvedValueOnce(page([removal], 'cursor-2'))
+      .mockResolvedValueOnce(page([imported]));
+    renderPage();
+    await screen.findByRole('table', { name: 'Changes' });
+    expect(list).toHaveBeenLastCalledWith({ limit: 20 });
+    expect(bodyRows()).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(list).toHaveBeenLastCalledWith({ limit: 20 }, 'cursor-1');
+    expect(screen.getByText('Showing 2 changes')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    expect(list).toHaveBeenLastCalledWith({ limit: 20 }, 'cursor-2');
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(screen.getByText(/3 changes shown/)).toBeInTheDocument();
+  });
+
+  it('HIST-PAGE: reaching the end of the list asks for the older changes', async () => {
+    const callbacks: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+      },
+    );
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    vi.spyOn(auditHistoryApi, 'list')
+      .mockResolvedValueOnce(page([correction], 'cursor-1'))
       .mockResolvedValueOnce(page([removal]));
     renderPage();
     await screen.findByRole('table', { name: 'Changes' });
-    expect(bodyRows()).toHaveLength(1);
-    await user.click(screen.getByRole('button', { name: 'Show older changes' }));
+    await waitFor(() => expect(callbacks.length).toBeGreaterThan(0));
+    act(() => {
+      callbacks.at(-1)?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as never);
+    });
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
-    expect(list).toHaveBeenLastCalledWith({}, 'cursor-1');
-    expect(screen.queryByRole('button', { name: 'Show older changes' })).toBeNull();
-    expect(screen.getByText(/2 changes shown/)).toBeInTheDocument();
   });
 
-  it('HIST-PAGE: a failed page keeps what is shown and offers to try again', async () => {
+  it('HIST-PAGE: a failed batch keeps what is shown and offers to try again', async () => {
     const user = userEvent.setup();
     const list = vi
       .spyOn(auditHistoryApi, 'list')
@@ -251,7 +289,7 @@ describe('audit history screen (BR 14)', () => {
       .mockResolvedValueOnce(page([removal]));
     renderPage();
     await screen.findByRole('table', { name: 'Changes' });
-    await user.click(screen.getByRole('button', { name: 'Show older changes' }));
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load older changes.');
     expect(bodyRows()).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Try again' }));

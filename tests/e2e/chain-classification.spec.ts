@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, type Locator } from '@playwright/test';
 import { compose, origin, test } from './mfa-fixtures';
-import { tradeApi } from './usd-trades-fixtures';
+import { forgetBrowserReads, reloadFresh, tradeApi } from './usd-trades-fixtures';
 
 // All names, amounts and the address are synthetic; no other case uses this address. The
 // shared acceptance database holds other cases' rows too, so this case filters by its wallet.
@@ -81,6 +81,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   ]);
 
   // CLS-COUNT: the sidebar counts what waits; the header bell says so and links to it.
+  await forgetBrowserReads(page);
   await page.goto('/dashboard');
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByLabel(`${before} to classify`, { exact: true })).toBeVisible();
@@ -185,7 +186,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   ]);
 
   // CLS-RECLASSIFY: the buy was income after all; the drawer starts from the saved answer.
-  await page.reload();
+  await reloadFresh(page);
   await expect(rows).toHaveCount(2);
   await rows.nth(1).getByRole('button', { name: 'Buy' }).click();
   const bought = page.getByRole('dialog', { name: 'Buy · BTC' });

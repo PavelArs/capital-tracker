@@ -1,5 +1,6 @@
 import { authApi, securityApi } from '@api';
 import { setUnauthorizedHandler } from '@api/client';
+import { adoptReads, hydrateReads, releaseReads } from '@api/read-cache';
 import type { FactorCredentials, User } from '@shared/types';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     const removeUnauthorizedHandler = setUnauthorizedHandler(() => {
       stateVersion.current++;
+      releaseReads();
       setUser(null);
       setMfaPending(false);
       setLoading(false);
@@ -36,9 +38,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const restoreUser = async () => {
       try {
         const userData = await authApi.getCurrentUser();
+        if (!active || version !== stateVersion.current) return;
+        // The answers this browser kept for the owner before the reload are back in memory
+        // before the first page paints, so it can show them at once.
+        await hydrateReads(userData.id);
         if (active && version === stateVersion.current) setUser(userData);
       } catch {
-        if (active && version === stateVersion.current) setUser(null);
+        if (active && version === stateVersion.current) {
+          releaseReads();
+          setUser(null);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -65,12 +74,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const version = ++stateVersion.current;
     const response = await authApi.verifyFactor({ kind, code });
     if (version !== stateVersion.current) return;
+    adoptReads(response.user.id);
     setUser(response.user);
     setMfaPending(false);
   }, []);
 
   const restartPassword = useCallback(() => {
     stateVersion.current++;
+    releaseReads();
     setUser(null);
     setMfaPending(false);
   }, []);
@@ -79,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const version = ++stateVersion.current;
     await authApi.logout();
     if (version !== stateVersion.current) return;
+    releaseReads();
     setUser(null);
     setMfaPending(false);
   }, []);
@@ -88,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const version = ++stateVersion.current;
     await securityApi.logoutEverywhere();
     if (version !== stateVersion.current) return;
+    releaseReads();
     setUser(null);
     setMfaPending(false);
   }, []);
