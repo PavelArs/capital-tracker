@@ -19,7 +19,7 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetPage from './AssetPage';
-import PortfolioPage from './PortfolioPage';
+import PortfolioPage, { nextSort, sortAssets } from './PortfolioPage';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -969,7 +969,10 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^All(?!o)/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.getByRole('searchbox', { name: 'Search assets' })).toHaveValue('');
   });
 
@@ -1035,6 +1038,72 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
   });
 
+  it('SORT-HEADERS click on a column name sorts by it: descending, ascending, then the default order', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const order = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => row.querySelector('.portfolio-asset__name')?.textContent);
+    const header = (name: string) => screen.getByRole('columnheader', { name });
+    const click = (name: string) => user.click(within(header(name)).getByRole('button', { name }));
+    expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
+    expect(document.querySelectorAll('th[aria-sort]')).toHaveLength(0);
+
+    await click('Amount');
+    expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
+    expect(header('Amount')).toHaveAttribute('aria-sort', 'descending');
+    await click('Amount');
+    expect(order()).toEqual(['Toncoin', 'Bitcoin', 'US dollar']);
+    expect(header('Amount')).toHaveAttribute('aria-sort', 'ascending');
+    await click('Amount');
+    expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
+    expect(header('Amount')).not.toHaveAttribute('aria-sort');
+
+    // Another column starts over; names run A to Z first; unknown figures stay last.
+    await click('Asset');
+    expect(order()).toEqual(['Bitcoin', 'Toncoin', 'US dollar']);
+    expect(header('Asset')).toHaveAttribute('aria-sort', 'ascending');
+    await click('Avg buy price');
+    expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
+    expect(header('Asset')).not.toHaveAttribute('aria-sort');
+    await click('Avg buy price');
+    expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
+    // The chosen order holds when the search narrows the rows.
+    await user.type(screen.getByRole('searchbox', { name: 'Search assets' }), 'coin');
+    expect(order()).toEqual(['Bitcoin', 'Toncoin']);
+  });
+
+  it('SORT-ORDER cycles a column and keeps unknown figures last in both directions', () => {
+    const named = (n: number, name: string, value: string | null) =>
+      valued(n, name, null, crypto, { value });
+    const assets = [named(1, 'B', '2'), named(2, 'A', null), named(3, 'C', '9')];
+    const names = (sort: Parameters<typeof sortAssets>[1]) =>
+      sortAssets(assets, sort).map((asset) => asset.name);
+    expect(names({ key: 'value', direction: 'desc' })).toEqual(['C', 'B', 'A']);
+    expect(names({ key: 'value', direction: 'asc' })).toEqual(['B', 'C', 'A']);
+    expect(names({ key: 'name', direction: 'desc' })).toEqual(['C', 'B', 'A']);
+    expect(names(null)).toEqual(['B', 'A', 'C']);
+    expect(nextSort(null, 'value')).toEqual({ key: 'value', direction: 'desc' });
+    expect(nextSort({ key: 'value', direction: 'desc' }, 'value')).toEqual({
+      key: 'value',
+      direction: 'asc',
+    });
+    expect(nextSort({ key: 'value', direction: 'asc' }, 'value')).toBeNull();
+    expect(nextSort({ key: 'name', direction: 'asc' }, 'name')).toEqual({
+      key: 'name',
+      direction: 'desc',
+    });
+    expect(nextSort({ key: 'name', direction: 'desc' }, 'name')).toBeNull();
+    expect(nextSort({ key: 'name', direction: 'desc' }, 'value')).toEqual({
+      key: 'value',
+      direction: 'desc',
+    });
+  });
+
   it('PHONE-LIST shows two-line asset rows and a Sort by select instead of the table', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: true,
@@ -1043,7 +1112,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       removeEventListener: () => undefined,
     }));
     try {
-      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([toncoin, cash, bitcoin]));
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
       const user = userEvent.setup();
       renderAt('/portfolio');
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
@@ -1057,6 +1126,11 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       const sort = screen.getByRole('combobox', { name: 'Sort by' });
       await user.selectOptions(sort, 'Name');
       expect(order()).toEqual(['Bitcoin', 'Toncoin', 'US dollar']);
+      // The direction button turns the order around; Default order clears the sort.
+      await user.click(screen.getByRole('button', { name: 'Ascending' }));
+      expect(order()).toEqual(['US dollar', 'Toncoin', 'Bitcoin']);
+      await user.selectOptions(sort, 'Default order');
+      expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
       // An unknown change sorts last.
       await user.selectOptions(sort, '24h change');
       expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);

@@ -214,6 +214,51 @@
   white-space: nowrap;
 }
 
+.portfolio-th-sort {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.portfolio-th-sort:hover,
+.portfolio-th-sort[data-active="true"] {
+  color: var(--ink);
+}
+
+/* The arrow hangs beside the label, so choosing a column does not move the columns. */
+.portfolio-th-sort__arrow {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  margin-right: 2px;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+th:first-child .portfolio-th-sort__arrow {
+  right: auto;
+  left: 100%;
+  margin: 0 0 0 2px;
+}
+
+.portfolio-th-sort:hover .portfolio-th-sort__arrow {
+  opacity: 0.4;
+}
+
+.portfolio-th-sort[data-active="true"] .portfolio-th-sort__arrow {
+  opacity: 1;
+}
+
+.portfolio-th-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .portfolio-table td {
   padding: 11px 12px;
   border-top: 1px solid var(--line);
@@ -938,6 +983,10 @@ a.portfolio-asset__name:hover {
   margin-bottom: var(--sp-2);
   color: var(--ink-3);
   font-size: var(--fs-sm);
+}
+
+.portfolio-sort__direction {
+  padding: 6px;
 }
 
 .portfolio-sort .portfolio-input {
