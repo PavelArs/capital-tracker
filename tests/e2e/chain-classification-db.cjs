@@ -547,15 +547,18 @@ async function dust(db, s) {
   assert.deepEqual(await ownerSettings.read(owner), {
     mainCurrency: 'USD',
     dustThresholdUsd: null,
+    insightRules: null,
   });
 
   assert.deepEqual(await ownerSettings.update(owner, { mainCurrency: 'EUR' }), {
     mainCurrency: 'EUR',
     dustThresholdUsd: null,
+    insightRules: null,
   });
   assert.deepEqual(await ownerSettings.update(owner, { dustThresholdUsd: '1.00' }), {
     mainCurrency: 'EUR',
     dustThresholdUsd: '1',
+    insightRules: null,
   });
   await rejected(() => ownerSettings.update(owner, { dustThresholdUsd: '0' }), 400);
   await rejected(() => ownerSettings.update(owner, { dustThresholdUsd: '2000000' }), 400);
@@ -589,6 +592,7 @@ async function dust(db, s) {
   assert.deepEqual(await ownerSettings.update(owner, { dustThresholdUsd: null }), {
     mainCurrency: 'EUR',
     dustThresholdUsd: null,
+    insightRules: null,
   });
   assert.equal(await status(34), 'needs-classification');
   assert.equal(await count(s, owner), 3);

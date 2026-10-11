@@ -543,21 +543,27 @@ async function ownerSettings(db) {
   const service = new OwnerSettingsService(db);
   assert.deepEqual(
     await service.read(owner.id),
-    { mainCurrency: 'USD', dustThresholdUsd: null },
+    { mainCurrency: 'USD', dustThresholdUsd: null, insightRules: null },
     'No saved row means USD',
   );
   assert.deepEqual(await service.update(owner.id, { mainCurrency: 'EUR' }), {
     mainCurrency: 'EUR',
     dustThresholdUsd: null,
+    insightRules: null,
   });
   assert.deepEqual(await service.update(owner.id, { mainCurrency: 'RUB' }), {
     mainCurrency: 'RUB',
     dustThresholdUsd: null,
+    insightRules: null,
   });
-  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'RUB', dustThresholdUsd: null });
+  assert.deepEqual(await service.read(owner.id), {
+    mainCurrency: 'RUB',
+    dustThresholdUsd: null,
+    insightRules: null,
+  });
   assert.deepEqual(
     await service.read(other.id),
-    { mainCurrency: 'USD', dustThresholdUsd: null },
+    { mainCurrency: 'USD', dustThresholdUsd: null, insightRules: null },
     'One owner never changes another',
   );
   const before = await fingerprint(db);

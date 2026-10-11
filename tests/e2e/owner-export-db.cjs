@@ -670,6 +670,7 @@ async function jsonBackup(db, s, f, made) {
       mainCurrency: 'EUR',
       updatedAt: backup.tables.owner_settings[0].updatedAt,
       dustThresholdUsd: null,
+      insightRules: null,
     },
   ]);
   assert.equal(await fingerprint(db), before, 'Backup changes no row');

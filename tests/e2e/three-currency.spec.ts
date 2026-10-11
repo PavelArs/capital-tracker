@@ -52,6 +52,7 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     expect(await (await settings.get('/api/owner-settings')).json()).toEqual({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
+      insightRules: null,
     });
     expect(
       (
