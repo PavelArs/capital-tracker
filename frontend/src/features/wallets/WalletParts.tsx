@@ -16,6 +16,7 @@ import type {
 import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { useRef, useState } from 'react';
 import Badge from '@/ui/Badge';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
@@ -439,7 +440,7 @@ function ChainAmounts({
     ));
   if (stacked)
     return (
-      <span className="transactions-item__amount wallets-stack">
+      <span className="ui-row__amount wallets-stack">
         {pieces.map((piece) => (
           <span key={piece}>{piece}</span>
         ))}
@@ -524,20 +525,14 @@ export function AddressRow({
   if (narrow) {
     return (
       <li className="wallets-source">
-        <button type="button" className="transactions-item" aria-label={label} onClick={onOpen}>
+        <button type="button" className={rowClass()} aria-label={label} onClick={onOpen}>
           <AssetIcon {...networkIcon(network)} />
-          <span className="transactions-item__main">
-            <span className="transactions-item__title">{name}</span>
-            <span className="transactions-item__detail">
-              {derived ?? place(address)} · {syncBadge(address, run).label}
-            </span>
-          </span>
-          <span className="transactions-item__side">
-            <ChainAmounts address={address} stacked expanded={expanded} />
-            <span className="transactions-item__value">
-              {addressValue(address, prices, currency)}
-            </span>
-          </span>
+          <ListRowText
+            title={name}
+            detail={`${derived ?? place(address)} · ${syncBadge(address, run).label}`}
+            amount={<ChainAmounts address={address} stacked expanded={expanded} />}
+            value={addressValue(address, prices, currency)}
+          />
         </button>
         {more}
         {message}
@@ -617,15 +612,9 @@ export function ManualRow({
   if (narrow) {
     return (
       <li className="wallets-source wallets-source--manual">
-        <div className="transactions-item">
+        <div className={rowClass()}>
           {icons}
-          <span className="transactions-item__main">
-            <span className="transactions-item__title">{names}</span>
-            <span className="transactions-item__detail">Tracked by hand</span>
-          </span>
-          <span className="transactions-item__side">
-            <span className="transactions-item__amount">{value}</span>
-          </span>
+          <ListRowText title={names} detail="Tracked by hand" amount={value} />
         </div>
       </li>
     );

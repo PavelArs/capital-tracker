@@ -1,13 +1,13 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import { useWallets } from './useWallets';

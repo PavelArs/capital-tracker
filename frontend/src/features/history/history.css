@@ -60,7 +60,7 @@
 }
 
 /* A mark that is no asset (deposit, price) lines up with the 32 px asset icons on phones. */
-.transactions-item > .transactions-type-icon {
+.ui-row > .transactions-type-icon {
   width: 32px;
   height: 32px;
 }

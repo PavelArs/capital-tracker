@@ -4,6 +4,7 @@ import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
@@ -35,11 +36,11 @@ import PeriodFilter from './PeriodFilter';
 import { periodOf } from './period';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
-import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
 import EmptyState from '@/ui/EmptyState';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 
 type StatusView = 'needs-classification' | 'hidden' | 'dust';
 type View = 'all' | StatusView | Operation['source'];
@@ -347,35 +348,33 @@ function OperationItem({
   ].join(' ');
   return (
     <li data-operation={operation.id} aria-current={current || undefined}>
-      <button
-        type="button"
-        className={`transactions-item${needs ? ' transactions-item--needs' : ''}${current ? ' transactions-item--open' : ''}`}
-        onClick={onOpen}
-      >
+      <button type="button" className={rowClass({ warn: needs, open: current })} onClick={onOpen}>
         <AssetIcon
           symbol={operation.asset.symbol}
           name={operation.asset.name}
           network={operation.asset.network}
         />
-        <span className="transactions-item__main">
-          <span className="transactions-item__title">{title}</span>
-          {needs ? (
-            <Badge tone="warn" dot className="transactions-item__badge">
-              To classify
-            </Badge>
-          ) : (
-            <span className="transactions-item__detail">
-              {(operation.status === 'hidden' || operation.status === 'dust') &&
-                `${statusLabels[operation.status]} · `}
-              {placeLabel(operation)}
-              {at !== 'No time' && ` · ${at}`}
-            </span>
-          )}
-        </span>
-        <span className="transactions-item__side">
-          <span className="transactions-item__amount">{signedQuantity(operation)}</span>
-          <span className="transactions-item__value">{phoneValue(operation, currency)}</span>
-        </span>
+        <ListRowText
+          title={title}
+          detail={
+            needs ? (
+              <Badge tone="warn" dot>
+                To classify
+              </Badge>
+            ) : (
+              [
+                (operation.status === 'hidden' || operation.status === 'dust') &&
+                  statusLabels[operation.status],
+                placeLabel(operation),
+                at !== 'No time' && at,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            )
+          }
+          amount={signedQuantity(operation)}
+          value={phoneValue(operation, currency)}
+        />
       </button>
     </li>
   );
@@ -840,7 +839,7 @@ export default function TransactionsPage() {
               </button>
             </div>
           ) : narrow ? (
-            <ol className="transactions-list" aria-label="Transactions">
+            <ol className="ui-rows transactions-list" aria-label="Transactions">
               {days.map((group) => (
                 <li key={group.heading} className="transactions-list__day">
                   <h2 className="transactions-list__heading">{group.heading}</h2>

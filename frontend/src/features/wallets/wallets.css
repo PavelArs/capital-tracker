@@ -242,7 +242,7 @@ button.wallets-source__open:focus-visible {
   color: var(--ink-2);
 }
 
-.wallets-source .transactions-item {
+.wallets-source .ui-row {
   padding: 10px 16px;
   border-bottom: 0;
 }

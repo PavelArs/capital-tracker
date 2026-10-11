@@ -10,13 +10,13 @@ import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { dayHeading, time } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import HistoryDrawer from './HistoryDrawer';
 import {
   actorLabels,
@@ -31,6 +31,7 @@ import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './history.css';
 import EmptyState from '@/ui/EmptyState';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 
 const changes = Object.keys(changeLabels) as AuditChange[];
 const entities = Object.keys(entityLabels) as AuditEntity[];
@@ -110,22 +111,14 @@ function Item({
 }) {
   return (
     <li data-event={event.id} aria-current={current || undefined}>
-      <button
-        type="button"
-        className={`transactions-item${current ? ' transactions-item--open' : ''}`}
-        onClick={onOpen}
-      >
+      <button type="button" className={rowClass({ open: current })} onClick={onOpen}>
         <Mark event={event} />
-        <span className="transactions-item__main">
-          <span className="transactions-item__title">{event.title}</span>
-          <span className="transactions-item__detail">{summary(event)}</span>
-        </span>
-        <span className="transactions-item__side">
-          <span className="transactions-item__amount">{changeLabels[event.change]}</span>
-          <span className="transactions-item__value">
-            {time(event.at).replace(' UTC', '')} · {actorLabels[event.actor]}
-          </span>
-        </span>
+        <ListRowText
+          title={event.title}
+          detail={summary(event)}
+          amount={changeLabels[event.change]}
+          value={`${time(event.at).replace(' UTC', '')} · ${actorLabels[event.actor]}`}
+        />
       </button>
     </li>
   );
@@ -342,7 +335,7 @@ export default function HistoryPage() {
               </button>
             </div>
           ) : narrow ? (
-            <ol className="transactions-list" aria-label="Changes">
+            <ol className="ui-rows transactions-list" aria-label="Changes">
               {days.map((group) => (
                 <li key={group.heading} className="transactions-list__day">
                   <h2 className="transactions-list__heading">{group.heading}</h2>

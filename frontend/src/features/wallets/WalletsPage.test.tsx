@@ -310,7 +310,7 @@ describe('WAL-LIST: wallets grouped by account', () => {
     const row = within(trustCard).getByRole('button', {
       name: `Trust Wallet BTC ${addresses.trust}`,
     });
-    expect(row).toHaveClass('transactions-item');
+    expect(row).toHaveClass('ui-row');
     expect(row).toHaveTextContent('bc1qar0s…wf5mdq · Synced');
     expect(row).toHaveTextContent('0.01 BTC$800.00');
   });
@@ -1369,7 +1369,7 @@ describe('M21: Bitcoin wallets by account public key', () => {
     }));
     setup([keyed]);
     const row = await screen.findByRole('button', { name: `Trezor BTC ${zpub}` });
-    expect(row).toHaveClass('transactions-item');
+    expect(row).toHaveClass('ui-row');
     expect(row).toHaveTextContent('5 addresses · Synced');
     expect(row).not.toHaveTextContent('zpub');
   });

@@ -5,6 +5,8 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useId } from 'react';
 import { Link } from 'react-router-dom';
+import { ListRowText, rowClass } from '@/ui/ListRow';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { withCurrency } from '../portfolio/currency';
 import {
   missingLabel,
@@ -18,7 +20,6 @@ import {
 import { Change } from '../portfolio/PortfolioPage';
 import AssetIcon from '../shell/AssetIcon';
 import { onlyChain, type TokenChains, withChains } from '../shell/token-chains';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 
 const TOP = 5;
 
@@ -118,14 +119,14 @@ function List({
   chains: TokenChains;
 }) {
   return (
-    <ul className="portfolio-list">
+    <ul className="ui-rows">
       {assets.map((asset) => {
         const market = asset.priceSource === 'market';
         const change = asset.priceChange24hPercent;
         return (
           <li key={asset.instrumentId}>
             <Link
-              className="portfolio-list__row"
+              className={rowClass()}
               to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
             >
               <AssetIcon
@@ -134,14 +135,20 @@ function List({
                 assetType={asset.assetType}
                 network={onlyChain(asset.symbol, chains)}
               />
-              <span className="portfolio-list__name">{asset.name}</span>
-              <span className="portfolio-list__value">{money(asset.value, currency)}</span>
-              <span className="portfolio-list__detail">{amount(asset, chains)}</span>
-              <span
-                className={`portfolio-list__pnl${market && tone(change) ? ` portfolio-${tone(change)}` : ''}`}
-              >
-                {market ? `${percent(change)} today` : sourceLabels[asset.priceSource]}
-              </span>
+              <ListRowText
+                title={asset.name}
+                detail={amount(asset, chains)}
+                amount={money(asset.value, currency)}
+                value={
+                  market ? (
+                    <span className={tone(change) ? `portfolio-${tone(change)}` : undefined}>
+                      {percent(change)} today
+                    </span>
+                  ) : (
+                    sourceLabels[asset.priceSource]
+                  )
+                }
+              />
             </Link>
           </li>
         );

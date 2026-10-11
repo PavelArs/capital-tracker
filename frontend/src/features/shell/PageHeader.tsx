@@ -10,7 +10,7 @@ import { Icon } from './icons';
 import { useMainCurrency } from './main-currency';
 import NotificationsBell from './NotificationsBell';
 import './shell-page.css';
-import { useCompactScreen } from './useCompactScreen';
+import { useCompactScreen } from '@/ui/useMediaQuery';
 
 /**
  * The prototype's top bar on every page: title, display currency and "Add transaction".

@@ -7,13 +7,13 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
 import Allocation from './Allocation';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
@@ -21,6 +21,7 @@ import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } 
 import '../shell/shell-page.css';
 import './portfolio.css';
 import EmptyState from '@/ui/EmptyState';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 
 export const typeLabels: Record<AssetType, string> = {
   crypto: 'Crypto',
@@ -403,6 +404,19 @@ function AssetsTable({
   );
 }
 
+/** A phone row's unrealized P&L: money and percent, coloured by sign. */
+function Profit({ asset, currency }: { asset: AssetValuation; currency: AccountingCurrency }) {
+  const { pnl, ratio } = shownProfit(asset);
+  if (pnl === null) return DASH;
+  const sign = tone(pnl);
+  return (
+    <span className={sign ? `portfolio-${sign}` : undefined}>
+      {money(pnl, currency, true)}
+      {ratio !== null && ` · ${percent(ratio)}`}
+    </span>
+  );
+}
+
 // Phones get two-line rows instead of the table: the whole row opens the asset, and the
 // columns that do not fit are on the asset page (design: tables on phones).
 function AssetsList({
@@ -417,39 +431,26 @@ function AssetsList({
   chains: TokenChains;
 }) {
   return (
-    <ul className="portfolio-list">
+    <ul className="ui-rows">
       {assets.map((asset) => (
         <li key={asset.instrumentId}>
-          <Link
-            className="portfolio-list__row"
-            to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
-          >
+          <Link className={rowClass()} to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
             <AssetIcon
               symbol={asset.symbol}
               name={asset.name}
               assetType={asset.assetType}
               network={onlyChain(asset.symbol, chains)}
             />
-            <span className="portfolio-list__name">{asset.name}</span>
-            <span className="portfolio-list__value">{money(asset.value, currency)}</span>
-            <span className="portfolio-list__detail">
-              {withChains(
+            <ListRowText
+              title={asset.name}
+              detail={withChains(
                 `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
                 asset.symbol,
                 chains,
               )}
-            </span>
-            <span
-              className={`portfolio-list__pnl${tone(shownProfit(asset).pnl) ? ` portfolio-${tone(shownProfit(asset).pnl)}` : ''}`}
-            >
-              {shownProfit(asset).pnl === null
-                ? DASH
-                : `${money(shownProfit(asset).pnl, currency, true)}${
-                    shownProfit(asset).ratio === null
-                      ? ''
-                      : ` · ${percent(shownProfit(asset).ratio)}`
-                  }`}
-            </span>
+              amount={money(asset.value, currency)}
+              value={<Profit asset={asset} currency={currency} />}
+            />
           </Link>
         </li>
       ))}

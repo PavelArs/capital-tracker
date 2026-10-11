@@ -1,0 +1,106 @@
+/* Phones (below 640 px): two-line rows instead of a table, no sideways scrolling. The list
+   reaches 8 px past the card's text so a row's hover and open background have room. */
+.ui-rows,
+.ui-rows ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-rows {
+  margin: 0 -8px;
+}
+
+.ui-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+a.ui-row,
+button.ui-row {
+  cursor: pointer;
+}
+
+a.ui-row:hover,
+button.ui-row:hover {
+  background: var(--sunken);
+}
+
+.ui-row:focus-visible {
+  border-radius: var(--r-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ui-row > :first-child {
+  flex: none;
+}
+
+.ui-row--warn {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.ui-row--open {
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--raised);
+}
+
+.ui-row__main,
+.ui-row__side {
+  display: grid;
+  gap: 3px;
+}
+
+.ui-row__main {
+  flex: 1;
+  min-width: 0;
+  justify-items: start;
+}
+
+.ui-row__side {
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-row__title,
+.ui-row__detail {
+  max-width: 100%;
+  overflow: hidden;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
+  white-space: nowrap;
+}
+
+.ui-row__title {
+  font-size: var(--fs-md);
+}
+
+.ui-row__amount {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.ui-row__detail,
+.ui-row__value {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.ui-row__main > .ui-badge {
+  height: 20px;
+  font-size: var(--fs-xs);
+}
