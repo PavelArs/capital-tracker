@@ -181,8 +181,8 @@ export class DepositsService {
         [owner, id, input.startDate, input.ratePercent],
       );
       await manager.query(
-        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount)
-         VALUES ($1,$2,$3,$4,'topup',$5)`,
+        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount, "position")
+         VALUES ($1,$2,$3,$4,'topup',$5,1)`,
         [randomUUID(), owner, id, input.startDate, input.amount],
       );
     });
@@ -205,8 +205,9 @@ export class DepositsService {
       if (firstImpossibleMovement(termsOf(stored), next) !== -1)
         throw new UnprocessableEntityException('The deposit could not have had this movement');
       await manager.query(
-        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount, comment)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "occurredOn", kind, amount, comment, "position")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,
+           (SELECT coalesce(max("position"), 0) + 1 FROM bank_deposit_movements WHERE "depositId"=$3))`,
         [randomUUID(), owner, depositId, input.date, input.kind, input.amount, input.comment],
       );
     });
