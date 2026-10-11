@@ -23,7 +23,7 @@ export default function Insights({
   const { items, note } = collectInsights(portfolio, rules);
   return (
     <section className="shell-card dashboard-insights" aria-labelledby={heading}>
-      <div className="portfolio-toolbar">
+      <div className="dashboard-insights__head">
         <h2 id={heading}>Insights</h2>
         <Link className="dashboard-link" to="/preferences">
           Rules
