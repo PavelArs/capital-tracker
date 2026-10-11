@@ -72,6 +72,23 @@ In CI the critical profile runs in parallel shards on images built once:
   manifest images for this commit and run and the checks and cases are covered exactly
   once and passed; then it verifies the receipt.
 
+A push to main does not repeat this when its pull request run already did it. In
+`Build Release Images`, `node scripts/reuse-pr-images.cjs` looks up the pull request merged as
+the pushed commit (the same lookup as `Merged Pull Request CI`, which still must pass) and
+reuses its run only if all of this holds: that run passed the full suite; its `release-images`,
+`release-images-manifest` and `critical-release-acceptance` artifacts are still available
+(`release-images` is kept one day); its manifest is valid for that run; and the commit it
+tested (the manifest's `commit`, the pull request's test merge) has exactly the same git
+tree as the pushed commit. Then main loads the pull request's images and verifies them
+against that manifest, exports them as the release candidate for the pushed commit and run,
+skips the shard and scan steps, and `Acceptance Receipt and Image Security` verifies the pull
+request run's receipt for its own commit and run instead of merging shard receipts. In
+every other case, on any error or doubt, in a re-run of the push run, and when the repository
+variable `REUSE_PR_IMAGES` is `false`, main builds, tests and scans as before. The job
+names, the required results of `CI Status` and the deploy provenance are unchanged; the
+reuse is decided step by step so each release job still has to end in success. The step
+summary of `Build Release Images` says which way a push went and why.
+
 Shard mode needs a CI run id and prebuilt images; locally keep using
 `pnpm test:e2e:critical` (serial, builds its own images) or `pnpm test:e2e`. Print the
 split with `node scripts/acceptance-shards.cjs plan`.
