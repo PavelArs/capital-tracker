@@ -31,7 +31,7 @@ import {
   subtitle,
   withoutHiddenTokens,
 } from './WalletParts';
-import { gapAddress, pricesOf, reconcile } from './wallets';
+import { gapAddress, PENDING, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -191,8 +191,19 @@ const removalFailure = (error: unknown) =>
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
   const { accountId = '' } = useParams();
-  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
-    useWallets();
+  const {
+    portfolio,
+    addresses,
+    kinds,
+    hiddenSymbols,
+    failed,
+    load,
+    replace,
+    forget,
+    runs,
+    sync,
+    asked,
+  } = useWallets();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -325,7 +336,9 @@ export default function WalletPage() {
               </Stat>
             </dl>
             <ReconcileNote
-              result={reconcile(list, portfolio, accountId)}
+              result={
+                hiddenSymbols ? reconcile(list, portfolio, accountId, hiddenSymbols) : PENDING
+              }
               target={gapAddress(list, accountId)}
               onCounted={() => void load(true)}
             />

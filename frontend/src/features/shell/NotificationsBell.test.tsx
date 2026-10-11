@@ -1,3 +1,4 @@
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { announceClassificationChange, operationsApi } from '@api/operations.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { portfolioValuationApi } from '@api/portfolio-valuation.api';
@@ -55,6 +56,7 @@ const toClassify = vi.spyOn(operationsApi, 'needsClassification');
 const valued = vi.spyOn(portfolioValuationApi, 'get');
 const sources = vi.spyOn(syncStatusApi, 'get');
 const wallets = vi.spyOn(walletAddressesApi, 'list');
+const hidden = vi.spyOn(hiddenAssetsApi, 'list');
 
 function renderHeader(path = '/dashboard') {
   return render(
@@ -75,6 +77,8 @@ beforeEach(() => {
   sources.mockResolvedValue([pricesSource()]);
   wallets.mockReset();
   wallets.mockResolvedValue([]);
+  hidden.mockReset();
+  hidden.mockResolvedValue([]);
 });
 afterEach(cleanup);
 
