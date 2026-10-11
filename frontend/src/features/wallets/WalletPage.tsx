@@ -4,9 +4,10 @@ import type { Operation, OperationList } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { isAxiosError } from 'axios';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { requestFailure } from '@/utils/request-failure';
 import { withCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import ConfirmDialog from '../security/ConfirmDialog';
@@ -17,7 +18,6 @@ import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
 import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import EditWalletDialog from './EditWalletDialog';
@@ -36,6 +36,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
+import EmptyState from '@/ui/EmptyState';
 
 type OperationsState = OperationList | 'loading' | 'failed';
 
@@ -115,7 +116,7 @@ function WalletTransactions({
   const pagedOwn = useInfinite(own);
   return (
     <section className="shell-card" aria-labelledby="wallet-transactions">
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id="wallet-transactions">Transactions</h2>
         {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
       </div>
@@ -152,7 +153,7 @@ function WalletTransactions({
                         : ''}
                     </span>
                   </span>
-                  <span className="portfolio-num">
+                  <span className="ui-num">
                     {signedAmount(operation)}
                     {operation.value !== null && typeof operations === 'object' && (
                       <span className="portfolio-sub">
@@ -178,14 +179,15 @@ function WalletTransactions({
 }
 
 /** WALLET-REMOVE: the reason the server gave, or a plain sentence for what went wrong. */
-function removalFailure(error: unknown): string {
-  const response = isAxiosError(error) ? error.response : undefined;
-  if (!response) return 'Could not reach the server. Nothing was changed; try again.';
-  if (response.status === 409 && typeof response.data?.message === 'string')
-    return response.data.message;
-  if (response.status === 404) return 'This wallet no longer exists. Reload the page.';
-  return 'Could not remove the wallet. Nothing was changed; try again.';
-}
+const removalFailure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable: 'Could not reach the server. Nothing was changed; try again.',
+    status: {
+      409: (message) => message ?? 'Could not remove the wallet. Nothing was changed; try again.',
+      404: 'This wallet no longer exists. Reload the page.',
+    },
+    fallback: 'Could not remove the wallet. Nothing was changed; try again.',
+  });
 
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
@@ -259,11 +261,7 @@ export default function WalletPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title={account?.name ?? 'Wallet'}
-        currency={portfolio?.currency}
-        onTransactionSaved={refresh}
-      />
+      <PageHeader title={account?.name ?? 'Wallet'} currency={portfolio?.currency} />
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/wallets', asked)}>
           ← Wallets
@@ -279,13 +277,17 @@ export default function WalletPage() {
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
       ) : !account ? (
-        <section className="shell-card shell-empty" aria-labelledby="wallet-missing">
-          <h2 id="wallet-missing">Wallet not found</h2>
-          <p>It may belong to another owner or the link is wrong.</p>
-          <Link className="shell-button" to={withCurrency('/wallets', asked)}>
-            Open Wallets
-          </Link>
-        </section>
+        <EmptyState
+          id="wallet-missing"
+          title="Wallet not found"
+          actions={
+            <Link className="shell-button" to={withCurrency('/wallets', asked)}>
+              Open Wallets
+            </Link>
+          }
+        >
+          It may belong to another owner or the link is wrong.
+        </EmptyState>
       ) : (
         <>
           <div className="portfolio-head">
@@ -344,7 +346,7 @@ export default function WalletPage() {
           </section>
           {own.length > 0 && (
             <section className="shell-card wallets-card" aria-labelledby="wallet-addresses">
-              <div className="portfolio-toolbar wallets-card__toolbar">
+              <div className="ui-toolbar wallets-card__toolbar">
                 <h2 id="wallet-addresses">Addresses</h2>
                 <button
                   type="button"
@@ -374,7 +376,7 @@ export default function WalletPage() {
           )}
           <div className="portfolio-split">
             <section className="shell-card" aria-labelledby="wallet-assets">
-              <div className="portfolio-toolbar">
+              <div className="ui-toolbar">
                 <h2 id="wallet-assets">Assets</h2>
               </div>
               {holdings.length === 0 ? (
@@ -405,7 +407,7 @@ export default function WalletPage() {
                           </span>
                         </span>
                       </Link>
-                      <span className="portfolio-num">
+                      <span className="ui-num">
                         {holding.value === null ? DASH : money(holding.value, currency)}
                         {holding.value !== null && total !== null && Number(total) > 0 && (
                           <span className="portfolio-sub">

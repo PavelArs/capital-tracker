@@ -2,6 +2,7 @@ import { type SecurityOverview, type SecuritySession, securityApi } from '@api/s
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
+import Badge from '@/ui/Badge';
 import { Bone } from '../shell/Skeleton';
 import AuthenticatorDialog from './AuthenticatorDialog';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -112,7 +113,9 @@ export default function SecuritySettings() {
               </p>
             </div>
             <div className="security-actions">
-              <span className="security-badge">On</span>
+              <Badge tone="pos" dot>
+                On
+              </Badge>
               <button
                 type="button"
                 className="shell-button shell-button--secondary"
@@ -188,7 +191,7 @@ export default function SecuritySettings() {
                       </span>
                     </span>
                     {session.current ? (
-                      <span className="security-badge security-badge--plain">This browser</span>
+                      <Badge tone="pos">This browser</Badge>
                     ) : (
                       <button
                         type="button"

@@ -5,6 +5,8 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useId } from 'react';
 import { Link } from 'react-router-dom';
+import { ListRowText, rowClass } from '@/ui/ListRow';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { withCurrency } from '../portfolio/currency';
 import {
   missingLabel,
@@ -18,7 +20,6 @@ import {
 import { Change } from '../portfolio/PortfolioPage';
 import AssetIcon from '../shell/AssetIcon';
 import { onlyChain, type TokenChains, withChains } from '../shell/token-chains';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 
 const TOP = 5;
 
@@ -47,21 +48,21 @@ function Table({
   chains: TokenChains;
 }) {
   return (
-    <div className="portfolio-table-wrap">
-      <table className="portfolio-table">
+    <div className="ui-table-wrap">
+      <table className="ui-table">
         <thead>
           <tr>
             <th scope="col">Asset</th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               Price
             </th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               24h
             </th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               Value
             </th>
-            <th scope="col" className="portfolio-num">
+            <th scope="col" className="ui-num">
               Share
             </th>
           </tr>
@@ -88,14 +89,14 @@ function Table({
                   </span>
                 </span>
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 <Change value={asset.priceChange24hPercent} />
               </td>
-              <td className="portfolio-num portfolio-strong">{money(asset.value, currency)}</td>
-              <td className="portfolio-num">{percent(asset.allocationPercent, false)}</td>
+              <td className="ui-num portfolio-strong">{money(asset.value, currency)}</td>
+              <td className="ui-num">{percent(asset.allocationPercent, false)}</td>
             </tr>
           ))}
         </tbody>
@@ -118,14 +119,14 @@ function List({
   chains: TokenChains;
 }) {
   return (
-    <ul className="portfolio-list">
+    <ul className="ui-rows">
       {assets.map((asset) => {
         const market = asset.priceSource === 'market';
         const change = asset.priceChange24hPercent;
         return (
           <li key={asset.instrumentId}>
             <Link
-              className="portfolio-list__row"
+              className={rowClass()}
               to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
             >
               <AssetIcon
@@ -134,14 +135,20 @@ function List({
                 assetType={asset.assetType}
                 network={onlyChain(asset.symbol, chains)}
               />
-              <span className="portfolio-list__name">{asset.name}</span>
-              <span className="portfolio-list__value">{money(asset.value, currency)}</span>
-              <span className="portfolio-list__detail">{amount(asset, chains)}</span>
-              <span
-                className={`portfolio-list__pnl${market && tone(change) ? ` portfolio-${tone(change)}` : ''}`}
-              >
-                {market ? `${percent(change)} today` : sourceLabels[asset.priceSource]}
-              </span>
+              <ListRowText
+                title={asset.name}
+                detail={amount(asset, chains)}
+                amount={money(asset.value, currency)}
+                value={
+                  market ? (
+                    <span className={tone(change) ? `portfolio-${tone(change)}` : undefined}>
+                      {percent(change)} today
+                    </span>
+                  ) : (
+                    sourceLabels[asset.priceSource]
+                  )
+                }
+              />
             </Link>
           </li>
         );
@@ -170,7 +177,7 @@ export default function TopAssets({
   const assets = portfolio ? topAssets(portfolio) : [];
   return (
     <section className="shell-card dashboard-assets" aria-labelledby={heading}>
-      <div className="portfolio-toolbar">
+      <div className="ui-toolbar">
         <h2 id={heading}>Top assets</h2>
         <Link className="dashboard-link" to={withCurrency('/portfolio', asked)}>
           All assets

@@ -310,7 +310,7 @@ describe('WAL-LIST: wallets grouped by account', () => {
     const row = within(trustCard).getByRole('button', {
       name: `Trust Wallet BTC ${addresses.trust}`,
     });
-    expect(row).toHaveClass('transactions-item');
+    expect(row).toHaveClass('ui-row');
     expect(row).toHaveTextContent('bc1qar0s…wf5mdq · Synced');
     expect(row).toHaveTextContent('0.01 BTC$800.00');
   });
@@ -1212,7 +1212,7 @@ describe('Tron wallets', () => {
     expect(energy).toHaveTextContent('800 TRX');
     expect(energy).toHaveTextContent('Active');
     expect(bandwidth).toHaveTextContent('Staked for bandwidth');
-    expect(unstaking).toHaveTextContent('Back to the balance on 20 Oct 2026');
+    expect(unstaking).toHaveTextContent('Back to the balance on Oct 20, 2026');
     expect(unstaking).toHaveTextContent('Unstaking');
     expect(staking).toHaveTextContent('Energy and bandwidth are not assets');
     expect(staking).toHaveTextContent('rewards not claimed yet are not counted');
@@ -1369,7 +1369,7 @@ describe('M21: Bitcoin wallets by account public key', () => {
     }));
     setup([keyed]);
     const row = await screen.findByRole('button', { name: `Trezor BTC ${zpub}` });
-    expect(row).toHaveClass('transactions-item');
+    expect(row).toHaveClass('ui-row');
     expect(row).toHaveTextContent('5 addresses · Synced');
     expect(row).not.toHaveTextContent('zpub');
   });
@@ -1750,7 +1750,7 @@ describe('M22: Bybit accounts', () => {
     const drawer = screen.getByRole('dialog', { name: 'Bybit · Bybit' });
     expect(drawer).toHaveTextContent('Bybit UID123456789');
     expect(drawer).toHaveTextContent('API key…0001 · read-only, stored encrypted');
-    expect(drawer).toHaveTextContent('Key expires1 Jan 2027');
+    expect(drawer).toHaveTextContent('Key expiresJan 1, 2027');
     expect(drawer).toHaveTextContent('As Bybit reported them 5 min ago');
     expect(drawer).toHaveTextContent('Not tracked5 S · not counted');
     expect(drawer).toHaveTextContent(

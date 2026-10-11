@@ -1,0 +1,54 @@
+/* One banner for notes, warnings and errors inside cards, dialogs and drawers. Features keep only their margins. */
+.ui-banner {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+
+.ui-banner--info {
+  background: var(--accent-soft);
+}
+
+.ui-banner--warn {
+  background: var(--warn-soft);
+}
+
+.ui-banner--neg {
+  background: var(--neg-soft);
+}
+
+.ui-banner--pos {
+  background: var(--pos-soft);
+}
+
+/* Icon, text and a button on one line; the text takes the room. */
+.ui-banner--action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ui-banner--action > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-banner--action .shell-icon,
+.ui-banner--action .shell-button {
+  flex: none;
+}
+
+.ui-banner--action .shell-button {
+  text-decoration: none;
+}
+
+.ui-banner--warn.ui-banner--action .shell-icon {
+  color: var(--warn);
+}
+
+@media (max-width: 559.98px) {
+  .ui-banner--action {
+    flex-wrap: wrap;
+  }
+}

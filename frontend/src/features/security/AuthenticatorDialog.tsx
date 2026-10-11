@@ -142,7 +142,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
   }
 
   const errorBlock = error && (
-    <p id="security-authenticator-error" className="portfolio-dialog__error" role="alert">
+    <p id="security-authenticator-error" className="ui-banner ui-banner--neg" role="alert">
       {error}
     </p>
   );
@@ -156,7 +156,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
         onEscape={busy ? undefined : onClose}
       >
         <form onSubmit={confirm} noValidate>
-          <div className="portfolio-dialog__body">
+          <div className="ui-modal__body">
             <p className="security-step">Step 1 of 2</p>
             <p className="security-dialog__text">
               Scan it with Google Authenticator, 1Password, Bitwarden or a similar app. Your current
@@ -165,7 +165,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             <div className="security-qr-row">
               <QrCode value={setup.uri} label="QR code for your authenticator app" />
               <div className="security-key">
-                <span className="portfolio-field__label">Can't scan? Enter this key</span>
+                <span className="ui-field__label">Can't scan? Enter this key</span>
                 <div className="security-secret">
                   <span>{grouped(setup.secret)}</span>
                   <button
@@ -179,13 +179,13 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
                 </div>
               </div>
             </div>
-            <div className="portfolio-field">
-              <label className="portfolio-field__label" htmlFor="security-new-totp">
+            <div className="ui-field">
+              <label className="ui-field__label" htmlFor="security-new-totp">
                 Code from the new app
               </label>
               <input
                 id="security-new-totp"
-                className="portfolio-input security-otp"
+                className="ui-input security-otp"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={7}
@@ -198,7 +198,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             </div>
             {errorBlock}
           </div>
-          <div className="portfolio-dialog__foot">
+          <div className="ui-modal__foot">
             <button
               type="button"
               className="shell-button shell-button--ghost"
@@ -234,23 +234,21 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       onEscape={busy ? undefined : onClose}
     >
       <form onSubmit={prove} noValidate>
-        <div className="portfolio-dialog__body">
+        <div className="ui-modal__body">
           <p className="security-dialog__text">
             For a new phone, or when the old one is lost. First confirm it's you
             {kind === 'totp'
               ? ' with a code from your current authenticator app.'
               : ' with one of your recovery codes; it is used up.'}
           </p>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor="security-proof">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="security-proof">
               {kind === 'totp' ? 'Code from your authenticator app' : 'Recovery code'}
             </label>
             <input
               id="security-proof"
               className={
-                kind === 'totp'
-                  ? 'portfolio-input security-otp'
-                  : 'portfolio-input security-recovery-input'
+                kind === 'totp' ? 'ui-input security-otp' : 'ui-input security-recovery-input'
               }
               inputMode={kind === 'totp' ? 'numeric' : 'text'}
               autoComplete={kind === 'totp' ? 'one-time-code' : 'off'}
@@ -268,7 +266,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             {kind === 'totp' ? 'Lost the phone? Use a recovery code' : 'Use the authenticator code'}
           </button>
         </div>
-        <div className="portfolio-dialog__foot">
+        <div className="ui-modal__foot">
           <button
             type="button"
             className="shell-button shell-button--ghost"

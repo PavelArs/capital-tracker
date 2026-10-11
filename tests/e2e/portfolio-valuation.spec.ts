@@ -220,7 +220,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await expect(main.getByRole('table')).toHaveCount(0);
   await main.getByRole('searchbox', { name: 'Search assets' }).fill(suffix);
   const phoneRow = main.getByRole('link', { name: new RegExp(`^${assetName}`) });
-  await expect(phoneRow).toHaveText(`${assetName}$96,000.001.2 PVUI+$30,000.00 · +45.45%`);
+  await expect(phoneRow).toHaveText(`${assetName}1.2 PVUI$96,000.00+$30,000.00 · +45.45%`);
   await main.getByRole('combobox', { name: 'Sort by' }).selectOption({ label: 'Name' });
   expect(
     await page.evaluate(

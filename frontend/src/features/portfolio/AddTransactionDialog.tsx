@@ -9,6 +9,9 @@ import { type DependentOperation, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Modal from '@/ui/Modal';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
@@ -57,9 +60,6 @@ export interface Account {
   journalRevision: number;
 }
 
-const focusableFields =
-  'a[href], button:not([disabled]), select:not([disabled]), textarea, input:not([disabled]):not([type="radio"]), input[type="radio"]:checked, summary';
-
 const problemText: Record<EntryProblem, string> = {
   instrument: 'Choose an asset',
   amount: 'Enter an amount greater than 0',
@@ -70,15 +70,6 @@ const problemText: Record<EntryProblem, string> = {
   fee: 'Enter the fee as a number',
   comment: `Keep the comment within ${MAX_COMMENT_LENGTH} characters`,
 };
-
-const shortDate = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'UTC',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-});
-/** Mar 1, 2026, as the prototype and the Transactions list write dates. */
-export const dateText = (iso: string) => shortDate.format(new Date(iso));
 
 /** The message of a 409 that names the transfer itself as the first operation left short. */
 const OWN_SHORTFALL = 'An account does not hold enough for this transfer';
@@ -117,7 +108,7 @@ export function coverageOf(
 
 /** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
 export const shortText = (account: string, coin: string, date: string) =>
-  `${account} does not hold enough ${coin} on ${dateText(date)} for this transfer.`;
+  `${account} does not hold enough ${coin} on ${dayText(date)} for this transfer.`;
 /**
  * The account's records start later than the transaction, so nothing can move in or out; with no
  * start date its records have not started: it was opened with balances.
@@ -125,7 +116,7 @@ export const shortText = (account: string, coin: string, date: string) =>
 export const coverageText = (account: string, from: string | null, date: string) =>
   from === null
     ? `The records of ${account} have not started: it was opened with balances, so start them on Manual accounts first.`
-    : `The records of ${account} start on ${dateText(from)}, after this transaction on ${dateText(date)}.`;
+    : `The records of ${account} start on ${dayText(from)}, after this transaction on ${dayText(date)}.`;
 
 function failure(
   error: unknown,
@@ -150,7 +141,7 @@ function failure(
       ? coverageText(name(coverage.accountId), null, date)
       : `${coverageText(name(coverage.accountId), coverage.coverageFrom, date)} Choose a later date.`;
   if (dependent)
-    return `A later transaction on ${dateText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
+    return `A later transaction on ${dayText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
   if (status === 409 || status === 422)
     return 'This transaction does not fit the saved history: the account may not hold that much on this date, or it was changed elsewhere. Close this window and try again.';
   if (status === 400) return 'Check the fields and try again.';
@@ -201,6 +192,10 @@ const moreKinds = [
   ['airdrop', 'Airdrop'],
   ['gift-received', 'Gift'],
   ['fee', 'Fee'],
+] as const satisfies readonly (readonly [EntryKind, string])[];
+const giftKinds = [
+  ['gift-received', 'Received'],
+  ['gift-sent', 'Sent'],
 ] as const satisfies readonly (readonly [EntryKind, string])[];
 const isMoreKind = (kind: EntryKind) =>
   kind === 'reward' || kind === 'airdrop' || kind === 'fee' || kind.startsWith('gift');
@@ -312,32 +307,6 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [saving, setSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
-
-  const dialog = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  const busy = useRef(false);
-  busy.current = saving;
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.current?.querySelector<HTMLElement>('input[type="radio"]:checked')?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy.current) close.current();
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const focusable = [...dialog.current.querySelectorAll<HTMLElement>(focusableFields)];
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-        event.preventDefault();
-        (event.shiftKey ? last : first)?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, []);
 
   useEffect(() => {
     let live = true;
@@ -699,7 +668,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   const fieldError = (problem: EntryProblem, text = problemText[problem]) =>
     found.has(problem) && (
-      <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
+      <span className="ui-field__error" id={`${id}-${problem}-error`}>
         {text}
       </span>
     );
@@ -716,633 +685,585 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   );
 
   return (
-    <div className="portfolio-scrim">
-      <div
-        ref={dialog}
-        className="portfolio-dialog portfolio-dialog--wide"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-title`}
-      >
-        <form onSubmit={submit} noValidate>
-          <div className="portfolio-dialog__head">
-            <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
-            <CloseButton onClick={onClose} disabled={saving} />
-          </div>
-          <div className="portfolio-dialog__body">
-            <div className="portfolio-field">
-              <span id={`${id}-type`} className="portfolio-field__label">
-                Type
-              </span>
-              <div className="portfolio-types">
-                <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-type`}>
-                  {mainKinds.map(([value, label]) => (
-                    <label key={value}>
-                      <input
-                        type="radio"
-                        name={`${id}-kind`}
-                        value={value}
-                        checked={kind === value}
-                        disabled={Boolean(editing) && family(value) !== family(kind)}
-                        onChange={() => choose(value)}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="portfolio-types__more"
-                  aria-expanded={moreShown}
-                  aria-controls={`${id}-more-types`}
-                  onClick={() => setMoreShown(!moreShown)}
-                >
-                  More {moreShown ? '▴' : '▾'}
-                </button>
-              </div>
-              {moreShown && (
-                <div
-                  id={`${id}-more-types`}
-                  className="shell-seg"
-                  role="radiogroup"
-                  aria-label="More types"
-                >
-                  {moreKinds.map(([value, label]) => (
-                    <label key={value}>
-                      <input
-                        type="radio"
-                        name={`${id}-kind`}
-                        value={value}
-                        checked={
-                          value === 'gift-received' ? kind.startsWith('gift') : kind === value
-                        }
-                        disabled={Boolean(editing) && family(value) !== family(kind)}
-                        onChange={() => choose(value)}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              )}
-              {kind.startsWith('gift') && (
-                <div className="shell-seg" role="radiogroup" aria-label="Gift">
-                  {(
-                    [
-                      ['gift-received', 'Received'],
-                      ['gift-sent', 'Sent'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <label key={value}>
-                      <input
-                        type="radio"
-                        name={`${id}-gift`}
-                        value={value}
-                        checked={kind === value}
-                        onChange={() => choose(value)}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              )}
+    <Modal
+      titleId={`${id}-title`}
+      size="wide"
+      onEscape={saving ? undefined : onClose}
+      initialFocus={(root) => root.querySelector<HTMLElement>('input[type="radio"]:checked')}
+    >
+      <form onSubmit={submit} noValidate>
+        <div className="ui-modal__head">
+          <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
+          <CloseButton onClick={onClose} disabled={saving} />
+        </div>
+        <div className="ui-modal__body">
+          <div className="ui-field">
+            <span id={`${id}-type`} className="ui-field__label">
+              Type
+            </span>
+            <div className="portfolio-types">
+              <SegmentedControl
+                name={`${id}-kind`}
+                labelledBy={`${id}-type`}
+                options={mainKinds}
+                value={kind}
+                disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
+                onChange={choose}
+              />
+              <button
+                type="button"
+                className="portfolio-types__more"
+                aria-expanded={moreShown}
+                aria-controls={`${id}-more-types`}
+                onClick={() => setMoreShown(!moreShown)}
+              >
+                More {moreShown ? '▴' : '▾'}
+              </button>
             </div>
-            {loadFailed ? (
-              <p className="portfolio-dialog__error" role="alert">
-                Could not load your assets and accounts. Close this window and try again.
-              </p>
-            ) : !ready ? (
-              <p className="portfolio-field__hint" role="status">
-                Loading your assets and accounts…
-              </p>
-            ) : accounts.length === 0 || assets.length === 0 ? (
-              <p className="shell-note" role="status">
-                {accounts.length === 0 ? (
-                  <>
-                    Add a wallet first on the <Link to="/wallets">Wallets</Link> page, or an asset
-                    with a balance on the Portfolio page.
-                  </>
-                ) : (
-                  'Add an asset first on the Portfolio page, then record its trades.'
-                )}
-              </p>
-            ) : (
-              <>
-                <div className="portfolio-field">
-                  <span id={`${id}-asset`} className="portfolio-field__label">
-                    Asset
-                  </span>
-                  <div className="portfolio-chips" role="group" aria-labelledby={`${id}-asset`}>
-                    {shownAssets.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="portfolio-chip portfolio-chip--asset"
-                        aria-pressed={!other && entry.instrumentId === item.id}
-                        onClick={() => {
-                          setOther(null);
-                          update({ instrumentId: item.id });
-                        }}
-                      >
-                        <AssetIcon
-                          symbol={item.symbol}
-                          name={item.name}
-                          assetType={item.assetType}
-                          size="sm"
-                        />
-                        {item.symbol ?? item.name}
-                      </button>
-                    ))}
-                    {moreAssets.length > 0 && (
-                      <select
-                        className="portfolio-input portfolio-chip-select"
-                        aria-label="More assets"
-                        value=""
-                        onChange={(event) => {
-                          setOther(null);
-                          update({ instrumentId: event.target.value });
-                        }}
-                      >
-                        <option value="">More assets…</option>
-                        {moreAssets.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {!sell && !editing && (
-                      <button
-                        type="button"
-                        className="portfolio-chip portfolio-chip--asset"
-                        aria-pressed={other !== null}
-                        onClick={() => setOther(other ?? { ticker: '', name: '' })}
-                      >
-                        + Other asset
-                      </button>
-                    )}
-                  </div>
-                  {other ? null : fieldError('instrument')}
-                </div>
-                {other && (
-                  <div className="portfolio-row">
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-ticker`}>
-                        Ticker
-                      </label>
-                      <input
-                        id={`${id}-ticker`}
-                        className="portfolio-input"
-                        placeholder="e.g. TON"
-                        autoComplete="off"
-                        value={other.ticker}
-                        onChange={(event) => setOther({ ...other, ticker: event.target.value })}
-                        onBlur={leave('instrument')}
-                        {...invalid('instrument')}
-                      />
-                      {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
-                    </div>
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-name`}>
-                        Name (optional)
-                      </label>
-                      <input
-                        id={`${id}-name`}
-                        className="portfolio-input"
-                        placeholder={otherTicker || 'Toncoin'}
-                        autoComplete="off"
-                        maxLength={120}
-                        value={other.name}
-                        onChange={(event) => setOther({ ...other, name: event.target.value })}
-                      />
-                    </div>
-                  </div>
-                )}
-                <div className="portfolio-row">
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-amount`}>
-                      Amount
-                    </label>
-                    <span className="portfolio-affix">
-                      <input
-                        id={`${id}-amount`}
-                        className="portfolio-input"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={entry.amount}
-                        onChange={(event) => setAmount(event.target.value)}
-                        onBlur={leave('amount')}
-                        {...(overshown
-                          ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
-                          : invalid('amount'))}
-                      />
-                      <span className="portfolio-affix__suffix">{symbol}</span>
-                    </span>
-                    {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
-                      (sell && (
-                        <Availability
-                          id={`${id}-available`}
-                          account={accountName}
-                          symbol={symbol}
-                          date={at}
-                          available={available}
-                          loading={availableKey !== null && availability?.key !== availableKey}
-                          over={overshown}
-                          onUseAll={useAll}
-                        />
-                      ))}
-                  </div>
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-date`}>
-                      Date
-                    </label>
-                    <input
-                      id={`${id}-date`}
-                      className="portfolio-input"
-                      type="date"
-                      max={today()}
-                      value={entry.date}
-                      onChange={(event) => update({ date: event.target.value })}
-                      onBlur={settle('date')}
-                      {...invalid('date')}
-                    />
-                    {fieldError('date')}
-                  </div>
-                </div>
-                {priced && (
-                  <>
-                    <div className="portfolio-row">
-                      <div className="portfolio-field">
-                        <label className="portfolio-field__label" htmlFor={`${id}-unit`}>
-                          Price per {unitSymbol}
-                        </label>
-                        <span className="portfolio-affix">
-                          <input
-                            id={`${id}-unit`}
-                            className="portfolio-input"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            value={unit}
-                            onChange={(event) => setUnitPrice(event.target.value)}
-                          />
-                          <span className="portfolio-affix__suffix">{entry.currency}</span>
-                        </span>
-                        {marketPrice && (
-                          <span className="portfolio-field__hint">
-                            Market today{' '}
-                            {needsRate(entry.currency)
-                              ? `${quantity(marketPrice)} ${entry.currency}`
-                              : price(marketUsd ?? null, 'USD')}{' '}
-                            ·{' '}
-                            <button
-                              type="button"
-                              className="portfolio-link"
-                              onClick={() => setUnitPrice(marketPrice)}
-                            >
-                              Use
-                            </button>
-                          </span>
-                        )}
-                      </div>
-                      <div className="portfolio-field">
-                        <label className="portfolio-field__label" htmlFor={`${id}-total`}>
-                          {buy ? 'Total paid' : 'Total received'}
-                        </label>
-                        <span className="portfolio-affix">
-                          <input
-                            id={`${id}-total`}
-                            className="portfolio-input"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            value={entry.total}
-                            onChange={(event) => setTotal(event.target.value)}
-                            onBlur={leave('total')}
-                            {...invalid('total')}
-                          />
-                          <span className="portfolio-affix__suffix">{entry.currency}</span>
-                        </span>
-                        {fieldError(
-                          'total',
-                          buy ? 'Enter what you paid' : 'Enter what you received',
-                        )}
-                      </div>
-                    </div>
-                    <div className="portfolio-field">
-                      <span id={`${id}-currency`} className="portfolio-field__label">
-                        {buy ? 'Paid in' : 'Received in'}
-                      </span>
-                      <div
-                        className="shell-seg"
-                        role="radiogroup"
-                        aria-labelledby={`${id}-currency`}
-                      >
-                        {paidIn.map((code: PaidIn) => (
-                          <label key={code}>
-                            <input
-                              type="radio"
-                              name={`${id}-currency`}
-                              value={code}
-                              checked={entry.currency === code}
-                              onChange={() =>
-                                update({ currency: code, rate: '', rateEdited: false })
-                              }
-                            />
-                            {code}
-                          </label>
-                        ))}
-                      </div>
-                      {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
-                        <span className="portfolio-field__hint">
-                          {entry.currency} is counted 1:1 with USD.
-                        </span>
-                      )}
-                      {sell
-                        ? !(asset && isCashOf(asset, entry.currency)) && (
-                            <span className="portfolio-field__hint">
-                              The {entry.currency} received stays in {accountName} as cash.
-                            </span>
-                          )
-                        : fromCash !== null &&
-                          totalTyped !== null && (
-                            <span className="portfolio-field__hint">
-                              {compareDecimal(fromCash, totalTyped) === 0
-                                ? `Paid from the ${entry.currency} cash in ${accountName}.`
-                                : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
-                            </span>
-                          )}
-                    </div>
-                    {needsRate(entry.currency) && (
-                      <div className="portfolio-field">
-                        <label className="portfolio-field__label" htmlFor={`${id}-rate`}>
-                          Exchange rate
-                        </label>
-                        <span className="portfolio-affix portfolio-affix--wide">
-                          <input
-                            id={`${id}-rate`}
-                            className="portfolio-input"
-                            inputMode="decimal"
-                            placeholder={rateLoading ? 'Loading…' : ''}
-                            value={shown.rate}
-                            onChange={(event) =>
-                              update({ rate: event.target.value, rateEdited: true })
-                            }
-                            aria-describedby={`${id}-rate-hint`}
-                            onBlur={leave('rate')}
-                            {...invalid('rate')}
-                          />
-                          <span className="portfolio-affix__suffix">
-                            {entry.currency} per 1 USD
-                          </span>
-                        </span>
-                        {fieldError('rate')}
-                        <span className="portfolio-field__hint" id={`${id}-rate-hint`}>
-                          {entry.rateEdited
-                            ? 'Your rate is used for this transaction. '
-                            : prefill
-                              ? 'Bank of Russia rate on the selected date, filled in automatically. Change it if you paid a different rate. '
-                              : rateLoading
-                                ? ''
-                                : 'No Bank of Russia rate is stored for this date; enter the rate you paid. '}
-                          {entry.rateEdited && prefill && (
-                            <button
-                              type="button"
-                              className="portfolio-link"
-                              onClick={() => update({ rate: '', rateEdited: false })}
-                            >
-                              Use Bank of Russia rate {prefill}
-                            </button>
-                          )}
-                          {!entry.rateEdited && 'Totals are kept in USD.'}
-                        </span>
-                      </div>
-                    )}
-                  </>
-                )}
-                {valued(kind) && (
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-total`}>
-                      Value{valueOptional(kind) ? ' (optional)' : ''}
-                    </label>
-                    <span className="portfolio-affix">
-                      <input
-                        id={`${id}-total`}
-                        className="portfolio-input"
-                        inputMode="decimal"
-                        placeholder={marketValue ?? '0.00'}
-                        value={entry.total}
-                        onChange={(event) => update({ total: event.target.value })}
-                        aria-describedby={`${id}-value-hint`}
-                        onBlur={leave('total')}
-                        {...invalid('total')}
-                      />
-                      <span className="portfolio-affix__suffix">USD</span>
-                    </span>
-                    {fieldError(
-                      'total',
-                      numberProblem(entry.total, 'Enter what it was worth on that date'),
-                    )}
-                    <span className="portfolio-field__hint" id={`${id}-value-hint`}>
-                      What it was worth on that date. {valueHints[kind]}
-                      {marketValue && (
-                        <>
-                          {' '}
-                          Market today {money(marketValue, 'USD')} ·{' '}
-                          <button
-                            type="button"
-                            className="portfolio-link"
-                            onClick={() => update({ total: marketValue })}
-                          >
-                            Use
-                          </button>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                )}
-                {transfer ? (
-                  <>
-                    <div className="portfolio-row">
-                      <div className="portfolio-field">
-                        <label className="portfolio-field__label" htmlFor={`${id}-account`}>
-                          From
-                        </label>
-                        <select
-                          id={`${id}-account`}
-                          className="portfolio-input"
-                          value={accountId}
-                          disabled={Boolean(editing)}
-                          onChange={(event) => setAccountId(event.target.value)}
-                        >
-                          {accounts.map((account) => (
-                            <option key={account.id} value={account.id}>
-                              {account.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="portfolio-field">
-                        <label className="portfolio-field__label" htmlFor={`${id}-to`}>
-                          To
-                        </label>
-                        <select
-                          id={`${id}-to`}
-                          className="portfolio-input"
-                          value={toAccountId}
-                          disabled={Boolean(editing)}
-                          onChange={(event) => setToAccountId(event.target.value)}
-                          {...(tried && sameAccount
-                            ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
-                            : {})}
-                        >
-                          {accounts.map((account) => (
-                            <option key={account.id} value={account.id}>
-                              {account.name}
-                            </option>
-                          ))}
-                        </select>
-                        {tried && sameAccount && (
-                          <span className="portfolio-field__error" id={`${id}-to-error`}>
-                            Choose a different wallet
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <p className="portfolio-field__hint">
-                      {fewAccounts
-                        ? 'Add a second wallet or account to move coins between them.'
-                        : 'Transfers move coins between your wallets and keep their purchase price. No price needed.'}
-                    </p>
-                  </>
-                ) : (
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-account`}>
-                      Wallet or account
-                    </label>
-                    <select
-                      id={`${id}-account`}
-                      className="portfolio-input"
-                      value={accountId}
-                      disabled={Boolean(editing)}
-                      onChange={(event) => setAccountId(event.target.value)}
+            {moreShown && (
+              <SegmentedControl
+                id={`${id}-more-types`}
+                name={`${id}-kind`}
+                label="More types"
+                options={moreKinds}
+                value={kind}
+                isChecked={(value) =>
+                  value === 'gift-received' ? kind.startsWith('gift') : kind === value
+                }
+                disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
+                onChange={choose}
+              />
+            )}
+            {kind.startsWith('gift') && (
+              <SegmentedControl
+                name={`${id}-gift`}
+                label="Gift"
+                options={giftKinds}
+                value={kind}
+                onChange={choose}
+              />
+            )}
+          </div>
+          {loadFailed ? (
+            <p className="ui-banner ui-banner--neg" role="alert">
+              Could not load your assets and accounts. Close this window and try again.
+            </p>
+          ) : !ready ? (
+            <p className="ui-field__hint" role="status">
+              Loading your assets and accounts…
+            </p>
+          ) : accounts.length === 0 || assets.length === 0 ? (
+            <p className="shell-note" role="status">
+              {accounts.length === 0 ? (
+                <>
+                  Add a wallet first on the <Link to="/wallets">Wallets</Link> page, or an asset
+                  with a balance on the Portfolio page.
+                </>
+              ) : (
+                'Add an asset first on the Portfolio page, then record its trades.'
+              )}
+            </p>
+          ) : (
+            <>
+              <div className="ui-field">
+                <span id={`${id}-asset`} className="ui-field__label">
+                  Asset
+                </span>
+                <div className="ui-chips" role="group" aria-labelledby={`${id}-asset`}>
+                  {shownAssets.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="ui-chip portfolio-asset-chip"
+                      aria-pressed={!other && entry.instrumentId === item.id}
+                      onClick={() => {
+                        setOther(null);
+                        update({ instrumentId: item.id });
+                      }}
                     >
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
+                      <AssetIcon
+                        symbol={item.symbol}
+                        name={item.name}
+                        assetType={item.assetType}
+                        size="sm"
+                      />
+                      {item.symbol ?? item.name}
+                    </button>
+                  ))}
+                  {moreAssets.length > 0 && (
+                    <select
+                      className="ui-input portfolio-chip-select"
+                      aria-label="More assets"
+                      value=""
+                      onChange={(event) => {
+                        setOther(null);
+                        update({ instrumentId: event.target.value });
+                      }}
+                    >
+                      <option value="">More assets…</option>
+                      {moreAssets.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
                         </option>
                       ))}
                     </select>
-                  </div>
-                )}
-                <details
-                  className="portfolio-more"
-                  open={
-                    Boolean(entry.time || entry.fee || entry.comment) ||
-                    found.has('time') ||
-                    found.has('fee') ||
-                    found.has('comment')
-                  }
-                >
-                  <summary>
-                    {priced || transfer
-                      ? 'More options: time, fee, comment'
-                      : 'More options: time, comment'}
-                  </summary>
-                  <div className="portfolio-row">
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-time`}>
-                        Time, UTC (optional)
-                      </label>
-                      <input
-                        id={`${id}-time`}
-                        className="portfolio-input"
-                        type="time"
-                        value={entry.time}
-                        onChange={(event) => update({ time: event.target.value })}
-                        onBlur={settle('time')}
-                        {...invalid('time')}
-                      />
-                      {fieldError('time')}
-                    </div>
-                    {(priced || transfer) && (
-                      <div className="portfolio-field">
-                        <label className="portfolio-field__label" htmlFor={`${id}-fee`}>
-                          Fee (optional)
-                        </label>
-                        <span className="portfolio-affix">
-                          <input
-                            id={`${id}-fee`}
-                            className="portfolio-input"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            value={entry.fee}
-                            onChange={(event) => update({ fee: event.target.value })}
-                            onBlur={leave('fee')}
-                            {...invalid('fee')}
-                          />
-                          <span className="portfolio-affix__suffix">
-                            {transfer ? symbol : entry.currency}
-                          </span>
-                        </span>
-                        {fieldError('fee', numberProblem(entry.fee, problemText.fee))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-comment`}>
-                      Comment
+                  )}
+                  {!sell && !editing && (
+                    <button
+                      type="button"
+                      className="ui-chip portfolio-asset-chip"
+                      aria-pressed={other !== null}
+                      onClick={() => setOther(other ?? { ticker: '', name: '' })}
+                    >
+                      + Other asset
+                    </button>
+                  )}
+                </div>
+                {other ? null : fieldError('instrument')}
+              </div>
+              {other && (
+                <div className="ui-field-row">
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-ticker`}>
+                      Ticker
                     </label>
-                    <textarea
-                      id={`${id}-comment`}
-                      className="portfolio-input portfolio-textarea"
-                      placeholder="Optional"
-                      value={entry.comment}
-                      onChange={(event) => update({ comment: event.target.value })}
-                      onBlur={leave('comment')}
-                      {...invalid('comment')}
+                    <input
+                      id={`${id}-ticker`}
+                      className="ui-input"
+                      placeholder="e.g. TON"
+                      autoComplete="off"
+                      value={other.ticker}
+                      onChange={(event) => setOther({ ...other, ticker: event.target.value })}
+                      onBlur={leave('instrument')}
+                      {...invalid('instrument')}
                     />
-                    {fieldError('comment')}
+                    {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
                   </div>
-                </details>
-              </>
-            )}
-            {error && (
-              <p className="portfolio-dialog__error" role="alert">
-                {error}
-              </p>
-            )}
-          </div>
-          <div className="portfolio-dialog__foot">
-            <span className="portfolio-dialog__summary">
-              {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
-              {valued(kind) &&
-                positive(entry.total) !== null &&
-                `Value ${money(positive(entry.total), 'USD')}`}
-            </span>
-            <button
-              type="button"
-              className="shell-button shell-button--ghost"
-              onClick={onClose}
-              disabled={saving}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="shell-button shell-button--primary"
-              disabled={
-                saving ||
-                (priced && rateLoading) ||
-                !ready ||
-                !accounts?.length ||
-                !assets?.length ||
-                fewAccounts
-              }
-            >
-              {editing ? 'Save changes' : 'Save transaction'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-name`}>
+                      Name (optional)
+                    </label>
+                    <input
+                      id={`${id}-name`}
+                      className="ui-input"
+                      placeholder={otherTicker || 'Toncoin'}
+                      autoComplete="off"
+                      maxLength={120}
+                      value={other.name}
+                      onChange={(event) => setOther({ ...other, name: event.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="ui-field-row">
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-amount`}>
+                    Amount
+                  </label>
+                  <span className="ui-affix">
+                    <input
+                      id={`${id}-amount`}
+                      className="ui-input"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={entry.amount}
+                      onChange={(event) => setAmount(event.target.value)}
+                      onBlur={leave('amount')}
+                      {...(overshown
+                        ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
+                        : invalid('amount'))}
+                    />
+                    <span className="ui-affix__suffix">{symbol}</span>
+                  </span>
+                  {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
+                    (sell && (
+                      <Availability
+                        id={`${id}-available`}
+                        account={accountName}
+                        symbol={symbol}
+                        date={at}
+                        available={available}
+                        loading={availableKey !== null && availability?.key !== availableKey}
+                        over={overshown}
+                        onUseAll={useAll}
+                      />
+                    ))}
+                </div>
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-date`}>
+                    Date
+                  </label>
+                  <input
+                    id={`${id}-date`}
+                    className="ui-input"
+                    type="date"
+                    max={today()}
+                    value={entry.date}
+                    onChange={(event) => update({ date: event.target.value })}
+                    onBlur={settle('date')}
+                    {...invalid('date')}
+                  />
+                  {fieldError('date')}
+                </div>
+              </div>
+              {priced && (
+                <>
+                  <div className="ui-field-row">
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-unit`}>
+                        Price per {unitSymbol}
+                      </label>
+                      <span className="ui-affix">
+                        <input
+                          id={`${id}-unit`}
+                          className="ui-input"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={unit}
+                          onChange={(event) => setUnitPrice(event.target.value)}
+                        />
+                        <span className="ui-affix__suffix">{entry.currency}</span>
+                      </span>
+                      {marketPrice && (
+                        <span className="ui-field__hint">
+                          Market today{' '}
+                          {needsRate(entry.currency)
+                            ? `${quantity(marketPrice)} ${entry.currency}`
+                            : price(marketUsd ?? null, 'USD')}{' '}
+                          ·{' '}
+                          <button
+                            type="button"
+                            className="portfolio-link"
+                            onClick={() => setUnitPrice(marketPrice)}
+                          >
+                            Use
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-total`}>
+                        {buy ? 'Total paid' : 'Total received'}
+                      </label>
+                      <span className="ui-affix">
+                        <input
+                          id={`${id}-total`}
+                          className="ui-input"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={entry.total}
+                          onChange={(event) => setTotal(event.target.value)}
+                          onBlur={leave('total')}
+                          {...invalid('total')}
+                        />
+                        <span className="ui-affix__suffix">{entry.currency}</span>
+                      </span>
+                      {fieldError('total', buy ? 'Enter what you paid' : 'Enter what you received')}
+                    </div>
+                  </div>
+                  <div className="ui-field">
+                    <span id={`${id}-currency`} className="ui-field__label">
+                      {buy ? 'Paid in' : 'Received in'}
+                    </span>
+                    <SegmentedControl
+                      name={`${id}-currency`}
+                      labelledBy={`${id}-currency`}
+                      options={paidIn}
+                      value={entry.currency}
+                      onChange={(code: PaidIn) =>
+                        update({ currency: code, rate: '', rateEdited: false })
+                      }
+                    />
+                    {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
+                      <span className="ui-field__hint">
+                        {entry.currency} is counted 1:1 with USD.
+                      </span>
+                    )}
+                    {sell
+                      ? !(asset && isCashOf(asset, entry.currency)) && (
+                          <span className="ui-field__hint">
+                            The {entry.currency} received stays in {accountName} as cash.
+                          </span>
+                        )
+                      : fromCash !== null &&
+                        totalTyped !== null && (
+                          <span className="ui-field__hint">
+                            {compareDecimal(fromCash, totalTyped) === 0
+                              ? `Paid from the ${entry.currency} cash in ${accountName}.`
+                              : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
+                          </span>
+                        )}
+                  </div>
+                  {needsRate(entry.currency) && (
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-rate`}>
+                        Exchange rate
+                      </label>
+                      <span className="ui-affix ui-affix--wide">
+                        <input
+                          id={`${id}-rate`}
+                          className="ui-input"
+                          inputMode="decimal"
+                          placeholder={rateLoading ? 'Loading…' : ''}
+                          value={shown.rate}
+                          onChange={(event) =>
+                            update({ rate: event.target.value, rateEdited: true })
+                          }
+                          aria-describedby={`${id}-rate-hint`}
+                          onBlur={leave('rate')}
+                          {...invalid('rate')}
+                        />
+                        <span className="ui-affix__suffix">{entry.currency} per 1 USD</span>
+                      </span>
+                      {fieldError('rate')}
+                      <span className="ui-field__hint" id={`${id}-rate-hint`}>
+                        {entry.rateEdited
+                          ? 'Your rate is used for this transaction. '
+                          : prefill
+                            ? 'Bank of Russia rate on the selected date, filled in automatically. Change it if you paid a different rate. '
+                            : rateLoading
+                              ? ''
+                              : 'No Bank of Russia rate is stored for this date; enter the rate you paid. '}
+                        {entry.rateEdited && prefill && (
+                          <button
+                            type="button"
+                            className="portfolio-link"
+                            onClick={() => update({ rate: '', rateEdited: false })}
+                          >
+                            Use Bank of Russia rate {prefill}
+                          </button>
+                        )}
+                        {!entry.rateEdited && 'Totals are kept in USD.'}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+              {valued(kind) && (
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-total`}>
+                    Value{valueOptional(kind) ? ' (optional)' : ''}
+                  </label>
+                  <span className="ui-affix">
+                    <input
+                      id={`${id}-total`}
+                      className="ui-input"
+                      inputMode="decimal"
+                      placeholder={marketValue ?? '0.00'}
+                      value={entry.total}
+                      onChange={(event) => update({ total: event.target.value })}
+                      aria-describedby={`${id}-value-hint`}
+                      onBlur={leave('total')}
+                      {...invalid('total')}
+                    />
+                    <span className="ui-affix__suffix">USD</span>
+                  </span>
+                  {fieldError(
+                    'total',
+                    numberProblem(entry.total, 'Enter what it was worth on that date'),
+                  )}
+                  <span className="ui-field__hint" id={`${id}-value-hint`}>
+                    What it was worth on that date. {valueHints[kind]}
+                    {marketValue && (
+                      <>
+                        {' '}
+                        Market today {money(marketValue, 'USD')} ·{' '}
+                        <button
+                          type="button"
+                          className="portfolio-link"
+                          onClick={() => update({ total: marketValue })}
+                        >
+                          Use
+                        </button>
+                      </>
+                    )}
+                  </span>
+                </div>
+              )}
+              {transfer ? (
+                <>
+                  <div className="ui-field-row">
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-account`}>
+                        From
+                      </label>
+                      <select
+                        id={`${id}-account`}
+                        className="ui-input"
+                        value={accountId}
+                        disabled={Boolean(editing)}
+                        onChange={(event) => setAccountId(event.target.value)}
+                      >
+                        {accounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-to`}>
+                        To
+                      </label>
+                      <select
+                        id={`${id}-to`}
+                        className="ui-input"
+                        value={toAccountId}
+                        disabled={Boolean(editing)}
+                        onChange={(event) => setToAccountId(event.target.value)}
+                        {...(tried && sameAccount
+                          ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
+                          : {})}
+                      >
+                        {accounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                      {tried && sameAccount && (
+                        <span className="ui-field__error" id={`${id}-to-error`}>
+                          Choose a different wallet
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="ui-field__hint">
+                    {fewAccounts
+                      ? 'Add a second wallet or account to move coins between them.'
+                      : 'Transfers move coins between your wallets and keep their purchase price. No price needed.'}
+                  </p>
+                </>
+              ) : (
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-account`}>
+                    Wallet or account
+                  </label>
+                  <select
+                    id={`${id}-account`}
+                    className="ui-input"
+                    value={accountId}
+                    disabled={Boolean(editing)}
+                    onChange={(event) => setAccountId(event.target.value)}
+                  >
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <details
+                className="portfolio-more"
+                open={
+                  Boolean(entry.time || entry.fee || entry.comment) ||
+                  found.has('time') ||
+                  found.has('fee') ||
+                  found.has('comment')
+                }
+              >
+                <summary>
+                  {priced || transfer
+                    ? 'More options: time, fee, comment'
+                    : 'More options: time, comment'}
+                </summary>
+                <div className="ui-field-row">
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-time`}>
+                      Time, UTC (optional)
+                    </label>
+                    <input
+                      id={`${id}-time`}
+                      className="ui-input"
+                      type="time"
+                      value={entry.time}
+                      onChange={(event) => update({ time: event.target.value })}
+                      onBlur={settle('time')}
+                      {...invalid('time')}
+                    />
+                    {fieldError('time')}
+                  </div>
+                  {(priced || transfer) && (
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-fee`}>
+                        Fee (optional)
+                      </label>
+                      <span className="ui-affix">
+                        <input
+                          id={`${id}-fee`}
+                          className="ui-input"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={entry.fee}
+                          onChange={(event) => update({ fee: event.target.value })}
+                          onBlur={leave('fee')}
+                          {...invalid('fee')}
+                        />
+                        <span className="ui-affix__suffix">
+                          {transfer ? symbol : entry.currency}
+                        </span>
+                      </span>
+                      {fieldError('fee', numberProblem(entry.fee, problemText.fee))}
+                    </div>
+                  )}
+                </div>
+                <div className="ui-field">
+                  <label className="ui-field__label" htmlFor={`${id}-comment`}>
+                    Comment
+                  </label>
+                  <textarea
+                    id={`${id}-comment`}
+                    className="ui-input ui-textarea"
+                    placeholder="Optional"
+                    value={entry.comment}
+                    onChange={(event) => update({ comment: event.target.value })}
+                    onBlur={leave('comment')}
+                    {...invalid('comment')}
+                  />
+                  {fieldError('comment')}
+                </div>
+              </details>
+            </>
+          )}
+          {error && (
+            <p className="ui-banner ui-banner--neg" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="ui-modal__foot">
+          <span className="ui-modal__summary">
+            {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
+            {valued(kind) &&
+              positive(entry.total) !== null &&
+              `Value ${money(positive(entry.total), 'USD')}`}
+          </span>
+          <button
+            type="button"
+            className="shell-button shell-button--ghost"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="shell-button shell-button--primary"
+            disabled={
+              saving ||
+              (priced && rateLoading) ||
+              !ready ||
+              !accounts?.length ||
+              !assets?.length ||
+              fewAccounts
+            }
+          >
+            {editing ? 'Save changes' : 'Save transaction'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -1368,17 +1289,17 @@ function Availability({
   over,
   onUseAll,
 }: AvailabilityProps) {
-  if (loading) return <span className="portfolio-field__hint">Checking what {account} holds…</span>;
+  if (loading) return <span className="ui-field__hint">Checking what {account} holds…</span>;
   if (available === null) return null;
   const held = `${quantity(available)} ${symbol}`;
   if (Number(available) === 0)
     return (
       <span
-        className={over ? 'portfolio-field__error' : 'portfolio-field__hint'}
+        className={over ? 'ui-field__error' : 'ui-field__hint'}
         id={id}
         role={over ? 'alert' : undefined}
       >
-        {account} has no {symbol} on {dateText(date)}
+        {account} has no {symbol} on {dayText(date)}
       </span>
     );
   const useAll = (
@@ -1387,11 +1308,11 @@ function Availability({
     </button>
   );
   return over ? (
-    <span className="portfolio-field__error" id={id} role="alert">
-      Only {held} is available in {account} on {dateText(date)} · {useAll}
+    <span className="ui-field__error" id={id} role="alert">
+      Only {held} is available in {account} on {dayText(date)} · {useAll}
     </span>
   ) : (
-    <span className="portfolio-field__hint" id={id}>
+    <span className="ui-field__hint" id={id}>
       Available in {account}: {held} · {useAll}
     </span>
   );

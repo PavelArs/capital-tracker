@@ -7,19 +7,21 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
-import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
 import Allocation from './Allocation';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
 import './portfolio.css';
+import EmptyState from '@/ui/EmptyState';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 
 export const typeLabels: Record<AssetType, string> = {
   crypto: 'Crypto',
@@ -271,14 +273,14 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         </div>
       </dl>
       {portfolio.stalePriceCount > 0 && (
-        <p className="portfolio-warn" role="note">
+        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
           {portfolio.stalePriceCount === 1
             ? '1 price is older than 2 hours; the last stored price is used.'
             : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
         </p>
       )}
       {portfolio.missingRateCount > 0 && (
-        <p className="portfolio-warn" role="note">
+        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
           {portfolio.missingRateCount === 1
             ? '1 asset has'
             : `${portfolio.missingRateCount} assets have`}{' '}
@@ -308,8 +310,8 @@ function AssetsTable({
   onSort: (key: SortKey) => void;
 }) {
   return (
-    <div className="portfolio-table-wrap">
-      <table className="portfolio-table">
+    <div className="ui-table-wrap">
+      <table className="ui-table">
         <thead>
           <tr>
             {sortColumns.map(([key, label]) => {
@@ -318,20 +320,20 @@ function AssetsTable({
                 <th
                   key={key}
                   scope="col"
-                  className={key === 'name' ? undefined : 'portfolio-num'}
+                  className={key === 'name' ? undefined : 'ui-num'}
                   aria-sort={
                     active === null ? undefined : active === 'asc' ? 'ascending' : 'descending'
                   }
                 >
                   <button
                     type="button"
-                    className="portfolio-th-sort"
+                    className="ui-th-sort"
                     data-active={active !== null}
                     onClick={() => onSort(key)}
                   >
                     <Icon
                       name={active === 'asc' ? 'arrowUp' : 'arrowDown'}
-                      className="shell-icon shell-icon--sm portfolio-th-sort__arrow"
+                      className="shell-icon shell-icon--sm ui-th-sort__arrow"
                     />
                     {label}
                   </button>
@@ -362,13 +364,13 @@ function AssetsTable({
                   </span>
                 </span>
               </td>
-              <td className="portfolio-num">{quantity(asset.quantity)}</td>
-              <td className="portfolio-num">
+              <td className="ui-num">{quantity(asset.quantity)}</td>
+              <td className="ui-num">
                 {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
                 <span className="portfolio-sub">{priceNote(asset, now)}</span>
               </td>
-              <td className="portfolio-num portfolio-strong">{money(asset.value, currency)}</td>
-              <td className="portfolio-num">
+              <td className="ui-num portfolio-strong">{money(asset.value, currency)}</td>
+              <td className="ui-num">
                 <span className="portfolio-share">
                   <span className="portfolio-share__bar" aria-hidden="true">
                     <i
@@ -380,10 +382,10 @@ function AssetsTable({
                   </span>
                 </span>
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 <Signed
                   value={shownProfit(asset).pnl}
                   currency={currency}
@@ -391,7 +393,7 @@ function AssetsTable({
                   inline
                 />
               </td>
-              <td className="portfolio-num">
+              <td className="ui-num">
                 <Change value={asset.priceChange24hPercent} />
               </td>
             </tr>
@@ -399,6 +401,19 @@ function AssetsTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** A phone row's unrealized P&L: money and percent, coloured by sign. */
+function Profit({ asset, currency }: { asset: AssetValuation; currency: AccountingCurrency }) {
+  const { pnl, ratio } = shownProfit(asset);
+  if (pnl === null) return DASH;
+  const sign = tone(pnl);
+  return (
+    <span className={sign ? `portfolio-${sign}` : undefined}>
+      {money(pnl, currency, true)}
+      {ratio !== null && ` · ${percent(ratio)}`}
+    </span>
   );
 }
 
@@ -416,39 +431,26 @@ function AssetsList({
   chains: TokenChains;
 }) {
   return (
-    <ul className="portfolio-list">
+    <ul className="ui-rows">
       {assets.map((asset) => (
         <li key={asset.instrumentId}>
-          <Link
-            className="portfolio-list__row"
-            to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
-          >
+          <Link className={rowClass()} to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
             <AssetIcon
               symbol={asset.symbol}
               name={asset.name}
               assetType={asset.assetType}
               network={onlyChain(asset.symbol, chains)}
             />
-            <span className="portfolio-list__name">{asset.name}</span>
-            <span className="portfolio-list__value">{money(asset.value, currency)}</span>
-            <span className="portfolio-list__detail">
-              {withChains(
+            <ListRowText
+              title={asset.name}
+              detail={withChains(
                 `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
                 asset.symbol,
                 chains,
               )}
-            </span>
-            <span
-              className={`portfolio-list__pnl${tone(shownProfit(asset).pnl) ? ` portfolio-${tone(shownProfit(asset).pnl)}` : ''}`}
-            >
-              {shownProfit(asset).pnl === null
-                ? DASH
-                : `${money(shownProfit(asset).pnl, currency, true)}${
-                    shownProfit(asset).ratio === null
-                      ? ''
-                      : ` · ${percent(shownProfit(asset).ratio)}`
-                  }`}
-            </span>
+              amount={money(asset.value, currency)}
+              value={<Profit asset={asset} currency={currency} />}
+            />
           </Link>
         </li>
       ))}
@@ -528,11 +530,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title="Portfolio"
-        currency={portfolio?.currency}
-        onTransactionSaved={() => void load(true)}
-      />
+      <PageHeader title="Portfolio" currency={portfolio?.currency} />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your portfolio. Your data is safe; try again.</p>
@@ -543,15 +541,13 @@ export default function PortfolioPage() {
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
       ) : assets.length === 0 ? (
-        <section className="shell-card shell-empty" aria-labelledby="portfolio-empty">
-          <h2 id="portfolio-empty">No assets yet</h2>
-          <p>Add a coin, cash or anything else you want to track.</p>
-          {addButton(true)}
-        </section>
+        <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
+          Add a coin, cash or anything else you want to track.
+        </EmptyState>
       ) : (
         <>
           {refreshFailed && (
-            <p className="portfolio-warn" role="alert">
+            <p className="ui-banner ui-banner--warn portfolio-warn" role="alert">
               Could not refresh the values; showing the last loaded ones.{' '}
               <button type="button" className="shell-button" onClick={() => void load(true)}>
                 Refresh
@@ -560,19 +556,19 @@ export default function PortfolioPage() {
           )}
           <Summary portfolio={portfolio} />
           <section className="shell-card" aria-labelledby="portfolio-assets">
-            <div className="portfolio-toolbar">
+            <div className="ui-toolbar">
               <h2 id="portfolio-assets">Assets</h2>
-              <div className="portfolio-chips" role="group" aria-label="Filter assets">
+              <div className="ui-chips" role="group" aria-label="Filter assets">
                 {filters.map(([value, label]) => (
                   <button
                     key={value}
                     type="button"
-                    className="portfolio-chip"
+                    className="ui-chip"
                     aria-pressed={filter === value}
                     onClick={() => setFilter(value)}
                   >
                     {label}
-                    <span className="portfolio-chip__count">
+                    <span className="ui-chip__count">
                       {' '}
                       {value === 'all'
                         ? assets.length
@@ -584,7 +580,7 @@ export default function PortfolioPage() {
               <div className="portfolio-tools">
                 <input
                   type="search"
-                  className="portfolio-search"
+                  className="ui-search"
                   placeholder="Search assets"
                   aria-label="Search assets"
                   value={search}
@@ -599,7 +595,7 @@ export default function PortfolioPage() {
                   <label htmlFor="portfolio-sort-key">Sort by</label>
                   <select
                     id="portfolio-sort-key"
-                    className="portfolio-input"
+                    className="ui-input"
                     value={sort?.key ?? ''}
                     onChange={(event) =>
                       setSort(

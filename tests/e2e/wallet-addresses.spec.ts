@@ -395,7 +395,7 @@ isolated(
       const note = box(card.querySelector('[role="note"]'));
       const last = [...card.querySelectorAll('dt')].find((dt) => dt.textContent === 'Last sync');
       const label = box(last ?? null);
-      const status = box(last?.nextElementSibling?.querySelector('.wallets-badge') ?? null);
+      const status = box(last?.nextElementSibling?.querySelector('.ui-badge') ?? null);
       if (!grid || !note || !label || !status) return ['missing summary parts'];
       return [
         Math.abs(note.left - grid.left) > 1 && `note left ${note.left} vs ${grid.left}`,

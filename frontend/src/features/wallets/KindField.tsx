@@ -15,13 +15,13 @@ export default function KindField({
   onChange: (kind: KindChoice) => void;
 }) {
   return (
-    <div className="portfolio-field">
-      <label className="portfolio-field__label" htmlFor={id}>
+    <div className="ui-field">
+      <label className="ui-field__label" htmlFor={id}>
         How you hold it <span className="wallets-muted">(optional)</span>
       </label>
       <select
         id={id}
-        className="portfolio-input"
+        className="ui-input"
         value={value}
         onChange={(event) => onChange(event.target.value as KindChoice)}
       >

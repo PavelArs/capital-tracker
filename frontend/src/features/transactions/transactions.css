@@ -73,7 +73,7 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.transactions-chip--warn .portfolio-chip__count {
+.transactions-chip--warn .ui-chip__count {
   color: var(--warn);
   font-weight: 700;
 }
@@ -221,35 +221,6 @@
   color: var(--ink-2);
 }
 
-.transactions-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--raised);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink-2);
-  font-weight: 600;
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-
-.transactions-badge--warn {
-  background: var(--warn-soft);
-  box-shadow: none;
-  color: var(--warn);
-}
-
-.transactions-badge--warn::before {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  content: "";
-}
-
 .transactions-status {
   display: inline-flex;
   align-items: center;
@@ -268,94 +239,12 @@
   margin: 0;
 }
 
-.transactions-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-
-.transactions-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: rgba(4, 6, 10, 0.62);
-}
-
-:root[data-theme="light"] .transactions-scrim {
-  background: rgba(18, 23, 38, 0.35);
-}
-
-.transactions-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 81;
-  display: flex;
-  flex-direction: column;
-  width: min(460px, 100vw);
-  border-left: 1px solid var(--line-strong);
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: var(--fs-md);
-}
-
-.transactions-drawer__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.transactions-drawer__head h2 {
-  flex: 1;
-  margin: 0;
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
-
-.transactions-drawer__body {
-  display: grid;
-  flex: 1;
-  align-content: start;
-  gap: var(--sp-5);
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.transactions-drawer__foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--line);
-}
-
-.transactions-drawer__foot .shell-button {
-  margin-top: 0;
-}
-
-/* Height of a one-line footer, so the buttons do not move when a label or a note changes. */
-.transactions-drawer__foot {
-  min-height: 65px;
-  align-items: center;
-}
-
-/* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
-.transactions-drawer__foot .shell-button--primary {
-  min-width: 96px;
-}
-
 .transactions-hero {
   display: grid;
   gap: 6px;
 }
 
-.transactions-hero .transactions-badge {
+.transactions-hero .ui-badge {
   justify-self: start;
 }
 
@@ -475,109 +364,23 @@
   border-top: 1px solid var(--line);
 }
 
-.transactions-confirm {
-  z-index: 90;
-}
-
 .transactions-confirm__text {
   margin: 0;
   color: var(--ink-2);
   line-height: 1.45;
 }
 
-/* Phones (below 640 px): two-line rows instead of the table, no sideways scrolling. */
-.transactions-list,
-.transactions-list ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
+/* Phones (below 640 px): the rows (ui/list-row.css) under a heading per day. The list reaches
+   8 px past the card's text, so the heading keeps 8 px in. */
 .transactions-list__heading {
   margin: 0;
-  padding: 18px 0 6px;
+  padding: 18px 8px 6px;
   border-bottom: 1px solid var(--line);
   color: var(--ink-3);
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.transactions-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 60px;
-  padding: 10px 0;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.transactions-item:focus-visible {
-  border-radius: var(--r-sm);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.transactions-item--needs {
-  box-shadow: inset 3px 0 0 var(--warn);
-  padding-left: 10px;
-}
-
-.transactions-item__main,
-.transactions-item__side {
-  display: grid;
-  gap: 3px;
-}
-
-.transactions-item__main {
-  flex: 1;
-  min-width: 0;
-  justify-items: start;
-}
-
-.transactions-item__side {
-  justify-items: end;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.transactions-item__title,
-.transactions-item__detail {
-  max-width: 100%;
-  overflow: hidden;
-  /* Text that does not fit fades out at the end instead of ending in "…". */
-  mask-image: var(--fade-end);
-  animation: fade-end linear;
-  animation-timeline: scroll(self inline);
-  white-space: nowrap;
-}
-
-.transactions-item__title {
-  font-size: var(--fs-md);
-}
-
-.transactions-item__amount {
-  font-size: var(--fs-md);
-  font-weight: 600;
-}
-
-.transactions-item__detail,
-.transactions-item__value {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-}
-
-.transactions-item__badge {
-  height: 20px;
-  font-size: var(--fs-xs);
 }
 
 /* Phones: the search spans the row, the other filters sit two to a row with their label
@@ -681,7 +484,7 @@
   margin-top: var(--sp-3);
 }
 
-.transactions-more > .portfolio-field {
+.transactions-more > .ui-field {
   margin-bottom: var(--sp-4);
 }
 
@@ -742,21 +545,11 @@
 }
 
 .transactions-notice {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--pos-soft);
-  font-size: var(--fs-sm);
   line-height: 1.4;
 }
 
 .shell-page > .transactions-notice {
   margin-bottom: var(--sp-4);
-}
-
-.transactions-badge--muted {
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-  color: var(--ink-3);
 }
 
 .transactions-row--hidden td {
@@ -789,12 +582,6 @@
 
 .transactions-table tr.transactions-row--open td:first-child {
   box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.transactions-item--open {
-  box-shadow: inset 3px 0 0 var(--accent);
-  padding-left: 10px;
-  background: var(--raised);
 }
 
 /* XFER-PROPOSED: pairs of a withdrawal and a receipt the owner can join in one tap. */

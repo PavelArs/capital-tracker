@@ -636,11 +636,11 @@ describe('show-dashboard-top-assets', () => {
       expect(within(top).queryByRole('table')).toBeNull();
       const links = within(top).getAllByRole('link', { name: /today|Fixed/ });
       expect(links.map((link) => link.textContent)).toEqual([
-        'Bitcoin$4,200.000.05 BTC-0.80% today',
-        'Ethereum$2,000.002 ETH+1.25% today',
-        'US Dollar$1,500.001,500 USDFixed',
-        'Solana$900.002 SOL+1.25% today',
-        'Zcash$600.002 ZEC+1.25% today',
+        'Bitcoin0.05 BTC$4,200.00-0.80% today',
+        'Ethereum2 ETH$2,000.00+1.25% today',
+        'US Dollar1,500 USD$1,500.00Fixed',
+        'Solana2 SOL$900.00+1.25% today',
+        'Zcash2 ZEC$600.00+1.25% today',
       ]);
       expect(links[0]).toHaveAttribute('href', `/portfolio/${id(1)}`);
     } finally {

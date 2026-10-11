@@ -1,6 +1,7 @@
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { type ReactNode, useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { SegmentedPlaceholder } from '@/ui/SegmentedControl';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
 import { useAttention } from './attention-context';
@@ -9,10 +10,11 @@ import { Icon } from './icons';
 import { useMainCurrency } from './main-currency';
 import NotificationsBell from './NotificationsBell';
 import './shell-page.css';
-import { useCompactScreen } from './useCompactScreen';
+import { useCompactScreen } from '@/ui/useMediaQuery';
 
 /**
- * The prototype's top bar on every page: title, display currency and "Add transaction".
+ * The prototype's top bar on every page: title, display currency and the bell; "Add
+ * transaction" only where the page asks for it (Transactions).
  * The currency lives in the address (?currency=EUR), like the Portfolio switch; none
  * means the main currency. `currency` is what the page's data came back in, used until
  * the shell knows the main currency.
@@ -21,12 +23,13 @@ export default function PageHeader({
   title,
   currency,
   actions,
-  onTransactionSaved,
+  onAddTransaction,
 }: {
   title: ReactNode;
   currency?: AccountingCurrency;
   actions?: ReactNode;
-  onTransactionSaved?: () => void;
+  /** Shows Add transaction; called after a transaction is saved. */
+  onAddTransaction?: () => void;
 }) {
   const [asked, setAsked] = useAskedCurrency();
   const { main } = useMainCurrency();
@@ -45,29 +48,27 @@ export default function PageHeader({
         <CurrencySwitch value={shown} onChange={setAsked} />
       ) : (
         // The switch's room is held until the main currency is known, so the buttons do not step aside.
-        <div className="shell-seg shell-seg--hold" aria-hidden="true">
-          {accountingCurrencies.map((currency) => (
-            <label key={currency}>{currency}</label>
-          ))}
-        </div>
+        <SegmentedPlaceholder labels={accountingCurrencies} />
       )}
       {!compact && bell}
       {compact && slot && createPortal(bell, slot)}
-      <button
-        type="button"
-        className="shell-button shell-button--primary"
-        onClick={() => setRecording(true)}
-      >
-        <Icon name="plus" className="shell-icon shell-icon--sm" />
-        Add transaction
-      </button>
+      {onAddTransaction && (
+        <button
+          type="button"
+          className="shell-button shell-button--primary"
+          onClick={() => setRecording(true)}
+        >
+          <Icon name="plus" className="shell-icon shell-icon--sm" />
+          Add transaction
+        </button>
+      )}
       {recording && (
         <AddTransactionDialog
           onClose={() => setRecording(false)}
           onSaved={() => {
             setRecording(false);
             attention?.refresh();
-            onTransactionSaved?.();
+            onAddTransaction?.();
           }}
         />
       )}
