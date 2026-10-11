@@ -63,18 +63,17 @@ export function useWallets() {
           .load()
           .then((accounts) => request === latest.current && setKinds(kindsOf(accounts)))
           .catch(() => undefined);
-        cachedReads.hiddenAssets
-          .load()
-          .then((items) => request === latest.current && setHiddenAssets(items))
-          // Unread again: the balances wait rather than trust a list the owner may have changed.
-          .catch(() => request === latest.current && setHiddenAssets(null));
-        const [nextPortfolio, nextAddresses] = await Promise.all([
+        // ASSET-HIDE: the hidden list lands with the balances it is compared against; one that
+        // cannot be read leaves the comparison unknown rather than trusting an older list.
+        const [nextPortfolio, nextAddresses, nextHidden] = await Promise.all([
           cachedReads.portfolio.load(asked),
           cachedReads.wallets.load(),
+          cachedReads.hiddenAssets.load().catch(() => null),
         ]);
         if (request !== latest.current) return;
         setPortfolio(nextPortfolio);
         setAddresses(nextAddresses);
+        setHiddenAssets(nextHidden);
       } catch {
         if (request === latest.current && !quiet && !(kept && keptAddresses)) setFailed(true);
       }
