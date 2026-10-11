@@ -1,5 +1,5 @@
 import { useAuth } from '@contexts/AuthContext';
-import AuthFrame, { FieldError, Notice } from '@features/password-reset/AuthFrame';
+import AuthFrame, { FieldError, focusOnMount, Notice } from '@features/password-reset/AuthFrame';
 import PasswordField from '@features/password-reset/PasswordField';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -9,11 +9,6 @@ type FactorKind = 'totp' | 'recovery';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const recoveryPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{8}){3}$/i;
-
-// Each factor step opens with the cursor in its code field.
-const focusOnMount = (input: HTMLInputElement | null) => {
-  input?.focus();
-};
 
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
 
@@ -136,6 +131,7 @@ export default function Login() {
           <input
             className="auth-input"
             id="login-email"
+            ref={focusOnMount}
             type="email"
             autoComplete="username"
             placeholder="you@example.com"

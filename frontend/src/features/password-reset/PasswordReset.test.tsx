@@ -52,6 +52,12 @@ afterEach(() => {
 });
 
 describe('RESET-REQUEST reset request screen', () => {
+  it('opens with the cursor in the email field', () => {
+    renderAt('/password-reset');
+
+    expect(screen.getByLabelText('Email')).toHaveFocus();
+  });
+
   it('asks for a valid email before sending anything', async () => {
     const user = renderAt('/password-reset');
     await user.type(screen.getByLabelText('Email'), 'not-an-email');

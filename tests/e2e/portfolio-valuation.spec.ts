@@ -111,7 +111,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await expect(
     allocation.getByRole('listitem').filter({ has: page.getByText('Crypto', { exact: true }) }),
   ).toHaveCount(1);
-  await grouping.getByRole('radio', { name: 'Account', exact: true }).check();
+  await grouping.getByRole('radio', { name: 'Wallets', exact: true }).check();
   await expect(allocation.getByRole('listitem').filter({ hasText: accountName })).toContainText(
     '$96,000.00',
   );

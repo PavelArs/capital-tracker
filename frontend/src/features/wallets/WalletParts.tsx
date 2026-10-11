@@ -19,6 +19,7 @@ import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { CopyButton } from '../shell/CopyValue';
+import { Icon } from '../shell/icons';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
 import {
@@ -498,6 +499,7 @@ export function AddressRow({
     <div className="wallets-message wallets-message--error">
       <span>{problem}</span>
       <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
+        <Icon name="refresh" className="shell-icon shell-icon--sm" />
         Retry now
       </button>
     </div>

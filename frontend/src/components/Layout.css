@@ -222,11 +222,8 @@ a.shell-sync:hover {
   line-height: 1.25;
 }
 
-.shell-owner__email {
+.shell-owner__name {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .shell-owner__who small {

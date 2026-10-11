@@ -7,6 +7,11 @@ import './password-reset.css';
 
 type Tone = 'accent' | 'pos' | 'warn';
 
+/** Ref callback for the field a step opens with, so the cursor is already in it. */
+export const focusOnMount = (input: HTMLInputElement | null) => {
+  input?.focus();
+};
+
 interface AuthFrameProps {
   icon?: IconName;
   tone?: Tone;
