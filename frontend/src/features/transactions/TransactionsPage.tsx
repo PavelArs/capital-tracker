@@ -36,6 +36,7 @@ import {
 } from './operation-format';
 import PeriodFilter from './PeriodFilter';
 import { periodOf } from './period';
+import { handOver } from './proposals-handover';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import '../shell/shell-page.css';
@@ -395,6 +396,25 @@ function reveal(row: Element) {
 // (no period) and this one's share what they share.
 const lastList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.last(currency, range) : cachedReads.operations.last(currency);
+// The cards above the list (joined transfers, duplicates) are read with the list, so they are
+// there when it appears instead of pushing it down a moment later. An answer already kept is
+// painted at once and needs no wait, and a slow answer never holds the list back for long.
+const PROPOSALS_WAIT_MS = 1500;
+const proposalsKept = () =>
+  cachedReads.transferProposals.last() !== undefined &&
+  cachedReads.duplicateProposals.last() !== undefined;
+// A kept list is painted at once only with its cards: another page may have kept the list alone,
+// and the cards would then arrive above it.
+const shownList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  proposalsKept() ? lastList(currency, range) : undefined;
+const proposalsArrived = (): Promise<unknown> => {
+  if (proposalsKept()) return Promise.resolve();
+  const read = Promise.allSettled([
+    cachedReads.transferProposals.load().then(() => handOver('transfer')),
+    cachedReads.duplicateProposals.load().then(() => handOver('duplicate')),
+  ]);
+  return Promise.race([read, new Promise((resolve) => setTimeout(resolve, PROPOSALS_WAIT_MS))]);
+};
 const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.load(currency, range) : cachedReads.operations.load(currency);
 
@@ -410,7 +430,7 @@ export default function TransactionsPage() {
   const period = useMemo(() => periodOf(from, to), [from, to]);
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
-  const [list, setList] = useState<OperationList | null>(() => lastList(asked, period) ?? null);
+  const [list, setList] = useState<OperationList | null>(() => shownList(asked, period) ?? null);
   const [failed, setFailed] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   // ASSET-HIDE: so are the assets the owner hid from their own pages.
@@ -427,6 +447,8 @@ export default function TransactionsPage() {
   // before that builds on the first one, not on the address it replaces.
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
+  // A list is on screen: it was kept from before, or has arrived.
+  const onScreen = useRef(list !== null);
 
   const narrow = useNarrowScreen();
   const listRef = useRef<HTMLElement>(null);
@@ -440,10 +462,19 @@ export default function TransactionsPage() {
     ) => {
       const request = ++latest.current;
       setFailed(false);
-      if (fresh) setList(lastList(currency, range) ?? null);
+      if (fresh) {
+        const kept = shownList(currency, range);
+        setList(kept ?? null);
+        onScreen.current = kept !== undefined;
+      }
       try {
-        const next = await loadList(currency, range);
+        // Only the first paint waits for the cards; a refresh of a list on screen does not.
+        const [next] = await Promise.all([
+          loadList(currency, range),
+          onScreen.current ? undefined : proposalsArrived(),
+        ]);
         if (request !== latest.current) return null;
+        onScreen.current = true;
         setList(next);
         return next;
       } catch {
