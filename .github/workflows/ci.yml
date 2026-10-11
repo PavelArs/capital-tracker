@@ -222,6 +222,13 @@ jobs:
   # the full suite and exports the candidate the deploy promotes. The images are built
   # once, critical acceptance runs in parallel isolated shards and the final job merges
   # their receipts before scanning the same images.
+  # Owner decision 2026-10-11: a push to main does not repeat what its pull request run already
+  # did. When that run passed the full suite, still holds its artifacts and tested a commit whose
+  # git tree equals the pushed commit's, main loads those exact images, exports them as the
+  # candidate and verifies the pull request's acceptance receipt instead of building, testing and
+  # scanning again (scripts/reuse-pr-images.cjs). Otherwise, and on any doubt, main does all of it.
+  # The reuse steps below are skipped through `steps.reuse` / `needs.release-images`, never through
+  # a job-level condition: every release job still ends in success, which the aggregate requires.
   release-images:
     name: Build Release Images
     runs-on: ubuntu-latest
@@ -229,12 +236,27 @@ jobs:
     permissions:
       contents: read
       packages: read
+      actions: read
+      pull-requests: read
+    outputs:
+      reuse: ${{ steps.reuse.outputs.reuse }}
+      run_id: ${{ steps.reuse.outputs.run_id }}
+      tested_commit: ${{ steps.reuse.outputs.tested_commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # Never fails: without a proven pull request run this run builds and tests as usual.
+      - name: Look for a tested pull request build with the same tree
+        id: reuse
+        # The repository variable REUSE_PR_IMAGES=false switches the reuse off without a code change.
+        if: github.event_name == 'push' && vars.REUSE_PR_IMAGES != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/reuse-pr-images.cjs
       - name: Pull exact reviewed PostgreSQL and Redis images
+        if: steps.reuse.outputs.reuse != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -266,16 +288,19 @@ jobs:
             test "$(docker image inspect "$tag" --format '{{.Id}}')" = "$(docker image inspect "$digest" --format '{{.Id}}')"
           done
       - name: Build the backend and frontend acceptance images once
+        if: steps.reuse.outputs.reuse != 'true'
         run: node scripts/acceptance.mjs images --manifest release-images/manifest.json
       # The raw tar is about 700 MB and every shard and the scan job download it: zstd
       # shrinks it a few times for a couple of seconds of compression here.
       - name: Save the exact images for the acceptance shards
+        if: steps.reuse.outputs.reuse != 'true'
         run: |
           set -euo pipefail
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | zstd -T0 -3 -q -o release-images/images.tar.zst
           (cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
+        if: steps.reuse.outputs.reuse != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-images
@@ -285,14 +310,35 @@ jobs:
           compression-level: 0
       # The receipt job needs only the manifest, not the images themselves.
       - name: Upload the image manifest for the acceptance receipt
+        if: steps.reuse.outputs.reuse != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-images-manifest
           path: release-images/manifest.json
           if-no-files-found: error
           retention-days: 1
+      # Reuse: the very images the pull request run built, scanned and ran acceptance on.
+      - name: Download the images the pull request tested
+        if: steps.reuse.outputs.reuse == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-images
+          path: release-images
+          run-id: ${{ steps.reuse.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Load and verify the images the pull request tested
+        if: steps.reuse.outputs.reuse == 'true'
+        env:
+          TESTED_COMMIT: ${{ steps.reuse.outputs.tested_commit }}
+          TESTED_RUN_ID: ${{ steps.reuse.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          (cd release-images && sha256sum -c images.tar.zst.sha256)
+          zstd -dc release-images/images.tar.zst | docker load
+          rm release-images/images.tar.zst
+          node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$TESTED_COMMIT" "$TESTED_RUN_ID"
       # The deploy promotes exactly these images: they pass the acceptance shards and the scan on
-      # main as well as on their pull request.
+      # main, or (reuse) on the pull request run that built them.
       - name: Export the release candidate images
         if: github.event_name == 'push'
         env:
@@ -346,32 +392,38 @@ jobs:
         shard: [probes-1, probes-2, browser-1, browser-2, browser-3, browser-4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.release-images.outputs.reuse != 'true'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: needs.release-images.outputs.reuse != 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: needs.release-images.outputs.reuse != 'true'
       - run: pnpm install --frozen-lockfile
+        if: needs.release-images.outputs.reuse != 'true'
       - name: Read the Playwright version
         id: playwright
-        if: startsWith(matrix.shard, 'browser-')
+        if: startsWith(matrix.shard, 'browser-') && needs.release-images.outputs.reuse != 'true'
         run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       # A cached browser of the same Playwright version skips the download; the install
       # below still checks it and installs the system packages Chromium needs.
       - name: Restore the Playwright browser
-        if: startsWith(matrix.shard, 'browser-')
+        if: startsWith(matrix.shard, 'browser-') && needs.release-images.outputs.reuse != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install the Playwright browser
-        if: startsWith(matrix.shard, 'browser-')
+        if: startsWith(matrix.shard, 'browser-') && needs.release-images.outputs.reuse != 'true'
         run: pnpm exec playwright install --with-deps chromium
       - name: Download the built release images
+        if: needs.release-images.outputs.reuse != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-images
           path: release-images
       - name: Load and verify the exact built images
+        if: needs.release-images.outputs.reuse != 'true'
         run: |
           set -euo pipefail
           (cd release-images && sha256sum -c images.tar.zst.sha256)
@@ -379,11 +431,13 @@ jobs:
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Run critical real release acceptance
+        if: needs.release-images.outputs.reuse != 'true'
         id: critical-release-acceptance
         env:
           SHARD: ${{ matrix.shard }}
         run: node scripts/acceptance.mjs critical --shard "$SHARD" --images release-images/manifest.json
       - name: Upload the critical acceptance shard receipt
+        if: needs.release-images.outputs.reuse != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: critical-shard-receipt-${{ matrix.shard }}
@@ -391,7 +445,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+        if: always() && needs.release-images.outputs.reuse != 'true'
         with:
           name: synthetic-acceptance-report-${{ matrix.shard }}
           path: |
@@ -400,6 +454,13 @@ jobs:
           retention-days: 7
           # Diagnostics only: a re-run of a failed shard may replace its earlier report.
           overwrite: true
+      - name: Record the acceptance reused from the pull request run
+        if: needs.release-images.outputs.reuse == 'true'
+        env:
+          SHARD: ${{ matrix.shard }}
+          TESTED_RUN_ID: ${{ needs.release-images.outputs.run_id }}
+        run: |
+          echo "Shard $SHARD was not run again: pull request run $TESTED_RUN_ID tested these exact images and the receipt job verifies its merged receipt." >> "$GITHUB_STEP_SUMMARY"
 
   # The scans need only the built images, so they run beside the shards rather than after them.
   image-security:
@@ -412,15 +473,19 @@ jobs:
     needs: [release-images]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.release-images.outputs.reuse != 'true'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: needs.release-images.outputs.reuse != 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Download the built release images
+        if: needs.release-images.outputs.reuse != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-images
           path: release-images
       - name: Load and verify the exact built images
+        if: needs.release-images.outputs.reuse != 'true'
         run: |
           set -euo pipefail
           (cd release-images && sha256sum -c images.tar.zst.sha256)
@@ -428,6 +493,7 @@ jobs:
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Scan the backend image
+        if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
@@ -440,6 +506,7 @@ jobs:
           exit-code: '0'
           timeout: 10m
       - name: Scan the frontend image
+        if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
@@ -453,6 +520,7 @@ jobs:
           exit-code: '0'
           timeout: 10m
       - name: Scan the PostgreSQL image
+        if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
@@ -466,6 +534,7 @@ jobs:
           exit-code: '0'
           timeout: 10m
       - name: Scan the Redis image
+        if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
@@ -480,9 +549,10 @@ jobs:
           timeout: 10m
       - name: Redact potentially sensitive scanner details
         id: redact-image-security
-        if: always()
+        if: always() && needs.release-images.outputs.reuse != 'true'
         run: node scripts/check-release-image-security.cjs --redact-only
       - name: Enforce exact-image high and critical security gate
+        if: needs.release-images.outputs.reuse != 'true'
         run: node scripts/check-release-image-security.cjs
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always() && steps.redact-image-security.conclusion == 'success'
@@ -490,6 +560,12 @@ jobs:
           name: release-image-security
           path: '*-image-security.json'
           retention-days: 7
+      - name: Record the scan reused from the pull request run
+        if: needs.release-images.outputs.reuse == 'true'
+        env:
+          TESTED_RUN_ID: ${{ needs.release-images.outputs.run_id }}
+        run: |
+          echo "The images were not scanned again: pull request run $TESTED_RUN_ID scanned these exact images." >> "$GITHUB_STEP_SUMMARY"
 
   # Passes only when every shard passed on the built images and the scan job passed on them.
   docker-build:
@@ -498,6 +574,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
     needs: [release-images, critical-acceptance, image-security]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -505,20 +582,24 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Download the built image manifest
+        if: needs.release-images.outputs.reuse != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-images-manifest
           path: release-images
       - name: Download the critical acceptance shard receipts
+        if: needs.release-images.outputs.reuse != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: critical-shard-receipt-*
           path: shard-receipts
           merge-multiple: true
       - name: Merge verified critical acceptance shards
+        if: needs.release-images.outputs.reuse != 'true'
         id: critical-release-acceptance
         run: node scripts/acceptance-shards.cjs merge release-images/manifest.json shard-receipts "$GITHUB_SHA" "$GITHUB_RUN_ID" test-results/critical-release-acceptance.json
       - name: Verify critical acceptance receipt
+        if: needs.release-images.outputs.reuse != 'true'
         id: verify-critical-receipt
         run: node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -526,6 +607,30 @@ jobs:
         with:
           name: critical-release-acceptance
           path: test-results/critical-release-acceptance.json
+          if-no-files-found: error
+          retention-days: 7
+      # Reuse: the receipt the pull request run merged from its own shards, bound to its own
+      # commit and run, for the very images this run loaded from that run.
+      - name: Download the acceptance receipt the pull request run verified
+        if: needs.release-images.outputs.reuse == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: critical-release-acceptance
+          path: reused-acceptance
+          run-id: ${{ needs.release-images.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify the reused critical acceptance receipt
+        id: verify-reused-receipt
+        if: needs.release-images.outputs.reuse == 'true'
+        env:
+          TESTED_COMMIT: ${{ needs.release-images.outputs.tested_commit }}
+          TESTED_RUN_ID: ${{ needs.release-images.outputs.run_id }}
+        run: node scripts/critical-release-profile.cjs verify reused-acceptance/critical-release-acceptance.json "$TESTED_COMMIT" "$TESTED_RUN_ID"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.verify-reused-receipt.conclusion == 'success'
+        with:
+          name: critical-release-acceptance
+          path: reused-acceptance/critical-release-acceptance.json
           if-no-files-found: error
           retention-days: 7
 
