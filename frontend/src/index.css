@@ -44,10 +44,13 @@
   box-sizing: border-box;
 }
 
-/* The scrollbar's room is kept on every page, so a short page and a long one, or a page under
-   an open dialog, put their content in the same place. */
-html {
-  scrollbar-gutter: stable;
+/* On a desktop the scrollbar's room is kept on every page, so a short page and a long one, or a
+   page under an open dialog, put their content in the same place. Phone scrollbars float over
+   the page and need no room. */
+@media (min-width: 640px) {
+  html {
+    scrollbar-gutter: stable;
+  }
 }
 
 body {
