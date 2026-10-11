@@ -35,6 +35,10 @@ function bitcoinHistory(body: Record<string, unknown>): void {
 }
 const cells = (row: Locator) => row.getByRole('cell');
 
+/** The prototype's short form of an address or hash, as the drawer shows it. */
+const shortValue = (value: string) =>
+  `${value.slice(0, value.startsWith('0x') ? 5 : 6)}…${value.slice(-4)}`;
+
 test('OPS-UI: manual and blockchain operations in one Transactions list with filters and details', async ({
   page,
   request,
@@ -222,9 +226,9 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
     ['Network', 'Bitcoin'],
     // WAL-ACCOUNT: the address is in no wallet yet; the address has its own line.
     ['Wallet', 'Not in a wallet yet'],
-    ['Address', address],
+    ['Address', shortValue(address)],
     // TX-HASH: the hash copies in one click and opens on a public explorer.
-    ['Transaction', `${txid}CopyView in explorer`],
+    ['Transaction', `${shortValue(txid)}View in explorer`],
     ['Network fee', 'Paid by sender'],
     ['Status', 'Needs classification'],
     ['Source', 'Blockchain'],

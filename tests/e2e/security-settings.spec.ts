@@ -54,7 +54,9 @@ test('SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new
     await security.getByRole('button', { name: 'Generate new codes', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Generate new recovery codes' });
     enrollment.usedTotp = true;
-    await dialog.getByLabel('Code from your authenticator app', { exact: true }).fill(totpAt(enrollment));
+    await dialog
+      .getByLabel('Code from your authenticator app', { exact: true })
+      .fill(totpAt(enrollment));
     const generated = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === '/api/auth/security/recovery-codes' &&
@@ -65,7 +67,10 @@ test('SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new
     expect(response.status()).toBe(200);
     expect(response.headers()['cache-control']).toMatch(/(?:^|[,\s])no-store(?:$|[,\s])/);
     const shown = page.getByRole('dialog', { name: 'New recovery codes' });
-    const codes = await shown.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem').allInnerTexts();
+    const codes = await shown
+      .getByRole('list', { name: 'Recovery codes' })
+      .getByRole('listitem')
+      .allInnerTexts();
     expect(codes).toHaveLength(10);
     expect(new Set(codes).size).toBe(10);
     for (const code of codes) {
@@ -180,7 +185,9 @@ test('SEC-TOTP: Settings sets the authenticator up again after a fresh code; oth
     await expect(
       scan.getByRole('img', { name: 'QR code for your authenticator app', exact: true }),
     ).toBeVisible();
-    await expect(scan.getByText(setup.secret.match(/.{4}/g)!.join(' '), { exact: true })).toBeVisible();
+    await expect(
+      scan.getByText(setup.secret.match(/.{4}/g)!.join(' '), { exact: true }),
+    ).toBeVisible();
     const replacement = { uri: setup.uri };
     await scan.getByLabel('Code from the new app', { exact: true }).fill(totpAt(replacement));
     const confirmed = page.waitForResponse(

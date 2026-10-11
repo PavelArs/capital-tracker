@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { loginWithMfa, test } from './mfa-fixtures';
 
 // Characterize retained portfolio behavior through the real opaque-cookie authentication path.
@@ -142,7 +142,9 @@ test('ISO-003-B: the browser authenticates using the real seeded password', asyn
   await loginThroughBrowser(page);
   await page.reload();
   await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true }),
+  ).toBeVisible();
 });
 
 test('ISO-004-C: the retired wallet API is gone and leaves legacy wallets untouched', async ({

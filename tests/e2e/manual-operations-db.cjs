@@ -674,8 +674,13 @@ async function kinds(db, s, f) {
   );
   // Editing a transfer may spend what it moved itself, fee included.
   const walletHolds = async (extra) =>
-    (await s.trades.available(owner, wallet, { instrumentId: btc, at: day('2026-03-01'), ...extra }))
-      .quantity;
+    (
+      await s.trades.available(owner, wallet, {
+        instrumentId: btc,
+        at: day('2026-03-01'),
+        ...extra,
+      })
+    ).quantity;
   assert.equal(await walletHolds({}), '0.0029');
   assert.equal(await walletHolds({ exclude: `transfer:${second.transfer.transferId}` }), '0.011');
   await rejected(() => walletHolds({ exclude: `swap:${second.transfer.transferId}` }), 400);
@@ -699,7 +704,8 @@ async function kinds(db, s, f) {
       }),
     409,
     (body) =>
-      body?.dependent?.operationId === `trade:${spent.tradeId}` && body.dependent.accountId === cold,
+      body?.dependent?.operationId === `trade:${spent.tradeId}` &&
+      body.dependent.accountId === cold,
   );
   assert.equal(await fingerprint(db), before, 'A refused deletion changes nothing');
 

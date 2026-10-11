@@ -35,10 +35,16 @@ async function main() {
     });
     const base = `http://127.0.0.1:${server.address().port}`;
     const options = {
-      adapter: 'http', proxy: false, responseType: 'text',
-      transformResponse: [(value) => value], timeout: 1000,
-      maxContentLength: 65536, maxBodyLength: 0, maxRedirects: 0,
-      headers: { Accept: 'application/json' }, validateStatus: () => true,
+      adapter: 'http',
+      proxy: false,
+      responseType: 'text',
+      transformResponse: [(value) => value],
+      timeout: 1000,
+      maxContentLength: 65536,
+      maxBodyLength: 0,
+      maxRedirects: 0,
+      headers: { Accept: 'application/json' },
+      validateStatus: () => true,
     };
     const success = await axios.get(`${base}/success`, options);
     assert.equal(success.status, 200);
@@ -71,7 +77,9 @@ async function main() {
     });
     assert.equal(requests.filter((url) => url === '/timeout').length, 1);
     console.log('PASS AXS-001-B stalled response rejects using the configured timeout');
-    console.log(`PASS 5/5 backend HTTP adapter checks on Axios ${expectedVersion}; frontend package VERSION also asserted (browser adapter untested)`);
+    console.log(
+      `PASS 5/5 backend HTTP adapter checks on Axios ${expectedVersion}; frontend package VERSION also asserted (browser adapter untested)`,
+    );
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
 import {
   accountRows,
@@ -14,8 +14,6 @@ import {
 } from './manual-opening-fixtures';
 import { completeFactor, fingerprint, passwordStep, test } from './mfa-fixtures';
 import {
-  TradeApi,
-  type TradeReceipt,
   coverageFrom,
   installTradeCommitFailure,
   noStore,
@@ -23,11 +21,14 @@ import {
   raceTradeReplicas,
   readReceipt,
   restartWithExactProviderWarmup,
+  TradeApi,
+  type TradeReceipt,
   tradeApi,
   tradeInput,
   tradeRows,
   tradeTables,
 } from './usd-trades-fixtures';
+
 async function rejectUnchanged(
   api: TradeApi,
   path: string,
@@ -44,6 +45,10 @@ async function rejectUnchanged(
 }
 async function fixture(page: Page) {
   const api = await tradeApi(page);
+  // The signed-in app polls the sync status over its own connection, which an Nginx worker that
+  // predates a backend selection still routes with the old pool. Only API calls follow, and the
+  // routing evidence counts every request of the runner, so the page leaves the app first.
+  await page.goto('about:blank');
   const account = await api.account();
   const instrument = await api.instrument(`Точный USD инструмент ${randomUUID()}`, 'SAME');
   const origin = await api.initialize(account.id);

@@ -169,7 +169,14 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   );
   await expect(fact(moved, 'From')).toHaveText(senderName);
   await expect(fact(moved, 'To')).toHaveText(receiverName);
-  await expect(fact(moved, 'Other address')).toHaveText(receiverAddress);
+  // The drawer shows the short form; the tooltip and the copy button carry the full address.
+  await expect(fact(moved, 'Other address')).toHaveText(
+    `${receiverAddress.slice(0, 6)}…${receiverAddress.slice(-4)}`,
+  );
+  await expect(fact(moved, 'Other address').locator('.copy-value')).toHaveAttribute(
+    'title',
+    receiverAddress,
+  );
   await expect(fact(moved, 'Network fee')).toHaveText('0.00001 BTC');
   await page.screenshot({ path: testInfo.outputPath('transfer-drawer-1440-dark.png') });
   await page.keyboard.press('Escape');

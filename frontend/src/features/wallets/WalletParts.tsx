@@ -647,10 +647,9 @@ export function ReconcileNote({
   // One request id per coin and difference, kept for a retry after a lost answer.
   const attempts = useRef(new Map<string, string>());
   if (result.state !== 'differs') return null;
-  const lines = result.assets.map(({ symbol, chain, recorded, difference, exchange }) => {
-    const by = quantity(difference.replace(/^-/, ''));
+  const lines = result.assets.map(({ symbol, chain, recorded, exchange }) => {
     const source = exchange ? 'Bybit reports' : 'The blockchain shows';
-    return `Balance differs by ${by} ${symbol}. ${source} ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
+    return `${source} ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
   });
   // BYBIT-GAPS: what the API never lists, such as P2P purchases, is entered by hand.
   const advice = result.assets.every((item) => item.exchange)
@@ -683,33 +682,42 @@ export function ReconcileNote({
       setCounting(false);
     }
   };
+  const headline = `Balance differs by ${result.assets
+    .map(({ symbol, difference }) => `${quantity(difference.replace(/^-/, ''))} ${symbol}`)
+    .join(', ')}`;
   return (
     <div className="wallets-message wallets-message--warn" role="note">
-      <p>
-        {lines.join(' ')} {advice}
-      </p>
-      {countable && (
-        <>
-          <p>
-            Or count the difference now: each coin becomes one record of this account, without a
-            purchase price, that you can answer later as a purchase, a deposit or anything else.
-          </p>
-          <button
-            type="button"
-            className="shell-button shell-button--secondary"
-            disabled={counting}
-            onClick={() => void count()}
-          >
-            {counting ? 'Counting…' : 'Count the difference'}
-          </button>
-          {failed && (
-            <p role="alert">
-              Could not count every coin. Bybit may have reported another balance; reload and try
-              again.
+      <details className="wallets-diff">
+        <summary>
+          <span className="wallets-diff__line">{headline}</span>
+          <span className="wallets-diff__more">Details</span>
+        </summary>
+        <p>
+          {lines.join(' ')} {advice}
+        </p>
+        {countable && (
+          <>
+            <p>
+              Or count the difference now: each coin becomes one record of this account, without a
+              purchase price, that you can answer later as a purchase, a deposit or anything else.
             </p>
-          )}
-        </>
-      )}
+            <button
+              type="button"
+              className="shell-button shell-button--secondary"
+              disabled={counting}
+              onClick={() => void count()}
+            >
+              {counting ? 'Counting…' : 'Count the difference'}
+            </button>
+            {failed && (
+              <p role="alert">
+                Could not count every coin. Bybit may have reported another balance; reload and try
+                again.
+              </p>
+            )}
+          </>
+        )}
+      </details>
     </div>
   );
 }
