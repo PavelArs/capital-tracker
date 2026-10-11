@@ -745,10 +745,22 @@ function oneTransactionSwap(
 }
 
 /** Every known operation, newest first; raw chain rows stay unclassified (OPS-1..3). */
+/** OPS-PERIOD: UTC calendar days (YYYY-MM-DD), both ends included; an absent end is open. */
+export interface OperationRange {
+  from?: string;
+  to?: string;
+}
+
+const inRange = (occurredAt: string, range: OperationRange) => {
+  const day = occurredAt.slice(0, 10);
+  return (!range.from || day >= range.from) && (!range.to || day <= range.to);
+};
+
 export function projectOperations(
   at: Date,
   sources: OperationSources,
   fx: FxConverter = inUsdOnly(),
+  range: OperationRange = {},
 ): OperationList {
   const entries: { operation: Projected; order: number }[] = [];
   const dustThresholdUsd = sources.dustThresholdUsd ?? null;
@@ -1042,12 +1054,15 @@ export function projectOperations(
       right.order - left.order ||
       left.operation.id.localeCompare(right.operation.id),
   );
-  const operations = entries.map((entry) => inCurrency(entry.operation, fx));
+  // OPS-PERIOD: the period only narrows the rows; the count stays that of the whole list.
+  const operations = entries
+    .filter((entry) => inRange(entry.operation.occurredAt, range))
+    .map((entry) => inCurrency(entry.operation, fx));
   return {
     at: at.toISOString(),
     quoteCurrency: fx.currency,
-    needsClassificationCount: operations.filter(
-      (operation) => operation.status === 'needs-classification',
+    needsClassificationCount: entries.filter(
+      (entry) => entry.operation.status === 'needs-classification',
     ).length,
     dustThresholdUsd,
     operations,
