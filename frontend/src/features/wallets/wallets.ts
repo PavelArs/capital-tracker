@@ -92,6 +92,7 @@ export type Reconciliation =
  * USDT, USDC and the other tokens the portfolio counts). Known only when every address has its
  * whole history; a partly loaded address would show a false difference. The coins the owner hid
  * (`hidden`, tickers in capitals) are left out of the check: the portfolio no longer counts them.
+ * A ticker the portfolio still counts through another, visible coin is checked as before.
  */
 export function reconcile(
   addresses: readonly WalletAddress[],
@@ -120,8 +121,9 @@ export function reconcile(
     .flat()
     .map((balance) => balance.symbol)
     .filter(counted);
+  // A ticker is left out only while no visible coin of it remains: two instruments may share one.
   const symbols = [...new Set([...listed, ...recorded, ...tokens])].filter(
-    (symbol) => !hidden.has(symbol.toUpperCase()),
+    (symbol) => !hidden.has(symbol.toUpperCase()) || counted(symbol.toUpperCase()),
   );
   const assets = symbols.flatMap((symbol) => {
     const chain = sum(

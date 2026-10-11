@@ -101,6 +101,18 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       state: 'differs',
       assets: [{ symbol: 'BTC', difference: '0.0102' }],
     });
+    // Another, visible coin by the same ticker keeps the check: only one instrument was hidden.
+    expect(
+      reconcile([bybit], records, trust, hiddenSymbolsOf([{ symbol: 'BTC' }, { symbol: 'NIGHT' }])),
+    ).toEqual({ state: 'match' });
+    expect(
+      reconcile(
+        [bybit],
+        portfolio([{ accountId: trust, quantity: '0.01' }]),
+        trust,
+        hiddenSymbolsOf([{ symbol: 'BTC' }, { symbol: 'NIGHT' }]),
+      ),
+    ).toMatchObject({ state: 'differs', assets: [{ symbol: 'BTC', difference: '0.0002' }] });
   });
 
   it('BYBIT-HIDDEN: what the owner hid from the records is no difference of an exchange', () => {

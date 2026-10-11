@@ -11,7 +11,10 @@ export interface AttentionInput {
   sources: SyncSource[] | null;
   wallets: WalletAddress[] | null;
   portfolio: PortfolioValuation | null;
-  /** The assets the owner hid; their balances are no difference to explain. Null when unread. */
+  /**
+   * The assets the owner hid; their balances are no difference to explain. Null when the read
+   * failed: balances are then not compared; left out, none is hidden.
+   */
   hiddenAssets?: readonly { symbol: string | null }[] | null;
   now: Date;
 }
@@ -165,12 +168,13 @@ function balanceItems(
  */
 export function collectAttention(input: AttentionInput): Attention {
   const { sources, wallets, portfolio, now } = input;
+  const hiddenKnown = input.hiddenAssets !== null;
   const items = [
     pricesItem(input),
     ratesItem(input),
     classifyItem(input.toClassify),
     ...walletItems(wallets ?? [], now),
-    ...(wallets && portfolio
+    ...(wallets && portfolio && hiddenKnown
       ? balanceItems(wallets, portfolio, hiddenSymbolsOf(input.hiddenAssets ?? []))
       : []),
   ].filter((item): item is AttentionItem => item !== null);
@@ -178,7 +182,11 @@ export function collectAttention(input: AttentionInput): Attention {
   return {
     items,
     checked:
-      sources !== null && wallets !== null && portfolio !== null && input.toClassify !== null,
+      sources !== null &&
+      wallets !== null &&
+      portfolio !== null &&
+      hiddenKnown &&
+      input.toClassify !== null,
     pricesUpdatedAt:
       prices?.state === 'synced' && !items.some((item) => item.key === 'prices')
         ? prices.lastSuccessAt

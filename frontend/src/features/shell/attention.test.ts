@@ -262,9 +262,25 @@ describe('DASH-ATTENTION: what needs the owner on the dashboard', () => {
       }),
     ]);
     expect(collectAttention(input({ portfolio: records, hiddenAssets: [] })).items).toHaveLength(1);
+    // Hidden, the coin is gone from the portfolio; it is no difference of the wallet.
     expect(
-      collectAttention(input({ portfolio: records, hiddenAssets: [{ symbol: 'btc' }] })).items,
+      collectAttention(input({ portfolio: portfolio([]), hiddenAssets: [{ symbol: 'btc' }] }))
+        .items,
     ).toEqual([]);
+  });
+
+  it('ASSET-HIDE: balances are not compared, and the check not claimed, while the hidden list is unread', () => {
+    const records = portfolio([
+      asset({
+        holdings: [
+          { accountId: trust, accountName: 'Trust Wallet', quantity: '0.0098', value: '784' },
+        ],
+      }),
+    ]);
+    const unread = collectAttention(input({ portfolio: records, hiddenAssets: null }));
+    expect(unread.items).toEqual([]);
+    expect(unread.checked).toBe(false);
+    expect(collectAttention(input({ portfolio: records, hiddenAssets: [] })).checked).toBe(true);
   });
 
   it('does not compare a wallet that is still loading or failing its history', () => {
