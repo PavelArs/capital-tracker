@@ -238,6 +238,7 @@ function DustThreshold() {
         </span>
         <input
           id="settings-dust"
+          className="ui-input"
           type="text"
           inputMode="decimal"
           placeholder="Off"

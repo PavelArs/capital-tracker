@@ -990,7 +990,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(fact(buy, 'Paid from cash')).toBe('400 USDT');
   });
 
-  it('opens the one Add/Edit window from the drawer and from the page header', async () => {
+  it('opens the one Add/Edit window from the drawer and from the page', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Edit' }));

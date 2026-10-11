@@ -29,8 +29,11 @@
   white-space: nowrap;
 }
 
+/* A sortable column's name; the chosen column shows its arrow after the name (prototype). */
 .ui-th-sort {
-  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -39,33 +42,8 @@
   cursor: pointer;
 }
 
-.ui-th-sort:hover,
-.ui-th-sort[data-active="true"] {
+.ui-th-sort:hover {
   color: var(--ink);
-}
-
-/* The arrow hangs beside the label, so choosing a column does not move the columns. */
-.ui-th-sort__arrow {
-  position: absolute;
-  top: 50%;
-  right: 100%;
-  margin-right: 2px;
-  transform: translateY(-50%);
-  opacity: 0;
-}
-
-th:first-child .ui-th-sort__arrow {
-  right: auto;
-  left: 100%;
-  margin: 0 0 0 2px;
-}
-
-.ui-th-sort:hover .ui-th-sort__arrow {
-  opacity: 0.4;
-}
-
-.ui-th-sort[data-active="true"] .ui-th-sort__arrow {
-  opacity: 1;
 }
 
 .ui-th-sort:focus-visible {

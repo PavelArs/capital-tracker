@@ -272,10 +272,11 @@ export default function HistoryPage() {
                 </button>
               ))}
             </div>
-            <div className="transactions-filters">
-              <label className="transactions-filter">
+            <div className="ui-filters">
+              <label className="ui-filter">
                 <span>Type</span>
                 <select
+                  className="ui-input ui-input--sm"
                   value={entity ?? ''}
                   onChange={(event) => update({ entity: event.target.value })}
                 >
@@ -287,9 +288,10 @@ export default function HistoryPage() {
                   ))}
                 </select>
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>Source</span>
                 <select
+                  className="ui-input ui-input--sm"
                   value={actor ?? ''}
                   onChange={(event) => update({ actor: event.target.value })}
                 >
@@ -301,20 +303,20 @@ export default function HistoryPage() {
                   ))}
                 </select>
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>From</span>
                 <input
-                  className="history-date"
+                  className="ui-input ui-input--sm"
                   type="date"
                   value={from ?? ''}
                   max={to ?? undefined}
                   onChange={(event) => update({ from: event.target.value })}
                 />
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>To</span>
                 <input
-                  className="history-date"
+                  className="ui-input ui-input--sm"
                   type="date"
                   value={to ?? ''}
                   min={from ?? undefined}
