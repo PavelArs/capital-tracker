@@ -98,6 +98,17 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   ]);
   expect(listed.needsClassificationCount).toBeGreaterThanOrEqual(1);
   expect((await api.send('GET', '/operations?asset=BTC')).status()).toBe(400);
+  // OPS-PERIOD: from and to are UTC days, both included, and bad days are refused.
+  const inPeriod = async (query: string) =>
+    (
+      (await api.result('GET', `/operations${query}`, 200)) as { operations: ListedOperation[] }
+    ).operations.some((operation) => operation.account?.id === account.id);
+  expect(await inPeriod('?from=2025-06-13&to=2025-06-13')).toBe(true);
+  expect(await inPeriod('?from=2025-06-13')).toBe(true);
+  expect(await inPeriod('?to=2025-06-12')).toBe(false);
+  expect(await inPeriod('?from=2025-06-14')).toBe(false);
+  for (const bad of ['?from=2025-02-30', '?from=yesterday', '?from=2025-06-14&to=2025-06-13'])
+    expect((await api.send('GET', `/operations${bad}`)).status()).toBe(400);
 
   await forgetBrowserReads(page);
   await page.goto('/transactions');
