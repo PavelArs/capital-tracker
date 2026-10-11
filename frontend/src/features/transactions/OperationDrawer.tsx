@@ -1,4 +1,5 @@
 import { assetRewardsApi } from '@api/asset-rewards.api';
+import { cachedReads } from '@api/cached-reads';
 import { announceClassificationChange, type Operation, operationsApi } from '@api/operations.api';
 import { ownedTransfersApi } from '@api/owned-transfers.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
@@ -15,6 +16,7 @@ import CopyValue from '../shell/CopyValue';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
 import {
   amount,
+  assetNetwork,
   day,
   exchangeChain,
   exchangeRecord,
@@ -70,13 +72,78 @@ function poolDifference(operation: Operation): { label: string; text: string } |
     : { label: 'Pool income', text: amount(magnitude, operation.asset, '+') };
 }
 
-function title(operation: Operation): string {
+/**
+ * The ticker of an asset in the drawer's title: a link to the asset's page when the page exists.
+ * A journal row names its asset by id; a blockchain leg only by ticker, which the portfolio's
+ * assets resolve.
+ */
+function TickerLink({
+  asset,
+  pages,
+}: {
+  asset: Operation['asset'];
+  pages: ReadonlyMap<string, string>;
+}) {
+  const name = asset.symbol ?? asset.name;
+  const id =
+    asset.instrumentId ?? (asset.symbol ? pages.get(asset.symbol.toUpperCase()) : undefined);
+  const network = assetNetwork(asset);
+  return (
+    <>
+      {id ? (
+        <Link className="shell-link" to={`/portfolio/${id}`}>
+          {name}
+        </Link>
+      ) : (
+        name
+      )}
+      {network && ` (${network})`}
+    </>
+  );
+}
+
+function title(operation: Operation, pages: ReadonlyMap<string, string>): ReactNode {
   const label = operation.type ? typeLabel(operation) : `${typeLabel(operation)} transaction`;
-  const counter =
-    operation.type === 'swap' && operation.counterAsset
-      ? ` → ${ticker(operation.counterAsset)}`
-      : '';
-  return `${label} · ${ticker(operation.asset)}${counter}`;
+  return (
+    <>
+      {label} · <TickerLink asset={operation.asset} pages={pages} />
+      {operation.type === 'swap' && operation.counterAsset && (
+        <>
+          {' → '}
+          <TickerLink asset={operation.counterAsset} pages={pages} />
+        </>
+      )}
+    </>
+  );
+}
+
+/** The pages of the portfolio's assets by ticker; empty until they are read. */
+function useAssetPages(currency: AccountingCurrency): ReadonlyMap<string, string> {
+  const [pages, setPages] = useState<ReadonlyMap<string, string>>(() =>
+    assetPages(cachedReads.portfolio.last(currency)?.assets),
+  );
+  useEffect(() => {
+    let live = true;
+    // Without the portfolio the title shows plain tickers.
+    cachedReads.portfolio
+      .load(currency)
+      .then((portfolio) => live && setPages(assetPages(portfolio.assets)))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [currency]);
+  return pages;
+}
+
+function assetPages(
+  assets: readonly { instrumentId: string; symbol: string | null }[] | undefined,
+): ReadonlyMap<string, string> {
+  return new Map(
+    (assets ?? []).flatMap((asset) =>
+      asset.symbol ? [[asset.symbol.toUpperCase(), asset.instrumentId] as [string, string]] : [],
+    ),
+  );
 }
 
 /** An amount in the list's currency; a recorded one without that date's rate says so. */
@@ -432,6 +499,7 @@ export default function OperationDrawer({
   onClassified,
   notice = null,
 }: Props) {
+  const pages = useAssetPages(currency);
   const drawer = useRef<HTMLDivElement>(null);
   const modal = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -770,7 +838,7 @@ export default function OperationDrawer({
         aria-hidden={confirm ? true : undefined}
       >
         <div className="transactions-drawer__head">
-          <h2 id="operation-title">{title(operation)}</h2>
+          <h2 id="operation-title">{title(operation, pages)}</h2>
           <CloseButton buttonRef={closeButton} onClick={onClose} />
         </div>
         {chain && classifying ? (

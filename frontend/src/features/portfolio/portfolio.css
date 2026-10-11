@@ -16,6 +16,23 @@
   margin: 0;
 }
 
+/* The question before an asset is hidden: a card under the breadcrumb row. */
+.portfolio-confirm {
+  flex: 1 1 100%;
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.portfolio-confirm p {
+  margin: 0;
+}
+
+.portfolio-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
 .shell-button--danger {
   margin-top: 0;
   border-color: transparent;

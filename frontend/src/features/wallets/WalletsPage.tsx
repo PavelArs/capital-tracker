@@ -1,8 +1,9 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
@@ -24,6 +25,30 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
+
+/** The addresses of one wallet, twenty to a page; the page is only shown when there are more. */
+function PagedSources({
+  items,
+  label,
+  row,
+  children,
+}: {
+  items: WalletAddress[];
+  label: string;
+  row: (address: WalletAddress) => ReactNode;
+  children?: ReactNode;
+}) {
+  const paged = useInfinite(items);
+  return (
+    <>
+      <ul className="wallets-sources">
+        {paged.rows.map(row)}
+        {children}
+      </ul>
+      {paged.more && <LoadMore {...paged.more} label={label} />}
+    </>
+  );
+}
 
 // Wallets grouped the way the owner holds them (prototype "Wallets", M10): each account with
 // its tracked addresses, the coins entered by hand, and whether the chain agrees.
@@ -60,6 +85,8 @@ export default function WalletsPage() {
         )
     : [];
 
+  // PAGES: twenty wallets a page.
+  const pagedCards = useInfinite(cards);
   const addButton = (
     <button
       type="button"
@@ -70,19 +97,18 @@ export default function WalletsPage() {
       Add wallet
     </button>
   );
-  const rows = (items: WalletAddress[]) =>
-    items.map((address) => (
-      <AddressRow
-        key={address.id}
-        address={address}
-        run={runs[address.id]}
-        narrow={narrow}
-        prices={prices}
-        currency={currency}
-        onOpen={() => setOpenId(address.id)}
-        onSync={() => void sync(address.id)}
-      />
-    ));
+  const row = (address: WalletAddress) => (
+    <AddressRow
+      key={address.id}
+      address={address}
+      run={runs[address.id]}
+      narrow={narrow}
+      prices={prices}
+      currency={currency}
+      onOpen={() => setOpenId(address.id)}
+      onSync={() => void sync(address.id)}
+    />
+  );
 
   return (
     <div className="shell-page">
@@ -132,10 +158,10 @@ export default function WalletsPage() {
                   <span>Open an address and choose the wallet it belongs to.</span>
                 </div>
               </div>
-              <ul className="wallets-sources">{rows(unassigned)}</ul>
+              <PagedSources items={unassigned} label="addresses" row={row} />
             </section>
           )}
-          {cards.map(({ account, addresses: own, holdings: all }) => {
+          {pagedCards.rows.map(({ account, addresses: own, holdings: all }) => {
             const holdings = withoutHiddenTokens(all, own);
             const tracked = trackedSymbols(own);
             const manual = holdings.filter(
@@ -170,12 +196,11 @@ export default function WalletsPage() {
                   </div>
                 </div>
                 {own.length > 0 || manual.length > 0 ? (
-                  <ul className="wallets-sources">
-                    {rows(own)}
+                  <PagedSources items={own} label={`addresses of ${account.name}`} row={row}>
                     {manual.length > 0 && (
                       <ManualRow holdings={manual} currency={currency} narrow={narrow} />
                     )}
-                  </ul>
+                  </PagedSources>
                 ) : (
                   <p className="wallets-empty-row">Nothing in this wallet yet.</p>
                 )}
@@ -187,6 +212,7 @@ export default function WalletsPage() {
               </section>
             );
           })}
+          {pagedCards.more && <LoadMore {...pagedCards.more} label="wallets" />}
         </>
       )}
       {adding && (

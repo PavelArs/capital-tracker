@@ -52,14 +52,19 @@ export interface TokenTransfer {
   raw: Record<string, unknown>;
 }
 
-export type ListResult<T> = { ok: true; items: T[] } | { ok: false; reason: StepFailure };
-export type BlockResult = { ok: true; block: number } | { ok: false; reason: StepFailure };
+/** Why a read failed, and (SYNC-DETAIL) what the source itself said, for the owner's message. */
+export type Failed = { ok: false; reason: StepFailure; detail?: string };
+export type ListResult<T> = { ok: true; items: T[] } | Failed;
+export type BlockResult = { ok: true; block: number } | Failed;
 /** What a read-only contract call returned; null when the call reverted. */
-export type CallResult = { ok: true; data: string | null } | { ok: false; reason: StepFailure };
+export type CallResult = { ok: true; data: string | null } | Failed;
 
 class InvalidResponse extends Error {}
 class Refused extends Error {
-  constructor(readonly reason: StepFailure) {
+  constructor(
+    readonly reason: StepFailure,
+    readonly said?: string,
+  ) {
     super(reason);
   }
 }
@@ -162,13 +167,23 @@ export function parseList<T>(body: unknown, parse: (item: unknown) => T): T[] {
     return result.map(parse);
   }
   if (status !== '0') return invalid();
-  if (
-    Array.isArray(result) &&
-    result.length === 0 &&
-    /^No (transactions|records) found/i.test(text(message))
-  )
+  // An empty range: Etherscan says "No transactions found"; Blockscout names what is missing, as
+  // in "No token transfers found" or "No internal transactions found".
+  if (Array.isArray(result) && result.length === 0 && /^No [a-z ]+ found/i.test(text(message)))
     return [];
   throw refusal(result);
+}
+
+/** A refusal's words as shown to the owner: one short line, with anything address-like cut out. */
+function said(result: string): string {
+  return (
+    result
+      .replace(/0x[0-9a-f]{6,}/gi, '0x…')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is stripped
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .trim()
+      .slice(0, 80)
+  );
 }
 
 function refusal(result: unknown): Refused | InvalidResponse {
@@ -178,7 +193,7 @@ function refusal(result: unknown): Refused | InvalidResponse {
     return new Refused('plan_required');
   if (/rate limit/i.test(result)) return new Refused('rate_limited');
   if (/api ?key/i.test(result)) return new Refused('not_configured');
-  return new Refused('unavailable');
+  return new Refused('unavailable', said(result));
 }
 
 /** The newest block number (proxy eth_blockNumber). */
@@ -330,10 +345,19 @@ export class EtherscanClient {
     );
   }
 
+  /** The source's host name, which names it in what the owner reads. */
+  private get host(): string {
+    try {
+      return new URL(this.baseUrl).hostname;
+    } catch {
+      return 'The data source';
+    }
+  }
+
   private async get<T>(
     params: Record<string, string>,
     parse: (body: unknown) => T,
-  ): Promise<T | { ok: false; reason: StepFailure }> {
+  ): Promise<T | Failed> {
     if (!this.configured) return { ok: false, reason: 'not_configured' };
     const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
@@ -353,18 +377,32 @@ export class EtherscanClient {
         validateStatus: () => true,
         headers: { Accept: 'application/json' },
       });
-    } catch {
-      return { ok: false, reason: 'unavailable' };
+    } catch (error) {
+      const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
+      return { ok: false, reason: 'unavailable', detail: `${this.host} did not answer${code}` };
     } finally {
       this.pace.lastRequestAt = Date.now();
     }
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
-    if (response.status !== 200) return { ok: false, reason: 'unavailable' };
+    if (response.status !== 200) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        detail: `${this.host} answered HTTP ${response.status}`,
+      };
+    }
     try {
       return parse(JSON.parse(response.data));
     } catch (error) {
-      if (error instanceof Refused) return { ok: false, reason: error.reason };
-      return { ok: false, reason: 'invalid_response' };
+      if (error instanceof Refused) {
+        const detail = error.said ? `${this.host} said: ${error.said}` : undefined;
+        return { ok: false, reason: error.reason, ...(detail ? { detail } : {}) };
+      }
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `${this.host} sent an unexpected answer`,
+      };
     }
   }
 }

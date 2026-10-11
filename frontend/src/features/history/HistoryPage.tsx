@@ -5,12 +5,12 @@ import {
   type AuditEvent,
   type AuditHistory,
   type AuditQuery,
-  auditHistoryApi,
 } from '@api/audit-history.api';
 import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { dayHeading, time } from '../transactions/operation-format';
@@ -138,6 +138,7 @@ export default function HistoryPage() {
       ...(actor && { actor }),
       ...(from && { from }),
       ...(to && { to }),
+      limit: PAGE_SIZE,
     }),
     [entity, change, actor, from, to],
   );
@@ -145,6 +146,8 @@ export default function HistoryPage() {
   const [history, setHistory] = useState<AuditHistory | null>(
     () => cachedReads.audit.last(query) ?? null,
   );
+  // INFINITE: the changes read so far, twenty at a time; older ones are asked for with the
+  // cursor the server gave when the end of the list is reached.
   const [events, setEvents] = useState<AuditEvent[]>(
     () => cachedReads.audit.last(query)?.events ?? [],
   );
@@ -174,12 +177,12 @@ export default function HistoryPage() {
   }, [load]);
 
   const more = async () => {
-    if (!history?.next) return;
+    if (!history?.next || loadingMore) return;
     const request = ++latest.current;
     setLoadingMore(true);
     setFailed(null);
     try {
-      const page = await auditHistoryApi.list(query, history.next);
+      const page = await cachedReads.audit.load(query, history.next);
       if (request !== latest.current) return;
       setHistory(page);
       setEvents((shown) => [...shown, ...page.events]);
@@ -408,17 +411,13 @@ export default function HistoryPage() {
               </button>
             </p>
           )}
-          {history.next && (
-            <div className="history-more">
-              <button
-                type="button"
-                className="shell-button"
-                disabled={loadingMore}
-                onClick={() => void more()}
-              >
-                {loadingMore ? 'Loading…' : 'Show older changes'}
-              </button>
-            </div>
+          {history.next && !failed && (
+            <LoadMore
+              shown={events.length}
+              onMore={() => void more()}
+              busy={loadingMore}
+              label="changes"
+            />
           )}
           <p className="shell-note portfolio-note">
             {events.length} {events.length === 1 ? 'change' : 'changes'} shown, newest first. Every

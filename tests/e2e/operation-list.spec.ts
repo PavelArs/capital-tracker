@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, type Locator } from '@playwright/test';
 import { compose, origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and the address are synthetic. The shared acceptance database holds
 // other cases' operations too, so this case finds its own rows by account and wallet.
@@ -102,7 +102,19 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   ]);
   expect(listed.needsClassificationCount).toBeGreaterThanOrEqual(1);
   expect((await api.send('GET', '/operations?asset=BTC')).status()).toBe(400);
+  // OPS-PERIOD: from and to are UTC days, both included, and bad days are refused.
+  const inPeriod = async (query: string) =>
+    (
+      (await api.result('GET', `/operations${query}`, 200)) as { operations: ListedOperation[] }
+    ).operations.some((operation) => operation.account?.id === account.id);
+  expect(await inPeriod('?from=2025-06-13&to=2025-06-13')).toBe(true);
+  expect(await inPeriod('?from=2025-06-13')).toBe(true);
+  expect(await inPeriod('?to=2025-06-12')).toBe(false);
+  expect(await inPeriod('?from=2025-06-14')).toBe(false);
+  for (const bad of ['?from=2025-02-30', '?from=yesterday', '?from=2025-06-14&to=2025-06-13'])
+    expect((await api.send('GET', `/operations${bad}`)).status()).toBe(400);
 
+  await forgetBrowserReads(page);
   await page.goto('/transactions');
   const main = page.getByRole('main');
   await expect(
@@ -239,7 +251,8 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   // Since M9 a buy or sell is edited and deleted right in the drawer.
   await expect(tradeDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await expect(tradeDrawer.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
-  await expect(tradeDrawer.getByRole('link')).toHaveCount(0);
+  // Only the ticker in the title is a link (to the asset's page).
+  await expect(tradeDrawer.getByRole('link')).toHaveText(['BTC']);
   await tradeDrawer.getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog', { name: 'Edit transaction', exact: true });
   await expect(edit.getByLabel('Amount')).toHaveValue('0.00918359');

@@ -307,9 +307,10 @@ backup checksum, and restore into a NEW isolated PostgreSQL instance using the s
 major version. Compare schema/data and confirm the intended data-loss boundary before
 any separately authorized switch. Never pipe recovery into the active owner database.
 Keep backup generations; these scripts never prune volumes or backups. After a verified deploy the
-script removes application images (`capital-tracker-{backend,frontend}`) older than the running pair
-and the pair it replaced (the recovery pair), without `-f`, so Docker refuses any image a container
-still uses. Infrastructure and other projects' images are never touched; a failure here does not
+script removes application images (`capital-tracker-{backend,frontend}`) older than the three newest
+pairs: the running one, the one it replaced and the one the previous successful release replaced
+(recorded in that release's `previous-images`). It runs without `-f`, so Docker refuses any image a
+container still uses. Infrastructure and other projects' images are never touched; a failure here does not
 fail the release. Older pairs are not kept: restoring one means pulling it again by digest.
 
 ## Operator access and restart

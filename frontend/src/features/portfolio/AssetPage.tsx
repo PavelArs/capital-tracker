@@ -9,8 +9,9 @@ import type {
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
@@ -28,6 +29,7 @@ import { kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
+import HideAsset from './HideAsset';
 import { assetCaption, Change, Signed } from './PortfolioPage';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
@@ -60,7 +62,6 @@ function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: D
   return `${sourceName(current.source)} · ${current.status === 'stale' ? 'stale, ' : ''}updated ${when}`;
 }
 
-const SHOWN_OPERATIONS = 10;
 const periodNames: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
   '7D': 'past 7 days',
@@ -228,7 +229,7 @@ function movedAmount(operation: Operation, key: string): string {
   return operationAmount(operation.counterQuantity, operation.counterAsset, '+');
 }
 
-// The asset's own operations: the latest ten, then a link to all of them (prototype).
+// The asset's own operations, twenty a page, then a link to all of them in Transactions.
 function AssetTransactions({
   asset,
   operations,
@@ -240,6 +241,8 @@ function AssetTransactions({
 }) {
   const key = keyOf(asset);
   const own = typeof operations === 'object' ? assetOperations(operations.operations, key) : [];
+  // PAGES: twenty transactions a page.
+  const pagedOwn = useInfinite(own);
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
@@ -261,7 +264,7 @@ function AssetTransactions({
       ) : (
         <>
           <ul className="portfolio-holdings portfolio-operations">
-            {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
+            {pagedOwn.rows.map((operation) => (
               <li key={operation.id}>
                 <span>
                   {operation.status === 'needs-classification' ? (
@@ -284,8 +287,9 @@ function AssetTransactions({
               </li>
             ))}
           </ul>
+          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
           <Link className="portfolio-link portfolio-operations__all" to={all}>
-            {own.length > SHOWN_OPERATIONS ? `Show all ${own.length}` : 'Open in Transactions'}
+            Open in Transactions
           </Link>
         </>
       )}
@@ -474,6 +478,7 @@ function AssetDetails({
 // One asset across every account (portfolio-valuation PV-5).
 export default function AssetPage() {
   const { assetId } = useParams();
+  const navigate = useNavigate();
   const [asked] = useAskedCurrency();
   // Coming back shows the last answers at once; the loads below replace them.
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
@@ -546,6 +551,12 @@ export default function AssetPage() {
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
         </Link>
+        {asset && (
+          <HideAsset
+            symbol={asset.symbol}
+            onHidden={() => navigate(withCurrency('/portfolio', asked))}
+          />
+        )}
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">

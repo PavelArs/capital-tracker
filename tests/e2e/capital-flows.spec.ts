@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { origin, test } from './mfa-fixtures';
-import { tradeApi, tradeInput } from './usd-trades-fixtures';
+import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 // All names, amounts and prices are synthetic. The shared acceptance database holds other
 // cases' operations too, so this case checks what its own buy and sale add to the month's
@@ -141,6 +141,7 @@ test('FLOW-SPLIT-UI: dashboard splits the change into market and net deposits wi
     expect(minus(now ?? '0', was ?? '0'), iso(at)).toBe(added);
   }
 
+  await forgetBrowserReads(page);
   const first = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return (
