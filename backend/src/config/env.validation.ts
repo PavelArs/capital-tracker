@@ -40,6 +40,12 @@ export class EnvironmentVariables {
   @IsOptional()
   ETHERSCAN_API_KEY?: string;
 
+  // Optional free Blockscout key (dev.blockscout.com) for OP Mainnet and Base: their public
+  // explorers turn away requests without one.
+  @IsString()
+  @IsOptional()
+  BLOCKSCOUT_API_KEY?: string;
+
   // Optional free TronGrid key for Tron wallet history; without it TronGrid's lower keyless
   // rate applies.
   @IsString()

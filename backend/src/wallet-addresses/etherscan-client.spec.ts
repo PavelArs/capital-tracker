@@ -55,7 +55,12 @@ const transfer = {
 describe('ETH-SYNC Etherscan client', () => {
   let server: Server;
   let baseUrl: string;
-  let replies: { status: number; body: string; location?: string }[];
+  let replies: {
+    status: number;
+    body: string;
+    location?: string;
+    headers?: Record<string, string>;
+  }[];
   let requests: URL[];
   const client = (apiKey: string | null = key) =>
     new EtherscanClient({ apiKey, baseUrl, timeoutMs: 500, pauseMs: 0 });
@@ -69,6 +74,7 @@ describe('ETH-SYNC Etherscan client', () => {
       response.writeHead(reply.status, {
         'content-type': 'application/json',
         ...(reply.location ? { location: reply.location } : {}),
+        ...reply.headers,
       });
       response.end(reply.body);
     });
@@ -223,6 +229,57 @@ describe('ETH-SYNC Etherscan client', () => {
     }
     expect(requests[1].searchParams.get('module')).toBe('block');
     expect(requests[1].searchParams.get('action')).toBe('eth_block_number');
+  });
+
+  it('BLOCKSCOUT-KEY reads a chain through the PRO API with the key and the chain, when a key is set', async () => {
+    replies.push(ok([normal]), ok([normal]));
+    const withKey = new EtherscanClient({
+      apiKey: null,
+      blockscoutKey: ' synthetic-blockscout-key ',
+      proUrl: baseUrl,
+      timeoutMs: 500,
+      pauseMs: 0,
+    });
+    // The chain's public explorer address is not asked at all while a key is set.
+    const scout = withKey.blockscout('http://127.0.0.1:1/api', 10);
+    await expect(scout.normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    expect(requests[0].searchParams.get('apikey')).toBe('synthetic-blockscout-key');
+    expect(requests[0].searchParams.get('chain_id')).toBe('10');
+    expect(requests[0].searchParams.get('chainid')).toBe('10');
+    expect(requests[0].searchParams.get('module')).toBe('account');
+    // Without a key the public explorer is asked, with no key or chain in the query.
+    const publicScout = client(null).blockscout(baseUrl, 10);
+    await expect(publicScout.normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    expect(requests[1].searchParams.has('apikey')).toBe(false);
+    expect(requests[1].searchParams.has('chain_id')).toBe(false);
+  });
+
+  it('RATE-LIMIT names the host that limits requests and when its limit lifts', async () => {
+    const host = new URL(baseUrl).hostname;
+    replies.push(
+      { ...json({}, 429), headers: { 'x-ratelimit-reset': '2281604' } },
+      { ...json({}, 429), headers: { 'retry-after': '90' } },
+      { ...json({}, 429), headers: { 'x-ratelimit-reset': '1790000000' } },
+      json({}, 429),
+    );
+    const scout = client(null).blockscout(baseUrl);
+    await expect(scout.normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'rate_limited',
+      detail: `${host} limits requests without a key (BLOCKSCOUT_API_KEY), its limit lifts in about 39 min`,
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'rate_limited',
+      detail: `${host} limits requests, its limit lifts in about 2 min`,
+    });
+    // A clock time is not a duration: it is left out.
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({
+      detail: `${host} limits requests`,
+    });
+    await expect(client().normal(owned, 1, 2)).resolves.toMatchObject({
+      detail: `${host} limits requests`,
+    });
   });
 
   it('BLOCKSCOUT reads an empty range however it words it', async () => {

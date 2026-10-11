@@ -43,7 +43,10 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
       provide: EtherscanClient,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        new EtherscanClient({ apiKey: config.get<string>('ETHERSCAN_API_KEY') ?? null }),
+        new EtherscanClient({
+          apiKey: config.get<string>('ETHERSCAN_API_KEY') ?? null,
+          blockscoutKey: config.get<string>('BLOCKSCOUT_API_KEY') ?? null,
+        }),
     },
     // Solana's public endpoint needs no key (M15).
     { provide: SolanaRpcClient, useFactory: () => new SolanaRpcClient() },
