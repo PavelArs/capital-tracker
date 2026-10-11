@@ -65,6 +65,11 @@ export function pricesOf(portfolio: PortfolioValuation | null): Map<string, stri
   return prices;
 }
 
+/** ASSET-HIDE: the tickers, in capitals, of the assets the owner hid. */
+export function hiddenSymbolsOf(hiddenAssets: readonly { symbol: string | null }[]): Set<string> {
+  return new Set(hiddenAssets.flatMap(({ symbol }) => (symbol ? [symbol.toUpperCase()] : [])));
+}
+
 export interface AssetDifference {
   symbol: string;
   chain: string;
@@ -73,6 +78,8 @@ export interface AssetDifference {
   /** The balance is what an exchange reports (M22, BYBIT-GAPS), not a blockchain. */
   exchange: boolean;
 }
+
+const NO_SYMBOLS: ReadonlySet<string> = new Set();
 
 export type Reconciliation =
   | { state: 'none' }
@@ -83,12 +90,14 @@ export type Reconciliation =
 /**
  * SYNC-RECONCILE: the account's addresses against its transactions, asset by asset (BTC; ETH,
  * USDT, USDC and the other tokens the portfolio counts). Known only when every address has its
- * whole history; a partly loaded address would show a false difference.
+ * whole history; a partly loaded address would show a false difference. The coins the owner hid
+ * (`hidden`, tickers in capitals) are left out of the check: the portfolio no longer counts them.
  */
 export function reconcile(
   addresses: readonly WalletAddress[],
   portfolio: PortfolioValuation,
   accountId: string,
+  hidden: ReadonlySet<string> = NO_SYMBOLS,
 ): Reconciliation {
   const own = addresses.filter((address) => address.accountId === accountId);
   if (own.length === 0) return { state: 'none' };
@@ -111,7 +120,9 @@ export function reconcile(
     .flat()
     .map((balance) => balance.symbol)
     .filter(counted);
-  const symbols = [...new Set([...listed, ...recorded, ...tokens])];
+  const symbols = [...new Set([...listed, ...recorded, ...tokens])].filter(
+    (symbol) => !hidden.has(symbol.toUpperCase()),
+  );
   const assets = symbols.flatMap((symbol) => {
     const chain = sum(
       (balances as ChainBalance[][])
@@ -121,14 +132,14 @@ export function reconcile(
     );
     const recorded = recordedCoin(portfolio, accountId, symbol);
     // BYBIT-HIDDEN: what the owner hid from the calculations is held at the exchange on purpose.
-    const hidden = sum(
+    const heldBack = sum(
       own.flatMap((address) =>
         (address.exchange?.hidden ?? [])
           .filter((item) => item.symbol === symbol)
           .map((item) => item.quantity),
       ),
     );
-    const difference = decimal(units(chain) - units(recorded) - units(hidden));
+    const difference = decimal(units(chain) - units(recorded) - units(heldBack));
     const exchange = own.every((address) => networkOf(address).exchange === true);
     return difference === '0' ? [] : [{ symbol, chain, recorded, difference, exchange }];
   });

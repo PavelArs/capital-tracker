@@ -1,13 +1,14 @@
 import type { WalletKind } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
+import type { HiddenAsset } from '@api/hidden-assets.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
 import { failureMessage, type SyncRun } from './SyncStatus';
-import { kindsOf } from './wallets';
+import { hiddenSymbolsOf, kindsOf } from './wallets';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
@@ -30,6 +31,10 @@ export function useWallets() {
   // W1: how each wallet is held; a failed read leaves the labels out, not the page.
   const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
     kindsOf(cachedReads.accounts.last()),
+  );
+  // ASSET-HIDE: the coins the owner hid are no difference to explain; a failed read hides none.
+  const [hiddenAssets, setHiddenAssets] = useState<HiddenAsset[]>(
+    () => cachedReads.hiddenAssets.last() ?? [],
   );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
@@ -56,6 +61,10 @@ export function useWallets() {
         cachedReads.accounts
           .load()
           .then((accounts) => request === latest.current && setKinds(kindsOf(accounts)))
+          .catch(() => undefined);
+        cachedReads.hiddenAssets
+          .load()
+          .then((items) => request === latest.current && setHiddenAssets(items))
           .catch(() => undefined);
         const [nextPortfolio, nextAddresses] = await Promise.all([
           cachedReads.portfolio.load(asked),
@@ -146,5 +155,18 @@ export function useWallets() {
     return () => window.clearInterval(timer);
   }, [backgroundSyncing, load]);
 
-  return { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked };
+  const hiddenSymbols = useMemo(() => hiddenSymbolsOf(hiddenAssets), [hiddenAssets]);
+  return {
+    portfolio,
+    addresses,
+    kinds,
+    hiddenSymbols,
+    failed,
+    load,
+    replace,
+    forget,
+    runs,
+    sync,
+    asked,
+  };
 }

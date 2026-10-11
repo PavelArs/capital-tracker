@@ -53,8 +53,19 @@ function PagedSources({
 // Wallets grouped the way the owner holds them (prototype "Wallets", M10): each account with
 // its tracked addresses, the coins entered by hand, and whether the chain agrees.
 export default function WalletsPage() {
-  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
-    useWallets();
+  const {
+    portfolio,
+    addresses,
+    kinds,
+    hiddenSymbols,
+    failed,
+    load,
+    replace,
+    forget,
+    runs,
+    sync,
+    asked,
+  } = useWallets();
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
@@ -205,7 +216,7 @@ export default function WalletsPage() {
                   <p className="wallets-empty-row">Nothing in this wallet yet.</p>
                 )}
                 <ReconcileNote
-                  result={reconcile(list, portfolio, account.accountId)}
+                  result={reconcile(list, portfolio, account.accountId, hiddenSymbols)}
                   target={gapAddress(list, account.accountId)}
                   onCounted={() => void load(true)}
                 />

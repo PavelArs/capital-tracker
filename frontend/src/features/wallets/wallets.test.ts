@@ -6,6 +6,7 @@ import {
   checkAddress,
   checkApiKey,
   checkBitcoinAddress,
+  hiddenSymbolsOf,
   reconcile,
   shortAddress,
   sum,
@@ -67,6 +68,38 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       assets: [
         { symbol: 'BTC', chain: '0.01', recorded: '0.0098', difference: '0.0002', exchange: false },
       ],
+    });
+  });
+
+  it('ASSET-HIDE: a coin the owner hid is no difference of an exchange, the others stay', () => {
+    const bybit = address(1, {
+      network: 'bybit',
+      address: '123456789',
+      chainBalance: null,
+      balances: [
+        { symbol: 'BTC', quantity: '0.0102' },
+        { symbol: 'NIGHT', quantity: '2.8' },
+      ],
+      exchange: {
+        keyHint: 'ab12',
+        ipBound: true,
+        keyExpiresAt: null,
+        reportedAt: null,
+        untracked: [],
+        historyFrom: '2024-10-01T00:00:00.000Z',
+        hidden: [],
+      },
+    });
+    const records = portfolio([{ accountId: trust, quantity: '0.0102' }]);
+    expect(reconcile([bybit], records, trust)).toMatchObject({
+      state: 'differs',
+      assets: [{ symbol: 'NIGHT', difference: '2.8' }],
+    });
+    const hidden = hiddenSymbolsOf([{ symbol: 'night' }, { symbol: null }]);
+    expect(reconcile([bybit], records, trust, hidden)).toEqual({ state: 'match' });
+    expect(reconcile([bybit], portfolio([]), trust, hidden)).toMatchObject({
+      state: 'differs',
+      assets: [{ symbol: 'BTC', difference: '0.0102' }],
     });
   });
 

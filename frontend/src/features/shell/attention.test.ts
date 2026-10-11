@@ -253,6 +253,20 @@ describe('DASH-ATTENTION: what needs the owner on the dashboard', () => {
     ]);
   });
 
+  it('ASSET-HIDE: a hidden coin is no balance difference', () => {
+    const records = portfolio([
+      asset({
+        holdings: [
+          { accountId: trust, accountName: 'Trust Wallet', quantity: '0.0098', value: '784' },
+        ],
+      }),
+    ]);
+    expect(collectAttention(input({ portfolio: records, hiddenAssets: [] })).items).toHaveLength(1);
+    expect(
+      collectAttention(input({ portfolio: records, hiddenAssets: [{ symbol: 'btc' }] })).items,
+    ).toEqual([]);
+  });
+
   it('does not compare a wallet that is still loading or failing its history', () => {
     const loading = wallet(1, { chainBalance: null });
     expect(

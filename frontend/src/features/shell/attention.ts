@@ -3,7 +3,7 @@ import type { SyncSource } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { age, quantity } from '../portfolio/format';
 import { networkOf } from '../wallets/networks';
-import { reconcile } from '../wallets/wallets';
+import { hiddenSymbolsOf, reconcile } from '../wallets/wallets';
 
 /** What the shell knows; null where it could not be read. */
 export interface AttentionInput {
@@ -11,6 +11,8 @@ export interface AttentionInput {
   sources: SyncSource[] | null;
   wallets: WalletAddress[] | null;
   portfolio: PortfolioValuation | null;
+  /** The assets the owner hid; their balances are no difference to explain. Null when unread. */
+  hiddenAssets?: readonly { symbol: string | null }[] | null;
   now: Date;
 }
 
@@ -129,9 +131,10 @@ function walletItems(wallets: readonly WalletAddress[], now: Date): AttentionIte
 function balanceItems(
   wallets: readonly WalletAddress[],
   portfolio: PortfolioValuation,
+  hidden: ReadonlySet<string>,
 ): AttentionItem[] {
   return portfolio.accounts.flatMap((account) => {
-    const result = reconcile(wallets, portfolio, account.accountId);
+    const result = reconcile(wallets, portfolio, account.accountId, hidden);
     if (result.state !== 'differs') return [];
     const detail = result.assets
       .map(({ symbol, difference }) => {
@@ -167,7 +170,9 @@ export function collectAttention(input: AttentionInput): Attention {
     ratesItem(input),
     classifyItem(input.toClassify),
     ...walletItems(wallets ?? [], now),
-    ...(wallets && portfolio ? balanceItems(wallets, portfolio) : []),
+    ...(wallets && portfolio
+      ? balanceItems(wallets, portfolio, hiddenSymbolsOf(input.hiddenAssets ?? []))
+      : []),
   ].filter((item): item is AttentionItem => item !== null);
   const prices = sources?.find((item) => item.kind === 'prices');
   return {

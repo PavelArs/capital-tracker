@@ -190,8 +190,19 @@ function removalFailure(error: unknown): string {
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
   const { accountId = '' } = useParams();
-  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
-    useWallets();
+  const {
+    portfolio,
+    addresses,
+    kinds,
+    hiddenSymbols,
+    failed,
+    load,
+    replace,
+    forget,
+    runs,
+    sync,
+    asked,
+  } = useWallets();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -324,7 +335,7 @@ export default function WalletPage() {
               </Stat>
             </dl>
             <ReconcileNote
-              result={reconcile(list, portfolio, accountId)}
+              result={reconcile(list, portfolio, accountId, hiddenSymbols)}
               target={gapAddress(list, accountId)}
               onCounted={() => void load(true)}
             />
