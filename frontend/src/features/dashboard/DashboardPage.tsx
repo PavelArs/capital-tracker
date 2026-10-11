@@ -267,7 +267,7 @@ export default function DashboardPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={reload} />
+      <PageHeader title="Dashboard" currency={shown?.currency} />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>

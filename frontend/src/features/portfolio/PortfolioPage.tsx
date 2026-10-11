@@ -530,11 +530,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title="Portfolio"
-        currency={portfolio?.currency}
-        onTransactionSaved={() => void load(true)}
-      />
+      <PageHeader title="Portfolio" currency={portfolio?.currency} />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your portfolio. Your data is safe; try again.</p>

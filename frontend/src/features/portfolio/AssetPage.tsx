@@ -540,14 +540,7 @@ export default function AssetPage() {
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
     <div className="shell-page">
-      <PageHeader
-        title={asset?.name ?? 'Asset'}
-        currency={portfolio?.currency}
-        onTransactionSaved={() => {
-          void load();
-          void loadOperations();
-        }}
-      />
+      <PageHeader title={asset?.name ?? 'Asset'} currency={portfolio?.currency} />
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio

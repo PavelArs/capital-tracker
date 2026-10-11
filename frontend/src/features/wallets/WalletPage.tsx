@@ -261,11 +261,7 @@ export default function WalletPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title={account?.name ?? 'Wallet'}
-        currency={portfolio?.currency}
-        onTransactionSaved={refresh}
-      />
+      <PageHeader title={account?.name ?? 'Wallet'} currency={portfolio?.currency} />
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/wallets', asked)}>
           ← Wallets

@@ -681,11 +681,7 @@ export default function TransactionsPage() {
   return (
     <div className="shell-page">
       {/* The header's switch sets ?currency=; the list reloads in that currency. */}
-      <PageHeader
-        title="Transactions"
-        currency={list?.quoteCurrency}
-        onTransactionSaved={changed}
-      />
+      <PageHeader title="Transactions" currency={list?.quoteCurrency} onAddTransaction={changed} />
       {notice && !opened && (
         <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
