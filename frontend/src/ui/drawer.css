@@ -3,6 +3,7 @@
   inset: 0;
   z-index: 80;
   background: rgba(4, 6, 10, 0.62);
+  animation: ui-fade-in 0.15s ease-out;
 }
 
 :root[data-theme="light"] .ui-drawer-scrim {
@@ -24,6 +25,7 @@
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
+  animation: ui-drawer-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .ui-drawer__head {
@@ -69,4 +71,11 @@
 /* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
 .ui-drawer__foot .shell-button--primary {
   min-width: 96px;
+}
+
+@keyframes ui-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
 }

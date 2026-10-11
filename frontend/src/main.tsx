@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import './ui/form.css';
 import './ui/table.css';
 import './ui/filters.css';
+import './ui/motion.css';
 import App from './App';
 import './utils/axiosConfig'; // Initialize axios interceptors
 import './i18n/config'; // Initialize i18n
