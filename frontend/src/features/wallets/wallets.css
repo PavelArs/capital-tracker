@@ -423,7 +423,7 @@ button.wallets-source__open:focus-visible {
   background: color-mix(in srgb, var(--neg) 12%, transparent);
 }
 
-.transactions-drawer .wallets-message {
+.ui-drawer .wallets-message {
   margin: 0;
 }
 

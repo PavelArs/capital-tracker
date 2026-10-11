@@ -275,81 +275,6 @@
   gap: 8px;
 }
 
-.transactions-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: rgba(4, 6, 10, 0.62);
-}
-
-:root[data-theme="light"] .transactions-scrim {
-  background: rgba(18, 23, 38, 0.35);
-}
-
-.transactions-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 81;
-  display: flex;
-  flex-direction: column;
-  width: min(460px, 100vw);
-  border-left: 1px solid var(--line-strong);
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: var(--fs-md);
-}
-
-.transactions-drawer__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.transactions-drawer__head h2 {
-  flex: 1;
-  margin: 0;
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
-
-.transactions-drawer__body {
-  display: grid;
-  flex: 1;
-  align-content: start;
-  gap: var(--sp-5);
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.transactions-drawer__foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--line);
-}
-
-.transactions-drawer__foot .shell-button {
-  margin-top: 0;
-}
-
-/* Height of a one-line footer, so the buttons do not move when a label or a note changes. */
-.transactions-drawer__foot {
-  min-height: 65px;
-  align-items: center;
-}
-
-/* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
-.transactions-drawer__foot .shell-button--primary {
-  min-width: 96px;
-}
-
 .transactions-hero {
   display: grid;
   gap: 6px;
@@ -473,10 +398,6 @@
   gap: 2px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
-}
-
-.transactions-confirm {
-  z-index: 90;
 }
 
 .transactions-confirm__text {

@@ -13,6 +13,11 @@
   background: rgba(18, 23, 38, 0.35);
 }
 
+/* A confirmation opened from a drawer covers the drawer (z-index 81). */
+.ui-scrim--over-drawer {
+  z-index: 90;
+}
+
 .ui-modal {
   width: min(520px, 100%);
   border: 1px solid var(--line-strong);

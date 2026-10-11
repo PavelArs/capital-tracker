@@ -824,7 +824,7 @@ export default function ClassifyForm({
   );
   return (
     <form className="transactions-classify" onSubmit={(event) => void submit(event)} noValidate>
-      <div className="transactions-drawer__body">
+      <div className="ui-drawer__body">
         {children}
         {!operation.account && (
           <p className="portfolio-warn transactions-classify__warn" role="note">
@@ -1161,7 +1161,7 @@ export default function ClassifyForm({
           </p>
         )}
       </div>
-      <div className="transactions-drawer__foot">
+      <div className="ui-drawer__foot">
         <span className="transactions-left">{left} left to classify</span>
         <span className="transactions-grow" />
         {onDeleted && (

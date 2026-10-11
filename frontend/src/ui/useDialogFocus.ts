@@ -14,6 +14,10 @@ interface Options {
   initialFocus?: ((root: HTMLElement) => HTMLElement | null | undefined) | undefined;
 }
 
+// Open dialogs, innermost last: only the innermost one answers the keyboard, so a confirmation
+// opened over a drawer takes Escape and Tab for itself.
+const open: object[] = [];
+
 /**
  * The keyboard contract of every modal surface: focus goes in when it opens, Tab stays inside,
  * Escape closes when allowed, and focus returns to what opened it.
@@ -23,6 +27,8 @@ export function useDialogFocus(root: RefObject<HTMLElement | null>, options: Opt
   latest.current = options;
 
   useEffect(() => {
+    const self = {};
+    open.push(self);
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const scope = root.current;
     if (scope) {
@@ -32,6 +38,7 @@ export function useDialogFocus(root: RefObject<HTMLElement | null>, options: Opt
       start?.focus();
     }
     const onKey = (event: KeyboardEvent) => {
+      if (open[open.length - 1] !== self) return;
       if (event.key === 'Escape') latest.current.onEscape?.();
       const inside = root.current;
       if (event.key !== 'Tab' || !inside) return;
@@ -46,7 +53,10 @@ export function useDialogFocus(root: RefObject<HTMLElement | null>, options: Opt
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
-      if (opener?.isConnected) opener.focus();
+      open.splice(open.indexOf(self), 1);
+      // Back to the opener, unless the closing code already put the keyboard somewhere else.
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (lost && opener?.isConnected) opener.focus();
     };
   }, [root]);
 }

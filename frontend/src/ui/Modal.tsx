@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, type RefObject, useRef } from 'react';
 import { useDialogFocus } from './useDialogFocus';
 import './modal.css';
 
@@ -16,6 +16,10 @@ interface Props {
   describedBy?: string | undefined;
   /** One local modifier on the dialog box, for what only this dialog needs. */
   className?: string | undefined;
+  /** A dialog opened over a drawer sits above it. */
+  overDrawer?: boolean;
+  /** The dialog box, for a dialog that moves the keyboard between its own steps. */
+  boxRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
 }
 
@@ -28,15 +32,18 @@ export default function Modal({
   role = 'dialog',
   describedBy,
   className,
+  overDrawer = false,
+  boxRef,
   children,
 }: Props) {
-  const box = useRef<HTMLDivElement>(null);
+  const own = useRef<HTMLDivElement>(null);
+  const box = boxRef ?? own;
   useDialogFocus(box, { onEscape, initialFocus });
   const classes = ['ui-modal', size === 'default' ? '' : `ui-modal--${size}`, className ?? '']
     .filter(Boolean)
     .join(' ');
   return (
-    <div className="ui-scrim">
+    <div className={overDrawer ? 'ui-scrim ui-scrim--over-drawer' : 'ui-scrim'}>
       <div
         ref={box}
         className={classes}
