@@ -156,7 +156,10 @@ describe('collectInsights', () => {
   });
 
   it('INS-REVIEW-UNPRICED: reports an asset with known cost but no return as not checked', () => {
-    const unpriced = asset(btc, 'BTC', { knownUnrealizedReturnPercent: null });
+    const unpriced = asset(btc, 'BTC', {
+      knownUnrealizedReturnPercent: null,
+      missingPrice: 'no-price',
+    });
     const sold = asset(eth, 'ETH', { quantity: '0', knownUnrealizedReturnPercent: null });
     const withLevels = collectInsights(
       portfolio([unpriced, sold]),
@@ -239,5 +242,31 @@ describe('collectInsights', () => {
       rules({ targets: [{ instrumentId: btc, percent: '0.07' }], driftPoints: '0.06' }),
     );
     expect(items).toEqual([]);
+  });
+
+  it('INS-REVIEW-ZERO: names a zero cost instead of asking for a price', () => {
+    const { items, note } = collectInsights(
+      portfolio([asset(btc, 'BTC', { knownUnrealizedReturnPercent: null, missingPrice: null })]),
+      rules({ gainReviewPercent: '100' }),
+    );
+    expect(items).toEqual([]);
+    expect(note).toBe('1 asset has a cost of zero, so its return is not compared.');
+  });
+
+  it('INS-DRIFT-UNPRICED: ignores instruments that are not held when naming the reason', () => {
+    const { note } = collectInsights(
+      portfolio(
+        [
+          asset(btc, 'BTC', { allocationPercent: '90' }),
+          asset(eth, 'ETH', { quantity: '0', missingPrice: 'no-price' }),
+        ],
+        {
+          allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+          unavailableAccountCount: 1,
+        },
+      ),
+      rules({ targets: [{ instrumentId: btc, percent: '50' }] }),
+    );
+    expect(note).toBe("An account's history starts later, so shares are not compared.");
   });
 });

@@ -2,8 +2,10 @@ import { type InsightRules, type OwnerSettings, ownerSettingsApi } from '@api/ow
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InsightSettings from './InsightSettings';
+import { MainCurrencyProvider, useMainCurrency } from './main-currency';
 
 // Synthetic ids and names only.
 const btc = '00000000-0000-4000-8000-000000000001';
@@ -214,5 +216,38 @@ describe('insight rules in Settings', () => {
     await user.type(screen.getAllByPlaceholderText('Off')[1], '60');
     await user.click(screen.getByRole('button', { name: 'Save rules' }));
     expect(update).toHaveBeenCalled();
+  });
+
+  it('INS-SETTINGS: shares the rules with the shell after its own first read failed', async () => {
+    const rules: InsightRules = {
+      targets: [],
+      driftPoints: '5',
+      gainReviewPercent: '80',
+      lossReviewPercent: null,
+    };
+    get.mockRejectedValueOnce(new Error('offline'));
+    get.mockResolvedValue(settings(rules));
+    const Probe = () => {
+      const { insightRules } = useMainCurrency();
+      return <p>{`shell rules: ${insightRules?.gainReviewPercent ?? 'none'}`}</p>;
+    };
+    const Page = () => {
+      const [open, setOpen] = useState(false);
+      return (
+        <MainCurrencyProvider>
+          <Probe />
+          <button type="button" onClick={() => setOpen(true)}>
+            Open settings
+          </button>
+          {open && <InsightSettings />}
+        </MainCurrencyProvider>
+      );
+    };
+    const user = userEvent.setup();
+    render(<Page />);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('shell rules: none')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open settings' }));
+    expect(await screen.findByText('shell rules: 80')).toBeInTheDocument();
   });
 });

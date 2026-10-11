@@ -120,6 +120,8 @@ export default function InsightSettings() {
         setAssets(portfolio?.assets ?? []);
         setPickerDown(portfolio === null);
         fill(settings.insightRules);
+        // The shell's first read may have failed: share what this one found.
+        setInsightRules(settings.insightRules);
         setState('ready');
       })
       .catch(() => active && setState('failed'));

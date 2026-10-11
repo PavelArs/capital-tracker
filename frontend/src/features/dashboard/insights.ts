@@ -54,8 +54,10 @@ export function collectInsights(
   const drift: { gap: number; item: InsightItem }[] = [];
   if (rules.targets.length > 0) {
     if (!portfolio.allocation.complete || portfolio.totalValue === null) {
-      const noRate = portfolio.assets.some((asset) => asset.missingPrice === 'no-rate');
-      const noPrice = portfolio.assets.some((asset) => asset.missingPrice === 'no-price');
+      // Only what is held counts: an instrument at zero quantity never blocks the allocation.
+      const held = portfolio.assets.filter((asset) => Number(asset.quantity) !== 0);
+      const noRate = held.some((asset) => asset.missingPrice === 'no-rate');
+      const noPrice = held.some((asset) => asset.missingPrice === 'no-price');
       const history = portfolio.unavailableAccountCount > 0;
       const reasons = [
         (noPrice || (!noRate && !history)) && 'some holdings have no price yet',
@@ -107,6 +109,7 @@ export function collectInsights(
 
   let unpriced = 0;
   let unrated = 0;
+  let zeroCost = 0;
   const review: { size: number; item: InsightItem }[] = [];
   for (const asset of portfolio.assets) {
     if (Number(asset.knownCostQuantity) <= 0) continue;
@@ -116,7 +119,9 @@ export function collectInsights(
         Number(asset.quantity) !== 0 &&
         (rules.gainReviewPercent !== null || rules.lossReviewPercent !== null);
       if (checkable && asset.missingPrice === 'no-rate') unrated += 1;
-      else if (checkable) unpriced += 1;
+      else if (checkable && asset.missingPrice === 'no-price') unpriced += 1;
+      // Priced, but a cost of zero leaves no percentage to compare.
+      else if (checkable) zeroCost += 1;
       continue;
     }
     const change = Number(asset.knownUnrealizedReturnPercent);
@@ -154,6 +159,13 @@ export function collectInsights(
       notChecked === 1
         ? `1 asset has no ${missing} yet, so its return on cost is not checked.`
         : `${notChecked} assets have no ${missing} yet, so their returns on cost are not checked.`;
+  }
+
+  if (zeroCost > 0 && note === null) {
+    note =
+      zeroCost === 1
+        ? '1 asset has a cost of zero, so its return is not compared.'
+        : `${zeroCost} assets have a cost of zero, so their returns are not compared.`;
   }
 
   const widest = (a: { gap?: number; size?: number }, b: { gap?: number; size?: number }) =>
