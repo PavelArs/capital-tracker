@@ -26,6 +26,7 @@ import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
 import './wallets.css';
 import EmptyState from '@/ui/EmptyState';
+import PageIntro from '@/ui/PageIntro';
 
 /** The addresses of one wallet, twenty to a page; the page is only shown when there are more. */
 function PagedSources({
@@ -146,13 +147,10 @@ export default function WalletsPage() {
         </EmptyState>
       ) : (
         <>
-          <div className="wallets-intro">
-            <p className="wallets-soft">
-              Wallets are read-only. The app stores only public addresses and read-only exchange
-              keys; it never asks for a seed phrase or a private key.
-            </p>
-            {addButton}
-          </div>
+          <PageIntro action={addButton}>
+            Wallets are read-only. The app stores only public addresses and read-only exchange keys;
+            it never asks for a seed phrase or a private key.
+          </PageIntro>
           {unassigned.length > 0 && (
             <section className="shell-card wallets-card" aria-labelledby="wallets-unassigned">
               <div className="wallets-card__head">

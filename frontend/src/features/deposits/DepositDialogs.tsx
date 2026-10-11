@@ -474,11 +474,13 @@ export function MovementDialog({
 export function CheckDialog({
   id,
   currency,
+  capitalized,
   onClose,
   onSaved,
 }: {
   id: string;
   currency: DepositCurrency;
+  capitalized: boolean;
   onClose: () => void;
   onSaved: (deposit: DepositDetail) => void;
 }) {
@@ -488,7 +490,11 @@ export function CheckDialog({
   return (
     <FormDialog
       title="Check against the bank"
-      note="Open the deposit in the bank's app and enter the balance it shows. The app compares it with what it counted."
+      note={`Open the deposit in the bank's app and enter the balance it shows. ${
+        capitalized
+          ? 'The app compares it with what the bank has added, without the interest earned since the last interest date.'
+          : 'The app compares it with the deposit and all the interest earned so far.'
+      }`}
       submit="Save check"
       problem={() =>
         dateProblem(date, 'Date') ??

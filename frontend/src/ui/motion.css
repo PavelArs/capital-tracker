@@ -1,0 +1,8 @@
+/* Entrances of the shared overlays and of what a page puts on screen after it loads. Only
+   arrivals are animated; closing is immediate. Reduced motion switches every animation off
+   (index.css). */
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}

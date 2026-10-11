@@ -9,7 +9,9 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { useAttention } from '../shell/attention-context';
 import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
+import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { leftOutSymbols } from '../wallets/WalletParts';
@@ -34,6 +36,7 @@ import {
 } from './operation-format';
 import PeriodFilter from './PeriodFilter';
 import { periodOf } from './period';
+import { handOver } from './proposals-handover';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import '../shell/shell-page.css';
@@ -41,6 +44,7 @@ import '../portfolio/portfolio.css';
 import './transactions.css';
 import EmptyState from '@/ui/EmptyState';
 import { ListRowText, rowClass } from '@/ui/ListRow';
+import PageIntro from '@/ui/PageIntro';
 
 type StatusView = 'needs-classification' | 'hidden' | 'dust';
 type View = 'all' | StatusView | Operation['source'];
@@ -392,6 +396,25 @@ function reveal(row: Element) {
 // (no period) and this one's share what they share.
 const lastList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.last(currency, range) : cachedReads.operations.last(currency);
+// The cards above the list (joined transfers, duplicates) are read with the list, so they are
+// there when it appears instead of pushing it down a moment later. An answer already kept is
+// painted at once and needs no wait, and a slow answer never holds the list back for long.
+const PROPOSALS_WAIT_MS = 1500;
+const proposalsKept = () =>
+  cachedReads.transferProposals.last() !== undefined &&
+  cachedReads.duplicateProposals.last() !== undefined;
+// A kept list is painted at once only with its cards: another page may have kept the list alone,
+// and the cards would then arrive above it.
+const shownList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  proposalsKept() ? lastList(currency, range) : undefined;
+const proposalsArrived = (): Promise<unknown> => {
+  if (proposalsKept()) return Promise.resolve();
+  const read = Promise.allSettled([
+    cachedReads.transferProposals.load().then(() => handOver('transfer')),
+    cachedReads.duplicateProposals.load().then(() => handOver('duplicate')),
+  ]);
+  return Promise.race([read, new Promise((resolve) => setTimeout(resolve, PROPOSALS_WAIT_MS))]);
+};
 const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.load(currency, range) : cachedReads.operations.load(currency);
 
@@ -407,7 +430,7 @@ export default function TransactionsPage() {
   const period = useMemo(() => periodOf(from, to), [from, to]);
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
-  const [list, setList] = useState<OperationList | null>(() => lastList(asked, period) ?? null);
+  const [list, setList] = useState<OperationList | null>(() => shownList(asked, period) ?? null);
   const [failed, setFailed] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   // ASSET-HIDE: so are the assets the owner hid from their own pages.
@@ -419,10 +442,13 @@ export default function TransactionsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   // The Edit window of the prototype (M9); new transactions open from the page header.
   const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
+  const attention = useAttention();
   // The router commits an address change later, in a transition; a second filter change
   // before that builds on the first one, not on the address it replaces.
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
+  // A list is on screen: it was kept from before, or has arrived.
+  const onScreen = useRef(list !== null);
 
   const narrow = useNarrowScreen();
   const listRef = useRef<HTMLElement>(null);
@@ -436,10 +462,19 @@ export default function TransactionsPage() {
     ) => {
       const request = ++latest.current;
       setFailed(false);
-      if (fresh) setList(lastList(currency, range) ?? null);
+      if (fresh) {
+        const kept = shownList(currency, range);
+        setList(kept ?? null);
+        onScreen.current = kept !== undefined;
+      }
       try {
-        const next = await loadList(currency, range);
+        // Only the first paint waits for the cards; a refresh of a list on screen does not.
+        const [next] = await Promise.all([
+          loadList(currency, range),
+          onScreen.current ? undefined : proposalsArrived(),
+        ]);
         if (request !== latest.current) return null;
+        onScreen.current = true;
         setList(next);
         return next;
       } catch {
@@ -591,8 +626,20 @@ export default function TransactionsPage() {
   const changed = () => {
     setDialog(null);
     setOpenId(null);
+    attention?.refresh();
     void load(asked, period, false);
   };
+  const empty = operations.length === 0 && !period;
+  const addButton = (
+    <button
+      type="button"
+      className="shell-button shell-button--primary"
+      onClick={() => setDialog({})}
+    >
+      <Icon name="plus" className="shell-icon shell-icon--sm" />
+      Add transaction
+    </button>
+  );
   // CLS-NEXT: the open transaction is marked in the list and brought into view, so the one
   // opened after a classification can be found when the drawer closes.
   const rowOf = useCallback(
@@ -681,7 +728,15 @@ export default function TransactionsPage() {
   return (
     <div className="shell-page">
       {/* The header's switch sets ?currency=; the list reloads in that currency. */}
-      <PageHeader title="Transactions" currency={list?.quoteCurrency} onAddTransaction={changed} />
+      <PageHeader title="Transactions" currency={list?.quoteCurrency} />
+      {/* The dialog saves without the list, so the button is there while it loads or fails too;
+          only an empty list moves it into the empty-state card. */}
+      {(failed || list === null || !empty) && (
+        <PageIntro action={addButton}>
+          Every purchase, sale, transfer and income in one list. Wallets and exchanges add theirs on
+          their own; record the rest here.
+        </PageIntro>
+      )}
       {notice && !opened && (
         <p className="ui-banner ui-banner--pos transactions-notice" role="status">
           {notice}
@@ -716,15 +771,17 @@ export default function TransactionsPage() {
         </section>
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
-      ) : operations.length === 0 && !period ? (
-        // Add transaction is in the page header.
+      ) : empty ? (
         <EmptyState
           id="transactions-empty"
           title="No transactions yet"
           actions={
-            <Link className="shell-button" to="/wallets">
-              Open wallets
-            </Link>
+            <>
+              {addButton}
+              <Link className="shell-button" to="/wallets">
+                Open wallets
+              </Link>
+            </>
           }
         >
           Purchases, sales and transfers you record and transactions found in your wallets appear
@@ -756,10 +813,14 @@ export default function TransactionsPage() {
                 );
               })}
             </div>
-            <div className="transactions-filters">
-              <label className="transactions-filter">
+            <div className="ui-filters">
+              <label className="ui-filter">
                 <span>Asset</span>
-                <select value={asset} onChange={(event) => update({ asset: event.target.value })}>
+                <select
+                  className="ui-input ui-input--sm"
+                  value={asset}
+                  onChange={(event) => update({ asset: event.target.value })}
+                >
                   <option value="">All assets</option>
                   {assetOptions.map(([key, label]) => (
                     <option key={key} value={key}>
@@ -768,9 +829,13 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>Account</span>
-                <select value={place} onChange={(event) => update({ account: event.target.value })}>
+                <select
+                  className="ui-input ui-input--sm"
+                  value={place}
+                  onChange={(event) => update({ account: event.target.value })}
+                >
                   <option value="">All accounts</option>
                   {placeOptions.map(([key, label]) => (
                     <option key={key} value={key}>
@@ -779,9 +844,13 @@ export default function TransactionsPage() {
                   ))}
                 </select>
               </label>
-              <label className="transactions-filter">
+              <label className="ui-filter">
                 <span>Type</span>
-                <select value={kind} onChange={(event) => update({ type: event.target.value })}>
+                <select
+                  className="ui-input ui-input--sm"
+                  value={kind}
+                  onChange={(event) => update({ type: event.target.value })}
+                >
                   <option value="">All types</option>
                   {kindOptions.map(([key, label]) => (
                     <option key={key} value={key}>
@@ -796,7 +865,7 @@ export default function TransactionsPage() {
                 onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
               />
               <input
-                className="transactions-search"
+                className="ui-input ui-input--sm ui-search"
                 type="search"
                 placeholder="Search asset, account, type"
                 aria-label="Search transactions"

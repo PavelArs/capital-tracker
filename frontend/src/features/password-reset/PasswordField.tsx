@@ -42,7 +42,7 @@ export default function PasswordField({
       )}
       <div className="auth-pw">
         <input
-          className="auth-input"
+          className="ui-input"
           id={id}
           type={visible ? 'text' : 'password'}
           autoComplete={autoComplete}

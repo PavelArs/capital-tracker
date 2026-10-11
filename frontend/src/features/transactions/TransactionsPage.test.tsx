@@ -10,6 +10,7 @@ import {
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
+import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -19,7 +20,9 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { shortValue } from '../shell/CopyValue';
 import { poolCandidates } from './ClassifyForm';
+import { handOver } from './proposals-handover';
 import TransactionsPage from './TransactionsPage';
+import TransferProposals from './TransferProposals';
 
 // Synthetic ids, names and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -845,6 +848,13 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
   });
 
+  it('offers Add transaction while the list is still loading', async () => {
+    vi.spyOn(operationsApi, 'list').mockReturnValue(new Promise(() => {}));
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No transactions yet' })).toBeNull();
+  });
+
   it('offers a retry when loading fails and never shows numbers it does not have', async () => {
     const user = userEvent.setup();
     const read = vi
@@ -854,6 +864,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your transactions');
     expect(screen.queryByRole('table')).toBeNull();
+    // Recording a transaction does not need the list, so the button stays.
+    expect(screen.getByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     expect(read).toHaveBeenCalledTimes(2);
@@ -990,7 +1002,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(fact(buy, 'Paid from cash')).toBe('400 USDT');
   });
 
-  it('opens the one Add/Edit window from the drawer and from the page header', async () => {
+  it('opens the one Add/Edit window from the drawer and from the page', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Edit' }));
@@ -2904,6 +2916,17 @@ describe('transactions-page-polish', () => {
   });
 
   it('OPS-RETURN: coming back to the page shows the last list at once and refreshes it', async () => {
+    // The cards were read the first time too, so nothing is left to arrive above the list.
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue({
+      windowHours: 24,
+      feePercent: 2,
+      proposals: [],
+    });
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue({
+      windowHours: 24,
+      amountPercent: 5,
+      proposals: [],
+    });
     vi.spyOn(operationsApi, 'list')
       .mockResolvedValueOnce(all)
       .mockReturnValueOnce(new Promise(() => undefined));
@@ -3446,6 +3469,80 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(20);
     await user.click(within(card).getByRole('button', { name: 'Show more' }));
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(22);
+  });
+
+  it('SMOOTH-JUMP: the cards are there when the list appears, so the list is not pushed down', async () => {
+    forgetReads();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue({
+      windowHours: 24,
+      amountPercent: 5,
+      proposals: [],
+    });
+    // The offer arrives well after the list would have.
+    const offer = vi
+      .spyOn(operationsApi, 'transferProposals')
+      .mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(found([proposal])), 150)),
+      );
+    renderPage();
+    // The first row is never on screen without the card above it.
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    expect(
+      screen.getByRole('region', { name: 'One possible transfer between your accounts' }),
+    ).toBeInTheDocument();
+    // And it asked once: the card used what the page read.
+    expect(offer).toHaveBeenCalledTimes(1);
+  });
+
+  it('SMOOTH-REFRESH: a list already on screen is refreshed without waiting for the cards', async () => {
+    const user = userEvent.setup();
+    forgetReads();
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(all)
+      .mockResolvedValue(list(all.operations.slice(0, 2)));
+    // The cards answer once, then the server stops answering them.
+    vi.spyOn(operationsApi, 'transferProposals')
+      .mockResolvedValueOnce(found([proposal]))
+      .mockReturnValue(new Promise(() => undefined));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+  });
+
+  it('SMOOTH-WARM: a list another page kept alone is not shown before the cards', async () => {
+    forgetReads();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue({
+      windowHours: 24,
+      amountPercent: 5,
+      proposals: [],
+    });
+    vi.spyOn(operationsApi, 'transferProposals').mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(found([proposal])), 150)),
+    );
+    // An asset or wallet page read the same list and nothing else.
+    await cachedReads.operations.load();
+    renderPage();
+    expect(screen.queryByRole('table', { name: 'Transactions' })).toBeNull();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    expect(
+      screen.getByRole('region', { name: 'One possible transfer between your accounts' }),
+    ).toBeInTheDocument();
+  });
+
+  it('SMOOTH-STALE: a hand-over whose answer was not kept does not stop the cards from asking', async () => {
+    forgetReads();
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal]));
+    handOver('transfer');
+    render(<TransferProposals onJoined={() => undefined} />);
+    expect(
+      await screen.findByRole('region', { name: 'One possible transfer between your accounts' }),
+    ).toBeInTheDocument();
   });
 });
 

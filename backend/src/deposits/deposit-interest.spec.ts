@@ -1,4 +1,5 @@
 import {
+  bankBalanceOf,
   type DepositMovement,
   type DepositTerms,
   firstImpossibleMovement,
@@ -63,6 +64,22 @@ describe('projectDeposit', () => {
     expect(result.due).toBe('1019.18');
     expect(result.accrued).toBe('0.00');
     expect(result.balance).toBe('101019.18');
+  });
+
+  it('compares a capitalizing deposit with what the bank posted and a paying one with all it earned', () => {
+    const capitalizing = terms({ capitalized: true });
+    const own = projectDeposit(capitalizing, [topup('2026-01-01', '100000')], '2026-02-11');
+    // 1 to 10 February earned and not yet added: the bank still shows the January balance.
+    expect(own.principal).toBe('101019.18');
+    expect(own.accrued).not.toBe('0.00');
+    expect(own.posted).toBe('101019.18');
+    expect(bankBalanceOf(capitalizing, own)).toBe('101019.18');
+
+    const paying = terms();
+    const payable = projectDeposit(paying, [topup('2026-01-01', '100000')], '2026-02-11');
+    expect(payable.posted).toBe('101019.18');
+    expect(bankBalanceOf(paying, payable)).toBe(payable.balance);
+    expect(payable.balance).not.toBe(payable.posted);
   });
 
   it('does not earn the day it is asked about', () => {
