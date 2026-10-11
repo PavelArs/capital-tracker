@@ -48,7 +48,25 @@ function parseForm(
   };
 }
 
-const label = (asset: AssetValuation) => asset.symbol ?? asset.name;
+// "BTC · Bitcoin"; where two assets still read the same, the accounts holding them tell them apart.
+function optionLabels(assets: AssetValuation[]): Map<string, string> {
+  const base = (asset: AssetValuation) =>
+    asset.symbol && asset.symbol !== asset.name ? `${asset.symbol} · ${asset.name}` : asset.name;
+  const counts = new Map<string, number>();
+  for (const asset of assets) counts.set(base(asset), (counts.get(base(asset)) ?? 0) + 1);
+  return new Map(
+    assets.map((asset) => {
+      const text = base(asset);
+      const accounts = [...new Set(asset.holdings.map((holding) => holding.accountName))];
+      return [
+        asset.instrumentId,
+        (counts.get(text) ?? 0) > 1 && accounts.length > 0
+          ? `${text} · ${accounts.join(', ')}`
+          : text,
+      ];
+    }),
+  );
+}
 
 /**
  * INS-SETTINGS: the rules the Dashboard "Insights" card checks: a target share for chosen assets
@@ -123,6 +141,7 @@ export default function InsightSettings() {
   }[state];
   const alert = state === 'invalid' || state === 'failed' || state === 'save-failed';
   const busy = state === 'loading' || state === 'failed' || state === 'saving';
+  const labels = optionLabels(assets);
   const free = (current: string) =>
     assets.filter(
       (asset) =>
@@ -166,7 +185,7 @@ export default function InsightSettings() {
                 <option value="">Choose an asset</option>
                 {free(row.instrumentId).map((asset) => (
                   <option key={asset.instrumentId} value={asset.instrumentId}>
-                    {label(asset)}
+                    {labels.get(asset.instrumentId)}
                   </option>
                 ))}
               </select>

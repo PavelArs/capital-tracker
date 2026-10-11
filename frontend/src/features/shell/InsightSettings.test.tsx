@@ -27,10 +27,10 @@ beforeEach(() => {
   valued.mockReset();
   valued.mockResolvedValue({
     assets: [
-      { instrumentId: btc, symbol: 'BTC', name: 'Bitcoin' },
-      { instrumentId: eth, symbol: 'ETH', name: 'Ethereum' },
+      { instrumentId: btc, symbol: 'BTC', name: 'Bitcoin', holdings: [] },
+      { instrumentId: eth, symbol: 'ETH', name: 'Ethereum', holdings: [] },
     ],
-  } as PortfolioValuation);
+  } as unknown as PortfolioValuation);
 });
 afterEach(cleanup);
 
@@ -39,7 +39,7 @@ describe('insight rules in Settings', () => {
     const user = userEvent.setup();
     render(<InsightSettings />);
     await user.click(await screen.findByRole('button', { name: 'Add target' }));
-    await user.selectOptions(screen.getByLabelText('Target asset 1'), 'BTC');
+    await user.selectOptions(screen.getByLabelText('Target asset 1'), 'BTC · Bitcoin');
     await user.type(screen.getByLabelText('Target share of 1, percent'), '50');
     await user.type(screen.getByLabelText('Review an asset down by, percent on cost'), '40');
     expect(screen.getByText('Together 50%; the other 50% is everything else.')).toBeInTheDocument();
@@ -107,12 +107,42 @@ describe('insight rules in Settings', () => {
     render(<InsightSettings />);
     await user.click(await screen.findByRole('button', { name: 'Add target' }));
     const second = screen.getByLabelText('Target asset 2') as HTMLSelectElement;
-    expect([...second.options].map((option) => option.text)).toEqual(['Choose an asset', 'ETH']);
-    await user.selectOptions(second, 'ETH');
+    expect([...second.options].map((option) => option.text)).toEqual([
+      'Choose an asset',
+      'ETH · Ethereum',
+    ]);
+    await user.selectOptions(second, 'ETH · Ethereum');
     await user.type(screen.getByLabelText('Target share of 2, percent'), '10');
     await user.click(screen.getByRole('button', { name: 'Save rules' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not save the insight rules; nothing changed.',
     );
+  });
+
+  it('INS-SETTINGS: tells same-ticker assets apart by the account that holds them', async () => {
+    valued.mockResolvedValue({
+      assets: [
+        {
+          instrumentId: btc,
+          symbol: 'USDT',
+          name: 'Tether',
+          holdings: [{ accountName: 'Main wallet' }],
+        },
+        {
+          instrumentId: eth,
+          symbol: 'USDT',
+          name: 'Tether',
+          holdings: [{ accountName: 'Exchange' }],
+        },
+      ],
+    } as unknown as PortfolioValuation);
+    render(<InsightSettings />);
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Add target' }));
+    const select = screen.getByLabelText('Target asset 1') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.text)).toEqual([
+      'Choose an asset',
+      'USDT · Tether · Main wallet',
+      'USDT · Tether · Exchange',
+    ]);
   });
 });

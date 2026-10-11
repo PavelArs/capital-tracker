@@ -111,12 +111,13 @@ describe('collectInsights', () => {
     expect(items.map((item) => item.key)).toEqual([`drift:${eth}`, `drift:${btc}`]);
   });
 
-  it('INS-DRIFT: skips a target whose asset is no longer in the portfolio', () => {
-    const { items } = collectInsights(
+  it('INS-DRIFT: reports a target whose asset is no longer in the portfolio as not checked', () => {
+    const { items, note } = collectInsights(
       portfolio([asset(btc, 'BTC', { allocationPercent: '50' })]),
       rules({ targets: [{ instrumentId: eth, percent: '30' }] }),
     );
     expect(items).toEqual([]);
+    expect(note).toBe('1 target is not checked: its asset is hidden or no longer held.');
   });
 
   it('INS-DRIFT-UNPRICED: does not compare shares while a holding has no price', () => {

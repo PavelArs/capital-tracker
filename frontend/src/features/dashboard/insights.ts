@@ -32,6 +32,7 @@ export function collectInsights(
   };
 
   let note: string | null = null;
+  let unchecked = 0;
   const drift: { gap: number; item: InsightItem }[] = [];
   if (rules.targets.length > 0) {
     if (!portfolio.allocation.complete || portfolio.totalValue === null) {
@@ -40,8 +41,12 @@ export function collectInsights(
       const total = Number(portfolio.totalValue);
       for (const { instrumentId, percent } of rules.targets) {
         const held = portfolio.assets.find((asset) => asset.instrumentId === instrumentId);
-        // A hidden or removed asset is no longer in the valuation, so its target is skipped.
-        if (!held) continue;
+        // A hidden or removed asset is no longer in the valuation: its target cannot be checked,
+        // and the card must not claim everything is within the rules.
+        if (!held) {
+          unchecked += 1;
+          continue;
+        }
         const actual = Number(held.allocationPercent ?? 0);
         const target = Number(percent);
         const gap = actual - target;
@@ -59,6 +64,13 @@ export function collectInsights(
         });
       }
     }
+  }
+
+  if (unchecked > 0 && note === null) {
+    note =
+      unchecked === 1
+        ? '1 target is not checked: its asset is hidden or no longer held.'
+        : `${unchecked} targets are not checked: their assets are hidden or no longer held.`;
   }
 
   const review: { size: number; item: InsightItem }[] = [];
