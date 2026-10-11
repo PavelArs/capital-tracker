@@ -148,7 +148,8 @@ export default function DepositsPage() {
             <span className="deposit-total__label">In deposits</span>
             <strong className="deposit-total__value">{money(list.totals[shown], shown)}</strong>
             <span className="deposit-total__note">
-              At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only while interest it earned is unpaid.
+              At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only
+              while interest it earned is unpaid.
             </span>
           </section>
           <ul className="deposit-list">
