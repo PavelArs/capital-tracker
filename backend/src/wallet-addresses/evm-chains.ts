@@ -82,7 +82,7 @@ export const evmChains: readonly EvmChain[] = [
     network: 'optimism',
     name: 'OP Mainnet',
     chainId: 10,
-    blockscout: 'https://optimism.blockscout.com/api',
+    blockscout: 'https://explorer.optimism.io/api',
     coingeckoPlatform: 'optimistic-ethereum',
     native: eth,
     stablecoins: {
