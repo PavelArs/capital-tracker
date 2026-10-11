@@ -129,7 +129,7 @@ export const depositsApi = {
 
   addCheck: async (
     id: string,
-    check: { checkedOn: string; bankBalance: string },
+    check: { requestId: string; checkedOn: string; bankBalance: string },
   ): Promise<DepositDetail> =>
     (await apiClient.post<DepositDetail>(`${one(id)}/checks`, check)).data,
 };

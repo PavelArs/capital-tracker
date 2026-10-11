@@ -287,6 +287,20 @@ async function checks(db, service, owner, ids) {
     'Checks of the same day are listed newest first, in the order they were entered',
   );
   assert.equal(corrected.lastCheck.bankBalance, '5052.09');
+  const reading = { checkedOn: '2026-10-04', bankBalance: '5052.08', requestId: randomUUID() };
+  await service.addCheck(owner, ids.usd, reading);
+  const retried = await service.addCheck(owner, ids.usd, reading);
+  assert.equal(retried.checks.length, 3, 'A retried check is recorded once');
+  await rejected(
+    () => service.addCheck(owner, ids.usd, { ...reading, bankBalance: '5052.07' }),
+    409,
+  );
+  const past = await service.get(owner, ids.usd, '2026-10-02');
+  assert.deepEqual(past.checks, [], 'A past view shows no later check');
+  assert.ok(
+    past.movements.every((movement) => movement.date <= '2026-10-02'),
+    'A past view shows no later movement',
+  );
   assert.equal(
     (await service.get(owner, ids.usd, '2026-10-02')).lastCheck,
     null,
@@ -379,6 +393,8 @@ async function main() {
       create: (owner, body) => plain.create(owner, { requestId: randomUUID(), ...body }),
       addMovement: (owner, id, body) =>
         plain.addMovement(owner, id, { requestId: randomUUID(), ...body }),
+      addCheck: (owner, id, body) =>
+        plain.addCheck(owner, id, { requestId: randomUUID(), ...body }),
     });
     const ids = await accrual(db, service, owner.id);
     await movements(db, service, owner.id, other.id, ids);

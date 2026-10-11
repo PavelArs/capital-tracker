@@ -39,6 +39,7 @@ export interface RateInput {
   ratePercent: string;
 }
 export interface CheckInput {
+  requestId: string;
   checkedOn: string;
   bankBalance: string;
 }
@@ -172,8 +173,13 @@ export function parseRateChange(input: unknown): RateInput {
 }
 
 export function parseCheck(input: unknown): CheckInput {
-  const record = object(input, ['checkedOn', 'bankBalance'], ['checkedOn', 'bankBalance']);
+  const record = object(
+    input,
+    ['requestId', 'checkedOn', 'bankBalance'],
+    ['requestId', 'checkedOn', 'bankBalance'],
+  );
   return {
+    requestId: parseUuid(record.requestId),
     checkedOn: parseDate(record.checkedOn),
     bankBalance: parseAmount(record.bankBalance, true),
   };

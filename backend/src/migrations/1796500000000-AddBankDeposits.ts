@@ -65,10 +65,14 @@ export class AddBankDeposits1796500000000 implements MigrationInterface {
       id uuid PRIMARY KEY,
       "ownerId" uuid NOT NULL,
       "depositId" uuid NOT NULL,
+      -- A retry of the same request returns the check it recorded instead of a second one.
+      "requestId" uuid NOT NULL,
+      "canonicalPayload" text NOT NULL,
       "checkedOn" date NOT NULL,
       "bankBalance" numeric(30, 2) NOT NULL CHECK ("bankBalance" >= 0),
       "position" integer NOT NULL,
       UNIQUE ("depositId", "position"),
+      UNIQUE ("ownerId", "requestId"),
       FOREIGN KEY ("ownerId", "depositId")
         REFERENCES bank_deposits ("ownerId", id) ON DELETE CASCADE
     )`);

@@ -497,6 +497,7 @@ export function CheckDialog({
 }) {
   const [date, setDate] = useState(today());
   const [balance, setBalance] = useState('');
+  const attempt = useAttempt();
   return (
     <FormDialog
       title="Check against the bank"
@@ -507,9 +508,10 @@ export function CheckDialog({
         amountProblem(balance, `Balance in the bank, ${currency}`, true)
       }
       onClose={onClose}
-      onSubmit={async () =>
-        onSaved(await depositsApi.addCheck(id, { checkedOn: date, bankBalance: balance.trim() }))
-      }
+      onSubmit={async () => {
+        const entries = { checkedOn: date, bankBalance: balance.trim() };
+        onSaved(await depositsApi.addCheck(id, { requestId: attempt(entries), ...entries }));
+      }}
     >
       <div className="portfolio-row">
         <DateField label="Date" value={date} onChange={setDate} />

@@ -323,18 +323,30 @@ export class DepositsService {
   async addCheck(ownerId: string, id: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const depositId = parseUuid(id);
-    const input = parseCheck(raw);
+    const { requestId, ...input } = parseCheck(raw);
+    const payload = JSON.stringify({ depositId, ...input });
     if (input.checkedOn > moscowDate(new Date()))
       throw new UnprocessableEntityException('Date is in the future');
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
       if (input.checkedOn < stored.deposit.startDate)
         throw new UnprocessableEntityException('The date is before the deposit started');
+      const [earlier]: { canonicalPayload: string }[] = await manager.query(
+        'SELECT "canonicalPayload" FROM bank_deposit_checks WHERE "ownerId"=$1 AND "requestId"=$2',
+        [owner, requestId],
+      );
+      if (earlier) {
+        // The same request again, e.g. a retry after a lost answer: already recorded.
+        if (earlier.canonicalPayload !== payload)
+          throw new ConflictException('This request was already used for a different check');
+        return;
+      }
       await manager.query(
-        `INSERT INTO bank_deposit_checks (id, "ownerId", "depositId", "checkedOn", "bankBalance", "position")
-         VALUES ($1,$2,$3,$4,$5,
+        `INSERT INTO bank_deposit_checks (id, "ownerId", "depositId", "requestId", "canonicalPayload",
+           "checkedOn", "bankBalance", "position")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,
            (SELECT coalesce(max("position"), 0) + 1 FROM bank_deposit_checks WHERE "depositId"=$3))`,
-        [randomUUID(), owner, depositId, input.checkedOn, input.bankBalance],
+        [randomUUID(), owner, depositId, requestId, payload, input.checkedOn, input.bankBalance],
       );
     });
     return this.get(owner, depositId, undefined);
@@ -505,19 +517,25 @@ export class DepositsService {
     return {
       ...this.view(stored, asOf, converters),
       asOf,
-      rates: stored.rates.map(({ effectiveFrom, ratePercent }) => ({ effectiveFrom, ratePercent })),
-      movements: stored.movements.map((row) => ({
-        id: row.id,
-        date: row.occurredOn,
-        kind: row.kind,
-        amount: row.amount,
-        comment: row.comment,
-      })),
+      // Only what was on record by the asked day, so a past view shows no later activity.
+      rates: stored.rates
+        .filter((rate) => rate.effectiveFrom <= asOf)
+        .map(({ effectiveFrom, ratePercent }) => ({ effectiveFrom, ratePercent })),
+      movements: stored.movements
+        .filter((row) => row.occurredOn <= asOf)
+        .map((row) => ({
+          id: row.id,
+          date: row.occurredOn,
+          kind: row.kind,
+          amount: row.amount,
+          comment: row.comment,
+        })),
       periods: projection.periods,
       interestPosted: projection.interestPosted,
       interestPaidOut: projection.interestPaidOut,
       interestForfeited: projection.interestForfeited,
       checks: stored.checks
+        .filter((check) => check.checkedOn <= asOf)
         .map((check) => {
           const calculated = projectDeposit(terms, movementsOf(stored), check.checkedOn).balance;
           return {

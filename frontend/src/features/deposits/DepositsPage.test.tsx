@@ -283,6 +283,7 @@ describe('DEP-DETAIL: one deposit', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save check' }));
     await waitFor(() =>
       expect(addCheck).toHaveBeenCalledWith(savings.id, {
+        requestId: expect.any(String),
         checkedOn: '2026-10-11',
         bankBalance: '100330',
       }),
