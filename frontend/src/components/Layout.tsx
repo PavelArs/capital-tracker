@@ -2,6 +2,7 @@ import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { AttentionProvider } from '@features/shell/attention-context';
+import { BellSlotContext } from '@features/shell/bell-slot';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { shellSections } from '@features/shell/navigation';
@@ -29,6 +30,8 @@ export default function Layout() {
   const toClassify = useNeedsClassification();
   const menuRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  // PHONE-BELL: where the page header draws the notifications bell on a phone.
+  const [bellSlot, setBellSlot] = useState<HTMLElement | null>(null);
 
   // Phones show the sections as a swipeable strip: keep the current one in view, also after a
   // turn of the device.
@@ -68,68 +71,71 @@ export default function Layout() {
   const email = user?.email ?? '';
 
   return (
-    <div className="shell">
-      <a className="skip-link" href="#main-content">
-        Skip to content
-      </a>
-      <nav className="shell-nav" aria-label="Main navigation">
-        <div className="shell-nav__header">
-          <div className="shell-brand">
-            <BrandMark />
-            Capital
+    <BellSlotContext.Provider value={bellSlot}>
+      <div className="shell">
+        <a className="skip-link" href="#main-content">
+          Skip to content
+        </a>
+        <nav className="shell-nav" aria-label="Main navigation">
+          <div className="shell-nav__header">
+            <div className="shell-brand">
+              <BrandMark />
+              Capital
+            </div>
           </div>
-        </div>
-        <div id="application-menu" ref={menuRef} className="shell-nav__menu">
-          <ul className="shell-nav__sections" data-nav-group="sections">
-            {shellSections.map((section) => (
-              <li key={section.path}>
-                <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
-                  <Icon name={section.icon} />
-                  {section.label}
-                  {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
-                    <span
-                      className="shell-nav__count"
-                      title={`${toClassify} to classify`}
-                      aria-label={`${toClassify} to classify`}
-                    >
-                      {toClassify}
-                    </span>
-                  )}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-          <SyncIndicator onFollow={followLink} />
-        </div>
-        <div className="shell-owner">
-          <span className="shell-owner__avatar" aria-hidden="true">
-            {email.charAt(0).toUpperCase()}
-          </span>
-          <span className="shell-owner__who">
-            <span className="shell-owner__name" title={email}>
-              Owner
+          <div id="application-menu" ref={menuRef} className="shell-nav__menu">
+            <ul className="shell-nav__sections" data-nav-group="sections">
+              {shellSections.map((section) => (
+                <li key={section.path}>
+                  <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
+                    <Icon name={section.icon} />
+                    {section.label}
+                    {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
+                      <span
+                        className="shell-nav__count"
+                        title={`${toClassify} to classify`}
+                        aria-label={`${toClassify} to classify`}
+                      >
+                        {toClassify}
+                      </span>
+                    )}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+            <SyncIndicator onFollow={followLink} />
+          </div>
+          <div className="shell-owner">
+            <div className="shell-owner__bell" ref={setBellSlot} />
+            <span className="shell-owner__avatar" aria-hidden="true">
+              {email.charAt(0).toUpperCase()}
             </span>
-            <small>2FA on</small>
-          </span>
-          <button
-            type="button"
-            className="shell-owner__logout"
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-            aria-label="Log out"
-            title="Log out"
-          >
-            <Icon name="logout" />
-          </button>
-        </div>
-      </nav>
-      <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
-        <MainCurrencyProvider>
-          <AttentionProvider>
-            <Outlet />
-          </AttentionProvider>
-        </MainCurrencyProvider>
-      </main>
-    </div>
+            <span className="shell-owner__who">
+              <span className="shell-owner__name" title={email}>
+                Owner
+              </span>
+              <small>2FA on</small>
+            </span>
+            <button
+              type="button"
+              className="shell-owner__logout"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              aria-label="Log out"
+              title="Log out"
+            >
+              <Icon name="logout" />
+            </button>
+          </div>
+        </nav>
+        <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
+          <MainCurrencyProvider>
+            <AttentionProvider>
+              <Outlet />
+            </AttentionProvider>
+          </MainCurrencyProvider>
+        </main>
+      </div>
+    </BellSlotContext.Provider>
   );
 }

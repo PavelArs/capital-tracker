@@ -3,7 +3,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { age } from '../portfolio/format';
 import { useAttention } from './attention-context';
+import CloseButton from './CloseButton';
 import { Icon } from './icons';
+import './shell-page.css';
 
 /** Keeps the switched currency on a link that may already carry a query. */
 const withAsked = (path: string, asked: AccountingCurrency | undefined) =>
@@ -72,11 +74,20 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
       </button>
       {open && (
         <>
-          <div className="shell-bell__scrim" aria-hidden="true" />
+          {/* The dimmed page behind the phone sheet: a tap on it closes the sheet. */}
+          <div className="shell-bell__scrim" aria-hidden="true" onClick={() => setOpen(false)} />
           <section id={panelId} className="shell-bell__panel" aria-label="Notifications">
             <header className="shell-bell__head">
               <h2>Notifications</h2>
               {count > 0 && <span>{count} need attention</span>}
+              <span className="shell-bell__close">
+                <CloseButton
+                  onClick={() => {
+                    setOpen(false);
+                    button.current?.focus();
+                  }}
+                />
+              </span>
             </header>
             {count === 0 ? (
               <p className="shell-bell__quiet">

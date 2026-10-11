@@ -254,6 +254,16 @@ a.shell-sync:hover {
   cursor: wait;
 }
 
+/* Phones: the notifications bell stands left of the avatar; the nav's flat button style must not flatten it. */
+.shell-owner__bell {
+  display: none;
+}
+
+.shell-owner .shell-bell__button {
+  border: 1px solid var(--line-strong);
+  background: var(--raised);
+}
+
 .shell-owner__logout {
   display: inline-grid;
   place-items: center;
@@ -351,6 +361,16 @@ a.shell-sync:hover {
   }
   .shell-main {
     padding: var(--sp-4);
+  }
+}
+
+/* Phones: the page header draws the notifications bell here, left of the avatar. The room is
+   held while a page loads, so the avatar does not step aside. */
+@media (max-width: 560px) {
+  .shell-owner__bell {
+    display: block;
+    min-width: 36px;
+    height: 36px;
   }
 }
 

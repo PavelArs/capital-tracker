@@ -1,12 +1,15 @@
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useContext, useState } from 'react';
+import { createPortal } from 'react-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
 import { useAttention } from './attention-context';
+import { BellSlotContext } from './bell-slot';
 import { Icon } from './icons';
 import { useMainCurrency } from './main-currency';
 import NotificationsBell from './NotificationsBell';
 import './shell-page.css';
+import { useCompactScreen } from './useCompactScreen';
 
 /**
  * The prototype's top bar on every page: title, display currency and "Add transaction".
@@ -29,6 +32,10 @@ export default function PageHeader({
   const { main } = useMainCurrency();
   const attention = useAttention();
   const [recording, setRecording] = useState(false);
+  // On a phone the bell sits in the top bar next to the owner (Layout), not in this row.
+  const compact = useCompactScreen();
+  const slot = useContext(BellSlotContext);
+  const bell = <NotificationsBell asked={asked} />;
   const shown = asked ?? currency ?? main;
   return (
     <header className="shell-page__head">
@@ -44,7 +51,8 @@ export default function PageHeader({
           ))}
         </div>
       )}
-      <NotificationsBell asked={asked} />
+      {!compact && bell}
+      {compact && slot && createPortal(bell, slot)}
       <button
         type="button"
         className="shell-button shell-button--primary"
