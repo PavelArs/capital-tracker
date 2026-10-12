@@ -21,7 +21,7 @@
     "owner:recover": "node dist/owner-cli.js recover"
   },
   "dependencies": {
-    "@keyv/redis": "^5.1.6",
+    "@keyv/redis": "^6.1.0",
     "@nestjs/cache-manager": "12.0.0",
     "@nestjs/common": "12.1.2",
     "@nestjs/config": "12.0.1",
