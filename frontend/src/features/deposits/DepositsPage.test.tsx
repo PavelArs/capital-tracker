@@ -161,6 +161,21 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
   });
 
+  it('offers daily interest and no longer quarterly', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const interest = within(dialog).getByLabelText('Interest');
+    expect(
+      within(interest)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Every day', 'Every month', 'At the end of the term']);
+    expect(interest).toHaveValue('monthly');
+  });
+
   it('refuses a term longer than the server accepts before sending it', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
@@ -228,6 +243,30 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.queryByText('Interest to be paid out')).not.toBeInTheDocument();
+  });
+
+  it('lists the interest of a deposit that posts every day twenty periods at a time, newest first', async () => {
+    const user = userEvent.setup();
+    const day = (index: number) =>
+      new Date(Date.UTC(2026, 6, 2 + index)).toISOString().slice(0, 10);
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(dollars, {
+        periods: Array.from({ length: 45 }, (_unused, index) => ({
+          from: day(index - 1),
+          to: day(index),
+          interest: '0.55',
+          treatment: 'capitalized' as const,
+        })),
+      }),
+    );
+    open(`/deposits/${dollars.id}?currency=USD`);
+    const periods = (await screen.findByRole('heading', { name: 'Interest by period' })).closest(
+      'section',
+    ) as HTMLElement;
+    expect(within(periods).getAllByRole('row')).toHaveLength(21);
+    expect(within(periods).getAllByRole('row')[1]).toHaveTextContent('Aug 15, 2026');
+    await user.click(within(periods).getByRole('button', { name: /more/i }));
+    expect(within(periods).getAllByRole('row').length).toBeGreaterThan(21);
   });
 
   it('tells a capitalizing deposit that the bank balance leaves out the interest not yet added', async () => {

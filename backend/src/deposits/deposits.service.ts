@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -25,6 +26,7 @@ import {
   type DepositTerms,
   firstImpossibleMovement,
   nextPayout,
+  payoutSchedules,
   projectDeposit,
 } from './deposit-interest';
 import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
@@ -96,7 +98,8 @@ export class DepositsService {
 
   async create(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
-    const { requestId, ...input } = parseDeposit(raw);
+    // A stored quarterly schedule is read as a retry of an earlier request only (below).
+    const { requestId, ...input } = parseDeposit(raw, payoutSchedules);
     const payload = JSON.stringify(input);
     if (input.startDate > moscowDate(new Date()))
       throw new UnprocessableEntityException('Start date is in the future');
@@ -133,6 +136,8 @@ export class DepositsService {
           throw new ConflictException('This request was already used for a different deposit');
         return earlier.id;
       }
+      // Quarterly is no longer offered: it is accepted only as the retry of a deposit made before.
+      if (input.payout === 'quarterly') throw new BadRequestException('Invalid deposit input');
       const depositId = created[0].id;
       await manager.query(
         'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',

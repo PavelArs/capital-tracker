@@ -1116,7 +1116,7 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 60);
+    assert.equal(migrations.length, 61);
     assert.equal(migrations[12].name, 'AddManualOpeningPositions1790030000000');
     assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
     assert.equal(migrations[14].name, 'AddUsdCsvImports1790050000000');

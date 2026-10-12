@@ -331,7 +331,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 60/);
+  assert.match(migrate(database), /Migrations applied: 61/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -682,7 +682,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS STELLAR-MIGRATION fresh 60 applies once; the Stellar migration refuses down');
+    console.log('PASS STELLAR-MIGRATION fresh 61 applies once; the Stellar migration refuses down');
   } finally {
     await db.destroy();
   }
