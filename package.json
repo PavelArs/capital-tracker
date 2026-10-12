@@ -4,9 +4,9 @@
   "private": true,
   "packageManager": "pnpm@12.9.1",
   "devDependencies": {
-    "@fission-ai/openspec": "1.14.0",
-    "@playwright/test": "1.63.0",
-    "@types/node": "^26.6.4",
+    "@fission-ai/openspec": "1.14.1",
+    "@playwright/test": "1.64.0",
+    "@types/node": "^26.6.5",
     "yaml": "2.9.1"
   },
   "engines": {
