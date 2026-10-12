@@ -167,6 +167,7 @@ function setup(
   hidden:
     | { instrumentId: string; name: string; symbol: string | null; hiddenAt: string }[]
     | 'unread' = [],
+  entry: string | { pathname: string; state: unknown } = '/wallets',
 ) {
   const hiddenList = vi.spyOn(hiddenAssetsApi, 'list');
   if (hidden === 'unread') hiddenList.mockRejectedValue(new Error('unavailable'));
@@ -191,7 +192,7 @@ function setup(
   });
   vi.spyOn(operationsApi, 'list').mockResolvedValue(noOperations);
   render(
-    <MemoryRouter initialEntries={['/wallets']}>
+    <MemoryRouter initialEntries={[entry]}>
       <WalletsPage />
     </MemoryRouter>,
   );
@@ -399,6 +400,19 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
     await user.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull();
+  });
+
+  it('ADD-PICK opens Add wallet once when Portfolio sends Crypto here', async () => {
+    setup([wallet(1, {})], portfolio(), {}, [], {
+      pathname: '/wallets',
+      state: { addWallet: true },
+    });
+    const user = userEvent.setup();
+    const dialog = await screen.findByRole('dialog', { name: 'Add wallet' });
+    expect(walletAddressesApi.list).toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add wallet' })).toBeInTheDocument();
   });
 
   it('W1 shows how each wallet is held in its header', async () => {
