@@ -220,6 +220,28 @@ describe('PROPERTY-ADD Add property', () => {
     expect(createAccount).not.toHaveBeenCalled();
   });
 
+  it('locks every field while the rate for a ruble estimate is on its way', async () => {
+    // Codex P2: an edit made during the lookup would be shown but not saved.
+    let answer: (report: FxRatesReport) => void = () => {};
+    vi.mocked(fxRatesApi.get).mockImplementation(
+      () => new Promise((resolve) => (answer = resolve)),
+    );
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await fill(user, dialog, {
+      'Purchase price': '8500000',
+      'What it is worth now (optional)': '9200000',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    expect(within(dialog).getByLabelText('Purchase price')).toBeDisabled();
+    expect(within(dialog).getByLabelText('What it is worth now (optional)')).toBeDisabled();
+    answer(rates(null));
+    await within(dialog).findByRole('alert');
+    // Nothing was saved, so the fields can be changed again.
+    expect(within(dialog).getByLabelText('Purchase price')).toBeEnabled();
+    expect(createAccount).not.toHaveBeenCalled();
+  });
+
   it('retries only what is missing, under the same requests', async () => {
     setPrice.mockRejectedValueOnce(refused(500));
     const user = userEvent.setup();

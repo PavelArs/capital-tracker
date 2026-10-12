@@ -248,7 +248,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
               labelledBy={`${id}-kind`}
               options={propertyKinds}
               value={entry.kind}
-              disabled={locked}
+              disabled={locked || saving}
               onChange={(kind) => update({ kind })}
             />
           </div>
@@ -264,7 +264,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
               autoComplete="off"
               placeholder={entry.kind}
               value={entry.name}
-              disabled={locked}
+              disabled={locked || saving}
               onChange={(event) => update({ name: event.target.value })}
               onBlur={leave('name')}
               {...invalid('name')}
@@ -280,7 +280,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
               labelledBy={`${id}-currency`}
               options={currencies}
               value={entry.currency}
-              disabled={locked}
+              disabled={locked || saving}
               onChange={(currency) => update({ currency })}
             />
           </div>
@@ -296,7 +296,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
                   inputMode="decimal"
                   placeholder="0"
                   value={entry.cost}
-                  disabled={locked}
+                  disabled={locked || saving}
                   onChange={(event) => update({ cost: event.target.value })}
                   onBlur={leave('cost')}
                   {...invalid('cost')}
@@ -315,7 +315,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
                 type="date"
                 max={utcDay(new Date())}
                 value={entry.bought}
-                disabled={locked}
+                disabled={locked || saving}
                 onChange={(event) => update({ bought: event.target.value })}
                 onBlur={leave('bought')}
                 {...invalid('bought')}
@@ -335,7 +335,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
                   inputMode="decimal"
                   placeholder="Same as purchase"
                   value={entry.estimate}
-                  disabled={locked}
+                  disabled={locked || saving}
                   onChange={(event) => update({ estimate: event.target.value })}
                   onBlur={leave('estimate')}
                   aria-describedby={found.has('estimate') ? undefined : `${id}-estimate-hint`}
@@ -359,7 +359,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
                   className="ui-input"
                   inputMode="decimal"
                   value={entry.share}
-                  disabled={locked}
+                  disabled={locked || saving}
                   onChange={(event) => update({ share: event.target.value })}
                   onBlur={leave('share')}
                   {...invalid('share')}
