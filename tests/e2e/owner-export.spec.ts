@@ -82,6 +82,10 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
     'wallets.csv',
     'operations.csv',
     'chain-transactions.csv',
+    'deposits.csv',
+    'deposit-rates.csv',
+    'deposit-movements.csv',
+    'deposit-checks.csv',
   ]);
   expect(files.get('accounts.csv')).toContain(`${account.id},${accountName},`);
   const operations = (files.get('operations.csv') ?? '').split('\r\n');

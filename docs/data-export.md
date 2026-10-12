@@ -26,6 +26,10 @@ number) is written with a leading `'`.
 | `wallets.csv` | tracked address | network, address, wallet label and the account it belongs to. |
 | `operations.csv` | journal entry | every buy, sell, income, expense, gift, fee, transfer, swap, reward, opening balance, deposit and withdrawal. |
 | `chain-transactions.csv` | raw blockchain transaction leg | amounts in coins, the owner's classification and the operation it produced. |
+| `deposits.csv` | bank deposit | name, bank, currency, term, payout schedule, capitalization, day basis and early-close rule as entered. |
+| `deposit-rates.csv` | rate of a deposit from a date on | annual rate in percent; the first row of a deposit is the rate it opened with. |
+| `deposit-movements.csv` | top-up, withdrawal or interest payout | in the order the bank dated them; `recorded_at` is when the owner entered it. |
+| `deposit-checks.csv` | balance read in the bank's own app | the figure the owner compared with the computed balance. |
 
 `operations.csv` holds active **and voided** entries. `status` is `active` or `voided`; a
 voided entry shows what it said before it was deleted. `source` is `manual`, `csv` (imported
@@ -45,6 +49,11 @@ are in USD as recorded; a trade paid in RUB or EUR also carries `paid_currency`,
 
 `classification_status` is `unclassified`, `classified` or `hidden`; the computed "Dust"
 status depends on the current price and threshold and is not exported.
+
+The deposit files hold only what the owner entered (DEP-TERMS). Interest earned and the
+balance are computed from those rows on every read and are not exported; each file names the
+deposit by `deposit_id` and by `deposit` (its name). Dates are `YYYY-MM-DD`, amounts exact
+decimals in the deposit's currency.
 
 ## JSON backup (EXP-JSON)
 

@@ -98,12 +98,56 @@ export interface ExportChainTransaction {
   classificationVersion: number | null;
   classifiedAt: string | null;
 }
+/** A bank deposit as the owner entered it; interest earned is computed and not exported. */
+export interface ExportDeposit {
+  id: string;
+  name: string;
+  bank: string;
+  currency: string;
+  startDate: string;
+  endDate: string | null;
+  payout: string;
+  capitalized: boolean;
+  dayBasis: string;
+  earlyClose: string;
+  createdAt: string;
+}
+/** The annual rate in percent from a date on. */
+export interface ExportDepositRate {
+  depositId: string;
+  deposit: string;
+  effectiveFrom: string;
+  ratePercent: string;
+}
+/** Money put in, taken out, or interest paid out to the owner, dated by the bank. */
+export interface ExportDepositMovement {
+  id: string;
+  depositId: string;
+  deposit: string;
+  occurredOn: string;
+  kind: string;
+  amount: string;
+  comment: string | null;
+  recordedAt: string;
+}
+/** The balance the owner read in the bank's own app on a day. */
+export interface ExportDepositCheck {
+  id: string;
+  depositId: string;
+  deposit: string;
+  checkedOn: string;
+  bankBalance: string;
+}
 export interface ExportData {
   assets: readonly ExportAsset[];
   accounts: readonly ExportAccount[];
   wallets: readonly ExportWallet[];
   operations: readonly ExportOperation[];
   chain: readonly ExportChainTransaction[];
+  deposits: readonly ExportDeposit[];
+  depositRates: readonly ExportDepositRate[];
+  depositMovements: readonly ExportDepositMovement[];
+  depositChecks: readonly ExportDepositCheck[];
 }
 
 const purposeTypes: Record<TradePurpose, string> = {
@@ -283,6 +327,63 @@ export function exportFiles(data: ExportData): ZipFile[] {
     ),
     table('operations.csv', operationColumns, operations),
     table('chain-transactions.csv', chainColumns, chain),
+    table(
+      'deposits.csv',
+      [
+        ['id', (row: ExportDeposit) => row.id],
+        ['name', (row) => row.name],
+        ['bank', (row) => row.bank],
+        ['currency', (row) => row.currency],
+        ['start_date', (row) => row.startDate],
+        ['end_date', (row) => row.endDate],
+        ['payout', (row) => row.payout],
+        ['capitalized', (row) => row.capitalized],
+        ['day_basis', (row) => row.dayBasis],
+        ['early_close', (row) => row.earlyClose],
+        ['created_at', (row) => row.createdAt],
+      ],
+      [...data.deposits].sort((a, b) => byText(a.startDate, b.startDate) || byCreation(a, b)),
+    ),
+    table(
+      'deposit-rates.csv',
+      [
+        ['deposit_id', (row: ExportDepositRate) => row.depositId],
+        ['deposit', (row) => row.deposit],
+        ['effective_from', (row) => row.effectiveFrom],
+        ['rate_percent', (row) => row.ratePercent],
+      ],
+      [...data.depositRates].sort(
+        (a, b) => byText(a.deposit, b.deposit) || byText(a.effectiveFrom, b.effectiveFrom),
+      ),
+    ),
+    table(
+      'deposit-movements.csv',
+      [
+        ['id', (row: ExportDepositMovement) => row.id],
+        ['deposit_id', (row) => row.depositId],
+        ['deposit', (row) => row.deposit],
+        ['occurred_on', (row) => row.occurredOn],
+        ['kind', (row) => row.kind],
+        ['amount', (row) => row.amount],
+        ['comment', (row) => row.comment],
+        ['recorded_at', (row) => row.recordedAt],
+      ],
+      // The rows arrive in the order they were entered, which a stable sort keeps within a day.
+      [...data.depositMovements].sort((a, b) => byText(a.occurredOn, b.occurredOn)),
+    ),
+    table(
+      'deposit-checks.csv',
+      [
+        ['id', (row: ExportDepositCheck) => row.id],
+        ['deposit_id', (row) => row.depositId],
+        ['deposit', (row) => row.deposit],
+        ['checked_on', (row) => row.checkedOn],
+        ['bank_balance', (row) => row.bankBalance],
+      ],
+      [...data.depositChecks].sort(
+        (a, b) => byText(a.checkedOn, b.checkedOn) || byText(a.id, b.id),
+      ),
+    ),
   ];
 }
 
