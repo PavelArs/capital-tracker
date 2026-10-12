@@ -195,4 +195,24 @@ describe('read cache', () => {
     await expect(cachedReads.toClassify.load()).resolves.toBe(5);
     expect(count).toHaveBeenCalledTimes(2);
   });
+
+  it('hands the page a prefetch asked after a change even if an older read was still on its way', async () => {
+    const answers: Array<(value: number) => void> = [];
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const older = cachedReads.toClassify.load();
+    announceSyncChange();
+    const prefetch = cachedReads.toClassify.prefetch();
+    answers[1](8);
+    await prefetch;
+    // The page takes the prefetch asked after the change; no third request is sent.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(8);
+    expect(count).toHaveBeenCalledTimes(2);
+    answers[0](1);
+    await older;
+  });
 });

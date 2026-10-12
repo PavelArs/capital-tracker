@@ -92,7 +92,7 @@ function cachedRead<A extends unknown[], T>(
     prefetch: (...args: A): Promise<T> => {
       const id = key(args);
       // Joining a read someone else already started leaves nothing to hand over later.
-      const joined = inFlight.has(id);
+      const joined = inFlight.get(id)?.generation === generationNow();
       const promise = ask(args, false);
       if (joined) return promise;
       unclaimed.add(id);
