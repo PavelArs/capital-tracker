@@ -494,6 +494,28 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
   });
 
+  it('shows the value and allocation of an owner who holds nothing but bank deposits', async () => {
+    const base = portfolio([]);
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([], {
+        totalValue: '20000',
+        pricedSubtotal: '20000',
+        depositsValue: '20000',
+        allocation: {
+          ...base.allocation,
+          byType: [{ key: 'deposits', label: 'Bank deposits', value: '20000', percent: '100.00' }],
+        },
+      }),
+    );
+    renderAt('/portfolio');
+    const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('$20,000.00 in bank deposits');
+    expect(screen.getByText('No assets yet')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Allocation' })).toBeInTheDocument();
+  });
+
   it('says so when a deposit has no current rate and leaves it out of the value', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin], {

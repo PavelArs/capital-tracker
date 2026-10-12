@@ -423,8 +423,35 @@ async function wholePortfolio(db, owner) {
   assert.match(paid.value, /^554710\.9[56]/);
   assert.match(paid.profit, /^\+?7710\.9[56]/, 'Taking interest out does not change the profit');
   console.log('PASS DEP-VALUE-FLOWS');
-  await deposits.remove(owner, rubles.id);
+
+  stage = 'synthetic hourly job refreshes an owner who has only deposits';
+  const scheduled = new PortfolioSnapshotsService(
+    db,
+    new ConfigService({ PRICE_COLLECTION_ENABLED: 'true' }),
+  );
+  const later = new Date('2026-10-04T15:00:00.000Z');
+  const tick = await scheduled.tick(later);
+  assert.equal(tick.outcome, 'refreshed');
+  const [{ count }] = await db.query(
+    `SELECT count(*)::int AS count FROM portfolio_snapshots WHERE "ownerId"=$1 AND "takenAt"=$2`,
+    [owner, later],
+  );
+  assert.ok(count > 0, 'The scheduled refresh reached the owner with deposits alone');
+  console.log('PASS DEP-VALUE-SCHEDULED');
+
+  stage = 'synthetic ruble deposit alone in rubles needs no dollar series';
   await deposits.remove(owner, dollarsDeposit.id);
+  // The rates are append-only; this isolated database lets the trigger step aside once.
+  await db.query('ALTER TABLE fx_rates DISABLE TRIGGER USER');
+  await db.query(`DELETE FROM fx_rates WHERE currency = 'USD'`);
+  await db.query('ALTER TABLE fx_rates ENABLE TRIGGER USER');
+  const alone = await snapshots.history(owner, { period: 'ALL', currency: 'RUB' }, now);
+  assert.notEqual(alone.value, null, 'Nothing but a ruble deposit in rubles is exact');
+  assert.equal(alone.complete, true);
+  const live = await valuation.read(owner, { currency: 'RUB' }, now);
+  assert.ok(Math.abs(Number(alone.value) - Number(live.totalValue)) < 0.01, 'The same sum as now');
+  console.log('PASS DEP-VALUE-SAME-CURRENCY');
+  await deposits.remove(owner, rubles.id);
 }
 
 async function main() {

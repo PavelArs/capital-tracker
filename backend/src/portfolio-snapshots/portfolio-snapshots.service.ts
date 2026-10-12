@@ -170,8 +170,10 @@ function valuesAt(
       undefined,
       depositValuesAt(valuation.deposits, instant, fx),
     );
-    // Without a rate the value in that currency is unknown, not a smaller sum.
-    const rated = fx.available('USD', moscowDate(instant));
+    // Without a rate the value in that currency is unknown, not a smaller sum. Prices are in
+    // dollars, so a portfolio of deposits alone needs no dollar rate: a deposit without its own
+    // rate is counted as unrated instead.
+    const rated = valuation.instruments.length === 0 || fx.available('USD', moscowDate(instant));
     return {
       at,
       currency: fx.currency,
@@ -301,7 +303,7 @@ export class PortfolioSnapshotsService {
     if (!this.enabled) return { outcome: 'disabled' };
     const owners: { ownerId: string }[] = await this.source.query(
       `SELECT "ownerId" FROM accounting_instruments UNION SELECT "ownerId" FROM manual_accounts
-        ORDER BY 1`,
+        UNION SELECT "ownerId" FROM bank_deposits ORDER BY 1`,
     );
     for (const { ownerId } of owners) {
       try {
