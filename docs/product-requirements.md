@@ -678,6 +678,17 @@ network-specific identity:
   later entry depends on it) is refused with a reason and nothing is saved. A buy or sale that
   was settled in the account's cash is replaced before the transaction is recorded, so the cash
   it spent is spent once and not entered as new money.
+- CLS-MARKET-VALUE: **Given** a blockchain transaction to classify of a coin that has no stored
+  price within two days before the transaction (so it has no estimate at its time), but a
+  price stored at any other time **when** the owner opens the classification window and chooses
+  an answer that takes a value in dollars (income, expense, gift, a reward, an airdrop, a fee, a
+  swap) **then** the Value field is already filled with the quantity at the latest stored price
+  (dollars and cents, more places for a small sum), with a line that names the coin and the day
+  of that price, and saving records that value; typing another value replaces it. Nothing is
+  offered for a coin with a price near the transaction (it keeps "Empty: its stored price"), for
+  a coin with no stored price at all (the field stays empty), for a pool withdrawal (its value is
+  the gain, not the coins' worth), for a swap that names a record added by hand, or when the
+  transaction already has an answer.
 - CLS-SWAP-RECORD: **Given** the owner added "Buy 10 ZEC for 1000 USD" by hand or from CSV in an
   account, and a wallet of that account sent 1000 USDC within a week of it to pay for it **when**
   the owner answers the send as a Swap and chooses that purchase under "Received in exchange"
@@ -960,6 +971,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M40 | `more-evm-chains` | Polygon (POL), BNB Smart Chain (BNB) and Avalanche C-Chain (AVAX) join Base, Arbitrum One and OP Mainnet: each chain has its own coin, which the portfolio prices from Bybit's spot market like the other coins outside the price catalog, and its own USDT and USDC contracts (18 decimals on BNB Smart Chain); a token calling itself POL, BNB or AVAX from another contract is a lookalike like one calling itself ETH; no migration (M39 already names the chains) | M39 | — |
 | M41 | `link-bybit-by-hash` | a Bybit deposit or withdrawal on an Ethereum-like chain other than Ethereum meets the wallet's leg of the hash its record names, so the two are linked as one transfer by the app (BYBIT-LINK-HASH); a transfer answered on one side alone is joined once the other side is certain (XFER-REJOIN); the link column stays for legs of one identity, the pair is found by the transfer both name; no migration | M22, M36, M39 | — |
 | M42 | `evm-free-fallback` | Etherscan's free plan no longer serves OP Mainnet, Base, BNB Smart Chain or Avalanche C-Chain; when it refuses a chain with its plan message, OP Mainnet (explorer.optimism.io) and Base (base.blockscout.com) are read from their keyless Blockscout explorers instead (same calls, no key, internal transfers named `transactionHash`), for six hours before Etherscan is asked again; BNB Smart Chain and Avalanche C-Chain, which have no known Blockscout explorer, say the free plan does not cover them; an empty range is read however the explorer words it (Blockscout says "No token transfers found"), and with the free `BLOCKSCOUT_API_KEY` set they are read through Blockscout's PRO API (`api.blockscout.com/v2/api`, the chain as a parameter, same calls) instead of the public explorers, which answer 429 or 403 to requests without a key; a 429 says which host limits requests and in about how many minutes the limit lifts; a failed read says which source answered and how (host and HTTP status, or its refusal text with address-like parts cut out) in the wallet's message and sync journal; a redirect that stays on the same host and scheme is followed (twice at most), one to another host is refused and named; no migration | M39, M40 | — |
+| M43 | `market-value-default` | a transaction of a coin with no stored price near its time asks for a value; the classification window offers the quantity at the coin's latest stored price as the value, to keep or change (CLS-MARKET-VALUE); no migration | M12, EST-AT-TIME | — |
 
 ```mermaid
 flowchart LR

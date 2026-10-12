@@ -85,6 +85,11 @@ interface Draft {
   currency: Currency;
   rate: string;
   value: string;
+  /**
+   * CLS-MARKET-VALUE: the value offered when the coin has no price near the transaction's time,
+   * already in `value` until the owner changes it; empty when nothing is offered.
+   */
+  suggested: string;
   /** Transfer only: the owner's other wallet. */
   account: string;
   /** Transfer only: the address of that wallet that took part in this very transaction. */
@@ -109,6 +114,21 @@ function ownAccount(operation: Operation) {
     : operation.account;
 }
 
+/**
+ * CLS-MARKET-VALUE: the quantity at the latest stored price of the coin, in dollars and cents
+ * (more places for a small sum), for a transaction with no price stored near its own time.
+ */
+export function suggestedValue(operation: Operation): string {
+  const amount = Number(operation.marketValue?.valueUsd);
+  if (!operation.chain || operation.estimatedValueUsd !== null || !(amount > 0)) return '';
+  if (amount >= 1) return amount.toFixed(2);
+  const places = Math.min(12, 2 - Math.floor(Math.log10(amount)));
+  return amount.toFixed(places).replace(/0+$/, '');
+}
+
+/** What the owner entered as the value: an offered value left as it was is not an entry. */
+const entered = (draft: Draft) => (draft.value === draft.suggested ? '' : draft.value.trim());
+
 function draftOf(operation: Operation): Draft {
   const saved = operation.classification;
   const value = saved?.value ?? null;
@@ -123,12 +143,14 @@ function draftOf(operation: Operation): Draft {
   const suggested = !value && operation.counterWallet && operation.counterAccount;
   // SWAP-ONE-TX-SUGGEST: another coin back in the same transaction suggests a swap.
   const together = !value && !suggested ? operation.chain?.swapWith : undefined;
+  const offered = value ? '' : suggestedValue(operation);
   return {
     type: recorded ? 'swap' : (value?.type ?? (suggested ? 'transfer' : together ? 'swap' : null)),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
-    value: valued?.valueUsd ?? '',
+    value: valued?.valueUsd ?? offered,
+    suggested: offered,
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
     partner:
       moved?.partner && moved.partner.txid === operation.chain?.txid ? moved.partner.addressId : '',
@@ -516,7 +538,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
         return {
           type: 'swap',
           record: { kind: 'trade', id: replaced[1], version: Number(replaced[2]) },
-          valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+          valueUsd: entered(draft) ? decimal(draft.value) : null,
         };
       const record = recordKey.exec(draft.pair);
       if (record)
@@ -847,7 +869,15 @@ export default function ClassifyForm({
                 type="button"
                 className={`transactions-option${type === 'transfer' ? ' transactions-option--wide' : ''}`}
                 aria-pressed={draft.type === type}
-                onClick={() => change({ type })}
+                onClick={() =>
+                  change({
+                    type,
+                    // The gain of a pool withdrawal is not what the coins were worth.
+                    ...(type === 'pool-withdrawal' && draft.value === draft.suggested
+                      ? { value: '', suggested: '' }
+                      : {}),
+                  })
+                }
               >
                 {label}
               </button>
@@ -1122,17 +1152,19 @@ export default function ClassifyForm({
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
               ) || (
                 <span className="ui-field__hint">
-                  {replacing
-                    ? 'Empty: the value of the record you added.'
-                    : swap || draft.type === 'fee'
-                      ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                      : poolWithdrawal
-                        ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                        : draft.type === 'expense' || operation.direction !== 'in'
-                          ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
-                          : optional
-                            ? 'Without a value the coins count in net worth, not in profit.'
-                            : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
+                  {draft.suggested && draft.value === draft.suggested && !replacing
+                    ? `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${day(operation.occurredAt)}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`
+                    : replacing
+                      ? 'Empty: the value of the record you added.'
+                      : swap || draft.type === 'fee'
+                        ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                        : poolWithdrawal
+                          ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                          : draft.type === 'expense' || operation.direction !== 'in'
+                            ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
+                            : optional
+                              ? 'Without a value the coins count in net worth, not in profit.'
+                              : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
                 </span>
               )}
             </div>
