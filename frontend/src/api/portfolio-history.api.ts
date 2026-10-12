@@ -40,10 +40,15 @@ export interface PortfolioHistory {
   points: HistoryPoint[];
 }
 
+// The first read after a change (or after the day's interest is posted) waits for the server to
+// rebuild the stored snapshots, which can take longer than the client's usual ten seconds.
+const HISTORY_TIMEOUT_MS = 30_000;
+
 export const portfolioHistoryApi = {
   get: async (period: HistoryPeriod, currency?: AccountingCurrency): Promise<PortfolioHistory> => {
     const response = await apiClient.get<PortfolioHistory>('/accounting/portfolio/history', {
       params: currency ? { period, currency } : { period },
+      timeout: HISTORY_TIMEOUT_MS,
     });
     return response.data;
   },

@@ -196,6 +196,7 @@ export default function WalletPage() {
     portfolio,
     addresses,
     kinds,
+    classed,
     hiddenSymbols,
     failed,
     load,
@@ -234,10 +235,10 @@ export default function WalletPage() {
 
   const account = portfolio?.accounts.find((item) => item.accountId === accountId);
   const kind = kinds[accountId] ?? null;
-  const accounts: WalletAccount[] = (portfolio?.accounts ?? []).map(({ accountId: id, name }) => ({
-    accountId: id,
-    name,
-  }));
+  // A broker account or a property (v8) is never offered as a wallet to put an address in.
+  const accounts: WalletAccount[] = (portfolio?.accounts ?? [])
+    .filter((item) => !classed.has(item.accountId))
+    .map(({ accountId: id, name }) => ({ accountId: id, name }));
   const list = addresses ?? [];
   const own = list.filter((address) => address.accountId === accountId);
   const currency = portfolio?.currency ?? 'USD';

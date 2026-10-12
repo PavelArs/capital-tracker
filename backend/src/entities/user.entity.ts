@@ -19,24 +19,6 @@ export class User {
   @Exclude()
   password!: string;
 
-  @Column({ nullable: true, type: 'varchar' })
-  firstName!: string | null;
-
-  @Column({ nullable: true, type: 'varchar' })
-  lastName!: string | null;
-
-  @Column({ default: false })
-  emailVerified!: boolean;
-
-  @Column({ nullable: true, type: 'varchar' })
-  emailVerificationToken!: string | null;
-
-  @Column({ nullable: true, type: 'varchar' })
-  resetPasswordToken!: string | null;
-
-  @Column({ nullable: true, type: 'timestamp' })
-  resetPasswordExpires!: Date | null;
-
   @CreateDateColumn()
   createdAt!: Date;
 
