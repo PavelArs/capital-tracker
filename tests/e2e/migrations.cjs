@@ -171,6 +171,7 @@ const migrationNames = [
   'AddBankDeposits1796500000000',
   'AddInflation1796700000000',
   'DailyDepositInterest1796800000000',
+  'ClassOfAccount1796900000000',
 ];
 
 function connection(database) {
@@ -268,7 +269,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly sixty-one migrations',
+      'Exactly sixty-two migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1334,18 +1335,19 @@ function sessionDeviceAddition(kind, row) {
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
 // HideAssets1796400000000, AddBankDeposits1796500000000 and AddInflation1796700000000 add only tables;
-// DailyDepositInterest1796800000000 only widens a check of a table they add.
+// DailyDepositInterest1796800000000 only widens a check of a table they add;
+// ClassOfAccount1796900000000 adds one nullable assetClass column and its check to manual_accounts.
 function walletKindAddition(kind, row) {
   if (kind === 'columns')
     return (
-      (row.table_name === 'manual_accounts' && row.column_name === 'kind') ||
+      (row.table_name === 'manual_accounts' && ['kind', 'assetClass'].includes(row.column_name)) ||
       (['manual_accounts', 'wallet_addresses'].includes(row.table_name) &&
         row.column_name === 'removedAt')
     );
   return (
     kind === 'constraints' &&
     row.relname === 'manual_accounts' &&
-    row.conname === 'manual_accounts_kind_check'
+    ['manual_accounts_kind_check', 'manual_accounts_assetClass_check'].includes(row.conname)
   );
 }
 function replacedOriginCheck(kind, row) {
@@ -2230,8 +2232,10 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           for (const row of parsed) {
             assert.equal(row.kind, null, 'Prior accounts have no wallet kind');
             assert.equal(row.removedAt, null, 'Prior accounts are still tracked');
+            assert.equal(row.assetClass, null, 'Prior accounts stay wallets');
             delete row.kind;
             delete row.removedAt;
+            delete row.assetClass;
           }
           assert.deepEqual(
             parsed,
@@ -2345,6 +2349,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1796500000000',
           '1796700000000',
           '1796800000000',
+          '1796900000000',
         ][index - 11],
       );
     }

@@ -4,6 +4,19 @@ import { forgetReads } from './read-cache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** Set on the one repeat of a read that timed out or met a gateway error. */
+    retried?: boolean;
+  }
+}
+
+// A read that timed out, lost the connection or met a gateway error is asked once more: the
+// server often finished the work meanwhile (a snapshot rebuild, a restarting container), so the
+// owner would only have pressed "Try again" to see the page.
+const RETRY_DELAY_MS = 500;
+const GATEWAY_STATUSES = [502, 503, 504];
+
 // Create axios instance with default config
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -64,6 +77,15 @@ function isUnsafeRequest(config?: InternalAxiosRequestConfig): boolean {
   return !['get', 'head', 'options'].includes(config?.method?.toLowerCase() || 'get');
 }
 
+function worthRepeating(error: AxiosError): boolean {
+  const { config } = error;
+  if (!config || config.retried || isUnsafeRequest(config) || error.code === 'ERR_CANCELED') {
+    return false;
+  }
+  if (error.response) return GATEWAY_STATUSES.includes(error.response.status);
+  return ['ECONNABORTED', 'ETIMEDOUT', 'ERR_NETWORK'].includes(error.code ?? '');
+}
+
 // Error handler function - will be set from ErrorContext
 let errorHandler: ((message: string) => void) | null = null;
 
@@ -90,6 +112,10 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiError>) => {
+    if (worthRepeating(error) && error.config) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      return apiClient({ ...error.config, retried: true });
+    }
     const pageHandlesError =
       ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(
         error.config?.url || '',

@@ -153,10 +153,6 @@ async function checkHash(client, userId, exactPassword) {
       'Preserve spaces',
     );
   }
-  assert.equal(user.emailVerified, true);
-  assert.equal(user.emailVerificationToken, null);
-  assert.equal(user.resetPasswordToken, null);
-  assert.equal(user.resetPasswordExpires, null);
   return user.password;
 }
 
@@ -243,8 +239,7 @@ async function verifyExisting() {
       ['dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'AMBIGUOUS@example.invalid'],
     ]) {
       await client.query(
-        `INSERT INTO users(id,email,password,"emailVerified","emailVerificationToken","resetPasswordToken","resetPasswordExpires")
-        VALUES ($1,$2,'synthetic-legacy-credential',false,'old-verification','old-reset','2030-01-01')`,
+        `INSERT INTO users(id,email,password) VALUES ($1,$2,'synthetic-legacy-credential')`,
         [userId, email],
       );
       await client.query(
@@ -306,14 +301,7 @@ async function verifyExisting() {
       assert.ok(changed);
       if (old.id !== id) assert.deepEqual(changed, old, 'Other users remain unchanged');
       else {
-        for (const field of [
-          'password',
-          'emailVerified',
-          'emailVerificationToken',
-          'resetPasswordToken',
-          'resetPasswordExpires',
-          'updatedAt',
-        ]) {
+        for (const field of ['password', 'updatedAt']) {
           delete old[field];
           delete changed[field];
         }

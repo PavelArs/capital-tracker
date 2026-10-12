@@ -32,12 +32,6 @@ describe('OWN-002/003 owner credentials and revision checks', () => {
         id: userId,
         email: 'owner@example.invalid',
         password: await hashPassword(password),
-        firstName: null,
-        lastName: null,
-        emailVerified: true,
-        emailVerificationToken: 'private-old-token',
-        resetPasswordToken: 'private-old-reset',
-        resetPasswordExpires: null,
         createdAt: new Date('2026-09-21'),
         updatedAt: new Date('2026-09-21'),
       } as User,
@@ -52,15 +46,8 @@ describe('OWN-002/003 owner credentials and revision checks', () => {
     const validated = await service.validateUser(' OWNER@EXAMPLE.INVALID ', password);
     expect(validated).not.toBeNull();
     const result = validated!;
-    expect(Object.keys(result.user).sort()).toEqual([
-      'createdAt',
-      'email',
-      'firstName',
-      'id',
-      'lastName',
-      'updatedAt',
-    ]);
-    expect(JSON.stringify(result.user)).not.toContain('private-');
+    expect(Object.keys(result.user).sort()).toEqual(['createdAt', 'email', 'id', 'updatedAt']);
+    expect(JSON.stringify(result.user)).not.toContain('argon2');
     expect(await service.validateUser(owner.user.email, password.trim())).toBeNull();
   });
 

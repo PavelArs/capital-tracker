@@ -303,6 +303,26 @@ describe('WAL-RENAME, W1 account change input', () => {
     rejects(() => parseAccount({ requestId, name: 'Ledger', kind: null }));
     rejects(() => parseAccount({ requestId, name: 'Ledger', kind: 'bank' }));
   });
+  it('names the class of a new account only when sent, never with a wallet kind', () => {
+    expect(parseAccount({ requestId, name: 'Studio', assetClass: 'property' })).toEqual({
+      requestId,
+      name: 'Studio',
+      assetClass: 'property',
+    });
+    expect(parseAccount({ requestId, name: 'Sample Broker', assetClass: 'broker' })).toEqual({
+      requestId,
+      name: 'Sample Broker',
+      assetClass: 'broker',
+    });
+    rejects(() => parseAccount({ requestId, name: 'Studio', assetClass: null }));
+    rejects(() => parseAccount({ requestId, name: 'Studio', assetClass: 'bank' }));
+    rejects(() => parseAccount({ requestId, name: 'Studio', assetClass: 'Property' }));
+    rejects(() =>
+      parseAccount({ requestId, name: 'Studio', assetClass: 'property', kind: 'hardware' }),
+    );
+    // The class is set once: an account change cannot name it.
+    expect(() => parseAccountChange({ assetClass: 'property' })).toThrow(BadRequestException);
+  });
   it.each([
     undefined,
     null,

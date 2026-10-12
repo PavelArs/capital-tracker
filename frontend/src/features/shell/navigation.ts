@@ -1,9 +1,12 @@
+import type { AccountClass } from '@api/accounting.api';
 import type { IconName } from './icons';
 
 export interface ShellSection {
   path: string;
   label: string;
   icon: IconName;
+  /** v8: shown once the owner holds an account of this class, or while it is open. */
+  held?: AccountClass;
 }
 
 // Order and names follow the accepted prototype (docs/product-requirements.md, M1).
@@ -13,6 +16,7 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/transactions', label: 'Transactions', icon: 'transactions' },
   { path: '/wallets', label: 'Wallets', icon: 'wallets' },
   { path: '/deposits', label: 'Deposits', icon: 'archive' },
+  { path: '/real-estate', label: 'Real estate', icon: 'home', held: 'property' },
   // `/settings` was the legacy settings screen; it now redirects here (M20).
   { path: '/preferences', label: 'Settings', icon: 'settings' },
 ];

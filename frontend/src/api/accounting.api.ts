@@ -2,12 +2,16 @@ import apiClient from './client';
 
 /** W1: how the owner holds a wallet's coins. */
 export type WalletKind = 'software' | 'hardware' | 'exchange';
+/** Asset classes (v8): an account that holds a broker account or a property, not coins. */
+export type AccountClass = 'broker' | 'property';
 
 export interface AccountSummary {
   id: string;
   name: string;
   /** Null until the owner says. */
   kind: WalletKind | null;
+  /** Null for a wallet; absent from servers older than the class. */
+  assetClass?: AccountClass | null;
   currentRevision: number;
   createdAt: string;
 }
@@ -29,6 +33,8 @@ export interface AccountInput {
   requestId: string;
   name: string;
   kind?: WalletKind;
+  /** Set once when the account is made; never sent with a kind. */
+  assetClass?: AccountClass;
 }
 
 export const accountingApi = {

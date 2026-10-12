@@ -13,6 +13,7 @@ import ForgotPasswordPage from '@features/password-reset/ForgotPasswordPage';
 import ResetPasswordPage from '@features/password-reset/ResetPasswordPage';
 import AssetPage from '@features/portfolio/AssetPage';
 import PortfolioPage from '@features/portfolio/PortfolioPage';
+import RealEstatePage from '@features/property/RealEstatePage';
 import { retiredPaths } from '@features/shell/navigation';
 import SettingsPage from '@features/shell/SettingsPage';
 import TransactionsPage from '@features/transactions/TransactionsPage';
@@ -60,6 +61,7 @@ function AppRoutes() {
         <Route path="wallets/:accountId" element={<WalletPage />} />
         <Route path="deposits" element={<DepositsPage />} />
         <Route path="deposits/:depositId" element={<DepositPage />} />
+        <Route path="real-estate" element={<RealEstatePage />} />
         <Route path="preferences" element={<SettingsPage />} />
         <Route path="history" element={<HistoryPage />} />
         {retiredPaths.map(([from, to]) => (

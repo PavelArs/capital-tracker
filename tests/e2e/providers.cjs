@@ -327,7 +327,7 @@ function eurostatInflation(response) {
     JSON.stringify({
       version: '2.0',
       class: 'dataset',
-      id: ['freq', 'unit', 'coicop', 'geo', 'time'],
+      id: ['freq', 'unit', 'coicop18', 'geo', 'time'],
       size: [1, 1, 1, 1, months.length],
       value: Object.fromEntries(months.map((_month, position) => [position, inflationLevel(position)])),
       dimension: {
@@ -1038,7 +1038,7 @@ function provider(request, response, url) {
     return blsInflation(request, response);
   if (
     url.hostname === 'ec.europa.eu' &&
-    url.pathname === '/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx'
+    url.pathname === '/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_minr'
   )
     return eurostatInflation(response);
   if (url.hostname === 'api.etherscan.io' || blockscoutChains[url.hostname])

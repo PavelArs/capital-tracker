@@ -101,11 +101,10 @@ export class PasswordResetService {
       const state = this.state(link);
       if (state !== 'valid') throw refused(state);
       if (!owner || owner.userId !== link.userId) throw refused('invalid');
-      await manager.query(
-        `UPDATE users SET password = $1, "resetPasswordToken" = NULL,
-        "resetPasswordExpires" = NULL, "updatedAt" = now() WHERE id = $2`,
-        [hash, owner.userId],
-      );
+      await manager.query('UPDATE users SET password = $1, "updatedAt" = now() WHERE id = $2', [
+        hash,
+        owner.userId,
+      ]);
       await manager.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [
         randomUUID(),
       ]);
