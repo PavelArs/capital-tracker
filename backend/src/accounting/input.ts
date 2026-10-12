@@ -9,14 +9,22 @@ import {
 /** W1: how the owner holds the coins of a wallet. */
 export const walletKinds = ['software', 'hardware', 'exchange'] as const;
 export type WalletKind = (typeof walletKinds)[number];
+/**
+ * Asset classes (v8): an account that holds a broker account or a property instead of coins.
+ * Null is a wallet, as every account was before.
+ */
+export const accountClasses = ['broker', 'property'] as const;
+export type AccountClass = (typeof accountClasses)[number];
 
 export interface AccountInput {
   requestId: string;
   name: string;
   /** Present only when sent, so a body without it keeps its exact shape. */
   kind?: WalletKind;
+  /** Set once when the account is made, present only when sent, like the kind. */
+  assetClass?: AccountClass;
 }
-export interface InstrumentInput extends AccountInput {
+export interface InstrumentInput extends Omit<AccountInput, 'kind' | 'assetClass'> {
   symbol: string | null;
   assetType?: AssetType;
   valuationCurrency?: ValuationCurrency;
@@ -118,11 +126,15 @@ export function parseAsOf(value: unknown): string {
   return date.toISOString();
 }
 export function parseAccount(input: unknown): AccountInput {
-  const row = object(input, ['requestId', 'name', 'kind']);
+  const row = object(input, ['requestId', 'name', 'kind', 'assetClass']);
+  const has = (key: string) => Object.hasOwn(row, key);
+  // How coins are held means nothing for a broker account or a property.
+  if (has('kind') && has('assetClass')) return bad();
   return {
     requestId: parseUuid(row.requestId),
     name: label(row.name, 120),
-    ...(Object.hasOwn(row, 'kind') ? { kind: member(row.kind, walletKinds) } : {}),
+    ...(has('kind') ? { kind: member(row.kind, walletKinds) } : {}),
+    ...(has('assetClass') ? { assetClass: member(row.assetClass, accountClasses) } : {}),
   };
 }
 /**

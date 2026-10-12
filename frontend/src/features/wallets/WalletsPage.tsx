@@ -59,6 +59,7 @@ export default function WalletsPage() {
     portfolio,
     addresses,
     kinds,
+    classed,
     hiddenSymbols,
     failed,
     load,
@@ -81,7 +82,11 @@ export default function WalletsPage() {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [addRequested, addresses, navigate, location.pathname, location.search]);
   const narrow = useNarrowScreen();
-  const accounts: WalletAccount[] = (portfolio?.accounts ?? []).map(({ accountId, name }) => ({
+  // Property and broker accounts (v8) are listed in their own sections, not here.
+  const walletAccounts = (portfolio?.accounts ?? []).filter(
+    ({ accountId }) => !classed.has(accountId),
+  );
+  const accounts: WalletAccount[] = walletAccounts.map(({ accountId, name }) => ({
     accountId,
     name,
   }));
@@ -93,7 +98,7 @@ export default function WalletsPage() {
     (address) => !address.accountId || !accounts.some((a) => a.accountId === address.accountId),
   );
   const cards = portfolio
-    ? portfolio.accounts
+    ? walletAccounts
         .map((account) => ({
           account,
           addresses: list.filter((address) => address.accountId === account.accountId),

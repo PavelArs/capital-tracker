@@ -63,7 +63,7 @@ describe('authApi', () => {
 
   describe('getProfile', () => {
     it('should fetch user profile', async () => {
-      const mockUser = { id: '1', email: 'test@example.com', firstName: 'John' };
+      const mockUser = { id: '1', email: 'test@example.com' };
       vi.mocked(apiClient.get).mockResolvedValue({ data: mockUser });
 
       const result = await authApi.getProfile();

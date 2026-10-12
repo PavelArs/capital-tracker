@@ -8,6 +8,7 @@ import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { shellSections } from '@features/shell/navigation';
 import { prefetchSection } from '@features/shell/prefetch';
 import SyncIndicator from '@features/shell/SyncIndicator';
+import { useHeldClasses } from '@features/shell/useHeldClasses';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -29,6 +30,11 @@ export default function Layout() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   // CLS-COUNT: blockchain transactions waiting for an answer, next to Transactions.
   const toClassify = useNeedsClassification();
+  // v8: Real estate (and later Brokers) appear once the owner holds something there.
+  const held = useHeldClasses(pathname);
+  const sections = shellSections.filter(
+    (section) => !section.held || held.has(section.held) || pathname.startsWith(section.path),
+  );
   const menuRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   // PHONE-BELL: where the page header draws the notifications bell on a phone.
@@ -86,7 +92,7 @@ export default function Layout() {
           </div>
           <div id="application-menu" ref={menuRef} className="shell-nav__menu">
             <ul className="shell-nav__sections" data-nav-group="sections">
-              {shellSections.map((section) => (
+              {sections.map((section) => (
                 <li key={section.path}>
                   <NavLink
                     to={withCurrency(section.path, asked)}

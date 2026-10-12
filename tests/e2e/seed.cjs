@@ -37,20 +37,17 @@ async function main() {
       parallelism: 1,
     });
     await client.query('BEGIN');
-    for (const [id, email, firstName] of [
-      ['11111111-1111-4111-8111-111111111111', 'owner@example.invalid', 'Synthetic Owner'],
-      ['22222222-2222-4222-8222-222222222222', 'foreign@example.invalid', 'Synthetic Foreign'],
+    for (const [id, email] of [
+      ['11111111-1111-4111-8111-111111111111', 'owner@example.invalid'],
+      ['22222222-2222-4222-8222-222222222222', 'foreign@example.invalid'],
     ]) {
       await client.query(
-        `INSERT INTO users (id, email, password, "firstName", "emailVerified")
-         VALUES ($1, $2, $3, $4, true)
-         ON CONFLICT (id) DO UPDATE SET password = EXCLUDED.password,
-         "emailVerified" = true`,
+        `INSERT INTO users (id, email, password) VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET password = EXCLUDED.password`,
         [
           id,
           email,
           id === '11111111-1111-4111-8111-111111111111' ? 'synthetic-legacy-placeholder' : password,
-          firstName,
         ],
       );
     }

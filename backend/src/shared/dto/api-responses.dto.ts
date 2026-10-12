@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * Generic success message response
@@ -26,18 +26,6 @@ export class UserProfileResponseDto {
     example: 'user@example.com',
   })
   email: string;
-
-  @ApiPropertyOptional({
-    description: 'User first name',
-    example: 'John',
-  })
-  firstName?: string | null;
-
-  @ApiPropertyOptional({
-    description: 'User last name',
-    example: 'Doe',
-  })
-  lastName?: string | null;
 
   @ApiProperty({
     description: 'Account creation timestamp',

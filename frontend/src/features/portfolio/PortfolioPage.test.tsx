@@ -665,6 +665,31 @@ describe('PV-UI Portfolio values every asset', () => {
     );
   });
 
+  it('names a property account in Holdings without sending it to Wallets (v8)', async () => {
+    // Codex P2: a property account has no wallet page.
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: id(101),
+          name: 'Trust Wallet',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await user.click(await screen.findByRole('link', { name: 'Bitcoin' }));
+    const holdings = await screen.findByRole('region', { name: 'Holdings' });
+    await waitFor(() => expect(within(holdings).getAllByRole('link')).toHaveLength(1));
+    expect(within(holdings).queryByRole('link', { name: 'Trust Wallet' })).toBeNull();
+    expect(holdings).toHaveTextContent('Trust Wallet1 BTC');
+  });
+
   it('explains a missing rate, an unknown asset and a failed load', async () => {
     const get = vi
       .spyOn(portfolioValuationApi, 'get')
@@ -744,9 +769,18 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
         .map(
           (button) => button.querySelector('b')?.textContent ?? button.getAttribute('aria-label'),
         ),
-    ).toEqual(['Close', 'Crypto', 'Bank', 'Something else']);
+    ).toEqual(['Close', 'Crypto', 'Bank', 'Real estate', 'Something else']);
 
-    await user.click(within(picker).getByRole('button', { name: /^Bank/ }));
+    await user.click(within(picker).getByRole('button', { name: /^Real estate/ }));
+    expect(screen.getByRole('dialog', { name: 'Add property' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
+        name: /^Bank/,
+      }),
+    );
     expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
     const deposit = screen.getByRole('dialog', { name: 'Add deposit' });
     await user.keyboard('{Escape}');

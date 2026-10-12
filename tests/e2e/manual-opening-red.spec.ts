@@ -21,6 +21,7 @@ type AccountSummary = {
 
 function expectEmptySummary(account: AccountSummary, name: string): void {
   expect(Object.keys(account).sort()).toEqual([
+    'assetClass',
     'createdAt',
     'currentRevision',
     'id',
