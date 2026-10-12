@@ -171,9 +171,11 @@ function valuesAt(
       depositValuesAt(valuation.deposits, instant, fx),
     );
     // Without a rate the value in that currency is unknown, not a smaller sum. Prices are in
-    // dollars, so a portfolio of deposits alone needs no dollar rate: a deposit without its own
-    // rate is counted as unrated instead.
-    const rated = valuation.instruments.length === 0 || fx.available('USD', moscowDate(instant));
+    // dollars, so only a held asset needs the dollar rate: deposits state their own, and one
+    // without it is counted as unrated.
+    const rated =
+      report.assets.every((asset) => asset.value === '0') ||
+      fx.available('USD', moscowDate(instant));
     return {
       at,
       currency: fx.currency,

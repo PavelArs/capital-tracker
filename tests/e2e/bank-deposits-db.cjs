@@ -442,6 +442,12 @@ async function wholePortfolio(db, owner) {
   stage = 'synthetic ruble deposit alone in rubles needs no dollar series';
   await deposits.remove(owner, dollarsDeposit.id);
   // The rates are append-only; this isolated database lets the trigger step aside once.
+  // A configured asset that is not held makes no difference.
+  await db.query(
+    `INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload")
+    VALUES($1,$2,'Unheld asset','UNH',$3,$4)`,
+    [randomUUID(), owner, randomUUID(), JSON.stringify({ name: 'Unheld asset', symbol: 'UNH' })],
+  );
   await db.query('ALTER TABLE fx_rates DISABLE TRIGGER USER');
   await db.query(`DELETE FROM fx_rates WHERE currency = 'USD'`);
   await db.query('ALTER TABLE fx_rates ENABLE TRIGGER USER');
