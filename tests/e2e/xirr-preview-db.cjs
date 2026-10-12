@@ -149,11 +149,11 @@ async function main() {
     await source.initialize();
     await reader.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     const owners = {};
     for (const label of ['period', 'empty', 'foreign']) {
       const [row] = await source.query(
-        'INSERT INTO users(email,password,"emailVerified") VALUES($1,$2,true) RETURNING id',
+        'INSERT INTO users(email,password) VALUES($1,$2) RETURNING id',
         [`xirr-${label}@example.invalid`, 'synthetic-not-a-login-hash'],
       );
       owners[label] = row.id;

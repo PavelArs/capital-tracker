@@ -390,10 +390,10 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('manual-portfolio-owner@example.invalid','synthetic-not-a-hash',true),
-      ('manual-portfolio-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('manual-portfolio-owner@example.invalid','synthetic-not-a-hash'),
+      ('manual-portfolio-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const first = (
       await s.accounting.createInstrument(owner.id, {

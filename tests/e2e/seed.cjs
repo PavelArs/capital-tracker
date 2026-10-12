@@ -51,16 +51,6 @@ async function main() {
         ],
       );
     }
-    await client.query(
-      `INSERT INTO crypto_wallets (id, "userId", type, address, balance, "lastUpdated")
-       VALUES ($1, $2, 'bitcoin', $3, 3.5, '2026-09-21T00:00:00Z')
-       ON CONFLICT (id) DO NOTHING`,
-      [
-        '33333333-3333-4333-8333-333333333333',
-        '22222222-2222-4222-8222-222222222222',
-        'synthetic-foreign-bitcoin-address',
-      ],
-    );
     await client.query('COMMIT');
     execFileSync(
       process.execPath,
@@ -81,7 +71,7 @@ async function main() {
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
-    console.log('Synthetic owner provisioned through production CLI; foreign wallet seeded');
+    console.log('Synthetic owner provisioned through production CLI; foreign owner seeded');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

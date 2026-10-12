@@ -1054,16 +1054,16 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, migrated.stderr);
-  assert.match(migrated.stdout, /Migrations applied: 62/);
+  assert.match(migrated.stdout, /Migrations applied: 63/);
   const db = source();
   await db.initialize();
   try {
     const s = services(db);
     const [{ id: owner }] = await db.query(
-      `INSERT INTO users(email,password,"emailVerified") VALUES('swap-owner@example.invalid','synthetic-no-login',true) RETURNING id`,
+      `INSERT INTO users(email,password) VALUES('swap-owner@example.invalid','synthetic-no-login') RETURNING id`,
     );
     const [{ id: foreign }] = await db.query(
-      `INSERT INTO users(email,password,"emailVerified") VALUES('swap-foreign@example.invalid','synthetic-no-login',true) RETURNING id`,
+      `INSERT INTO users(email,password) VALUES('swap-foreign@example.invalid','synthetic-no-login') RETURNING id`,
     );
     const instrument = async (who, name) =>
       (await s.accounting.createInstrument(who, { requestId: randomUUID(), name, symbol: 'SAME' }))

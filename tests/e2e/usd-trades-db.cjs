@@ -189,26 +189,11 @@ async function seed(source, accounting) {
   const users = [];
   for (const email of ['usd-trades-owner@example.invalid', 'usd-trades-other@example.invalid']) {
     const [user] = await source.query(
-      `INSERT INTO users(email,password,"emailVerified")
-      VALUES($1,'synthetic-pg-fixture-not-a-login-hash',true) RETURNING id`,
+      `INSERT INTO users(email,password)
+      VALUES($1,'synthetic-pg-fixture-not-a-login-hash') RETURNING id`,
       [email],
     );
     users.push(user.id);
-    await source.query(
-      `INSERT INTO crypto_wallets("userId",type,address,balance)
-      VALUES($1,'bitcoin',$2,'1.250000000000000001')`,
-      [user.id, `synthetic-${email}`],
-    );
-    for (const [table, category] of [
-      ['assets', 'savings'],
-      ['liabilities', 'loans'],
-    ]) {
-      await source.query(
-        `INSERT INTO ${table}("userId",name,category,amount,"currencyId",date)
-        SELECT $1,'Preserved synthetic finance',$2,'123.45',id,'2026-01-01' FROM currencies WHERE code='USD'`,
-        [user.id, category],
-      );
-    }
   }
   const [owner, other] = users;
   await source.query('INSERT INTO owner_auth(id,"userId","credentialVersion") VALUES(1,$1,$2)', [
@@ -961,7 +946,7 @@ async function sqlConstraints(source, fixture) {
   for (const [table, code, constraint] of [
     ['manual_accounts', '23001', 'account_trade_journals_ownerId_accountId_fkey'],
     ['accounting_instruments', '23001', 'account_opening_positions_ownerId_instrumentId_fkey'],
-    ['users', '23503', 'FK_d8cf9bdec7d2fad0852aec349c1'],
+    ['users', '23503', undefined],
   ]) {
     stage = `TRADE-006-B referenced ${table} deletion refusal`;
     const key =
@@ -1853,7 +1838,7 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 62);
+    assert.equal(migrations.length, 63);
     assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
     assert.equal(migrations[14].name, 'AddUsdCsvImports1790050000000');
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');

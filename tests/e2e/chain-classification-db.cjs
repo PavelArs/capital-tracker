@@ -315,8 +315,8 @@ async function provisional(db, s) {
   const {
     readValuationInputs,
   } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
-  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('classification-provisional@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('classification-provisional@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const cold = await account(s, owner, 'Cold storage');
   const address = await wallet(
     db,
@@ -519,8 +519,8 @@ async function dust(db, s) {
     OwnerSettingsService,
   } = require('/app/backend/dist/owner-settings/owner-settings.service.js');
   const ownerSettings = new OwnerSettingsService(db);
-  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('classification-dust@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('classification-dust@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const hot = await account(s, owner, 'Hot wallet');
   const address = await wallet(db, owner, hot, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
   await db.query(
@@ -597,8 +597,8 @@ async function dust(db, s) {
 
 async function tokenFee(db, s) {
   stage = 'TOKEN-FEE a token send and the ether leg that paid its gas are one row';
-  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('classification-token-fee@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('classification-token-fee@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const hot = await account(s, owner, 'Hot wallet');
   const [{ id: address }] = await db.query(
     `INSERT INTO wallet_addresses(id,"ownerId",network,address,"accountId")
@@ -715,10 +715,10 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('classification-owner@example.invalid','synthetic-not-a-hash',true),
-      ('classification-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('classification-owner@example.invalid','synthetic-not-a-hash'),
+      ('classification-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = { owner: owner.id, other: other.id };
     const made = await buyAndCount(db, s, f);

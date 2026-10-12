@@ -428,9 +428,9 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('chart-owner@example.invalid','synthetic-not-a-hash',true),('chart-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('chart-owner@example.invalid','synthetic-not-a-hash'),('chart-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     await timeline(db, s, owner.id, other.id);
     await coherent(db, s, owner.id);

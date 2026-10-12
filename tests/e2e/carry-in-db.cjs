@@ -546,21 +546,11 @@ async function seed(source, svc) {
   const users = [];
   for (const email of ['carry-owner@example.invalid', 'carry-other@example.invalid']) {
     const [user] = await source.query(
-      `INSERT INTO users(email,password,"emailVerified")
-      VALUES($1,'synthetic-direct-service-not-a-login-hash',true) RETURNING id`,
+      `INSERT INTO users(email,password)
+      VALUES($1,'synthetic-direct-service-not-a-login-hash') RETURNING id`,
       [email],
     );
     users.push(user.id);
-    await source.query(
-      `INSERT INTO crypto_wallets("userId",type,address,balance)
-      VALUES($1,'bitcoin',$2,'1.250000000000000001')`,
-      [user.id, 'synthetic-' + email],
-    );
-    await source.query(
-      `INSERT INTO assets("userId",name,category,amount,"currencyId",date)
-      SELECT $1,'Preserved synthetic finance','savings','123.45',id,'2026-01-01' FROM currencies WHERE code='USD'`,
-      [user.id],
-    );
   }
   const [owner, other] = users;
   await source.query('INSERT INTO owner_auth(id,"userId","credentialVersion") VALUES(1,$1,$2)', [
@@ -1816,7 +1806,7 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 62);
+    assert.equal(migrations.length, 63);
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');
     assert.equal(migrations[17].name, 'AddManualUsdPrices1790080000000');

@@ -424,16 +424,16 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
   try {
     await post('reset', {});
     const [owner, stranger] = (
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('tron-owner@example.invalid','synthetic-not-a-login-hash',true),
-      ('tron-stranger@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('tron-owner@example.invalid','synthetic-not-a-login-hash'),
+      ('tron-stranger@example.invalid','synthetic-not-a-login-hash') RETURNING id`)
     ).map(({ id }) => id);
     const s = services(db);
     const newAccount = async (name) =>
@@ -1215,7 +1215,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS TRON-MIGRATION fresh 62 applies once; the Tron migration refuses down');
+    console.log('PASS TRON-MIGRATION fresh 63 applies once; the Tron migration refuses down');
   } finally {
     await db.destroy();
   }

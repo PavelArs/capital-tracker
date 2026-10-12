@@ -18,7 +18,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 62;
+const MIGRATIONS = 63;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -562,11 +562,11 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other, third, fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('deposit-owner@example.invalid','synthetic-not-a-hash',true),
-      ('deposit-other@example.invalid','synthetic-not-a-hash',true),
-      ('deposit-third@example.invalid','synthetic-not-a-hash',true),
-      ('deposit-fourth@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [owner, other, third, fourth] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('deposit-owner@example.invalid','synthetic-not-a-hash'),
+      ('deposit-other@example.invalid','synthetic-not-a-hash'),
+      ('deposit-third@example.invalid','synthetic-not-a-hash'),
+      ('deposit-fourth@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { DepositsService } = require(modulePath);
     const plain = new DepositsService(db);
     // Every call carries a fresh request id unless a stage names one to test a replay.

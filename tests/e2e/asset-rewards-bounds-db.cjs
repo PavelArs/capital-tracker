@@ -68,7 +68,7 @@ function migrate() {
     timeout: 60000,
   });
   assert.equal(result.status, 0, 'Actual guarded migration CLI must succeed');
-  assert.match(result.stdout, /Migrations applied: 62/);
+  assert.match(result.stdout, /Migrations applied: 63/);
 }
 async function fingerprint(db) {
   const tables = await db.query(
@@ -520,14 +520,14 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
-    const owners = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('reward-race@example.invalid','synthetic-not-a-hash',true),
-      ('reward-owner-active@example.invalid','synthetic-not-a-hash',true),
-      ('reward-local-active@example.invalid','synthetic-not-a-hash',true),
-      ('reward-version-cap@example.invalid','synthetic-not-a-hash',true),
-      ('reward-local-revision@example.invalid','synthetic-not-a-hash',true),
-      ('reward-passive-revision@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
+    const owners = await db.query(`INSERT INTO users(email,password) VALUES
+      ('reward-race@example.invalid','synthetic-not-a-hash'),
+      ('reward-owner-active@example.invalid','synthetic-not-a-hash'),
+      ('reward-local-active@example.invalid','synthetic-not-a-hash'),
+      ('reward-version-cap@example.invalid','synthetic-not-a-hash'),
+      ('reward-local-revision@example.invalid','synthetic-not-a-hash'),
+      ('reward-passive-revision@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     await processRaces(db, s, owners[0].id);
     await activeLimits(db, s, owners[1].id, owners[2].id);

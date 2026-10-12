@@ -110,7 +110,7 @@ function fingerprint(includeSessions = false, excludeAdmissions = false): string
     expect(tables).toContain('auth_request_limits');
     tables.splice(tables.indexOf('auth_request_limits'), 1);
   }
-  expect(tables).toContain('crypto_wallets');
+  expect(tables).toContain('manual_accounts');
   expect(tables).toContain('owner_auth');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
   return query(

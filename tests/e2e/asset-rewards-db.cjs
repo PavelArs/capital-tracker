@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { createHash, randomUUID } = require('node:crypto');
+const { droppedTables, survivingRow } = require('./dropped-schema.cjs');
 const { existsSync, readdirSync } = require('node:fs');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
@@ -56,6 +57,7 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
   const values = [];
   for (const { tablename } of tables) {
     if (excluded.includes(tablename)) continue;
+    if (droppedTables.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
     // Upgrades add owner_mfa."consecutiveFailures", auth_sessions.device and manual_accounts.kind
     // (asserted to be 0 and null separately).
@@ -71,7 +73,9 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
               : 'to_jsonb(t)';
     values.push([
       tablename,
-      await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`),
+      await db.query(
+        `SELECT (${survivingRow(tablename, row)})::text AS row FROM "${tablename}" t ORDER BY row`,
+      ),
     ]);
   }
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
@@ -173,8 +177,8 @@ async function migrationPreservation() {
     await db.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     await db.runMigrations({ transaction: 'all' });
     assert.equal((await db.query('SELECT count(*)::int n FROM migrations'))[0].n, 20);
-    const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified")
-      VALUES('reward-predecessor@example.invalid','synthetic-no-login',true) RETURNING id`);
+    const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+      VALUES('reward-predecessor@example.invalid','synthetic-no-login') RETURNING id`);
     // Freeze predecessor rows using their original schema, not current services that
     // may query new reward tables before the migration exists.
     const accountId = randomUUID(),
@@ -271,7 +275,7 @@ async function migrationPreservation() {
       ],
     );
     const before = await fingerprint(db, ['migrations'], true);
-    assert.match(migrate(predecessor), /Migrations applied: 42/);
+    assert.match(migrate(predecessor), /Migrations applied: 43/);
     assert.deepEqual(await db.query('SELECT "consecutiveFailures" FROM owner_mfa'), [
       { consecutiveFailures: 0 },
     ]);
@@ -958,7 +962,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();
@@ -966,8 +970,8 @@ async function main() {
     await db.initialize();
     for (const table of [...rewardTables, 'account_swaps', 'account_swap_versions'])
       assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('reward-owner@example.invalid','synthetic-no-login',true),('reward-other@example.invalid','synthetic-no-login',true) RETURNING id`);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('reward-owner@example.invalid','synthetic-no-login'),('reward-other@example.invalid','synthetic-no-login') RETURNING id`);
     const s = services(db);
     const token = (
       await s.accounting.createInstrument(owner.id, {

@@ -189,7 +189,7 @@ async function migration(db) {
   assert.deepEqual(await db.query('SELECT * FROM owner_settings'), []);
   await assert.rejects(() => new AccountInThreeCurrencies1790900000000().down(), /recovery plan/);
   console.log(
-    'PASS FX-MIGRATION fresh 27 applies once, replay applies none, new tables empty, down refuses',
+    'PASS FX-MIGRATION fresh 28 applies once, replay applies none, new tables empty, down refuses',
   );
 }
 
@@ -537,9 +537,9 @@ async function appendOnly(db) {
 
 async function ownerSettings(db) {
   stage = 'CUR-SWITCH owner main currency';
-  const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('currency-owner@example.invalid','synthetic-not-a-hash',true),
-    ('currency-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('currency-owner@example.invalid','synthetic-not-a-hash'),
+    ('currency-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const service = new OwnerSettingsService(db);
   assert.deepEqual(
     await service.read(owner.id),
@@ -975,7 +975,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 62/);
+    assert.match(migrate(name), /Migrations applied: 63/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
@@ -987,7 +987,7 @@ async function main() {
   await broken.initialize();
   await accounting.initialize();
   try {
-    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     await migration(rates);
     await disabled(rates);
     const first = await backfill(rates);

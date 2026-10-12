@@ -80,7 +80,6 @@ const etherStakeTables = [
 ];
 const rewardTables = ['account_rewards', 'account_reward_versions'];
 const transferTables = ['owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions'];
-const fxTables = ['display_fx_collection', 'display_fx_observations'];
 const priceTables = ['manual_usd_price_versions'];
 const flowTables = ['portfolio_flow_journals', 'portfolio_flow_versions'];
 const carryTables = ['account_carry_in_lots'];
@@ -172,6 +171,7 @@ const migrationNames = [
   'AddInflation1796700000000',
   'DailyDepositInterest1796800000000',
   'ClassOfAccount1796900000000',
+  'DropLegacySchema1797000000000',
 ];
 
 function connection(database) {
@@ -251,9 +251,78 @@ async function snapshot(client) {
   return result;
 }
 
+// DropLegacySchema1797000000000 removes these on purpose; everything else must survive untouched.
+const droppedTables = [
+  'reports',
+  'capitals',
+  'assets',
+  'liabilities',
+  'user_currency_preferences',
+  'crypto_wallets',
+  'subscriptions',
+  'currencies',
+  'invitation_codes',
+  'display_fx_observations',
+  'display_fx_collection',
+];
+const droppedEnums = [
+  'assets_assettype_enum',
+  'assets_category_enum',
+  'assets_incometype_enum',
+  'crypto_wallets_type_enum',
+  'currencies_type_enum',
+  'liabilities_category_enum',
+  'liabilities_frequency_enum',
+  'reports_format_enum',
+  'reports_type_enum',
+  'subscriptions_status_enum',
+  'subscriptions_type_enum',
+];
+const droppedColumns = {
+  users: [
+    'emailVerified',
+    'emailVerificationToken',
+    'resetPasswordToken',
+    'resetPasswordExpires',
+    'firstName',
+    'lastName',
+  ],
+  wallet_stake_scans: ['scannedAt'],
+};
+
+// A snapshot without the objects the legacy drop removes, so the rest can be compared exactly.
+function withoutDropped(snap) {
+  const kept = (table) => !droppedTables.includes(table);
+  const keptColumn = (table, column) => !(droppedColumns[table] ?? []).includes(column);
+  const rows = {};
+  for (const [table, values] of Object.entries(snap.rows)) {
+    if (!kept(table)) continue;
+    rows[table] = droppedColumns[table]
+      ? values
+          .map(({ row }) => {
+            const parsed = JSON.parse(row);
+            for (const column of droppedColumns[table]) delete parsed[column];
+            return { row: JSON.stringify(parsed) };
+          })
+          .sort((a, b) => (a.row < b.row ? -1 : 1))
+      : values;
+  }
+  return {
+    ...snap,
+    tables: snap.tables.filter((row) => kept(row.tablename)),
+    columns: snap.columns.filter(
+      (row) => kept(row.table_name) && keptColumn(row.table_name, row.column_name),
+    ),
+    constraints: snap.constraints.filter((row) => kept(row.relname)),
+    indexes: snap.indexes.filter((row) => kept(row.tablename)),
+    enums: snap.enums.filter((row) => !droppedEnums.includes(row.typname)),
+    rows,
+  };
+}
+
 async function seedOwner(client, email) {
   const { rows } = await client.query(
-    `INSERT INTO users(email, password, "emailVerified") VALUES ($1, $2, true) RETURNING id`,
+    `INSERT INTO users(email,password) VALUES ($1, $2) RETURNING id`,
     [email, 'synthetic-migration-fixture-not-a-login-hash'],
   );
   return rows[0].id;
@@ -269,18 +338,13 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly sixty-two migrations',
+      'Exactly sixty-three migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
     ).rows.map((row) => row.tablename);
     for (const table of [
       'users',
-      'assets',
-      'liabilities',
-      'currencies',
-      'crypto_wallets',
-      'user_currency_preferences',
       'owner_auth',
       'auth_sessions',
       'owner_mfa',
@@ -292,7 +356,6 @@ async function verifyFresh() {
       ...carryTables,
       ...flowTables,
       ...priceTables,
-      ...fxTables,
       ...transferTables,
       ...rewardTables,
       ...swapTables,
@@ -311,6 +374,18 @@ async function verifyFresh() {
     ]) {
       assert.ok(tables.includes(table), `Missing current table ${table}`);
     }
+    for (const table of droppedTables)
+      assert.ok(!tables.includes(table), `Legacy table ${table} must be gone`);
+    for (const [table, columns] of Object.entries(droppedColumns)) {
+      const present = (
+        await client.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+          [table],
+        )
+      ).rows.map((row) => row.column_name);
+      for (const column of columns)
+        assert.ok(!present.includes(column), `Unused column ${table}.${column} must be gone`);
+    }
     assert.equal(
       (await client.query('SELECT count(*)::int AS count FROM auth_request_limits')).rows[0].count,
       0,
@@ -322,7 +397,6 @@ async function verifyFresh() {
       ...carryTables,
       ...flowTables,
       ...priceTables,
-      ...fxTables,
       ...transferTables,
       ...rewardTables,
       ...swapTables,
@@ -344,12 +418,7 @@ async function verifyFresh() {
         0,
       );
     }
-    const owner = await seedOwner(client, 'fresh-migration@example.invalid');
-    await client.query(
-      `INSERT INTO crypto_wallets("userId", type, address, balance)
-       VALUES ($1, 'bitcoin', 'synthetic-migration-address', '1.250000000000000001')`,
-      [owner],
-    );
+    await seedOwner(client, 'fresh-migration@example.invalid');
     const before = await snapshot(client);
     const replay = runMigration(freshName);
     assert.equal(replay.status, 0, `ISO-001 replay failed: ${replay.output}`);
@@ -601,12 +670,14 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
     const result = runMigration(target);
     assert.equal(result.status, 0, `${scenario} additive upgrade failed: ${result.output}`);
     const after = await snapshot(client);
+    const keptBefore = withoutDropped(before);
+    const keptAfter = withoutDropped(after);
     if (previousCount === 8)
       assert.deepEqual(after.rows.owner_auth, [], 'No automatic owner selection');
     assert.deepEqual(after.rows.auth_sessions, [], 'Migration cannot grant a session');
-    for (const [table, rows] of Object.entries(before.rows)) {
+    for (const [table, rows] of Object.entries(keptBefore.rows)) {
       if (!['migrations', 'auth_sessions'].includes(table))
-        assert.deepEqual(after.rows[table], rows, `Preserve every previous ${table} row`);
+        assert.deepEqual(keptAfter.rows[table], rows, `Preserve every previous ${table} row`);
     }
     const previousNames = migrationNames.slice(0, previousCount);
     assert.deepEqual(
@@ -632,7 +703,6 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
       ...carryTables,
       ...flowTables,
       ...priceTables,
-      ...fxTables,
       ...transferTables,
       ...rewardTables,
       ...swapTables,
@@ -659,7 +729,6 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
       ...carryTables,
       ...flowTables,
       ...priceTables,
-      ...fxTables,
       ...transferTables,
       ...rewardTables,
       ...swapTables,
@@ -686,7 +755,7 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
     ]) {
       assert.deepEqual(
         after[kind].filter((row) => !addedTables.includes(row[tableKey])),
-        before[kind].filter((row) => !addedTables.includes(row[tableKey])),
+        keptBefore[kind].filter((row) => !addedTables.includes(row[tableKey])),
         `Preserve previous ${kind}`,
       );
     }
@@ -724,7 +793,7 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
         'Existing session constraints preserved apart from state/identity extension',
       );
     }
-    assert.deepEqual(after.enums, before.enums);
+    assert.deepEqual(after.enums, keptBefore.enums);
     assert.deepEqual(after.extensions, before.extensions);
     const replay = runMigration(target);
     assert.equal(replay.status, 0);
@@ -1996,7 +2065,6 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     ...(previousCount < 16 ? carryTables : []),
     ...(previousCount < 17 ? flowTables : []),
     ...(previousCount < 18 ? priceTables : []),
-    ...(previousCount < 19 ? fxTables : []),
     ...(previousCount < 20 ? transferTables : []),
     ...(previousCount < 21 ? rewardTables : []),
     ...swapTables,
@@ -2177,6 +2245,8 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     );
     for (const table of addedTables)
       assert.deepEqual(after.rows[table], [], 'New tables must be empty');
+    const keptBefore = withoutDropped(before);
+    const keptAfter = withoutDropped(after);
     if (previousCount >= 13) {
       assert.deepEqual(
         after.columns
@@ -2195,7 +2265,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
         classificationChecks,
       );
     }
-    for (const [table, rows] of Object.entries(before.rows)) {
+    for (const [table, rows] of Object.entries(keptBefore.rows)) {
       if (table !== 'migrations') {
         if (table === 'account_trade_journals' && previousCount < 16) {
           const originals = (values) => values.map(({ row }) => JSON.parse(row));
@@ -2270,7 +2340,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           );
         } else {
           assert.deepEqual(
-            after.rows[table],
+            keptAfter.rows[table],
             rows,
             `Preserve every previous ${table} row, including all session classes`,
           );
@@ -2350,6 +2420,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1796700000000',
           '1796800000000',
           '1796900000000',
+          '1797000000000',
         ][index - 11],
       );
     }
@@ -2359,7 +2430,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
       ['constraints', 'relname'],
       ['indexes', 'tablename'],
     ]) {
-      const prior = before[kind].filter(
+      const prior = keptBefore[kind].filter(
         (row) =>
           !(previousCount < 16 && replacedOriginCheck(kind, row)) && !replacedScopeCheck(kind, row),
       );
@@ -2379,7 +2450,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
         `Every previous ${kind} entry (only pre16 permits the reviewed carry-in schema change) remains unchanged`,
       );
     }
-    assert.deepEqual(after.enums, before.enums);
+    assert.deepEqual(after.enums, keptBefore.enums);
     assert.deepEqual(after.extensions, before.extensions);
     const oldSequence = before.sequences.find((row) => row.sequencename === 'migrations_id_seq');
     const newSequence = after.sequences.find((row) => row.sequencename === 'migrations_id_seq');

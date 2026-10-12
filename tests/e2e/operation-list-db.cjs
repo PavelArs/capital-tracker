@@ -504,12 +504,12 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     const [owner, other, third] =
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('operations-owner@example.invalid','synthetic-not-a-hash',true),
-      ('operations-other@example.invalid','synthetic-not-a-hash',true),
-      ('operations-third@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('operations-owner@example.invalid','synthetic-not-a-hash'),
+      ('operations-other@example.invalid','synthetic-not-a-hash'),
+      ('operations-third@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = { owner: owner.id, other: other.id, third: third.id };
     for (const check of [everyJournal, emptyOwner, threeCurrencies]) await check(db, s, f);

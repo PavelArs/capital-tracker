@@ -62,11 +62,7 @@ Never in the backup: password hashes, the TOTP secret, recovery codes, sessions,
 reset links and sign-in limits. Market prices, Bank of Russia rates, portfolio snapshots and
 sync state are left out too: they are collected or rebuilt again.
 
-The legacy tables behind the screens retired in M20 (old assets, liabilities, crypto wallets
-and currency visibility) and the capitals, reports and subscriptions no screen used stay in
-the database untouched (their backend modules and APIs were removed later in M20); their rows join the backup under the same `tables` key, listed in
-`legacyTables`. They belong to the owner by `userId`, which is left out like `ownerId`; the
-shared legacy currency list contributes only the currencies those rows name (`currencies`).
+The legacy tables behind the screens retired in M20 (old assets, liabilities, crypto wallets, currencies, capitals, reports and subscriptions) were dropped by migration 64; backups made before it still carry their rows under `legacyTables`.
 The owner-export probe fails when a new table is neither backed up nor listed as left out
 with its reason.
 

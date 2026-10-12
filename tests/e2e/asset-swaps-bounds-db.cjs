@@ -69,7 +69,7 @@ function migrate() {
     timeout: 60000,
   });
   assert.equal(result.status, 0, 'Actual guarded migration CLI must succeed');
-  assert.match(result.stdout, /Migrations applied: 62/);
+  assert.match(result.stdout, /Migrations applied: 63/);
 }
 async function fingerprint(db) {
   const tables = await db.query(
@@ -765,15 +765,15 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const owners = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('swap-race@example.invalid','synthetic-not-a-hash',true),
-      ('swap-owner-active@example.invalid','synthetic-not-a-hash',true),
-      ('swap-local-active@example.invalid','synthetic-not-a-hash',true),
-      ('swap-version-cap@example.invalid','synthetic-not-a-hash',true),
-      ('swap-local-revision@example.invalid','synthetic-not-a-hash',true),
-      ('swap-passive-revision@example.invalid','synthetic-not-a-hash',true),
-      ('swap-component-cap@example.invalid','synthetic-not-a-hash',true),
-      ('swap-allocation-pages@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const owners = await db.query(`INSERT INTO users(email,password) VALUES
+      ('swap-race@example.invalid','synthetic-not-a-hash'),
+      ('swap-owner-active@example.invalid','synthetic-not-a-hash'),
+      ('swap-local-active@example.invalid','synthetic-not-a-hash'),
+      ('swap-version-cap@example.invalid','synthetic-not-a-hash'),
+      ('swap-local-revision@example.invalid','synthetic-not-a-hash'),
+      ('swap-passive-revision@example.invalid','synthetic-not-a-hash'),
+      ('swap-component-cap@example.invalid','synthetic-not-a-hash'),
+      ('swap-allocation-pages@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     await processRaces(db, s, owners[0].id);
     await activeLimits(db, s, owners[1].id, owners[2].id);

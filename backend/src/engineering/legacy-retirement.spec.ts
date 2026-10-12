@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DynamicModule, Type } from '@nestjs/common';
 
 // M20: the screens of these modules are gone, so their APIs and background collectors go too.
-// Their tables and rows stay; the JSON backup carries them (backup-tables.ts, legacyTables).
+// Their tables were dropped later by DropLegacySchema1797000000000.
 const retired = ['assets', 'liabilities', 'crypto', 'currencies', 'display-fx', 'metrics'];
 
 describe('LEGACY-API: retired legacy modules are no longer part of the application', () => {

@@ -138,12 +138,12 @@ async function main() {
   try {
     await source.initialize();
     await reader.initialize();
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     const owners = {};
     for (const label of ['period', 'empty', 'foreign', 'wide']) {
       owners[label] = (
         await source.query(
-          'INSERT INTO users(email,password,"emailVerified") VALUES($1,$2,true) RETURNING id',
+          'INSERT INTO users(email,password) VALUES($1,$2) RETURNING id',
           [`twr-${label}@example.invalid`, 'synthetic-not-a-login-hash'],
         )
       )[0].id;
