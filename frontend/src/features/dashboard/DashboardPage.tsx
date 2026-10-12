@@ -16,6 +16,7 @@ import { useAttention } from '../shell/attention-context';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
+import DashboardLoading from './DashboardLoading';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
 import '../shell/shell-page.css';
@@ -153,31 +154,6 @@ export function isEmptyPortfolio(history: PortfolioHistory): boolean {
   );
 }
 
-// Grey blocks where the net worth and the chart will appear (prototype "Loading" state).
-function Loading() {
-  return (
-    <section
-      className="dashboard-loading"
-      role="status"
-      aria-busy="true"
-      aria-label="Loading your capital"
-    >
-      <div className="dashboard-loading__hero">
-        <i className="dashboard-loading__block dashboard-loading__label" />
-        <i className="dashboard-loading__block dashboard-loading__value" />
-        <i className="dashboard-loading__block dashboard-loading__delta" />
-      </div>
-      <div className="shell-card dashboard-loading__card">
-        <div className="dashboard-loading__toolbar">
-          <i className="dashboard-loading__block dashboard-loading__legend" />
-          <i className="dashboard-loading__block dashboard-loading__periods" />
-        </div>
-        <i className="dashboard-loading__block dashboard-loading__chart" />
-      </div>
-    </section>
-  );
-}
-
 function Empty({ onAdd }: { onAdd: () => void }) {
   return (
     <EmptyState
@@ -276,7 +252,7 @@ export default function DashboardPage() {
           </button>
         </section>
       ) : shown === null ? (
-        <Loading />
+        <DashboardLoading />
       ) : isEmptyPortfolio(shown) ? (
         <Empty onAdd={() => setAdding(true)} />
       ) : (
