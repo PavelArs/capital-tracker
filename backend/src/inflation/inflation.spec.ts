@@ -12,9 +12,9 @@ import {
 import {
   InflationClient,
   levelsToChanges,
+  parseBlsLevels,
   parseCbrInflation,
   parseEurostatHicp,
-  parseFredCsv,
   yearOverYearToChanges,
 } from './inflation-sources';
 
@@ -118,49 +118,94 @@ describe('INFL-INDEX the level of prices', () => {
 });
 
 describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
-  const fred = (rows: string[], header = 'observation_date,CPIAUCNS') =>
-    `${[header, ...rows].join('\n')}\n`;
+  const bls = (rows: [string, string, string][], over: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      status: 'REQUEST_SUCCEEDED',
+      responseTime: 98,
+      message: [],
+      Results: {
+        series: [
+          {
+            seriesID: 'CUUR0000SA0',
+            // Newest first, as the API sends them.
+            data: rows.map(([year, period, value]) => ({
+              year,
+              period,
+              periodName: period,
+              value,
+              footnotes: [{}],
+            })),
+          },
+        ],
+      },
+      ...over,
+    });
 
-  it('turns FRED index levels into monthly percent changes', () => {
-    expect(
-      parseFredCsv(
-        fred(['2025-01-01,300.000', '2025-02-01,303.000', '2025-03-01,303.000']),
-        'CPIAUCNS',
-      ),
-    ).toEqual([
+  it('turns BLS index levels into monthly percent changes, newest first, annual average ignored', () => {
+    const levels = parseBlsLevels(
+      bls([
+        ['2025', 'M13', '305.000'],
+        ['2025', 'M03', '303.000'],
+        ['2025', 'M02', '303.000'],
+        ['2025', 'M01', '300.000'],
+      ]),
+      'CUUR0000SA0',
+    );
+    expect(levels).toEqual([
+      { month: '2025-01', value: 300 },
+      { month: '2025-02', value: 303 },
+      { month: '2025-03', value: 303 },
+    ]);
+    expect(levelsToChanges(levels)).toEqual([
       { month: '2025-02', percent: '1.00000000' },
       { month: '2025-03', percent: '0.00000000' },
     ]);
   });
 
-  it('accepts the older DATE header and CRLF line ends', () => {
-    expect(
-      parseFredCsv(
-        fred(['2025-01-01,100', '2025-02-01,101'], 'DATE,CPIAUCNS').replace(/\n/g, '\r\n'),
-        'CPIAUCNS',
-      ),
-    ).toEqual([{ month: '2025-02', percent: '1.00000000' }]);
+  it('spreads the change across a month BLS did not publish', () => {
+    // October 2025 was never published; the change from September to November is shared.
+    const levels = parseBlsLevels(
+      bls([
+        ['2025', 'M11', '102.010'],
+        ['2025', 'M10', '-'],
+        ['2025', 'M09', '100.000'],
+      ]),
+      'CUUR0000SA0',
+    );
+    expect(levelsToChanges(levels)).toEqual([
+      { month: '2025-10', percent: '1.00000000' },
+      { month: '2025-11', percent: '1.00000000' },
+    ]);
   });
 
-  it('gives no change for a month after a missing value', () => {
-    expect(
-      parseFredCsv(
-        fred(['2025-01-01,100', '2025-02-01,.', '2025-03-01,102', '2025-04-01,102']),
-        'CPIAUCNS',
-      ),
-    ).toEqual([{ month: '2025-04', percent: '0.00000000' }]);
+  it('has no level for a month BLS did not publish', () => {
+    expect(parseBlsLevels(bls([['2025', 'M01', '-']]), 'CUUR0000SA0')).toEqual([]);
   });
 
   it.each([
-    ['a page', '<html>maintenance</html>', 'no series header'],
-    ['another series', fred(['2025-01-01,100'], 'observation_date,CPILFESL'), 'series "CPILFESL"'],
-    ['a day inside a month', fred(['2025-01-02,100']), 'unexpected row'],
-    ['a text value', fred(['2025-01-01,abc']), 'value "abc" on 2025-01'],
-    ['a zero value', fred(['2025-01-01,0']), 'value 0 on 2025-01'],
-    ['months out of order', fred(['2025-02-01,100', '2025-01-01,100']), '2025-01 after 2025-02'],
-    ['no value at all', fred(['2025-01-01,.']), 'no values'],
+    ['text', 'maintenance', 'not JSON'],
+    [
+      'a refusal',
+      bls([], { status: 'REQUEST_NOT_PROCESSED', message: ['daily threshold reached'] }),
+      'status "REQUEST_NOT_PROCESSED": "daily threshold reached"',
+    ],
+    [
+      'another series',
+      bls([['2025', 'M01', '100']]).replace('CUUR0000SA0', 'CUUR0000SAF'),
+      'no series "CUUR0000SA0"',
+    ],
+    ['a text value', bls([['2025', 'M01', 'abc']]), 'value "abc" on 2025-01'],
+    ['a zero value', bls([['2025', 'M01', '0']]), 'value 0 on 2025-01'],
+    [
+      'a repeated month',
+      bls([
+        ['2025', 'M01', '100'],
+        ['2025', 'M01', '100'],
+      ]),
+      '2025-01 twice',
+    ],
   ])('refuses %s', (_name, body, detail) => {
-    expect(() => parseFredCsv(body, 'CPIAUCNS')).toThrow(detail);
+    expect(() => parseBlsLevels(body, 'CUUR0000SA0')).toThrow(detail);
   });
 
   const stat = (over: Record<string, unknown> = {}) =>
@@ -181,8 +226,11 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
     ]);
   });
 
-  it('skips a month Eurostat has no value for', () => {
-    expect(parseEurostatHicp(stat({ value: { '0': 100, '2': 102 } }))).toEqual([]);
+  it('spreads the change across a month Eurostat has no value for', () => {
+    expect(parseEurostatHicp(stat({ value: { '0': 100, '2': 102.01 } }))).toEqual([
+      { month: '2025-02', percent: '1.00000000' },
+      { month: '2025-03', percent: '1.00000000' },
+    ]);
   });
 
   it.each([
@@ -204,14 +252,14 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
     expect(() => parseEurostatHicp(body)).toThrow(detail);
   });
 
-  it('derives changes only between consecutive months', () => {
+  it('breaks the chain after a gap of more than three missing months', () => {
     expect(
       levelsToChanges([
         { month: '2025-01', value: 100 },
-        { month: '2025-03', value: 110 },
-        { month: '2025-04', value: 110 },
+        { month: '2025-06', value: 110 },
+        { month: '2025-07', value: 110 },
       ]),
-    ).toEqual([{ month: '2025-04', percent: '0.00000000' }]);
+    ).toEqual([{ month: '2025-07', percent: '0.00000000' }]);
   });
 });
 
@@ -307,15 +355,23 @@ describe('INFL-OFFICIAL the HTTP client', () => {
   let server: Server;
   let base: string;
   let seen: string[];
-  let reply: (url: string) => { status: number; body: string };
+  let bodies: string[];
+  let reply: (url: string, body: string) => { status: number; body: string };
 
   beforeEach(async () => {
     seen = [];
+    bodies = [];
     server = createServer((request: IncomingMessage, response: ServerResponse) => {
-      seen.push(request.url ?? '');
-      const { status, body } = reply(request.url ?? '');
-      response.writeHead(status, { 'content-type': 'text/plain' });
-      response.end(body);
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        seen.push(request.url ?? '');
+        bodies.push(text);
+        const { status, body } = reply(request.url ?? '', text);
+        response.writeHead(status, { 'content-type': 'text/plain' });
+        response.end(body);
+      });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
@@ -323,14 +379,33 @@ describe('INFL-OFFICIAL the HTTP client', () => {
   });
   afterEach(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  it('asks FRED for the all-items CPI-U from December 2008', async () => {
-    reply = () => ({
-      status: 200,
-      body: 'observation_date,CPIAUCNS\n2025-01-01,100\n2025-02-01,101\n',
-    });
-    const result = await new InflationClient({ fredUrl: base }).fetch('fred');
-    expect(result).toEqual({ ok: true, changes: [{ month: '2025-02', percent: '1.00000000' }] });
-    expect(seen).toEqual(['/graph/fredgraph.csv?id=CPIAUCNS&cosd=2008-12-01']);
+  it('asks BLS for the all-items CPI-U in ten-year requests from 2008', async () => {
+    reply = (_url, request) => {
+      const { startyear } = JSON.parse(request) as { startyear: string };
+      const rows =
+        startyear === '2008'
+          ? [{ year: '2008', period: 'M12', value: '100.000' }]
+          : [{ year: '2018', period: 'M01', value: '101.000' }];
+      return {
+        status: 200,
+        body: JSON.stringify({
+          status: 'REQUEST_SUCCEEDED',
+          message: [],
+          Results: { series: [{ seriesID: 'CUUR0000SA0', data: rows }] },
+        }),
+      };
+    };
+    const result = await new InflationClient({ blsUrl: base }).fetch(
+      'bls',
+      new Date('2026-10-12T00:00:00Z'),
+    );
+    expect(seen).toEqual(['/publicAPI/v1/timeseries/data/', '/publicAPI/v1/timeseries/data/']);
+    expect(bodies.map((body) => JSON.parse(body))).toEqual([
+      { seriesid: ['CUUR0000SA0'], startyear: '2008', endyear: '2017' },
+      { seriesid: ['CUUR0000SA0'], startyear: '2018', endyear: '2026' },
+    ]);
+    // Dec 2008 -> Jan 2018 is 109 missing months: too long a gap to chain.
+    expect(result).toEqual({ ok: true, changes: [] });
   });
 
   it('asks Eurostat for the euro-area all-items index', async () => {
@@ -382,13 +457,13 @@ describe('INFL-OFFICIAL the HTTP client', () => {
 
   it('asks twice, then reports why', async () => {
     reply = () => ({ status: 429, body: '' });
-    const client = new InflationClient({ fredUrl: base, retryPauseMs: 0 });
-    expect(await client.fetch('fred')).toEqual({ ok: false, reason: 'rate_limited' });
+    const client = new InflationClient({ cbrUrl: base, retryPauseMs: 0 });
+    expect(await client.fetch('cbr')).toEqual({ ok: false, reason: 'rate_limited' });
     expect(seen).toHaveLength(2);
     reply = () => ({ status: 500, body: '' });
-    expect(await client.fetch('fred')).toEqual({ ok: false, reason: 'unavailable' });
+    expect(await client.fetch('cbr')).toEqual({ ok: false, reason: 'unavailable' });
     reply = () => ({ status: 200, body: '<html>maintenance</html>' });
-    expect(await client.fetch('fred')).toMatchObject({ ok: false, reason: 'invalid_response' });
+    expect(await client.fetch('cbr')).toMatchObject({ ok: false, reason: 'invalid_response' });
   });
 });
 

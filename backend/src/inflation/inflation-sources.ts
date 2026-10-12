@@ -3,7 +3,7 @@ import axios from 'axios';
 import type { AccountingCurrency } from '../fx-rates/fx-conversion';
 import { nextMonth, previousMonth } from './inflation-math';
 
-export type InflationProvider = 'fred' | 'eurostat' | 'cbr';
+export type InflationProvider = 'bls' | 'eurostat' | 'cbr';
 export type InflationFailure = 'rate_limited' | 'unavailable' | 'invalid_response';
 /** Percent change of the consumer price level from the previous month, per month. */
 export interface MonthlyChange {
@@ -16,12 +16,12 @@ export type InflationResult =
 
 /** The official source of each currency's inflation. */
 export const OFFICIAL_SOURCES: Partial<Record<AccountingCurrency, InflationProvider>> = {
-  USD: 'fred',
+  USD: 'bls',
   EUR: 'eurostat',
   RUB: 'cbr',
 };
 export const PROVIDER_NAMES: Record<InflationProvider, string> = {
-  fred: 'FRED (US CPI-U)',
+  bls: 'BLS (US CPI-U)',
   eurostat: 'Eurostat (euro area HICP)',
   cbr: 'Bank of Russia (annual inflation)',
 };
@@ -42,17 +42,30 @@ interface Level {
   value: number;
 }
 
-/** Percent changes between consecutive months; a month after a missing one has no change. */
+// A statistics office sometimes skips a month (the US CPI of October 2025 was never
+// published); the change across up to this many missing months is spread evenly over them.
+const MAX_FILLED_GAP = 3;
+
+/**
+ * Percent changes between published months. A gap of up to MAX_FILLED_GAP missing months gets
+ * the same change in each of its months and the next one; a longer gap leaves no change for
+ * the month after it, which breaks the chain there.
+ */
 export function levelsToChanges(levels: readonly Level[]): MonthlyChange[] {
   const changes: MonthlyChange[] = [];
   for (let i = 1; i < levels.length; i++) {
     const before = levels[i - 1];
     const after = levels[i];
-    if (nextMonth(before.month) !== after.month) continue;
-    changes.push({
-      month: after.month,
-      percent: ((after.value / before.value - 1) * 100).toFixed(8),
-    });
+    let steps = 1;
+    for (let month = nextMonth(before.month); month < after.month; month = nextMonth(month))
+      steps++;
+    if (steps > MAX_FILLED_GAP + 1) continue;
+    const percent = ((after.value / before.value) ** (1 / steps) - 1) * 100;
+    let month = before.month;
+    for (let step = 0; step < steps; step++) {
+      month = nextMonth(month);
+      changes.push({ month, percent: percent.toFixed(8) });
+    }
   }
   return changes;
 }
@@ -64,28 +77,46 @@ const positive = (text: string, where: string): number => {
 };
 
 /**
- * FRED graph CSV: `observation_date,CPIAUCNS` (older files say `DATE`), then one `YYYY-MM-01,value`
- * row per month ascending; a month without a value holds ".". Anything else is refused.
+ * BLS public API v1 answer for one series: `{"status":"REQUEST_SUCCEEDED","Results":{"series":
+ * [{"seriesID":"CUUR0000SA0","data":[{"year":"2026","period":"M08","value":"334.980"},…]}]}}`,
+ * newest first. Annual averages (M13) are ignored and a month marked "-" (not published) has no
+ * value. A refusal such as the daily limit also comes with HTTP 200 and a message, which is named.
  */
-export function parseFredCsv(body: string, series: string): MonthlyChange[] {
-  const lines = body.replace(/^﻿/, '').split(/\r?\n/);
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
-  const header = /^(?:observation_date|DATE),([A-Za-z0-9_]{1,40})$/.exec(lines[0] ?? '');
-  if (!header) invalid(`no series header: ${excerpt(body.trimStart())}`);
-  if (header[1] !== series) invalid(`series ${excerpt(header[1])}`);
-  const levels: Level[] = [];
-  for (const line of lines.slice(1)) {
-    const row = /^(\d{4})-(\d{2})-01,([^,]{1,20})$/.exec(line);
-    if (!row) invalid(`unexpected row ${excerpt(line)}`);
-    const month = `${row[1]}-${row[2]}`;
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) invalid(`impossible month ${month}`);
-    const last = levels[levels.length - 1]?.month;
-    if (last && last >= month) invalid(`${month} after ${last}`);
-    if (row[3] === '.') continue;
-    levels.push({ month, value: positive(row[3], `on ${month}`) });
+export function parseBlsLevels(body: string, series: string): Level[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    return invalid(`not JSON: ${excerpt(body.trimStart())}`);
   }
-  if (levels.length === 0) invalid('no values');
-  return levelsToChanges(levels);
+  const root = data as {
+    status?: unknown;
+    message?: unknown;
+    Results?: { series?: unknown };
+  };
+  if (root.status !== 'REQUEST_SUCCEEDED') {
+    const message = Array.isArray(root.message) ? String(root.message[0] ?? '') : '';
+    invalid(`status ${excerpt(String(root.status))}: ${excerpt(message, 120)}`);
+  }
+  const list = root.Results?.series;
+  const entry = Array.isArray(list) && list.length === 1 ? list[0] : undefined;
+  if (!entry || entry.seriesID !== series || !Array.isArray(entry.data))
+    invalid(`no series ${excerpt(series)}`);
+  const seen = new Set<string>();
+  const levels: Level[] = [];
+  for (const row of entry.data as Record<string, unknown>[]) {
+    const { year, period, value } = row;
+    if (typeof year !== 'string' || typeof period !== 'string' || typeof value !== 'string')
+      invalid('unexpected row');
+    const month = /^M(0[1-9]|1[0-2])$/.exec(period as string);
+    if (!month || !/^\d{4}$/.test(year as string)) continue;
+    const key = `${year}-${month[1]}`;
+    if (seen.has(key)) invalid(`${key} twice`);
+    seen.add(key);
+    if (value === '-') continue;
+    levels.push({ month: key, value: positive(value as string, `on ${key}`) });
+  }
+  return levels.sort((a, b) => (a.month < b.month ? -1 : 1));
 }
 
 /**
@@ -227,6 +258,15 @@ export function yearOverYearToChanges(rows: readonly YearOverYear[]): MonthlyCha
 const cbrDate = (date: Date) =>
   `${String(date.getUTCDate()).padStart(2, '0')}.${String(date.getUTCMonth() + 1).padStart(2, '0')}.${date.getUTCFullYear()}`;
 
+// BLS answers at most ten years per request.
+const BLS_YEARS_PER_REQUEST = 10;
+const BLS_SERIES = 'CUUR0000SA0';
+
+interface Download {
+  text: string;
+  bytes: number;
+}
+
 export class InflationClient {
   private readonly logger = new Logger(InflationClient.name);
   private readonly urls: Record<InflationProvider, string>;
@@ -235,7 +275,7 @@ export class InflationClient {
 
   constructor(
     options: {
-      fredUrl?: string;
+      blsUrl?: string;
       eurostatUrl?: string;
       cbrUrl?: string;
       timeoutMs?: number;
@@ -243,7 +283,7 @@ export class InflationClient {
     } = {},
   ) {
     this.urls = {
-      fred: options.fredUrl ?? 'https://fred.stlouisfed.org',
+      bls: options.blsUrl ?? 'https://api.bls.gov',
       eurostat: options.eurostatUrl ?? 'https://ec.europa.eu',
       cbr: options.cbrUrl ?? 'https://www.cbr.ru',
     };
@@ -259,47 +299,103 @@ export class InflationClient {
     return this.request(provider, now);
   }
 
-  private async request(provider: InflationProvider, now: Date): Promise<InflationResult> {
-    const base = this.urls[provider];
-    const url = {
-      fred: `${base}/graph/fredgraph.csv?id=CPIAUCNS&cosd=${INFLATION_HISTORY_FROM}-01`,
-      eurostat: `${base}/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx?format=JSON&lang=EN&freq=M&unit=I15&coicop=CP00&geo=EA&sinceTimePeriod=${INFLATION_HISTORY_FROM}`,
-      // The page is a GET form: the period is its UniDbQuery.From and .To fields.
-      cbr: `${base}/hd_base/infl/?UniDbQuery.Posted=True&UniDbQuery.From=01.01.2013&UniDbQuery.To=${cbrDate(now)}`,
-    }[provider];
-    const accept = { fred: 'text/csv', eurostat: 'application/json', cbr: 'text/html' }[provider];
-    let response: { status: number; data: ArrayBuffer };
+  private async download(
+    url: string,
+    accept: string,
+    body?: unknown,
+  ): Promise<{ ok: true; value: Download } | { ok: false; reason: InflationFailure }> {
     try {
-      response = await axios.get<ArrayBuffer>(url, {
+      const response = await axios.request<ArrayBuffer>({
+        url,
+        method: body === undefined ? 'GET' : 'POST',
+        data: body,
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
         maxRedirects: 0,
         maxContentLength: MAX_BODY_BYTES,
         responseType: 'arraybuffer',
         validateStatus: () => true,
-        headers: { Accept: accept, 'User-Agent': 'Mozilla/5.0 (compatible; capital-tracker)' },
+        headers: {
+          Accept: accept,
+          'User-Agent': 'Mozilla/5.0 (compatible; capital-tracker)',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
       });
+      if (response.status === 429) return { ok: false, reason: 'rate_limited' };
+      if (response.status !== 200) return { ok: false, reason: 'unavailable' };
+      return {
+        ok: true,
+        value: {
+          text: Buffer.from(response.data).toString('utf8'),
+          bytes: response.data.byteLength,
+        },
+      };
     } catch {
       return { ok: false, reason: 'unavailable' };
     }
-    if (response.status === 429) return { ok: false, reason: 'rate_limited' };
-    if (response.status !== 200) return { ok: false, reason: 'unavailable' };
+  }
+
+  private async request(provider: InflationProvider, now: Date): Promise<InflationResult> {
+    const base = this.urls[provider];
+    const downloads: Download[] = [];
+    const sources: [string, string, unknown?][] =
+      provider === 'bls'
+        ? this.blsRequests(base, now)
+        : provider === 'eurostat'
+          ? [
+              [
+                `${base}/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx?format=JSON&lang=EN&freq=M&unit=I15&coicop=CP00&geo=EA&sinceTimePeriod=${INFLATION_HISTORY_FROM}`,
+                'application/json',
+              ],
+            ]
+          : [
+              [
+                // The page is a GET form: the period is its UniDbQuery.From and .To fields.
+                `${base}/hd_base/infl/?UniDbQuery.Posted=True&UniDbQuery.From=01.01.2013&UniDbQuery.To=${cbrDate(now)}`,
+                'text/html',
+              ],
+            ];
+    for (const [url, accept, body] of sources) {
+      const result = await this.download(url, accept, body);
+      if (!result.ok) return result;
+      downloads.push(result.value);
+    }
     try {
-      const text = Buffer.from(response.data).toString('utf8');
       const changes = {
-        fred: () => parseFredCsv(text, 'CPIAUCNS'),
-        eurostat: () => parseEurostatHicp(text),
-        cbr: () => yearOverYearToChanges(parseCbrInflation(text)),
+        bls: () => {
+          const levels = downloads
+            .flatMap(({ text }) => parseBlsLevels(text, BLS_SERIES))
+            .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+          if (levels.length === 0) invalid('no values');
+          return levelsToChanges(levels);
+        },
+        eurostat: () => parseEurostatHicp(downloads[0].text),
+        cbr: () => yearOverYearToChanges(parseCbrInflation(downloads[0].text)),
       }[provider]();
       return { ok: true, changes };
     } catch (error) {
       if (error instanceof InvalidResponse) {
-        this.logger.warn(
-          `Unreadable ${provider} answer (${response.data.byteLength} bytes): ${error.message}`,
-        );
+        const bytes = downloads.reduce((sum, { bytes }) => sum + bytes, 0);
+        this.logger.warn(`Unreadable ${provider} answer (${bytes} bytes): ${error.message}`);
         return { ok: false, reason: 'invalid_response', detail: error.message };
       }
       throw error;
     }
+  }
+
+  // The public v1 API takes a POSTed series and years, ten years at most, from December 2008 on.
+  private blsRequests(base: string, now: Date): [string, string, unknown][] {
+    const requests: [string, string, unknown][] = [];
+    const last = now.getUTCFullYear();
+    for (let from = Number(INFLATION_HISTORY_FROM.slice(0, 4)); from <= last; ) {
+      const to = Math.min(from + BLS_YEARS_PER_REQUEST - 1, last);
+      requests.push([
+        `${base}/publicAPI/v1/timeseries/data/`,
+        'application/json',
+        { seriesid: [BLS_SERIES], startyear: String(from), endyear: String(to) },
+      ]);
+      from = to + 1;
+    }
+    return requests;
   }
 }

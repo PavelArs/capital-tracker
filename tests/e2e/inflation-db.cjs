@@ -69,14 +69,14 @@ async function collecting(db, InflationService) {
   stage = 'synthetic collection: USD one percent a month from 2025-01, EUR half a percent, RUB 0.8';
   const clock = new Date('2026-03-20T10:00:00.000Z');
   const answers = {
-    fred: flat(12, 14, '1.00000000'), // 2025-01 .. 2026-02
+    bls: flat(12, 14, '1.00000000'), // 2025-01 .. 2026-02
     eurostat: flat(12, 14, '0.50000000'),
     cbr: flat(12, 14, '0.80000000'),
   };
   const client = stubClient(answers);
   const service = new InflationService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: 'true' }), client);
   assert.deepEqual(await service.tick(clock), { outcome: 'collected', stored: 42 });
-  assert.deepEqual(client.calls, ['fred', 'eurostat', 'cbr']);
+  assert.deepEqual(client.calls, ['bls', 'eurostat', 'cbr']);
   assert.equal((await db.query('SELECT count(*)::int n FROM inflation_months'))[0].n, 42);
   const [state] = await db.query(`SELECT * FROM sync_sources WHERE key = 'fx:inflation'`);
   assert.equal(state.state, 'synced');
@@ -86,7 +86,7 @@ async function collecting(db, InflationService) {
   console.log('PASS INFL-COLLECT');
 
   stage = 'synthetic rerun: unchanged months store nothing, a revised month replaces its row';
-  answers.fred = flat(12, 14, '1.00000000').map(([month, percent]) =>
+  answers.bls = flat(12, 14, '1.00000000').map(([month, percent]) =>
     month === '2026-02' ? [month, '1.20000000'] : [month, percent],
   );
   assert.deepEqual(await service.tick(new Date('2026-03-21T00:00:00.000Z')), {
@@ -99,9 +99,9 @@ async function collecting(db, InflationService) {
   assert.equal(revised.c, '1.20000000');
   console.log('PASS INFL-IDEMPOTENT');
 
-  stage = 'synthetic partial failure: Eurostat does not answer, the FRED months are kept';
+  stage = 'synthetic partial failure: Eurostat does not answer, the BLS months are kept';
   answers.eurostat = { fail: 'unavailable' };
-  answers.fred = flat(12, 15, '1.00000000'); // adds 2026-03
+  answers.bls = flat(12, 15, '1.00000000'); // adds 2026-03
   const late = new Date('2026-03-21T12:00:00.000Z');
   assert.deepEqual(await service.tick(late), { outcome: 'collected', stored: 2 });
   const [delayed] = await db.query(`SELECT * FROM sync_sources WHERE key = 'fx:inflation'`);
@@ -112,7 +112,7 @@ async function collecting(db, InflationService) {
   assert.equal((await db.query(`SELECT count(*)::int n FROM inflation_months WHERE currency='EUR'`))[0].n, 14);
 
   stage = 'synthetic total failure: no readable answer from any provider';
-  answers.fred = { fail: 'invalid_response', detail: 'no series header: "<html>"' };
+  answers.bls = { fail: 'invalid_response', detail: 'no series header: "<html>"' };
   answers.eurostat = { fail: 'invalid_response', detail: 'not JSON' };
   answers.cbr = { fail: 'unavailable' };
   await service.tick(new Date('2026-03-21T14:00:00.000Z'));
@@ -139,7 +139,7 @@ async function reading(db, InflationService, owner, other) {
   const now = new Date('2026-03-22T00:00:00.000Z');
   const view = await service.overview(owner, now);
   const byCurrency = Object.fromEntries(view.currencies.map((item) => [item.currency, item]));
-  assert.equal(byCurrency.USD.officialSource, 'FRED (US CPI-U)');
+  assert.equal(byCurrency.USD.officialSource, 'BLS (US CPI-U)');
   assert.equal(byCurrency.USD.officialLastMonth, '2026-03');
   assert.equal(byCurrency.EUR.officialLastMonth, '2026-02');
   assert.equal(byCurrency.RUB.officialSource, 'Bank of Russia (annual inflation)');
@@ -234,10 +234,10 @@ async function reading(db, InflationService, owner, other) {
 
 async function constraints(db, owner) {
   stage = 'synthetic constraints: the tables refuse what the service would never write';
-  await refused(db, `INSERT INTO inflation_months VALUES ('GBP','2026-01-01','fred',1)`);
-  await refused(db, `INSERT INTO inflation_months VALUES ('USD','2026-01-02','fred',1)`);
-  await refused(db, `INSERT INTO inflation_months VALUES ('USD','2026-05-01','bls',1)`);
-  await refused(db, `INSERT INTO inflation_months VALUES ('USD','2026-05-01','fred',-100)`);
+  await refused(db, `INSERT INTO inflation_months VALUES ('GBP','2026-01-01','bls',1)`);
+  await refused(db, `INSERT INTO inflation_months VALUES ('USD','2026-01-02','bls',1)`);
+  await refused(db, `INSERT INTO inflation_months VALUES ('USD','2026-05-01','fred',1)`);
+  await refused(db, `INSERT INTO inflation_months VALUES ('USD','2026-05-01','bls',-100)`);
   await refused(
     db,
     `INSERT INTO inflation_manual_months("ownerId",currency,month,"changePercent") VALUES ($1,'USD','2026-05-03',1)`,
