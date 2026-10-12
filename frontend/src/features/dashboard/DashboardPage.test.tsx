@@ -182,6 +182,8 @@ const valuation = (changes: Partial<PortfolioValuation> = {}): PortfolioValuatio
   missingPriceCount: 0,
   stalePriceCount: 0,
   unavailableAccountCount: 0,
+  depositsValue: '0',
+  unratedDepositCount: 0,
   costBasis: null,
   knownCostSubtotal: '0',
   unknownCostCount: 0,
@@ -276,6 +278,26 @@ describe('record-portfolio-snapshots dashboard', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/not built yet/i)).toBeNull();
     expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('DEP-VALUE names the part of the net worth held in bank deposits, with a link', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({ currency: currency ?? 'USD', depositsValue: '12500' }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    await waitFor(() => expect(hero).toHaveTextContent('Includes $12,500.00 in bank deposits'));
+    expect(within(hero).getByRole('link', { name: 'bank deposits' })).toHaveAttribute(
+      'href',
+      '/deposits',
+    );
+  });
+
+  it('DEP-VALUE says nothing about deposits when there are none', async () => {
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('region', { name: 'Allocation' });
+    expect(hero).not.toHaveTextContent('bank deposits');
   });
 
   it('CHART-PERIODS switches the period and reads each point with its date, value and change', async () => {

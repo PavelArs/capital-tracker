@@ -2,7 +2,7 @@ import type { AssetType } from '@api/portfolio-assets.api';
 import type { AllocationSlice, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useId, useState } from 'react';
 import { SegmentedControl } from '@/ui/SegmentedControl';
-import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
+import { assetIdentity, assetTypeColors, depositColor } from '../shell/asset-identity';
 import { sum } from '../wallets/wallets';
 import { money, percent } from './format';
 
@@ -13,14 +13,19 @@ const groupings: [Grouping, string][] = [
   ['byType', 'Type'],
 ];
 
+/** Allocation key of all bank deposits in the by-type grouping. */
+const DEPOSITS = 'deposits';
+
 /** Slice colour: the asset's own or its type's; accounts keep the positional palette. */
 function sliceColor(
   portfolio: PortfolioValuation,
   grouping: Grouping,
   key: string,
 ): string | undefined {
-  if (grouping === 'byType') return assetTypeColors[key as AssetType];
-  if (grouping !== 'byAsset') return undefined;
+  if (grouping === 'byType')
+    return key === DEPOSITS ? depositColor : assetTypeColors[key as AssetType];
+  if (grouping === 'byAccount') return key.startsWith('bank:') ? depositColor : undefined;
+  if (key.startsWith('deposit:')) return depositColor;
   const asset = portfolio.assets.find((item) => item.instrumentId === key);
   return asset ? assetIdentity(asset).color : undefined;
 }
@@ -133,6 +138,8 @@ export default function Allocation({
           {portfolio.missingPriceCount > 0 && portfolio.unavailableAccountCount > 0 && ' '}
           {portfolio.unavailableAccountCount > 0 &&
             'Accounts whose history starts later are not included.'}
+          {portfolio.unratedDepositCount > 0 &&
+            `${portfolio.missingPriceCount + portfolio.unavailableAccountCount > 0 ? ' ' : ''}Deposits without a current exchange rate are not included.`}
         </p>
       )}
     </section>

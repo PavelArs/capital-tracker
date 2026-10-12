@@ -204,8 +204,15 @@ export function matchesSearch(asset: AssetValuation, search: string): boolean {
 const PARTIAL_NOTE =
   'Coins without a price or without a purchase price are left out: current value counts the priced assets, cost basis and P&L the coins whose purchase price is known. Open an asset to see what is missing.';
 
-function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
+function Summary({
+  portfolio,
+  asked,
+}: {
+  portfolio: PortfolioValuation;
+  asked: AccountingCurrency | undefined;
+}) {
   const unpriced = portfolio.missingPriceCount;
+  const unrated = portfolio.unratedDepositCount;
   const currency = portfolio.currency;
   const amount = (value: string | null) => money(value, currency);
   // Coins without a price or a purchase price stay out of the figures instead of emptying
@@ -220,6 +227,14 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   const partialRealized =
     portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
   const partial = partialValue || partialCost || partialProfit || partialRealized;
+  const missing = [
+    unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
+    portfolio.unavailableAccountCount > 0 &&
+      `${portfolio.unavailableAccountCount} account history starts later`,
+    unrated > 0 && `${unrated} ${unrated === 1 ? 'deposit' : 'deposits'} without a rate`,
+  ]
+    .filter((reason) => reason !== false)
+    .join(', ');
   return (
     <section className="shell-card portfolio-summary" aria-label="Portfolio summary">
       {partial && (
@@ -238,13 +253,11 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
           <dt>Current value</dt>
           <dd>
             {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
-            {partialValue && (unpriced > 0 || portfolio.unavailableAccountCount > 0) && (
+            {partialValue && missing !== '' && <span className="portfolio-sub">{missing}</span>}
+            {Number(portfolio.depositsValue) > 0 && (
               <span className="portfolio-sub">
-                {unpriced > 0 &&
-                  `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`}
-                {unpriced > 0 && portfolio.unavailableAccountCount > 0 && ', '}
-                {portfolio.unavailableAccountCount > 0 &&
-                  `${portfolio.unavailableAccountCount} account history starts later`}
+                {amount(portfolio.depositsValue)} in{' '}
+                <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
               </span>
             )}
           </dd>
@@ -573,7 +586,7 @@ export default function PortfolioPage() {
               </button>
             </p>
           )}
-          <Summary portfolio={portfolio} />
+          <Summary portfolio={portfolio} asked={asked} />
           <section className="shell-card" aria-labelledby="portfolio-assets">
             <div className="ui-toolbar">
               <h2 id="portfolio-assets">Assets</h2>

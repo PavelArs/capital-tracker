@@ -80,6 +80,9 @@ export function networkIdentity(network: Blockchain): AssetIdentity {
 }
 
 /** Allocation by type: crypto in the prototype's blue, cash in the cash colour. */
+/** Bank deposits in the allocation: the type, each deposit and each bank share it. */
+export const depositColor = 'var(--c-deposit)';
+
 export const assetTypeColors: Record<AssetType, string> = {
   crypto: 'var(--c-eth)',
   fiat: cash,
