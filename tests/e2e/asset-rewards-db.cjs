@@ -319,6 +319,9 @@ async function migrationPreservation() {
           'bank_deposit_rates',
           'bank_deposit_movements',
           'bank_deposit_checks',
+          'inflation_months',
+          'inflation_manual_months',
+          'inflation_personal_rates',
         ],
         true,
       ),
@@ -955,7 +958,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 60/);
+  assert.match(migrate(database), /Migrations applied: 61/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

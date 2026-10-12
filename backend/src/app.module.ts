@@ -15,6 +15,7 @@ import { TypeOrmConfigService } from './config/typeorm.config';
 import { DepositsModule } from './deposits/deposits.module';
 import { FxRatesModule } from './fx-rates/fx-rates.module';
 import { HealthModule } from './health/health.module';
+import { InflationModule } from './inflation/inflation.module';
 import { pinoHttpOptions } from './observability/logging';
 import { ObservabilityModule } from './observability/observability.module';
 import { OwnerExportModule } from './owner-export/owner-export.module';
@@ -52,6 +53,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     AccountingModule,
     DepositsModule,
     FxRatesModule,
+    InflationModule,
     OwnerExportModule,
     OwnerSettingsModule,
     HealthModule,

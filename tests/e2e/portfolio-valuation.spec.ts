@@ -171,7 +171,11 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
 
   // ADD-ASSET-BALANCE: a deposit added with an amount and value holds that balance at once.
   const depositName = `PORTFOLIO-UI deposit ${suffix}`;
-  await main.getByRole('button', { name: 'Add asset', exact: true }).first().click();
+  await main.getByRole('button', { name: 'Add', exact: true }).first().click();
+  await page
+    .getByRole('dialog', { name: 'Add to portfolio' })
+    .getByRole('button', { name: /^Something else/ })
+    .click();
   const dialog = page.getByRole('dialog', { name: 'Add asset' });
   await dialog.getByRole('radio', { name: 'Deposit', exact: true }).check();
   await dialog.getByLabel('Name', { exact: true }).fill(depositName);

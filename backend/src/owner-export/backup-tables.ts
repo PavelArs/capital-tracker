@@ -11,6 +11,8 @@ export const backupTables = [
   'bank_deposit_rates',
   'bank_deposit_movements',
   'bank_deposit_checks',
+  'inflation_manual_months',
+  'inflation_personal_rates',
   'manual_usd_price_versions',
   'manual_accounts',
   'account_opening_snapshots',
@@ -82,6 +84,7 @@ export const notBackedUp: Record<string, string> = {
   // Market data shared by every owner, collected again from its providers.
   price_observations: 'market prices',
   fx_rates: 'Bank of Russia rates',
+  inflation_months: 'official consumer price changes',
   display_fx_collection: 'legacy display rates',
   display_fx_observations: 'legacy display rates',
   // TOKEN-ANY: what the chain says about each token; the legs keep the token's contract.

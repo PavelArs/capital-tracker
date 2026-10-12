@@ -154,6 +154,12 @@ export function projectTradeVersion(row: VersionRow): TradeVersion {
     ...(row.comment ? { comment: row.comment } : {}),
   };
 }
+/**
+ * A wallet the owner removed takes no more entries. Read from the row as JSON, so history built
+ * with these services on a schema from before the column existed (migration fixtures) still runs.
+ */
+export const TRACKED_ACCOUNT = `to_jsonb(manual_accounts)->>'removedAt' IS NULL`;
+
 export async function readOwnedAccount(
   manager: EntityManager,
   owner: string,
@@ -162,7 +168,7 @@ export async function readOwnedAccount(
 ): Promise<AccountRow> {
   if (lock) await lockAccountingOwner(manager, owner);
   const [account]: AccountRow[] = await manager.query(
-    `SELECT id,"currentRevision" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT id,"currentRevision" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT}${lock ? ' FOR UPDATE' : ''}`,
     [owner, id],
   );
   if (!account) throw new NotFoundException();

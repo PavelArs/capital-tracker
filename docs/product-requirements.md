@@ -465,8 +465,10 @@ I know where its value comes from.
   **then** its history is back and the unanswered movements count again.
 - WALLET-REMOVE-ACCOUNT: **Given** a wallet **when** the owner removes it **then** its
   addresses are removed the same way and it leaves the lists, **but** a wallet that holds
-  recorded transactions is refused with that reason, because they are the history the
-  cost basis and profit depend on; its addresses can still be removed one by one.
+  an opening balance or an entry that is not voided (trade, transfer, swap, reward) is
+  refused with what it holds, because they are the history the cost basis and profit depend
+  on; its addresses can still be removed one by one. An empty journal or voided entries
+  alone do not block the removal.
 - A removed Bybit account also loses its stored API key.
 
 **US-3.2** As the owner my wallets sync themselves.
