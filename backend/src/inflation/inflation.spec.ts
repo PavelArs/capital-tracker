@@ -12,9 +12,9 @@ import {
 import {
   InflationClient,
   levelsToChanges,
-  parseBlsLevels,
   parseCbrInflation,
   parseEurostatHicp,
+  parseOecdCpiLevels,
   yearOverYearToChanges,
 } from './inflation-sources';
 
@@ -117,39 +117,27 @@ describe('INFL-INDEX the level of prices', () => {
   });
 });
 
-describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
-  const bls = (rows: [string, string, string][], over: Record<string, unknown> = {}) =>
-    JSON.stringify({
-      status: 'REQUEST_SUCCEEDED',
-      responseTime: 98,
-      message: [],
-      Results: {
-        series: [
-          {
-            seriesID: 'CUUR0000SA0',
-            // Newest first, as the API sends them.
-            data: rows.map(([year, period, value]) => ({
-              year,
-              period,
-              periodName: period,
-              value,
-              footnotes: [{}],
-            })),
-          },
-        ],
-      },
-      ...over,
-    });
+// The columns the OECD sends (csvfilewithlabels), reduced to the ones the parser reads and
+// the ones that name the series; a label with a comma is quoted.
+const HEADER =
+  'STRUCTURE,STRUCTURE_ID,STRUCTURE_NAME,ACTION,REF_AREA,Reference area,FREQ,UNIT_MEASURE,Unit of measure,TIME_PERIOD,Time period,OBS_VALUE,Observation value';
+const oecd = (rows: [string, string][], over: { area?: string; unit?: string } = {}) =>
+  [
+    HEADER,
+    ...rows.map(
+      ([month, value]) =>
+        `DATAFLOW,OECD.SDD.TPS:DSD_PRICES@DF_PRICES_ALL(1.0),"Consumer price indices (CPIs, HICPs), COICOP 1999",I,${over.area ?? 'USA'},United States,M,${over.unit ?? 'IX'},Index,${month},,${value},`,
+    ),
+  ].join('\r\n');
 
-  it('turns BLS index levels into monthly percent changes, newest first, annual average ignored', () => {
-    const levels = parseBlsLevels(
-      bls([
-        ['2025', 'M13', '305.000'],
-        ['2025', 'M03', '303.000'],
-        ['2025', 'M02', '303.000'],
-        ['2025', 'M01', '300.000'],
+describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
+  it('turns OECD index levels into monthly percent changes, whatever the row order', () => {
+    const levels = parseOecdCpiLevels(
+      oecd([
+        ['2025-03', '303.0000'],
+        ['2025-01', '300.0000'],
+        ['2025-02', '303.0000'],
       ]),
-      'CUUR0000SA0',
     );
     expect(levels).toEqual([
       { month: '2025-01', value: 300 },
@@ -162,15 +150,13 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
     ]);
   });
 
-  it('spreads the change across a month BLS did not publish', () => {
+  it('spreads the change across a month the statistics office did not publish', () => {
     // October 2025 was never published; the change from September to November is shared.
-    const levels = parseBlsLevels(
-      bls([
-        ['2025', 'M11', '102.010'],
-        ['2025', 'M10', '-'],
-        ['2025', 'M09', '100.000'],
+    const levels = parseOecdCpiLevels(
+      oecd([
+        ['2025-11', '102.0100'],
+        ['2025-09', '100.0000'],
       ]),
-      'CUUR0000SA0',
     );
     expect(levelsToChanges(levels)).toEqual([
       { month: '2025-10', percent: '1.00000000' },
@@ -178,34 +164,36 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
     ]);
   });
 
-  it('has no level for a month BLS did not publish', () => {
-    expect(parseBlsLevels(bls([['2025', 'M01', '-']]), 'CUUR0000SA0')).toEqual([]);
+  it('has no level for a month with an empty value', () => {
+    expect(parseOecdCpiLevels(oecd([['2025-01', '']]))).toEqual([]);
+  });
+
+  it('reads a quoted label with a comma and a final line without a line break', () => {
+    const body = oecd([['2025-01', '100.5']]);
+    expect(body).toContain('"Consumer price indices (CPIs, HICPs), COICOP 1999"');
+    expect(parseOecdCpiLevels(`\uFEFF${body}\n`)).toEqual([{ month: '2025-01', value: 100.5 }]);
   });
 
   it.each([
-    ['text', 'maintenance', 'not JSON'],
-    [
-      'a refusal',
-      bls([], { status: 'REQUEST_NOT_PROCESSED', message: ['daily threshold reached'] }),
-      'status "REQUEST_NOT_PROCESSED": "daily threshold reached"',
-    ],
-    [
-      'another series',
-      bls([['2025', 'M01', '100']]).replace('CUUR0000SA0', 'CUUR0000SAF'),
-      'no series "CUUR0000SA0"',
-    ],
-    ['a text value', bls([['2025', 'M01', 'abc']]), 'value "abc" on 2025-01'],
-    ['a zero value', bls([['2025', 'M01', '0']]), 'value 0 on 2025-01'],
+    ['text', 'maintenance', 'no TIME_PERIOD and OBS_VALUE: "maintenance"'],
+    ['an empty answer', '', 'not CSV'],
+    ['another area', oecd([['2025-01', '100']], { area: 'DEU' }), 'another series "DEU IX"'],
+    ['another unit', oecd([['2025-01', '1']], { unit: 'PC_CHG' }), 'another series "USA PC_CHG"'],
+    ['a text value', oecd([['2025-01', 'abc']]), 'value "abc" on 2025-01'],
+    ['a zero value', oecd([['2025-01', '0']]), 'value 0 on 2025-01'],
+    ['a text month', oecd([['2025-Q1', '100']]), 'month "2025-Q1"'],
     [
       'a repeated month',
-      bls([
-        ['2025', 'M01', '100'],
-        ['2025', 'M01', '100'],
+      oecd([
+        ['2025-01', '100'],
+        ['2025-01', '100'],
       ]),
       '2025-01 twice',
     ],
+    ['a short row', `${HEADER}\r\nDATAFLOW,x`, 'a row of another width'],
+    ['an open quote', `${HEADER}\r\nDATAFLOW,"x`, 'unterminated quote'],
   ])('refuses %s', (_name, body, detail) => {
-    expect(() => parseBlsLevels(body, 'CUUR0000SA0')).toThrow(detail);
+    expect(() => parseOecdCpiLevels(body)).toThrow(detail);
   });
 
   const stat = (over: Record<string, unknown> = {}) =>
@@ -355,19 +343,16 @@ describe('INFL-OFFICIAL the HTTP client', () => {
   let server: Server;
   let base: string;
   let seen: string[];
-  let bodies: string[];
   let reply: (url: string, body: string) => { status: number; body: string };
 
   beforeEach(async () => {
     seen = [];
-    bodies = [];
     server = createServer((request: IncomingMessage, response: ServerResponse) => {
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       request.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         seen.push(request.url ?? '');
-        bodies.push(text);
         const { status, body } = reply(request.url ?? '', text);
         response.writeHead(status, { 'content-type': 'text/plain' });
         response.end(body);
@@ -379,33 +364,19 @@ describe('INFL-OFFICIAL the HTTP client', () => {
   });
   afterEach(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  it('asks BLS for the all-items CPI-U in ten-year requests from 2008', async () => {
-    reply = (_url, request) => {
-      const { startyear } = JSON.parse(request) as { startyear: string };
-      const rows =
-        startyear === '2008'
-          ? [{ year: '2008', period: 'M12', value: '100.000' }]
-          : [{ year: '2018', period: 'M01', value: '101.000' }];
-      return {
-        status: 200,
-        body: JSON.stringify({
-          status: 'REQUEST_SUCCEEDED',
-          message: [],
-          Results: { series: [{ seriesID: 'CUUR0000SA0', data: rows }] },
-        }),
-      };
-    };
-    const result = await new InflationClient({ blsUrl: base }).fetch(
-      'bls',
-      new Date('2026-10-12T00:00:00Z'),
-    );
-    expect(seen).toEqual(['/publicAPI/v1/timeseries/data/', '/publicAPI/v1/timeseries/data/']);
-    expect(bodies.map((body) => JSON.parse(body))).toEqual([
-      { seriesid: ['CUUR0000SA0'], startyear: '2008', endyear: '2017' },
-      { seriesid: ['CUUR0000SA0'], startyear: '2018', endyear: '2026' },
+  it('asks the OECD for the all-items US CPI index from 2008', async () => {
+    reply = () => ({
+      status: 200,
+      body: oecd([
+        ['2025-02', '101.0000'],
+        ['2025-01', '100.0000'],
+      ]),
+    });
+    const result = await new InflationClient({ oecdUrl: base }).fetch('bls');
+    expect(result).toEqual({ ok: true, changes: [{ month: '2025-02', percent: '1.00000000' }] });
+    expect(seen).toEqual([
+      '/public/rest/data/OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0/USA.M.N.CPI.IX._T.N._Z?startPeriod=2008-12&format=csvfilewithlabels',
     ]);
-    // Dec 2008 -> Jan 2018 is 109 missing months: too long a gap to chain.
-    expect(result).toEqual({ ok: true, changes: [] });
   });
 
   it('asks Eurostat for the euro-area all-items index', async () => {
