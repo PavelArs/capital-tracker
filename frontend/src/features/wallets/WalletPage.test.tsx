@@ -208,11 +208,13 @@ function setup({
   list = [wallet(1)],
   items = [buy, chainReceipt, transferIn, elsewhere],
   kind = null,
+  coldClass = null,
 }: {
   account?: string;
   list?: WalletAddress[];
   items?: Operation[];
   kind?: WalletKind | null;
+  coldClass?: 'property' | null;
 } = {}) {
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
@@ -223,6 +225,18 @@ function setup({
         currentRevision: 0,
         createdAt: '2026-10-01T00:00:00.000Z',
       },
+      ...(coldClass
+        ? [
+            {
+              id: cold,
+              name: 'Cold storage',
+              kind: null,
+              assetClass: coldClass,
+              currentRevision: 0,
+              createdAt: '2026-10-01T00:00:00.000Z',
+            },
+          ]
+        : []),
     ],
     nextCursor: null,
   });
@@ -544,6 +558,28 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     );
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     expect(within(dialog).getByLabelText(/^Wallet/)).toHaveValue('Trust Wallet');
+  });
+
+  it('never offers a property account as a wallet for a new address (v8)', async () => {
+    // Codex P2: an address put into a property would sync coins into Real estate.
+    const user = userEvent.setup();
+    setup({ coldClass: 'property' });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    await user.click(screen.getByRole('button', { name: 'Add address' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Bitcoin/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(
+      within(dialog).getByLabelText('Bitcoin wallet address'),
+      '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const choices = within(dialog).getByRole('group', { name: 'Your wallets' });
+    expect(
+      within(choices)
+        .getAllByRole('button')
+        .map((chip) => chip.textContent),
+    ).toEqual(['Trust Wallet']);
   });
 
   it('shows the stored background failure as the last sync (SYNC-STATUS)', async () => {

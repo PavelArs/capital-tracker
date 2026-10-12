@@ -1,10 +1,13 @@
+import { accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
+import { forgetReads } from '@api/read-cache';
 import { AuthProvider } from '@contexts/AuthContext';
 import { ErrorProvider } from '@contexts/ErrorContext';
 import { createInstance } from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import ru from '../i18n/locales/ru.json';
 import Layout from './Layout';
 
@@ -64,6 +67,11 @@ describe('SHELL-002 navigation presentation', () => {
 });
 
 describe('SHELL-001 the sections, no Legacy group', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    forgetReads();
+  });
+
   it('lists the sections in order', async () => {
     const document = await markup();
     expect(linksOf(document.querySelector('[data-nav-group="sections"]'))).toEqual([
@@ -74,6 +82,37 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       ['Deposits', '/deposits'],
       ['Settings', '/preferences'],
     ]);
+  });
+
+  it('adds Real estate once a property is held, or while it is open (v8)', async () => {
+    const sections = async (path?: string) =>
+      linksOf((await markup(path)).querySelector('[data-nav-group="sections"]')).map(
+        ([label]) => label,
+      );
+    expect(await sections('/real-estate')).toEqual([
+      'Dashboard',
+      'Portfolio',
+      'Transactions',
+      'Wallets',
+      'Deposits',
+      'Real estate',
+      'Settings',
+    ]);
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          name: 'Studio',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 1,
+          createdAt: '2026-10-12T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    await cachedReads.accounts.load();
+    expect(await sections()).toContain('Real estate');
   });
 
   it('has no Legacy group and no link to the retired older screens (G1)', async () => {

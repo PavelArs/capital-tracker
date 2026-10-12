@@ -20,6 +20,9 @@ export class ManualAccount {
   @Column({ type: 'text', nullable: true })
   kind!: 'software' | 'hardware' | 'exchange' | null;
 
+  @Column({ type: 'text', nullable: true })
+  assetClass!: 'broker' | 'property' | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   removedAt!: Date | null;
 
