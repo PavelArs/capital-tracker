@@ -7,7 +7,8 @@ export class DropLegacySchema1797000000000 implements MigrationInterface {
     // DB-CLEAN: the tables of the screens retired in M20 and the columns of users and
     // wallet_stake_scans that no code reads. Plain DROP without CASCADE, so a dependent object
     // nobody knew about fails the whole migration instead of being removed with it. The owner
-    // confirmed the list on 2026-10-12; the release script takes and restores a dump first.
+    // confirmed the list on 2026-10-12. The dump comes from the release script, not from the
+    // migration CLI: anyone running migrate.js directly must take their own backup first.
     for (const table of [
       'reports',
       'capitals',

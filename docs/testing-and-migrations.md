@@ -300,6 +300,11 @@ With inherited environment, `pnpm --dir backend migration:show` and
 `node backend/dist/migrate.js`. A migration connection needs DDL privileges;
 runtime privilege separation still requires final deployment configuration.
 
+`DropLegacySchema1797000000000` permanently deletes the retired legacy tables and unused
+columns, and the CLI does not take a backup. Only `scripts/manual-mvp-release.sh` dumps
+and restore-checks the database before it runs. Anywhere else, take your own `pg_dump`
+of the database first; the migration cannot be reversed.
+
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
 uuid-ossp and applies nineteen migrations: eight historic migrations, the additive
