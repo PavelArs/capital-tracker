@@ -46,14 +46,20 @@ function cachedRead<A extends unknown[], T>(
   };
   // Answers of prefetch() waiting for the page that was about to open: when, by key.
   const prefetched = new Map<string, number>();
-  const load = (...args: A): Promise<T> => {
+  // Prefetches still on their way that no page has joined yet.
+  const unclaimed = new Set<string>();
+  const ask = (args: A, byPage: boolean): Promise<T> => {
     const id = key(args);
-    // A page opened right after a prefetch uses its answer once; later loads ask again.
-    const warmAt = prefetched.get(id);
-    if (warmAt !== undefined) {
-      prefetched.delete(id);
-      const warm = Date.now() - warmAt < PREFETCH_USE_MS ? recall<T>(id) : undefined;
-      if (warm !== undefined && !inFlight.has(id)) return Promise.resolve(warm);
+    if (byPage) {
+      // A page that joins a prefetch on its way has had its answer.
+      unclaimed.delete(id);
+      // A page opened right after a prefetch uses its answer once; later loads ask again.
+      const warmAt = prefetched.get(id);
+      if (warmAt !== undefined) {
+        prefetched.delete(id);
+        const warm = Date.now() - warmAt < PREFETCH_USE_MS ? recall<T>(id) : undefined;
+        if (warm !== undefined && !inFlight.has(id)) return Promise.resolve(warm);
+      }
     }
     // A reload does not ask the server again for what it said minutes ago; a change or a sync
     // empties the cache, so nothing stale is reused.
@@ -78,17 +84,23 @@ function cachedRead<A extends unknown[], T>(
   };
   return {
     last: (...args: A): T | undefined => recall<T>(key(args)),
-    load,
+    load: (...args: A): Promise<T> => ask(args, true),
     /**
      * `load` for a page that may open next: if it does within a few seconds it takes this
      * answer instead of sending the same request again.
      */
     prefetch: (...args: A): Promise<T> => {
       const id = key(args);
-      const promise = load(...args);
+      // Joining a read someone else already started leaves nothing to hand over later.
+      const joined = inFlight.has(id);
+      const promise = ask(args, false);
+      if (joined) return promise;
+      unclaimed.add(id);
       promise.then(
-        () => prefetched.set(id, Date.now()),
-        () => undefined,
+        () => {
+          if (unclaimed.delete(id)) prefetched.set(id, Date.now());
+        },
+        () => unclaimed.delete(id),
       );
       return promise;
     },

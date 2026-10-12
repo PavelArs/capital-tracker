@@ -175,4 +175,24 @@ describe('read cache', () => {
     await expect(Promise.all([early, page])).resolves.toEqual([9, 9]);
     expect(count).toHaveBeenCalledTimes(1);
   });
+
+  it('leaves nothing for a later load when the page joined the prefetch on its way', async () => {
+    let answer: (value: number) => void = () => {};
+    const count = vi
+      .spyOn(operationsApi, 'needsClassification')
+      .mockImplementationOnce(
+        () =>
+          new Promise<number>((resolve) => {
+            answer = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(5);
+    const early = cachedReads.toClassify.prefetch();
+    const page = cachedReads.toClassify.load();
+    answer(4);
+    await expect(Promise.all([early, page])).resolves.toEqual([4, 4]);
+    // The page has had its answer; opening it again asks the server.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(5);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
 });
