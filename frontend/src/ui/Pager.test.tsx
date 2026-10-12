@@ -44,6 +44,24 @@ describe('PAGER a short list five rows at a time', () => {
     expect(screen.queryByRole('navigation')).toBeNull();
   });
 
+  it('goes back to the first page when a row is added, where the newest row shows', async () => {
+    // Codex P2: a movement saved while on page 2 must not land out of sight on page 1.
+    const user = userEvent.setup();
+    const { rerender } = render(<Numbers count={12} />);
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    rerender(<Numbers count={13} />);
+    expect(shown()).toEqual(['1', '2', '3', '4', '5']);
+    expect(screen.getByRole('status')).toHaveTextContent('1–5 of 13 numbers');
+  });
+
+  it('keeps its page when a row goes, and stays on the last page when that one empties', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<Numbers count={12} />);
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    rerender(<Numbers count={11} />);
+    expect(shown()).toEqual(['6', '7', '8', '9', '10']);
+  });
+
   it('stays on the last page when the list shrinks', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<Numbers count={12} />);
