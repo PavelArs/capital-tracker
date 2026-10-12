@@ -1,3 +1,4 @@
+import DashboardLoading from '@features/dashboard/DashboardLoading';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { retiredPaths, shellSections } from '@features/shell/navigation';
@@ -31,7 +32,6 @@ type Blocks = ComponentProps<typeof PageSkeleton>['show'];
 
 // What each section is made of, so the grey blocks stand where its content will.
 const blocksOf: Record<string, Blocks> = {
-  dashboard: ['stats', 'chart'],
   portfolio: ['stats', 'rows'],
   transactions: ['rows'],
   history: ['rows'],
@@ -129,7 +129,12 @@ export default function BootShell() {
           <header className="shell-page__head">
             <Bone width={180} height={32} />
           </header>
-          <PageSkeleton label="Loading" show={show} rows={rowsOf[section]} />
+          {here === '/dashboard' ? (
+            // The Dashboard draws its own stand-in (a net-worth hero, then the chart).
+            <DashboardLoading />
+          ) : (
+            <PageSkeleton label="Loading" show={show} rows={rowsOf[section]} />
+          )}
         </div>
       </main>
     </div>

@@ -36,10 +36,11 @@ describe('BOOT-SHELL: the frame is drawn before the sign-in check answers', () =
     expect(document.querySelector('.shell-skeleton__stats')).toBeNull();
   });
 
-  it('lays out the Dashboard for the bare address, which leads there', () => {
+  it("draws the Dashboard's own stand-in for the bare address, which leads there", () => {
     open('/');
-    // Figures and a chart, not figures and a list.
-    expect(document.querySelector('.shell-skeleton__stats')).not.toBeNull();
+    // A net-worth hero and the chart, the same blocks the Dashboard draws while it loads.
+    expect(document.querySelector('.dashboard-loading__hero')).not.toBeNull();
+    expect(document.querySelector('.shell-skeleton__stats')).toBeNull();
     expect(document.querySelector('.shell-skeleton__rows')).toBeNull();
   });
 
