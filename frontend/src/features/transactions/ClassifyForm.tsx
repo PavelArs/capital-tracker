@@ -135,6 +135,8 @@ export function suggestedValue(operation: Operation): string {
   const digits = rounded.toString().padStart(places + 1, '0');
   const plain = `${digits.slice(0, digits.length - places)}.${digits.slice(digits.length - places)}`;
   if (!/[1-9]/.test(plain)) return '';
+  // An amount keeps at most 48 whole digits; a carry past that is not storable.
+  if (plain.split('.')[0].length > 48) return '';
   return whole.replace(/^0+/, '') ? plain : plain.replace(/0+$/, '').replace(/\.$/, '');
 }
 
