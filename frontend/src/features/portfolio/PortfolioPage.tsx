@@ -6,8 +6,9 @@ import type {
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -15,6 +16,7 @@ import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import AddAssetDialog from './AddAssetDialog';
+import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
 import Allocation from './Allocation';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
@@ -507,7 +509,9 @@ export default function PortfolioPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AssetSort>(defaultSort);
   const phone = useNarrowScreen();
-  const [adding, setAdding] = useState(false);
+  // Add opens the kind picker; the kind then opens its own form, or the page it is added on.
+  const [adding, setAdding] = useState<'pick' | Exclude<AddChoice, 'crypto'> | null>(null);
+  const navigate = useNavigate();
   const [refreshFailed, setRefreshFailed] = useState(false);
   const chains = useTokenChains();
   const latest = useRef(0);
@@ -552,16 +556,17 @@ export default function PortfolioPage() {
     // The new row must be visible, so a filter or search that would hide it is cleared.
     setFilter((current) => (current === 'all' || current === asset.assetType ? current : 'all'));
     setSearch('');
-    setAdding(false);
+    setAdding(null);
     void load(true);
   };
   const addButton = (primary: boolean) => (
     <button
       type="button"
       className={`shell-button${primary ? ' shell-button--primary' : ' shell-button--secondary'}`}
-      onClick={() => setAdding(true)}
+      onClick={() => setAdding('pick')}
     >
-      Add asset
+      <Icon name="plus" className="shell-icon shell-icon--sm" />
+      Add
     </button>
   );
   const now = new Date();
@@ -580,7 +585,7 @@ export default function PortfolioPage() {
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
       ) : assets.length === 0 && !hasDeposits(portfolio) ? (
         <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
-          Add a coin, cash or anything else you want to track.
+          Add a wallet, a bank deposit, a coin or anything else you want to track.
         </EmptyState>
       ) : (
         <>
@@ -595,7 +600,7 @@ export default function PortfolioPage() {
           <Summary portfolio={portfolio} asked={asked} />
           {assets.length === 0 ? (
             <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
-              Add a coin, cash or anything else you want to track.
+              Add a wallet, a bank deposit, a coin or anything else you want to track.
             </EmptyState>
           ) : (
             <section className="shell-card" aria-labelledby="portfolio-assets">
@@ -689,7 +694,23 @@ export default function PortfolioPage() {
           <Allocation portfolio={portfolio} />
         </>
       )}
-      {adding && <AddAssetDialog onClose={() => setAdding(false)} onAdded={added} />}
+      {adding === 'pick' && (
+        <AddToPortfolioDialog
+          onClose={() => setAdding(null)}
+          onChoose={(choice) =>
+            choice === 'crypto'
+              ? navigate(withCurrency('/wallets', asked), { state: { addWallet: true } })
+              : setAdding(choice)
+          }
+        />
+      )}
+      {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
+      {adding === 'bank' && (
+        <AddDepositDialog
+          onClose={() => setAdding(null)}
+          onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
+        />
+      )}
     </div>
   );
 }

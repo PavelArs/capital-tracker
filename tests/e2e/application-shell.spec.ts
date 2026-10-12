@@ -155,7 +155,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     portfolio.getByRole('heading', { level: 1, name: 'Portfolio', exact: true }),
   ).toBeVisible();
   await expect(portfolio.getByText(/not built yet/i)).toHaveCount(0);
-  await portfolio.getByRole('button', { name: 'Add asset', exact: true }).first().click();
+  await portfolio.getByRole('button', { name: 'Add', exact: true }).first().click();
+  await page
+    .getByRole('dialog', { name: 'Add to portfolio' })
+    .getByRole('button', { name: /^Something else/ })
+    .click();
   const addAsset = page.getByRole('dialog', { name: 'Add asset' });
   // A coin may start without a balance whatever accounts the shared database holds.
   const depositName = `SHELL-UI coin ${randomUUID()}`;
