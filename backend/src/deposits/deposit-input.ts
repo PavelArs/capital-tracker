@@ -7,8 +7,8 @@ import {
   depositCurrencies,
   type EarlyCloseRule,
   earlyCloseRules,
+  offeredPayoutSchedules,
   type PayoutSchedule,
-  payoutSchedules,
 } from './deposit-interest';
 
 export { parseUuid };
@@ -131,7 +131,7 @@ export function parseDeposit(input: unknown): DepositInput {
   const record = object(input, keys, keys);
   const startDate = parseDate(record.startDate);
   const endDate = record.endDate === null ? null : parseDate(record.endDate);
-  const payout = member(record.payout, payoutSchedules);
+  const payout = member(record.payout, offeredPayoutSchedules);
   if (endDate !== null && endDate <= startDate) return bad();
   // A bank term never runs this long; the figures are replayed day by day to the end date.
   if (

@@ -135,7 +135,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 59/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 60/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
@@ -193,7 +193,7 @@ async function main() {
       ],
     });
     const beforeUpgrade = await fingerprint(source, ['migrations'], true);
-    assert.match(migrate(database), /Migrations applied: 42/);
+    assert.match(migrate(database), /Migrations applied: 43/);
     assert.equal(
       await fingerprint(
         source,
@@ -255,7 +255,7 @@ async function main() {
       ),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }],
     );
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 59);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 60);
     assert.equal(
       (await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n,
       0,

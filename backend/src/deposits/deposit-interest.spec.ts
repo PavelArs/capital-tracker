@@ -50,6 +50,19 @@ describe('payoutDates', () => {
   it('stops at the asked day', () => {
     expect(payoutDates(terms(), '2026-02-15')).toEqual(['2026-02-01']);
   });
+
+  it('lists every day after the start for daily interest, then the end date', () => {
+    expect(payoutDates(terms({ payout: 'daily', endDate: '2026-01-04' }), '2026-12-31')).toEqual([
+      '2026-01-02',
+      '2026-01-03',
+      '2026-01-04',
+    ]);
+    expect(payoutDates(terms({ payout: 'daily', endDate: null }), '2026-01-03')).toEqual([
+      '2026-01-02',
+      '2026-01-03',
+    ]);
+    expect(payoutDates(terms({ payout: 'daily' }), '2026-01-01')).toEqual([]);
+  });
 });
 
 describe('projectDeposit', () => {
@@ -105,6 +118,25 @@ describe('projectDeposit', () => {
     expect(result.principal).toBe('102988.15');
     expect(result.balance).toBe('102988.15');
     expect(result.interestPosted).toBe('2988.15');
+  });
+
+  it('posts each day of daily interest and capitalizes it into the next day', () => {
+    const result = projectDeposit(
+      terms({ payout: 'daily', capitalized: true, endDate: null }),
+      [topup('2026-01-01', '100000')],
+      '2026-01-04',
+    );
+    // 100000, 100032.88 and 100065.77 at 12% over 365 days, each rounded to cents when posted.
+    expect(result.periods.map((period) => period.interest)).toEqual(['32.88', '32.89', '32.90']);
+    expect(result.principal).toBe('100098.67');
+    expect(result.interestPosted).toBe('98.67');
+    const paying = projectDeposit(
+      terms({ payout: 'daily', capitalized: false, endDate: null }),
+      [topup('2026-01-01', '100000')],
+      '2026-01-04',
+    );
+    expect(paying.principal).toBe('100000.00');
+    expect(paying.due).toBe('98.64');
   });
 
   it('leaves payable interest due until a payout takes it out', () => {
@@ -359,8 +391,8 @@ describe('depositBalances', () => {
     for (let round = 0; round < 60; round += 1) {
       const startDate = addDays('2025-01-01', random(400));
       const endDate = random(3) === 0 ? null : addDays(startDate, 20 + random(500));
-      const payouts = ['monthly', 'quarterly', 'at-end'] as const;
-      const payout = payouts[endDate === null ? random(2) : random(3)];
+      const payouts = ['daily', 'monthly', 'quarterly', 'at-end'] as const;
+      const payout = payouts[endDate === null ? random(3) : random(4)];
       const deposit = terms({
         startDate,
         endDate,
