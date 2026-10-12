@@ -407,6 +407,26 @@ describe('PV-UI Portfolio values every asset', () => {
     );
   });
 
+  it('PV-KNOWN-PART shows the profit of the priced coins when another has no price', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, toncoin], {
+        completeness: 'incomplete',
+        totalValue: null,
+        missingPriceCount: 1,
+        unrealizedPnl: null,
+        unrealizedReturnPercent: null,
+        knownUnrealizedPnl: '30000',
+        knownUnrealizedReturnPercent: '60.00',
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    // The coin without a price stays out of the profit instead of emptying it.
+    expect(summary).toHaveTextContent('Unrealized P&L+$30,000.00+60.00%');
+    expect(within(summary).getByRole('img', { name: /Coins without a price/ })).toBeInTheDocument();
+  });
+
   it('PV-KNOWN-PART shows realized P&L of the sales with a known cost and no tooltip when complete', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin], {

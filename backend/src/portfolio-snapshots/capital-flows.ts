@@ -20,6 +20,8 @@ const ATOM_SCALE = 10n ** 30n;
  */
 export interface CapitalFlow {
   at: number;
+  /** The instrument the money bought or sold, to tell the flows of an unpriced coin apart. */
+  instrumentId?: string;
   usd: bigint;
   rateDate: string;
   native?: { currency: PaidCurrency; amount: bigint };
@@ -27,6 +29,7 @@ export interface CapitalFlow {
 /** A flow in one accounting currency at scale 60, like snapshot values; null without a rate. */
 export interface StatedFlow {
   at: number;
+  instrumentId?: string;
   amount: bigint | null;
 }
 
@@ -56,6 +59,7 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
       for (const lot of account.initialLots)
         flows.push({
           at: start,
+          instrumentId: lot.instrumentId,
           usd: signed(
             deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity)
               .carriedCostUsd,
@@ -73,6 +77,7 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
         if (trade.settlement && usd === 0n) continue;
         flows.push({
           at: Date.parse(trade.occurredAt),
+          instrumentId: trade.instrumentId,
           usd,
           rateDate: moscowDate(trade.occurredAt),
           ...(trade.paid
@@ -104,7 +109,11 @@ export function stateFlows(flows: readonly CapitalFlow[], fx: FxConverter): Stat
       flow.native && fx.currency !== 'USD'
         ? fx.convert(flow.native.amount, flow.native.currency, flow.rateDate)
         : fx.convert(flow.usd, 'USD', flow.rateDate);
-    return { at: flow.at, amount: amount === null ? null : amount * ATOM_SCALE };
+    return {
+      at: flow.at,
+      ...(flow.instrumentId === undefined ? {} : { instrumentId: flow.instrumentId }),
+      amount: amount === null ? null : amount * ATOM_SCALE,
+    };
   });
 }
 
@@ -132,16 +141,33 @@ const unknownSplit = {
   marketReturnPercent: null,
 };
 
+/** What a point holds, by instrument: its quantity and value, null for a coin without a price. */
+export type HeldAssets = ReadonlyMap<string, { quantity: string; value: string | null }>;
+
+/** A point of the series as the split reads it. */
+export interface SplitPoint {
+  at: number;
+  value: string | null;
+  /** The value leaves out a held asset without a price or a deposit without a rate. */
+  unpriced?: boolean;
+  /** A deposit left out for want of a rate: the money put into it stays in the flows. */
+  unrated?: boolean;
+  held?: HeldAssets;
+}
+
 /**
  * Capital change from `start` to `end` split into flows and market (BR 10): netFlow =
  * deposits − withdrawals after `start` up to `end`; marketEffect = V1 − V0 − netFlow;
- * marketReturnPercent = marketEffect / (V0 + deposits), empty when that is 0. A value that
- * leaves out a held asset without a price gives no market effect: the asset's flows are
- * counted while its value is not, which would show its cost as a loss.
+ * marketReturnPercent = marketEffect / (V0 + deposits), empty when that is 0. A coin without
+ * a price now is left out of both values and so is its market effect: the rest is still said, as
+ * long as the coin's quantity is the same at both ends and none of its flows falls between
+ * them, otherwise its flows would be counted while its value is not and show its cost as a
+ * loss. A deposit without a rate, or a coin whose details are not known, gives no market
+ * effect.
  */
 export function splitChange(
-  start: { at: number; value: string | null; unpriced?: boolean } | null,
-  end: { at: number; value: string | null; unpriced?: boolean },
+  start: SplitPoint | null,
+  end: SplitPoint,
   flows: readonly StatedFlow[],
 ): {
   deposits: string | null;
@@ -153,9 +179,11 @@ export function splitChange(
   if (start === null) return unknownSplit;
   let deposits = 0n;
   let withdrawals = 0n;
+  const inWindow: StatedFlow[] = [];
   for (const flow of flows) {
     if (flow.at <= start.at || flow.at > end.at) continue;
     if (flow.amount === null) return unknownSplit;
+    inWindow.push(flow);
     if (flow.amount > 0n) deposits += flow.amount;
     else withdrawals -= flow.amount;
   }
@@ -165,14 +193,33 @@ export function splitChange(
     withdrawals: formatProduct(withdrawals),
     netFlow: formatSignedProduct(netFlow),
   };
-  if (
-    start.value === null ||
-    end.value === null ||
-    start.unpriced === true ||
-    end.unpriced === true
-  )
-    return { ...split, marketEffect: null, marketReturnPercent: null };
-  const from = valueAtoms(start.value);
+  const noMarket = { ...split, marketEffect: null, marketReturnPercent: null };
+  if (start.value === null || end.value === null) return noMarket;
+  if (start.unrated === true || end.unrated === true) return noMarket;
+  // Only a coin that has no price now is left out. One that had none at the start of the
+  // period but has now (its prices begin later) leaves its market effect unknown, as before.
+  const left = new Set<string>();
+  if (end.unpriced === true) {
+    if (end.held === undefined) return noMarket;
+    for (const [id, asset] of end.held) if (asset.value === null) left.add(id);
+  }
+  if (start.unpriced === true) {
+    if (start.held === undefined) return noMarket;
+    for (const [id, asset] of start.held)
+      if (asset.value === null && !left.has(id)) return noMarket;
+  }
+  // The value of the coins left out, to take from both ends.
+  let startLeft = 0n;
+  for (const id of left) {
+    // A point read without its coins cannot say what the coins left out were worth at it.
+    if (start.held === undefined) return noMarket;
+    const before = start.held.get(id);
+    const after = end.held?.get(id);
+    if ((before?.quantity ?? '0') !== (after?.quantity ?? '0')) return noMarket;
+    if (inWindow.some((flow) => flow.instrumentId === id)) return noMarket;
+    if (before?.value) startLeft += valueAtoms(before.value);
+  }
+  const from = valueAtoms(start.value) - startLeft;
   const market = valueAtoms(end.value) - from - netFlow;
   const base = from + deposits;
   return {

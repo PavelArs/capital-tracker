@@ -466,6 +466,49 @@ async function paidTrades(db, s, f) {
   console.log('PASS CUR-PAID-RUB flows of trades paid in RUB or EUR are exact in that currency');
 }
 
+async function unpricedEnd(db, s, f) {
+  stage =
+    'HIST-END-UNPRICED a coin without a price is left out of the market effect of the rest';
+  const { left } = f;
+  const create = async (name, symbol) =>
+    (
+      await s.accounting.createInstrument(left, {
+        requestId: randomUUID(),
+        name,
+        symbol,
+        assetType: 'crypto',
+      })
+    ).value.id;
+  const btc = await create('Bitcoin', 'BTC');
+  // ETH has no stored price at all in this stage.
+  const eth = await create('Ethereum', 'ETH');
+  const wallet = await account(s, left, 'Left wallet', '2026-08-01T00:00:00.000Z');
+  await trade(db, s, left, wallet, btc, 'buy', '2026-08-10T10:00:00.000Z', '1', '50000');
+  await trade(db, s, left, wallet, eth, 'buy', '2026-08-12T10:00:00.000Z', '2', '5000');
+  const history = await s.snapshots.history(left, { period: '1M', currency: 'USD' }, now);
+  const first = btcClose('2026-09-05T00:00:00.000Z');
+  const last = btcClose('2026-10-04T00:00:00.000Z');
+  assert.equal(history.value, String(last), 'The value counts the priced BTC only');
+  assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
+  assert.equal(
+    history.marketEffect,
+    minus(String(last), String(first)),
+    'Market effect of BTC alone, the ETH without a price left out of both ends',
+  );
+  // More ETH bought inside the period: its cost is a flow while its value is not counted.
+  await trade(db, s, left, wallet, eth, 'buy', '2026-09-20T10:00:00.000Z', '1', '1000');
+  const bought = await s.snapshots.history(left, { period: '1M', currency: 'USD' }, now);
+  assert.equal(bought.netFlow, '1000');
+  assert.deepEqual(
+    [bought.marketEffect, bought.marketReturnPercent],
+    [null, null],
+    'A flow of the coin without a price leaves the market effect unknown',
+  );
+  console.log(
+    'PASS HIST-END-UNPRICED the market effect counts the priced coins and leaves one without a price out',
+  );
+}
+
 async function unpricedStart(db, s, f) {
   stage =
     'HIST-START-UNPRICED a period that starts before an asset has a price gives no market effect';
@@ -537,13 +580,14 @@ async function main() {
   try {
     await db.initialize();
     assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 60);
-    const [owner, early, other, paid, unpriced] =
+    const [owner, early, other, paid, unpriced, left] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('flows-owner@example.invalid','synthetic-not-a-hash',true),
       ('flows-early@example.invalid','synthetic-not-a-hash',true),
       ('flows-other@example.invalid','synthetic-not-a-hash',true),
       ('flows-paid@example.invalid','synthetic-not-a-hash',true),
-      ('flows-unpriced@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('flows-unpriced@example.invalid','synthetic-not-a-hash',true),
+      ('flows-left@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
     const f = {
       owner: owner.id,
@@ -551,10 +595,11 @@ async function main() {
       other: other.id,
       paid: paid.id,
       unpriced: unpriced.id,
+      left: left.id,
     };
     await storedHistory(db);
     await operations(db, s, f);
-    for (const check of [month, transfer, allTime, legacy, rates, paidTrades, unpricedStart])
+    for (const check of [month, transfer, allTime, legacy, rates, paidTrades, unpricedEnd, unpricedStart])
       await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();
