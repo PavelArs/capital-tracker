@@ -268,6 +268,19 @@ async function removeWallet(db, s, owner, f) {
   );
   await s.accounting.removeAccount(owner, journalOnly);
   await s.accounting.removeAccount(owner, voided);
+  await rejected(() => trade(voided, 2), 404);
+  await rejected(
+    () =>
+      s.accounting.saveOpening(owner, voided, {
+        requestId: randomUUID(),
+        expectedRevision: 0,
+        asOf: '2026-01-01T00:00:00Z',
+        positions: [
+          { instrumentId: btc, quantity: '1', costStatus: 'known', totalCostUsd: '60000' },
+        ],
+      }),
+    404,
+  );
   const left = (await s.accounting.listAccounts(owner)).items.map((item) => item.id);
   assert.ok(!left.includes(journalOnly) && !left.includes(voided) && left.includes(live));
   assert.equal(

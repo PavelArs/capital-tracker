@@ -200,7 +200,7 @@ export class AccountingService {
     return this.source.transaction(async (manager) => {
       await lockAccountingOwner(manager, owner);
       const [account]: AccountRow[] = await manager.query(
-        'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
+        'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL FOR UPDATE',
         [owner, id],
       );
       if (!account) throw new NotFoundException();
@@ -402,7 +402,7 @@ export class AccountingService {
         : { beforeRevision: queryNumber(options.beforeRevision) }),
     });
     const [account] = await this.source.query(
-      'SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2',
+      'SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL',
       [owner, id],
     );
     if (!account) throw new NotFoundException();

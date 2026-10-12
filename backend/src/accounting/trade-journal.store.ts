@@ -162,7 +162,7 @@ export async function readOwnedAccount(
 ): Promise<AccountRow> {
   if (lock) await lockAccountingOwner(manager, owner);
   const [account]: AccountRow[] = await manager.query(
-    `SELECT id,"currentRevision" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT id,"currentRevision" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL${lock ? ' FOR UPDATE' : ''}`,
     [owner, id],
   );
   if (!account) throw new NotFoundException();
