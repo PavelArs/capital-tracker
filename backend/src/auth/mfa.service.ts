@@ -302,7 +302,7 @@ export class MfaService implements OnModuleInit {
         "consecutiveFailures" = 0 WHERE id = 1`,
       );
       const [user]: UserWithoutPassword[] = await manager.query(
-        'SELECT id, email, "firstName", "lastName", "createdAt", "updatedAt" FROM users WHERE id = $1',
+        'SELECT id, email, "createdAt", "updatedAt" FROM users WHERE id = $1',
         [owner.userId],
       );
       return {
@@ -557,10 +557,10 @@ export class MfaService implements OnModuleInit {
       if (!user || !(await verifyPassword(user.password, currentPassword)))
         return { status: 'password' } as const;
       if (currentPassword === newPassword) return { status: 'same' } as const;
-      await manager.query(
-        'UPDATE users SET password = $1, "resetPasswordToken" = NULL, "resetPasswordExpires" = NULL, "updatedAt" = now() WHERE id = $2',
-        [await hashPassword(newPassword), userId],
-      );
+      await manager.query('UPDATE users SET password = $1, "updatedAt" = now() WHERE id = $2', [
+        await hashPassword(newPassword),
+        userId,
+      ]);
       const version = randomUUID();
       await manager.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [version]);
       await manager.query('DELETE FROM auth_sessions WHERE "userId" = $1 AND "tokenHash" <> $2', [

@@ -65,12 +65,10 @@ async function main(): Promise<void> {
         randomUUID(),
       ]);
     }
-    await runner.query(
-      `UPDATE users SET password = $1, "emailVerified" = true,
-      "emailVerificationToken" = NULL, "resetPasswordToken" = NULL,
-      "resetPasswordExpires" = NULL, "updatedAt" = now() WHERE id = $2`,
-      [hash, userId],
-    );
+    await runner.query('UPDATE users SET password = $1, "updatedAt" = now() WHERE id = $2', [
+      hash,
+      userId,
+    ]);
     await runner.query('DELETE FROM auth_sessions WHERE "userId" = $1', [userId]);
     // A password set by the operator also ends any emailed reset link still outstanding.
     await runner.query(
