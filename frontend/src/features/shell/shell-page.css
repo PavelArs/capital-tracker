@@ -15,6 +15,12 @@
   animation: ui-fade-in 0.18s ease-out;
 }
 
+/* The frame drawn while the sign-in check is on its way is the page's own stand-in: it is there
+   from the first paint, so it does not fade in and the page that replaces it starts from it. */
+.shell-page.shell-page--boot > * {
+  animation: none;
+}
+
 .shell-page h1 {
   margin: 0;
   font-size: var(--fs-xl);
