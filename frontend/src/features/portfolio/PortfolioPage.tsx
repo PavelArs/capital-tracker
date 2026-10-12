@@ -388,14 +388,16 @@ function AssetsTable({
                     assetType={asset.assetType}
                     network={onlyChain(asset.symbol, chains)}
                   />
-                  <span>
+                  <span className="portfolio-asset__text">
                     <Link
                       className="portfolio-asset__name"
                       to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
                     >
                       {asset.name}
                     </Link>
-                    <span className="portfolio-asset__ticker">{assetCaption(asset, chains)}</span>
+                    <span className="portfolio-asset__ticker" title={assetCaption(asset, chains)}>
+                      {assetCaption(asset, chains)}
+                    </span>
                   </span>
                 </span>
               </td>
