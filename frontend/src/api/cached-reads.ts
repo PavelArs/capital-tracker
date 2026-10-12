@@ -46,8 +46,9 @@ function cachedRead<A extends unknown[], T>(
   };
   // Answers of prefetch() waiting for the page that was about to open: when, by key.
   const prefetched = new Map<string, number>();
-  // Prefetches still on their way that no page has joined yet.
-  const unclaimed = new Set<string>();
+  // Prefetches still on their way that no page has joined yet, each with its own token so an
+  // older one settling late cannot take the place of a newer one.
+  const unclaimed = new Map<string, object>();
   const ask = (args: A, byPage: boolean): Promise<T> => {
     const id = key(args);
     if (byPage) {
@@ -91,16 +92,27 @@ function cachedRead<A extends unknown[], T>(
      */
     prefetch: (...args: A): Promise<T> => {
       const id = key(args);
+      // An answer already waiting for a page is not asked for a second time (the same read is
+      // behind two menu links).
+      const warmAt = prefetched.get(id);
+      if (warmAt !== undefined && Date.now() - warmAt < PREFETCH_USE_MS) {
+        const warm = recall<T>(id);
+        if (warm !== undefined) return Promise.resolve(warm);
+      }
       // Joining a read someone else already started leaves nothing to hand over later.
       const joined = inFlight.get(id)?.generation === generationNow();
       const promise = ask(args, false);
       if (joined) return promise;
-      unclaimed.add(id);
+      const mine = {};
+      unclaimed.set(id, mine);
+      const settle = (answered: boolean) => {
+        if (unclaimed.get(id) !== mine) return;
+        unclaimed.delete(id);
+        if (answered) prefetched.set(id, Date.now());
+      };
       promise.then(
-        () => {
-          if (unclaimed.delete(id)) prefetched.set(id, Date.now());
-        },
-        () => unclaimed.delete(id),
+        () => settle(true),
+        () => settle(false),
       );
       return promise;
     },

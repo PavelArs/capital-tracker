@@ -215,4 +215,32 @@ describe('read cache', () => {
     answers[0](1);
     await older;
   });
+
+  it('does not ask again for an answer already waiting for a page, from another prefetch', async () => {
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockResolvedValue(6);
+    await cachedReads.toClassify.prefetch();
+    await expect(cachedReads.toClassify.prefetch()).resolves.toBe(6);
+    expect(count).toHaveBeenCalledTimes(1);
+    await expect(cachedReads.toClassify.load()).resolves.toBe(6);
+    expect(count).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the newer prefetch claimable when an older one from before a change settles late', async () => {
+    const answers: Array<(value: number) => void> = [];
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const older = cachedReads.toClassify.prefetch();
+    announceSyncChange();
+    const newer = cachedReads.toClassify.prefetch();
+    answers[0](1);
+    await older;
+    answers[1](2);
+    await newer;
+    await expect(cachedReads.toClassify.load()).resolves.toBe(2);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
 });
