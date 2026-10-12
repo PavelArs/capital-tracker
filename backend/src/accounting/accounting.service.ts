@@ -27,6 +27,7 @@ import {
   type WalletKind,
 } from './input';
 import { projectOpening, type SnapshotRow } from './opening.store';
+import { TRACKED_ACCOUNT } from './trade-journal.store';
 
 interface AccountRow {
   id: string;
@@ -200,7 +201,7 @@ export class AccountingService {
     return this.source.transaction(async (manager) => {
       await lockAccountingOwner(manager, owner);
       const [account]: AccountRow[] = await manager.query(
-        'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
+        `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT} FOR UPDATE`,
         [owner, id],
       );
       if (!account) throw new NotFoundException();
@@ -314,19 +315,48 @@ export class AccountingService {
         [owner, id],
       );
       if (found.length === 0) throw new NotFoundException();
-      const [{ recorded }]: { recorded: boolean }[] = await manager.query(
-        `SELECT (EXISTS (SELECT 1 FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2)
-          OR EXISTS (SELECT 1 FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2)
-          OR EXISTS (SELECT 1 FROM owned_transfers
-            WHERE "ownerId"=$1 AND ("fromAccountId"=$2 OR "toAccountId"=$2))
-          OR EXISTS (SELECT 1 FROM account_swaps WHERE "ownerId"=$1 AND "accountId"=$2)
-          OR EXISTS (SELECT 1 FROM account_rewards WHERE "ownerId"=$1 AND "accountId"=$2))
-          AS recorded`,
+      // What the wallet's history still rests on: an opening, and entries whose latest version is
+      // not voided. An empty journal or a voided entry holds nothing, so it never blocks removal.
+      const [held]: {
+        openings: number;
+        trades: number;
+        transfers: number;
+        swaps: number;
+        rewards: number;
+      }[] = await manager.query(
+        `SELECT
+            (SELECT count(*) FROM account_opening_snapshots
+              WHERE "ownerId"=$1 AND "accountId"=$2)::int AS openings,
+            (SELECT count(*) FROM account_trades t JOIN account_trade_versions v
+              ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId" AND v."tradeId"=t.id
+              AND v.version=t."currentVersion"
+              WHERE t."ownerId"=$1 AND t."accountId"=$2 AND v.kind<>'void')::int AS trades,
+            (SELECT count(*) FROM owned_transfers t JOIN owned_transfer_versions v
+              ON v."ownerId"=t."ownerId" AND v."transferId"=t.id AND v.version=t."currentVersion"
+              WHERE t."ownerId"=$1 AND (t."fromAccountId"=$2 OR t."toAccountId"=$2)
+              AND v.kind<>'void')::int AS transfers,
+            (SELECT count(*) FROM account_swaps t JOIN account_swap_versions v
+              ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId" AND v."swapId"=t.id
+              AND v.version=t."currentVersion"
+              WHERE t."ownerId"=$1 AND t."accountId"=$2 AND v.kind<>'void')::int AS swaps,
+            (SELECT count(*) FROM account_rewards t JOIN account_reward_versions v
+              ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId" AND v."rewardId"=t.id
+              AND v.version=t."currentVersion"
+              WHERE t."ownerId"=$1 AND t."accountId"=$2 AND v.kind<>'void')::int AS rewards`,
         [owner, id],
       );
-      if (recorded)
+      const parts = [
+        [held.openings, 'opening balance', 'opening balances'],
+        [held.trades, 'trade', 'trades'],
+        [held.transfers, 'transfer', 'transfers'],
+        [held.swaps, 'swap', 'swaps'],
+        [held.rewards, 'reward', 'rewards'],
+      ]
+        .filter(([n]) => n)
+        .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+      if (parts.length > 0)
         throw new ConflictException(
-          'This wallet has recorded transactions, so it stays in your history. Remove its addresses to stop syncing them.',
+          `This wallet has recorded transactions (${parts.join(', ')}), so it stays in your history. Remove its addresses to stop syncing them.`,
         );
       await stopTracking(manager, owner, { accountId: id });
       await manager.query(
@@ -373,7 +403,7 @@ export class AccountingService {
         : { beforeRevision: queryNumber(options.beforeRevision) }),
     });
     const [account] = await this.source.query(
-      'SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2',
+      `SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT}`,
       [owner, id],
     );
     if (!account) throw new NotFoundException();
