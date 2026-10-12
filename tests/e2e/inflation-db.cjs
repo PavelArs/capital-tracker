@@ -66,22 +66,23 @@ const flat = (start, count, percent) =>
   });
 
 async function collecting(db, InflationService) {
-  stage = 'synthetic collection: USD one percent a month from 2025-01, EUR half a percent';
+  stage = 'synthetic collection: USD one percent a month from 2025-01, EUR half a percent, RUB 0.8';
   const clock = new Date('2026-03-20T10:00:00.000Z');
   const answers = {
     fred: flat(12, 14, '1.00000000'), // 2025-01 .. 2026-02
     eurostat: flat(12, 14, '0.50000000'),
+    cbr: flat(12, 14, '0.80000000'),
   };
   const client = stubClient(answers);
   const service = new InflationService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: 'true' }), client);
-  assert.deepEqual(await service.tick(clock), { outcome: 'collected', stored: 28 });
-  assert.deepEqual(client.calls, ['fred', 'eurostat']);
-  assert.equal((await db.query('SELECT count(*)::int n FROM inflation_months'))[0].n, 28);
+  assert.deepEqual(await service.tick(clock), { outcome: 'collected', stored: 42 });
+  assert.deepEqual(client.calls, ['fred', 'eurostat', 'cbr']);
+  assert.equal((await db.query('SELECT count(*)::int n FROM inflation_months'))[0].n, 42);
   const [state] = await db.query(`SELECT * FROM sync_sources WHERE key = 'fx:inflation'`);
   assert.equal(state.state, 'synced');
   assert.equal(state.nextRunAt.toISOString(), '2026-03-20T22:00:00.000Z', 'Twelve hours later');
   assert.deepEqual(await service.tick(new Date('2026-03-20T21:59:00.000Z')), { outcome: 'not_due' });
-  assert.equal(client.calls.length, 2, 'Nothing asked before the next run');
+  assert.equal(client.calls.length, 3, 'Nothing asked before the next run');
   console.log('PASS INFL-COLLECT');
 
   stage = 'synthetic rerun: unchanged months store nothing, a revised month replaces its row';
@@ -110,14 +111,15 @@ async function collecting(db, InflationService) {
   assert.equal(delayed.nextRunAt.toISOString(), '2026-03-21T13:00:00.000Z', 'Asked again in an hour');
   assert.equal((await db.query(`SELECT count(*)::int n FROM inflation_months WHERE currency='EUR'`))[0].n, 14);
 
-  stage = 'synthetic total failure: an unreadable answer from both providers';
+  stage = 'synthetic total failure: no readable answer from any provider';
   answers.fred = { fail: 'invalid_response', detail: 'no series header: "<html>"' };
   answers.eurostat = { fail: 'invalid_response', detail: 'not JSON' };
+  answers.cbr = { fail: 'unavailable' };
   await service.tick(new Date('2026-03-21T14:00:00.000Z'));
   const [failed] = await db.query(`SELECT * FROM sync_sources WHERE key = 'fx:inflation'`);
   assert.equal(failed.state, 'failed');
   assert.equal(failed.errorCode, 'invalid_response');
-  assert.match(failed.errorMessage, /unreadable answer for USD, EUR \(no series header/);
+  assert.match(failed.errorMessage, /unreadable answer for USD, EUR, RUB \(no series header/);
   assert.equal(
     new Date(failed.lastSuccessAt).toISOString(),
     '2026-03-21T00:00:00.000Z',
@@ -133,15 +135,15 @@ async function collecting(db, InflationService) {
 
 async function reading(db, InflationService, owner, other) {
   const service = new InflationService(db, new ConfigService({}), stubClient({}));
-  stage = 'synthetic overview: USD to 2026-03, EUR to 2026-02, RUB without a source';
+  stage = 'synthetic overview: USD to 2026-03, EUR to 2026-02, RUB from the Bank of Russia';
   const now = new Date('2026-03-22T00:00:00.000Z');
   const view = await service.overview(owner, now);
   const byCurrency = Object.fromEntries(view.currencies.map((item) => [item.currency, item]));
   assert.equal(byCurrency.USD.officialSource, 'FRED (US CPI-U)');
   assert.equal(byCurrency.USD.officialLastMonth, '2026-03');
   assert.equal(byCurrency.EUR.officialLastMonth, '2026-02');
-  assert.equal(byCurrency.RUB.officialSource, null);
-  assert.equal(byCurrency.RUB.lastMonth, null);
+  assert.equal(byCurrency.RUB.officialSource, 'Bank of Russia (annual inflation)');
+  assert.equal(byCurrency.RUB.lastMonth, '2026-02');
   assert.match(byCurrency.USD.trailingYearPercent, /^12\.6825/, '1.01 ** 12 - 1');
   assert.equal(view.sync.state, 'failed');
   console.log('PASS INFL-OVERVIEW');
@@ -156,8 +158,8 @@ async function reading(db, InflationService, owner, other) {
   assert.equal(official.estimated, false);
   const beyond = await service.factor(owner, { currency: 'USD', from: '2026-03-15', to: '2026-04-15' });
   assert.equal(beyond.estimated, true, 'April is not published yet');
-  const unknown = await service.factor(owner, { currency: 'RUB', from: '2025-01-01', to: '2025-12-31' });
-  assert.deepEqual([unknown.factor, unknown.estimated], [null, null], 'No RUB series, no factor');
+  const unknown = await service.factor(owner, { currency: 'RUB', from: '2024-06-01', to: '2025-12-31' });
+  assert.deepEqual([unknown.factor, unknown.estimated], [null, null], 'Before the first month, no factor');
   const before = await service.factor(owner, { currency: 'USD', from: '2024-06-01', to: '2025-06-01' });
   assert.equal(before.factor, null, 'Before the first published month');
   await rejected(
@@ -166,7 +168,7 @@ async function reading(db, InflationService, owner, other) {
   );
   console.log('PASS INFL-FACTOR');
 
-  stage = 'synthetic manual months: RUB typed in by hand, USD month replaced, other owner unaffected';
+  stage = 'synthetic manual months: RUB months typed over the published ones, USD month replaced, other owner unaffected';
   assert.deepEqual(await service.setMonth(owner, 'RUB', '2025-12', { changePercent: '0.5' }), {
     currency: 'RUB',
     month: '2025-12',
@@ -181,7 +183,11 @@ async function reading(db, InflationService, owner, other) {
   assert.equal(usd.factor, '1.0200000000', 'The typed month replaces the published one');
   const others = await service.factor(other, { currency: 'USD', from: '2026-01-15', to: '2026-02-15' });
   assert.equal(others.factor, '1.0100000000', 'The other owner still reads the published month');
-  assert.equal((await service.factor(other, { currency: 'RUB', from: '2025-12-15', to: '2026-02-15' })).factor, null);
+  assert.equal(
+    (await service.factor(other, { currency: 'RUB', from: '2025-12-15', to: '2026-02-15' })).factor,
+    '1.0160640000',
+    'The other owner reads the published 0.8 percent twice',
+  );
   const listed = (await service.overview(owner, now)).currencies.find((item) => item.currency === 'RUB');
   assert.deepEqual(listed.manualMonths.map((item) => item.month), ['2025-12', '2026-01', '2026-02']);
   await service.removeMonth(owner, 'USD', '2026-02');

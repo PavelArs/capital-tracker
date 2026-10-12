@@ -12,8 +12,10 @@ import {
 import {
   InflationClient,
   levelsToChanges,
+  parseCbrInflation,
   parseEurostatHicp,
   parseFredCsv,
+  yearOverYearToChanges,
 } from './inflation-sources';
 
 const months = (from: string, percents: number[]) => {
@@ -213,6 +215,94 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
   });
 });
 
+describe('INFL-OFFICIAL the Bank of Russia annual inflation', () => {
+  const row = (date: string, key: string, inflation: string, target = '4,00') =>
+    `<tr><td>${date}</td><td>${key}</td><td>${inflation}</td><td>${target}</td></tr>`;
+  const page = (rows: string[], header = 'Инфляция, % г/г') =>
+    `<html><body><div class="table-wrapper"><div class="table"><table class="data">
+      <tr><th>Дата</th><th>Ключевая ставка, % годовых</th><th>${header}</th><th>Цель по инфляции, %</th></tr>
+      ${rows.join('\n')}
+    </table></div></div></body></html>`;
+
+  it('reads the inflation column by its header, newest row first, with decimal commas', () => {
+    expect(
+      parseCbrInflation(page([row('09.2026', '14,00', '6,35'), row('08.2026', '14,00', '6,33')])),
+    ).toEqual([
+      { month: '2026-08', percent: 6.33 },
+      { month: '2026-09', percent: 6.35 },
+    ]);
+  });
+
+  it.each([
+    ['no table', '<html>maintenance</html>', 'no inflation table'],
+    [
+      'another column',
+      page([row('09.2026', '14,00', '6,35')], 'Ключевая ставка'),
+      'unexpected header',
+    ],
+    ['a short row', page(['<tr><td>09.2026</td><td>14,00</td></tr>']), 'unexpected row'],
+    ['a bad date', page([row('2026-09', '14,00', '6,35')]), 'date "2026-09"'],
+    ['a bad value', page([row('09.2026', '14,00', 'n/a')]), 'value "n/a" on 2026-09'],
+    [
+      'a repeated month',
+      page([row('09.2026', '14,00', '6'), row('09.2026', '14,00', '6')]),
+      '2026-09 twice',
+    ],
+    ['no month', page([]), 'no months'],
+  ])('refuses %s', (_name, html, detail) => {
+    expect(() => parseCbrInflation(html)).toThrow(detail);
+  });
+
+  const yearly = (from: string, count: number, percent: number) => {
+    const result: { month: string; percent: number }[] = [];
+    let [year, month] = from.split('-').map(Number);
+    for (let i = 0; i < count; i++) {
+      result.push({ month: `${year}-${String(month).padStart(2, '0')}`, percent });
+      if (++month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+    return result;
+  };
+
+  it('rebuilds even monthly changes from a steady annual rate', () => {
+    const changes = yearOverYearToChanges(yearly('2025-01', 24, 12));
+    expect(changes[0].month).toBe('2024-02');
+    expect(changes.at(-1)?.month).toBe('2026-12');
+    const monthly = (1.12 ** (1 / 12) - 1) * 100;
+    for (const change of changes) expect(Number(change.percent)).toBeCloseTo(monthly, 6);
+  });
+
+  it('makes twelve changes multiply to the published annual rate, whatever the seed', () => {
+    const rows = yearly('2025-01', 12, 8).concat(yearly('2026-01', 12, 5));
+    const changes = yearOverYearToChanges(rows);
+    const byMonth = new Map(
+      changes.map((change) => [change.month, 1 + Number(change.percent) / 100]),
+    );
+    const product = (last: string) => {
+      let result = 1;
+      let [year, month] = last.split('-').map(Number);
+      for (let i = 0; i < 12; i++) {
+        result *= byMonth.get(`${year}-${String(month).padStart(2, '0')}`) as number;
+        if (--month < 1) {
+          month = 12;
+          year--;
+        }
+      }
+      return result;
+    };
+    expect(product('2025-06')).toBeCloseTo(1.08, 6);
+    expect(product('2026-03')).toBeCloseTo(1.05, 6);
+    expect(product('2026-12')).toBeCloseTo(1.05, 6);
+  });
+
+  it('rebuilds only the run of months ending at the latest one', () => {
+    const rows = [...yearly('2024-01', 3, 7), ...yearly('2025-06', 14, 6)];
+    expect(yearOverYearToChanges(rows)[0].month).toBe('2024-07');
+  });
+});
+
 describe('INFL-OFFICIAL the HTTP client', () => {
   let server: Server;
   let base: string;
@@ -257,6 +347,37 @@ describe('INFL-OFFICIAL the HTTP client', () => {
     expect(result).toEqual({ ok: true, changes: [{ month: '2025-02', percent: '1.00000000' }] });
     expect(seen[0]).toContain('prc_hicp_midx?format=JSON');
     expect(seen[0]).toContain('coicop=CP00&geo=EA&sinceTimePeriod=2008-12');
+  });
+
+  it('asks the Bank of Russia page for the period and rebuilds monthly changes', async () => {
+    reply = () => ({
+      status: 200,
+      body: `<table class="data"><tr><th>Дата</th><th>Ключевая ставка, % годовых</th><th>Инфляция, % г/г</th><th>Цель по инфляции, %</th></tr>${[
+        '12.2025',
+        '11.2025',
+        '10.2025',
+        '09.2025',
+        '08.2025',
+        '07.2025',
+        '06.2025',
+        '05.2025',
+        '04.2025',
+        '03.2025',
+        '02.2025',
+        '01.2025',
+      ]
+        .map((date) => `<tr><td>${date}</td><td>14,00</td><td>12,00</td><td>4,00</td></tr>`)
+        .join('')}</table>`,
+    });
+    const result = await new InflationClient({ cbrUrl: base }).fetch(
+      'cbr',
+      new Date('2026-01-05T10:00:00Z'),
+    );
+    expect(seen[0]).toBe(
+      '/hd_base/infl/?UniDbQuery.Posted=True&UniDbQuery.From=01.01.2013&UniDbQuery.To=05.01.2026',
+    );
+    expect(result.ok && result.changes).toHaveLength(23);
+    expect(result.ok && result.changes[0].month).toBe('2024-02');
   });
 
   it('asks twice, then reports why', async () => {

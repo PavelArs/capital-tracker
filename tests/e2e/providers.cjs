@@ -275,6 +275,17 @@ function fredInflation(response, url) {
   response.writeHead(200, { 'content-type': 'text/csv', connection: 'close' });
   response.end(`observation_date,CPIAUCNS\n${rows.join('\n')}\n`);
 }
+function cbrInflation(response) {
+  const months = inflationMonths().slice(1);
+  const rows = months
+    .map((month) => `<tr><td>${month.slice(5)}.${month.slice(0, 4)}</td><td>14,00</td><td>5,50</td><td>4,00</td></tr>`)
+    .reverse()
+    .join('');
+  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
+  response.end(
+    `<html><body><table class="data"><tr><th>Дата</th><th>Ключевая ставка, % годовых</th><th>Инфляция, % г/г</th><th>Цель по инфляции, %</th></tr>${rows}</table></body></html>`,
+  );
+}
 function eurostatInflation(response) {
   const months = inflationMonths();
   response.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
@@ -987,6 +998,8 @@ function provider(request, response, url) {
     return krakenOhlc(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp')
     return cbrDynamic(response, url);
+  if (url.hostname === 'www.cbr.ru' && url.pathname === '/hd_base/infl/')
+    return cbrInflation(response);
   if (url.hostname === 'fred.stlouisfed.org' && url.pathname === '/graph/fredgraph.csv')
     return fredInflation(response, url);
   if (

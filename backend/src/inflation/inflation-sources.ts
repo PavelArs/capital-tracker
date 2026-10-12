@@ -1,9 +1,9 @@
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { AccountingCurrency } from '../fx-rates/fx-conversion';
-import { nextMonth } from './inflation-math';
+import { nextMonth, previousMonth } from './inflation-math';
 
-export type InflationProvider = 'fred' | 'eurostat';
+export type InflationProvider = 'fred' | 'eurostat' | 'cbr';
 export type InflationFailure = 'rate_limited' | 'unavailable' | 'invalid_response';
 /** Percent change of the consumer price level from the previous month, per month. */
 export interface MonthlyChange {
@@ -14,14 +14,16 @@ export type InflationResult =
   | { ok: true; changes: MonthlyChange[] }
   | { ok: false; reason: InflationFailure; detail?: string };
 
-/** The official source of each currency's inflation; RUB has none read automatically yet. */
+/** The official source of each currency's inflation. */
 export const OFFICIAL_SOURCES: Partial<Record<AccountingCurrency, InflationProvider>> = {
   USD: 'fred',
   EUR: 'eurostat',
+  RUB: 'cbr',
 };
 export const PROVIDER_NAMES: Record<InflationProvider, string> = {
   fred: 'FRED (US CPI-U)',
   eurostat: 'Eurostat (euro area HICP)',
+  cbr: 'Bank of Russia (annual inflation)',
 };
 
 // Index values from December 2008, so the first change stored is January 2009.
@@ -141,10 +143,93 @@ export function parseEurostatHicp(body: string): MonthlyChange[] {
   return levelsToChanges(levels);
 }
 
+/** The year-over-year inflation of a month, in percent, as the Bank of Russia publishes it. */
+export interface YearOverYear {
+  month: string;
+  percent: number;
+}
+
+const CBR_DATE = /^(0[1-9]|1[0-2])\.(\d{4})$/;
+const CBR_PERCENT = /^-?\d{1,3}(?:,\d{1,4})?$/;
+const cell = (html: string) =>
+  html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#160;|&nbsp;/g, ' ')
+    .trim();
+
+/**
+ * The table of https://www.cbr.ru/hd_base/infl/ : `<table class="data">` with a header row
+ * (Дата, Ключевая ставка, Инфляция, % г/г, Цель по инфляции) and one row per month newest
+ * first, `MM.YYYY` and percents with a decimal comma. The inflation column is found by its header.
+ */
+export function parseCbrInflation(html: string): YearOverYear[] {
+  const table = /<table[^>]*class="data"[^>]*>([\s\S]{0,200000}?)<\/table>/.exec(html);
+  if (!table) invalid(`no inflation table: ${excerpt(html.trimStart())}`);
+  const rows = [...table[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map((row) =>
+    [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((item) => cell(item[1])),
+  );
+  const header = rows[0] ?? [];
+  const column = header.findIndex((title) => /^Инфляция/.test(title));
+  if (header[0] !== 'Дата' || column < 0 || !/г\/г/.test(header[column]))
+    invalid(`unexpected header ${excerpt(header.join('|'), 120)}`);
+  const seen = new Set<string>();
+  const result: YearOverYear[] = [];
+  for (const row of rows.slice(1)) {
+    if (row.length !== header.length) invalid(`unexpected row ${excerpt(row.join('|'), 120)}`);
+    const date = CBR_DATE.exec(row[0]);
+    if (!date) invalid(`date ${excerpt(row[0])}`);
+    const month = `${date[2]}-${date[1]}`;
+    if (seen.has(month)) invalid(`${month} twice`);
+    seen.add(month);
+    if (!CBR_PERCENT.test(row[column])) invalid(`value ${excerpt(row[column])} on ${month}`);
+    result.push({ month, percent: Number(row[column].replace(',', '.')) });
+  }
+  if (result.length === 0) invalid('no months');
+  return result.sort((a, b) => (a.month < b.month ? -1 : 1));
+}
+
+/**
+ * Monthly changes rebuilt from year-over-year inflation. A level equals the level a year earlier
+ * times (1 + that month's year-over-year rate). The year before the first published month is not
+ * known, so its months are assumed to grow evenly at that rate: a month's change can be off by
+ * the usual seasonal swing (about half a percent), a year's worth of changes is exact. Only the
+ * run of consecutive months ending at the latest one is rebuilt.
+ */
+export function yearOverYearToChanges(rows: readonly YearOverYear[]): MonthlyChange[] {
+  let start = rows.length - 1;
+  while (start > 0 && nextMonth(rows[start - 1].month) === rows[start].month) start--;
+  const run = rows.slice(start);
+  const levels = new Map<string, number>();
+  let before = run[0].month;
+  for (let i = 0; i < 12; i++) before = previousMonth(before);
+  const seedRate = 1 + run[0].percent / 100;
+  for (let k = 0; k < 12; k++) {
+    levels.set(before, seedRate ** (k / 12));
+    before = nextMonth(before);
+  }
+  for (const { month, percent } of run) {
+    let year = month;
+    for (let i = 0; i < 12; i++) year = previousMonth(year);
+    levels.set(month, (levels.get(year) as number) * (1 + percent / 100));
+  }
+  const changes: MonthlyChange[] = [];
+  let month = nextMonth(previousMonth(run[0].month));
+  for (let i = 0; i < 11; i++) month = previousMonth(month);
+  for (; month <= run[run.length - 1].month; month = nextMonth(month)) {
+    const level = levels.get(month);
+    const prior = levels.get(previousMonth(month));
+    if (level === undefined || prior === undefined) continue;
+    changes.push({ month, percent: ((level / prior - 1) * 100).toFixed(8) });
+  }
+  return changes;
+}
+
+const cbrDate = (date: Date) =>
+  `${String(date.getUTCDate()).padStart(2, '0')}.${String(date.getUTCMonth() + 1).padStart(2, '0')}.${date.getUTCFullYear()}`;
+
 export class InflationClient {
   private readonly logger = new Logger(InflationClient.name);
-  private readonly fredUrl: string;
-  private readonly eurostatUrl: string;
+  private readonly urls: Record<InflationProvider, string>;
   private readonly timeoutMs: number;
   private readonly retryPauseMs: number;
 
@@ -152,29 +237,37 @@ export class InflationClient {
     options: {
       fredUrl?: string;
       eurostatUrl?: string;
+      cbrUrl?: string;
       timeoutMs?: number;
       retryPauseMs?: number;
     } = {},
   ) {
-    this.fredUrl = options.fredUrl ?? 'https://fred.stlouisfed.org';
-    this.eurostatUrl = options.eurostatUrl ?? 'https://ec.europa.eu';
+    this.urls = {
+      fred: options.fredUrl ?? 'https://fred.stlouisfed.org',
+      eurostat: options.eurostatUrl ?? 'https://ec.europa.eu',
+      cbr: options.cbrUrl ?? 'https://www.cbr.ru',
+    };
     this.timeoutMs = options.timeoutMs ?? 20_000;
     this.retryPauseMs = options.retryPauseMs ?? 5_000;
   }
 
   /** The monthly changes of a currency's official series, asked for once more after a failure. */
-  async fetch(provider: InflationProvider): Promise<InflationResult> {
-    const first = await this.request(provider);
+  async fetch(provider: InflationProvider, now = new Date()): Promise<InflationResult> {
+    const first = await this.request(provider, now);
     if (first.ok) return first;
     await new Promise((resolve) => setTimeout(resolve, this.retryPauseMs));
-    return this.request(provider);
+    return this.request(provider, now);
   }
 
-  private async request(provider: InflationProvider): Promise<InflationResult> {
-    const url =
-      provider === 'fred'
-        ? `${this.fredUrl}/graph/fredgraph.csv?id=CPIAUCNS&cosd=${INFLATION_HISTORY_FROM}-01`
-        : `${this.eurostatUrl}/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx?format=JSON&lang=EN&freq=M&unit=I15&coicop=CP00&geo=EA&sinceTimePeriod=${INFLATION_HISTORY_FROM}`;
+  private async request(provider: InflationProvider, now: Date): Promise<InflationResult> {
+    const base = this.urls[provider];
+    const url = {
+      fred: `${base}/graph/fredgraph.csv?id=CPIAUCNS&cosd=${INFLATION_HISTORY_FROM}-01`,
+      eurostat: `${base}/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx?format=JSON&lang=EN&freq=M&unit=I15&coicop=CP00&geo=EA&sinceTimePeriod=${INFLATION_HISTORY_FROM}`,
+      // The page is a GET form: the period is its UniDbQuery.From and .To fields.
+      cbr: `${base}/hd_base/infl/?UniDbQuery.Posted=True&UniDbQuery.From=01.01.2013&UniDbQuery.To=${cbrDate(now)}`,
+    }[provider];
+    const accept = { fred: 'text/csv', eurostat: 'application/json', cbr: 'text/html' }[provider];
     let response: { status: number; data: ArrayBuffer };
     try {
       response = await axios.get<ArrayBuffer>(url, {
@@ -184,7 +277,7 @@ export class InflationClient {
         maxContentLength: MAX_BODY_BYTES,
         responseType: 'arraybuffer',
         validateStatus: () => true,
-        headers: { Accept: provider === 'fred' ? 'text/csv' : 'application/json' },
+        headers: { Accept: accept, 'User-Agent': 'Mozilla/5.0 (compatible; capital-tracker)' },
       });
     } catch {
       return { ok: false, reason: 'unavailable' };
@@ -193,10 +286,12 @@ export class InflationClient {
     if (response.status !== 200) return { ok: false, reason: 'unavailable' };
     try {
       const text = Buffer.from(response.data).toString('utf8');
-      return {
-        ok: true,
-        changes: provider === 'fred' ? parseFredCsv(text, 'CPIAUCNS') : parseEurostatHicp(text),
-      };
+      const changes = {
+        fred: () => parseFredCsv(text, 'CPIAUCNS'),
+        eurostat: () => parseEurostatHicp(text),
+        cbr: () => yearOverYearToChanges(parseCbrInflation(text)),
+      }[provider]();
+      return { ok: true, changes };
     } catch (error) {
       if (error instanceof InvalidResponse) {
         this.logger.warn(

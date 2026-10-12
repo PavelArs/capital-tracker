@@ -10,7 +10,7 @@ export class AddInflation1796700000000 implements MigrationInterface {
     await runner.query(`CREATE TABLE inflation_months (
       currency text NOT NULL CHECK (currency IN ('USD', 'EUR', 'RUB')),
       month date NOT NULL CHECK (month = date_trunc('month', month)::date),
-      provider text NOT NULL CHECK (provider IN ('fred', 'eurostat')),
+      provider text NOT NULL CHECK (provider IN ('fred', 'eurostat', 'cbr')),
       "changePercent" numeric(14, 8) NOT NULL CHECK ("changePercent" > -100 AND "changePercent" < 1000),
       "fetchedAt" timestamptz(3) NOT NULL DEFAULT now(),
       PRIMARY KEY (currency, month)
