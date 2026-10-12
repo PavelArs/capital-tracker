@@ -730,3 +730,68 @@ a.portfolio-asset__name:hover {
     margin-top: 28px;
   }
 }
+
+/* Add to portfolio: one tile per kind of asset, each opening that kind's own form. */
+.portfolio-add {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.portfolio-add__lead,
+.portfolio-add__note {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.portfolio-add__note {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+.portfolio-add__choice {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 10px;
+  padding: var(--sp-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.portfolio-add__choice:hover {
+  border-color: var(--ink-3);
+  background: var(--raised);
+}
+
+.portfolio-add__choice small {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+/* The last tile takes the whole row when the count is odd. */
+.portfolio-add__choice:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.portfolio-add__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+@media (max-width: 639.98px) {
+  .portfolio-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

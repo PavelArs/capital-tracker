@@ -1,6 +1,6 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { type ReactNode, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { type ReactNode, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
@@ -70,6 +70,16 @@ export default function WalletsPage() {
   } = useWallets();
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Crypto in Portfolio's Add to portfolio comes here and opens Add wallet once the wallets are
+  // known, so a duplicate address is still caught; the request is cleared so Back does not repeat it.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const addRequested = Boolean((location.state as { addWallet?: boolean } | null)?.addWallet);
+  useEffect(() => {
+    if (!addRequested || addresses === null) return;
+    setAdding(true);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [addRequested, addresses, navigate, location.pathname, location.search]);
   const narrow = useNarrowScreen();
   const accounts: WalletAccount[] = (portfolio?.accounts ?? []).map(({ accountId, name }) => ({
     accountId,

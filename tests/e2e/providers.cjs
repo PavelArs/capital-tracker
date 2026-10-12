@@ -17,6 +17,8 @@ const allowedHosts = new Set([
   'open.er-api.com',
   'api.kraken.com',
   'www.cbr.ru',
+  'api.bls.gov',
+  'ec.europa.eu',
   'api.bybit.com',
   'api.trongrid.io',
   'apilist.tronscanapi.com',
@@ -248,6 +250,90 @@ function cbrDynamic(response, url) {
   });
   response.end(
     `<?xml version="1.0" encoding="windows-1251"?><ValCurs ID="${code}" DateRange1="${date(from)}" DateRange2="${date(to)}" name="Foreign Currency Market Dynamic">${records}</ValCurs>`,
+  );
+}
+
+// INFL-OFFICIAL: synthetic consumer price indices, 0.3% a month since December 2024 and the
+// latest two months not published yet, in the shapes of the BLS API, Eurostat JSON-stat and the Bank of Russia table.
+function inflationMonths() {
+  const now = new Date();
+  const last = now.getUTCFullYear() * 12 + now.getUTCMonth() - 2;
+  const months = [];
+  for (let number = 2024 * 12 + 11; number <= last; number++)
+    months.push(`${Math.floor(number / 12)}-${String((number % 12) + 1).padStart(2, '0')}`);
+  return months;
+}
+function inflationLevel(position) {
+  return Math.round(100 * 1.003 ** position * 1000) / 1000;
+}
+function blsInflation(request, response) {
+  const chunks = [];
+  request.on('data', (chunk) => chunks.push(chunk));
+  request.on('end', () => {
+    let query = {};
+    try {
+      query = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    } catch {}
+    const from = Number(query.startyear);
+    const to = Number(query.endyear);
+    const ok =
+      request.method === 'POST' &&
+      Array.isArray(query.seriesid) &&
+      query.seriesid[0] === 'CUUR0000SA0' &&
+      Number.isInteger(from) &&
+      Number.isInteger(to) &&
+      to - from < 10;
+    response.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
+    if (!ok)
+      return response.end(
+        JSON.stringify({ status: 'REQUEST_NOT_PROCESSED', message: ['Invalid request'], Results: {} }),
+      );
+    const data = inflationMonths()
+      .map((month, position) => ({ month, position }))
+      .filter(({ month }) => Number(month.slice(0, 4)) >= from && Number(month.slice(0, 4)) <= to)
+      .reverse()
+      .map(({ month, position }) => ({
+        year: month.slice(0, 4),
+        period: `M${month.slice(5)}`,
+        periodName: month,
+        value: inflationLevel(position).toFixed(3),
+        footnotes: [{}],
+      }));
+    response.end(
+      JSON.stringify({
+        status: 'REQUEST_SUCCEEDED',
+        responseTime: 5,
+        message: [],
+        Results: { series: [{ seriesID: 'CUUR0000SA0', data }] },
+      }),
+    );
+  });
+}
+function cbrInflation(response) {
+  const months = inflationMonths().slice(1);
+  const rows = months
+    .map((month) => `<tr><td>${month.slice(5)}.${month.slice(0, 4)}</td><td>14,00</td><td>5,50</td><td>4,00</td></tr>`)
+    .reverse()
+    .join('');
+  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
+  response.end(
+    `<html><body><table class="data"><tr><th>Дата</th><th>Ключевая ставка, % годовых</th><th>Инфляция, % г/г</th><th>Цель по инфляции, %</th></tr>${rows}</table></body></html>`,
+  );
+}
+function eurostatInflation(response) {
+  const months = inflationMonths();
+  response.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
+  response.end(
+    JSON.stringify({
+      version: '2.0',
+      class: 'dataset',
+      id: ['freq', 'unit', 'coicop', 'geo', 'time'],
+      size: [1, 1, 1, 1, months.length],
+      value: Object.fromEntries(months.map((_month, position) => [position, inflationLevel(position)])),
+      dimension: {
+        time: { category: { index: Object.fromEntries(months.map((month, position) => [month, position])) } },
+      },
+    }),
   );
 }
 
@@ -946,6 +1032,15 @@ function provider(request, response, url) {
     return krakenOhlc(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp')
     return cbrDynamic(response, url);
+  if (url.hostname === 'www.cbr.ru' && url.pathname === '/hd_base/infl/')
+    return cbrInflation(response);
+  if (url.hostname === 'api.bls.gov' && url.pathname === '/publicAPI/v1/timeseries/data/')
+    return blsInflation(request, response);
+  if (
+    url.hostname === 'ec.europa.eu' &&
+    url.pathname === '/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx'
+  )
+    return eurostatInflation(response);
   if (url.hostname === 'api.etherscan.io' || blockscoutChains[url.hostname])
     return etherscan(response, url);
   if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);

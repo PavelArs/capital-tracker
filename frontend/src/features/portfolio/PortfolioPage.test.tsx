@@ -16,7 +16,7 @@ import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.ap
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetPage from './AssetPage';
 import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
@@ -180,6 +180,12 @@ function renderAt(path: string) {
       </Routes>
     </MemoryRouter>,
   );
+}
+// Add opens Add to portfolio; a coin, cash or anything by hand is "Something else".
+async function openAddAsset(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: 'Add' }));
+  const picker = screen.getByRole('dialog', { name: 'Add to portfolio' });
+  await user.click(within(picker).getByRole('button', { name: /^Something else/ }));
 }
 const rowOf = (name: string) => screen.getByRole('row', { name: new RegExp(`^${name}`) });
 const cells = (row: HTMLElement) =>
@@ -531,7 +537,7 @@ describe('PV-UI Portfolio values every asset', () => {
     const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
     expect(summary).toHaveTextContent('$20,000.00 in bank deposits');
     expect(screen.getByText('No assets yet')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Add' }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getByRole('region', { name: 'Allocation' })).toBeInTheDocument();
   });
@@ -576,7 +582,7 @@ describe('PV-UI Portfolio values every asset', () => {
     });
     const user = userEvent.setup();
     const add = async () => {
-      await user.click(screen.getByRole('button', { name: 'Add asset' }));
+      await openAddAsset(user);
       const dialog = screen.getByRole('dialog', { name: 'Add asset' });
       await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
       await user.type(within(dialog).getByLabelText('Name'), 'Toncoin');
@@ -681,7 +687,7 @@ describe('PV-UI Portfolio values every asset', () => {
 
 describe('AST-UI Portfolio lists assets with their classification', () => {
   const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(await screen.findByRole('button', { name: 'Add asset' }));
+    await openAddAsset(user);
     const dialog = screen.getByRole('dialog', { name: 'Add asset' });
     // The wallet list is loaded before a balance can be added.
     await within(dialog).findByLabelText('Wallet or account');
@@ -709,6 +715,51 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const dialog = await openDialog(user);
     await user.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it("ADD-PICK asks what to add, then opens that kind's own form or page", async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const Wallets = () => {
+      const location = useLocation();
+      return (
+        <p>
+          Wallets page, add wallet: {String((location.state as { addWallet?: boolean })?.addWallet)}
+        </p>
+      );
+    };
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/portfolio?currency=EUR']}>
+        <Routes>
+          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/wallets" element={<Wallets />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Add' }));
+    const picker = screen.getByRole('dialog', { name: 'Add to portfolio' });
+    expect(
+      within(picker)
+        .getAllByRole('button')
+        .map(
+          (button) => button.querySelector('b')?.textContent ?? button.getAttribute('aria-label'),
+        ),
+    ).toEqual(['Close', 'Crypto', 'Bank', 'Something else']);
+
+    await user.click(within(picker).getByRole('button', { name: /^Bank/ }));
+    expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
+    const deposit = screen.getByRole('dialog', { name: 'Add deposit' });
+    await user.keyboard('{Escape}');
+    expect(deposit).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
+        name: /^Crypto/,
+      }),
+    );
+    expect(await screen.findByText('Wallets page, add wallet: true')).toBeInTheDocument();
   });
 
   it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
@@ -952,7 +1003,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
-    await user.click(screen.getByRole('button', { name: 'Add asset' }));
+    await openAddAsset(user);
     const empty = screen.getByRole('dialog', { name: 'Add asset' });
     // G1: with no account yet, the balance gets a new one made right here.
     expect(await within(empty).findByText(/You have no account yet/)).toBeInTheDocument();
@@ -1090,7 +1141,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
-    const opener = screen.getByRole('button', { name: 'Add asset' });
+    const opener = screen.getByRole('button', { name: 'Add' });
     let dialog = await openDialog(user);
     expect(within(dialog).getByLabelText('Name')).toHaveFocus();
     const submit = within(dialog).getByRole('button', { name: 'Add asset' });
@@ -1285,7 +1336,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('No assets yet')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Add' }).length).toBeGreaterThan(0);
   });
 });
 
