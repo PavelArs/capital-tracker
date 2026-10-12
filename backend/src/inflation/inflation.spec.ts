@@ -212,7 +212,7 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
     JSON.stringify({
       version: '2.0',
       class: 'dataset',
-      id: ['freq', 'unit', 'coicop', 'geo', 'time'],
+      id: ['freq', 'unit', 'coicop18', 'geo', 'time'],
       size: [1, 1, 1, 1, 3],
       value: { '0': 100, '1': 101, '2': 102.01 },
       dimension: { time: { category: { index: { '2025-01': 0, '2025-02': 1, '2025-03': 2 } } } },
@@ -238,7 +238,7 @@ describe('INFL-OFFICIAL parsing what the statistics offices publish', () => {
     ['more than one country', stat({ size: [1, 1, 1, 2, 3] }), 'is not one value'],
     [
       'no time dimension',
-      stat({ id: ['freq', 'unit', 'coicop', 'geo', 'when'] }),
+      stat({ id: ['freq', 'unit', 'coicop18', 'geo', 'when'] }),
       'no time dimension',
     ],
     ['no values', stat({ value: {} }), 'no values'],
@@ -420,8 +420,8 @@ describe('INFL-OFFICIAL the HTTP client', () => {
     });
     const result = await new InflationClient({ eurostatUrl: base }).fetch('eurostat');
     expect(result).toEqual({ ok: true, changes: [{ month: '2025-02', percent: '1.00000000' }] });
-    expect(seen[0]).toContain('prc_hicp_midx?format=JSON');
-    expect(seen[0]).toContain('coicop=CP00&geo=EA&sinceTimePeriod=2008-12');
+    expect(seen[0]).toContain('prc_hicp_minr?format=JSON');
+    expect(seen[0]).toContain('unit=I15&coicop18=TOTAL&geo=EA&sinceTimePeriod=2008-12');
   });
 
   it('asks the Bank of Russia page for the period and rebuilds monthly changes', async () => {
