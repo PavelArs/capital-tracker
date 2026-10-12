@@ -226,8 +226,8 @@ function Summary({
     portfolio.costBasis === null &&
     (portfolio.unknownCostCount > 0 || portfolio.missingRateCount > 0) &&
     Number(portfolio.knownCostSubtotal) > 0;
-  const partialProfit =
-    portfolio.unrealizedPnl === null && partialCost && portfolio.knownUnrealizedPnl !== null;
+  // The coins left out, for a missing price or a missing purchase price, are named in the note.
+  const partialProfit = portfolio.unrealizedPnl === null && portfolio.knownUnrealizedPnl !== null;
   const partialRealized =
     portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
   const partial = partialValue || partialCost || partialProfit || partialRealized;

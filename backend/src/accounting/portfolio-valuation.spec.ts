@@ -316,6 +316,24 @@ describe('PV-KNOWN-PART profit over the coins whose cost is known', () => {
     expect(result.knownUnrealizedPnl).toBeNull();
   });
 
+  it('leaves a coin without a price out and counts the priced ones', () => {
+    const result = projectPortfolio(
+      now,
+      [btc, eth],
+      [holding(1, 'Trezor', [position(btc, '1', '50000'), position(eth, '2', '4000')])],
+      prices({ ETH: ['3000', minutesAgo(5)] }),
+    );
+    expect(result).toMatchObject({
+      totalValue: null,
+      missingPriceCount: 1,
+      unrealizedPnl: null,
+      // Only ETH is priced: 6000 - 4000 over its cost.
+      knownUnrealizedPnl: '2000',
+      knownUnrealizedReturnPercent: '50.00',
+    });
+    expect(assetOf(result, btc)).toMatchObject({ unrealizedPnl: null, knownUnrealizedPnl: null });
+  });
+
   it('is empty when no coin has a known cost', () => {
     const result = projectPortfolio(
       now,

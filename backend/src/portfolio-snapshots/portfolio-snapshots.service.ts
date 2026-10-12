@@ -28,7 +28,15 @@ import { readFxRates } from '../fx-rates/fx-rates.service';
 import { trackJob } from '../observability/metrics';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
-import { capitalFlows, investedAt, profitToDate, splitChange, stateFlows } from './capital-flows';
+import {
+  capitalFlows,
+  type HeldAssets,
+  investedAt,
+  profitToDate,
+  type SplitPoint,
+  splitChange,
+  stateFlows,
+} from './capital-flows';
 import {
   DEFAULT_PERIOD,
   firstValuedPoint,
@@ -157,7 +165,7 @@ function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
-): (SnapshotValue & { unpriced: boolean; unrated: boolean })[] {
+): (SnapshotValue & { unpriced: boolean; unrated: boolean; held: HeldAssets })[] {
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
@@ -186,6 +194,12 @@ function valuesAt(
       unpriced: rated && (report.missingPriceCount > 0 || report.unratedDepositCount > 0),
       // A deposit left out of the value is still in the money put in.
       unrated: rated && report.unratedDepositCount > 0,
+      // What is held, to take a coin without a price out of the market effect.
+      held: new Map(
+        report.assets
+          .filter((asset) => asset.quantity !== '0')
+          .map((asset) => [asset.instrumentId, { quantity: asset.quantity, value: asset.value }]),
+      ),
     };
   });
 }
@@ -358,16 +372,17 @@ export class PortfolioSnapshotsService {
       const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
       const [current] = valuesAt(valuation, now.getTime(), prices, [fx]);
-      const series: { at: number; value: string | null; complete: boolean; unpriced?: boolean }[] =
-        [
-          ...stored,
-          {
-            at: now.getTime(),
-            value: current.value,
-            complete: current.complete,
-            unpriced: current.unpriced,
-          },
-        ];
+      const series: (SplitPoint & { complete: boolean })[] = [
+        ...stored,
+        {
+          at: now.getTime(),
+          value: current.value,
+          complete: current.complete,
+          unpriced: current.unpriced,
+          unrated: current.unrated,
+          held: current.held,
+        },
+      ];
       // Deposits and withdrawals come from the operations themselves, in this currency at the
       // rate of each one's date (split-market-and-flows).
       const flows = [
@@ -385,12 +400,14 @@ export class PortfolioSnapshotsService {
         invested: invested[index],
       }));
       let start = firstValuedPoint(series);
-      if (start && !start.complete && start.unpriced === undefined) {
+      const leftOut = [...current.held.values()].some((asset) => asset.value === null);
+      if (start && start.held === undefined && (!start.complete || leftOut)) {
         // A stored snapshot is incomplete for a held asset without a price and for accounts
-        // not yet started; only the first leaves out value, so that is read again.
+        // not yet started; only the first leaves out value, so that is read again, with what
+        // it held. A coin now without a price also needs what it was worth at the start.
         const inputs = await readSeriesInputs(manager, owner);
         const [again] = valuesAt(inputs.valuation, start.at, pricesAt(inputs, start.at), [fx]);
-        start = { ...start, unpriced: again.unpriced };
+        start = { ...start, unpriced: again.unpriced, unrated: again.unrated, held: again.held };
       }
       return {
         period: query.period,

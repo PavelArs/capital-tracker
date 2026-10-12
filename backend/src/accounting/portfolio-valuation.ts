@@ -563,7 +563,9 @@ export function projectPortfolio(
       if (total.unknownQuantity > 0n) unknownCostCount++;
       if (result === null) unrealizedComplete = false;
       else unrealized += result;
-      if (knownQuantity > 0n) {
+      // A coin without a price stays out of the known result, as of the known value: it is
+      // counted in missingPriceCount and said so in the notes, but does not empty the rest.
+      if (knownQuantity > 0n && value !== null) {
         if (knownResult === null) knownUnrealizedComplete = false;
         else {
           knownUnrealized += knownResult;
