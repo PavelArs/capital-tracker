@@ -51,4 +51,27 @@ describe('BOOT-SHELL: the frame is drawn before the sign-in check answers', () =
     );
     expect(document.querySelector('.shell-owner__bell')).not.toBeNull();
   });
+
+  it('lays out an asset page with its chart between the figures and the list', () => {
+    open('/portfolio/some-asset');
+    expect(document.querySelector('.shell-skeleton__stats')).not.toBeNull();
+    expect(document.querySelector('.shell-skeleton__rows')).not.toBeNull();
+    // The chart's card sits between the figures and the list.
+    expect(document.querySelectorAll('.shell-skeleton__card')).toHaveLength(2);
+    expect(document.querySelector('.shell-skeleton__cards')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('draws a deposit page as cards', () => {
+    open('/deposits/some-deposit');
+    expect(document.querySelector('.shell-skeleton__cards')).not.toBeNull();
+    expect(document.querySelector('.shell-skeleton__stats')).toBeNull();
+  });
+
+  it('marks and lays out the section a retired bookmark leads to', () => {
+    open('/settings');
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(document.querySelector('.shell-skeleton__cards')).not.toBeNull();
+    expect(document.querySelector('.shell-skeleton__stats')).toBeNull();
+  });
 });

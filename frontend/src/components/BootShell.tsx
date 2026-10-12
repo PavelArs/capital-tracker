@@ -1,9 +1,9 @@
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
-import { shellSections } from '@features/shell/navigation';
+import { retiredPaths, shellSections } from '@features/shell/navigation';
 import { Bone, PageSkeleton } from '@features/shell/Skeleton';
 import { type ComponentProps, useEffect, useRef } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import '@features/shell/shell-page.css';
 import '@features/shell/tokens.css';
 import './Layout.css';
@@ -21,6 +21,22 @@ const blocksOf: Record<string, Blocks> = {
   preferences: ['cards'],
 };
 
+// An asset, a wallet or a deposit has its own shape, not the list's.
+const nestedBlocksOf: Record<string, Blocks> = {
+  portfolio: ['stats', 'chart', 'rows'],
+  wallets: ['stats', 'rows'],
+  deposits: ['cards'],
+};
+
+/** Where the owner ends up: the bare address and the retired bookmarks are sent on by the routes. */
+function landingPath(pathname: string): string {
+  const retired = retiredPaths.find(
+    ([from]) => pathname === from || pathname.startsWith(`${from}/`),
+  );
+  if (retired) return retired[1];
+  return pathname === '/' ? '/dashboard' : pathname;
+}
+
 /**
  * The frame of the application (navigation, an empty page head, grey blocks) drawn while the
  * sign-in check is on its way, so the first thing on screen is the place the owner is going to,
@@ -31,8 +47,8 @@ export default function BootShell() {
   // The selected currency stays on the links, as in the navigation that replaces this one.
   const [asked] = useAskedCurrency();
   const menuRef = useRef<HTMLDivElement>(null);
-  // The address "/" leads to the Dashboard once the owner is known.
-  const [section = 'dashboard', ...rest] = pathname.split('/').filter(Boolean);
+  const here = landingPath(pathname);
+  const [section = '', ...rest] = here.split('/').filter(Boolean);
 
   // Phones show the sections as a strip: keep the current one in view, as Layout does.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
@@ -42,8 +58,10 @@ export default function BootShell() {
     if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
     strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
   }, [pathname]);
-  // An asset, a wallet or a deposit: figures on top and a list under them.
-  const show = rest.length > 0 ? blocksOf.portfolio : (blocksOf[section] ?? blocksOf.portfolio);
+  const show =
+    (rest.length > 0 ? nestedBlocksOf[section] : undefined) ??
+    blocksOf[section] ??
+    blocksOf.portfolio;
   return (
     <div className="shell">
       <nav className="shell-nav" aria-label="Main navigation">
@@ -57,10 +75,15 @@ export default function BootShell() {
           <ul className="shell-nav__sections" data-nav-group="sections">
             {shellSections.map((entry) => (
               <li key={entry.path}>
-                <NavLink to={withCurrency(entry.path, asked)}>
+                <Link
+                  to={withCurrency(entry.path, asked)}
+                  aria-current={
+                    here === entry.path || here.startsWith(`${entry.path}/`) ? 'page' : undefined
+                  }
+                >
                   <Icon name={entry.icon} />
                   {entry.label}
-                </NavLink>
+                </Link>
               </li>
             ))}
           </ul>
