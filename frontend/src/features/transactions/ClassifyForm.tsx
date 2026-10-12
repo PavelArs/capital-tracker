@@ -144,8 +144,9 @@ export function suggestedValue(operation: Operation): string {
  * what the owner typed.
  */
 function shownValue(draft: Draft): string {
-  const fits =
-    draft.type !== 'pool-withdrawal' && !recordKey.test(draft.pair) && !replaceKey.test(draft.pair);
+  const namesRecord =
+    draft.type === 'swap' && (recordKey.test(draft.pair) || replaceKey.test(draft.pair));
+  const fits = draft.type !== 'pool-withdrawal' && !namesRecord;
   return draft.offered && fits ? draft.suggested : draft.value;
 }
 

@@ -2697,6 +2697,22 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('999.99');
     });
 
+    it('CLS-MARKET-VALUE: a swap record left chosen does not hide the offer for another answer', async () => {
+      const unpriced = operation({
+        ...paid,
+        estimatedValueUsd: null,
+        marketValue: { valueUsd: '999.99', observedAt: '2026-10-03T12:00:00.000Z' },
+      });
+      const { user, drawer } = await openRow([unpriced, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Expense' }));
+      expect(within(drawer).getByLabelText(/Value at the time/)).toHaveValue('999.99');
+    });
+
     it('an outgoing transaction can be replaced by a plain purchase of another coin', async () => {
       const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
       // Not choices: another wallet's, with a fee, paid in RUB, a sale, a purpose, the same coin,
