@@ -1,0 +1,73 @@
+/* Phones: the search and a Filters button in one row; the filters open in a sheet. */
+.ui-filter-bar {
+  display: flex;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.ui-filter-bar .ui-search {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.ui-filter-bar__button.shell-button {
+  flex: none;
+  height: 36px;
+  margin-top: 0;
+}
+
+.ui-filter-bar__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sheet rises from the bottom edge and keeps its buttons above the home indicator. */
+.ui-scrim:has(> .ui-modal--sheet) {
+  place-items: end stretch;
+  padding: 0;
+}
+
+.ui-modal--sheet {
+  width: 100%;
+  animation: ui-sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-width: 1px 0 0;
+  border-radius: 16px 16px 0 0;
+}
+
+.ui-modal--sheet .ui-modal__foot {
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+.ui-modal--sheet .ui-modal__foot .shell-button {
+  flex: 1;
+  margin-top: 0;
+}
+
+/* One filter a row, labels above, full width. */
+.ui-filters.ui-filters--sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+
+.ui-filters--sheet .ui-filter {
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+
+.ui-filters--sheet .ui-filter .ui-input {
+  width: 100%;
+  height: 40px;
+  font-size: var(--fs-md);
+}

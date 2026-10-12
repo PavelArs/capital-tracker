@@ -43,6 +43,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
 import EmptyState from '@/ui/EmptyState';
+import FilterSheet from '@/ui/FilterSheet';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import PageIntro from '@/ui/PageIntro';
 
@@ -419,6 +420,8 @@ const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
   range ? cachedReads.operations.load(currency, range) : cachedReads.operations.load(currency);
 
 // Every operation the app knows in one list (list-all-operations, OPS-4).
+const periodKey = (range: OperationRange | undefined) => `${range?.from ?? ''}|${range?.to ?? ''}`;
+
 export default function TransactionsPage() {
   // No currency in the address means the owner's main currency (Settings).
   const [asked] = useAskedCurrency();
@@ -431,6 +434,8 @@ export default function TransactionsPage() {
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
   const [list, setList] = useState<OperationList | null>(() => shownList(asked, period) ?? null);
+  // The period the list on screen was read for; a new period keeps the old rows until it arrives.
+  const [listPeriod, setListPeriod] = useState(() => periodKey(period));
   const [failed, setFailed] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   // ASSET-HIDE: so are the assets the owner hid from their own pages.
@@ -465,6 +470,7 @@ export default function TransactionsPage() {
       if (fresh) {
         const kept = shownList(currency, range);
         setList(kept ?? null);
+        setListPeriod(periodKey(range));
         onScreen.current = kept !== undefined;
       }
       try {
@@ -476,6 +482,7 @@ export default function TransactionsPage() {
         if (request !== latest.current) return null;
         onScreen.current = true;
         setList(next);
+        setListPeriod(periodKey(range));
         return next;
       } catch {
         if (request === latest.current) setFailed(true);
@@ -813,7 +820,28 @@ export default function TransactionsPage() {
                 );
               })}
             </div>
-            <div className="ui-filters">
+            <FilterSheet
+              active={[asset, place, kind, period].filter(Boolean).length}
+              onReset={() =>
+                update({ asset: '', account: '', type: '', from: '', to: '', cost: '' })
+              }
+              done={
+                // Until the new period's rows arrive, the count would be the old period's.
+                listPeriod === periodKey(period)
+                  ? `Show ${visible.length} ${visible.length === 1 ? 'transaction' : 'transactions'}`
+                  : 'Show transactions'
+              }
+              search={
+                <input
+                  className="ui-input ui-input--sm ui-search"
+                  type="search"
+                  placeholder="Search asset, account, type"
+                  aria-label="Search transactions"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              }
+            >
               <label className="ui-filter">
                 <span>Asset</span>
                 <select
@@ -864,15 +892,7 @@ export default function TransactionsPage() {
                 today={new Date().toISOString().slice(0, 10)}
                 onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
               />
-              <input
-                className="ui-input ui-input--sm ui-search"
-                type="search"
-                placeholder="Search asset, account, type"
-                aria-label="Search transactions"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
+            </FilterSheet>
           </div>
           {unknownCost && (
             <p className="transactions-info">

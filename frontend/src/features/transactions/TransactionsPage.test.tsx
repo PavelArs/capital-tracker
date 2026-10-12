@@ -649,6 +649,83 @@ describe('TransactionsPage (list-all-operations)', () => {
     }
   });
 
+  it('OPS-FILTER-SHEET-COUNT: the sheet names no count while a new period is loading', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(operationsApi, 'list')
+        .mockResolvedValueOnce(all)
+        .mockReturnValueOnce(new Promise(() => {}));
+      renderPage();
+      await screen.findByRole('list', { name: 'Transactions' });
+      await user.click(screen.getByRole('button', { name: 'Filters' }));
+      const sheet = screen.getByRole('dialog', { name: 'Filters' });
+      expect(
+        within(sheet).getByRole('button', { name: 'Show 6 transactions' }),
+      ).toBeInTheDocument();
+      await user.selectOptions(
+        within(sheet).getByRole('combobox', { name: 'Period' }),
+        'Last 30 days',
+      );
+      expect(within(sheet).getByRole('button', { name: 'Show transactions' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('OPS-FILTER-SHEET: on a phone the filters wait behind a Filters button in a sheet', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+      renderPage();
+      const rows = await screen.findByRole('list', { name: 'Transactions' });
+      // The chips and the search stay; the selects do not take the first screen.
+      expect(screen.getByRole('searchbox', { name: 'Search transactions' })).toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'Asset' })).toBeNull();
+      const button = screen.getByRole('button', { name: 'Filters' });
+      await user.click(button);
+      const sheet = screen.getByRole('dialog', { name: 'Filters' });
+      expect(within(sheet).getByRole('button', { name: 'Reset' })).toBeDisabled();
+      await user.selectOptions(within(sheet).getByRole('combobox', { name: 'Asset' }), 'USDT');
+      await user.click(within(sheet).getByRole('button', { name: 'Show 1 transaction' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(within(rows).getAllByRole('button')).toHaveLength(1);
+      // The button counts the filters that are set; Reset in the sheet clears them.
+      await user.click(screen.getByRole('button', { name: 'Filters, 1 set' }));
+      const again = screen.getByRole('dialog', { name: 'Filters' });
+      await user.selectOptions(
+        within(again).getByRole('combobox', { name: 'Period' }),
+        'Custom range',
+      );
+      fireEvent.change(within(again).getByLabelText('From'), { target: { value: '2025-06-01' } });
+      await user.click(screen.getByRole('button', { name: 'Reset' }));
+      // A range being picked clears with the rest.
+      expect(
+        within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('combobox', {
+          name: 'Period',
+        }),
+      ).toHaveValue('all');
+      expect(screen.queryByLabelText('From')).toBeNull();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
+      expect(within(rows).getAllByRole('button')).toHaveLength(6);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('reads the status filter from the address so other screens can link to it', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage('/transactions?status=needs-classification');
