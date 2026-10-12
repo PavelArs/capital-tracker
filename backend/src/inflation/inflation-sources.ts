@@ -120,8 +120,9 @@ export function parseBlsLevels(body: string, series: string): Level[] {
 }
 
 /**
- * Eurostat JSON-stat 2.0 for prc_hicp_midx narrowed to one geo, item and unit: the dimensions
- * other than time must hold exactly one category; `value` maps a position to the index.
+ * Eurostat JSON-stat 2.0 for prc_hicp_minr (ECOICOP 2; the older prc_hicp_midx stopped at 2025-12)
+ * narrowed to one geo, item and unit: the dimensions other than time must hold exactly one
+ * category; `value` maps a position to the index.
  */
 export function parseEurostatHicp(body: string): MonthlyChange[] {
   let data: unknown;
@@ -344,7 +345,7 @@ export class InflationClient {
         : provider === 'eurostat'
           ? [
               [
-                `${base}/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx?format=JSON&lang=EN&freq=M&unit=I15&coicop=CP00&geo=EA&sinceTimePeriod=${INFLATION_HISTORY_FROM}`,
+                `${base}/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_minr?format=JSON&lang=EN&freq=M&unit=I15&coicop18=TOTAL&geo=EA&sinceTimePeriod=${INFLATION_HISTORY_FROM}`,
                 'application/json',
               ],
             ]
