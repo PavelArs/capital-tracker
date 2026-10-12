@@ -41,4 +41,19 @@ describe('useHeldClasses (v8)', () => {
     answer({ items: [property], nextCursor: null });
     await waitFor(() => expect(result.current.has('property')).toBe(true));
   });
+
+  it('tries a failed read again on the next page', async () => {
+    const list = vi
+      .spyOn(accountingApi, 'listAccounts')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ items: [property], nextCursor: null });
+    const { result, rerender } = renderHook(({ path }) => useHeldClasses(path), {
+      initialProps: { path: '/dashboard' },
+    });
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    rerender({ path: '/portfolio' });
+    await waitFor(() => expect(result.current.has('property')).toBe(true));
+    expect(list).toHaveBeenCalledTimes(2);
+  });
 });

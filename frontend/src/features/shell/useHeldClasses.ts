@@ -12,7 +12,7 @@ const classesOf = (accounts: readonly { assetClass?: AccountClass | null }[] | u
  * The asset classes the owner holds accounts of (v8), for the sections shown only then. Only a
  * change the owner makes can add an account, and every change drops the kept reads: so the
  * accounts are read on arrival and again on the first page after a change, never on every page.
- * A failed read keeps what was known.
+ * A failed read keeps what was known and is tried again on the next page.
  */
 export function useHeldClasses(pathname: string): ReadonlySet<AccountClass> {
   const [held, setHeld] = useState(() => classesOf(cachedReads.accounts.last()));
@@ -32,7 +32,10 @@ export function useHeldClasses(pathname: string): ReadonlySet<AccountClass> {
     readIn.current = generation;
     cachedReads.accounts.load().then(
       (accounts) => mounted.current && setHeld(classesOf(accounts)),
-      () => undefined,
+      () => {
+        // A failed read is tried again on the next page, not only after the next change.
+        if (readIn.current === generation) readIn.current = null;
+      },
     );
   }, [pathname]);
   return held;

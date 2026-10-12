@@ -98,11 +98,12 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
   const id = useId();
   const first = useRef<HTMLInputElement>(null);
 
-  // Closing before the purchase is saved leaves nothing behind: the account made for it holds
-  // nothing yet, so it goes (a refusal means the purchase did land after all, and it stays).
+  // Closing keeps what cannot be taken back: once the property itself is saved, its page opens,
+  // as Add asset does, and its purchase can be added there. An account made for a property that
+  // was never saved holds nothing, so it goes rather than stay out of reach.
   const finish = () => {
     const done = saved.current;
-    if (done.asset && done.receipt) return onAdded(done.asset);
+    if (done.asset) return onAdded(done.asset);
     if (done.accountId) void accountingApi.removeAccount(done.accountId).catch(() => undefined);
     onClose();
   };
@@ -185,7 +186,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
         }),
       );
     } catch (caught) {
-      setError(failure(caught, 'The purchase was not saved. '));
+      setError(failure(caught, 'The property was added, but its purchase was not saved. '));
       setSaving(false);
       return;
     }
@@ -385,7 +386,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
             onClick={finish}
             disabled={saving}
           >
-            {saved.current.receipt ? 'Close' : 'Cancel'}
+            {saved.current.asset ? 'Close' : 'Cancel'}
           </button>
           <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
             Add property

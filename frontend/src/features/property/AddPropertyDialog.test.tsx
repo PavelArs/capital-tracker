@@ -253,19 +253,20 @@ describe('PROPERTY-ADD Add property', () => {
     expect(onAdded).not.toHaveBeenCalled();
   });
 
-  it('also removes the account when the purchase is refused and the dialog is closed', async () => {
+  it('keeps the property and opens it when its purchase is refused', async () => {
+    // As Add asset does: the property is saved and cannot be taken back, so its page opens.
     createTrade.mockRejectedValueOnce(refused(400));
     const user = userEvent.setup();
-    const { dialog, onAdded, onClose } = open();
+    const { dialog, onAdded } = open();
     await fill(user, dialog, { 'Purchase price': '8500000' });
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The purchase was not saved. Check the fields and try again.',
+      'The property was added, but its purchase was not saved. Check the fields and try again.',
     );
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(removeAccount).toHaveBeenCalledWith(id(2));
-    expect(onClose).toHaveBeenCalled();
-    expect(onAdded).not.toHaveBeenCalled();
+    const [, footer] = within(dialog).getAllByRole('button', { name: 'Close' });
+    await user.click(footer);
+    expect(removeAccount).not.toHaveBeenCalled();
+    expect(onAdded).toHaveBeenCalledWith(asset);
   });
 
   it('keeps everything once the purchase is saved, even if the value is not', async () => {
