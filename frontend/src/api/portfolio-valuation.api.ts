@@ -76,6 +76,10 @@ export interface PortfolioValuation {
   missingPriceCount: number;
   stalePriceCount: number;
   unavailableAccountCount: number;
+  /** What the bank deposits are worth, part of the value; none by default. */
+  depositsValue: string;
+  /** Deposits whose currency has no fresh Bank of Russia rate; left out of the value. */
+  unratedDepositCount: number;
   costBasis: string | null;
   knownCostSubtotal: string;
   unknownCostCount: number;

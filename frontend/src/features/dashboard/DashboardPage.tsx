@@ -4,12 +4,12 @@ import {
   historyPeriods,
   type PortfolioHistory,
 } from '@api/portfolio-history.api';
-import type { PortfolioValuation } from '@api/portfolio-valuation.api';
+import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
-import { useAskedCurrency } from '../portfolio/currency';
+import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, percent, quantity, tone } from '../portfolio/format';
 import AboutChart from '../shell/AboutChart';
 import { useAttention } from '../shell/attention-context';
@@ -94,9 +94,11 @@ function Amount({ text }: { text: string }) {
 function NetWorth({
   history,
   portfolio,
+  asked,
 }: {
   history: PortfolioHistory;
   portfolio: PortfolioValuation | null;
+  asked: AccountingCurrency | undefined;
 }) {
   const { currency, profit } = history;
   const direction = tone(profit);
@@ -136,6 +138,14 @@ function NetWorth({
           </span>
         )}
       </div>
+      {portfolio !== null &&
+        portfolio.currency === currency &&
+        Number(portfolio.depositsValue) > 0 && (
+          <div className="dashboard-hero__note">
+            Includes {money(portfolio.depositsValue, currency)} in{' '}
+            <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
+          </div>
+        )}
       <ChangeSplit history={history} />
     </section>
   );
@@ -257,7 +267,7 @@ export default function DashboardPage() {
         <Empty onAdd={() => setAdding(true)} />
       ) : (
         <>
-          <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} />
+          <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} asked={asked} />
           <section
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"

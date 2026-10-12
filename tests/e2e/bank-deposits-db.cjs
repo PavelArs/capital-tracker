@@ -369,6 +369,108 @@ async function owners(db, service, owner, other, ids) {
   console.log('PASS DEP-OWNER');
 }
 
+async function wholePortfolio(db, owner) {
+  stage = 'synthetic whole portfolio: the 12% ruble deposit and the 4% dollar one beside no coins';
+  const { PortfolioValuationService } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+  const { PortfolioSnapshotsService } = require('/app/backend/dist/portfolio-snapshots/portfolio-snapshots.service.js');
+  const { DepositsService } = require(modulePath);
+  const deposits = new DepositsService(db);
+  const rubles = await deposits.create(owner, { requestId: randomUUID(), ...savings });
+  const dollarsDeposit = await deposits.create(owner, { requestId: randomUUID(), ...dollars });
+  const now = new Date('2026-10-04T12:00:00.000Z');
+  const valuation = new PortfolioValuationService(db);
+  const rub = await valuation.read(owner, { currency: 'RUB' }, now);
+  assert.equal(rub.completeness, 'complete');
+  assert.equal(rub.unratedDepositCount, 0);
+  assert.equal(rub.depositsValue, rub.totalValue, 'Nothing but deposits is held');
+  assert.match(rub.totalValue, /^557710\.9[56]/, 'The same sum the deposits list states');
+  assert.deepEqual(rub.allocation.byType.map((slice) => [slice.key, slice.percent]), [
+    ['deposits', '100.00'],
+  ]);
+  assert.deepEqual(
+    rub.allocation.byAsset.map((slice) => slice.label),
+    ['Dollar B', 'Savings A'],
+    'One slice per deposit, the larger first',
+  );
+  assert.deepEqual(rub.allocation.byAccount.map((slice) => slice.label), ['Synthetic Bank']);
+  const usd = await valuation.read(owner, { currency: 'USD' }, now);
+  assert.match(usd.totalValue, /^6196\.78/, "Full precision, the list rounds each deposit to cents");
+  console.log('PASS DEP-VALUE-NOW');
+
+  const snapshots = new PortfolioSnapshotsService(db, new ConfigService({}));
+  const history = await snapshots.history(owner, { period: 'ALL', currency: 'RUB' }, now);
+  const first = history.points.find((point) => point.value !== null && Number(point.value) > 0);
+  assert.equal(first.at.slice(0, 10), '2026-07-01', 'The deposit appears the day it starts');
+  assert.match(first.invested, /^550000(\.0+)?$/);
+  assert.match(history.value, /^557710\.9[56]/);
+  assert.match(history.invested, /^550000(\.0+)?$/, 'Only the money put in counts as invested');
+  assert.ok(
+    history.points.filter((point) => point.at >= '2026-07-01').every((point) => point.complete),
+    'Every point since the deposit started is complete',
+  );
+  assert.match(history.profit, /^\+?7710\.9[56]/, 'Interest is the profit, not new money');
+  console.log('PASS DEP-VALUE-HISTORY');
+
+  stage = 'synthetic payout of posted interest leaves the portfolio';
+  await deposits.addMovement(owner, rubles.id, {
+    requestId: randomUUID(),
+    date: '2026-10-02',
+    kind: 'interest-payout',
+    amount: '3000',
+  });
+  const paid = await snapshots.history(owner, { period: 'ALL', currency: 'RUB' }, now);
+  assert.match(paid.invested, /^547000(\.0+)?$/, 'A payout is money taken out');
+  assert.match(paid.value, /^554710\.9[56]/);
+  assert.match(paid.profit, /^\+?7710\.9[56]/, 'Taking interest out does not change the profit');
+  console.log('PASS DEP-VALUE-FLOWS');
+
+  stage = 'synthetic deposit without a fresh rate leaves the profit unknown';
+  // The rates stop on 2026-10-02, so by 2026-10-25 the dollar deposit has none at most 15 days old.
+  const stale = await snapshots.history(
+    owner,
+    { period: 'ALL', currency: 'RUB' },
+    new Date('2026-10-25T12:00:00.000Z'),
+  );
+  assert.equal(stale.complete, false);
+  assert.equal(stale.profit, null, 'A deposit that is left out must not read as a loss');
+  console.log('PASS DEP-VALUE-UNRATED-PROFIT');
+
+  stage = 'synthetic hourly job refreshes an owner who has only deposits';
+  const scheduled = new PortfolioSnapshotsService(
+    db,
+    new ConfigService({ PRICE_COLLECTION_ENABLED: 'true' }),
+  );
+  const later = new Date('2026-10-04T15:00:00.000Z');
+  const tick = await scheduled.tick(later);
+  assert.equal(tick.outcome, 'refreshed');
+  const [{ count }] = await db.query(
+    `SELECT count(*)::int AS count FROM portfolio_snapshots WHERE "ownerId"=$1 AND "takenAt"=$2`,
+    [owner, later],
+  );
+  assert.ok(count > 0, 'The scheduled refresh reached the owner with deposits alone');
+  console.log('PASS DEP-VALUE-SCHEDULED');
+
+  stage = 'synthetic ruble deposit alone in rubles needs no dollar series';
+  await deposits.remove(owner, dollarsDeposit.id);
+  // The rates are append-only; this isolated database lets the trigger step aside once.
+  // A configured asset that is not held makes no difference.
+  await db.query(
+    `INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload")
+    VALUES($1,$2,'Unheld asset','UNH',$3,$4)`,
+    [randomUUID(), owner, randomUUID(), JSON.stringify({ name: 'Unheld asset', symbol: 'UNH' })],
+  );
+  await db.query('ALTER TABLE fx_rates DISABLE TRIGGER USER');
+  await db.query(`DELETE FROM fx_rates WHERE currency = 'USD'`);
+  await db.query('ALTER TABLE fx_rates ENABLE TRIGGER USER');
+  const alone = await snapshots.history(owner, { period: 'ALL', currency: 'RUB' }, now);
+  assert.notEqual(alone.value, null, 'Nothing but a ruble deposit in rubles is exact');
+  assert.equal(alone.complete, true);
+  const live = await valuation.read(owner, { currency: 'RUB' }, now);
+  assert.ok(Math.abs(Number(alone.value) - Number(live.totalValue)) < 0.01, 'The same sum as now');
+  console.log('PASS DEP-VALUE-SAME-CURRENCY');
+  await deposits.remove(owner, rubles.id);
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -405,9 +507,10 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    const [owner, other, third] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('deposit-owner@example.invalid','synthetic-not-a-hash',true),
-      ('deposit-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('deposit-other@example.invalid','synthetic-not-a-hash',true),
+      ('deposit-third@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const { DepositsService } = require(modulePath);
     const plain = new DepositsService(db);
     // Every call carries a fresh request id unless a stage names one to test a replay.
@@ -422,6 +525,7 @@ async function main() {
     await movements(db, service, owner.id, other.id, ids);
     await checks(db, service, owner.id, ids);
     await owners(db, service, owner.id, other.id, ids);
+    await wholePortfolio(db, third.id);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

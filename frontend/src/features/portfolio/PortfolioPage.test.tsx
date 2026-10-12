@@ -137,6 +137,8 @@ function portfolio(assets: AssetValuation[], changes: Partial<PortfolioValuation
     missingPriceCount: 0,
     stalePriceCount: 0,
     unavailableAccountCount: 0,
+    depositsValue: '0',
+    unratedDepositCount: 0,
     costBasis: '70000',
     knownCostSubtotal: '70000',
     unknownCostCount: 0,
@@ -451,6 +453,86 @@ describe('PV-UI Portfolio values every asset', () => {
     const allocation = screen.getByRole('region', { name: 'Allocation' });
     expect(allocation).toHaveTextContent('Accounts whose history starts later are not included.');
     expect(cells(rowOf('Bitcoin'))[1]).toBe('<0.00000001');
+  });
+
+  it('counts bank deposits in the value, links them and lists them in the allocation', async () => {
+    const base = portfolio([bitcoin]);
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], {
+        depositsValue: '20000',
+        allocation: {
+          ...base.allocation,
+          byType: [
+            { key: 'crypto', label: 'Crypto', value: '80000', percent: '80.00' },
+            { key: 'deposits', label: 'Bank deposits', value: '20000', percent: '20.00' },
+          ],
+          byAccount: [
+            { key: id(101), label: 'Trust Wallet', value: '80000', percent: '80.00' },
+            {
+              key: 'bank:Synthetic Bank',
+              label: 'Synthetic Bank',
+              value: '20000',
+              percent: '20.00',
+            },
+          ],
+        },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('$20,000.00 in bank deposits');
+    expect(within(summary).getByRole('link', { name: 'bank deposits' })).toHaveAttribute(
+      'href',
+      '/deposits',
+    );
+    const allocation = screen.getByRole('region', { name: 'Allocation' });
+    const user = userEvent.setup();
+    await user.click(within(allocation).getByRole('radio', { name: 'Type' }));
+    expect(allocation).toHaveTextContent('Bank deposits$20,000.0020.00%');
+    await user.click(within(allocation).getByRole('radio', { name: 'Wallets' }));
+    expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
+  });
+
+  it('shows the value and allocation of an owner who holds nothing but bank deposits', async () => {
+    const base = portfolio([]);
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([], {
+        totalValue: '20000',
+        pricedSubtotal: '20000',
+        depositsValue: '20000',
+        allocation: {
+          ...base.allocation,
+          byType: [{ key: 'deposits', label: 'Bank deposits', value: '20000', percent: '100.00' }],
+        },
+      }),
+    );
+    renderAt('/portfolio');
+    const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('$20,000.00 in bank deposits');
+    expect(screen.getByText('No assets yet')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Allocation' })).toBeInTheDocument();
+  });
+
+  it('says so when a deposit has no current rate and leaves it out of the value', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], {
+        completeness: 'incomplete',
+        totalValue: null,
+        unratedDepositCount: 2,
+        allocation: { ...portfolio([]).allocation, complete: false },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(screen.getByRole('region', { name: 'Portfolio summary' })).toHaveTextContent(
+      '2 deposits without a rate',
+    );
+    expect(screen.getByRole('region', { name: 'Allocation' })).toHaveTextContent(
+      'Deposits without a current exchange rate are not included.',
+    );
   });
 
   it('keeps the loaded portfolio when a later refresh fails and ignores a stale reply', async () => {

@@ -90,6 +90,8 @@ function portfolio(btcInTrust = '0.0098'): PortfolioValuation {
     missingPriceCount: 0,
     stalePriceCount: 0,
     unavailableAccountCount: 0,
+    depositsValue: '0',
+    unratedDepositCount: 0,
     costBasis: null,
     knownCostSubtotal: '0',
     unknownCostCount: 0,

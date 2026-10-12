@@ -16,6 +16,7 @@ import {
   readValuationInputs,
   type ValuationInputs,
 } from '../accounting/portfolio-valuation.service';
+import { depositFlows, depositValuesAt } from '../deposits/deposit-valuation';
 import {
   type AccountingCurrency,
   accountingCurrencies,
@@ -103,6 +104,10 @@ const INPUT_TABLES = [
   'wallet_ether_stake_moves',
   'wallet_ether_stake_rewards',
   'wallet_tron_stake_moves',
+  // DEP-VALUE: a deposit's terms and movements change its worth on every day since its start.
+  'bank_deposits',
+  'bank_deposit_rates',
+  'bank_deposit_movements',
 ] as const;
 // Only which account an address belongs to; its sync progress changes no value.
 const INPUT_PARTS: readonly [string, string][] = [
@@ -152,20 +157,35 @@ function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
-): (SnapshotValue & { unpriced: boolean })[] {
+): (SnapshotValue & { unpriced: boolean; unrated: boolean })[] {
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
-    const report = projectPortfolio(instant, valuation.instruments, accounts, prices, fx);
-    // Without a rate the value in that currency is unknown, not a smaller sum.
-    const rated = fx.available('USD', moscowDate(instant));
+    const report = projectPortfolio(
+      instant,
+      valuation.instruments,
+      accounts,
+      prices,
+      fx,
+      undefined,
+      depositValuesAt(valuation.deposits, instant, fx),
+    );
+    // Without a rate the value in that currency is unknown, not a smaller sum. Prices are in
+    // dollars, so only a held asset needs the dollar rate: deposits state their own, and one
+    // without it is counted as unrated.
+    const rated =
+      report.assets.every((asset) => asset.value === '0') ||
+      fx.available('USD', moscowDate(instant));
     return {
       at,
       currency: fx.currency,
       value: rated ? report.pricedSubtotal : null,
       complete: rated && report.completeness === 'complete',
-      // The value leaves out a held asset without a price (not an account yet to start).
-      unpriced: rated && report.missingPriceCount > 0,
+      // The value leaves out a held asset without a price (not an account yet to start) or a
+      // deposit without a rate.
+      unpriced: rated && (report.missingPriceCount > 0 || report.unratedDepositCount > 0),
+      // A deposit left out of the value is still in the money put in.
+      unrated: rated && report.unratedDepositCount > 0,
     };
   });
 }
@@ -287,7 +307,7 @@ export class PortfolioSnapshotsService {
     if (!this.enabled) return { outcome: 'disabled' };
     const owners: { ownerId: string }[] = await this.source.query(
       `SELECT "ownerId" FROM accounting_instruments UNION SELECT "ownerId" FROM manual_accounts
-        ORDER BY 1`,
+        UNION SELECT "ownerId" FROM bank_deposits ORDER BY 1`,
     );
     for (const { ownerId } of owners) {
       try {
@@ -350,7 +370,10 @@ export class PortfolioSnapshotsService {
         ];
       // Deposits and withdrawals come from the operations themselves, in this currency at the
       // rate of each one's date (split-market-and-flows).
-      const flows = stateFlows(capitalFlows(valuation), fx);
+      const flows = [
+        ...stateFlows(capitalFlows(valuation), fx),
+        ...depositFlows(valuation.deposits, fx),
+      ].sort((left, right) => left.at - right.at);
       const invested = investedAt(
         flows,
         series.map((point) => point.at),
@@ -380,7 +403,9 @@ export class PortfolioSnapshotsService {
         ...periodChange(start?.unpriced ? null : (start?.value ?? null), current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
-        ...profitToDate(current.value, invested.at(-1) ?? null, current.unpriced),
+        ...(current.unrated
+          ? { profit: null, profitPercent: null }
+          : profitToDate(current.value, invested.at(-1) ?? null, current.unpriced)),
         ...splitChange(start, series.at(-1)!, flows),
         points,
       };

@@ -204,8 +204,19 @@ export function matchesSearch(asset: AssetValuation, search: string): boolean {
 const PARTIAL_NOTE =
   'Coins without a price or without a purchase price are left out: current value counts the priced assets, cost basis and P&L the coins whose purchase price is known. Open an asset to see what is missing.';
 
-function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
+// Bank deposits are part of the value even when no asset is held.
+const hasDeposits = (portfolio: PortfolioValuation) =>
+  Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0;
+
+function Summary({
+  portfolio,
+  asked,
+}: {
+  portfolio: PortfolioValuation;
+  asked: AccountingCurrency | undefined;
+}) {
   const unpriced = portfolio.missingPriceCount;
+  const unrated = portfolio.unratedDepositCount;
   const currency = portfolio.currency;
   const amount = (value: string | null) => money(value, currency);
   // Coins without a price or a purchase price stay out of the figures instead of emptying
@@ -220,6 +231,14 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   const partialRealized =
     portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
   const partial = partialValue || partialCost || partialProfit || partialRealized;
+  const missing = [
+    unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
+    portfolio.unavailableAccountCount > 0 &&
+      `${portfolio.unavailableAccountCount} account history starts later`,
+    unrated > 0 && `${unrated} ${unrated === 1 ? 'deposit' : 'deposits'} without a rate`,
+  ]
+    .filter((reason) => reason !== false)
+    .join(', ');
   return (
     <section className="shell-card portfolio-summary" aria-label="Portfolio summary">
       {partial && (
@@ -238,13 +257,11 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
           <dt>Current value</dt>
           <dd>
             {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
-            {partialValue && (unpriced > 0 || portfolio.unavailableAccountCount > 0) && (
+            {partialValue && missing !== '' && <span className="portfolio-sub">{missing}</span>}
+            {Number(portfolio.depositsValue) > 0 && (
               <span className="portfolio-sub">
-                {unpriced > 0 &&
-                  `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`}
-                {unpriced > 0 && portfolio.unavailableAccountCount > 0 && ', '}
-                {portfolio.unavailableAccountCount > 0 &&
-                  `${portfolio.unavailableAccountCount} account history starts later`}
+                {amount(portfolio.depositsValue)} in{' '}
+                <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
               </span>
             )}
           </dd>
@@ -559,7 +576,7 @@ export default function PortfolioPage() {
         </section>
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
-      ) : assets.length === 0 ? (
+      ) : assets.length === 0 && !hasDeposits(portfolio) ? (
         <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
           Add a coin, cash or anything else you want to track.
         </EmptyState>
@@ -573,92 +590,100 @@ export default function PortfolioPage() {
               </button>
             </p>
           )}
-          <Summary portfolio={portfolio} />
-          <section className="shell-card" aria-labelledby="portfolio-assets">
-            <div className="ui-toolbar">
-              <h2 id="portfolio-assets">Assets</h2>
-              <div className="ui-chips" role="group" aria-label="Filter assets">
-                {filters.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className="ui-chip"
-                    aria-pressed={filter === value}
-                    onClick={() => setFilter(value)}
-                  >
-                    {label}
-                    <span className="ui-chip__count">
-                      {' '}
-                      {value === 'all'
-                        ? assets.length
-                        : assets.filter((asset) => asset.assetType === value).length}
-                    </span>
-                  </button>
-                ))}
+          <Summary portfolio={portfolio} asked={asked} />
+          {assets.length === 0 ? (
+            <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
+              Add a coin, cash or anything else you want to track.
+            </EmptyState>
+          ) : (
+            <section className="shell-card" aria-labelledby="portfolio-assets">
+              <div className="ui-toolbar">
+                <h2 id="portfolio-assets">Assets</h2>
+                <div className="ui-chips" role="group" aria-label="Filter assets">
+                  {filters.map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className="ui-chip"
+                      aria-pressed={filter === value}
+                      onClick={() => setFilter(value)}
+                    >
+                      {label}
+                      <span className="ui-chip__count">
+                        {' '}
+                        {value === 'all'
+                          ? assets.length
+                          : assets.filter((asset) => asset.assetType === value).length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="portfolio-tools">
+                  <input
+                    type="search"
+                    className="ui-input ui-input--sm ui-search"
+                    placeholder="Search assets"
+                    aria-label="Search assets"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                  {addButton(false)}
+                </div>
               </div>
-              <div className="portfolio-tools">
-                <input
-                  type="search"
-                  className="ui-input ui-input--sm ui-search"
-                  placeholder="Search assets"
-                  aria-label="Search assets"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                {addButton(false)}
-              </div>
-            </div>
-            {phone ? (
-              <>
-                <label className="portfolio-sort">
-                  Sort by
-                  <select
-                    className="ui-input ui-input--sm"
-                    value={shown.key}
-                    onChange={(event) => {
-                      const key = event.target.value as SortKey;
-                      setSort({ key, direction: firstDirection(key) });
-                    }}
-                  >
-                    {phoneSorts.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <AssetsList
+              {phone ? (
+                <>
+                  <label className="portfolio-sort">
+                    Sort by
+                    <select
+                      className="ui-input ui-input--sm"
+                      value={shown.key}
+                      onChange={(event) => {
+                        const key = event.target.value as SortKey;
+                        setSort({ key, direction: firstDirection(key) });
+                      }}
+                    >
+                      {phoneSorts.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <AssetsList
+                    assets={paged.rows}
+                    currency={portfolio.currency}
+                    asked={asked}
+                    chains={chains}
+                  />
+                </>
+              ) : (
+                <AssetsTable
                   assets={paged.rows}
                   currency={portfolio.currency}
                   asked={asked}
+                  now={now}
                   chains={chains}
+                  sort={sort}
+                  onSort={(key) => setSort((current) => nextSort(current, key))}
                 />
-              </>
-            ) : (
-              <AssetsTable
-                assets={paged.rows}
-                currency={portfolio.currency}
-                asked={asked}
-                now={now}
-                chains={chains}
-                sort={sort}
-                onSort={(key) => setSort((current) => nextSort(current, key))}
-              />
-            )}
-            {paged.more && <LoadMore {...paged.more} label="assets" />}
-            {visible.length === 0 && (
-              <p className="portfolio-none">
-                {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this type.'}
+              )}
+              {paged.more && <LoadMore {...paged.more} label="assets" />}
+              {visible.length === 0 && (
+                <p className="portfolio-none">
+                  {search.trim()
+                    ? `No assets match "${search.trim()}".`
+                    : 'No assets of this type.'}
+                </p>
+              )}
+              <p className="shell-note portfolio-note">
+                {ratesNote(portfolio)} Holdings come from your{' '}
+                <Link className="shell-link" to="/wallets">
+                  wallets
+                </Link>{' '}
+                and the transactions you add.
               </p>
-            )}
-            <p className="shell-note portfolio-note">
-              {ratesNote(portfolio)} Holdings come from your{' '}
-              <Link className="shell-link" to="/wallets">
-                wallets
-              </Link>{' '}
-              and the transactions you add.
-            </p>
-          </section>
+            </section>
+          )}
           <Allocation portfolio={portfolio} />
         </>
       )}
