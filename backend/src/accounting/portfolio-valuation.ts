@@ -102,6 +102,16 @@ export interface AllocationSlice {
 }
 
 const typeLabels: Record<AssetType, string> = { crypto: 'Crypto', fiat: 'Cash', manual: 'Manual' };
+/** DEP-VALUE: allocation key of all bank deposits in the by-type grouping. */
+export const DEPOSITS_TYPE = 'deposits';
+
+/** One bank deposit's worth in the report's currency at scale 60; null without a rate. */
+export interface PortfolioDeposit {
+  id: string;
+  name: string;
+  bank: string;
+  value: bigint | null;
+}
 const NO_RATES: FxRates = { USD: [], EUR: [] };
 export const usdOnly = () => new FxConverter(NO_RATES, 'USD');
 
@@ -390,6 +400,8 @@ export function projectPortfolio(
   fx: FxConverter = usdOnly(),
   /** Prices stored at or before 24 hours ago, for each price's daily change. */
   previous?: PortfolioPrices,
+  /** DEP-VALUE: bank deposits, which add to the value but have no price, lots or cost. */
+  deposits: readonly PortfolioDeposit[] = [],
 ) {
   const today = moscowDate(at);
   // An amount paid in RUB or EUR is exact in its own currency and converts from it; USD
@@ -629,8 +641,20 @@ export function projectPortfolio(
       left.instrumentId.localeCompare(right.instrumentId),
   );
 
+  let depositValue = 0n;
+  let unratedDepositCount = 0;
+  for (const deposit of deposits) {
+    if (deposit.value === null) unratedDepositCount++;
+    else if (deposit.value > 0n) {
+      depositValue += deposit.value;
+      subtotal += deposit.value;
+      add(byAsset, `deposit:${deposit.id}`, deposit.name, deposit.value);
+      add(byType, DEPOSITS_TYPE, 'Bank deposits', deposit.value);
+      add(byAccount, `bank:${deposit.bank}`, deposit.bank, deposit.value);
+    }
+  }
   const available = unavailableAccountCount === 0;
-  const complete = available && missingPriceCount === 0;
+  const complete = available && missingPriceCount === 0 && unratedDepositCount === 0;
   const costComplete = available && unknownCostCount === 0 && missingRateCount === 0;
   return {
     at: at.toISOString(),
@@ -642,6 +666,8 @@ export function projectPortfolio(
     missingPriceCount,
     stalePriceCount,
     unavailableAccountCount,
+    depositsValue: formatProduct(depositValue),
+    unratedDepositCount,
     costBasis: costComplete ? formatAtoms(knownCost) : null,
     knownCostSubtotal: formatAtoms(knownCost),
     unknownCostCount,

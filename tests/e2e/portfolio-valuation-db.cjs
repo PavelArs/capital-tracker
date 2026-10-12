@@ -188,6 +188,8 @@ async function wholePortfolio(db, s, f) {
       'missingPriceCount',
       'stalePriceCount',
       'unavailableAccountCount',
+      'depositsValue',
+      'unratedDepositCount',
       'costBasis',
       'knownCostSubtotal',
       'unknownCostCount',
@@ -212,6 +214,7 @@ async function wholePortfolio(db, s, f) {
   assert.equal(report.at, now.toISOString());
   assert.equal(report.completeness, 'complete');
   assert.equal(report.totalValue, '10000');
+  assert.deepEqual([report.depositsValue, report.unratedDepositCount], ['0', 0], 'No bank deposits');
   assert.equal(report.stalePriceCount, 1);
   assert.equal(report.costBasis, '9100');
   assert.equal(report.unrealizedPnl, '900');

@@ -587,3 +587,74 @@ describe('PV-HIDE an asset the owner hid', () => {
     expect(withoutAssets(accounts, new Set())).toEqual(accounts);
   });
 });
+
+describe('DEP-VALUE bank deposits in the portfolio', () => {
+  const worth = (amount: number) => BigInt(amount) * 10n ** 60n;
+  const bank = (n: number, bankName: string, value: bigint | null) => ({
+    id: id(900 + n),
+    name: `Deposit ${n}`,
+    bank: bankName,
+    value,
+  });
+  const wallet = () => [account(1, 'Trust Wallet', [trade(btc, 'buy', '1', '50000')])];
+  const priced = () => prices({ BTC: ['80000', minutesAgo(30)] });
+
+  it('adds what the deposits are worth to the value, the shares and the allocation', () => {
+    const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', worth(15_000)),
+      bank(2, 'First Bank', worth(5_000)),
+    ]);
+    expect(result).toMatchObject({
+      completeness: 'complete',
+      totalValue: '100000',
+      pricedSubtotal: '100000',
+      depositsValue: '20000',
+      unratedDepositCount: 0,
+      // Deposits have no cost: the coins' figures stay what they were.
+      costBasis: '50000',
+      unrealizedPnl: '30000',
+    });
+    expect(assetOf(result, btc).allocationPercent).toBe('80.00');
+    expect(result.allocation.byType).toEqual([
+      { key: 'crypto', label: 'Crypto', value: '80000', percent: '80.00' },
+      { key: 'deposits', label: 'Bank deposits', value: '20000', percent: '20.00' },
+    ]);
+    expect(result.allocation.byAccount).toEqual([
+      { key: id(101), label: 'Trust Wallet', value: '80000', percent: '80.00' },
+      { key: 'bank:First Bank', label: 'First Bank', value: '20000', percent: '20.00' },
+    ]);
+    expect(result.allocation.byAsset.map((slice) => slice.key)).toEqual(
+      [btc.id, id(901), id(902)].map((key, index) => (index === 0 ? key : `deposit:${key}`)),
+    );
+  });
+
+  it('counts a deposit without a rate as missing, not as nothing', () => {
+    const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', worth(15_000)),
+      bank(2, 'Second Bank', null),
+    ]);
+    expect(result).toMatchObject({
+      completeness: 'incomplete',
+      totalValue: null,
+      pricedSubtotal: '95000',
+      depositsValue: '15000',
+      unratedDepositCount: 1,
+    });
+    expect(result.allocation.complete).toBe(false);
+  });
+
+  it('keeps a deposit that is worth nothing out of the allocation', () => {
+    const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', 0n),
+    ]);
+    expect(result.depositsValue).toBe('0');
+    expect(result.allocation.byType.map((slice) => slice.key)).toEqual(['crypto']);
+  });
+
+  it('values a portfolio of deposits alone', () => {
+    const result = projectPortfolio(now, [], [], prices({}), undefined, undefined, [
+      bank(1, 'First Bank', worth(3_000)),
+    ]);
+    expect(result).toMatchObject({ totalValue: '3000', depositsValue: '3000' });
+  });
+});

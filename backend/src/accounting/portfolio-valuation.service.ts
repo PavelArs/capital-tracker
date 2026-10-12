@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { loadDeposits } from '../deposits/deposit-store';
+import { type DepositHolding, depositValuesAt } from '../deposits/deposit-valuation';
 import {
   type AccountingCurrency,
   FxConverter,
@@ -113,6 +115,8 @@ export interface ValuationInputs {
   ledgers: ConnectedLedgerCache;
   /** D1: each account's unanswered chain movements and outgoing "Other" answers. */
   chainMoves: ReadonlyMap<string, readonly ChainMove[]>;
+  /** DEP-VALUE: the bank deposits, worth what their terms and movements compute. */
+  deposits: readonly DepositHolding[];
 }
 
 interface ChainMoveRow {
@@ -356,6 +360,7 @@ export async function readValuationInputs(
     accounts,
     ledgers,
     chainMoves: await readChainMoves(manager, owner),
+    deposits: await loadDeposits(manager, owner),
   };
 }
 
@@ -501,7 +506,15 @@ export class PortfolioValuationService {
         inputs.instruments,
         new Date(now.getTime() - DAY_MS),
       );
-      const report = projectPortfolio(now, inputs.instruments, accounts, prices, fx, previous);
+      const report = projectPortfolio(
+        now,
+        inputs.instruments,
+        accounts,
+        prices,
+        fx,
+        previous,
+        depositValuesAt(inputs.deposits, now, fx),
+      );
       // TOKEN-HIDE: the asset of a coin the wallets leave out stays in the books it was made in
       // before; with nothing held in it the table does not list it. Held coins always show.
       const left = await leftOutSymbols(manager, owner);

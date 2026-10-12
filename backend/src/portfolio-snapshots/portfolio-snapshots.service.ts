@@ -16,6 +16,7 @@ import {
   readValuationInputs,
   type ValuationInputs,
 } from '../accounting/portfolio-valuation.service';
+import { depositFlows, depositValuesAt } from '../deposits/deposit-valuation';
 import {
   type AccountingCurrency,
   accountingCurrencies,
@@ -103,6 +104,10 @@ const INPUT_TABLES = [
   'wallet_ether_stake_moves',
   'wallet_ether_stake_rewards',
   'wallet_tron_stake_moves',
+  // DEP-VALUE: a deposit's terms and movements change its worth on every day since its start.
+  'bank_deposits',
+  'bank_deposit_rates',
+  'bank_deposit_movements',
 ] as const;
 // Only which account an address belongs to; its sync progress changes no value.
 const INPUT_PARTS: readonly [string, string][] = [
@@ -156,7 +161,15 @@ function valuesAt(
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
-    const report = projectPortfolio(instant, valuation.instruments, accounts, prices, fx);
+    const report = projectPortfolio(
+      instant,
+      valuation.instruments,
+      accounts,
+      prices,
+      fx,
+      undefined,
+      depositValuesAt(valuation.deposits, instant, fx),
+    );
     // Without a rate the value in that currency is unknown, not a smaller sum.
     const rated = fx.available('USD', moscowDate(instant));
     return {
@@ -164,8 +177,9 @@ function valuesAt(
       currency: fx.currency,
       value: rated ? report.pricedSubtotal : null,
       complete: rated && report.completeness === 'complete',
-      // The value leaves out a held asset without a price (not an account yet to start).
-      unpriced: rated && report.missingPriceCount > 0,
+      // The value leaves out a held asset without a price (not an account yet to start) or a
+      // deposit without a rate.
+      unpriced: rated && (report.missingPriceCount > 0 || report.unratedDepositCount > 0),
     };
   });
 }
@@ -350,7 +364,10 @@ export class PortfolioSnapshotsService {
         ];
       // Deposits and withdrawals come from the operations themselves, in this currency at the
       // rate of each one's date (split-market-and-flows).
-      const flows = stateFlows(capitalFlows(valuation), fx);
+      const flows = [
+        ...stateFlows(capitalFlows(valuation), fx),
+        ...depositFlows(valuation.deposits, fx),
+      ].sort((left, right) => left.at - right.at);
       const invested = investedAt(
         flows,
         series.map((point) => point.at),

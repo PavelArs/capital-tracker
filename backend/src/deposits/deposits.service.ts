@@ -7,12 +7,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { canonicalDecimalToAtoms } from '../accounting/money';
-import {
-  type AccountingCurrency,
-  FxConverter,
-  MAX_RATE_AGE_DAYS,
-  moscowDate,
-} from '../fx-rates/fx-conversion';
+import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import {
   parseAsOfDate,
@@ -32,70 +27,10 @@ import {
   nextPayout,
   projectDeposit,
 } from './deposit-interest';
-
-interface DepositRow {
-  id: string;
-  name: string;
-  bank: string;
-  currency: DepositCurrency;
-  startDate: string;
-  endDate: string | null;
-  payout: DepositTerms['payout'];
-  capitalized: boolean;
-  dayBasis: DepositTerms['dayBasis'];
-  earlyClose: DepositTerms['earlyClose'];
-}
-interface RateRow {
-  depositId: string;
-  effectiveFrom: string;
-  ratePercent: string;
-}
-interface MovementRow {
-  id: string;
-  depositId: string;
-  occurredOn: string;
-  kind: DepositMovement['kind'];
-  amount: string;
-  comment: string | null;
-}
-interface CheckRow {
-  id: string;
-  depositId: string;
-  checkedOn: string;
-  bankBalance: string;
-}
-interface Stored {
-  deposit: DepositRow;
-  rates: RateRow[];
-  movements: MovementRow[];
-  checks: CheckRow[];
-}
+import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
+import { ratesAreFresh } from './deposit-valuation';
 
 const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
-
-const columns = `id, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
-  to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis", "earlyClose"`;
-
-const termsOf = (stored: Stored): DepositTerms => ({
-  startDate: stored.deposit.startDate,
-  endDate: stored.deposit.endDate,
-  payout: stored.deposit.payout,
-  capitalized: stored.deposit.capitalized,
-  dayBasis: stored.deposit.dayBasis,
-  earlyClose: stored.deposit.earlyClose,
-  rates: stored.rates.map((rate) => ({
-    effectiveFrom: rate.effectiveFrom,
-    ratePercent: rate.ratePercent,
-  })),
-});
-const movementsOf = (stored: Stored): DepositMovement[] =>
-  stored.movements.map((row) => ({ date: row.occurredOn, kind: row.kind, amount: row.amount }));
-
-const ratePercentText = (value: string) => {
-  const [whole, fraction = ''] = value.split('.');
-  const trimmed = fraction.replace(/0+$/, '');
-  return trimmed ? `${whole}.${trimmed}` : whole;
-};
 
 /**
  * DEP-ACCRUAL, DEP-CHECK: bank deposits the owner entered once. What a deposit has earned and
@@ -113,7 +48,7 @@ export class DepositsService {
       if (asOf !== undefined && asOf > latestSnapshot(today))
         throw new UnprocessableEntityException('The date is too far in the future');
       const date = asOf ?? today;
-      const all = await this.load(manager, owner);
+      const all = await loadDeposits(manager, owner);
       const converters = await this.converters(manager);
       // A deposit that has not started by the asked day is not part of that day's picture.
       const items = all
@@ -148,7 +83,7 @@ export class DepositsService {
     const depositId = parseUuid(id);
     const asOf = parseAsOfDate(rawAsOf);
     return this.read(async (manager) => {
-      const [stored] = await this.load(manager, owner, depositId);
+      const [stored] = await loadDeposits(manager, owner, depositId);
       if (!stored) throw new NotFoundException('Deposit not found');
       const date = asOf ?? moscowDate(new Date());
       if (date > latestSnapshot(moscowDate(new Date())))
@@ -392,43 +327,7 @@ export class DepositsService {
       [owner, id],
     );
     if (found.length === 0) throw new NotFoundException('Deposit not found');
-    return (await this.load(manager, owner, id))[0];
-  }
-
-  private async load(manager: EntityManager, owner: string, id?: string): Promise<Stored[]> {
-    const filter = id ? 'AND id=$2' : '';
-    const args = id ? [owner, id] : [owner];
-    const deposits: DepositRow[] = await manager.query(
-      `SELECT ${columns} FROM bank_deposits WHERE "ownerId"=$1 ${filter} ORDER BY "startDate", "createdAt", id`,
-      args,
-    );
-    if (deposits.length === 0) return [];
-    const ids = deposits.map((row) => row.id);
-    const rates: RateRow[] = await manager.query(
-      `SELECT "depositId", to_char("effectiveFrom", 'YYYY-MM-DD') AS "effectiveFrom", "ratePercent"::text AS "ratePercent"
-       FROM bank_deposit_rates WHERE "ownerId"=$1 AND "depositId" = ANY($2) ORDER BY "effectiveFrom"`,
-      [owner, ids],
-    );
-    const movements: MovementRow[] = await manager.query(
-      `SELECT id, "depositId", to_char("occurredOn", 'YYYY-MM-DD') AS "occurredOn", kind, amount::text AS amount, comment
-       FROM bank_deposit_movements WHERE "ownerId"=$1 AND "depositId" = ANY($2)
-       ORDER BY "occurredOn", "position"`,
-      [owner, ids],
-    );
-    const checks: CheckRow[] = await manager.query(
-      `SELECT id, "depositId", to_char("checkedOn", 'YYYY-MM-DD') AS "checkedOn", "bankBalance"::text AS "bankBalance"
-       FROM bank_deposit_checks WHERE "ownerId"=$1 AND "depositId" = ANY($2)
-       ORDER BY "checkedOn", "position"`,
-      [owner, ids],
-    );
-    return deposits.map((deposit) => ({
-      deposit,
-      rates: rates
-        .filter((row) => row.depositId === deposit.id)
-        .map((row) => ({ ...row, ratePercent: ratePercentText(row.ratePercent) })),
-      movements: movements.filter((row) => row.depositId === deposit.id),
-      checks: checks.filter((row) => row.depositId === deposit.id),
-    }));
+    return (await loadDeposits(manager, owner, id))[0];
   }
 
   /** The balance stated in each accounting currency at the Bank of Russia rate of that day. */
@@ -569,23 +468,6 @@ export class DepositsService {
 
 /** A snapshot may look one year ahead; the figures are replayed day by day up to it. */
 const latestSnapshot = (today: string) => `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`;
-
-/** Whether the rate of every foreign currency involved is at most `MAX_RATE_AGE_DAYS` old. */
-function ratesAreFresh(
-  converter: FxConverter,
-  currencies: readonly AccountingCurrency[],
-  date: string,
-): boolean {
-  const rates = converter.ratesOn(date);
-  return currencies.every((currency) => {
-    if (currency === 'RUB') return true;
-    const rate = rates.find((entry) => entry.currency === currency);
-    if (!rate) return false;
-    const age =
-      (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${rate.date}T00:00:00Z`)) / 86_400_000;
-    return age <= MAX_RATE_AGE_DAYS;
-  });
-}
 
 /** Movements in date order, equal dates keeping the order they were given. */
 function stableByDate(movements: DepositMovement[]): DepositMovement[] {
