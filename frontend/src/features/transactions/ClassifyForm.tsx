@@ -84,12 +84,15 @@ interface Draft {
   amount: string;
   currency: Currency;
   rate: string;
+  /** What the owner typed; see `shownValue` for the value the form shows and sends. */
   value: string;
   /**
-   * CLS-MARKET-VALUE: the value offered when the coin has no price near the transaction's time,
-   * already in `value` until the owner changes it; empty when nothing is offered.
+   * CLS-MARKET-VALUE: the value offered when the coin has no price near the transaction's time;
+   * empty when nothing is offered.
    */
   suggested: string;
+  /** The offer still stands: the owner has not typed in or cleared the value field. */
+  offered: boolean;
   /** Transfer only: the owner's other wallet. */
   account: string;
   /** Transfer only: the address of that wallet that took part in this very transaction. */
@@ -135,6 +138,17 @@ export function suggestedValue(operation: Operation): string {
   return whole.replace(/^0+/, '') ? plain : plain.replace(/0+$/, '').replace(/\.$/, '');
 }
 
+/**
+ * The value the form shows and sends: the offer while it stands, for the answers it fits (not a
+ * pool withdrawal's gain, not a swap that names a record, which brings its own value); otherwise
+ * what the owner typed.
+ */
+function shownValue(draft: Draft): string {
+  const fits =
+    draft.type !== 'pool-withdrawal' && !recordKey.test(draft.pair) && !replaceKey.test(draft.pair);
+  return draft.offered && fits ? draft.suggested : draft.value;
+}
+
 function draftOf(operation: Operation): Draft {
   const saved = operation.classification;
   const value = saved?.value ?? null;
@@ -155,8 +169,9 @@ function draftOf(operation: Operation): Draft {
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
-    value: valued?.valueUsd ?? offered,
+    value: valued?.valueUsd ?? '',
     suggested: offered,
+    offered: offered !== '',
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
     partner:
       moved?.partner && moved.partner.txid === operation.chain?.txid ? moved.partner.addressId : '',
@@ -504,11 +519,11 @@ function problems(draft: Draft, choosesAddress = false): Set<Problem> {
     else if (choosesAddress && !draft.partner) found.add('partner');
   } else if (draft.type === 'swap') {
     if (!draft.pair) found.add('pair');
-    if (!recordKey.test(draft.pair) && draft.value.trim() && !positive(draft.value))
+    if (!recordKey.test(draft.pair) && shownValue(draft).trim() && !positive(shownValue(draft)))
       found.add('value');
   } else if (draft.type === 'pool-withdrawal') {
     if (!draft.deposit) found.add('deposit');
-    if (draft.value.trim() && !positive(draft.value)) found.add('value');
+    if (shownValue(draft).trim() && !positive(shownValue(draft))) found.add('value');
   } else if (draft.type === 'pool-deposit') {
     // Nothing to enter: the coins stay the owner's.
   } else if (draft.type === 'buy' || draft.type === 'sell') {
@@ -522,8 +537,9 @@ function problems(draft: Draft, choosesAddress = false): Set<Problem> {
     draft.type === 'airdrop' ||
     draft.type === 'fee'
   ) {
-    if (draft.value.trim() && !positive(draft.value)) found.add('value');
-  } else if (draft.type && draft.type !== 'other' && !positive(draft.value)) found.add('value');
+    if (shownValue(draft).trim() && !positive(shownValue(draft))) found.add('value');
+  } else if (draft.type && draft.type !== 'other' && !positive(shownValue(draft)))
+    found.add('value');
   if ([...draft.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
 }
@@ -544,7 +560,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
         return {
           type: 'swap',
           record: { kind: 'trade', id: replaced[1], version: Number(replaced[2]) },
-          valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+          valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
         };
       const record = recordKey.exec(draft.pair);
       if (record)
@@ -556,7 +572,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       return {
         type: 'swap',
         with: { addressId, txid },
-        valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
       };
     }
     case 'buy':
@@ -577,7 +593,10 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
     case 'pool-reward':
     case 'airdrop':
     case 'fee':
-      return { type: draft.type, valueUsd: draft.value.trim() ? decimal(draft.value) : null };
+      return {
+        type: draft.type,
+        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
+      };
     case 'other':
       return { type: 'other' };
     case 'pool-deposit':
@@ -587,7 +606,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       return {
         type: 'pool-withdrawal',
         deposit: { addressId, txid },
-        valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
         ...(draft.partial ? { partial: true as const } : {}),
       };
     }
@@ -595,7 +614,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       // CLS-RECORDED: asked for as a swap that names the record (draftOf); never a type here.
       return null;
     default:
-      return { type: draft.type, valueUsd: decimal(draft.value)! };
+      return { type: draft.type, valueUsd: decimal(shownValue(draft))! };
   }
 }
 
@@ -736,16 +755,7 @@ export default function ClassifyForm({
   // One request id per answer: a retry after a lost response cannot record it twice.
   const [requestId, setRequestId] = useState(newRequestId);
   const change = (next: Partial<Draft>) => {
-    setDraft((current) => ({
-      ...current,
-      ...next,
-      // A record added by hand brings its own value; the latest price is not offered beside it.
-      ...(next.pair !== undefined &&
-      (recordKey.test(next.pair) || replaceKey.test(next.pair)) &&
-      current.value === current.suggested
-        ? { value: '' }
-        : {}),
-    }));
+    setDraft((current) => ({ ...current, ...next }));
     setRequestId(newRequestId());
     setError(null);
   };
@@ -884,18 +894,7 @@ export default function ClassifyForm({
                 type="button"
                 className={`transactions-option${type === 'transfer' ? ' transactions-option--wide' : ''}`}
                 aria-pressed={draft.type === type}
-                onClick={() =>
-                  change({
-                    type,
-                    // The gain of a pool withdrawal is not what the coins were worth: the offer
-                    // waits, and comes back with the next answer that takes a value.
-                    ...(type === 'pool-withdrawal' && draft.value === draft.suggested
-                      ? { value: '' }
-                      : draft.type === 'pool-withdrawal' && draft.value === '' && draft.suggested
-                        ? { value: draft.suggested }
-                        : {}),
-                  })
-                }
+                onClick={() => change({ type })}
               >
                 {label}
               </button>
@@ -1158,8 +1157,8 @@ export default function ClassifyForm({
                   className="ui-input"
                   inputMode="decimal"
                   placeholder="0.00"
-                  value={draft.value}
-                  onChange={(event) => change({ value: event.target.value })}
+                  value={shownValue(draft)}
+                  onChange={(event) => change({ value: event.target.value, offered: false })}
                   onBlur={leave('value')}
                   {...invalid('value')}
                 />
@@ -1170,7 +1169,7 @@ export default function ClassifyForm({
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
               ) || (
                 <span className="ui-field__hint">
-                  {draft.suggested && draft.value === draft.suggested && !replacing
+                  {draft.offered && draft.suggested && shownValue(draft) === draft.suggested
                     ? `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${day(operation.occurredAt)}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`
                     : replacing
                       ? 'Empty: the value of the record you added.'

@@ -1455,6 +1455,22 @@ describe('classify-chain-transactions (M12)', () => {
     expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('50.01');
   });
 
+  it('CLS-MARKET-VALUE: a value the owner cleared stays empty through a pool withdrawal round trip', async () => {
+    const unpriced = chainOperation(11, {
+      occurredAt: '2025-06-20T08:05:00.000Z',
+      estimatedValueUsd: null,
+      marketValue: { valueUsd: '50.005', observedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: txid(11), blockHeight: 800011, priceObservedAt: null, direction: 'in' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced]));
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Reward' }));
+    await user.clear(within(drawer).getByLabelText('Value at the time (optional)'));
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Reward' }));
+    expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('');
+  });
+
   it.each([
     ['0.0000000000001', '0.0000000000001'],
     ['0.99996', '1'],
@@ -2664,6 +2680,21 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
         record: { kind: 'trade', id: id(70), version: 4 },
         valueUsd: null,
       });
+    });
+
+    it('CLS-MARKET-VALUE: the offered value comes back after leaving a recorded swap choice', async () => {
+      const unpriced = operation({
+        ...paid,
+        estimatedValueUsd: null,
+        marketValue: { valueUsd: '999.99', observedAt: '2026-10-03T12:00:00.000Z' },
+      });
+      const { user, drawer } = await openRow([unpriced, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      await user.selectOptions(select, `replace:${id(70)}:4`);
+      expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('');
+      await user.selectOptions(select, (select as HTMLSelectElement).options[0].value);
+      expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('999.99');
     });
 
     it('an outgoing transaction can be replaced by a plain purchase of another coin', async () => {
