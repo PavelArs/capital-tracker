@@ -157,7 +157,7 @@ function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
-): (SnapshotValue & { unpriced: boolean })[] {
+): (SnapshotValue & { unpriced: boolean; unrated: boolean })[] {
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
@@ -184,6 +184,8 @@ function valuesAt(
       // The value leaves out a held asset without a price (not an account yet to start) or a
       // deposit without a rate.
       unpriced: rated && (report.missingPriceCount > 0 || report.unratedDepositCount > 0),
+      // A deposit left out of the value is still in the money put in.
+      unrated: rated && report.unratedDepositCount > 0,
     };
   });
 }
@@ -401,7 +403,9 @@ export class PortfolioSnapshotsService {
         ...periodChange(start?.unpriced ? null : (start?.value ?? null), current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
-        ...profitToDate(current.value, invested.at(-1) ?? null, current.unpriced),
+        ...(current.unrated
+          ? { profit: null, profitPercent: null }
+          : profitToDate(current.value, invested.at(-1) ?? null, current.unpriced)),
         ...splitChange(start, series.at(-1)!, flows),
         points,
       };
