@@ -113,7 +113,10 @@ function member<T extends string>(value: unknown, allowed: readonly T[]): T {
     : bad();
 }
 
-export function parseDeposit(input: unknown): DepositInput {
+export function parseDeposit(
+  input: unknown,
+  payouts: readonly PayoutSchedule[] = offeredPayoutSchedules,
+): DepositInput {
   const keys = [
     'requestId',
     'name',
@@ -131,7 +134,7 @@ export function parseDeposit(input: unknown): DepositInput {
   const record = object(input, keys, keys);
   const startDate = parseDate(record.startDate);
   const endDate = record.endDate === null ? null : parseDate(record.endDate);
-  const payout = member(record.payout, offeredPayoutSchedules);
+  const payout = member(record.payout, payouts);
   if (endDate !== null && endDate <= startDate) return bad();
   // A bank term never runs this long; the figures are replayed day by day to the end date.
   if (

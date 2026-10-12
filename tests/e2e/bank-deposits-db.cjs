@@ -237,6 +237,21 @@ async function daily(db, service, owner) {
   assert.equal(due.principal, '100000.00');
   // New deposits cannot be quarterly; the row of an earlier one is still valid for the database.
   await rejected(() => service.create(owner, { ...terms, payout: 'quarterly' }), 400);
+  // The retry of a quarterly deposit made before this release still finds it instead of failing.
+  const requestId = randomUUID();
+  const old = await service.create(owner, { ...terms, name: 'Daily Q', payout: 'monthly', requestId });
+  await db.query(
+    `UPDATE bank_deposits SET payout='quarterly',
+       "canonicalPayload"=replace("canonicalPayload", '"payout":"monthly"', '"payout":"quarterly"') WHERE id=$1`,
+    [old.id],
+  );
+  const retried = await service.create(owner, {
+    ...terms,
+    name: 'Daily Q',
+    payout: 'quarterly',
+    requestId,
+  });
+  assert.equal(retried.id, old.id, 'A quarterly retry returns the deposit it made');
   await assert.rejects(
     () => db.query(`UPDATE bank_deposits SET payout='hourly' WHERE id=$1`, [made.id]),
     /bank_deposits_payout_check/,
