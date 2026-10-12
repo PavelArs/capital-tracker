@@ -39,6 +39,7 @@ const blocksOf: Record<string, Blocks> = {
   history: ['rows'],
   wallets: ['cards'],
   deposits: ['cards'],
+  'real-estate': ['cards'],
   preferences: ['cards'],
 };
 
@@ -101,19 +102,21 @@ export default function BootShell() {
         </div>
         <div ref={menuRef} className="shell-nav__menu">
           <ul className="shell-nav__sections" data-nav-group="sections">
-            {shellSections.map((entry) => (
-              <li key={entry.path}>
-                <Link
-                  to={withCurrency(entry.path, asked)}
-                  aria-current={
-                    here === entry.path || here.startsWith(`${entry.path}/`) ? 'page' : undefined
-                  }
-                >
-                  <Icon name={entry.icon} />
-                  {entry.label}
-                </Link>
-              </li>
-            ))}
+            {shellSections
+              .filter((entry) => !entry.held || here.startsWith(entry.path))
+              .map((entry) => (
+                <li key={entry.path}>
+                  <Link
+                    to={withCurrency(entry.path, asked)}
+                    aria-current={
+                      here === entry.path || here.startsWith(`${entry.path}/`) ? 'page' : undefined
+                    }
+                  >
+                    <Icon name={entry.icon} />
+                    {entry.label}
+                  </Link>
+                </li>
+              ))}
           </ul>
         </div>
         <div className="shell-owner">

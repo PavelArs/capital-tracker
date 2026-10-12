@@ -412,6 +412,65 @@ describe('cookie session API client', () => {
     expect(cache.recall('page')).toBeUndefined();
   });
 
+  it('asks a read once more after a timeout and shows the page when the second answer comes', async () => {
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      if (sent.length === 1) {
+        throw new AxiosError('timeout of 10000ms exceeded', 'ECONNABORTED', config);
+      }
+      return response(config, { ok: true });
+    };
+
+    const answer = await apiClient.get('/accounting/portfolio/history');
+
+    expect(answer.data).toEqual({ ok: true });
+    expect(sent.map((config) => config.url)).toEqual([
+      '/accounting/portfolio/history',
+      '/accounting/portfolio/history',
+    ]);
+  });
+
+  it('asks a read once more after a gateway error but not after another refusal', async () => {
+    const sent: string[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(`${config.url}`);
+      if (config.url === '/accounting/gateway' && sent.length === 1) throw rejected(config, 504);
+      if (config.url === '/accounting/gateway') return response(config, { ok: true });
+      throw rejected(config, 404);
+    };
+
+    await expect(apiClient.get('/accounting/gateway')).resolves.toMatchObject({ status: 200 });
+    await expect(apiClient.get('/accounting/missing')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(sent).toEqual(['/accounting/gateway', '/accounting/gateway', '/accounting/missing']);
+  });
+
+  it('gives up on a read after its one repeat fails as well', async () => {
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+
+    await expect(apiClient.get('/accounting/portfolio')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(sent).toHaveLength(2);
+  });
+
+  it('never repeats a write that timed out', async () => {
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'token' });
+      throw new AxiosError('timeout of 10000ms exceeded', 'ECONNABORTED', config);
+    };
+
+    await expect(apiClient.post('/accounting/trades', {})).rejects.toBeInstanceOf(AxiosError);
+
+    expect(sent.filter((config) => config.url === '/accounting/trades')).toHaveLength(1);
+  });
+
   it('notifies React on a protected 401 without changing the document URL or retrying its write', async () => {
     window.history.replaceState({}, '', '/manual-accounts/retained-command');
     const onUnauthorized = vi.fn();

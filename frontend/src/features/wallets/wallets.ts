@@ -506,3 +506,13 @@ export function kindsOf(
 ): Record<string, WalletKind | null> {
   return Object.fromEntries((accounts ?? []).map((account) => [account.id, account.kind]));
 }
+
+/**
+ * Accounts that hold a broker account or a property (v8): they have their own sections and
+ * stay out of Wallets.
+ */
+export function classedOf(
+  accounts: readonly { id: string; assetClass?: string | null }[] | undefined,
+): ReadonlySet<string> {
+  return new Set((accounts ?? []).filter((account) => account.assetClass).map(({ id }) => id));
+}

@@ -128,6 +128,8 @@ const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revi
       FROM ${table} t WHERE t."ownerId"=$1`,
 ).join(' UNION ALL ')}) parts`;
 const INSERT_BATCH = 1000;
+// A burst of edits (a classification run, an import) is rebuilt once, this long after the last.
+const REFRESH_SOON_MS = 2_000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const invalid = () => new BadRequestException('Invalid accounting input');
@@ -296,6 +298,7 @@ function assetAt(
 @Injectable()
 export class PortfolioSnapshotsService {
   private readonly logger = new Logger(PortfolioSnapshotsService.name);
+  private readonly soon = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly source: DataSource,
@@ -315,6 +318,31 @@ export class PortfolioSnapshotsService {
     } catch {
       this.logger.warn('Portfolio snapshots could not be refreshed');
     }
+  }
+
+  /**
+   * After the owner changed something, rebuilds their snapshots in the background so the next
+   * Dashboard read finds them fresh instead of rebuilding from Jan 1, 2025 while the page waits.
+   * Changes made a moment apart share one rebuild; a read that arrives meanwhile waits for the
+   * same lock and finds nothing left to do.
+   */
+  refreshSoon(ownerId: string): void {
+    if (!this.enabled) return;
+    const waiting = this.soon.get(ownerId);
+    if (waiting) clearTimeout(waiting);
+    const timer = setTimeout(() => {
+      this.soon.delete(ownerId);
+      this.refresh(ownerId).catch(() => {
+        this.logger.warn('Portfolio snapshots could not be refreshed after a change');
+      });
+    }, REFRESH_SOON_MS);
+    timer.unref();
+    this.soon.set(ownerId, timer);
+  }
+
+  onModuleDestroy(): void {
+    for (const timer of this.soon.values()) clearTimeout(timer);
+    this.soon.clear();
   }
 
   async tick(now = new Date()): Promise<TickResult> {

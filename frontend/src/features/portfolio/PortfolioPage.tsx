@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
+import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -705,6 +706,12 @@ export default function PortfolioPage() {
         />
       )}
       {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
+      {adding === 'property' && (
+        <AddPropertyDialog
+          onClose={() => setAdding(null)}
+          onAdded={(asset) => navigate(withCurrency(`/portfolio/${asset.id}`, asked))}
+        />
+      )}
       {adding === 'bank' && (
         <AddDepositDialog
           onClose={() => setAdding(null)}

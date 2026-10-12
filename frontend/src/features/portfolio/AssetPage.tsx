@@ -26,7 +26,7 @@ import {
   statusLabels,
   typeLabel,
 } from '../transactions/operation-format';
-import { kindLabels, kindsOf } from '../wallets/wallets';
+import { classedOf, kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
@@ -306,6 +306,7 @@ function AssetDetails({
   operations,
   onRetryOperations,
   kinds,
+  classed,
   onPriceSaved,
   now,
 }: {
@@ -316,6 +317,8 @@ function AssetDetails({
   onRetryOperations: () => void;
   /** W1, A3: how each wallet is held, once known. */
   kinds: Record<string, WalletKind | null>;
+  /** v8: accounts of another class (property) are no wallets; null until the accounts are read. */
+  classed: ReadonlySet<string> | null;
   onPriceSaved: () => void;
   now: Date;
 }) {
@@ -450,15 +453,21 @@ function AssetDetails({
             <ul className="portfolio-holdings">
               {asset.holdings.map((holding) => {
                 const kind = kinds[holding.accountId];
+                // A property account has no wallet page: it is shown by its own name only.
+                const wallet = classed !== null && !classed.has(holding.accountId);
                 return (
                   <li key={holding.accountId}>
                     <span className="portfolio-holding">
-                      <Link
-                        className="shell-link"
-                        to={withCurrency(`/wallets/${holding.accountId}`, asked)}
-                      >
-                        {holding.accountName}
-                      </Link>
+                      {wallet ? (
+                        <Link
+                          className="shell-link"
+                          to={withCurrency(`/wallets/${holding.accountId}`, asked)}
+                        >
+                          {holding.accountName}
+                        </Link>
+                      ) : (
+                        <span>{holding.accountName}</span>
+                      )}
                       {kind && <span className="portfolio-sub">{kindLabels[kind]}</span>}
                     </span>
                     <span className="ui-num">
@@ -530,11 +539,19 @@ export default function AssetPage() {
   const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
     kindsOf(cachedReads.accounts.last()),
   );
+  const [classed, setClassed] = useState<ReadonlySet<string> | null>(() => {
+    const kept = cachedReads.accounts.last();
+    return kept ? classedOf(kept) : null;
+  });
   useEffect(() => {
     let live = true;
     cachedReads.accounts
       .load()
-      .then((accounts) => live && setKinds(kindsOf(accounts)))
+      .then((accounts) => {
+        if (!live) return;
+        setKinds(kindsOf(accounts));
+        setClassed(classedOf(accounts));
+      })
       .catch(() => undefined);
     return () => {
       live = false;
@@ -574,6 +591,7 @@ export default function AssetPage() {
           operations={operations}
           onRetryOperations={() => void loadOperations()}
           kinds={kinds}
+          classed={classed}
           onPriceSaved={() => void load()}
           now={new Date()}
         />
