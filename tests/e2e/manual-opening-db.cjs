@@ -590,11 +590,11 @@ async function constraints(source, fixture) {
       }),
     ['23505'],
   );
-  stage = 'OPEN-004 legacy user deletion foreign-key refusal';
-  await rejectedSql(source, (runner) => runner.query('DELETE FROM users WHERE id=$1', [owner]), [
-    '23503',
-  ]);
   // PostgreSQL18 reports the dedicated RESTRICT SQLSTATE for these parent deletes.
+  stage = 'OPEN-004 referenced user deletion RESTRICT refusal';
+  await rejectedSql(source, (runner) => runner.query('DELETE FROM users WHERE id=$1', [owner]), [
+    '23001',
+  ]);
   stage = 'OPEN-004 referenced instrument deletion RESTRICT refusal';
   await rejectedSql(
     source,

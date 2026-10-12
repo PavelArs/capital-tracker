@@ -946,7 +946,7 @@ async function sqlConstraints(source, fixture) {
   for (const [table, code, constraint] of [
     ['manual_accounts', '23001', 'account_trade_journals_ownerId_accountId_fkey'],
     ['accounting_instruments', '23001', 'account_opening_positions_ownerId_instrumentId_fkey'],
-    ['users', '23503', undefined],
+    ['users', '23001', undefined],
   ]) {
     stage = `TRADE-006-B referenced ${table} deletion refusal`;
     const key =
