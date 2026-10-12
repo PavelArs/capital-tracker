@@ -60,30 +60,27 @@ export function useWallets() {
       setFailed(false);
       const kept = quiet ? undefined : cachedReads.portfolio.last(asked);
       const keptAddresses = cachedReads.wallets.last();
-      if (!quiet) setPortfolio(kept && keptAddresses ? kept : null);
+      const keptAccounts = cachedReads.accounts.last();
+      if (!quiet) setPortfolio(kept && keptAddresses && keptAccounts ? kept : null);
       try {
-        // The labels never hold the page back: they arrive when they arrive, or not at all.
-        cachedReads.accounts
-          .load()
-          .then((accounts) => {
-            if (request !== latest.current) return;
-            setKinds(kindsOf(accounts));
-            setClassed(classedOf(accounts));
-          })
-          .catch(() => undefined);
         // ASSET-HIDE: the hidden list lands with the balances it is compared against; one that
         // cannot be read leaves the comparison unknown rather than trusting an older list.
-        const [nextPortfolio, nextAddresses, nextHidden] = await Promise.all([
+        // v8: the accounts land with them too, since their class keeps property out of Wallets.
+        const [nextPortfolio, nextAddresses, nextHidden, nextAccounts] = await Promise.all([
           cachedReads.portfolio.load(asked),
           cachedReads.wallets.load(),
           cachedReads.hiddenAssets.load().catch(() => null),
+          cachedReads.accounts.load(),
         ]);
         if (request !== latest.current) return;
+        setKinds(kindsOf(nextAccounts));
+        setClassed(classedOf(nextAccounts));
         setPortfolio(nextPortfolio);
         setAddresses(nextAddresses);
         setHiddenAssets(nextHidden);
       } catch {
-        if (request === latest.current && !quiet && !(kept && keptAddresses)) setFailed(true);
+        if (request === latest.current && !quiet && !(kept && keptAddresses && keptAccounts))
+          setFailed(true);
       }
     },
     [asked],

@@ -665,6 +665,31 @@ describe('PV-UI Portfolio values every asset', () => {
     );
   });
 
+  it('names a property account in Holdings without sending it to Wallets (v8)', async () => {
+    // Codex P2: a property account has no wallet page.
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: id(101),
+          name: 'Trust Wallet',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await user.click(await screen.findByRole('link', { name: 'Bitcoin' }));
+    const holdings = await screen.findByRole('region', { name: 'Holdings' });
+    await waitFor(() => expect(within(holdings).getAllByRole('link')).toHaveLength(1));
+    expect(within(holdings).queryByRole('link', { name: 'Trust Wallet' })).toBeNull();
+    expect(holdings).toHaveTextContent('Trust Wallet1 BTC');
+  });
+
   it('explains a missing rate, an unknown asset and a failed load', async () => {
     const get = vi
       .spyOn(portfolioValuationApi, 'get')

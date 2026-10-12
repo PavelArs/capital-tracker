@@ -51,6 +51,7 @@ let createAccount: Mock<typeof accountingApi.createAccount>;
 let createAsset: Mock<typeof portfolioAssetsApi.create>;
 let createTrade: Mock<typeof tradesApi.create>;
 let setPrice: Mock<typeof manualPricesApi.set>;
+let removeAccount: Mock<typeof accountingApi.removeAccount>;
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
@@ -74,6 +75,8 @@ beforeEach(() => {
   vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
   setPrice = vi.fn<typeof manualPricesApi.set>(async () => ({}) as PriceReceipt);
   vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
+  removeAccount = vi.fn<typeof accountingApi.removeAccount>(async () => undefined);
+  vi.spyOn(accountingApi, 'removeAccount').mockImplementation(removeAccount);
 });
 afterEach(() => {
   cleanup();
@@ -236,18 +239,46 @@ describe('PROPERTY-ADD Add property', () => {
     expect(onAdded).toHaveBeenCalledWith(asset);
   });
 
-  it('keeps the property when its purchase is refused and closes onto it', async () => {
+  it('leaves no empty account behind when closed before the purchase is saved', async () => {
+    // Codex P2: the account is made first; closing after a later step failed must not strand it.
+    createAsset.mockRejectedValueOnce(refused(500));
+    const user = userEvent.setup();
+    const { dialog, onAdded, onClose } = open();
+    await fill(user, dialog, { 'Purchase price': '8500000' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Nothing was saved.');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
+    expect(onClose).toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it('also removes the account when the purchase is refused and the dialog is closed', async () => {
     createTrade.mockRejectedValueOnce(refused(400));
+    const user = userEvent.setup();
+    const { dialog, onAdded, onClose } = open();
+    await fill(user, dialog, { 'Purchase price': '8500000' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The purchase was not saved. Check the fields and try again.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
+    expect(onClose).toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it('keeps everything once the purchase is saved, even if the value is not', async () => {
+    setPrice.mockRejectedValueOnce(refused(500));
     const user = userEvent.setup();
     const { dialog, onAdded } = open();
     await fill(user, dialog, { 'Purchase price': '8500000' });
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The property was added, but its purchase was not saved. Check the fields and try again.',
-    );
+    await within(dialog).findByRole('alert');
     // The footer's Cancel became Close: what is saved is kept.
     const [, footer] = within(dialog).getAllByRole('button', { name: 'Close' });
     await user.click(footer);
+    expect(removeAccount).not.toHaveBeenCalled();
     expect(onAdded).toHaveBeenCalledWith(asset);
   });
 });

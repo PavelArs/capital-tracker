@@ -145,6 +145,29 @@ describe('PROPERTY-LIST Real estate', () => {
     expect(screen.getByRole('dialog', { name: 'Add property' })).toBeInTheDocument();
   });
 
+  it('counts only what is held in property accounts when the asset is also held elsewhere', async () => {
+    // Codex P2: an asset bought into a wallet as well must not bring the wallet's part along.
+    const mixed = asset(4, 'Garage', plot, {
+      quantity: '1.5',
+      value: '30000',
+      costBasis: '25000',
+      unrealizedPnl: '5000',
+      unrealizedReturnPercent: '20',
+      holdings: [
+        { accountId: plot, accountName: 'Land', quantity: '1', value: '20000' },
+        { accountId: wallet, accountName: 'Home safe', quantity: '0.5', value: '10000' },
+      ],
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([mixed]));
+    renderPage();
+    const [card] = within(await screen.findByRole('list')).getAllByRole('link');
+    expect(card).toHaveTextContent('GarageFully yours$20,000.00');
+    expect(card).toHaveTextContent('Paid—Gain—');
+    expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
+      '$20,000.00',
+    );
+  });
+
   it('offers to add the first property', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([properties[2]]));
     renderPage();

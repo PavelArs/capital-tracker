@@ -37,7 +37,7 @@ function Card({ property, portfolio }: { property: Property; portfolio: Portfoli
           <span className="property-card__name">{asset.name}</span>
           <span className="property-card__share">{shareText(share)}</span>
         </div>
-        <strong className="property-card__value">{money(asset.value, currency)}</strong>
+        <strong className="property-card__value">{money(property.value, currency)}</strong>
         <dl className="property-card__facts">
           {share < 100 && (
             <div>
@@ -51,14 +51,14 @@ function Card({ property, portfolio }: { property: Property; portfolio: Portfoli
           </div>
           <div>
             <dt>Paid</dt>
-            <dd>{money(asset.costBasis, currency)}</dd>
+            <dd>{money(property.costBasis, currency)}</dd>
           </div>
           <div>
             <dt>Gain</dt>
-            <dd className={`property-card__gain--${tone(asset.unrealizedPnl) ?? 'flat'}`}>
-              {money(asset.unrealizedPnl, currency, true)}
-              {asset.unrealizedReturnPercent !== null &&
-                ` (${percent(asset.unrealizedReturnPercent)})`}
+            <dd className={`property-card__gain--${tone(property.unrealizedPnl) ?? 'flat'}`}>
+              {money(property.unrealizedPnl, currency, true)}
+              {property.unrealizedReturnPercent !== null &&
+                ` (${percent(property.unrealizedReturnPercent)})`}
             </dd>
           </div>
         </dl>
@@ -97,8 +97,8 @@ export default function RealEstatePage() {
   }, [asked]);
 
   const properties = portfolio && classes ? propertiesOf(portfolio, classes) : null;
-  const total = properties?.reduce((sum, { asset }) => sum + Number(asset.value ?? 0), 0) ?? 0;
-  const unpriced = properties?.filter(({ asset }) => asset.value === null).length ?? 0;
+  const total = properties?.reduce((sum, { value }) => sum + Number(value ?? 0), 0) ?? 0;
+  const unpriced = properties?.filter(({ value }) => value === null).length ?? 0;
   const addButton = (primary: boolean) => (
     <button
       type="button"

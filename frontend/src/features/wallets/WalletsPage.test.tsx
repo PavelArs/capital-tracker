@@ -169,18 +169,22 @@ function setup(
     | 'unread' = [],
   entry: string | { pathname: string; state: unknown } = '/wallets',
   more: (ReturnType<typeof account> & { assetClass?: 'broker' | 'property' })[] = [],
+  accountsAnswer?: ReturnType<typeof accountingApi.listAccounts>,
 ) {
   const hiddenList = vi.spyOn(hiddenAssetsApi, 'list');
   if (hidden === 'unread') hiddenList.mockRejectedValue(new Error('unavailable'));
   else hiddenList.mockResolvedValue(hidden);
-  vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
-    items: [
-      account(trust, 'Trust Wallet', kinds[trust] ?? null),
-      account(cold, 'Cold storage', kinds[cold] ?? null),
-      ...more,
-    ],
-    nextCursor: null,
-  });
+  const accounts = vi.spyOn(accountingApi, 'listAccounts');
+  if (accountsAnswer) accounts.mockReturnValue(accountsAnswer);
+  else
+    accounts.mockResolvedValue({
+      items: [
+        account(trust, 'Trust Wallet', kinds[trust] ?? null),
+        account(cold, 'Cold storage', kinds[cold] ?? null),
+        ...more,
+      ],
+      nextCursor: null,
+    });
   vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation);
   vi.spyOn(walletAddressesApi, 'list').mockResolvedValue(list);
   vi.spyOn(walletAddressesApi, 'syncRuns').mockResolvedValue([]);
@@ -433,6 +437,42 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     expect(await screen.findByRole('region', { name: 'Trust Wallet' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Studio' })).toBeNull());
     expect(screen.getByRole('region', { name: 'Cold storage' })).toBeInTheDocument();
+  });
+
+  it('never shows a property account as a wallet, even while the accounts are on their way', async () => {
+    // Codex P2: the class decides where an account belongs, so the cards wait for it.
+    const studio = id(12);
+    const valuation = portfolio();
+    valuation.accounts.push({
+      accountId: studio,
+      name: 'Studio',
+      coverage: 'covered',
+      pricedValue: '90000',
+      missingPriceCount: 0,
+    });
+    let answer: (page: Awaited<ReturnType<typeof accountingApi.listAccounts>>) => void = () => {};
+    setup(
+      [wallet(1, {})],
+      valuation,
+      {},
+      [],
+      '/wallets',
+      [],
+      new Promise((resolve) => (answer = resolve)),
+    );
+    await waitFor(() => expect(walletAddressesApi.list).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('region', { name: 'Studio' })).toBeNull();
+    answer({
+      items: [
+        account(trust, 'Trust Wallet', null),
+        account(cold, 'Cold storage', null),
+        { ...account(studio, 'Studio', null), assetClass: 'property' },
+      ],
+      nextCursor: null,
+    });
+    expect(await screen.findByRole('region', { name: 'Trust Wallet' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Studio' })).toBeNull();
   });
 
   it('W1 shows how each wallet is held in its header', async () => {
