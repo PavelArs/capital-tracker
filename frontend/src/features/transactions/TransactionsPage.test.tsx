@@ -1393,6 +1393,120 @@ describe('classify-chain-transactions (M12)', () => {
     expect(classify.mock.calls[1][2].classification).toEqual({ type: 'fee', valueUsd: '1.25' });
   });
 
+  it('CLS-MARKET-VALUE: a coin with no price near the transaction is valued at its latest price, to change or keep', async () => {
+    const unpriced = chainOperation(7, {
+      occurredAt: '2025-06-20T08:05:00.000Z',
+      quantity: '2',
+      estimatedValueUsd: null,
+      marketValue: { valueUsd: '1234.5678', observedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: txid(7), blockHeight: 800007, priceObservedAt: null, direction: 'in' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Income' }));
+    const value = within(drawer).getByLabelText('Value at the time');
+    expect(value).toHaveValue('1234.57');
+    expect(drawer).toHaveTextContent('valued at its latest stored price (');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({
+      type: 'income',
+      valueUsd: '1234.57',
+    });
+  });
+
+  it('CLS-MARKET-VALUE: the offered value is replaced by what the owner types and is not offered for a pool gain', async () => {
+    const unpriced = chainOperation(8, {
+      occurredAt: '2025-06-20T08:05:00.000Z',
+      quantity: '0.0000002',
+      estimatedValueUsd: null,
+      marketValue: { valueUsd: '0.00123456', observedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: txid(8), blockHeight: 800008, priceObservedAt: null, direction: 'in' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Income' }));
+    const value = within(drawer).getByLabelText('Value at the time');
+    expect(value).toHaveValue('0.00123');
+    await user.clear(value);
+    await user.type(value, '3');
+    expect(drawer).not.toHaveTextContent('valued at its latest stored price');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({ type: 'income', valueUsd: '3' });
+  });
+
+  it('CLS-MARKET-VALUE: the offer waits while a pool withdrawal is chosen and comes back after it', async () => {
+    const unpriced = chainOperation(10, {
+      occurredAt: '2025-06-20T08:05:00.000Z',
+      estimatedValueUsd: null,
+      marketValue: { valueUsd: '50.005', observedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: txid(10), blockHeight: 800010, priceObservedAt: null, direction: 'in' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced]));
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Income' }));
+    expect(within(drawer).getByLabelText('Value at the time')).toHaveValue('50.01');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    expect(within(drawer).getByLabelText('Value of the gain (optional)')).toHaveValue('');
+    await user.click(within(drawer).getByRole('button', { name: 'Reward' }));
+    expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('50.01');
+  });
+
+  it('CLS-MARKET-VALUE: a value the owner cleared stays empty through a pool withdrawal round trip', async () => {
+    const unpriced = chainOperation(11, {
+      occurredAt: '2025-06-20T08:05:00.000Z',
+      estimatedValueUsd: null,
+      marketValue: { valueUsd: '50.005', observedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: txid(11), blockHeight: 800011, priceObservedAt: null, direction: 'in' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced]));
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Reward' }));
+    await user.clear(within(drawer).getByLabelText('Value at the time (optional)'));
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Reward' }));
+    expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('');
+  });
+
+  it.each([
+    ['0.0000000000001', '0.0000000000001'],
+    ['0.99996', '1'],
+    ['1000000000000000000000', '1000000000000000000000.00'],
+    [`${'9'.repeat(48)}.999`, ''],
+    [`${'9'.repeat(48)}.001`, `${'9'.repeat(48)}.00`],
+    ['0.00000000000000000000000000000049', ''],
+  ])(
+    'CLS-MARKET-VALUE: a market value of %s is offered as plain decimal text %s',
+    async (market, offered) => {
+      const unpriced = chainOperation(11, {
+        occurredAt: '2025-06-20T08:05:00.000Z',
+        estimatedValueUsd: null,
+        marketValue: { valueUsd: market, observedAt: '2026-10-04T11:00:00.000Z' },
+        chain: { txid: txid(11), blockHeight: 800011, priceObservedAt: null, direction: 'in' },
+      });
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced]));
+      const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Income' }));
+      expect(within(drawer).getByLabelText('Value at the time')).toHaveValue(offered);
+    },
+  );
+
+  it('CLS-MARKET-VALUE: nothing is offered when a price is stored for the time or the coin has none', async () => {
+    const priced = chainOperation(9, {
+      occurredAt: '2025-06-20T08:05:00.000Z',
+      estimatedValueUsd: '610',
+      marketValue: { valueUsd: '99999', observedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: txid(9), blockHeight: 800009, priceObservedAt: null, direction: 'in' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([priced]));
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Income' }));
+    expect(within(drawer).getByLabelText('Value at the time')).toHaveValue('');
+  });
+
   it('CLS-RECLASSIFY, CLS-HIDE: a classified row can be changed or hidden, keeping its answer', async () => {
     const hidden = { ...bought, type: null, status: 'hidden' as const };
     vi.spyOn(operationsApi, 'list')
@@ -2545,6 +2659,61 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
         config: { headers: new AxiosHeaders() },
         data: { message },
       });
+
+    it('CLS-MARKET-VALUE: choosing a record to replace drops the offered value, which the record brings', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const unpriced = operation({
+        ...paid,
+        estimatedValueUsd: null,
+        marketValue: { valueUsd: '999.99', observedAt: '2026-10-03T12:00:00.000Z' },
+      });
+      const { user, drawer } = await openRow([unpriced, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('999.99');
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('');
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2].classification).toEqual({
+        type: 'swap',
+        record: { kind: 'trade', id: id(70), version: 4 },
+        valueUsd: null,
+      });
+    });
+
+    it('CLS-MARKET-VALUE: the offered value comes back after leaving a recorded swap choice', async () => {
+      const unpriced = operation({
+        ...paid,
+        estimatedValueUsd: null,
+        marketValue: { valueUsd: '999.99', observedAt: '2026-10-03T12:00:00.000Z' },
+      });
+      const { user, drawer } = await openRow([unpriced, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      await user.selectOptions(select, `replace:${id(70)}:4`);
+      expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('');
+      await user.selectOptions(select, (select as HTMLSelectElement).options[0].value);
+      expect(within(drawer).getByLabelText('Value at the time (optional)')).toHaveValue('999.99');
+    });
+
+    it('CLS-MARKET-VALUE: a swap record left chosen does not hide the offer for another answer', async () => {
+      const unpriced = operation({
+        ...paid,
+        estimatedValueUsd: null,
+        marketValue: { valueUsd: '999.99', observedAt: '2026-10-03T12:00:00.000Z' },
+      });
+      const { user, drawer } = await openRow([unpriced, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Expense' }));
+      expect(within(drawer).getByLabelText(/Value at the time/)).toHaveValue('999.99');
+    });
 
     it('an outgoing transaction can be replaced by a plain purchase of another coin', async () => {
       const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();

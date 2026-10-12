@@ -71,6 +71,11 @@ export interface Operation {
   counterQuantity: string | null;
   valueUsd: string | null;
   estimatedValueUsd: string | null;
+  /**
+   * Blockchain only (CLS-MARKET-VALUE): the quantity at the latest stored price, when none is
+   * stored near the transaction's time; the classification window suggests it as the value.
+   */
+  marketValue?: { valueUsd: string; observedAt: string } | null;
   costBasisUsd: string | null;
   feeUsd: string | null;
   /**

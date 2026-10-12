@@ -202,6 +202,11 @@ export interface OperationSources {
    * picks for its time (EST-AT-TIME).
    */
   marketPrices: ReadonlyMap<string, readonly StoredMarketPrice[]>;
+  /**
+   * CLS-MARKET-VALUE: the latest stored USD price of a ticker of any age, for a chain transaction
+   * that has no price near its own time.
+   */
+  latestPrices?: ReadonlyMap<string, StoredMarketPrice>;
   /** CLS-DUST: the owner's dust threshold in USD; absent or null: off. */
   dustThresholdUsd?: string | null;
   /** TOKEN-HIDE: `tokenKey(address, contract)` of every token an address leaves out. */
@@ -245,6 +250,11 @@ export interface Operation {
   valueUsd: string | null;
   /** Chain only: quantity at the price stored for the transaction's time, an estimate. */
   estimatedValueUsd: string | null;
+  /**
+   * Chain only (CLS-MARKET-VALUE): the quantity at the latest stored price, when no price is
+   * stored near the transaction's time. The classification window suggests it as the value.
+   */
+  marketValue: { valueUsd: string; observedAt: string } | null;
   costBasisUsd: string | null;
   feeUsd: string | null;
   fee: ListedFee | null;
@@ -360,6 +370,7 @@ const blank = {
   counterQuantity: null,
   valueUsd: null,
   estimatedValueUsd: null,
+  marketValue: null,
   costBasisUsd: null,
   feeUsd: null,
   fee: null,
@@ -428,6 +439,21 @@ export function estimate(quantity: string, price: StoredMarketPrice | undefined)
 }
 
 /**
+ * CLS-MARKET-VALUE: a transaction with no price stored near its time is valued at the latest
+ * price stored for the coin, whatever its age; null when it has a price of its own time or the
+ * coin has none at all.
+ */
+function marketValueOf(
+  quantity: string,
+  atTime: StoredMarketPrice | undefined,
+  latest: StoredMarketPrice | undefined,
+): { valueUsd: string; observedAt: string } | null {
+  if (atTime || !latest) return null;
+  const valueUsd = estimate(quantity, latest);
+  return valueUsd === null ? null : { valueUsd, observedAt: latest.observedAt };
+}
+
+/**
  * The owner's other address in the same transaction, moving the other way: the leg a transfer
  * linked (M13), or for a transaction still to classify the one candidate, if there is one.
  */
@@ -476,6 +502,7 @@ function chainOperation(
   records: ReadonlyMap<string, Projected> = new Map(),
   settled: ReadonlyMap<ChainOperationInput, PoolSettlement> = new Map(),
   hiddenToken = false,
+  latest: ReadonlyMap<string, StoredMarketPrice> = new Map(),
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
@@ -499,6 +526,11 @@ function chainOperation(
     asset,
     quantity,
     estimatedValueUsd: estimate(quantity, price),
+    marketValue: marketValueOf(
+      quantity,
+      price,
+      asset.symbol ? latest.get(asset.symbol) : undefined,
+    ),
     // The sender pays an incoming transaction's fee.
     fee: row.direction === 'in' ? null : fee,
     account: row.account,
@@ -1041,6 +1073,7 @@ export function projectOperations(
         settled,
         // TOKEN-HIDE: a leg of a token its address leaves out never asks to be classified.
         sources.leftOutTokens?.has(tokenKey(row.wallet.id, row.asset)) ?? false,
+        sources.latestPrices,
       ),
       row,
       byHash.get(hashKey(row)) ?? [],

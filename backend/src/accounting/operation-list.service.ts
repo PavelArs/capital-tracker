@@ -7,7 +7,7 @@ import {
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
-import { storedPricesAt } from '../prices/market-price.store';
+import { latestMarketPrices, priceAt, storedPricesAt } from '../prices/market-price.store';
 import { chainFacts } from '../wallet-addresses/bybit-records';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import { evmNetworks } from '../wallet-addresses/evm-chains';
@@ -366,6 +366,23 @@ export class OperationListService {
           at: row.blockTime.toISOString(),
         })),
       );
+      // CLS-MARKET-VALUE: a coin with no price near a transaction's time is valued at its latest.
+      const unpriced = [
+        ...new Set(
+          chain.flatMap((row) => {
+            const symbol = chainAsset(row.network, row.asset).symbol;
+            return symbol && !priceAt(marketPrices.get(symbol), row.blockTime.toISOString())
+              ? [symbol]
+              : [];
+          }),
+        ),
+      ];
+      const latestPrices = new Map(
+        (await latestMarketPrices(manager, unpriced, now)).map((item) => [
+          item.asset,
+          { priceUsd: item.price, observedAt: item.observedAt, source: item.source },
+        ]),
+      );
       const currency = asked ?? (await readMainCurrency(manager, owner));
       const fx = new FxConverter(await readFxRates(manager), currency);
 
@@ -508,6 +525,7 @@ export class OperationListService {
                   },
           })),
           marketPrices,
+          latestPrices,
           dustThresholdUsd: await readDustThreshold(manager, owner),
           leftOutTokens: await leftOutTokens(manager, owner),
         },
