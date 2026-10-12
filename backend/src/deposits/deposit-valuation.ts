@@ -6,7 +6,7 @@ import {
   moscowDate,
 } from '../fx-rates/fx-conversion';
 import type { StatedFlow } from '../portfolio-snapshots/capital-flows';
-import { type DepositCurrency, projectDeposit } from './deposit-interest';
+import { type DepositCurrency, depositBalances, projectDeposit } from './deposit-interest';
 import { movementsOf, type Stored, termsOf } from './deposit-store';
 
 // DEP-VALUE: what the owner's deposits add to the whole portfolio. A deposit is worth its
@@ -52,6 +52,23 @@ function stated(
 // in every currency and for every instant of that day, so a history rebuild replays it once per
 // date. Holdings are read afresh for every request, so a cached balance never goes stale.
 const balances = new WeakMap<DepositHolding, Map<string, bigint>>();
+
+/**
+ * Replays every deposit once for all the instants a history is about to read, so that reading
+ * each of them costs nothing more. Without it every date is a replay from the deposit's start.
+ */
+export function primeDepositBalances(
+  holdings: readonly DepositHolding[],
+  instants: readonly number[],
+) {
+  const dates = [...new Set(instants.map((at) => moscowDate(new Date(at))))];
+  for (const holding of holdings) {
+    const known = balances.get(holding) ?? new Map<string, bigint>();
+    balances.set(holding, known);
+    const replayed = depositBalances(termsOf(holding), movementsOf(holding), dates);
+    for (const [date, atoms] of replayed) known.set(date, atoms);
+  }
+}
 
 function balanceOn(holding: DepositHolding, date: string): bigint {
   const known = balances.get(holding) ?? new Map<string, bigint>();

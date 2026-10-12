@@ -1,7 +1,9 @@
+import { canonicalDecimalToAtoms } from '../accounting/money';
 import {
   bankBalanceOf,
   type DepositMovement,
   type DepositTerms,
+  depositBalances,
   firstImpossibleMovement,
   nextPayout,
   payoutDates,
@@ -340,5 +342,60 @@ describe('nextPayout', () => {
 
   it('is null once the term is over', () => {
     expect(nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-04-01')).toBeNull();
+  });
+});
+
+describe('depositBalances', () => {
+  // A small deterministic generator, so a failure names the same case every run.
+  let seed = 20261012;
+  const random = (count: number) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % count;
+  };
+  const addDays = (date: string, days: number) =>
+    new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+  it('reads the same balance as a replay to each date, for many deposits', () => {
+    for (let round = 0; round < 60; round += 1) {
+      const startDate = addDays('2025-01-01', random(400));
+      const endDate = random(3) === 0 ? null : addDays(startDate, 20 + random(500));
+      const payouts = ['monthly', 'quarterly', 'at-end'] as const;
+      const payout = payouts[endDate === null ? random(2) : random(3)];
+      const deposit = terms({
+        startDate,
+        endDate,
+        payout,
+        capitalized: random(2) === 0,
+        dayBasis: random(2) === 0 ? 'actual-365' : 'actual-actual',
+        earlyClose: random(2) === 0 ? 'forfeits-interest' : 'keeps-interest',
+        rates: [
+          { effectiveFrom: startDate, ratePercent: `${3 + random(15)}.${random(100)}` },
+          { effectiveFrom: addDays(startDate, 30 + random(200)), ratePercent: `${random(20)}` },
+        ],
+      });
+      const movements: DepositMovement[] = [
+        topup(startDate, `${10000 + random(90000)}.${random(100)}`),
+      ];
+      let day = 0;
+      for (let step = random(6); step > 0; step -= 1) {
+        day += 1 + random(120);
+        const kind = (['topup', 'withdrawal', 'interest-payout'] as const)[random(3)];
+        const amount = kind === 'withdrawal' && random(3) === 0 ? '999999' : `${1 + random(5000)}`;
+        movements.push({ date: addDays(startDate, day), kind, amount });
+      }
+      const dates = Array.from({ length: 40 }, () => addDays(startDate, random(900) - 30));
+      const balances = depositBalances(deposit, movements, dates);
+      for (const date of dates) {
+        const expected =
+          date < startDate
+            ? 0n
+            : canonicalDecimalToAtoms(projectDeposit(deposit, movements, date).balance);
+        expect([round, date, balances.get(date)]).toEqual([round, date, expected]);
+      }
+    }
+  });
+
+  it('is empty without dates', () => {
+    expect(depositBalances(terms(), [], []).size).toBe(0);
   });
 });
