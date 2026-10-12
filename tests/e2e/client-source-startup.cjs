@@ -236,12 +236,11 @@ async function main() {
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
     assert.equal(
       Number(state.migrations),
-      60,
+      61,
       'Run after the actual preserved sixty-one migrations',
     );
     assert.equal(
       state.latest_migration,
-      'AddInflation1796700000000',
       'ClassOfAccount1796900000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );
