@@ -391,6 +391,54 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     });
   });
 
+  it('VAL-UNPRICED-KNOWN a coin without a price is left out and the market effect of the rest is said', () => {
+    const held = (btc: string, eth: string | null, ethQuantity = '2') =>
+      new Map([
+        ['btc', { quantity: '1', value: btc }],
+        ['eth', { quantity: ethQuantity, value: eth }],
+      ]);
+    const start = {
+      at: at('2026-09-05T00:00:00.000Z'),
+      value: '60000',
+      held: held('50000', '10000'),
+    };
+    // ETH has no price now: its 10000 is out of the end value, and of the start value too.
+    const end = {
+      at: at('2026-10-05T00:00:00.000Z'),
+      value: '55000',
+      unpriced: true,
+      held: held('55000', null),
+    };
+    expect(splitChange(start, end, [])).toEqual({
+      deposits: '0',
+      withdrawals: '0',
+      netFlow: '0',
+      marketEffect: '5000',
+      marketReturnPercent: '10.00',
+    });
+    // A flow that belongs to the coin without a price, or a change in its quantity, is not known.
+    const flow = { at: at('2026-09-20T00:00:00.000Z'), instrumentId: 'eth', amount: usd(1000) };
+    expect(splitChange(start, end, [flow])).toMatchObject({ netFlow: '1000', marketEffect: null });
+    expect(splitChange(start, { ...end, held: held('55000', null, '3') }, [])).toMatchObject({
+      marketEffect: null,
+    });
+    // A flow of another coin counts as money in or out of the rest.
+    expect(splitChange(start, end, [{ ...flow, instrumentId: 'btc' }])).toMatchObject({
+      netFlow: '1000',
+      marketEffect: '4000',
+    });
+    // A deposit without a rate still gives none.
+    expect(splitChange(start, { ...end, unrated: true }, [])).toMatchObject({ marketEffect: null });
+    // A coin without a price at the start only (its prices begin later) is still unknown.
+    expect(
+      splitChange(
+        { ...start, value: '50000', unpriced: true, held: held('50000', null) },
+        { at: end.at, value: '65000', held: held('55000', '10000') },
+        [],
+      ),
+    ).toMatchObject({ marketEffect: null });
+  });
+
   it('PROFIT-ALL-TIME profit or loss is net worth minus all-time net invested', () => {
     // 100000 put in over time, 20000 taken out, worth 95000 now: +15000, 18.75 % of 80000.
     expect(profitToDate('95000', '80000')).toEqual({
