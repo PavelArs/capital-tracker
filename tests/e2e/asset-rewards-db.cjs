@@ -67,7 +67,7 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
           : withoutClassification && tablename === 'auth_sessions'
             ? "to_jsonb(t) - 'device'"
             : withoutClassification && tablename === 'manual_accounts'
-              ? "to_jsonb(t) - 'kind' - 'removedAt'"
+              ? "to_jsonb(t) - 'kind' - 'removedAt' - 'assetClass'"
               : 'to_jsonb(t)';
     values.push([
       tablename,
@@ -271,7 +271,7 @@ async function migrationPreservation() {
       ],
     );
     const before = await fingerprint(db, ['migrations'], true);
-    assert.match(migrate(predecessor), /Migrations applied: 40/);
+    assert.match(migrate(predecessor), /Migrations applied: 41/);
     assert.deepEqual(await db.query('SELECT "consecutiveFailures" FROM owner_mfa'), [
       { consecutiveFailures: 0 },
     ]);
@@ -958,7 +958,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 60/);
+  assert.match(migrate(database), /Migrations applied: 61/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

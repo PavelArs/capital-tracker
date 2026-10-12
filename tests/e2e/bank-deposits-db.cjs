@@ -18,7 +18,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 60;
+const MIGRATIONS = 61;
 let stage = 'synthetic configuration';
 
 function source() {

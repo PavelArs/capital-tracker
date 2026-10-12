@@ -744,9 +744,18 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
         .map(
           (button) => button.querySelector('b')?.textContent ?? button.getAttribute('aria-label'),
         ),
-    ).toEqual(['Close', 'Crypto', 'Bank', 'Something else']);
+    ).toEqual(['Close', 'Crypto', 'Bank', 'Real estate', 'Something else']);
 
-    await user.click(within(picker).getByRole('button', { name: /^Bank/ }));
+    await user.click(within(picker).getByRole('button', { name: /^Real estate/ }));
+    expect(screen.getByRole('dialog', { name: 'Add property' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
+        name: /^Bank/,
+      }),
+    );
     expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
     const deposit = screen.getByRole('dialog', { name: 'Add deposit' });
     await user.keyboard('{Escape}');

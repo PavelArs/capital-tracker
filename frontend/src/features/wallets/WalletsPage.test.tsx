@@ -168,6 +168,7 @@ function setup(
     | { instrumentId: string; name: string; symbol: string | null; hiddenAt: string }[]
     | 'unread' = [],
   entry: string | { pathname: string; state: unknown } = '/wallets',
+  more: (ReturnType<typeof account> & { assetClass?: 'broker' | 'property' })[] = [],
 ) {
   const hiddenList = vi.spyOn(hiddenAssetsApi, 'list');
   if (hidden === 'unread') hiddenList.mockRejectedValue(new Error('unavailable'));
@@ -176,6 +177,7 @@ function setup(
     items: [
       account(trust, 'Trust Wallet', kinds[trust] ?? null),
       account(cold, 'Cold storage', kinds[cold] ?? null),
+      ...more,
     ],
     nextCursor: null,
   });
@@ -413,6 +415,24 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Add wallet' })).toBeInTheDocument();
+  });
+
+  it('leaves a property account to Real estate (v8)', async () => {
+    const studio = id(12);
+    const valuation = portfolio();
+    valuation.accounts.push({
+      accountId: studio,
+      name: 'Studio',
+      coverage: 'covered',
+      pricedValue: '90000',
+      missingPriceCount: 0,
+    });
+    setup([wallet(1, {})], valuation, {}, [], '/wallets', [
+      { ...account(studio, 'Studio', null), assetClass: 'property' },
+    ]);
+    expect(await screen.findByRole('region', { name: 'Trust Wallet' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Studio' })).toBeNull());
+    expect(screen.getByRole('region', { name: 'Cold storage' })).toBeInTheDocument();
   });
 
   it('W1 shows how each wallet is held in its header', async () => {

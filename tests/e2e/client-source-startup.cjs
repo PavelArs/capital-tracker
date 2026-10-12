@@ -237,11 +237,12 @@ async function main() {
     assert.equal(
       Number(state.migrations),
       60,
-      'Run after the actual preserved sixty migrations',
+      'Run after the actual preserved sixty-one migrations',
     );
     assert.equal(
       state.latest_migration,
       'AddInflation1796700000000',
+      'ClassOfAccount1796900000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
@@ -275,7 +276,7 @@ async function main() {
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map(
       (row) => row.name,
     );
-    assert.equal(shownNames.length, 60);
+    assert.equal(shownNames.length, 61);
     assert.deepEqual(
       shownNames,
       appliedNames,

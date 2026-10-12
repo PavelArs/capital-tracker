@@ -8,7 +8,7 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
 import { failureMessage, type SyncRun } from './SyncStatus';
-import { hiddenSymbolsOf, kindsOf } from './wallets';
+import { classedOf, hiddenSymbolsOf, kindsOf } from './wallets';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
@@ -31,6 +31,10 @@ export function useWallets() {
   // W1: how each wallet is held; a failed read leaves the labels out, not the page.
   const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
     kindsOf(cachedReads.accounts.last()),
+  );
+  // Property and broker accounts (v8) have their own sections; known once the accounts are read.
+  const [classed, setClassed] = useState<ReadonlySet<string>>(() =>
+    classedOf(cachedReads.accounts.last()),
   );
   // ASSET-HIDE: the coins the owner hid are no difference to explain. Until the list is read
   // (or when its read fails) it is unknown, and no balance is compared.
@@ -61,7 +65,11 @@ export function useWallets() {
         // The labels never hold the page back: they arrive when they arrive, or not at all.
         cachedReads.accounts
           .load()
-          .then((accounts) => request === latest.current && setKinds(kindsOf(accounts)))
+          .then((accounts) => {
+            if (request !== latest.current) return;
+            setKinds(kindsOf(accounts));
+            setClassed(classedOf(accounts));
+          })
           .catch(() => undefined);
         // ASSET-HIDE: the hidden list lands with the balances it is compared against; one that
         // cannot be read leaves the comparison unknown rather than trusting an older list.
@@ -164,6 +172,7 @@ export function useWallets() {
     portfolio,
     addresses,
     kinds,
+    classed,
     hiddenSymbols,
     failed,
     load,

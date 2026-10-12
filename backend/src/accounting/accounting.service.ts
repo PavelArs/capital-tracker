@@ -17,6 +17,7 @@ import {
   type ValuationCurrency,
 } from './asset-classification';
 import {
+  type AccountClass,
   parseAccount,
   parseAccountChange,
   parseHistoryQuery,
@@ -34,6 +35,7 @@ interface AccountRow {
   name: string;
   currentRevision: number | null;
   kind: WalletKind | null;
+  assetClass?: AccountClass | null;
   createdAt: Date;
   canonicalPayload: string;
 }
@@ -50,6 +52,8 @@ export interface AccountSummary {
   name: string;
   /** W1: software, hardware or exchange; null until the owner says. */
   kind: WalletKind | null;
+  /** v8: a broker account or a property; null for a wallet. */
+  assetClass: AccountClass | null;
   currentRevision: number;
   createdAt: string;
 }
@@ -83,6 +87,7 @@ const accountView = (row: AccountRow): AccountSummary => ({
   id: row.id,
   name: row.name,
   kind: row.kind ?? null,
+  assetClass: row.assetClass ?? null,
   currentRevision: row.currentRevision ?? 0,
   createdAt: row.createdAt.toISOString(),
 });
@@ -115,17 +120,22 @@ export class AccountingService {
   ): Promise<{ created: boolean; value: AccountSummary }> {
     const owner = parseUuid(ownerId);
     const value = parseAccount(input);
-    // The kind joins the payload only when sent, so an earlier request keeps its exact payload.
+    // The kind and the class join the payload only when sent, so an earlier request keeps its
+    // exact payload.
     const payload = JSON.stringify({
       name: value.name,
       ...(value.kind ? { kind: value.kind } : {}),
+      ...(value.assetClass ? { assetClass: value.assetClass } : {}),
     });
-    // The kind column is named only when a kind is sent, so the database checks that build an
+    // Each optional column is named only when sent, so the database checks that build an
     // account on a schema from before the column still work.
+    const optional: [string, string][] = [];
+    if (value.kind) optional.push(['kind', value.kind]);
+    if (value.assetClass) optional.push(['"assetClass"', value.assetClass]);
     const rows: AccountRow[] = await this.source.query(
       `INSERT INTO manual_accounts
-      (id,"ownerId","requestId","canonicalPayload",name${value.kind ? ',kind' : ''})
-      VALUES ($1,$2,$3,$4,$5${value.kind ? ',$6' : ''})
+      (id,"ownerId","requestId","canonicalPayload",name${optional.map(([column]) => `,${column}`).join('')})
+      VALUES ($1,$2,$3,$4,$5${optional.map((_, index) => `,$${index + 6}`).join('')})
       ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
       [
         randomUUID(),
@@ -133,7 +143,7 @@ export class AccountingService {
         value.requestId,
         payload,
         value.name,
-        ...(value.kind ? [value.kind] : []),
+        ...optional.map(([, item]) => item),
       ],
     );
     const row =
