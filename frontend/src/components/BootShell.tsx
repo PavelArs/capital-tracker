@@ -1,3 +1,4 @@
+import { accountingCurrencies } from '@api/portfolio-valuation.api';
 import DashboardLoading from '@features/dashboard/DashboardLoading';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
@@ -5,6 +6,7 @@ import { retiredPaths, shellSections } from '@features/shell/navigation';
 import { Bone, PageSkeleton } from '@features/shell/Skeleton';
 import { type ComponentProps, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { SegmentedPlaceholder } from '@/ui/SegmentedControl';
 import '@features/shell/shell-page.css';
 import '@features/shell/tokens.css';
 import './Layout.css';
@@ -48,7 +50,9 @@ const nestedBlocksOf: Record<string, Blocks> = {
 };
 
 /** Where the owner ends up: the bare address and the retired bookmarks are sent on by the routes. */
-function landingPath(pathname: string): string {
+function landingPath(address: string): string {
+  // The router takes "/dashboard/" for "/dashboard".
+  const pathname = address.length > 1 ? address.replace(/\/+$/, '') : address;
   const retired = retiredPaths.find(
     ([from]) => pathname === from || pathname.startsWith(`${from}/`),
   );
@@ -116,8 +120,13 @@ export default function BootShell() {
           <div className="shell-owner__bell" />
           <span className="shell-owner__avatar" aria-hidden="true" />
           <span className="shell-owner__who">
-            <span className="shell-owner__name">Owner</span>
-            <small>2FA on</small>
+            {/* No claim about who this is before the sign-in check has answered. */}
+            <span className="shell-owner__name">
+              <Bone width={56} height={14} />
+            </span>
+            <small>
+              <Bone width={40} height={11} />
+            </small>
           </span>
           <button type="button" className="shell-owner__logout" disabled aria-label="Log out">
             <Icon name="logout" />
@@ -127,7 +136,10 @@ export default function BootShell() {
       <main id="main-content" className="shell-main">
         <div className="shell-page shell-page--boot">
           <header className="shell-page__head">
-            <Bone width={180} height={32} />
+            <h1>
+              <Bone width={180} height={29} />
+            </h1>
+            <SegmentedPlaceholder labels={accountingCurrencies} />
           </header>
           {here === '/dashboard' ? (
             // The Dashboard draws its own stand-in (a net-worth hero, then the chart).

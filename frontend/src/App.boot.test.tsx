@@ -95,4 +95,20 @@ describe('BOOT-SHELL: the frame is drawn before the sign-in check answers', () =
     open('/history');
     expect(document.querySelectorAll('.shell-skeleton__row')).toHaveLength(8);
   });
+
+  it('treats a trailing slash like the router does', () => {
+    open('/dashboard/');
+    expect(document.querySelector('.dashboard-loading__hero')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('says nothing about who is signed in and keeps the room of the page header', () => {
+    open('/portfolio');
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+    expect(nav).not.toHaveTextContent('Owner');
+    expect(nav).not.toHaveTextContent('2FA');
+    // The heading and the currency switch hold their places, so the page does not step down.
+    expect(document.querySelector('.shell-page__head h1 .shell-bone')).not.toBeNull();
+    expect(document.querySelector('.shell-page__head .ui-seg--hold')).not.toBeNull();
+  });
 });
