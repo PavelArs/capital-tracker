@@ -6,6 +6,7 @@ import { BellSlotContext } from '@features/shell/bell-slot';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { shellSections } from '@features/shell/navigation';
+import { prefetchSection } from '@features/shell/prefetch';
 import SyncIndicator from '@features/shell/SyncIndicator';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
@@ -87,7 +88,15 @@ export default function Layout() {
             <ul className="shell-nav__sections" data-nav-group="sections">
               {shellSections.map((section) => (
                 <li key={section.path}>
-                  <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
+                  <NavLink
+                    to={withCurrency(section.path, asked)}
+                    onClick={followLink}
+                    onPointerEnter={(event) => {
+                      if (event.pointerType === 'mouse') prefetchSection(section.path, asked);
+                    }}
+                    onPointerDown={() => prefetchSection(section.path, asked)}
+                    onFocus={() => prefetchSection(section.path, asked)}
+                  >
                     <Icon name={section.icon} />
                     {section.label}
                     {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
