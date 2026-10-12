@@ -118,14 +118,14 @@ describe('depositFlows', () => {
       { date: '2026-01-01', kind: 'topup', amount: '1000' },
       { date: '2026-01-10', kind: 'topup', amount: '200' },
       { date: '2026-01-20', kind: 'interest-payout', amount: '5' },
-      { date: '2026-02-01', kind: 'withdrawal', amount: '300' },
+      { date: '2026-01-25', kind: 'withdrawal', amount: '300' },
     ]);
     const flows = depositFlows([moved], fx('RUB'));
     expect(flows.map((flow) => [new Date(flow.at).toISOString(), flow.amount])).toEqual([
       ['2025-12-31T21:00:00.000Z', 100_000n * scale],
       ['2026-01-09T21:00:00.000Z', 20_000n * scale],
       ['2026-01-19T21:00:00.000Z', -500n * scale],
-      ['2026-01-31T21:00:00.000Z', -30_000n * scale],
+      ['2026-01-24T21:00:00.000Z', -30_000n * scale],
     ]);
   });
 
@@ -145,6 +145,29 @@ describe('depositFlows', () => {
       { date: '2025-06-01', kind: 'topup', amount: '10' },
     ]);
     expect(depositFlows([early], fx('RUB'))[0].amount).toBeNull();
+  });
+});
+
+describe('depositFlows with an old rate', () => {
+  it('leaves a flow unknown when the latest rate is more than fifteen days old', () => {
+    const moved = deposit({}, [
+      { date: '2026-02-25', kind: 'topup', amount: '10' },
+      { date: '2026-02-26', kind: 'topup', amount: '10' },
+    ]);
+    // The rates stop at 2026-02-10: the 25th is the last day they still count.
+    expect(depositFlows([moved], fx('RUB')).map((flow) => flow.amount)).toEqual([
+      1_100n * scale,
+      null,
+    ]);
+  });
+});
+
+describe('depositValueOn replays once per date', () => {
+  it('states the same deposit on one day in several currencies', () => {
+    const held = deposit();
+    expect(depositValueOn(held, '2026-01-15', fx('RUB'))).toBe(100_000n * scale);
+    expect(depositValueOn(held, '2026-01-15', fx('USD'))).toBe(1250n * scale);
+    expect(depositValueOn(held, '2026-01-16', fx('RUB'))).toBe(100_000n * scale);
   });
 });
 
