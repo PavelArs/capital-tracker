@@ -4,8 +4,8 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import Pager, { usePages } from '@/ui/Pager';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
-import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
@@ -37,7 +37,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
-/** The interest posted so far, newest first; a deposit that posts every day has a long list. */
+/** The interest posted so far, newest first, five periods a page: a daily deposit has many. */
 function InterestPeriods({
   periods,
   currency,
@@ -45,8 +45,7 @@ function InterestPeriods({
   periods: DepositDetail['periods'];
   currency: AccountingCurrency;
 }) {
-  const newest = [...periods].reverse();
-  const paged = useInfinite(newest);
+  const paged = usePages([...periods].reverse());
   return (
     <>
       <div className="ui-table-wrap">
@@ -71,7 +70,102 @@ function InterestPeriods({
           </tbody>
         </table>
       </div>
-      {paged.more && <LoadMore {...paged.more} label="periods" />}
+      {paged.pager && <Pager {...paged.pager} label="periods" />}
+    </>
+  );
+}
+
+/** Money put in and taken out, newest first, five a page. */
+function Movements({
+  movements,
+  currency,
+  onRemove,
+}: {
+  movements: DepositDetail['movements'];
+  currency: AccountingCurrency;
+  onRemove: (id: string) => void;
+}) {
+  // The first top-up is the deposit itself; it goes with the deposit, not on its own.
+  const opening = movements[0]?.id;
+  const paged = usePages([...movements].reverse());
+  return (
+    <>
+      <div className="ui-table-wrap">
+        <table className="ui-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>What</th>
+              <th>Note</th>
+              <th className="ui-num">Amount</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {paged.rows.map((movement) => (
+              <tr key={movement.id}>
+                <td>{dateText(movement.date)}</td>
+                <td>{movementText[movement.kind]}</td>
+                <td>{movement.comment ?? ''}</td>
+                <td className="ui-num">{money(movement.amount, currency)}</td>
+                <td className="deposit-table__act">
+                  {movement.id !== opening && (
+                    <button
+                      type="button"
+                      className="shell-close"
+                      aria-label={`Remove the ${movementText[movement.kind].toLowerCase()} of ${dateText(movement.date)}`}
+                      onClick={() => onRemove(movement.id)}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {paged.pager && <Pager {...paged.pager} label="movements" />}
+    </>
+  );
+}
+
+/** The bank balances entered against the app's figure, five a page. */
+function Checks({
+  checks,
+  currency,
+}: {
+  checks: DepositDetail['checks'];
+  currency: AccountingCurrency;
+}) {
+  const paged = usePages(checks);
+  return (
+    <>
+      <div className="ui-table-wrap">
+        <table className="ui-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th className="ui-num">Bank</th>
+              <th className="ui-num">App</th>
+              <th className="ui-num">Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.rows.map((row) => (
+              <tr key={row.id}>
+                <td>{dateText(row.checkedOn)}</td>
+                <td className="ui-num">{money(row.bankBalance, currency)}</td>
+                <td className="ui-num">{money(row.calculated, currency)}</td>
+                <td className="ui-num">
+                  {Number(row.difference) === 0 ? '—' : money(row.difference, currency, true)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {paged.pager && <Pager {...paged.pager} label="checks" />}
     </>
   );
 }
@@ -259,41 +353,11 @@ export default function DepositPage() {
                 {removeFailed}
               </p>
             )}
-            <div className="ui-table-wrap">
-              <table className="ui-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>What</th>
-                    <th>Note</th>
-                    <th className="ui-num">Amount</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...deposit.movements].reverse().map((movement, position, all) => (
-                    <tr key={movement.id}>
-                      <td>{dateText(movement.date)}</td>
-                      <td>{movementText[movement.kind]}</td>
-                      <td>{movement.comment ?? ''}</td>
-                      <td className="ui-num">{money(movement.amount, own)}</td>
-                      <td className="deposit-table__act">
-                        {position !== all.length - 1 && (
-                          <button
-                            type="button"
-                            className="shell-close"
-                            aria-label={`Remove the ${movementText[movement.kind].toLowerCase()} of ${dateText(movement.date)}`}
-                            onClick={() => void removeMovement(movement.id)}
-                          >
-                            <Icon name="trash" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Movements
+              movements={deposit.movements}
+              currency={own}
+              onRemove={(id) => void removeMovement(id)}
+            />
           </section>
 
           <section className="shell-card" aria-labelledby="deposit-checks">
@@ -304,30 +368,7 @@ export default function DepositPage() {
                 payout or a different rate.
               </p>
             ) : (
-              <div className="ui-table-wrap">
-                <table className="ui-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th className="ui-num">Bank</th>
-                      <th className="ui-num">App</th>
-                      <th className="ui-num">Difference</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {deposit.checks.map((row) => (
-                      <tr key={row.id}>
-                        <td>{dateText(row.checkedOn)}</td>
-                        <td className="ui-num">{money(row.bankBalance, own)}</td>
-                        <td className="ui-num">{money(row.calculated, own)}</td>
-                        <td className="ui-num">
-                          {Number(row.difference) === 0 ? '—' : money(row.difference, own, true)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Checks checks={deposit.checks} currency={own} />
             )}
           </section>
 

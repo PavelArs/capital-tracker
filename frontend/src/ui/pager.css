@@ -1,0 +1,26 @@
+/* Previous and Next under a short list inside a card, with the rows on screen between them.
+   They stay on one line on a phone; the count wraps instead. */
+.ui-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+}
+
+.ui-pager__count {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.ui-pager__button {
+  flex: none;
+  margin-top: 0;
+}
+
+.ui-pager__button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}

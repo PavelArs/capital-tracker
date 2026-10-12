@@ -245,7 +245,7 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(screen.queryByText('Interest to be paid out')).not.toBeInTheDocument();
   });
 
-  it('lists the interest of a deposit that posts every day twenty periods at a time, newest first', async () => {
+  it('lists the interest of a deposit that posts every day five periods a page, newest first', async () => {
     const user = userEvent.setup();
     const day = (index: number) =>
       new Date(Date.UTC(2026, 6, 2 + index)).toISOString().slice(0, 10);
@@ -263,10 +263,44 @@ describe('DEP-DETAIL: one deposit', () => {
     const periods = (await screen.findByRole('heading', { name: 'Interest by period' })).closest(
       'section',
     ) as HTMLElement;
-    expect(within(periods).getAllByRole('row')).toHaveLength(21);
+    // A header row and five periods: the page no longer grows as it scrolls.
+    expect(within(periods).getAllByRole('row')).toHaveLength(6);
     expect(within(periods).getAllByRole('row')[1]).toHaveTextContent('Aug 15, 2026');
-    await user.click(within(periods).getByRole('button', { name: /more/i }));
-    expect(within(periods).getAllByRole('row').length).toBeGreaterThan(21);
+    expect(within(periods).getByRole('status')).toHaveTextContent('1–5 of 45 periods');
+    await user.click(within(periods).getByRole('button', { name: 'Next' }));
+    expect(within(periods).getAllByRole('row')).toHaveLength(6);
+    expect(within(periods).getAllByRole('row')[1]).toHaveTextContent('Aug 10, 2026');
+    expect(within(periods).getByRole('status')).toHaveTextContent('6–10 of 45 periods');
+  });
+
+  it('lists many payouts five a page and keeps the deposit’s own top-up unremovable', async () => {
+    const user = userEvent.setup();
+    const payouts = Array.from({ length: 7 }, (_unused, index) => ({
+      id: `p${index + 1}`,
+      date: `2026-0${7 + Math.floor((index + 1) / 4)}-${String(1 + ((index + 1) % 4) * 7).padStart(2, '0')}`,
+      kind: 'interest-payout' as const,
+      amount: '10.00',
+      comment: null,
+    }));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(savings, {
+        movements: [
+          { id: 'm1', date: '2026-07-01', kind: 'topup', amount: '100000.00', comment: null },
+          ...payouts,
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}?currency=RUB`);
+    const movements = (await screen.findByRole('heading', { name: 'Movements' })).closest(
+      'section',
+    ) as HTMLElement;
+    expect(within(movements).getAllByRole('row')).toHaveLength(6);
+    expect(within(movements).getByRole('status')).toHaveTextContent('1–5 of 8 movements');
+    expect(within(movements).getAllByRole('button', { name: /^Remove/ })).toHaveLength(5);
+    await user.click(within(movements).getByRole('button', { name: 'Next' }));
+    // The last page ends with the top-up that opened the deposit, which has no Remove.
+    expect(within(movements).getAllByRole('row')).toHaveLength(4);
+    expect(within(movements).getAllByRole('button', { name: /^Remove/ })).toHaveLength(2);
   });
 
   it('tells a capitalizing deposit that the bank balance leaves out the interest not yet added', async () => {
