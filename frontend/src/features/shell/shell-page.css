@@ -21,6 +21,12 @@
   animation: none;
 }
 
+/* The first real page after that frame appears at once too: its fade has no length while the mark
+   set by BootShell is on the root. Nothing starts when the mark comes off, the fades are over. */
+:root[data-from-boot] .shell-page > * {
+  animation-duration: 0s;
+}
+
 .shell-page h1 {
   margin: 0;
   font-size: var(--fs-xl);

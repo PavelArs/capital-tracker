@@ -74,4 +74,24 @@ describe('BOOT-SHELL: the frame is drawn before the sign-in check answers', () =
     expect(document.querySelector('.shell-skeleton__cards')).not.toBeNull();
     expect(document.querySelector('.shell-skeleton__stats')).toBeNull();
   });
+
+  it('lets the first real page appear at once and restores the fade a moment after the frame leaves', () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = render(<App />);
+      expect(document.documentElement).toHaveAttribute('data-from-boot');
+      unmount();
+      // The mark stays while the page that replaces the frame mounts, then comes off.
+      expect(document.documentElement).toHaveAttribute('data-from-boot');
+      vi.advanceTimersByTime(500);
+      expect(document.documentElement).not.toHaveAttribute('data-from-boot');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('draws as many rows as the history page does while its data is on its way', () => {
+    open('/history');
+    expect(document.querySelectorAll('.shell-skeleton__row')).toHaveLength(8);
+  });
 });

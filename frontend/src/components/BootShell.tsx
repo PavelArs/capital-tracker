@@ -8,6 +8,25 @@ import '@features/shell/shell-page.css';
 import '@features/shell/tokens.css';
 import './Layout.css';
 
+// The rows each list page draws while its own data is on its way, so the card keeps its height.
+const rowsOf: Record<string, number> = { transactions: 10, history: 8 };
+
+// The page that replaces the frame must not fade in from an empty body. While this mark is on the
+// root, the entrance fade of page bodies has no length (see shell-page.css); it comes off a moment
+// after the frame leaves, so pages opened later fade in as before.
+const HANDOVER_MS = 400;
+let handoverTimer: number | undefined;
+
+function markHandover(on: boolean) {
+  window.clearTimeout(handoverTimer);
+  if (on) document.documentElement.dataset.fromBoot = '';
+  else
+    handoverTimer = window.setTimeout(
+      () => delete document.documentElement.dataset.fromBoot,
+      HANDOVER_MS,
+    );
+}
+
 type Blocks = ComponentProps<typeof PageSkeleton>['show'];
 
 // What each section is made of, so the grey blocks stand where its content will.
@@ -47,6 +66,11 @@ export default function BootShell() {
   // The selected currency stays on the links, as in the navigation that replaces this one.
   const [asked] = useAskedCurrency();
   const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    markHandover(true);
+    return () => markHandover(false);
+  }, []);
+
   const here = landingPath(pathname);
   const [section = '', ...rest] = here.split('/').filter(Boolean);
 
@@ -105,11 +129,7 @@ export default function BootShell() {
           <header className="shell-page__head">
             <Bone width={180} height={32} />
           </header>
-          <PageSkeleton
-            label="Loading"
-            show={show}
-            rows={section === 'transactions' ? 10 : undefined}
-          />
+          <PageSkeleton label="Loading" show={show} rows={rowsOf[section]} />
         </div>
       </main>
     </div>
