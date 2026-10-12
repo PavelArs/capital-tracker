@@ -119,6 +119,21 @@
   gap: 10px;
 }
 
+/* The table's first column keeps one width: the caption that names a token's blockchains
+   arrives after the wallets are read and used to widen the column (and move every other one).
+   A longer name or caption is cut with an ellipsis instead. */
+.portfolio-asset__text {
+  display: block;
+  width: 13rem;
+  min-width: 0;
+}
+
+.portfolio-asset__text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .portfolio-asset__name {
   display: block;
   font-weight: 600;
