@@ -169,6 +169,27 @@ describe('PROPERTY-LIST Real estate', () => {
     );
   });
 
+  it('keeps a share too small to round to a hundredth of a percent', async () => {
+    // Codex P2: 0.004% of an expensive property is still held and still worth something.
+    const sliver = asset(5, 'Tower', studio, {
+      quantity: '0.00004',
+      price: {
+        value: '500000000',
+        observedAt: '2026-10-12T09:00:00.000Z',
+        source: 'manual',
+        status: 'fresh',
+      },
+      value: '20000',
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([sliver]));
+    renderPage();
+    const [card] = within(await screen.findByRole('list')).getAllByRole('link');
+    expect(card).toHaveTextContent('TowerLess than 0.01% yours$20,000.00');
+    expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
+      '$20,000.00',
+    );
+  });
+
   it('offers to add the first property', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([properties[2]]));
     renderPage();

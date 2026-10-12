@@ -28,11 +28,14 @@ export function propertiesOf(
       const held = asset.holdings.filter((holding) => classes[holding.accountId] === 'property');
       if (!held.length) return [];
       const quantity = held.reduce((sum, holding) => sum + Number(holding.quantity), 0);
+      // Whatever is still held counts, however small; only the shown share is rounded.
+      if (!(quantity > 0)) return [];
       const whole = held.length === asset.holdings.length;
       return [
         {
           asset,
-          share: Math.round(quantity * 10_000) / 100,
+          // Rounded only past what the share can be entered with, to drop float noise.
+          share: Math.round(quantity * 1e8) / 1e6,
           value: whole ? asset.value : sumOf(held.map((holding) => holding.value)),
           costBasis: whole ? asset.costBasis : null,
           unrealizedPnl: whole ? asset.unrealizedPnl : null,
@@ -40,7 +43,6 @@ export function propertiesOf(
         },
       ];
     })
-    .filter((property) => property.share > 0)
     .sort(
       (left, right) =>
         Number(right.value ?? 0) - Number(left.value ?? 0) ||
@@ -48,6 +50,11 @@ export function propertiesOf(
     );
 }
 
-/** "50% yours", "33.33% yours", "Fully yours". */
-export const shareText = (share: number) =>
-  share >= 100 ? 'Fully yours' : `${new Intl.NumberFormat('en-US').format(share)}% yours`;
+/** "50% yours", "33.33% yours", "Fully yours", "Less than 0.01% yours". */
+export function shareText(share: number): string {
+  if (share >= 100) return 'Fully yours';
+  const shown = Math.min(Math.round(share * 100) / 100, 99.99);
+  return shown < 0.01
+    ? 'Less than 0.01% yours'
+    : `${new Intl.NumberFormat('en-US').format(shown)}% yours`;
+}

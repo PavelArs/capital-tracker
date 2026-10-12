@@ -299,6 +299,16 @@ export class AccountingService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const change = parseAccountChange(input);
+    if (change.kind) {
+      // How coins are held means nothing for a broker account or a property (v8), and the class
+      // never changes once the account exists.
+      const found: { assetClass: string | null }[] = await this.source.query(
+        'SELECT "assetClass" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL',
+        [owner, id],
+      );
+      if (!found[0]) throw new NotFoundException();
+      if (found[0].assetClass) throw new BadRequestException('Only a wallet has a kind');
+    }
     const [rows]: [AccountRow[], number] = await this.source.query(
       `UPDATE manual_accounts SET name = COALESCE($3, name),
         kind = CASE WHEN $4::boolean THEN $5 ELSE kind END

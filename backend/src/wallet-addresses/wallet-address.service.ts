@@ -955,11 +955,14 @@ export class WalletAddressService {
   // before any account row, so this does too.
   private async account(manager: EntityManager, owner: string, id: string) {
     await lockAccountingOwner(manager, owner);
-    const rows: unknown[] = await manager.query(
-      'SELECT 1 FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR KEY SHARE',
+    const rows: { assetClass: string | null }[] = await manager.query(
+      'SELECT "assetClass" FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR KEY SHARE',
       [owner, id],
     );
     if (rows.length === 0) throw new NotFoundException();
+    // Addresses and exchange accounts sync coins: they go into wallets, never into a broker
+    // account or a property (v8).
+    if (rows[0].assetClass) throw new BadRequestException('Addresses belong to wallets');
   }
 
   private read<T>(action: (manager: EntityManager) => Promise<T>): Promise<T> {
