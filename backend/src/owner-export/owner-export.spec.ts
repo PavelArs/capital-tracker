@@ -24,6 +24,7 @@ const depositId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const topupId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const payoutId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const checkId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const earlierCheckId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 const blankOperation = {
   accountId: null,
@@ -264,6 +265,7 @@ const data: ExportData = {
       amount: '120.50',
       comment: null,
       recordedAt: '2025-04-01T09:00:00.000Z',
+      position: 2,
     },
     {
       id: topupId,
@@ -274,6 +276,7 @@ const data: ExportData = {
       amount: '100000.00',
       comment: 'First "money"',
       recordedAt: '2025-03-01T08:00:01.000Z',
+      position: 1,
     },
   ],
   depositChecks: [
@@ -283,6 +286,15 @@ const data: ExportData = {
       deposit: '=Synthetic, deposit',
       checkedOn: '2025-04-02',
       bankBalance: '100320.75',
+      position: 2,
+    },
+    {
+      id: earlierCheckId,
+      depositId,
+      deposit: '=Synthetic, deposit',
+      checkedOn: '2025-04-02',
+      bankBalance: '100300.10',
+      position: 1,
     },
   ],
 };
@@ -373,13 +385,15 @@ describe('owner data export (EXP-CSV)', () => {
       `${depositId},${name},2025-09-01,14`,
     ]);
     expect(lines('deposit-movements.csv')).toEqual([
-      'id,deposit_id,deposit,occurred_on,kind,amount,comment,recorded_at',
-      `${topupId},${depositId},${name},2025-03-01,topup,100000.00,"First ""money""",2025-03-01T08:00:01.000Z`,
-      `${payoutId},${depositId},${name},2025-04-01,interest-payout,120.50,,2025-04-01T09:00:00.000Z`,
+      'id,deposit_id,deposit,occurred_on,kind,amount,comment,recorded_at,position',
+      `${topupId},${depositId},${name},2025-03-01,topup,100000.00,"First ""money""",2025-03-01T08:00:01.000Z,1`,
+      `${payoutId},${depositId},${name},2025-04-01,interest-payout,120.50,,2025-04-01T09:00:00.000Z,2`,
     ]);
     expect(lines('deposit-checks.csv')).toEqual([
-      'id,deposit_id,deposit,checked_on,bank_balance',
-      `${checkId},${depositId},${name},2025-04-02,100320.75`,
+      'id,deposit_id,deposit,checked_on,bank_balance,position',
+      // The same day: the check entered later comes last, whatever its id sorts like.
+      `${earlierCheckId},${depositId},${name},2025-04-02,100300.10,1`,
+      `${checkId},${depositId},${name},2025-04-02,100320.75,2`,
     ]);
   });
 

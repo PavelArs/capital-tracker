@@ -129,6 +129,8 @@ export interface ExportDepositMovement {
   amount: string;
   comment: string | null;
   recordedAt: string;
+  /** The order the movements of the deposit were entered in; the same-day order is replayed by it. */
+  position: number;
 }
 /** The balance the owner read in the bank's own app on a day. */
 export interface ExportDepositCheck {
@@ -137,6 +139,8 @@ export interface ExportDepositCheck {
   deposit: string;
   checkedOn: string;
   bankBalance: string;
+  /** The order the checks of the deposit were entered in; the last of a day is the latest. */
+  position: number;
 }
 export interface ExportData {
   assets: readonly ExportAsset[];
@@ -367,9 +371,15 @@ export function exportFiles(data: ExportData): ZipFile[] {
         ['amount', (row) => row.amount],
         ['comment', (row) => row.comment],
         ['recorded_at', (row) => row.recordedAt],
+        ['position', (row) => row.position],
       ],
-      // The rows arrive in the order they were entered, which a stable sort keeps within a day.
-      [...data.depositMovements].sort((a, b) => byText(a.occurredOn, b.occurredOn)),
+      [...data.depositMovements].sort(
+        (a, b) =>
+          byText(a.occurredOn, b.occurredOn) ||
+          byText(a.deposit, b.deposit) ||
+          byText(a.depositId, b.depositId) ||
+          a.position - b.position,
+      ),
     ),
     table(
       'deposit-checks.csv',
@@ -379,9 +389,14 @@ export function exportFiles(data: ExportData): ZipFile[] {
         ['deposit', (row) => row.deposit],
         ['checked_on', (row) => row.checkedOn],
         ['bank_balance', (row) => row.bankBalance],
+        ['position', (row) => row.position],
       ],
       [...data.depositChecks].sort(
-        (a, b) => byText(a.checkedOn, b.checkedOn) || byText(a.id, b.id),
+        (a, b) =>
+          byText(a.checkedOn, b.checkedOn) ||
+          byText(a.deposit, b.deposit) ||
+          byText(a.depositId, b.depositId) ||
+          a.position - b.position,
       ),
     ),
   ];

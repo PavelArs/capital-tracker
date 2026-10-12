@@ -648,8 +648,8 @@ async function csvArchive(db, s, f, made) {
     ],
   );
   assert.deepEqual(
-    table('deposit-checks.csv').map((row) => [row.deposit_id, row.checked_on, row.bank_balance]),
-    [[made.deposit, '2025-08-02', '15100.25']],
+    table('deposit-checks.csv').map((row) => [row.deposit_id, row.checked_on, row.bank_balance, row.position]),
+    [[made.deposit, '2025-08-02', '15100.25', '1']],
   );
   assert.equal(await fingerprint(db), before, 'Export changes no row');
 

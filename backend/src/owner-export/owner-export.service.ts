@@ -467,14 +467,14 @@ export class OwnerExportService {
     );
     const movements: Row[] = await manager.query(
       `SELECT id, "depositId", to_char("occurredOn", 'YYYY-MM-DD') AS "occurredOn", kind,
-          amount::text AS amount, comment, "createdAt"
+          amount::text AS amount, comment, "createdAt", "position"
         FROM bank_deposit_movements WHERE "ownerId"=$1
         ORDER BY "occurredOn", "depositId", "position"`,
       [owner],
     );
     const checks: Row[] = await manager.query(
       `SELECT id, "depositId", to_char("checkedOn", 'YYYY-MM-DD') AS "checkedOn",
-          "bankBalance"::text AS "bankBalance"
+          "bankBalance"::text AS "bankBalance", "position"
         FROM bank_deposit_checks WHERE "ownerId"=$1
         ORDER BY "checkedOn", "depositId", "position"`,
       [owner],
@@ -509,6 +509,7 @@ export class OwnerExportService {
         amount: String(row.amount),
         comment: text(row.comment),
         recordedAt: iso(row.createdAt),
+        position: Number(row.position),
       })),
       depositChecks: checks.map((row) => ({
         id: String(row.id),
@@ -516,6 +517,7 @@ export class OwnerExportService {
         deposit: nameOf(row),
         checkedOn: String(row.checkedOn),
         bankBalance: String(row.bankBalance),
+        position: Number(row.position),
       })),
     };
   }

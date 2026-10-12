@@ -28,8 +28,8 @@ number) is written with a leading `'`.
 | `chain-transactions.csv` | raw blockchain transaction leg | amounts in coins, the owner's classification and the operation it produced. |
 | `deposits.csv` | bank deposit | name, bank, currency, term, payout schedule, capitalization, day basis and early-close rule as entered. |
 | `deposit-rates.csv` | rate of a deposit from a date on | annual rate in percent; the first row of a deposit is the rate it opened with. |
-| `deposit-movements.csv` | top-up, withdrawal or interest payout | in the order the bank dated them; `recorded_at` is when the owner entered it. |
-| `deposit-checks.csv` | balance read in the bank's own app | the figure the owner compared with the computed balance. |
+| `deposit-movements.csv` | top-up, withdrawal or interest payout | in the order the bank dated them; `recorded_at` is when the owner entered it and `position` is the order of entry within the deposit, which settles two movements of one day. |
+| `deposit-checks.csv` | balance read in the bank's own app | the figure the owner compared with the computed balance; of two checks on one day the higher `position` was entered later. |
 
 `operations.csv` holds active **and voided** entries. `status` is `active` or `voided`; a
 voided entry shows what it said before it was deleted. `source` is `manual`, `csv` (imported
