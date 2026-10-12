@@ -118,7 +118,8 @@ export default function Login() {
     restartPassword();
   };
 
-  if (loading) return <div className="loading-container">Loading…</div>;
+  // The answer to the sign-in check is not known yet: show the empty page, not a sentence.
+  if (loading) return null;
   if (user) return null; // Redirects via the effect.
 
   if (!mfaPending) {

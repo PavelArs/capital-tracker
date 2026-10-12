@@ -1,4 +1,5 @@
 import { setErrorHandler } from '@api';
+import BootShell from '@components/BootShell';
 import Layout from '@components/Layout';
 import ToastViewport from '@components/Toast';
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
@@ -28,13 +29,7 @@ interface PrivateRouteProps {
 function PrivateRoute({ children }: PrivateRouteProps) {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="loading-container" role="status">
-        Загрузка…
-      </div>
-    );
-  }
+  if (loading) return <BootShell />;
 
   return user ? <>{children}</> : <Navigate to="/login" />;
 }
