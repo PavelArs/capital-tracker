@@ -1,7 +1,7 @@
 import type { AccountClass } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import EmptyState from '@/ui/EmptyState';
 import PageIntro from '@/ui/PageIntro';
@@ -79,22 +79,32 @@ export default function RealEstatePage() {
   });
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
+  const latest = useRef(0);
 
+  // Only the newest request may change the page; a refresh keeps what is shown and says so
+  // when it fails, as Portfolio does.
+  const load = useCallback(
+    (quiet = false) => {
+      const request = ++latest.current;
+      setFailed(false);
+      if (!quiet) setPortfolio(cachedReads.portfolio.last(asked) ?? null);
+      Promise.all([cachedReads.portfolio.load(asked), cachedReads.accounts.load()]).then(
+        ([nextPortfolio, accounts]) => {
+          if (request !== latest.current) return;
+          setPortfolio(nextPortfolio);
+          setClasses(classesOf(accounts));
+        },
+        () => request === latest.current && setFailed(true),
+      );
+    },
+    [asked],
+  );
   useEffect(() => {
-    let live = true;
-    setFailed(false);
-    Promise.all([cachedReads.portfolio.load(asked), cachedReads.accounts.load()]).then(
-      ([nextPortfolio, accounts]) => {
-        if (!live) return;
-        setPortfolio(nextPortfolio);
-        setClasses(classesOf(accounts));
-      },
-      () => live && setFailed(true),
-    );
+    load();
     return () => {
-      live = false;
+      latest.current++;
     };
-  }, [asked]);
+  }, [load]);
 
   const properties = portfolio && classes ? propertiesOf(portfolio, classes) : null;
   const total = properties?.reduce((sum, { value }) => sum + Number(value ?? 0), 0) ?? 0;
@@ -114,9 +124,12 @@ export default function RealEstatePage() {
     <div className="shell-page">
       <PageHeader title="Real estate" currency={portfolio?.currency} />
       {failed && !properties ? (
-        <p className="shell-note" role="alert">
-          Could not load your real estate. Try again later.
-        </p>
+        <section className="shell-card property-state" role="alert">
+          <p>Could not load your real estate. Your data is safe; try again.</p>
+          <button type="button" className="shell-button" onClick={() => load()}>
+            Try again
+          </button>
+        </section>
       ) : properties === null || portfolio === null ? (
         <PageSkeleton label="Loading real estate" show={['cards']} />
       ) : properties.length === 0 ? (
@@ -131,6 +144,14 @@ export default function RealEstatePage() {
         </EmptyState>
       ) : (
         <>
+          {failed && (
+            <p className="ui-banner ui-banner--warn" role="alert">
+              Could not refresh your real estate; showing the last loaded figures.{' '}
+              <button type="button" className="shell-button" onClick={() => load(true)}>
+                Refresh
+              </button>
+            </p>
+          )}
           <PageIntro action={addButton(false)}>
             Valued at your own estimate. Update it on the property's page whenever you like.
           </PageIntro>

@@ -31,7 +31,9 @@ export function useHeldClasses(pathname: string): ReadonlySet<AccountClass> {
     if (readIn.current === generation) return;
     readIn.current = generation;
     cachedReads.accounts.load().then(
-      (accounts) => mounted.current && setHeld(classesOf(accounts)),
+      // Only the newest read may answer: an older one that lands late knows less.
+      (accounts) =>
+        mounted.current && readIn.current === generation && setHeld(classesOf(accounts)),
       () => {
         // A failed read is tried again on the next page, not only after the next change.
         if (readIn.current === generation) readIn.current = null;

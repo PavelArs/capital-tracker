@@ -4,6 +4,19 @@
   align-self: flex-start;
 }
 
+/* A page that could not load: the reason and Try again on one line, as on Portfolio. */
+.property-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--ink-2);
+}
+
+.property-state p {
+  margin: 0;
+}
+
 /* Real estate (v8): the total, then one card per property, like the Deposits list. */
 .property-total {
   display: grid;

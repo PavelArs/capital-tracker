@@ -1,7 +1,7 @@
 import { accountingApi } from '@api/accounting.api';
 import { forgetReads } from '@api/read-cache';
 import { renderHook, waitFor } from '@testing-library/react';
-import { StrictMode } from 'react';
+import { act, StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useHeldClasses } from './useHeldClasses';
 
@@ -55,5 +55,21 @@ describe('useHeldClasses (v8)', () => {
     rerender({ path: '/portfolio' });
     await waitFor(() => expect(result.current.has('property')).toBe(true));
     expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an older read that answers after a newer one', async () => {
+    // Codex P2: a read started before the owner added a property must not hide it again.
+    let older: (value: { items: (typeof property)[]; nextCursor: null }) => void = () => {};
+    vi.spyOn(accountingApi, 'listAccounts')
+      .mockImplementationOnce(() => new Promise((resolve) => (older = resolve)))
+      .mockResolvedValue({ items: [property], nextCursor: null });
+    const { result, rerender } = renderHook(({ path }) => useHeldClasses(path), {
+      initialProps: { path: '/dashboard' },
+    });
+    forgetReads();
+    rerender({ path: '/real-estate' });
+    await waitFor(() => expect(result.current.has('property')).toBe(true));
+    await act(async () => older({ items: [], nextCursor: null }));
+    expect(result.current.has('property')).toBe(true);
   });
 });

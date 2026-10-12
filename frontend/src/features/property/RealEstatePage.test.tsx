@@ -1,4 +1,5 @@
 import { type AccountSummary, accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
 import {
   type AssetValuation,
   type PortfolioValuation,
@@ -173,5 +174,39 @@ describe('PROPERTY-LIST Real estate', () => {
     renderPage();
     expect(await screen.findByText('No property yet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add property' })).toBeInTheDocument();
+  });
+
+  it('says so when a refresh fails and keeps the last loaded figures', async () => {
+    // Codex P2: kept cards must not pass for current ones when the fresh read fails.
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    await cachedReads.portfolio.load(undefined);
+    await cachedReads.accounts.load();
+    get.mockRejectedValueOnce(new Error('offline'));
+    const user = userEvent.setup();
+    renderPage();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Could not refresh your real estate; showing the last loaded figures.',
+    );
+    expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
+      '$61,000.00',
+    );
+    await user.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    expect(get).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('offers to try again when nothing could be loaded', async () => {
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(valuation(properties));
+    const user = userEvent.setup();
+    renderPage();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not load your real estate.');
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('list')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(2);
   });
 });
