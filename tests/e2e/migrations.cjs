@@ -313,7 +313,14 @@ function withoutDropped(snap) {
     columns: snap.columns.filter(
       (row) => kept(row.table_name) && keptColumn(row.table_name, row.column_name),
     ),
-    constraints: snap.constraints.filter((row) => kept(row.relname)),
+    // PostgreSQL 18 lists NOT NULL as pg_constraint rows, which leave with their column.
+    constraints: snap.constraints.filter(
+      (row) =>
+        kept(row.relname) &&
+        !(droppedColumns[row.relname] ?? []).some(
+          (column) => row.conname === `${row.relname}_${column}_not_null`,
+        ),
+    ),
     indexes: snap.indexes.filter((row) => kept(row.tablename)),
     enums: snap.enums.filter((row) => !droppedEnums.includes(row.typname)),
     rows,
