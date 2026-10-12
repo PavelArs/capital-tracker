@@ -119,15 +119,21 @@ function ownAccount(operation: Operation) {
  * (more places for a small sum), for a transaction with no price stored near its own time.
  */
 export function suggestedValue(operation: Operation): string {
-  const amount = Number(operation.marketValue?.valueUsd);
-  if (!operation.chain || operation.estimatedValueUsd !== null || !(amount > 0)) return '';
-  if (amount >= 1) return amount.toFixed(2);
-  const places = Math.min(12, 2 - Math.floor(Math.log10(amount)));
-  return amount.toFixed(places).replace(/0+$/, '');
+  const text = operation.marketValue?.valueUsd ?? '';
+  if (!operation.chain || operation.estimatedValueUsd !== null || !/^[0-9]+(\.[0-9]+)?$/.test(text))
+    return '';
+  const [whole, fraction = ''] = text.split('.');
+  // Two places for a sum of a dollar or more, three significant digits for a smaller one, never
+  // more than the thirty places an amount keeps.
+  const zeros = fraction.length - fraction.replace(/^0+/, '').length;
+  const places = whole.replace(/^0+/, '') ? 2 : Math.min(30, zeros + 3);
+  const kept = BigInt(whole + fraction.padEnd(places, '0').slice(0, places));
+  const rounded = (fraction[places] ?? '0') >= '5' ? kept + 1n : kept;
+  const digits = rounded.toString().padStart(places + 1, '0');
+  const plain = `${digits.slice(0, digits.length - places)}.${digits.slice(digits.length - places)}`;
+  if (!/[1-9]/.test(plain)) return '';
+  return whole.replace(/^0+/, '') ? plain : plain.replace(/0+$/, '').replace(/\.$/, '');
 }
-
-/** What the owner entered as the value: an offered value left as it was is not an entry. */
-const entered = (draft: Draft) => (draft.value === draft.suggested ? '' : draft.value.trim());
 
 function draftOf(operation: Operation): Draft {
   const saved = operation.classification;
@@ -538,7 +544,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
         return {
           type: 'swap',
           record: { kind: 'trade', id: replaced[1], version: Number(replaced[2]) },
-          valueUsd: entered(draft) ? decimal(draft.value) : null,
+          valueUsd: draft.value.trim() ? decimal(draft.value) : null,
         };
       const record = recordKey.exec(draft.pair);
       if (record)
@@ -730,7 +736,16 @@ export default function ClassifyForm({
   // One request id per answer: a retry after a lost response cannot record it twice.
   const [requestId, setRequestId] = useState(newRequestId);
   const change = (next: Partial<Draft>) => {
-    setDraft((current) => ({ ...current, ...next }));
+    setDraft((current) => ({
+      ...current,
+      ...next,
+      // A record added by hand brings its own value; the latest price is not offered beside it.
+      ...(next.pair !== undefined &&
+      (recordKey.test(next.pair) || replaceKey.test(next.pair)) &&
+      current.value === current.suggested
+        ? { value: '' }
+        : {}),
+    }));
     setRequestId(newRequestId());
     setError(null);
   };
@@ -872,10 +887,13 @@ export default function ClassifyForm({
                 onClick={() =>
                   change({
                     type,
-                    // The gain of a pool withdrawal is not what the coins were worth.
+                    // The gain of a pool withdrawal is not what the coins were worth: the offer
+                    // waits, and comes back with the next answer that takes a value.
                     ...(type === 'pool-withdrawal' && draft.value === draft.suggested
-                      ? { value: '', suggested: '' }
-                      : {}),
+                      ? { value: '' }
+                      : draft.type === 'pool-withdrawal' && draft.value === '' && draft.suggested
+                        ? { value: draft.suggested }
+                        : {}),
                   })
                 }
               >
