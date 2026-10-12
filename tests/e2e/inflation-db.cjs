@@ -99,7 +99,7 @@ async function collecting(db, InflationService) {
   assert.equal(revised.c, '1.20000000');
   console.log('PASS INFL-IDEMPOTENT');
 
-  stage = 'synthetic partial failure: Eurostat does not answer, the BLS months are kept';
+  stage = 'synthetic partial failure: Eurostat does not answer, the US months are kept';
   answers.eurostat = { fail: 'unavailable' };
   answers.bls = flat(12, 15, '1.00000000'); // adds 2026-03
   const late = new Date('2026-03-21T12:00:00.000Z');
@@ -139,7 +139,7 @@ async function reading(db, InflationService, owner, other) {
   const now = new Date('2026-03-22T00:00:00.000Z');
   const view = await service.overview(owner, now);
   const byCurrency = Object.fromEntries(view.currencies.map((item) => [item.currency, item]));
-  assert.equal(byCurrency.USD.officialSource, 'BLS (US CPI-U)');
+  assert.equal(byCurrency.USD.officialSource, 'OECD (US CPI-U)');
   assert.equal(byCurrency.USD.officialLastMonth, '2026-03');
   assert.equal(byCurrency.EUR.officialLastMonth, '2026-02');
   assert.equal(byCurrency.RUB.officialSource, 'Bank of Russia (annual inflation)');
