@@ -241,7 +241,6 @@ async function main() {
     );
     assert.equal(
       state.latest_migration,
-      'AddBankDeposits1796500000000',
       'DailyDepositInterest1796800000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );
