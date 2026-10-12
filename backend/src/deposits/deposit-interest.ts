@@ -242,6 +242,79 @@ export function projectDeposit(
 }
 
 /**
+ * What `projectDeposit(...).balance` is on each of the dates, in atoms, from one replay instead
+ * of one per date: a history of hundreds of dates would otherwise replay the deposit from its
+ * start every time. The replay is the same day-by-day one; a date is read after that day's
+ * interest posting and movements and before the day itself earns anything. A date before the
+ * start is nothing.
+ */
+export function depositBalances(
+  terms: DepositTerms,
+  movements: readonly DepositMovement[],
+  dates: readonly string[],
+): Map<string, bigint> {
+  const wanted = [...new Set(dates)].sort();
+  const balances = new Map<string, bigint>();
+  if (wanted.length === 0) return balances;
+  const last = wanted[wanted.length - 1];
+  const horizon = terms.endDate !== null && terms.endDate < last ? terms.endDate : last;
+  const posting = new Set(payoutDates(terms, horizon));
+  let principal = 0n;
+  let accrued = 0n;
+  let due = 0n;
+  let closedOn: string | null = null;
+  let next = 0;
+  let index = 0;
+  const balance = () => principal + due + roundToCents(accrued);
+  for (; index < wanted.length && wanted[index] < terms.startDate; index += 1)
+    balances.set(wanted[index], 0n);
+
+  for (let date = terms.startDate; date <= horizon && closedOn === null; date = nextDay(date)) {
+    if (posting.has(date)) {
+      const interest = roundToCents(accrued);
+      if (terms.capitalized) principal += interest;
+      else due += interest;
+      accrued = 0n;
+    }
+    for (; next < movements.length && movements[next].date <= date; next += 1) {
+      const movement = movements[next];
+      const amount = canonicalDecimalToAtoms(movement.amount);
+      if (movement.kind === 'topup') principal += amount;
+      else if (movement.kind === 'interest-payout') {
+        due -= amount < due ? amount : due;
+      } else {
+        principal -= amount < principal ? amount : principal;
+        if (principal === 0n) {
+          closedOn = date;
+          if (terms.endDate === null || date < terms.endDate) {
+            if (terms.earlyClose !== 'forfeits-interest') due += roundToCents(accrued);
+            accrued = 0n;
+          }
+        }
+      }
+    }
+    for (; index < wanted.length && wanted[index] === date; index += 1)
+      balances.set(date, balance());
+    if (closedOn === null && date < horizon) {
+      const rate = rateOn(terms.rates, date);
+      accrued += (principal * rate) / (100n * RATE_STEP * daysInYearOf(terms.dayBasis, date));
+    }
+  }
+
+  // The replay has stopped (closed, or at the end date): only payouts of posted interest follow.
+  for (; index < wanted.length; index += 1) {
+    for (; next < movements.length && movements[next].date <= wanted[index]; next += 1) {
+      const movement = movements[next];
+      if (movement.kind !== 'interest-payout') continue;
+      const taken = canonicalDecimalToAtoms(movement.amount);
+      due -= taken < due ? taken : due;
+    }
+    balances.set(wanted[index], balance());
+  }
+  return balances;
+}
+
+/**
  * The balance a bank's screen is compared with. A bank that adds interest to the deposit on the
  * payout date (capitalization) shows only what it has posted; a deposit that pays interest out
  * shows the balance with what was earned so far.

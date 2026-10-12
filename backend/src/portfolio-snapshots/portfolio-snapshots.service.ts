@@ -16,7 +16,7 @@ import {
   readValuationInputs,
   type ValuationInputs,
 } from '../accounting/portfolio-valuation.service';
-import { depositFlows, depositValuesAt } from '../deposits/deposit-valuation';
+import { depositFlows, depositValuesAt, primeDepositBalances } from '../deposits/deposit-valuation';
 import {
   type AccountingCurrency,
   accountingCurrencies,
@@ -528,9 +528,11 @@ export class PortfolioSnapshotsService {
       const inputs = await readSeriesInputs(manager, owner);
       const rates = await readFxRates(manager);
       const converters = accountingCurrencies.map((currency) => new FxConverter(rates, currency));
-      const computed = instants
-        .filter((at) => at >= from)
-        .flatMap((at) => valuesAt(inputs.valuation, at, pricesAt(inputs, at), converters));
+      const due = instants.filter((at) => at >= from);
+      primeDepositBalances(inputs.valuation.deposits, due);
+      const computed = due.flatMap((at) =>
+        valuesAt(inputs.valuation, at, pricesAt(inputs, at), converters),
+      );
       const changes = snapshotChanges(existing, computed);
       await this.write(manager, owner, changes);
       written = changes.length;

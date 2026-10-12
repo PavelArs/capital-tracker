@@ -1,6 +1,12 @@
 import { FxConverter, type FxRates } from '../fx-rates/fx-conversion';
 import type { Stored } from './deposit-store';
-import { depositFlows, depositValueOn, depositValuesAt, ratesAreFresh } from './deposit-valuation';
+import {
+  depositFlows,
+  depositValueOn,
+  depositValuesAt,
+  primeDepositBalances,
+  ratesAreFresh,
+} from './deposit-valuation';
 
 // Synthetic deposits and rates only: 80 RUB per USD from 2026-01-01 and 100 RUB per EUR, 110
 // from 2026-02-10; the rates stop at 2026-02-10.
@@ -168,6 +174,25 @@ describe('depositValueOn replays once per date', () => {
     expect(depositValueOn(held, '2026-01-15', fx('RUB'))).toBe(100_000n * scale);
     expect(depositValueOn(held, '2026-01-15', fx('USD'))).toBe(1250n * scale);
     expect(depositValueOn(held, '2026-01-16', fx('RUB'))).toBe(100_000n * scale);
+  });
+});
+
+describe('primeDepositBalances', () => {
+  it('gives the values a replay to each date gives', () => {
+    const movements = [
+      { date: '2026-01-01', kind: 'topup' as const, amount: '1000' },
+      { date: '2026-01-20', kind: 'withdrawal' as const, amount: '400' },
+    ];
+    const instants = ['2025-12-31', '2026-01-01', '2026-01-10', '2026-01-31'].map((date) =>
+      Date.parse(`${date}T12:00:00Z`),
+    );
+    const plain = deposit({}, movements);
+    const primed = deposit({}, movements);
+    primeDepositBalances([primed], instants);
+    for (const at of instants)
+      expect(depositValuesAt([primed], new Date(at), fx('RUB'))).toEqual(
+        depositValuesAt([plain], new Date(at), fx('RUB')),
+      );
   });
 });
 
