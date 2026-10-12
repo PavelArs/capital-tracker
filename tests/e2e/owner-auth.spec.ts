@@ -117,15 +117,7 @@ function ownerCli(args: string[], password: string): void {
 
 function assertPublicUser(user: Record<string, unknown>): void {
   expect(user).toMatchObject({ id: ownerId, email: ownerEmail });
-  const permitted = [
-    'id',
-    'email',
-    'firstName',
-    'lastName',
-    'emailVerified',
-    'createdAt',
-    'updatedAt',
-  ];
+  const permitted = ['id', 'email', 'createdAt', 'updatedAt'];
   for (const field of Object.keys(user)) expect(permitted).toContain(field);
 }
 
