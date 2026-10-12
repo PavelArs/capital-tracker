@@ -58,6 +58,7 @@ function services(db) {
   const sync = new WalletSyncService(db, new ConfigService({}), [], classifications);
   return {
     accounting: make('accounting.service', 'AccountingService'),
+    trades,
     portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
     operations: make('operation-list.service', 'OperationListService'),
     classifications,
@@ -214,6 +215,70 @@ async function removeWallet(db, s, owner, f) {
   await rejected(() => s.accounting.removeAccount(owner, f.trust), 409);
   assert.ok((await s.accounting.listAccounts(owner)).items.some((item) => item.id === f.trust));
   assert.equal((await listed(s, owner)).length, 3, 'Nothing was stopped');
+
+  stage = 'WALLET-REMOVE-ACCOUNT a wallet whose journal is empty or whose entries are all voided leaves';
+  const btc = (
+    await s.accounting.createInstrument(owner, {
+      requestId: randomUUID(),
+      name: 'Bitcoin',
+      symbol: 'BTC',
+    })
+  ).value.id;
+  const trade = (account, revision) =>
+    s.trades.create(owner, account, {
+      requestId: randomUUID(),
+      expectedJournalRevision: revision,
+      instrumentId: btc,
+      side: 'buy',
+      occurredAt: '2026-06-13T00:00:00Z',
+      orderWithinTimestamp: revision,
+      quantity: '0.1',
+      grossUsd: '6000',
+      feeUsd: '0',
+    });
+  const journalOnly = await account(s, owner, 'Started journal');
+  await s.trades.initialize(owner, journalOnly, {
+    requestId: randomUUID(),
+    coverageFrom: '2026-01-01T00:00:00Z',
+    assertEmpty: true,
+  });
+  const voided = await account(s, owner, 'Voided entry');
+  await s.trades.initialize(owner, voided, {
+    requestId: randomUUID(),
+    coverageFrom: '2026-01-01T00:00:00Z',
+    assertEmpty: true,
+  });
+  const made = await trade(voided, 0);
+  await s.trades.void(owner, voided, made.value.trade.tradeId, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 1,
+  });
+  const live = await account(s, owner, 'Live entry');
+  await s.trades.initialize(owner, live, {
+    requestId: randomUUID(),
+    coverageFrom: '2026-01-01T00:00:00Z',
+    assertEmpty: true,
+  });
+  await trade(live, 0);
+  await rejected(() => s.accounting.removeAccount(owner, live), 409);
+  await assert.rejects(
+    () => s.accounting.removeAccount(owner, live),
+    (error) => /\(1 trade\)/.test(error.message),
+    'The refusal names what the wallet holds',
+  );
+  await s.accounting.removeAccount(owner, journalOnly);
+  await s.accounting.removeAccount(owner, voided);
+  const left = (await s.accounting.listAccounts(owner)).items.map((item) => item.id);
+  assert.ok(!left.includes(journalOnly) && !left.includes(voided) && left.includes(live));
+  assert.equal(
+    (
+      await db.query('SELECT count(*)::int AS n FROM account_trade_versions WHERE "accountId"=$1', [
+        voided,
+      ])
+    )[0].n,
+    2,
+    'Its voided history stays stored',
+  );
 
   stage = 'WALLET-REMOVE-ACCOUNT an empty wallet leaves the lists with its addresses';
   await s.accounting.removeAccount(owner, f.empty);
