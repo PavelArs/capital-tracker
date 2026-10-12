@@ -330,6 +330,20 @@ describe('ETH-SYNC Etherscan client', () => {
       ok: false,
       reason: 'unavailable',
       detail: `${host} said: Some internal transactions within this block range have not yet been processed`,
+      unprocessed: true,
+    });
+    // Some instances word the same warning with status 0 and the rows they have.
+    replies.push(
+      json({
+        message: 'Some internal transactions within this block range have not yet been processed',
+        result: [{ hash: 'partial' }],
+        status: '0',
+      }),
+    );
+    await expect(client(null).blockscout(baseUrl).internal(owned, 1, 2)).resolves.toMatchObject({
+      ok: false,
+      reason: 'unavailable',
+      unprocessed: true,
     });
     // Any other status 2 is still not understood.
     replies.push(json({ message: 'Something else', result: [], status: '2' }));

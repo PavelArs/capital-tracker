@@ -15,7 +15,13 @@ import {
   stakeTarget,
   symbolCall,
 } from './ethereum-stake';
-import { EtherscanClient, parseInternal, parseNormal } from './etherscan-client';
+import {
+  EtherscanClient,
+  type Failed,
+  type InternalTransfer,
+  parseInternal,
+  parseNormal,
+} from './etherscan-client';
 import { type EvmChain, type EvmNetwork } from './evm-chains';
 import { EvmReader } from './evm-reader';
 
@@ -120,11 +126,11 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
       }
       const normal = await this.etherscan.normal(state.address, from, target);
       if (!normal.ok) return finish('provider_error', normal.reason);
-      const internal = await this.etherscan.internal(state.address, from, target);
+      const internal = await this.internalUpTo(state.address, from, target, started);
       if (!internal.ok) return finish('provider_error', internal.reason);
       const read = await this.etherscan.tokens(state.address, from, target);
       if (!read.ok) return finish('provider_error', read.reason);
-      const end = rangeEnd(from, target, [normal.items, internal.items, read.items]);
+      const end = rangeEnd(from, internal.end, [normal.items, internal.items, read.items]);
       if (end === null) return finish('provider_error', 'invalid_response');
       const within = <T extends { blockNumber: number }>(items: T[]) =>
         items.filter((item) => item.blockNumber >= from && item.blockNumber <= end);
@@ -154,6 +160,42 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
       if (end === target) return complete(committed.state);
       state = committed.state;
     }
+  }
+
+  /**
+   * UNPROCESSED: Blockscout refuses a range of internal transfers that holds blocks it has not
+   * indexed yet, and an empty list would lose them once the scan moves on. The range is then cut
+   * to the largest end it answers for, so the history up to the first unindexed block is stored
+   * now; when even the first block is refused, the refusal is returned and the pass asks again
+   * later.
+   */
+  private async internalUpTo(
+    address: string,
+    from: number,
+    to: number,
+    started: number,
+  ): Promise<{ ok: true; items: InternalTransfer[]; end: number } | Failed> {
+    const whole = await this.etherscan.internal(address, from, to);
+    if (whole.ok) return { ok: true, items: whole.items, end: to };
+    if (!whole.unprocessed) return whole;
+    const first = await this.etherscan.internal(address, from, from);
+    if (!first.ok) return first;
+    let items = first.items;
+    let known = from;
+    let refused = to;
+    while (refused - known > 1 && Date.now() - started <= SYNC_TIME_BUDGET_MS) {
+      const middle = known + Math.floor((refused - known) / 2);
+      const read = await this.etherscan.internal(address, from, middle);
+      if (read.ok) {
+        known = middle;
+        items = read.items;
+      } else if (read.unprocessed) {
+        refused = middle;
+      } else {
+        return read;
+      }
+    }
+    return { ok: true, items, end: known };
   }
 
   private async scan(owner: string, id: string): Promise<ScanRow> {
