@@ -1477,7 +1477,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     expect(within(chart).queryByText(/No value can be shown/)).toBeNull();
   });
 
-  it('lists the operations of the asset and links to all of them in Transactions', async () => {
+  it('lists the latest five operations of the asset and links to all of them in Transactions', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     const buys = Array.from({ length: 11 }, (_, index) => operation(index + 1));
     const unclassified = operation(28, {
@@ -1511,13 +1511,13 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const card = await screen.findByRole('region', { name: 'Transactions' });
     const rows = await within(card).findAllByRole('listitem');
-    expect(rows).toHaveLength(12);
+    // Twelve operations move the asset; the card keeps the five latest.
+    expect(rows).toHaveLength(5);
     expect(rows[0]).toHaveTextContent(
       'Needs classificationSep 28, 2026 · Bitcoin wallet bc1qsy…0000+0.0087 BTC',
     );
     expect(rows[1]).toHaveTextContent('BuySep 11, 2026 · Trust Wallet+0.01 BTC$800.00');
-    expect(card).toHaveTextContent('12');
-    // Twelve fit in the first twenty: nothing more to show.
+    expect(card).toHaveTextContent('Latest 5 of 12');
     expect(within(card).queryByRole('button', { name: 'Show more' })).toBeNull();
     expect(within(card).getByRole('link', { name: 'Open in Transactions' })).toHaveAttribute(
       'href',
@@ -1525,7 +1525,26 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     );
   });
 
-  it('INFINITE: lists twenty operations of the asset and twenty more on request', async () => {
+  it('shows every operation when there are five or fewer, still with the Transactions button', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      dustThresholdUsd: null,
+      operations: Array.from({ length: 5 }, (_, index) => operation(index + 1)),
+    });
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const card = await screen.findByRole('region', { name: 'Transactions' });
+    expect(await within(card).findAllByRole('listitem')).toHaveLength(5);
+    expect(card).not.toHaveTextContent('Latest');
+    expect(within(card).getByRole('link', { name: 'Open in Transactions' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=BTC',
+    );
+  });
+
+  it('never pages the asset card: twenty-five operations show the five latest only', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     vi.mocked(operationsApi.list).mockResolvedValue({
       at: '2026-10-05T12:00:00.000Z',
@@ -1534,14 +1553,12 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       dustThresholdUsd: null,
       operations: Array.from({ length: 25 }, (_, index) => operation(index + 1)),
     });
-    const user = userEvent.setup();
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const card = await screen.findByRole('region', { name: 'Transactions' });
-    expect(await within(card).findAllByRole('listitem')).toHaveLength(20);
-    expect(within(card).getByRole('status')).toHaveTextContent('Showing 20 of 25 transactions');
-    await user.click(within(card).getByRole('button', { name: 'Show more' }));
-    expect(within(card).getAllByRole('listitem')).toHaveLength(25);
+    expect(await within(card).findAllByRole('listitem')).toHaveLength(5);
+    expect(card).toHaveTextContent('Latest 5 of 25');
     expect(within(card).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(within(card).queryByRole('status')).toBeNull();
   });
 
   it('reports a chart or transactions failure and recovers on retry', async () => {

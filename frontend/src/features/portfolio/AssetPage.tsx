@@ -13,7 +13,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
-import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
@@ -227,7 +226,10 @@ function movedAmount(operation: Operation, key: string): string {
   return operationAmount(operation.counterQuantity, operation.counterAsset, '+');
 }
 
-// The asset's own operations, twenty a page, then a link to all of them in Transactions.
+/** Latest transactions the asset's card lists; the rest are one button away in Transactions. */
+const ASSET_TRANSACTIONS_SHOWN = 5;
+
+// The asset's latest five operations, then a button to all of them in Transactions.
 function AssetTransactions({
   asset,
   operations,
@@ -239,14 +241,17 @@ function AssetTransactions({
 }) {
   const key = keyOf(asset);
   const own = typeof operations === 'object' ? assetOperations(operations.operations, key) : [];
-  // PAGES: twenty transactions a page.
-  const pagedOwn = useInfinite(own);
+  const latest = own.slice(0, ASSET_TRANSACTIONS_SHOWN);
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
       <div className="ui-toolbar">
         <h2 id="asset-transactions">Transactions</h2>
-        {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
+        {typeof operations === 'object' && (
+          <span className="portfolio-sub">
+            {own.length > latest.length ? `Latest ${latest.length} of ${own.length}` : own.length}
+          </span>
+        )}
       </div>
       {operations === 'failed' ? (
         <div className="portfolio-state" role="alert">
@@ -262,7 +267,7 @@ function AssetTransactions({
       ) : (
         <>
           <ul className="portfolio-holdings portfolio-operations">
-            {pagedOwn.rows.map((operation) => (
+            {latest.map((operation) => (
               <li key={operation.id}>
                 <span>
                   {operation.status === 'needs-classification' ? (
@@ -285,8 +290,7 @@ function AssetTransactions({
               </li>
             ))}
           </ul>
-          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
-          <Link className="portfolio-link portfolio-operations__all" to={all}>
+          <Link className="shell-button" to={all}>
             Open in Transactions
           </Link>
         </>
