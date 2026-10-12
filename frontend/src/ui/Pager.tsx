@@ -24,14 +24,24 @@ export interface Pages<T> {
 
 /**
  * Shows a list inside a card five rows at a time, so a long one (a deposit's daily interest,
- * its payouts) does not stretch the page; Previous and Next turn the pages. A row added goes
- * back to the first page, where a newest-first list shows it; a list that shrinks stays on the
- * same page, or its last one.
+ * its payouts) does not stretch the page; Previous and Next turn the pages. A row added opens
+ * the page it landed on, wherever its date puts it; a list that shrinks stays on the same page,
+ * or its last one. `keyOf` names each row, as its React key does.
  */
-export function usePages<T>(items: readonly T[], size = SHORT_PAGE): Pages<T> {
-  const [seen, setSeen] = useState({ page: 0, length: items.length });
-  const wanted = items.length > seen.length ? 0 : seen.page;
-  if (seen.length !== items.length) setSeen({ page: wanted, length: items.length });
+export function usePages<T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+  size = SHORT_PAGE,
+): Pages<T> {
+  const keys = items.map(keyOf);
+  const [seen, setSeen] = useState(() => ({ page: 0, keys }));
+  let wanted = seen.page;
+  if (keys.length !== seen.keys.length || keys.some((key, index) => key !== seen.keys[index])) {
+    const known = new Set(seen.keys);
+    const added = keys.findIndex((key) => !known.has(key));
+    if (added >= 0) wanted = Math.floor(added / size);
+    setSeen({ page: wanted, keys });
+  }
   const pages = Math.max(1, Math.ceil(items.length / size));
   const page = Math.min(wanted, pages - 1);
   const start = page * size;
@@ -46,7 +56,7 @@ export function usePages<T>(items: readonly T[], size = SHORT_PAGE): Pages<T> {
             from: start + 1,
             to: start + rows.length,
             total: items.length,
-            onPage: (next) => setSeen({ page: next, length: items.length }),
+            onPage: (next) => setSeen({ page: next, keys }),
           }
         : null,
   };

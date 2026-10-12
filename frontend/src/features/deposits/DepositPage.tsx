@@ -45,7 +45,7 @@ function InterestPeriods({
   periods: DepositDetail['periods'];
   currency: AccountingCurrency;
 }) {
-  const paged = usePages([...periods].reverse());
+  const paged = usePages([...periods].reverse(), (period) => period.to);
   return (
     <>
       <div className="ui-table-wrap">
@@ -87,7 +87,7 @@ function Movements({
 }) {
   // The first top-up is the deposit itself; it goes with the deposit, not on its own.
   const opening = movements[0]?.id;
-  const paged = usePages([...movements].reverse());
+  const paged = usePages([...movements].reverse(), (movement) => movement.id);
   return (
     <>
       <div className="ui-table-wrap">
@@ -138,7 +138,7 @@ function Checks({
   checks: DepositDetail['checks'];
   currency: AccountingCurrency;
 }) {
-  const paged = usePages(checks);
+  const paged = usePages(checks, (check) => check.id);
   return (
     <>
       <div className="ui-table-wrap">

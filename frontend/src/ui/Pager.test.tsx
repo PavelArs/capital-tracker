@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import Pager, { usePages } from './Pager';
 
-function Numbers({ count }: { count: number }) {
-  const { rows, pager } = usePages(Array.from({ length: count }, (_unused, index) => index + 1));
+function Numbers({ count, list }: { count?: number; list?: number[] }) {
+  const items = list ?? Array.from({ length: count ?? 0 }, (_unused, index) => index + 1);
+  const { rows, pager } = usePages(items, String);
   return (
     <>
       <ul>
@@ -44,14 +45,18 @@ describe('PAGER a short list five rows at a time', () => {
     expect(screen.queryByRole('navigation')).toBeNull();
   });
 
-  it('goes back to the first page when a row is added, where the newest row shows', async () => {
-    // Codex P2: a movement saved while on page 2 must not land out of sight on page 1.
+  it('opens the page a new row landed on, so a saved row is always in sight', async () => {
+    // Codex P2: a movement saved while on page 2 lands on page 1 when it is the newest, and on a
+    // later page when it is backdated.
     const user = userEvent.setup();
-    const { rerender } = render(<Numbers count={12} />);
+    const twelve = Array.from({ length: 12 }, (_unused, index) => (index + 1) * 10);
+    const { rerender } = render(<Numbers list={twelve} />);
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    rerender(<Numbers count={13} />);
-    expect(shown()).toEqual(['1', '2', '3', '4', '5']);
-    expect(screen.getByRole('status')).toHaveTextContent('1–5 of 13 numbers');
+    rerender(<Numbers list={[5, ...twelve]} />);
+    expect(shown()).toEqual(['5', '10', '20', '30', '40']);
+    rerender(<Numbers list={[5, ...twelve.slice(0, 10), 105, ...twelve.slice(10)]} />);
+    expect(shown()).toEqual(['100', '105', '110', '120']);
+    expect(screen.getByRole('status')).toHaveTextContent('11–14 of 14 numbers');
   });
 
   it('keeps its page when a row goes, and stays on the last page when that one empties', async () => {
