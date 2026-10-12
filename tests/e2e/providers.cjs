@@ -17,6 +17,8 @@ const allowedHosts = new Set([
   'open.er-api.com',
   'api.kraken.com',
   'www.cbr.ru',
+  'fred.stlouisfed.org',
+  'ec.europa.eu',
   'api.bybit.com',
   'api.trongrid.io',
   'apilist.tronscanapi.com',
@@ -248,6 +250,45 @@ function cbrDynamic(response, url) {
   });
   response.end(
     `<?xml version="1.0" encoding="windows-1251"?><ValCurs ID="${code}" DateRange1="${date(from)}" DateRange2="${date(to)}" name="Foreign Currency Market Dynamic">${records}</ValCurs>`,
+  );
+}
+
+// INFL-OFFICIAL: synthetic consumer price indices, 0.3% a month since December 2024 and the
+// latest two months not published yet, in the shapes of the FRED graph CSV and Eurostat JSON-stat.
+function inflationMonths() {
+  const now = new Date();
+  const last = now.getUTCFullYear() * 12 + now.getUTCMonth() - 2;
+  const months = [];
+  for (let number = 2024 * 12 + 11; number <= last; number++)
+    months.push(`${Math.floor(number / 12)}-${String((number % 12) + 1).padStart(2, '0')}`);
+  return months;
+}
+function inflationLevel(position) {
+  return Math.round(100 * 1.003 ** position * 1000) / 1000;
+}
+function fredInflation(response, url) {
+  if (url.searchParams.get('id') !== 'CPIAUCNS') {
+    response.writeHead(400, { 'content-type': 'text/plain', connection: 'close' });
+    return response.end('Bad Request');
+  }
+  const rows = inflationMonths().map((month, position) => `${month}-01,${inflationLevel(position)}`);
+  response.writeHead(200, { 'content-type': 'text/csv', connection: 'close' });
+  response.end(`observation_date,CPIAUCNS\n${rows.join('\n')}\n`);
+}
+function eurostatInflation(response) {
+  const months = inflationMonths();
+  response.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
+  response.end(
+    JSON.stringify({
+      version: '2.0',
+      class: 'dataset',
+      id: ['freq', 'unit', 'coicop', 'geo', 'time'],
+      size: [1, 1, 1, 1, months.length],
+      value: Object.fromEntries(months.map((_month, position) => [position, inflationLevel(position)])),
+      dimension: {
+        time: { category: { index: Object.fromEntries(months.map((month, position) => [month, position])) } },
+      },
+    }),
   );
 }
 
@@ -946,6 +987,13 @@ function provider(request, response, url) {
     return krakenOhlc(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp')
     return cbrDynamic(response, url);
+  if (url.hostname === 'fred.stlouisfed.org' && url.pathname === '/graph/fredgraph.csv')
+    return fredInflation(response, url);
+  if (
+    url.hostname === 'ec.europa.eu' &&
+    url.pathname === '/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_midx'
+  )
+    return eurostatInflation(response);
   if (url.hostname === 'api.etherscan.io' || blockscoutChains[url.hostname])
     return etherscan(response, url);
   if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);

@@ -51,6 +51,9 @@ const walletTables = [
   'bank_deposit_rates',
   'bank_deposit_movements',
   'bank_deposit_checks',
+  'inflation_months',
+  'inflation_manual_months',
+  'inflation_personal_rates',
 ];
 const marketPriceTables = ['price_observations', 'sync_sources'];
 const threeCurrencyTables = ['fx_rates', 'owner_settings'];
@@ -166,6 +169,7 @@ const migrationNames = [
   'StopTrackingWallets1796300000000',
   'HideAssets1796400000000',
   'AddBankDeposits1796500000000',
+  'AddInflation1796700000000',
 ];
 
 function connection(database) {
@@ -263,7 +267,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly fifty-nine migrations',
+      'Exactly sixty migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1328,7 +1332,7 @@ function sessionDeviceAddition(kind, row) {
 }
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
-// HideAssets1796400000000 and AddBankDeposits1796500000000 add only tables.
+// HideAssets1796400000000, AddBankDeposits1796500000000 and AddInflation1796700000000 add only tables.
 function walletKindAddition(kind, row) {
   if (kind === 'columns')
     return (
@@ -2337,6 +2341,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1796300000000',
           '1796400000000',
           '1796500000000',
+          '1796700000000',
         ][index - 11],
       );
     }
