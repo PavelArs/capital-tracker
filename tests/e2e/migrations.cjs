@@ -170,6 +170,7 @@ const migrationNames = [
   'HideAssets1796400000000',
   'AddBankDeposits1796500000000',
   'AddInflation1796700000000',
+  'DailyDepositInterest1796800000000',
   'ClassOfAccount1796900000000',
 ];
 
@@ -268,7 +269,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly sixty-one migrations',
+      'Exactly sixty-two migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1334,6 +1335,7 @@ function sessionDeviceAddition(kind, row) {
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
 // HideAssets1796400000000, AddBankDeposits1796500000000 and AddInflation1796700000000 add only tables;
+// DailyDepositInterest1796800000000 only widens a check of a table they add;
 // ClassOfAccount1796900000000 adds one nullable assetClass column and its check to manual_accounts.
 function walletKindAddition(kind, row) {
   if (kind === 'columns')
@@ -2346,6 +2348,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1796400000000',
           '1796500000000',
           '1796700000000',
+          '1796800000000',
           '1796900000000',
         ][index - 11],
       );

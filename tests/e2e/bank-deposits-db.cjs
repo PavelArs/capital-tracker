@@ -18,7 +18,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 61;
+const MIGRATIONS = 62;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -54,7 +54,7 @@ const dollars = {
   currency: 'USD',
   startDate: '2026-07-01',
   endDate: null,
-  payout: 'quarterly',
+  payout: 'monthly',
   capitalized: true,
   dayBasis: 'actual-365',
   earlyClose: 'keeps-interest',
@@ -69,7 +69,12 @@ async function accrual(db, service, owner) {
     CROSS JOIN generate_series(date '2026-06-01', date '2026-10-04', interval '1 day') d
     WHERE extract(isodow FROM d) < 6`);
   const rub = await service.create(owner, savings);
-  const usd = await service.create(owner, dollars);
+  // Quarterly is no longer offered, so a deposit made before that is a stored row: this one is
+  // written as one and has to keep reading as it did.
+  const created = await service.create(owner, dollars);
+  await db.query(`UPDATE bank_deposits SET payout='quarterly' WHERE id=$1`, [created.id]);
+  const usd = await service.get(owner, created.id, '2026-10-01');
+  assert.equal(usd.payout, 'quarterly', 'A stored quarterly deposit stays readable');
   assert.equal(rub.principal, '100000.00');
   assert.equal(rub.status, 'matured', 'Read today, its term is over');
 
@@ -203,6 +208,55 @@ async function accrual(db, service, owner) {
   await service.remove(owner, same.id);
   console.log('PASS DEP-ORDER');
   return { rub: rub.id, usd: usd.id };
+}
+
+async function daily(db, service, owner) {
+  stage = 'DEP-DAILY interest posted every day, and quarterly kept only for stored deposits';
+  const terms = {
+    ...savings,
+    name: 'Daily C',
+    endDate: null,
+    payout: 'daily',
+    capitalized: true,
+    amount: '100000.00',
+  };
+  const made = await service.create(owner, terms);
+  const read = (await service.list(owner, '2026-07-04')).items.find((item) => item.id === made.id);
+  // 12% over 365 days on 100000, 100032.88 and 100065.77: 32.88, 32.89 and 32.90, each posted.
+  assert.equal(read.principal, '100098.67');
+  assert.equal(read.accrued, '0.00', 'Nothing is waiting between daily postings');
+  assert.equal(read.nextPayout.date, '2026-07-05');
+  const detail = await service.get(owner, made.id, '2026-07-04');
+  assert.deepEqual(
+    detail.periods.map((period) => period.interest),
+    ['32.88', '32.89', '32.90'],
+  );
+  const paying = await service.create(owner, { ...terms, name: 'Daily D', capitalized: false });
+  const due = (await service.list(owner, '2026-07-04')).items.find((item) => item.id === paying.id);
+  assert.equal(due.due, '98.64', 'Three days of 32.88 payable');
+  assert.equal(due.principal, '100000.00');
+  // New deposits cannot be quarterly; the row of an earlier one is still valid for the database.
+  await rejected(() => service.create(owner, { ...terms, payout: 'quarterly' }), 400);
+  // The retry of a quarterly deposit made before this release still finds it instead of failing.
+  const requestId = randomUUID();
+  const old = await service.create(owner, { ...terms, name: 'Daily Q', payout: 'monthly', requestId });
+  await db.query(
+    `UPDATE bank_deposits SET payout='quarterly',
+       "canonicalPayload"=replace("canonicalPayload", '"payout":"monthly"', '"payout":"quarterly"') WHERE id=$1`,
+    [old.id],
+  );
+  const retried = await service.create(owner, {
+    ...terms,
+    name: 'Daily Q',
+    payout: 'quarterly',
+    requestId,
+  });
+  assert.equal(retried.id, old.id, 'A quarterly retry returns the deposit it made');
+  await assert.rejects(
+    () => db.query(`UPDATE bank_deposits SET payout='hourly' WHERE id=$1`, [made.id]),
+    /bank_deposits_payout_check/,
+  );
+  console.log('PASS DEP-DAILY');
 }
 
 async function movements(db, service, owner, other, ids) {
@@ -377,6 +431,7 @@ async function wholePortfolio(db, owner) {
   const deposits = new DepositsService(db);
   const rubles = await deposits.create(owner, { requestId: randomUUID(), ...savings });
   const dollarsDeposit = await deposits.create(owner, { requestId: randomUUID(), ...dollars });
+  await db.query(`UPDATE bank_deposits SET payout='quarterly' WHERE id=$1`, [dollarsDeposit.id]);
   const now = new Date('2026-10-04T12:00:00.000Z');
   const valuation = new PortfolioValuationService(db);
   const rub = await valuation.read(owner, { currency: 'RUB' }, now);
@@ -507,10 +562,11 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other, third] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    const [owner, other, third, fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('deposit-owner@example.invalid','synthetic-not-a-hash',true),
       ('deposit-other@example.invalid','synthetic-not-a-hash',true),
-      ('deposit-third@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('deposit-third@example.invalid','synthetic-not-a-hash',true),
+      ('deposit-fourth@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const { DepositsService } = require(modulePath);
     const plain = new DepositsService(db);
     // Every call carries a fresh request id unless a stage names one to test a replay.
@@ -522,6 +578,7 @@ async function main() {
         plain.addCheck(owner, id, { requestId: randomUUID(), ...body }),
     });
     const ids = await accrual(db, service, owner.id);
+    await daily(db, service, fourth.id);
     await movements(db, service, owner.id, other.id, ids);
     await checks(db, service, owner.id, ids);
     await owners(db, service, owner.id, other.id, ids);

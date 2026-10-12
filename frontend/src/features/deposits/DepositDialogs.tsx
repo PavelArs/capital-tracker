@@ -253,9 +253,10 @@ function Select<T extends string>({
   );
 }
 
+// Quarterly is not offered any more; a deposit made with it keeps working.
 const payoutOptions: readonly (readonly [PayoutSchedule, string])[] = [
+  ['daily', 'Every day'],
   ['monthly', 'Every month'],
-  ['quarterly', 'Every quarter'],
   ['at-end', 'At the end of the term'],
 ];
 

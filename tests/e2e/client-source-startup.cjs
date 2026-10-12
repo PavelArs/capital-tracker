@@ -236,8 +236,8 @@ async function main() {
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
     assert.equal(
       Number(state.migrations),
-      61,
-      'Run after the actual preserved sixty-one migrations',
+      62,
+      'Run after the actual preserved sixty-two migrations',
     );
     assert.equal(
       state.latest_migration,
@@ -275,7 +275,7 @@ async function main() {
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map(
       (row) => row.name,
     );
-    assert.equal(shownNames.length, 61);
+    assert.equal(shownNames.length, 62);
     assert.deepEqual(
       shownNames,
       appliedNames,

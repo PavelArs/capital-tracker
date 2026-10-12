@@ -5,8 +5,11 @@ import { canonicalDecimalToAtoms } from '../accounting/money';
 
 export const depositCurrencies = ['RUB', 'USD', 'EUR'] as const;
 export type DepositCurrency = (typeof depositCurrencies)[number];
-export const payoutSchedules = ['monthly', 'quarterly', 'at-end'] as const;
+/** Every schedule a stored deposit can have; quarterly deposits made earlier keep it. */
+export const payoutSchedules = ['daily', 'monthly', 'quarterly', 'at-end'] as const;
 export type PayoutSchedule = (typeof payoutSchedules)[number];
+/** What a new deposit can choose: quarterly is no longer offered. */
+export const offeredPayoutSchedules = ['daily', 'monthly', 'at-end'] as const;
 export const dayBases = ['actual-365', 'actual-actual'] as const;
 export type DayBasis = (typeof dayBases)[number];
 export const earlyCloseRules = ['forfeits-interest', 'keeps-interest'] as const;
@@ -97,6 +100,12 @@ function addMonths(start: string, months: number): string {
 /** The dates interest is posted, ascending, up to and including `last`. */
 export function payoutDates(terms: DepositTerms, last: string): string[] {
   const dates: string[] = [];
+  // Daily posts at the end of every day from the first one on; the end date is added below.
+  if (terms.payout === 'daily')
+    for (let date = nextDay(terms.startDate); date <= last; date = nextDay(date)) {
+      if (terms.endDate !== null && date >= terms.endDate) break;
+      dates.push(date);
+    }
   const every = terms.payout === 'monthly' ? 1 : terms.payout === 'quarterly' ? 3 : 0;
   if (every > 0)
     for (let step = 1; ; step += 1) {

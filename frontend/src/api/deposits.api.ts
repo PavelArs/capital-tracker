@@ -4,7 +4,8 @@ import type { AccountingCurrency } from './portfolio-valuation.api';
 // DEP-ACCRUAL, DEP-CHECK: bank deposits the owner entered once; interest and value are computed.
 
 export type DepositCurrency = AccountingCurrency;
-export type PayoutSchedule = 'monthly' | 'quarterly' | 'at-end';
+/** Quarterly is only on deposits made before it was removed from the form. */
+export type PayoutSchedule = 'daily' | 'monthly' | 'quarterly' | 'at-end';
 export type DayBasis = 'actual-365' | 'actual-actual';
 export type EarlyClose = 'forfeits-interest' | 'keeps-interest';
 export type DepositStatus = 'active' | 'matured' | 'closed';
