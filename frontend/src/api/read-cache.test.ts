@@ -128,4 +128,51 @@ describe('read cache', () => {
     expect(count).toHaveBeenCalledTimes(1);
     await expect(cachedReads.toClassify.load()).resolves.toBe(2);
   });
+
+  it('hands a prefetched answer to the page that opens next, once, and to nobody later', async () => {
+    const count = vi
+      .spyOn(operationsApi, 'needsClassification')
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(3);
+    await cachedReads.toClassify.prefetch();
+    // The page that opens right after takes the answer without another request.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(2);
+    expect(count).toHaveBeenCalledTimes(1);
+    // Only once: the next load asks the server again.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(3);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again when a prefetched answer is old, was dropped by a change or failed', async () => {
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockResolvedValue(1);
+    await cachedReads.toClassify.prefetch();
+    vi.advanceTimersByTime(31_000);
+    await cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(2);
+
+    await cachedReads.toClassify.prefetch();
+    announceSyncChange();
+    await cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(4);
+
+    count.mockRejectedValueOnce(new Error('offline'));
+    await expect(cachedReads.toClassify.prefetch()).rejects.toThrow('offline');
+    await expect(cachedReads.toClassify.load()).resolves.toBe(1);
+    expect(count).toHaveBeenCalledTimes(6);
+  });
+
+  it('lets a page that opens while the prefetch is still on its way share its request', async () => {
+    let answer: (value: number) => void = () => {};
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const early = cachedReads.toClassify.prefetch();
+    const page = cachedReads.toClassify.load();
+    answer(9);
+    await expect(Promise.all([early, page])).resolves.toEqual([9, 9]);
+    expect(count).toHaveBeenCalledTimes(1);
+  });
 });
