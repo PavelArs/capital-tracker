@@ -35,4 +35,20 @@ describe('BOOT-SHELL: the frame is drawn before the sign-in check answers', () =
     expect(document.querySelectorAll('.shell-skeleton__row').length).toBeGreaterThan(6);
     expect(document.querySelector('.shell-skeleton__stats')).toBeNull();
   });
+
+  it('lays out the Dashboard for the bare address, which leads there', () => {
+    open('/');
+    // Figures and a chart, not figures and a list.
+    expect(document.querySelector('.shell-skeleton__stats')).not.toBeNull();
+    expect(document.querySelector('.shell-skeleton__rows')).toBeNull();
+  });
+
+  it('keeps the asked currency on the links and a place for the bell, like the real navigation', () => {
+    open('/portfolio?currency=EUR');
+    expect(screen.getByRole('link', { name: 'Transactions' })).toHaveAttribute(
+      'href',
+      '/transactions?currency=EUR',
+    );
+    expect(document.querySelector('.shell-owner__bell')).not.toBeNull();
+  });
 });

@@ -1,7 +1,8 @@
+import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { shellSections } from '@features/shell/navigation';
 import { Bone, PageSkeleton } from '@features/shell/Skeleton';
-import type { ComponentProps } from 'react';
+import { type ComponentProps, useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import '@features/shell/shell-page.css';
 import '@features/shell/tokens.css';
@@ -27,7 +28,20 @@ const blocksOf: Record<string, Blocks> = {
  */
 export default function BootShell() {
   const { pathname } = useLocation();
-  const [section = '', ...rest] = pathname.split('/').filter(Boolean);
+  // The selected currency stays on the links, as in the navigation that replaces this one.
+  const [asked] = useAskedCurrency();
+  const menuRef = useRef<HTMLDivElement>(null);
+  // The address "/" leads to the Dashboard once the owner is known.
+  const [section = 'dashboard', ...rest] = pathname.split('/').filter(Boolean);
+
+  // Phones show the sections as a strip: keep the current one in view, as Layout does.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
+  useEffect(() => {
+    const strip = menuRef.current;
+    const current = strip?.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
+    strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
+  }, [pathname]);
   // An asset, a wallet or a deposit: figures on top and a list under them.
   const show = rest.length > 0 ? blocksOf.portfolio : (blocksOf[section] ?? blocksOf.portfolio);
   return (
@@ -39,11 +53,11 @@ export default function BootShell() {
             Capital
           </div>
         </div>
-        <div className="shell-nav__menu">
+        <div ref={menuRef} className="shell-nav__menu">
           <ul className="shell-nav__sections" data-nav-group="sections">
             {shellSections.map((entry) => (
               <li key={entry.path}>
-                <NavLink to={entry.path}>
+                <NavLink to={withCurrency(entry.path, asked)}>
                   <Icon name={entry.icon} />
                   {entry.label}
                 </NavLink>
@@ -52,6 +66,7 @@ export default function BootShell() {
           </ul>
         </div>
         <div className="shell-owner">
+          <div className="shell-owner__bell" />
           <span className="shell-owner__avatar" aria-hidden="true" />
           <span className="shell-owner__who">
             <span className="shell-owner__name">Owner</span>
