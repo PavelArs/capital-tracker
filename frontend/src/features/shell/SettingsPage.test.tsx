@@ -1,6 +1,7 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
+import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { securityApi } from '@api/security.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
@@ -34,6 +35,7 @@ beforeEach(() => {
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(hiddenAssetsApi, 'list').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(portfolioValuationApi, 'get').mockReturnValue(new Promise(() => {}));
   stored.clear();
   listeners.clear();
   vi.mocked(window.localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
@@ -153,10 +155,12 @@ describe('CUR-SWITCH main currency setting', () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
+      insightRules: null,
     });
     const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
+      insightRules: null,
       ...settings,
     }));
     vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates);
@@ -179,6 +183,7 @@ describe('CUR-SWITCH main currency setting', () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'RUB',
       dustThresholdUsd: null,
+      insightRules: null,
     });
     vi.spyOn(ownerSettingsApi, 'update').mockRejectedValue(new Error('offline'));
     vi.spyOn(fxRatesApi, 'get').mockResolvedValue({
@@ -216,10 +221,12 @@ describe('dust threshold (CLS-DUST)', () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
+      insightRules: null,
     });
     const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
+      insightRules: null,
       ...settings,
     }));
     const user = userEvent.setup();
@@ -262,6 +269,7 @@ describe('dust threshold (CLS-DUST)', () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'USD',
       dustThresholdUsd: '2',
+      insightRules: null,
     });
     vi.spyOn(ownerSettingsApi, 'update').mockRejectedValue(new Error('offline'));
     const user = userEvent.setup();

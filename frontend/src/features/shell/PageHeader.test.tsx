@@ -21,6 +21,7 @@ beforeEach(() => {
   vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
     mainCurrency: 'EUR',
     dustThresholdUsd: null,
+    insightRules: null,
   });
   vi.spyOn(portfolioAssetsApi, 'listAll').mockReturnValue(new Promise(() => {}));
   vi.spyOn(accountingApi, 'listAccounts').mockReturnValue(new Promise(() => {}));
@@ -84,10 +85,12 @@ describe('Shared page header', () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
+      insightRules: null,
     });
     vi.spyOn(ownerSettingsApi, 'update').mockResolvedValue({
       mainCurrency: 'RUB',
       dustThresholdUsd: null,
+      insightRules: null,
     });
     renderAt('/preferences', <SettingsPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();

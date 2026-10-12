@@ -18,6 +18,7 @@ import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
 import DashboardLoading from './DashboardLoading';
 import HistoryChart from './HistoryChart';
+import Insights from './Insights';
 import TopAssets from './TopAssets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -312,6 +313,9 @@ export default function DashboardPage() {
               label={chartLabel}
             />
           </section>
+          {portfolio !== null && !portfolioFailed && (
+            <Insights portfolio={portfolio} asked={asked} />
+          )}
           <div className="dashboard-bottom">
             <TopAssets
               chains={tokenChains(wallets)}

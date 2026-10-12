@@ -670,6 +670,7 @@ async function jsonBackup(db, s, f, made) {
       mainCurrency: 'EUR',
       updatedAt: backup.tables.owner_settings[0].updatedAt,
       dustThresholdUsd: null,
+      insightRules: null,
     },
   ]);
   assert.equal(await fingerprint(db), before, 'Backup changes no row');
@@ -727,7 +728,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 59);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 60);
     const [owner, other, third] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('export-owner@example.invalid','synthetic-not-a-hash',true),

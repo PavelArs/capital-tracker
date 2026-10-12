@@ -543,21 +543,27 @@ async function ownerSettings(db) {
   const service = new OwnerSettingsService(db);
   assert.deepEqual(
     await service.read(owner.id),
-    { mainCurrency: 'USD', dustThresholdUsd: null },
+    { mainCurrency: 'USD', dustThresholdUsd: null, insightRules: null },
     'No saved row means USD',
   );
   assert.deepEqual(await service.update(owner.id, { mainCurrency: 'EUR' }), {
     mainCurrency: 'EUR',
     dustThresholdUsd: null,
+    insightRules: null,
   });
   assert.deepEqual(await service.update(owner.id, { mainCurrency: 'RUB' }), {
     mainCurrency: 'RUB',
     dustThresholdUsd: null,
+    insightRules: null,
   });
-  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'RUB', dustThresholdUsd: null });
+  assert.deepEqual(await service.read(owner.id), {
+    mainCurrency: 'RUB',
+    dustThresholdUsd: null,
+    insightRules: null,
+  });
   assert.deepEqual(
     await service.read(other.id),
-    { mainCurrency: 'USD', dustThresholdUsd: null },
+    { mainCurrency: 'USD', dustThresholdUsd: null, insightRules: null },
     'One owner never changes another',
   );
   const before = await fingerprint(db);
@@ -975,7 +981,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 59/);
+    assert.match(migrate(name), /Migrations applied: 60/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
@@ -987,7 +993,7 @@ async function main() {
   await broken.initialize();
   await accounting.initialize();
   try {
-    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 59);
+    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 60);
     await migration(rates);
     await disabled(rates);
     const first = await backfill(rates);
