@@ -27,6 +27,7 @@ import {
   type WalletKind,
 } from './input';
 import { projectOpening, type SnapshotRow } from './opening.store';
+import { TRACKED_ACCOUNT } from './trade-journal.store';
 
 interface AccountRow {
   id: string;
@@ -200,7 +201,7 @@ export class AccountingService {
     return this.source.transaction(async (manager) => {
       await lockAccountingOwner(manager, owner);
       const [account]: AccountRow[] = await manager.query(
-        'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL FOR UPDATE',
+        `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT} FOR UPDATE`,
         [owner, id],
       );
       if (!account) throw new NotFoundException();
@@ -402,7 +403,7 @@ export class AccountingService {
         : { beforeRevision: queryNumber(options.beforeRevision) }),
     });
     const [account] = await this.source.query(
-      'SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL',
+      `SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT}`,
       [owner, id],
     );
     if (!account) throw new NotFoundException();
