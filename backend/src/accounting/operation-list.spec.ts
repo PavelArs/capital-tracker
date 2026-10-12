@@ -130,6 +130,7 @@ describe('list-all-operations projection', () => {
       counterQuantity: null,
       valueUsd: '1000',
       estimatedValueUsd: null,
+      marketValue: null,
       costBasisUsd: null,
       feeUsd: '0',
       fee: null,
@@ -182,6 +183,7 @@ describe('list-all-operations projection', () => {
       // Raw chain data has no recorded value; only an estimate at the price stored for its time.
       valueUsd: null,
       estimatedValueUsd: '780.10005255',
+      marketValue: null,
       costBasisUsd: null,
       feeUsd: null,
       // The sender pays an incoming transaction's fee.
@@ -569,6 +571,45 @@ describe('list-all-operations projection', () => {
       estimatedValue: null,
       chain: { priceObservedAt: null },
     });
+  });
+
+  it('CLS-MARKET-VALUE: a transaction with no price near its time carries the latest stored price as its value', () => {
+    const price = (priceUsd: string, observedAt: string) => ({
+      priceUsd,
+      observedAt,
+      source: 'kraken',
+    });
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          chain(1, { receivedUnits: '1000000', feeUnits: '0' }),
+          chain(2, {
+            receivedUnits: '1000000',
+            feeUnits: '0',
+            blockTime: '2025-08-01T12:00:00.000Z',
+          }),
+        ],
+        // Only the first transaction has a price within two days before it.
+        marketPrices: new Map([['BTC', [price('61000', '2025-06-20T08:00:00.000Z')]]]),
+        latestPrices: new Map([['BTC', price('120000', '2026-10-04T11:00:00.000Z')]]),
+      }),
+    );
+    const byTxid = new Map(list.operations.map((operation) => [operation.chain?.txid, operation]));
+    // A price of its own time is the estimate; the latest one is not offered.
+    expect(byTxid.get(txid(1))).toMatchObject({ estimatedValueUsd: '610', marketValue: null });
+    expect(byTxid.get(txid(2))).toMatchObject({
+      estimatedValueUsd: null,
+      marketValue: { valueUsd: '1200', observedAt: '2026-10-04T11:00:00.000Z' },
+    });
+  });
+
+  it('CLS-MARKET-VALUE: a coin with no stored price at all offers no value', () => {
+    const list = projectOperations(
+      now,
+      sources({ chain: [chain(1, { receivedUnits: '1000000', feeUnits: '0' })] }),
+    );
+    expect(list.operations[0]).toMatchObject({ estimatedValueUsd: null, marketValue: null });
   });
 
   it('EST-AT-TIME: dust is judged at the price stored for the time of the receipt', () => {

@@ -46,6 +46,13 @@ describe('deposit text', () => {
     expect(
       termText(deposit({ capitalized: true, payout: 'at-end', endDate: null, ratePercent: '4.5' })),
     ).toBe('4.5% · interest added at the end of the term · no end date');
+    expect(termText(deposit({ capitalized: true, payout: 'daily', endDate: null }))).toBe(
+      '12% · interest added daily · no end date',
+    );
+    // A deposit made when quarterly was offered still reads.
+    expect(termText(deposit({ payout: 'quarterly' }))).toBe(
+      '12% · interest paid quarterly · until Dec 1, 2026',
+    );
   });
 });
 

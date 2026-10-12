@@ -41,6 +41,7 @@ export const movementText: Record<MovementKind, string> = {
 };
 
 const payoutNames = {
+  daily: 'daily',
   monthly: 'monthly',
   quarterly: 'quarterly',
   'at-end': 'at the end of the term',

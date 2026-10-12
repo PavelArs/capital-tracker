@@ -84,7 +84,15 @@ interface Draft {
   amount: string;
   currency: Currency;
   rate: string;
+  /** What the owner typed; see `shownValue` for the value the form shows and sends. */
   value: string;
+  /**
+   * CLS-MARKET-VALUE: the value offered when the coin has no price near the transaction's time;
+   * empty when nothing is offered.
+   */
+  suggested: string;
+  /** The offer still stands: the owner has not typed in or cleared the value field. */
+  offered: boolean;
   /** Transfer only: the owner's other wallet. */
   account: string;
   /** Transfer only: the address of that wallet that took part in this very transaction. */
@@ -109,6 +117,41 @@ function ownAccount(operation: Operation) {
     : operation.account;
 }
 
+/**
+ * CLS-MARKET-VALUE: the quantity at the latest stored price of the coin, in dollars and cents
+ * (more places for a small sum), for a transaction with no price stored near its own time.
+ */
+export function suggestedValue(operation: Operation): string {
+  const text = operation.marketValue?.valueUsd ?? '';
+  if (!operation.chain || operation.estimatedValueUsd !== null || !/^[0-9]+(\.[0-9]+)?$/.test(text))
+    return '';
+  const [whole, fraction = ''] = text.split('.');
+  // Two places for a sum of a dollar or more, three significant digits for a smaller one, never
+  // more than the thirty places an amount keeps.
+  const zeros = fraction.length - fraction.replace(/^0+/, '').length;
+  const places = whole.replace(/^0+/, '') ? 2 : Math.min(30, zeros + 3);
+  const kept = BigInt(whole + fraction.padEnd(places, '0').slice(0, places));
+  const rounded = (fraction[places] ?? '0') >= '5' ? kept + 1n : kept;
+  const digits = rounded.toString().padStart(places + 1, '0');
+  const plain = `${digits.slice(0, digits.length - places)}.${digits.slice(digits.length - places)}`;
+  if (!/[1-9]/.test(plain)) return '';
+  // An amount keeps at most 48 whole digits; a carry past that is not storable.
+  if (plain.split('.')[0].length > 48) return '';
+  return whole.replace(/^0+/, '') ? plain : plain.replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/**
+ * The value the form shows and sends: the offer while it stands, for the answers it fits (not a
+ * pool withdrawal's gain, not a swap that names a record, which brings its own value); otherwise
+ * what the owner typed.
+ */
+function shownValue(draft: Draft): string {
+  const namesRecord =
+    draft.type === 'swap' && (recordKey.test(draft.pair) || replaceKey.test(draft.pair));
+  const fits = draft.type !== 'pool-withdrawal' && !namesRecord;
+  return draft.offered && fits ? draft.suggested : draft.value;
+}
+
 function draftOf(operation: Operation): Draft {
   const saved = operation.classification;
   const value = saved?.value ?? null;
@@ -123,12 +166,15 @@ function draftOf(operation: Operation): Draft {
   const suggested = !value && operation.counterWallet && operation.counterAccount;
   // SWAP-ONE-TX-SUGGEST: another coin back in the same transaction suggests a swap.
   const together = !value && !suggested ? operation.chain?.swapWith : undefined;
+  const offered = value ? '' : suggestedValue(operation);
   return {
     type: recorded ? 'swap' : (value?.type ?? (suggested ? 'transfer' : together ? 'swap' : null)),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
     value: valued?.valueUsd ?? '',
+    suggested: offered,
+    offered: offered !== '',
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
     partner:
       moved?.partner && moved.partner.txid === operation.chain?.txid ? moved.partner.addressId : '',
@@ -476,11 +522,11 @@ function problems(draft: Draft, choosesAddress = false): Set<Problem> {
     else if (choosesAddress && !draft.partner) found.add('partner');
   } else if (draft.type === 'swap') {
     if (!draft.pair) found.add('pair');
-    if (!recordKey.test(draft.pair) && draft.value.trim() && !positive(draft.value))
+    if (!recordKey.test(draft.pair) && shownValue(draft).trim() && !positive(shownValue(draft)))
       found.add('value');
   } else if (draft.type === 'pool-withdrawal') {
     if (!draft.deposit) found.add('deposit');
-    if (draft.value.trim() && !positive(draft.value)) found.add('value');
+    if (shownValue(draft).trim() && !positive(shownValue(draft))) found.add('value');
   } else if (draft.type === 'pool-deposit') {
     // Nothing to enter: the coins stay the owner's.
   } else if (draft.type === 'buy' || draft.type === 'sell') {
@@ -494,8 +540,9 @@ function problems(draft: Draft, choosesAddress = false): Set<Problem> {
     draft.type === 'airdrop' ||
     draft.type === 'fee'
   ) {
-    if (draft.value.trim() && !positive(draft.value)) found.add('value');
-  } else if (draft.type && draft.type !== 'other' && !positive(draft.value)) found.add('value');
+    if (shownValue(draft).trim() && !positive(shownValue(draft))) found.add('value');
+  } else if (draft.type && draft.type !== 'other' && !positive(shownValue(draft)))
+    found.add('value');
   if ([...draft.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
 }
@@ -516,7 +563,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
         return {
           type: 'swap',
           record: { kind: 'trade', id: replaced[1], version: Number(replaced[2]) },
-          valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+          valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
         };
       const record = recordKey.exec(draft.pair);
       if (record)
@@ -528,7 +575,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       return {
         type: 'swap',
         with: { addressId, txid },
-        valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
       };
     }
     case 'buy':
@@ -549,7 +596,10 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
     case 'pool-reward':
     case 'airdrop':
     case 'fee':
-      return { type: draft.type, valueUsd: draft.value.trim() ? decimal(draft.value) : null };
+      return {
+        type: draft.type,
+        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
+      };
     case 'other':
       return { type: 'other' };
     case 'pool-deposit':
@@ -559,7 +609,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       return {
         type: 'pool-withdrawal',
         deposit: { addressId, txid },
-        valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
         ...(draft.partial ? { partial: true as const } : {}),
       };
     }
@@ -567,7 +617,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       // CLS-RECORDED: asked for as a swap that names the record (draftOf); never a type here.
       return null;
     default:
-      return { type: draft.type, valueUsd: decimal(draft.value)! };
+      return { type: draft.type, valueUsd: decimal(shownValue(draft))! };
   }
 }
 
@@ -1110,8 +1160,8 @@ export default function ClassifyForm({
                   className="ui-input"
                   inputMode="decimal"
                   placeholder="0.00"
-                  value={draft.value}
-                  onChange={(event) => change({ value: event.target.value })}
+                  value={shownValue(draft)}
+                  onChange={(event) => change({ value: event.target.value, offered: false })}
                   onBlur={leave('value')}
                   {...invalid('value')}
                 />
@@ -1122,17 +1172,19 @@ export default function ClassifyForm({
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
               ) || (
                 <span className="ui-field__hint">
-                  {replacing
-                    ? 'Empty: the value of the record you added.'
-                    : swap || draft.type === 'fee'
-                      ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                      : poolWithdrawal
-                        ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                        : draft.type === 'expense' || operation.direction !== 'in'
-                          ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
-                          : optional
-                            ? 'Without a value the coins count in net worth, not in profit.'
-                            : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
+                  {draft.offered && draft.suggested && shownValue(draft) === draft.suggested
+                    ? `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${day(operation.occurredAt)}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`
+                    : replacing
+                      ? 'Empty: the value of the record you added.'
+                      : swap || draft.type === 'fee'
+                        ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                        : poolWithdrawal
+                          ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                          : draft.type === 'expense' || operation.direction !== 'in'
+                            ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
+                            : optional
+                              ? 'Without a value the coins count in net worth, not in profit.'
+                              : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
                 </span>
               )}
             </div>

@@ -1,9 +1,11 @@
 import { type DepositDetail, depositsApi } from '@api/deposits.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
@@ -32,6 +34,45 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
       <strong className="deposit-stat__value">{value}</strong>
       {hint && <span className="deposit-stat__hint">{hint}</span>}
     </div>
+  );
+}
+
+/** The interest posted so far, newest first; a deposit that posts every day has a long list. */
+function InterestPeriods({
+  periods,
+  currency,
+}: {
+  periods: DepositDetail['periods'];
+  currency: AccountingCurrency;
+}) {
+  const newest = [...periods].reverse();
+  const paged = useInfinite(newest);
+  return (
+    <>
+      <div className="ui-table-wrap">
+        <table className="ui-table">
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>What happened to it</th>
+              <th className="ui-num">Interest</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.rows.map((period) => (
+              <tr key={period.to}>
+                <td>{dateText(period.from)}</td>
+                <td>{dateText(period.to)}</td>
+                <td>{period.treatment === 'capitalized' ? 'Added to the deposit' : 'Payable'}</td>
+                <td className="ui-num">{money(period.interest, currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {paged.more && <LoadMore {...paged.more} label="periods" />}
+    </>
   );
 }
 
@@ -202,30 +243,7 @@ export default function DepositPage() {
             {deposit.periods.length === 0 ? (
               <p className="shell-note">No interest has been posted yet.</p>
             ) : (
-              <div className="ui-table-wrap">
-                <table className="ui-table">
-                  <thead>
-                    <tr>
-                      <th>From</th>
-                      <th>To</th>
-                      <th>What happened to it</th>
-                      <th className="ui-num">Interest</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...deposit.periods].reverse().map((period) => (
-                      <tr key={period.to}>
-                        <td>{dateText(period.from)}</td>
-                        <td>{dateText(period.to)}</td>
-                        <td>
-                          {period.treatment === 'capitalized' ? 'Added to the deposit' : 'Payable'}
-                        </td>
-                        <td className="ui-num">{money(period.interest, own)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InterestPeriods periods={deposit.periods} currency={own} />
             )}
             {Number(deposit.interestForfeited) > 0 && (
               <p className="shell-note">
