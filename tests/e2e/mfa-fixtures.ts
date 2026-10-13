@@ -86,7 +86,7 @@ export function fingerprint(
     .filter((table) => !excluded.includes(table) && !derivedCacheTables.includes(table));
   expect(tables).toContain('users');
   if (!excluded.includes('owner_auth')) expect(tables).toContain('owner_auth');
-  expect(tables).toContain('manual_accounts');
+  if (!excluded.includes('manual_accounts')) expect(tables).toContain('manual_accounts');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
   return query(
     orderedFingerprintSql(
