@@ -21,6 +21,8 @@ import { type WalletAddress, walletAddressesApi } from './wallet-addresses.api';
 // wallets sync about hourly, and every change the owner makes drops the cache, so a few minutes
 // cost nothing in accuracy.
 const REUSE_MS = 5 * 60_000;
+// How long a page opened right after a prefetch takes that answer instead of asking again.
+const PREFETCH_USE_MS = 30_000;
 
 // Reads on their way, by key. Callers asking for the same thing meanwhile share one request.
 const inFlight = new Map<string, { generation: number; promise: Promise<unknown> }>();
@@ -42,29 +44,76 @@ function cachedRead<A extends unknown[], T>(
     while (asked.length && asked[asked.length - 1] === undefined) asked.pop();
     return `${name}:${JSON.stringify(asked)}`;
   };
+  // Answers of prefetch() waiting for the page that was about to open: when, by key.
+  const prefetched = new Map<string, number>();
+  // Prefetches still on their way that no page has joined yet, each with its own token so an
+  // older one settling late cannot take the place of a newer one.
+  const unclaimed = new Map<string, object>();
+  const ask = (args: A, byPage: boolean): Promise<T> => {
+    const id = key(args);
+    if (byPage) {
+      // A page that joins a prefetch on its way has had its answer.
+      unclaimed.delete(id);
+      // A page opened right after a prefetch uses its answer once; later loads ask again.
+      const warmAt = prefetched.get(id);
+      if (warmAt !== undefined) {
+        prefetched.delete(id);
+        const warm = Date.now() - warmAt < PREFETCH_USE_MS ? recall<T>(id) : undefined;
+        if (warm !== undefined && !inFlight.has(id)) return Promise.resolve(warm);
+      }
+    }
+    // A reload does not ask the server again for what it said minutes ago; a change or a sync
+    // empties the cache, so nothing stale is reused.
+    const reused = reuseFor > 0 ? recallRestored<T>(id, reuseFor) : undefined;
+    if (reused !== undefined) return Promise.resolve(reused);
+    const startedIn = generationNow();
+    const shared = inFlight.get(id);
+    // An answer to a question asked before a change is not shared with one asked after it.
+    if (shared && shared.generation === startedIn) return shared.promise as Promise<T>;
+    const promise = (async () => {
+      const value = await read(...args);
+      remember(id, value, startedIn);
+      return value;
+    })();
+    const entry = { generation: startedIn, promise };
+    inFlight.set(id, entry);
+    const done = () => {
+      if (inFlight.get(id) === entry) inFlight.delete(id);
+    };
+    promise.then(done, done);
+    return promise;
+  };
   return {
     last: (...args: A): T | undefined => recall<T>(key(args)),
-    load: (...args: A): Promise<T> => {
+    load: (...args: A): Promise<T> => ask(args, true),
+    /**
+     * `load` for a page that may open next: if it does within a few seconds it takes this
+     * answer instead of sending the same request again.
+     */
+    prefetch: (...args: A): Promise<T> => {
       const id = key(args);
-      // A reload does not ask the server again for what it said minutes ago; a change or a sync
-      // empties the cache, so nothing stale is reused.
-      const reused = reuseFor > 0 ? recallRestored<T>(id, reuseFor) : undefined;
-      if (reused !== undefined) return Promise.resolve(reused);
-      const startedIn = generationNow();
-      const shared = inFlight.get(id);
-      // An answer to a question asked before a change is not shared with one asked after it.
-      if (shared && shared.generation === startedIn) return shared.promise as Promise<T>;
-      const promise = (async () => {
-        const value = await read(...args);
-        remember(id, value, startedIn);
-        return value;
-      })();
-      const entry = { generation: startedIn, promise };
-      inFlight.set(id, entry);
-      const done = () => {
-        if (inFlight.get(id) === entry) inFlight.delete(id);
+      // An answer already waiting for a page is not asked for a second time (the same read is
+      // behind two menu links).
+      const warmAt = prefetched.get(id);
+      if (warmAt !== undefined && Date.now() - warmAt < PREFETCH_USE_MS) {
+        const warm = recall<T>(id);
+        if (warm !== undefined) return Promise.resolve(warm);
+      }
+      // Joining a read someone else already started leaves nothing to hand over later.
+      const joined = inFlight.get(id)?.generation === generationNow();
+      const promise = ask(args, false);
+      if (joined) return promise;
+      const mine = {};
+      unclaimed.set(id, mine);
+      const settle = (answered: boolean) => {
+        if (unclaimed.get(id) !== mine) return;
+        unclaimed.delete(id);
+        if (answered) prefetched.set(id, Date.now());
       };
-      promise.then(done, done);
+      promise.then(
+        () => settle(true),
+        () => settle(false),
+      );
       return promise;
     },
   };

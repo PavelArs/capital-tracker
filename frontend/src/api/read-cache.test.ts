@@ -128,4 +128,119 @@ describe('read cache', () => {
     expect(count).toHaveBeenCalledTimes(1);
     await expect(cachedReads.toClassify.load()).resolves.toBe(2);
   });
+
+  it('hands a prefetched answer to the page that opens next, once, and to nobody later', async () => {
+    const count = vi
+      .spyOn(operationsApi, 'needsClassification')
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(3);
+    await cachedReads.toClassify.prefetch();
+    // The page that opens right after takes the answer without another request.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(2);
+    expect(count).toHaveBeenCalledTimes(1);
+    // Only once: the next load asks the server again.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(3);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again when a prefetched answer is old, was dropped by a change or failed', async () => {
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockResolvedValue(1);
+    await cachedReads.toClassify.prefetch();
+    vi.advanceTimersByTime(31_000);
+    await cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(2);
+
+    await cachedReads.toClassify.prefetch();
+    announceSyncChange();
+    await cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(4);
+
+    count.mockRejectedValueOnce(new Error('offline'));
+    await expect(cachedReads.toClassify.prefetch()).rejects.toThrow('offline');
+    await expect(cachedReads.toClassify.load()).resolves.toBe(1);
+    expect(count).toHaveBeenCalledTimes(6);
+  });
+
+  it('lets a page that opens while the prefetch is still on its way share its request', async () => {
+    let answer: (value: number) => void = () => {};
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const early = cachedReads.toClassify.prefetch();
+    const page = cachedReads.toClassify.load();
+    answer(9);
+    await expect(Promise.all([early, page])).resolves.toEqual([9, 9]);
+    expect(count).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves nothing for a later load when the page joined the prefetch on its way', async () => {
+    let answer: (value: number) => void = () => {};
+    const count = vi
+      .spyOn(operationsApi, 'needsClassification')
+      .mockImplementationOnce(
+        () =>
+          new Promise<number>((resolve) => {
+            answer = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(5);
+    const early = cachedReads.toClassify.prefetch();
+    const page = cachedReads.toClassify.load();
+    answer(4);
+    await expect(Promise.all([early, page])).resolves.toEqual([4, 4]);
+    // The page has had its answer; opening it again asks the server.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(5);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands the page a prefetch asked after a change even if an older read was still on its way', async () => {
+    const answers: Array<(value: number) => void> = [];
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const older = cachedReads.toClassify.load();
+    announceSyncChange();
+    const prefetch = cachedReads.toClassify.prefetch();
+    answers[1](8);
+    await prefetch;
+    // The page takes the prefetch asked after the change; no third request is sent.
+    await expect(cachedReads.toClassify.load()).resolves.toBe(8);
+    expect(count).toHaveBeenCalledTimes(2);
+    answers[0](1);
+    await older;
+  });
+
+  it('does not ask again for an answer already waiting for a page, from another prefetch', async () => {
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockResolvedValue(6);
+    await cachedReads.toClassify.prefetch();
+    await expect(cachedReads.toClassify.prefetch()).resolves.toBe(6);
+    expect(count).toHaveBeenCalledTimes(1);
+    await expect(cachedReads.toClassify.load()).resolves.toBe(6);
+    expect(count).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the newer prefetch claimable when an older one from before a change settles late', async () => {
+    const answers: Array<(value: number) => void> = [];
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const older = cachedReads.toClassify.prefetch();
+    announceSyncChange();
+    const newer = cachedReads.toClassify.prefetch();
+    answers[0](1);
+    await older;
+    answers[1](2);
+    await newer;
+    await expect(cachedReads.toClassify.load()).resolves.toBe(2);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
 });
