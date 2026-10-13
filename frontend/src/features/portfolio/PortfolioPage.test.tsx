@@ -18,6 +18,8 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setInflationBasis } from '../shell/inflation-basis';
+import { setValueView } from '../shell/value-view';
 import AssetPage from './AssetPage';
 import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
 
@@ -707,6 +709,160 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt(`/portfolio/${id(999)}`);
     expect(await screen.findByRole('heading', { name: 'Asset not found' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(3);
+  });
+});
+
+// INFL-REAL-PF: the cost in today's money and the profit over it, under the Nominal / Real switch.
+describe('Portfolio after inflation', () => {
+  const read = (cost: string, pnl: string | null, percent: string | null, estimated = false) => ({
+    costBasis: cost,
+    unrealizedPnl: pnl,
+    unrealizedReturnPercent: percent,
+    estimated,
+  });
+  const realBitcoin = {
+    ...bitcoin,
+    real: {
+      official: read('75000', '21000', '28.00'),
+      personal: { ...read('80000', '16000', '20.00', true), ownRate: true },
+    },
+  };
+  const realCash = {
+    ...cash,
+    real: {
+      official: read('4100', '-100', '-2.44'),
+      personal: { ...read('4200', '-200', '-4.76', true), ownRate: true },
+    },
+  };
+  const withReal = (extra: Partial<PortfolioValuation> = {}) =>
+    portfolio([realBitcoin, realCash], {
+      real: {
+        official: read('79100', '20900', '26.42'),
+        personal: { ...read('84200', '15800', '18.76', true), ownRate: true },
+      },
+      ...extra,
+    });
+  beforeEach(() => {
+    setValueView('nominal');
+    setInflationBasis('official');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(withReal());
+  });
+  // The choice is kept in this browser, so the next test must not inherit it.
+  afterEach(() => {
+    setValueView('nominal');
+    setInflationBasis('official');
+  });
+  const summary = () => screen.getByRole('region', { name: 'Portfolio summary' });
+
+  it('PF-REAL-NOMINAL opens on the nominal figures and shows the real ones beside them', async () => {
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent("Cost basis$70,000.00$79,100.00 in today's money");
+    expect(summary()).toHaveTextContent('Unrealized P&L+$30,000.00+42.86%Real +$20,900.00');
+    expect(screen.getByRole('button', { name: 'Unrealized P&L' })).toBeInTheDocument();
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('+$30,000.00+45.45%');
+    expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
+  });
+
+  it('PF-REAL-SWITCH Real puts the cost in today money and the real profit first', async () => {
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    expect(summary()).toHaveTextContent(
+      "Cost in today's money$79,100.00$70,000.00 paid + $9,100.00 inflation",
+    );
+    expect(summary()).toHaveTextContent('Real P&L+$20,900.00+26.42%Nominal +$30,000.00');
+    expect(summary()).toHaveTextContent("In today's USD, at the official rate");
+    expect(within(summary()).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    expect(screen.getByRole('button', { name: 'Real P&L' })).toBeInTheDocument();
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('+$21,000.00+28.00%nominal +$30,000.00');
+    expect(cells(rowOf('US dollar')).at(-2)).toBe('-$100.00-2.44%nominal $0.00');
+  });
+
+  it('PF-REAL-OWN-RATE reads the figures at the own rate when that is chosen', async () => {
+    setInflationBasis('personal');
+    setValueView('real');
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent("Cost in today's money$84,200.00");
+    expect(summary()).toHaveTextContent('Real P&L+$15,800.00+18.76%');
+    expect(summary()).toHaveTextContent("In today's USD, at your own rate");
+    expect(cells(rowOf('Bitcoin')).at(-2)).toContain('+$16,000.00+20.00%');
+  });
+
+  it('PF-REAL-SORT orders by the real profit under Real', async () => {
+    const user = userEvent.setup();
+    // Nominal: Bitcoin +30000 before the dollar 0. Real: the dollar is ahead only by being less negative.
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio(
+        [
+          {
+            ...realBitcoin,
+            real: { ...realBitcoin.real, official: read('99000', '-3000', '-3.03') },
+          },
+          { ...realCash, real: { ...realCash.real, official: read('3900', '100', '2.56') } },
+        ],
+        { real: withReal().real },
+      ),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    await user.click(screen.getByRole('button', { name: 'Real P&L' }));
+    const order = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => row.textContent?.slice(0, 7));
+    expect(order()).toEqual(['US doll', 'Bitcoin']);
+  });
+
+  it('PF-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: { official: null, personal: null } }], {
+        real: { official: null, personal: null },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent("Cost in today's money—");
+    expect(summary()).toHaveTextContent('Real P&L—');
+    expect(summary()).toHaveTextContent(
+      'a purchase price, exchange rate or inflation figure is missing',
+    );
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
+  });
+
+  it('PF-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).not.toHaveTextContent("in today's money");
+    expect(summary()).not.toHaveTextContent('Real +');
+  });
+
+  it('PF-REAL-PHONE shows the real profit in a phone row under Real', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      setValueView('real');
+      renderAt('/portfolio');
+      const row = await screen.findByRole('link', { name: /^Bitcoin/ });
+      expect(row).toHaveTextContent('Bitcoin1.2 BTC$96,000.00+$21,000.00 · +28.00%');
+      const sort = screen.getByRole('combobox', { name: 'Sort by' });
+      expect(within(sort).getByRole('option', { name: 'Real P&L' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

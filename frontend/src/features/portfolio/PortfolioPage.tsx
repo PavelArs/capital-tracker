@@ -4,6 +4,7 @@ import type {
   AccountingCurrency,
   AssetValuation,
   PortfolioValuation,
+  RealReading,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -12,11 +13,14 @@ import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
+import { basisText } from '../shell/basis-text';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
+import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
+import { useValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
 import Allocation from './Allocation';
@@ -52,21 +56,21 @@ export type AssetSort = { key: SortKey; direction: SortDirection };
 export const defaultSort: AssetSort = { key: 'value', direction: 'desc' };
 
 // The table's columns, left to right.
-const sortColumns: [SortKey, string][] = [
+const sortColumns = (real: boolean): [SortKey, string][] => [
   ['name', 'Asset'],
   ['amount', 'Amount'],
   ['price', 'Price'],
   ['value', 'Value'],
   ['allocation', 'Allocation'],
   ['avgBuy', 'Avg buy price'],
-  ['pnl', 'Unrealized P&L'],
+  ['pnl', real ? 'Real P&L' : 'Unrealized P&L'],
   ['change', '24h'],
 ];
 
 // The phone list's Sort by choices, as in the prototype.
-const phoneSorts: [SortKey, string][] = [
+const phoneSorts = (real: boolean): [SortKey, string][] => [
   ['value', 'Value'],
-  ['pnl', 'Unrealized P&L'],
+  ['pnl', real ? 'Real P&L' : 'Unrealized P&L'],
   ['change', '24h change'],
   ['name', 'Name'],
 ];
@@ -91,7 +95,7 @@ export function nextSort(current: AssetSort, key: SortKey): AssetSort {
  * order back.
  */
 export function phoneSort(sort: AssetSort): AssetSort {
-  return phoneSorts.some(([key]) => key === sort.key)
+  return phoneSorts(false).some(([key]) => key === sort.key)
     ? { key: sort.key, direction: firstDirection(sort.key) }
     : defaultSort;
 }
@@ -107,11 +111,28 @@ export function shownProfit(asset: AssetValuation): { pnl: string | null; ratio:
 }
 
 /**
+ * The asset's profit after inflation under the chosen basis (INFL-REAL-PF); unknown when the
+ * server has no real reading for it, or an answer saved before it existed.
+ */
+export function realProfit(
+  asset: AssetValuation,
+  basis: InflationBasis,
+): { pnl: string | null; ratio: string | null } {
+  const real = asset.real?.[basis] ?? null;
+  return { pnl: real?.unrealizedPnl ?? null, ratio: real?.unrealizedReturnPercent ?? null };
+}
+
+/**
  * Assets in the chosen order. Assets no longer held go last, as the server ranks them, so a
  * holding without a price stays above them; then unknown figures (no price, no purchase price)
  * go last in either direction; ties keep the names A to Z. A name order is only names.
  */
-export function sortAssets(assets: readonly AssetValuation[], sort: AssetSort): AssetValuation[] {
+export function sortAssets(
+  assets: readonly AssetValuation[],
+  sort: AssetSort,
+  /** Order the profit column by the profit after inflation on this basis instead. */
+  real: InflationBasis | null = null,
+): AssetValuation[] {
   const byName = (a: AssetValuation, b: AssetValuation) =>
     a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
   const sign = sort.direction === 'asc' ? 1 : -1;
@@ -129,7 +150,7 @@ export function sortAssets(assets: readonly AssetValuation[], sort: AssetSort): 
       case 'avgBuy':
         return asset.averageBuyPrice;
       case 'pnl':
-        return shownProfit(asset).pnl;
+        return real === null ? shownProfit(asset).pnl : realProfit(asset, real).pnl;
       default:
         return asset.priceChange24hPercent;
     }
@@ -163,13 +184,21 @@ const PARTIAL_NOTE =
 const hasDeposits = (portfolio: PortfolioValuation) =>
   Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0;
 
+const NO_REAL_COST = 'a purchase price, exchange rate or inflation figure is missing for some lots';
+
 function Summary({
   portfolio,
   asked,
+  real: showReal,
+  basis,
 }: {
   portfolio: PortfolioValuation;
   asked: AccountingCurrency | undefined;
+  /** Under Real the cost and the profit are the ones after inflation, the nominal ones below. */
+  real: boolean;
+  basis: InflationBasis;
 }) {
+  const reading: RealReading | null = portfolio.real?.[basis] ?? null;
   const unpriced = portfolio.missingPriceCount;
   const unrated = portfolio.unratedDepositCount;
   const currency = portfolio.currency;
@@ -222,10 +251,37 @@ function Summary({
           </dd>
         </div>
         <div>
-          <dt>Cost basis</dt>
+          <dt>{showReal ? "Cost in today's money" : 'Cost basis'}</dt>
           <dd>
-            {partialCost ? amount(portfolio.knownCostSubtotal) : amount(portfolio.costBasis)}
-            {portfolio.costBasis === null && !partialCost && (
+            {showReal ? (
+              reading === null ? (
+                <>
+                  {DASH}
+                  <span className="portfolio-sub">{NO_REAL_COST}</span>
+                </>
+              ) : (
+                <>
+                  {amount(reading.costBasis)}
+                  {portfolio.costBasis !== null && (
+                    <span className="portfolio-sub">
+                      {amount(portfolio.costBasis)} paid +{' '}
+                      {amount(String(Number(reading.costBasis) - Number(portfolio.costBasis)))}{' '}
+                      inflation
+                    </span>
+                  )}
+                </>
+              )
+            ) : partialCost ? (
+              amount(portfolio.knownCostSubtotal)
+            ) : (
+              amount(portfolio.costBasis)
+            )}
+            {!showReal && reading !== null && portfolio.costBasis !== null && (
+              <span className="portfolio-sub">
+                {amount(reading.costBasis)} in today&apos;s money
+              </span>
+            )}
+            {!showReal && portfolio.costBasis === null && !partialCost && (
               <span className="portfolio-sub">
                 {amount(portfolio.knownCostSubtotal)} known,{' '}
                 {portfolio.unknownCostCount > 0
@@ -238,20 +294,40 @@ function Summary({
           </dd>
         </div>
         <div>
-          <dt>Unrealized P&amp;L</dt>
+          <dt>{showReal ? 'Real P&L' : 'Unrealized P&L'}</dt>
           <dd>
-            {partialProfit ? (
+            {showReal ? (
+              <>
+                <Signed
+                  value={reading?.unrealizedPnl ?? null}
+                  currency={currency}
+                  ratio={reading?.unrealizedReturnPercent ?? null}
+                />
+                {reading !== null && portfolio.unrealizedPnl !== null && (
+                  <span className="portfolio-sub">
+                    Nominal {money(portfolio.unrealizedPnl, currency, true)}
+                  </span>
+                )}
+              </>
+            ) : partialProfit ? (
               <Signed
                 value={portfolio.knownUnrealizedPnl}
                 currency={currency}
                 ratio={portfolio.knownUnrealizedReturnPercent}
               />
             ) : (
-              <Signed
-                value={portfolio.unrealizedPnl}
-                currency={currency}
-                ratio={portfolio.unrealizedReturnPercent}
-              />
+              <>
+                <Signed
+                  value={portfolio.unrealizedPnl}
+                  currency={currency}
+                  ratio={portfolio.unrealizedReturnPercent}
+                />
+                {reading?.unrealizedPnl != null && portfolio.unrealizedPnl !== null && (
+                  <span className="portfolio-sub">
+                    Real {money(reading.unrealizedPnl, currency, true)}
+                  </span>
+                )}
+              </>
             )}
           </dd>
         </div>
@@ -265,6 +341,14 @@ function Summary({
           </dd>
         </div>
       </dl>
+      {showReal && reading !== null && (
+        <p className="shell-note portfolio-real-note">
+          In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
+          <Link className="shell-link" to="/settings">
+            Settings
+          </Link>
+        </p>
+      )}
       {portfolio.stalePriceCount > 0 && (
         <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
           {portfolio.stalePriceCount === 1
@@ -293,6 +377,7 @@ function AssetsTable({
   chains,
   sort,
   onSort,
+  real,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
@@ -301,13 +386,15 @@ function AssetsTable({
   chains: TokenChains;
   sort: AssetSort;
   onSort: (key: SortKey) => void;
+  /** The basis of the profit after inflation when the Real view is on; null for nominal. */
+  real: InflationBasis | null;
 }) {
   return (
     <div className="ui-table-wrap">
       <table className="ui-table">
         <thead>
           <tr>
-            {sortColumns.map(([key, label]) => {
+            {sortColumns(real !== null).map(([key, label]) => {
               const active = sort.key === key ? sort.direction : null;
               return (
                 <th
@@ -378,12 +465,28 @@ function AssetsTable({
                 {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
               </td>
               <td className="ui-num">
-                <Signed
-                  value={shownProfit(asset).pnl}
-                  currency={currency}
-                  ratio={shownProfit(asset).ratio}
-                  inline
-                />
+                {real === null ? (
+                  <Signed
+                    value={shownProfit(asset).pnl}
+                    currency={currency}
+                    ratio={shownProfit(asset).ratio}
+                    inline
+                  />
+                ) : (
+                  <>
+                    <Signed
+                      value={realProfit(asset, real).pnl}
+                      currency={currency}
+                      ratio={realProfit(asset, real).ratio}
+                      inline
+                    />
+                    {realProfit(asset, real).pnl !== null && shownProfit(asset).pnl !== null && (
+                      <span className="portfolio-sub">
+                        nominal {money(shownProfit(asset).pnl, currency, true)}
+                      </span>
+                    )}
+                  </>
+                )}
               </td>
               <td className="ui-num">
                 <Change value={asset.priceChange24hPercent} />
@@ -397,8 +500,16 @@ function AssetsTable({
 }
 
 /** A phone row's unrealized P&L: money and percent, coloured by sign. */
-function Profit({ asset, currency }: { asset: AssetValuation; currency: AccountingCurrency }) {
-  const { pnl, ratio } = shownProfit(asset);
+function Profit({
+  asset,
+  currency,
+  real,
+}: {
+  asset: AssetValuation;
+  currency: AccountingCurrency;
+  real: InflationBasis | null;
+}) {
+  const { pnl, ratio } = real === null ? shownProfit(asset) : realProfit(asset, real);
   if (pnl === null) return DASH;
   const sign = tone(pnl);
   return (
@@ -416,11 +527,13 @@ function AssetsList({
   currency,
   asked,
   chains,
+  real,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   chains: TokenChains;
+  real: InflationBasis | null;
 }) {
   return (
     <ul className="ui-rows">
@@ -441,7 +554,7 @@ function AssetsList({
                 chains,
               )}
               amount={money(asset.value, currency)}
-              value={<Profit asset={asset} currency={currency} />}
+              value={<Profit asset={asset} currency={currency} real={real} />}
             />
           </Link>
         </li>
@@ -462,6 +575,10 @@ export default function PortfolioPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AssetSort>(defaultSort);
   const phone = useNarrowScreen();
+  const [view] = useValueView();
+  const [basis] = useInflationBasis();
+  // Under Real the profit column is the profit after inflation on the chosen basis.
+  const real = view === 'real' ? basis : null;
   // Add opens the kind picker; the kind then opens its own form, or the page it is added on.
   const [adding, setAdding] = useState<'pick' | Exclude<AddChoice, 'crypto'> | null>(null);
   const navigate = useNavigate();
@@ -501,7 +618,7 @@ export default function PortfolioPage() {
   // The table and the phone list share one order, Value largest first until another is chosen;
   // a phone shows only the orders its Sort by can name.
   const shown = phone ? phoneSort(sort) : sort;
-  const ordered = sortAssets(visible, shown);
+  const ordered = sortAssets(visible, shown, real);
   const paged = useInfinite(ordered, {
     resetKey: `${filter}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
   });
@@ -526,7 +643,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Portfolio" currency={portfolio?.currency} />
+      <PageHeader title="Portfolio" currency={portfolio?.currency} valueSwitch />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your portfolio. Your data is safe; try again.</p>
@@ -550,7 +667,7 @@ export default function PortfolioPage() {
               </button>
             </p>
           )}
-          <Summary portfolio={portfolio} asked={asked} />
+          <Summary portfolio={portfolio} asked={asked} real={real !== null} basis={basis} />
           {assets.length === 0 ? (
             <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
               Add a wallet, a bank deposit, a coin or anything else you want to track.
@@ -602,7 +719,7 @@ export default function PortfolioPage() {
                         setSort({ key, direction: firstDirection(key) });
                       }}
                     >
-                      {phoneSorts.map(([value, label]) => (
+                      {phoneSorts(real !== null).map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
@@ -614,6 +731,7 @@ export default function PortfolioPage() {
                     currency={portfolio.currency}
                     asked={asked}
                     chains={chains}
+                    real={real}
                   />
                 </>
               ) : (
@@ -625,6 +743,7 @@ export default function PortfolioPage() {
                   chains={chains}
                   sort={sort}
                   onSort={(key) => setSort((current) => nextSort(current, key))}
+                  real={real}
                 />
               )}
               {paged.more && <LoadMore {...paged.more} label="assets" />}

@@ -46,20 +46,15 @@ export function realProfit(
   return { invested: text, ...profitToDate(value, text, unpriced), estimated };
 }
 
-export interface PersonalReading extends RealProfit {
-  /** False when the currency has no own rate and the figure is the official one. */
-  ownRate: boolean;
-}
-
 /**
  * The reading at the owner's own rate. A currency with no own rate follows the official one,
  * as the Settings card says, so the figure is the official reading and says so.
  */
-export function personalReading(
-  official: RealProfit | null,
-  own: () => RealProfit | null,
+export function personalReading<T extends object>(
+  official: T | null,
+  own: () => T | null,
   hasRate: boolean,
-): PersonalReading | null {
+): (T & { ownRate: boolean }) | null {
   const reading = hasRate ? own() : official;
   return reading === null ? null : { ...reading, ownRate: hasRate };
 }
