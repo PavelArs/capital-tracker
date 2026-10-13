@@ -87,6 +87,34 @@ describe('READ-HOOK: the way a page reads', () => {
     expect(result.current.data).toBe('answer b');
   });
 
+  it('never shows the answer of the old arguments, not even for one render', async () => {
+    const read = source();
+    const shown: Array<string | null> = [];
+    const { rerender } = renderHook(
+      ({ id }) => {
+        const { data } = useCachedRead(read, id);
+        shown.push(data);
+        return data;
+      },
+      { initialProps: { id: 'a' } },
+    );
+    await act(async () => read.asks[0].resolve('answer a'));
+    shown.length = 0;
+    rerender({ id: 'b' });
+    expect(shown).not.toContain('answer a');
+    expect(shown[0]).toBeNull();
+  });
+
+  it('shows the kept answer of the new arguments at once', async () => {
+    const kept: Record<string, string> = { b: 'kept b' };
+    const read = { ...source(), last: vi.fn((id: string) => kept[id]) };
+    const { result, rerender } = renderHook(({ id }) => useCachedRead(read, id), {
+      initialProps: { id: 'a' },
+    });
+    rerender({ id: 'b' });
+    expect(result.current.data).toBe('kept b');
+  });
+
   it('drops an answer that arrives after the page was left', async () => {
     const read = source();
     const { result, unmount } = renderHook(() => useCachedRead(read));

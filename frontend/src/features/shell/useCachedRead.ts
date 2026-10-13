@@ -6,6 +6,13 @@ interface CachedSource<A extends unknown[], T> {
   load: (...args: A) => Promise<T>;
 }
 
+/** What the hook holds, and the arguments (as a key) it was read for. */
+interface Held<T> {
+  key: string;
+  data: T | null;
+  error: unknown;
+}
+
 export interface CachedRead<T> {
   /** The answer shown: the last one kept, then the one the server gave; null until there is one. */
   data: T | null;
@@ -34,21 +41,39 @@ export function useCachedRead<A extends unknown[], T>(
   ...args: A
 ): CachedRead<T> {
   const key = JSON.stringify(args);
-  const [data, setData] = useState<T | null>(() => source.last(...args) ?? null);
-  const [error, setError] = useState<unknown>(null);
+  const [state, setState] = useState<Held<T>>(() => ({
+    key,
+    data: source.last(...args) ?? null,
+    error: null,
+  }));
   const latest = useRef(0);
-  const asked = useRef(args);
-  asked.current = args;
+  const asked = useRef({ args, key });
+  asked.current = { args, key };
+
+  // The state belongs to the arguments it was read for. On the render where they change, it is
+  // not shown: the kept answer for the new arguments is (or nothing), before any effect runs.
+  const held: Held<T> =
+    state.key === key ? state : { key, data: source.last(...args) ?? null, error: null };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the arguments.
   const reload = useCallback(
     (quiet = false) => {
       const request = ++latest.current;
-      setError(null);
-      if (!quiet) setData(source.last(...asked.current) ?? null);
-      source.load(...asked.current).then(
-        (next) => request === latest.current && setData(next),
-        (failure) => request === latest.current && setError(failure),
+      const { args: now, key: nowKey } = asked.current;
+      setState((previous) => ({
+        key: nowKey,
+        data: quiet && previous.key === nowKey ? previous.data : (source.last(...now) ?? null),
+        error: null,
+      }));
+      source.load(...now).then(
+        (next) => request === latest.current && setState({ key: nowKey, data: next, error: null }),
+        (failure) =>
+          request === latest.current &&
+          setState((previous) => ({
+            key: nowKey,
+            data: previous.key === nowKey ? previous.data : null,
+            error: failure,
+          })),
       );
     },
     [source, key],
@@ -64,9 +89,8 @@ export function useCachedRead<A extends unknown[], T>(
 
   const replace = useCallback((next: T) => {
     latest.current++;
-    setError(null);
-    setData(next);
+    setState({ key: asked.current.key, data: next, error: null });
   }, []);
 
-  return { data, error, reload, replace };
+  return { data: held.data, error: held.error, reload, replace };
 }
