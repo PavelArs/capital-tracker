@@ -1811,12 +1811,12 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 62/);
+  assert.match(migrated.stdout, /Migrations applied: 63/);
   const db = source();
   try {
     await db.initialize();
-    const [owner] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('swap-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [owner] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('swap-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = await setup(db, s, owner.id);
     const before = await rawFingerprint(db, owner.id);

@@ -364,16 +364,16 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
   try {
     await post('reset', {});
     const [owner, stranger] = (
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('eth-owner@example.invalid','synthetic-not-a-login-hash',true),
-      ('eth-stranger@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('eth-owner@example.invalid','synthetic-not-a-login-hash'),
+      ('eth-stranger@example.invalid','synthetic-not-a-login-hash') RETURNING id`)
     ).map(({ id }) => id);
     const s = services(db);
     const account = async (name) =>
@@ -1761,7 +1761,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS ETH-MIGRATION fresh 36 applies once; down refuses');
+    console.log('PASS ETH-MIGRATION fresh 37 applies once; down refuses');
   } finally {
     await db.destroy();
   }

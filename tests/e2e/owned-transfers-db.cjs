@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict');
 const { fork, spawnSync } = require('node:child_process');
 const { createHash, randomUUID } = require('node:crypto');
+const { droppedTables, survivingRow } = require('./dropped-schema.cjs');
 const { existsSync, readdirSync } = require('node:fs');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
@@ -56,6 +57,7 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
   const rows = [];
   for (const { tablename } of tables) {
     if (excluded.includes(tablename)) continue;
+    if (droppedTables.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
     const row =
       withoutClassification && tablename === 'accounting_instruments'
@@ -65,7 +67,9 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
           : 'to_jsonb(t)';
     rows.push([
       tablename,
-      await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`),
+      await db.query(
+        `SELECT (${survivingRow(tablename, row)})::text AS row FROM "${tablename}" t ORDER BY row`,
+      ),
     ]);
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
@@ -192,8 +196,8 @@ async function populatedUpgrade() {
     await prior.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     await prior.runMigrations({ transaction: 'all' });
     assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 19);
-    const [{ id: owner }] = await prior.query(`INSERT INTO users(email,password,"emailVerified")
-      VALUES('transfer-upgrade@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [{ id: owner }] = await prior.query(`INSERT INTO users(email,password)
+      VALUES('transfer-upgrade@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(prior);
     const a = (
       await s.accounting.createAccount(owner, {
@@ -265,8 +269,8 @@ async function populatedUpgrade() {
       [owner],
     );
     const old = await fingerprint(prior, ['migrations'], true);
-    assert.match(migrate(previousDatabase), /Migrations applied: 43/);
-    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.match(migrate(previousDatabase), /Migrations applied: 44/);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     assert.equal(
       await fingerprint(
         prior,
@@ -1173,13 +1177,13 @@ async function main() {
     'Missing module is prerequisite failure, not behavioral RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     for (const table of [
       ...transferTables,
       'account_rewards',
@@ -1189,11 +1193,11 @@ async function main() {
     ])
       assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const [owner, other, activeCap, versionCap] =
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('owned-transfer-owner@example.invalid','synthetic-not-a-hash',true),
-      ('owned-transfer-other@example.invalid','synthetic-not-a-hash',true),
-      ('owned-transfer-active-cap@example.invalid','synthetic-not-a-hash',true),
-      ('owned-transfer-version-cap@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('owned-transfer-owner@example.invalid','synthetic-not-a-hash'),
+      ('owned-transfer-other@example.invalid','synthetic-not-a-hash'),
+      ('owned-transfer-active-cap@example.invalid','synthetic-not-a-hash'),
+      ('owned-transfer-version-cap@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const token = (
       await s.accounting.createInstrument(owner.id, {

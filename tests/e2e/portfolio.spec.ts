@@ -10,24 +10,12 @@ const owner = {
   email: 'owner@example.invalid',
   password: 'Synthetic-password-42!',
 };
-const foreignOwnerId = '22222222-2222-4222-8222-222222222222';
 const foreignWalletId = '33333333-3333-4333-8333-333333333333';
 const foreignAddress = 'synthetic-foreign-bitcoin-address';
 const bitcoinAddress = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
 const repositoryRoot = resolve(__dirname, '../..');
 const composeFile = resolve(repositoryRoot, 'tests/e2e/compose.yml');
 
-type WalletRow = {
-  id: string;
-  userId: string;
-  type: string;
-  address: string;
-  balance: string;
-  tokens: unknown;
-  lastUpdated: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
 type ProviderRequest = { method: string; url: string };
 
 function compose(...args: string[]): string {
@@ -36,38 +24,6 @@ function compose(...args: string[]): string {
     ['compose', '-p', 'capital-tracker-e2e', '-f', composeFile, ...args],
     { cwd: repositoryRoot, encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024 },
   ).trim();
-}
-
-function databaseRows(where: string): WalletRow[] {
-  const sql = `SELECT COALESCE(json_agg(wallet), '[]'::json) FROM (
-    SELECT id, "userId", type, address, balance::text AS balance, tokens,
-      "lastUpdated", "createdAt", "updatedAt"
-    FROM crypto_wallets WHERE ${where} ORDER BY id
-  ) wallet`;
-  return JSON.parse(
-    compose(
-      'exec',
-      '-T',
-      'postgres',
-      'psql',
-      '-X',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-U',
-      'capital_e2e',
-      '-d',
-      'capital_tracker_e2e',
-      '-At',
-      '-c',
-      sql,
-    ),
-  ) as WalletRow[];
-}
-
-function walletRows(id: string): WalletRow[] {
-  // IDs returned by the real backend must not become arbitrary SQL in the test oracle.
-  expect(id).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i);
-  return databaseRows(`id = '${id}'::uuid`);
 }
 
 function providerControl(path: string, body?: Record<string, number>): unknown {
@@ -120,8 +76,6 @@ test('ISO-003-A: HTTPS login is public and direct private API requests are denie
     { method: 'GET', path: '/api/accounting/portfolio' },
     { method: 'GET', path: '/api/prices' },
   ];
-  const foreignBefore = walletRows(foreignWalletId);
-  expect(foreignBefore).toHaveLength(1);
   for (const endpoint of endpoints) {
     await test.step(`${endpoint.method} ${endpoint.path}`, async () => {
       const response = await request.fetch(endpoint.path, {
@@ -135,7 +89,6 @@ test('ISO-003-A: HTTPS login is public and direct private API requests are denie
       expect(body).not.toContain('"balance"');
     });
   }
-  expect(walletRows(foreignWalletId)).toEqual(foreignBefore);
 });
 
 test('ISO-003-B: the browser authenticates using the real seeded password', async ({ page }) => {
@@ -147,14 +100,9 @@ test('ISO-003-B: the browser authenticates using the real seeded password', asyn
   ).toBeVisible();
 });
 
-test('ISO-004-C: the retired wallet API is gone and leaves legacy wallets untouched', async ({
-  page,
-}) => {
-  // The legacy crypto module is retired (M20); its rows stay and leave with the JSON backup.
+test('ISO-004-C: the retired wallet API is gone', async ({ page }) => {
+  // The legacy crypto module is retired (M20) and its table is dropped.
   const csrfToken = await loginThroughBrowser(page);
-  const before = walletRows(foreignWalletId);
-  expect(before).toHaveLength(1);
-  expect(before[0]).toMatchObject({ userId: foreignOwnerId, address: foreignAddress });
   const providerBefore = walletProviderRequests(foreignAddress);
 
   for (const [method, path] of [
@@ -173,7 +121,6 @@ test('ISO-004-C: the retired wallet API is gone and leaves legacy wallets untouc
       const body = await response.text();
       expect(body).not.toContain(foreignAddress);
       expect(body).not.toContain('"balance"');
-      expect(walletRows(foreignWalletId)).toEqual(before);
       expect(walletProviderRequests(foreignAddress)).toEqual(providerBefore);
     });
   }

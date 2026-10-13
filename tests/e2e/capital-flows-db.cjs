@@ -575,19 +575,19 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 62/);
+  assert.match(migrated.stdout, /Migrations applied: 63/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     const [owner, early, other, paid, unpriced, left] =
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('flows-owner@example.invalid','synthetic-not-a-hash',true),
-      ('flows-early@example.invalid','synthetic-not-a-hash',true),
-      ('flows-other@example.invalid','synthetic-not-a-hash',true),
-      ('flows-paid@example.invalid','synthetic-not-a-hash',true),
-      ('flows-unpriced@example.invalid','synthetic-not-a-hash',true),
-      ('flows-left@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('flows-owner@example.invalid','synthetic-not-a-hash'),
+      ('flows-early@example.invalid','synthetic-not-a-hash'),
+      ('flows-other@example.invalid','synthetic-not-a-hash'),
+      ('flows-paid@example.invalid','synthetic-not-a-hash'),
+      ('flows-unpriced@example.invalid','synthetic-not-a-hash'),
+      ('flows-left@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = {
       owner: owner.id,

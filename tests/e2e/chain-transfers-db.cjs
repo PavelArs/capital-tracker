@@ -360,8 +360,8 @@ async function reclassify(db, s, owner, f, transferId) {
 // or an account's records start after the transaction.
 async function refused(db, s) {
   stage = 'XFER-REFUSED synthetic second owner with a sender, a receiver and one send';
-  const [other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('refused-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [other] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('refused-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const owner = other.id;
   const sender = await account(s, owner, 'Sender');
   const receiver = await account(s, owner, 'Receiver');
@@ -474,8 +474,8 @@ async function refused(db, s) {
 // what went missing between them.
 async function proposed(db, s) {
   stage = 'XFER-PROPOSED synthetic third owner: a sender, a receiver, a send and a receipt';
-  const [third] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('proposed-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [third] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('proposed-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const owner = third.id;
   const sender = await account(s, owner, 'Exchange');
   const receiver = await account(s, owner, 'Hardware');
@@ -588,8 +588,8 @@ async function proposed(db, s) {
 // stays unanswered, and a leg that does not fit is refused.
 async function addressChoice(db, s) {
   stage = 'XFER-ADDRESS synthetic fourth owner: a send received at two addresses of one account';
-  const [fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('address-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [fourth] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('address-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const owner = fourth.id;
   const sender = await account(s, owner, 'Spending');
   const receiver = await account(s, owner, 'Hardware');
@@ -675,8 +675,8 @@ async function addressChoice(db, s) {
 // once the withdrawal is synced. A record naming another hash is left alone.
 async function bybitHash(db, s) {
   stage = 'BYBIT-LINK-HASH synthetic fourth owner: a Bybit account and an Arbitrum wallet';
-  const [fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('bybit-hash-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [fourth] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('bybit-hash-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const owner = fourth.id;
   const exchange = await account(s, owner, 'Bybit');
   const metamask = await account(s, owner, 'Metamask');
@@ -982,12 +982,12 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 62/);
+  assert.match(migrated.stdout, /Migrations applied: 63/);
   const db = source();
   try {
     await db.initialize();
-    const [owner] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('transfer-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [owner] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('transfer-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     await storedHistory(db);
     const f = await setup(db, s, owner.id);

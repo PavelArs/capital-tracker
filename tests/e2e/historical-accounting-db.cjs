@@ -321,12 +321,12 @@ async function carryAccount(svc, owner, instrument, name) {
 
 async function seed(source, svc) {
   const [ownerRow] = await source.query(
-    `INSERT INTO users(email,password,"emailVerified")
-     VALUES('historical-owner@example.invalid','synthetic-password-not-a-login-hash',true) RETURNING id`,
+    `INSERT INTO users(email,password)
+     VALUES('historical-owner@example.invalid','synthetic-password-not-a-login-hash') RETURNING id`,
   );
   const [otherRow] = await source.query(
-    `INSERT INTO users(email,password,"emailVerified")
-     VALUES('historical-other@example.invalid','synthetic-password-not-a-login-hash',true) RETURNING id`,
+    `INSERT INTO users(email,password)
+     VALUES('historical-other@example.invalid','synthetic-password-not-a-login-hash') RETURNING id`,
   );
   const owner = ownerRow.id;
   const other = otherRow.id;
@@ -796,7 +796,7 @@ async function main() {
     await source.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 62);
+    assert.equal(migrations.length, 63);
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');
     assert.equal(migrations[17].name, 'AddManualUsdPrices1790080000000');

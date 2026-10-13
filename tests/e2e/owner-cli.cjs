@@ -242,10 +242,6 @@ async function verifyExisting() {
         `INSERT INTO users(id,email,password) VALUES ($1,$2,'synthetic-legacy-credential')`,
         [userId, email],
       );
-      await client.query(
-        `INSERT INTO crypto_wallets("userId",type,address,balance) VALUES ($1,'bitcoin',$2,'1.250000000000000001')`,
-        [userId, 'synthetic-' + userId],
-      );
     }
     for (const args of [
       ['bootstrap', '--email', 'selected@example.invalid', '--password-stdin'],

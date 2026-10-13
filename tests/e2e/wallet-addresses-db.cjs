@@ -199,16 +199,16 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
   try {
     await post('reset', {});
     const [owner, stranger] = (
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('wallet-owner@example.invalid','synthetic-not-a-login-hash',true),
-      ('wallet-stranger@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('wallet-owner@example.invalid','synthetic-not-a-login-hash'),
+      ('wallet-stranger@example.invalid','synthetic-not-a-login-hash') RETURNING id`)
     ).map(({ id }) => id);
     const bitcoin = new BitcoinSyncAdapter(db, new EsploraClient());
     // The background switch is the hourly collection's (M3); the probe drives ticks itself.
@@ -1075,7 +1075,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS ADDR-MIGRATION fresh 32 applies once; both wallet migrations refuse down');
+    console.log('PASS ADDR-MIGRATION fresh 33 applies once; both wallet migrations refuse down');
   } finally {
     await db.destroy();
   }

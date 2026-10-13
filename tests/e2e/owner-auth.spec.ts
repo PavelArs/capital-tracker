@@ -64,7 +64,7 @@ function databaseFingerprint(excludedTables: string[] = []): string {
       (table) => table && !excludedTables.includes(table) && !derivedCacheTables.includes(table),
     );
   if (!excludedTables.includes('users')) expect(tables).toContain('users');
-  expect(tables).toContain('crypto_wallets');
+  expect(tables).toContain('manual_accounts');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
   return query(
     orderedFingerprintSql(

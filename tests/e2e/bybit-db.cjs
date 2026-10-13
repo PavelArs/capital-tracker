@@ -415,16 +415,16 @@ async function main() {
     'Synthetic server key must be mounted',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
   try {
     await post('reset', {});
     const [owner, stranger] = (
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('bybit-owner@example.invalid','synthetic-not-a-login-hash',true),
-      ('bybit-stranger@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('bybit-owner@example.invalid','synthetic-not-a-login-hash'),
+      ('bybit-stranger@example.invalid','synthetic-not-a-login-hash') RETURNING id`)
     ).map(({ id }) => id);
     const s = services(db);
     const account = async (name) =>
@@ -1940,7 +1940,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS BYBIT-MIGRATION fresh 62 applies once; no Bybit migration goes down');
+    console.log('PASS BYBIT-MIGRATION fresh 63 applies once; no Bybit migration goes down');
   } finally {
     await db.destroy();
   }

@@ -300,6 +300,11 @@ With inherited environment, `pnpm --dir backend migration:show` and
 `node backend/dist/migrate.js`. A migration connection needs DDL privileges;
 runtime privilege separation still requires final deployment configuration.
 
+`DropLegacySchema1797000000000` permanently deletes the retired legacy tables and unused
+columns, and the CLI does not take a backup. Only `scripts/manual-mvp-release.sh` dumps
+and restore-checks the database before it runs. Anywhere else, take your own `pg_dump`
+of the database first; the migration cannot be reversed.
+
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
 uuid-ossp and applies nineteen migrations: eight historic migrations, the additive
@@ -516,7 +521,9 @@ histories.
 
 M20 removed the display FX module with the other legacy modules (assets, liabilities, crypto,
 currencies, metrics). Its unit tests, DFX-API case and `display-fx-db` probe went with it; the
-migration and its tables stay, and the migration fixtures keep checking them.
+tables of all those modules and the unused `users` columns were dropped by
+`DropLegacySchema1797000000000`, and the migration fixtures compare every upgrade with the
+schema and rows that must survive it.
 
 These focused command examples assume the isolated acceptance environment is
 initialized where required; they do not provision it. Actual selected PostgreSQL

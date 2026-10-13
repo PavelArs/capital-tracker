@@ -56,9 +56,10 @@ using synthetic owner data and provider fixtures.
 
 The second M20 step removed the legacy backend modules (assets, liabilities, crypto,
 currencies, display FX, metrics) and with them the `display-fx-db` probe, which only exercised
-the removed display FX service. Their tables and rows stay and leave with the JSON backup
-(EXP-JSON, `owner-export-db`); LIR-UI and ISO-004-C check that the old APIs answer 404 and
-leave the legacy rows untouched. SES-002-A now writes `PUT /owner-settings` instead of the
+the removed display FX service. Their tables were dropped later by migration
+`DropLegacySchema1797000000000` (the `migrations` probe checks that they and the unused
+`users` columns are gone and everything else is preserved); LIR-UI and ISO-004-C check that
+the old APIs answer 404. SES-002-A now writes `PUT /owner-settings` instead of the
 removed currency visibility endpoint.
 
 The separate inventory identifies additional browser coverage not selected here:

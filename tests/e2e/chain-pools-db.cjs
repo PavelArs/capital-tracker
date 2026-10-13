@@ -676,8 +676,8 @@ const parts = {
 
 async function partial(db, s) {
   stage = 'POOL-PARTIAL synthetic wallet: 2 ETH bought, a 1 ETH deposit and a 0.5 ETH deposit';
-  const [owner] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-    ('pool-parts-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const [owner] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('pool-parts-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const ownerId = owner.id;
   const ledger = await account(s, ownerId, 'Ledger');
   const eth = await wallet(db, ownerId, ledger, 'ethereum', `0x${'12'.repeat(20)}`);
@@ -940,12 +940,12 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 62/);
+  assert.match(migrated.stdout, /Migrations applied: 63/);
   const db = source();
   try {
     await db.initialize();
-    const [owner] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('pool-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [owner] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('pool-owner@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = await setup(db, s, owner.id);
     const before = await rawFingerprint(db, owner.id);

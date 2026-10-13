@@ -18,7 +18,7 @@ const settings = {
 };
 const database = 'capital_tracker_inflation_e2e';
 const modulePath = '/app/backend/dist/inflation/inflation.service.js';
-const MIGRATIONS = 62;
+const MIGRATIONS = 63;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -292,9 +292,9 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('inflation-owner@example.invalid','synthetic-not-a-hash',true),
-      ('inflation-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('inflation-owner@example.invalid','synthetic-not-a-hash'),
+      ('inflation-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { InflationService } = require(modulePath);
     await collecting(db, InflationService);
     await reading(db, InflationService, owner.id, other.id);

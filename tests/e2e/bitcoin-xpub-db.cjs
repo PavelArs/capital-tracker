@@ -264,16 +264,16 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 62/);
+  assert.match(migrate(database), /Migrations applied: 63/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
   try {
     await post('reset', {});
     const [owner, stranger] = (
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('xpub-owner@example.invalid','synthetic-not-a-login-hash',true),
-      ('xpub-stranger@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('xpub-owner@example.invalid','synthetic-not-a-login-hash'),
+      ('xpub-stranger@example.invalid','synthetic-not-a-login-hash') RETURNING id`)
     ).map(({ id }) => id);
     const s = services(db);
     const account = async (name) =>
@@ -672,7 +672,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS XPUB-MIGRATION fresh 62 applies once; down refuses');
+    console.log('PASS XPUB-MIGRATION fresh 63 applies once; down refuses');
   } finally {
     await db.destroy();
   }

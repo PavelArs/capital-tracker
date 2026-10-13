@@ -598,20 +598,20 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 62/);
+  assert.match(migrated.stdout, /Migrations applied: 63/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     assert.deepEqual(
       (await db.query('SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2')).map(
         ({ name }) => name,
       ),
-      ['ClassOfAccount1796900000000', 'DailyDepositInterest1796800000000'],
+      ['DropLegacySchema1797000000000', 'ClassOfAccount1796900000000'],
     );
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('snapshot-owner@example.invalid','synthetic-not-a-hash',true),
-      ('snapshot-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+      ('snapshot-owner@example.invalid','synthetic-not-a-hash'),
+      ('snapshot-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = { owner: owner.id, other: other.id };
     await storedHistory(db);

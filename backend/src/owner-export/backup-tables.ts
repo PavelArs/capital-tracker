@@ -1,6 +1,6 @@
 // EXP-JSON: which tables the backup holds. Every table of the schema is listed exactly once,
-// here, in `legacyTables` or in `notBackedUp` with the reason; the owner-export probe refuses
-// a table that is in none, so a new table has to be placed on purpose.
+// here or in `notBackedUp` with the reason; the owner-export probe refuses a table that is in
+// neither, so a new table has to be placed on purpose.
 
 /** The owner's own records, each keyed by "ownerId", in restore order. */
 export const backupTables = [
@@ -54,22 +54,6 @@ export const backupTables = [
   'chain_transaction_classification_versions',
 ] as const;
 
-/**
- * Rows of the screens retired in M20, keyed by "userId", in restore order. Their tables stay in
- * the database untouched; the backup carries them so they leave with the owner's data. The
- * legacy currency list is shared, so only the currencies those rows name are included.
- */
-export const legacyTables = [
-  'currencies',
-  'capitals',
-  'assets',
-  'liabilities',
-  'crypto_wallets',
-  'reports',
-  'subscriptions',
-  'user_currency_preferences',
-] as const;
-
 export const notBackedUp: Record<string, string> = {
   // Secrets and sign-in state never leave the server.
   users: 'password hash',
@@ -80,13 +64,10 @@ export const notBackedUp: Record<string, string> = {
   auth_sessions: 'sessions',
   auth_request_limits: 'sign-in rate limits',
   password_reset_tokens: 'password reset links',
-  invitation_codes: 'legacy sign-up codes',
   // Market data shared by every owner, collected again from its providers.
   price_observations: 'market prices',
   fx_rates: 'Bank of Russia rates',
   inflation_months: 'official consumer price changes',
-  display_fx_collection: 'legacy display rates',
-  display_fx_observations: 'legacy display rates',
   // TOKEN-ANY: what the chain says about each token; the legs keep the token's contract.
   chain_tokens: 'token details read from the chain',
   // Rebuilt from the records above.

@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { randomUUID, createHash } = require('node:crypto');
+const { droppedTables, survivingRow } = require('./dropped-schema.cjs');
 const { spawnSync } = require('node:child_process');
 const { readdirSync } = require('node:fs');
 const { ConfigService } = require('@nestjs/config');
@@ -98,6 +99,7 @@ async function fingerprint(source, excluded = [], withoutClassification = false)
   for (const { tablename } of await source.query(
     "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename",
   )) {
+    if (droppedTables.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
     const row =
       withoutClassification && tablename === 'accounting_instruments'
@@ -108,7 +110,9 @@ async function fingerprint(source, excluded = [], withoutClassification = false)
     if (!excluded.includes(tablename))
       rows.push([
         tablename,
-        await source.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`),
+        await source.query(
+          `SELECT (${survivingRow(tablename, row)})::text AS row FROM "${tablename}" t ORDER BY row`,
+        ),
       ]);
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
@@ -135,7 +139,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 62/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 63/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
@@ -156,10 +160,10 @@ async function main() {
     for (const name of ['owner', 'foreign'])
       owners.push(
         (
-          await source.query(
-            'INSERT INTO users(email,password,"emailVerified") VALUES($1,$2,true) RETURNING id',
-            [`prices-${name}@example.invalid`, 'synthetic-not-a-login-hash'],
-          )
+          await source.query('INSERT INTO users(email,password) VALUES($1,$2) RETURNING id', [
+            `prices-${name}@example.invalid`,
+            'synthetic-not-a-login-hash',
+          ])
         )[0].id,
       );
     const accounts = new AccountingService(source);
@@ -193,7 +197,7 @@ async function main() {
       ],
     });
     const beforeUpgrade = await fingerprint(source, ['migrations'], true);
-    assert.match(migrate(database), /Migrations applied: 45/);
+    assert.match(migrate(database), /Migrations applied: 46/);
     assert.equal(
       await fingerprint(
         source,
@@ -258,7 +262,7 @@ async function main() {
       ),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }],
     );
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 62);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
     assert.equal(
       (await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n,
       0,

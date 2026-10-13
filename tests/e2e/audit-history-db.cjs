@@ -552,10 +552,10 @@ async function main() {
   try {
     await db.initialize();
     const [owner, other, third] =
-      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
-      ('history-owner@example.invalid','synthetic-not-a-hash',true),
-      ('history-other@example.invalid','synthetic-not-a-hash',true),
-      ('history-third@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      await db.query(`INSERT INTO users(email,password) VALUES
+      ('history-owner@example.invalid','synthetic-not-a-hash'),
+      ('history-other@example.invalid','synthetic-not-a-hash'),
+      ('history-third@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = { owner: owner.id, other: other.id, third: third.id };
     const seeded = await seed(db, s, f);

@@ -160,8 +160,8 @@ async function seedOwners(source) {
     'foreign',
   ]) {
     const [row] = await source.query(
-      `INSERT INTO users(email,password,"emailVerified")
-       VALUES($1,'synthetic-password-not-a-login-hash',true) RETURNING id`,
+      `INSERT INTO users(email,password)
+       VALUES($1,'synthetic-password-not-a-login-hash') RETURNING id`,
       [`flow-${name}@example.invalid`],
     );
     owners[name] = row.id;
@@ -842,7 +842,7 @@ async function main() {
     await source.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 62);
+    assert.equal(migrations.length, 63);
     assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');
     assert.equal(migrations[17].name, 'AddManualUsdPrices1790080000000');
     assert.equal(migrations[18].name, 'AddDailyDisplayFx1790090000000');
