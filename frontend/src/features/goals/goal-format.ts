@@ -85,6 +85,17 @@ export function sumText(value: string | null, currency: GoalCurrency): string {
   return `${cents < 0n ? '-' : ''}${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`;
 }
 
+/** A sum the owner entered, as entered: whole units stay whole, cents are not rounded away. */
+export function enteredText(value: string | null, currency: GoalCurrency): string {
+  if (value === null || !PLAIN.test(value)) return DASH;
+  const cents = toCents(value);
+  if (cents % 100n === 0n) return wholeMoney(value, currency);
+  const abs = cents < 0n ? -cents : cents;
+  const units = (abs / 100n).toString().replace(/\B(?=(\d{3})+$)/g, ',');
+  const rest = (abs % 100n).toString().padStart(2, '0');
+  return `${cents < 0n ? '-' : ''}${currencySymbols[currency]}${units}.${rest}`;
+}
+
 /**
  * A sum that has to be put in, in whole units rounded up so that the figure shown always reaches
  * what is needed: $1.40 is $2, not $1.
@@ -155,6 +166,7 @@ export const scenarioText: Record<GoalScenario['key'], string> = {
 export function verdict(goal: Goal): string {
   const money = (value: string | null) => sumText(value, goal.currency);
   const needed = (value: string | null) => neededText(value, goal.currency);
+  const entered = (value: string | null) => enteredText(value, goal.currency);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
   const baseReached = base ? reachedDate(goal, base) : null;
   const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
@@ -180,7 +192,7 @@ export function verdict(goal: Goal): string {
     case 'on-track': {
       if (planned !== null && baseReached) {
         const early = goal.deadline ? monthsFrom(baseReached, goal.deadline) : 0;
-        return `On track. ${money(planned)} a month gets there by ${monthYear(baseReached)}${
+        return `On track. ${entered(planned)} a month gets there by ${monthYear(baseReached)}${
           early > 0 ? `, ${span(early)} early` : ''
         }.`;
       }
@@ -198,8 +210,8 @@ export function verdict(goal: Goal): string {
         planned === null
           ? ''
           : base?.reachedOn
-            ? `; at ${money(planned)} it takes until ${monthYear(base.reachedOn)}`
-            : `; at ${money(planned)} it is not reached in 100 years`;
+            ? `; at ${entered(planned)} it takes until ${monthYear(base.reachedOn)}`
+            : `; at ${entered(planned)} it is not reached in 100 years`;
       return `${head}Reaching it by ${monthYear(goal.deadline)} needs ${needed(needs)} a month${tail}.`;
     }
     case 'overdue': {
@@ -207,7 +219,7 @@ export function verdict(goal: Goal): string {
       const left = `${money(remaining)} to go.`;
       const later =
         planned !== null && base?.reachedOn
-          ? ` At ${money(planned)} a month you get there in ${monthYear(base.reachedOn)}.`
+          ? ` At ${entered(planned)} a month you get there in ${monthYear(base.reachedOn)}.`
           : '';
       return `${date}${left}${later}`;
     }
@@ -215,7 +227,7 @@ export function verdict(goal: Goal): string {
       if (base?.reachedOn && base.monthsToTarget !== null) {
         const when = `${monthYear(base.reachedOn)}, in ${span(base.monthsToTarget)}`;
         return planned !== null
-          ? `At ${money(planned)} a month you get there in ${when}.`
+          ? `At ${entered(planned)} a month you get there in ${when}.`
           : `The portfolio alone gets there in ${when}.`;
       }
       return 'At this pace it takes more than 100 years. Put in more each month or expect a higher return.';
@@ -225,7 +237,7 @@ export function verdict(goal: Goal): string {
 
 /**
  * A projection against the sum: "$1,200 more", "$600 short" or "On the sum" when there is no gap,
- * with the cents when it is under half a unit; null when there is none or it is not a plain number.
+ * with the cents when it is under one unit; null when there is none or it is not a plain number.
  */
 export function againstTarget(
   gap: string | null,
@@ -235,7 +247,16 @@ export function againstTarget(
   const cents = toCents(gap);
   if (cents === 0n) return { text: 'On the sum', hint: 'Right on the sum', tone: 'level' };
   const short = cents > 0n;
-  const amount = sumText(gap.replace(/^-/, ''), currency);
+  const abs = short ? cents : -cents;
+  const bare = gap.replace(/^-/, '');
+  // Never better than it is: a shortfall rounds up, a surplus down, and under one unit the cents
+  // are written out.
+  const amount =
+    abs < 100n
+      ? `${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`
+      : short
+        ? neededText(bare, currency)
+        : wholeMoney(`${abs / 100n}.00`, currency);
   const text = `${amount} ${short ? 'short' : 'more'}`;
   return { text, hint: short ? text : `${text} than the sum`, tone: short ? 'short' : 'more' };
 }

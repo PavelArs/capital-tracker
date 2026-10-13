@@ -4,6 +4,7 @@ import {
   againstTarget,
   dateText,
   difference,
+  enteredText,
   monthsFrom,
   monthYear,
   neededText,
@@ -220,6 +221,15 @@ describe('GOAL-MONTHS whole months by the payment schedule', () => {
   });
 });
 
+describe('GOAL-ENTERED a sum as the owner entered it', () => {
+  it('keeps the cents of an entered sum and leaves whole sums whole', () => {
+    expect(enteredText('1.40', 'USD')).toBe('$1.40');
+    expect(enteredText('1234567.05', 'EUR')).toBe('€1,234,567.05');
+    expect(enteredText('150000.00', 'RUB')).toBe('₽150,000');
+    expect(enteredText(null, 'USD')).toBe('—');
+  });
+});
+
 describe('GOAL-AGAINST a projection against the sum', () => {
   it('says short, more, or on the sum when the gap rounds to nothing', () => {
     expect(againstTarget('600.00', 'USD')?.text).toBe('$600 short');
@@ -232,8 +242,9 @@ describe('GOAL-AGAINST a projection against the sum', () => {
     expect(againstTarget('0.49', 'USD')).toMatchObject({ text: '$0.49 short', tone: 'short' });
     expect(againstTarget('-0.49', 'USD')).toMatchObject({ text: '$0.49 more', tone: 'more' });
     expect(againstTarget('0.05', 'USD')?.text).toBe('$0.05 short');
-    expect(againstTarget('0.50', 'USD')?.text).toBe('$1 short');
-    expect(againstTarget('-0.50', 'USD')?.text).toBe('$1 more');
+    expect(againstTarget('0.50', 'USD')?.text).toBe('$0.50 short');
+    expect(againstTarget('1.40', 'USD')?.text).toBe('$2 short');
+    expect(againstTarget('-1.60', 'USD')?.text).toBe('$1 more');
   });
 
   it('shows no sum for a figure written in scientific notation', () => {

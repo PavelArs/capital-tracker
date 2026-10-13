@@ -13,6 +13,7 @@ import { GoalBar, GoalFigures } from './GoalsPage';
 import {
   againstTarget,
   dateText,
+  enteredText,
   monthYear,
   neededText,
   rateText,
@@ -170,6 +171,7 @@ export default function GoalPage() {
 
   const money = (value: string | null) => (goal ? sumText(value, goal.currency) : '');
   const needed = (value: string | null) => (goal ? neededText(value, goal.currency) : '');
+  const entered = (value: string | null) => (goal ? enteredText(value, goal.currency) : '');
   const base = goal?.scenarios.find((scenario) => scenario.key === 'base') ?? null;
   const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
   const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
@@ -246,7 +248,7 @@ export default function GoalPage() {
                   : `${percent}% of the sum${goal.progress.complete ? '' : '; some assets have no price'}`
               }
             />
-            <Stat label="Sum to reach" value={money(goal.targetAmount)} />
+            <Stat label="Sum to reach" value={entered(goal.targetAmount)} />
             <Stat
               label="Time left"
               value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
@@ -258,7 +260,7 @@ export default function GoalPage() {
             />
             <Stat
               label="You put in a month"
-              value={planned ? money(goal.monthlyContribution) : 'Nothing'}
+              value={planned ? entered(goal.monthlyContribution) : 'Nothing'}
               hint={
                 known && base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
                   ? `Needed for the date: ${needed(base.requiredMonthly)}`
@@ -318,7 +320,7 @@ export default function GoalPage() {
               <p className="shell-note">
                 <Icon name="info" className="shell-icon shell-icon--sm" /> A projection, not a
                 promise: the same return every year on the whole portfolio, with{' '}
-                {planned ? `${money(goal.monthlyContribution)} put in` : 'nothing put in'} once a
+                {planned ? `${entered(goal.monthlyContribution)} put in` : 'nothing put in'} once a
                 month, the first a month from {dateText(goal.asOf)}.
               </p>
             </section>
