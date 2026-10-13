@@ -75,7 +75,19 @@ export function monthsToReach(current: number, target: number, contribution: num
     const ratio = (target * rate + contribution) / floor;
     months = Math.log(ratio) / Math.log(1 + rate);
   }
-  return Number.isFinite(months) && months <= MAX_MONTHS ? months : null;
+  if (!Number.isFinite(months) || months > MAX_MONTHS) return null;
+  // A target reached exactly on a payment can come out a hair above the whole number through
+  // floating-point noise and round up to the next month: settle a near-whole answer by checking
+  // the plan itself, to a billionth of the target.
+  const whole = Math.round(months);
+  if (
+    whole > 0 &&
+    months > whole &&
+    months - whole < 1e-6 &&
+    futureValue(current, contribution, rate, whole, whole) >= target * (1 - 1e-9)
+  )
+    return whole;
+  return months;
 }
 
 /** The ISO day `months` whole months after `date`, a short month taking the last day. */

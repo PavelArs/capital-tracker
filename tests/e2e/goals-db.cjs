@@ -75,7 +75,7 @@ async function terms(db, service, owner, other) {
   await rejected(() => service.create(owner, { ...reserve(), deadline: inYears(0) }), 422);
   await rejected(() => service.create(owner, { ...reserve(), deadline: '2999-01-01' }), 422);
   // A lost answer is retried after the deadline it named has arrived: the goal, not a refusal.
-  const soon = { ...reserve(), deadline: inDays(1) };
+  const soon = { ...reserve(), deadline: inDays(3) };
   const soonMade = await service.create(owner, soon);
   await db.query('UPDATE savings_goals SET deadline = current_date - 1 WHERE id=$1', [soonMade.id]);
   assert.equal(
