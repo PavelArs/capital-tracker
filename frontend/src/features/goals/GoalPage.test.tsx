@@ -113,6 +113,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(within(rows[3]).getByText('₽350,000')).toBeInTheDocument();
     expect(within(rows[3]).getByText('May 2031')).toBeInTheDocument();
     expect(screen.getByText(/at 4 points less and more a year/i)).toBeInTheDocument();
+    expect(screen.getByText(/the first a month from Oct 13, 2026/)).toBeInTheDocument();
   });
 
   it('shows when a goal without a date is reached, in each case', async () => {

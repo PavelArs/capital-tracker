@@ -73,6 +73,21 @@ export function rateText(percent: string): string {
   return percent.includes('.') ? percent.replace(/0+$/, '').replace(/\.$/, '') : percent;
 }
 
+/**
+ * The date a case reaches the sum. The server counts whole months for it but projects the deadline
+ * in fractional ones, so a case that already has the sum by the deadline can come out a month late;
+ * it is then given as the deadline itself.
+ */
+export function reachedDate(goal: Goal, scenario: GoalScenario): string | null {
+  const { reachedOn } = scenario;
+  if (reachedOn === null || goal.deadline === null) return reachedOn;
+  const metByDeadline =
+    scenario.gap !== null && PLAIN.test(scenario.gap) && toCents(scenario.gap) <= 0n;
+  return metByDeadline && reachedOn.slice(0, 7) > goal.deadline.slice(0, 7)
+    ? goal.deadline
+    : reachedOn;
+}
+
 export const statusTone: Record<GoalStatus, BadgeTone> = {
   reached: 'pos',
   'on-track': 'pos',
@@ -101,6 +116,7 @@ export const scenarioText: Record<GoalScenario['key'], string> = {
 export function verdict(goal: Goal): string {
   const money = (value: string | null) => wholeMoney(value, goal.currency);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
+  const baseReached = base ? reachedDate(goal, base) : null;
   const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
   const { current, remaining } = goal.progress;
   switch (goal.status) {
@@ -115,9 +131,9 @@ export function verdict(goal: Goal): string {
         ? 'Nothing in this currency could be valued yet, so the progress is not known.'
         : 'Some assets have no price or rate, so the value is understated and the plan cannot be judged yet.';
     case 'on-track': {
-      if (planned !== null && base?.reachedOn) {
-        const early = goal.deadline ? monthsFrom(base.reachedOn, goal.deadline) : 0;
-        return `On track. ${money(planned)} a month gets there by ${monthYear(base.reachedOn)}${
+      if (planned !== null && baseReached) {
+        const early = goal.deadline ? monthsFrom(baseReached, goal.deadline) : 0;
+        return `On track. ${money(planned)} a month gets there by ${monthYear(baseReached)}${
           early > 0 ? `, ${span(early)} early` : ''
         }.`;
       }

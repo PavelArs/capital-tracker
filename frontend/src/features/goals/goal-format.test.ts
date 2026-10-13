@@ -7,6 +7,7 @@ import {
   monthYear,
   ordered,
   rateText,
+  reachedDate,
   span,
   timeLeft,
   verdict,
@@ -200,5 +201,21 @@ describe('GOAL-TIME-LEFT time left to the date', () => {
     expect(timeLeft('2027-01-13', '2026-10-13')).toBe('3 months');
     expect(timeLeft('2026-10-13', '2026-10-13')).toBeNull();
     expect(timeLeft('2026-10-12', '2026-10-13')).toBeNull();
+  });
+});
+
+describe('GOAL-REACHED-DATE when a case gets the sum', () => {
+  const late = scenario({ reachedOn: '2026-12-13', gap: '-480.00' });
+  const dated = goal({ deadline: '2026-11-30', scenarios: [late] });
+
+  it('gives the deadline when the sum is already there by it but the whole months run past', () => {
+    expect(reachedDate(dated, late)).toBe('2026-11-30');
+    expect(verdict(dated)).toContain('by Nov 2026');
+  });
+
+  it('keeps the server date when the case is short at the deadline', () => {
+    const short = scenario({ reachedOn: '2026-12-13', gap: '480.00' });
+    expect(reachedDate(goal({ deadline: '2026-11-30' }), short)).toBe('2026-12-13');
+    expect(reachedDate(goal({ deadline: null }), late)).toBe('2026-12-13');
   });
 });

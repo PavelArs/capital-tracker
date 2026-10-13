@@ -15,6 +15,7 @@ import {
   dateText,
   monthYear,
   rateText,
+  reachedDate,
   scenarioText,
   span,
   statusText,
@@ -50,8 +51,10 @@ function Cases({ goal }: { goal: Goal }) {
   const money = (value: string | null) => wholeMoney(value, goal.currency);
   const dated = goal.deadline !== null;
   const done = goal.status === 'reached';
-  const reached = (scenario: GoalScenario) =>
-    done ? 'Already' : scenario.reachedOn ? monthYear(scenario.reachedOn) : 'Over 100 years';
+  const reached = (scenario: GoalScenario) => {
+    const date = reachedDate(goal, scenario);
+    return done ? 'Already' : date ? monthYear(date) : 'Over 100 years';
+  };
   return (
     <div className="ui-table-wrap">
       <table className="ui-table goal-cases">
@@ -302,7 +305,7 @@ export default function GoalPage() {
                 <Icon name="info" className="shell-icon shell-icon--sm" /> A projection, not a
                 promise: the same return every year on the whole portfolio, with{' '}
                 {planned ? `${money(goal.monthlyContribution)} put in` : 'nothing put in'} once a
-                month, the first a month from today.
+                month, the first a month from {dateText(goal.asOf)}.
               </p>
             </section>
           )}
