@@ -163,6 +163,18 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(screen.queryByText(/Needed for the date/)).toBeNull();
   });
 
+  it('shows no projections for a reached goal while assets are unpriced', async () => {
+    answers({
+      ...open,
+      status: 'reached',
+      progress: { current: '120000.00', complete: false, percent: '100.00', remaining: '0.00' },
+    });
+    show(open);
+    expect(await screen.findByRole('heading', { name: 'Reserve B' })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByText(/need every asset priced/i)).toBeInTheDocument();
+  });
+
   it('says so when the goal does not exist', async () => {
     answers(open);
     show(dated);

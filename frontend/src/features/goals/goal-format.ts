@@ -58,6 +58,18 @@ export function wholeMoney(value: string | null, currency: GoalCurrency): string
   return `${negative && units > 0n ? '-' : ''}${currencySymbols[currency]}${grouped}`;
 }
 
+/**
+ * Like wholeMoney, but a sub-unit amount keeps its cents instead of reading $0: what a plan still
+ * has to put in, or what it falls short by, is not nothing.
+ */
+export function sumText(value: string | null, currency: GoalCurrency): string {
+  if (value === null || !PLAIN.test(value)) return DASH;
+  const cents = toCents(value);
+  const abs = cents < 0n ? -cents : cents;
+  if (abs === 0n || abs >= 50n) return wholeMoney(value, currency);
+  return `${cents < 0n ? '-' : ''}${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`;
+}
+
 /** The difference of two decimal strings, as a decimal string with two decimals. */
 export function difference(larger: string, smaller: string): string {
   const cents = toCents(larger) - toCents(smaller);
@@ -81,9 +93,9 @@ export function rateText(percent: string): string {
 export function reachedDate(goal: Goal, scenario: GoalScenario): string | null {
   const { reachedOn } = scenario;
   if (reachedOn === null || goal.deadline === null) return reachedOn;
-  // Only a real surplus counts: a shortfall that rounds to 0.00 is still a missed date.
-  const metByDeadline =
-    scenario.gap !== null && PLAIN.test(scenario.gap) && toCents(scenario.gap) < 0n;
+  // The server's unrounded verdict: the displayed gap is rounded to the cent and cannot tell a
+  // fraction of a cent either way.
+  const metByDeadline = scenario.metByDeadline === true;
   return metByDeadline && reachedOn.slice(0, 7) > goal.deadline.slice(0, 7)
     ? goal.deadline
     : reachedOn;
@@ -115,7 +127,7 @@ export const scenarioText: Record<GoalScenario['key'], string> = {
 
 /** The sentence under a goal: where it stands and what it takes, from the base case. */
 export function verdict(goal: Goal): string {
-  const money = (value: string | null) => wholeMoney(value, goal.currency);
+  const money = (value: string | null) => sumText(value, goal.currency);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
   const baseReached = base ? reachedDate(goal, base) : null;
   const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
@@ -196,13 +208,7 @@ export function againstTarget(
   const cents = toCents(gap);
   if (cents === 0n) return { text: 'On the sum', hint: 'Right on the sum', tone: 'level' };
   const short = cents > 0n;
-  const abs = short ? cents : -cents;
-  // Under half a unit the whole-unit figures would read $0 or contradict the sums shown beside
-  // it, so the cents are written out.
-  const amount =
-    abs < 50n
-      ? `${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`
-      : wholeMoney(gap.replace(/^-/, ''), currency);
+  const amount = sumText(gap.replace(/^-/, ''), currency);
   const text = `${amount} ${short ? 'short' : 'more'}`;
   return { text, hint: short ? text : `${text} than the sum`, tone: short ? 'short' : 'more' };
 }

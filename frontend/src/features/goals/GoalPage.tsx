@@ -20,9 +20,9 @@ import {
   span,
   statusText,
   statusTone,
+  sumText,
   timeLeft,
   verdict,
-  wholeMoney,
 } from './goal-format';
 import '../shell/shell-page.css';
 import './goals.css';
@@ -48,7 +48,7 @@ const bannerTone = {
 
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
 function Cases({ goal }: { goal: Goal }) {
-  const money = (value: string | null) => wholeMoney(value, goal.currency);
+  const money = (value: string | null) => sumText(value, goal.currency);
   const dated = goal.deadline !== null;
   const done = goal.status === 'reached';
   const reached = (scenario: GoalScenario) => {
@@ -166,15 +166,15 @@ export default function GoalPage() {
       </div>
     );
 
-  const money = (value: string | null) => (goal ? wholeMoney(value, goal.currency) : '');
+  const money = (value: string | null) => (goal ? sumText(value, goal.currency) : '');
   const base = goal?.scenarios.find((scenario) => scenario.key === 'base') ?? null;
   const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
   const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
   const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
   const gap = goal ? offsets(goal) : null;
   // With assets that have no price the value is understated, so the projections from it are not
-  // figures to act on; a reached goal is still reached.
-  const known = goal ? goal.progress.complete || goal.status === 'reached' : false;
+  // figures to act on, even for a goal that is already reached.
+  const known = goal ? goal.progress.complete : false;
   const against = known ? againstTarget(base?.gap ?? null, goal?.currency ?? 'USD') : null;
 
   return (

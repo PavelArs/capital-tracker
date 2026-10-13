@@ -9,6 +9,7 @@ import {
   rateText,
   reachedDate,
   span,
+  sumText,
   timeLeft,
   verdict,
   wholeMoney,
@@ -187,6 +188,16 @@ describe('GOAL-VERDICT with assets that have no price', () => {
   });
 });
 
+describe('GOAL-SUM a sum that is not nothing', () => {
+  it('keeps the cents of a sub-unit amount instead of reading $0', () => {
+    expect(sumText('0.40', 'USD')).toBe('$0.40');
+    expect(sumText('-0.05', 'USD')).toBe('-$0.05');
+    expect(sumText('0.00', 'USD')).toBe('$0');
+    expect(sumText('1234.50', 'EUR')).toBe('€1,235');
+    expect(sumText('9.27e+127', 'USD')).toBe('—');
+  });
+});
+
 describe('GOAL-AGAINST a projection against the sum', () => {
   it('says short, more, or on the sum when the gap rounds to nothing', () => {
     expect(againstTarget('600.00', 'USD')?.text).toBe('$600 short');
@@ -218,7 +229,7 @@ describe('GOAL-TIME-LEFT time left to the date', () => {
 });
 
 describe('GOAL-REACHED-DATE when a case gets the sum', () => {
-  const late = scenario({ reachedOn: '2026-12-13', gap: '-480.00' });
+  const late = scenario({ reachedOn: '2026-12-13', gap: '-480.00', metByDeadline: true });
   const dated = goal({ deadline: '2026-11-30', scenarios: [late] });
 
   it('gives the deadline when the sum is already there by it but the whole months run past', () => {
@@ -226,8 +237,10 @@ describe('GOAL-REACHED-DATE when a case gets the sum', () => {
     expect(verdict(dated)).toContain('by Nov 2026');
   });
 
-  it('keeps the server date for a shortfall that rounds to 0.00', () => {
-    const missed = scenario({ reachedOn: '2026-12-13', gap: '0.00' });
+  it('follows the unrounded verdict, whatever the rounded gap reads', () => {
+    const surplus = scenario({ reachedOn: '2026-12-13', gap: '0.00', metByDeadline: true });
+    expect(reachedDate(goal({ deadline: '2026-11-30' }), surplus)).toBe('2026-11-30');
+    const missed = scenario({ reachedOn: '2026-12-13', gap: '0.00', metByDeadline: false });
     expect(reachedDate(goal({ deadline: '2026-11-30' }), missed)).toBe('2026-12-13');
   });
 
