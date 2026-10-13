@@ -60,15 +60,29 @@ export function amount(value: string): string | null {
     : text;
 }
 
+/**
+ * Whether a trimmed name is one the server keeps (`label` in backend accounting input): some
+ * text, at most `maximum` characters, no control characters and no broken Unicode.
+ */
+const label = (text: string, maximum: number) => {
+  const characters = Array.from(text);
+  return (
+    characters.length > 0 &&
+    characters.length <= maximum &&
+    !characters.some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code < 32 || (code >= 127 && code <= 159);
+    }) &&
+    !/\p{Cs}/u.test(text)
+  );
+};
+
 export function brokerProblems(entry: BrokerEntry): Set<BrokerProblem> {
   const found = new Set<BrokerProblem>();
-  const broker = entry.broker.trim();
-  if (!broker || broker.length > MAX_BROKER_NAME || /[\r\n]/.test(broker)) found.add('broker');
+  if (!label(entry.broker.trim(), MAX_BROKER_NAME)) found.add('broker');
   entry.positions.forEach((position, index) => {
     if (blank(position)) return;
-    const ticker = position.ticker.trim();
-    if (!ticker || ticker.length > MAX_TICKER || /[\r\n]/.test(ticker))
-      found.add(`ticker-${index}`);
+    if (!label(position.ticker.trim(), MAX_TICKER)) found.add(`ticker-${index}`);
     if (amount(position.quantity) === null) found.add(`quantity-${index}`);
     if (amount(position.price) === null) found.add(`price-${index}`);
   });

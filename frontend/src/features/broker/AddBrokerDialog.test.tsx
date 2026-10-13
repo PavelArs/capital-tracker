@@ -4,7 +4,7 @@ import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { forgetReads } from '@api/read-cache';
-import { type AvailableQuantity, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type TradePage, type TradeReceipt, type TradeVersion, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -50,6 +50,12 @@ let setPrice: Mock<typeof manualPricesApi.set>;
 let removeAccount: Mock<typeof accountingApi.removeAccount>;
 let hideAsset: Mock<typeof hiddenAssetsApi.hide>;
 let showAsset: Mock<typeof hiddenAssetsApi.show>;
+let listTrades: Mock<typeof tradesApi.list>;
+const page = (instruments: string[]): TradePage => ({
+  journalRevision: instruments.length,
+  items: instruments.map((instrumentId) => ({ instrumentId }) as TradeVersion),
+  nextOffset: null,
+});
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
@@ -92,7 +98,8 @@ beforeEach(() => {
       }) as TradeReceipt,
   );
   vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
-  vi.spyOn(tradesApi, 'available').mockRejectedValue(new Error('offline'));
+  listTrades = vi.fn<typeof tradesApi.list>(async () => page([]));
+  vi.spyOn(tradesApi, 'list').mockImplementation(listTrades);
   setPrice = vi.fn<typeof manualPricesApi.set>(async () => ({}) as PriceReceipt);
   vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
   removeAccount = vi.fn<typeof accountingApi.removeAccount>(async () => undefined);
@@ -368,6 +375,7 @@ describe('BROKER-ADD Add broker account', () => {
     // Codex P1: a lost answer or a server error does not prove the buy was not saved.
     createTrade.mockRejectedValueOnce(refused(503));
     removeAccount.mockRejectedValueOnce(refused(409));
+    listTrades.mockResolvedValue(page([id(10)]));
     const user = userEvent.setup();
     const { dialog, onAdded, onClose } = open();
     await fill(user, dialog, {
@@ -486,7 +494,7 @@ describe('BROKER-ADD Add broker account', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await vi.waitFor(() =>
       expect(within(dialog).getByRole('alert')).toHaveTextContent(
-        'Could not hide the empty assets this form added',
+        'Could not undo everything this form added',
       ),
     );
     expect(onClose).not.toHaveBeenCalled();
@@ -567,52 +575,118 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
-  it('hides a later position whose buy got no answer once the account shows none of it', async () => {
-    // Codex P2: the account holding none of the asset settles whether its buy was saved.
-    const available = vi.spyOn(tradesApi, 'available');
-    const twoPositions = async () => {
-      createTrade.mockImplementationOnce(async (_account, command) => ({
-        accountId: id(2),
-        journalRevision: 1,
-        trade: {
-          quantity: command.quantity,
-          grossUsd: '100',
-          occurredAt: command.occurredAt,
-        } as TradeReceipt['trade'],
-      }));
-      createTrade.mockRejectedValueOnce(refused(503));
-      const user = userEvent.setup();
-      const rendered = open();
-      await user.click(within(rendered.dialog).getByRole('button', { name: 'Add position' }));
-      await fill(user, rendered.dialog, {
-        Broker: 'Sample Broker',
-        'Ticker or name 1': 'VWRA',
-        'Quantity 1': '30',
-        'Price 1': '142.10',
-        'Ticker or name 2': 'BOND',
-        'Quantity 2': '5',
-        'Price 2': '90',
-      });
-      await user.click(within(rendered.dialog).getByRole('button', { name: 'Add account' }));
-      await within(rendered.dialog).findByRole('alert');
-      await user.click(
-        within(rendered.dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
-      );
-      await vi.waitFor(() => expect(rendered.onAdded).toHaveBeenCalled());
-    };
-    available.mockResolvedValueOnce({ quantity: '0' } as AvailableQuantity);
-    await twoPositions();
-    expect(available).toHaveBeenCalledWith(
-      id(2),
-      expect.objectContaining({ instrumentId: id(11) }),
+  const twoPositions = async () => {
+    createTrade.mockImplementationOnce(async (_account, command) => ({
+      accountId: id(2),
+      journalRevision: 1,
+      trade: {
+        quantity: command.quantity,
+        grossUsd: '100',
+        occurredAt: command.occurredAt,
+      } as TradeReceipt['trade'],
+    }));
+    createTrade.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const rendered = open();
+    await user.click(within(rendered.dialog).getByRole('button', { name: 'Add position' }));
+    await fill(user, rendered.dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+      'Ticker or name 2': 'BOND',
+      'Quantity 2': '5',
+      'Price 2': '90',
+    });
+    await user.click(within(rendered.dialog).getByRole('button', { name: 'Add account' }));
+    await within(rendered.dialog).findByRole('alert');
+    await user.click(
+      within(rendered.dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
     );
+    await vi.waitFor(() => expect(rendered.onAdded).toHaveBeenCalled());
+  };
+
+  it('hides a later position whose buy got no answer when the account has no trade of it', async () => {
+    // Codex P2: the account's trades settle whether the buy was saved.
+    listTrades.mockResolvedValue(page([id(10)]));
+    await twoPositions();
+    expect(listTrades).toHaveBeenCalledWith(id(2));
     expect(hideAsset.mock.calls).toEqual([[id(11)]]);
     expect(removeAccount).not.toHaveBeenCalled();
+  });
 
-    cleanup();
-    hideAsset.mockClear();
-    available.mockResolvedValueOnce({ quantity: '5' } as AvailableQuantity);
+  it('keeps a later position whose buy was saved, even once sold again', async () => {
+    // Codex P2: a balance sold back to zero still has its buy, so the asset stays.
+    listTrades.mockResolvedValue(page([id(10), id(11), id(11)]));
     await twoPositions();
     expect(hideAsset).not.toHaveBeenCalled();
+  });
+
+  it('stays open when what was made cannot be found again, and retries on the next close', async () => {
+    // Codex P2: a lost answer to finding the asset again must not be taken as nothing made.
+    createAsset.mockRejectedValueOnce(refused(503)).mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'Could not undo everything this form added',
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(createAsset).toHaveBeenCalledTimes(3);
+    expect(hideAsset.mock.calls).toEqual([[id(10)]]);
+  });
+
+  it('takes a lost answer to removing the account as settled once it is gone', async () => {
+    // Codex P2: removal may have worked although no answer came back; a 404 then proves it.
+    createTrade.mockRejectedValueOnce(refused(503));
+    removeAccount.mockRejectedValueOnce(refused(503)).mockRejectedValueOnce(refused(404));
+    const user = userEvent.setup();
+    const { dialog, onAdded, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await within(dialog).findByText(/Could not undo everything this form added/);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(removeAccount).toHaveBeenCalledTimes(2);
+    expect(hideAsset.mock.calls.at(-1)).toEqual([id(10)]);
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it('closes on the second try even if something still cannot be undone', async () => {
+    createTrade.mockRejectedValueOnce(refused(400));
+    hideAsset.mockRejectedValue(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await within(dialog).findByText(/Could not undo everything this form added/);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });

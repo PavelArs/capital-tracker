@@ -50,6 +50,18 @@ describe('BROKER-ADD the entry', () => {
     ).toEqual(new Set(['ticker-2', 'quantity-2', 'price-2']));
   });
 
+  it('refuses names the server would refuse', () => {
+    // Codex P2: the server refuses any control character, not only line breaks.
+    const ticker = (text: string) =>
+      brokerProblems(entry({ positions: [{ ticker: text, quantity: '1', price: '1' }] }));
+    expect(ticker(' VWRA\t')).toEqual(new Set());
+    expect(ticker('VW\tRA')).toEqual(new Set(['ticker-0']));
+    expect(ticker('VW\u0085RA')).toEqual(new Set(['ticker-0']));
+    expect(ticker('VW\uD800RA')).toEqual(new Set(['ticker-0']));
+    expect(ticker('😀'.repeat(120))).toEqual(new Set());
+    expect(brokerProblems(entry({ broker: 'Sample\u0007Broker' }))).toEqual(new Set(['broker']));
+  });
+
   it('keeps amounts within what the server stores, alone and multiplied', () => {
     // Codex P2: the server keeps 48 whole digits and 30 places.
     const row = (quantity: string, price = '1') =>

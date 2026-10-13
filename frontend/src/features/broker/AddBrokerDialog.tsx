@@ -131,6 +131,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     holdings: [],
   });
   const startedAt = useRef<Date | null>(null);
+  const retried = useRef(false);
   const [locked, setLocked] = useState(false);
   const id = useId();
   const first = useRef<HTMLInputElement>(null);
@@ -140,15 +141,27 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // A request whose answer was lost is asked again under the same id, which finds what it made.
   // An asset this form made, or showed again, without a saved buy would show as an empty asset
   // in Portfolio, so it is hidden. A buy whose answer was lost may have been saved: its asset is
-  // hidden only once the account is gone (the server removes only an account without buys) or
-  // holds none of it. If hiding fails, the form stays open so that closing again retries.
+  // hidden only once the account is gone (the server removes only an account without trades) or
+  // has no trade in it at all. Whatever cannot be settled now keeps the form open, so closing
+  // again retries; a second failure closes it and leaves the rest as it is.
   const finish = async () => {
     const done = saved.current;
     setSaving(true);
     setError(null);
-    await Promise.allSettled(
+    let settled = true;
+    // Whether a failed request got a definite answer; without one, nothing is settled yet.
+    const definite = (caught: unknown) => {
+      const code = status(caught);
+      if (code === undefined || code >= 500) settled = false;
+      return code !== undefined && code < 500;
+    };
+    await Promise.all(
       done.holdings.map(async (step) => {
-        if (!step.asset && step.making) step.asset = await portfolioAssetsApi.create(step.making);
+        if (!step.asset && step.making)
+          step.asset = await portfolioAssetsApi.create(step.making).catch((caught) => {
+            if (definite(caught)) step.making = null;
+            return null;
+          });
       }),
     );
     if (!done.accountId && done.accountUnsure)
@@ -157,42 +170,52 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           done.accountUnsure = false;
           return account.id;
         },
-        () => null,
+        (caught) => {
+          if (definite(caught)) done.accountUnsure = false;
+          return null;
+        },
       );
     const kept = done.holdings.some((step) => step.receipt);
-    if (
-      !kept &&
-      done.accountId &&
-      (await accountingApi.removeAccount(done.accountId).then(
+    // A 404 for the account this form made means it is already gone.
+    if (!kept && done.accountId) {
+      const removed = await accountingApi.removeAccount(done.accountId).then(
         () => true,
-        () => false,
-      ))
-    )
-      done.accountId = null;
-    const bare = !kept && !done.accountId;
+        (caught) => definite(caught) && status(caught) === 404,
+      );
+      if (removed) done.accountId = null;
+    }
+    const bare = !kept && !done.accountId && !done.accountUnsure;
     const accountId = done.accountId;
-    const empty = async (step: SavedHolding) => {
-      if (!step.asset || !(step.making || step.wasHidden) || step.receipt) return false;
-      if (!step.unsure || bare) return true;
-      if (!accountId) return false;
-      const held = await tradesApi
-        .available(accountId, { instrumentId: step.asset.id, at: new Date().toISOString() })
-        .then(
-          ({ quantity }) => /[1-9]/.test(quantity),
-          () => true,
-        );
-      return !held;
-    };
-    const hiding = await Promise.all(
-      done.holdings.map(async (step) => (step.asset && (await empty(step)) ? [step.asset.id] : [])),
-    );
+    const doubtful = done.holdings.some((step) => step.unsure && !step.receipt);
+    const traded =
+      doubtful && !bare && accountId
+        ? await tradesApi.list(accountId).then(
+            (page) =>
+              page.nextOffset === null
+                ? new Set(page.items.map((trade) => trade.instrumentId))
+                : null,
+            (caught) => {
+              definite(caught);
+              return null;
+            },
+          )
+        : null;
+    const empty = (step: SavedHolding) =>
+      !!step.asset &&
+      !!(step.making || step.wasHidden) &&
+      !step.receipt &&
+      (!step.unsure || bare || (traded !== null && !traded.has(step.asset.id)));
     const hidden = await Promise.allSettled(
-      hiding.flat().map((asset) => hiddenAssetsApi.hide(asset)),
+      done.holdings.flatMap((step) =>
+        step.asset && empty(step) ? [hiddenAssetsApi.hide(step.asset.id)] : [],
+      ),
     );
     // An asset that is gone needs no hiding.
-    if (hidden.some((result) => result.status === 'rejected' && status(result.reason) !== 404)) {
+    for (const result of hidden) if (result.status === 'rejected') definite(result.reason);
+    if (!settled && !retried.current) {
+      retried.current = true;
       setError(
-        'Could not hide the empty assets this form added, so Portfolio would show them. Close the form again to retry.',
+        'Could not undo everything this form added. Close the form again to retry; if that fails too, it closes and leaves the rest as it is.',
       );
       setSaving(false);
       return;
