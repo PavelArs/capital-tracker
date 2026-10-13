@@ -834,6 +834,33 @@ describe('Portfolio after inflation', () => {
     expect(summary()).toHaveTextContent('+ $2.00 inflation');
   });
 
+  it('PF-REAL-SORT-EXACT orders profits a float cannot tell apart', async () => {
+    const user = userEvent.setup();
+    setValueView('real');
+    const big = (name: string, pnl: string) => ({
+      ...realBitcoin,
+      instrumentId: `id-${name}`,
+      name,
+      symbol: name,
+      real: { official: read('1', pnl, '1'), personal: null },
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([big('Aaa', '9007199254740992'), big('Zzz', '9007199254740993')], {
+        real: withReal().real,
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Aaa/ });
+    await user.click(screen.getByRole('button', { name: 'Real P&L' }));
+    const order = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => row.textContent?.slice(0, 3));
+    // The first click is largest first; the floats are equal, so only an exact compare puts Zzz first.
+    expect(order()).toEqual(['Zzz', 'Aaa']);
+  });
+
   it('PF-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(

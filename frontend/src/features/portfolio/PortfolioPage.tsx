@@ -27,7 +27,7 @@ import Allocation from './Allocation';
 import { assetCaption, Change, Signed } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
-import { inflationAdjustment } from './real-cost';
+import { compareDecimals, inflationAdjustment } from './real-cost';
 import '../shell/shell-page.css';
 import './portfolio.css';
 import EmptyState from '@/ui/EmptyState';
@@ -164,7 +164,7 @@ export function sortAssets(
     if (left === null || right === null) {
       return left === right ? byName(a, b) : left === null ? 1 : -1;
     }
-    return sign * (Number(left) - Number(right)) || byName(a, b);
+    return sign * compareDecimals(left, right) || byName(a, b);
   });
 }
 
