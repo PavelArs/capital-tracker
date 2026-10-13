@@ -880,6 +880,24 @@ describe('Portfolio after inflation', () => {
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
   });
 
+  it('PF-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: { official: null, personal: null } }], {
+        costBasis: null,
+        unrealizedPnl: null,
+        knownCostSubtotal: '40000',
+        unknownCostCount: 1,
+        real: { official: null, personal: null },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent("Cost in today's money—");
+    expect(summary()).toHaveTextContent('$40,000.00 known');
+    expect(summary()).not.toHaveTextContent('paid');
+  });
+
   it('PF-REAL-UNAVAILABLE names the account history that starts later, not a missing lot figure', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
@@ -953,6 +971,27 @@ describe('Portfolio after inflation', () => {
     // Both nominal figures stay on screen beside the dashes.
     expect(position()).toHaveTextContent('$66,000.00 paid');
     expect(position()).toHaveTextContent('Nominal +$30,000.00');
+  });
+
+  it('ASSET-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        {
+          ...bitcoin,
+          costBasis: null,
+          unrealizedPnl: null,
+          knownCostSubtotal: '40000',
+          unknownCostQuantity: '0.5',
+          real: { official: null, personal: null },
+        },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost in today's money—");
+    expect(position()).toHaveTextContent('$40,000.00 known');
+    expect(position()).not.toHaveTextContent('paid');
   });
 
   it('ASSET-REAL-SOLD does not call a fully sold asset incomplete', async () => {

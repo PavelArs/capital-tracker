@@ -435,8 +435,14 @@ function AssetDetails({
                       <span className="portfolio-sub">
                         a purchase price, exchange rate or inflation figure is missing for some lots
                       </span>
-                      {asset.costBasis !== null && (
+                      {asset.costBasis !== null ? (
                         <span className="portfolio-sub">{amount(asset.costBasis)} paid</span>
+                      ) : (
+                        Number(asset.knownCostSubtotal) > 0 && (
+                          <span className="portfolio-sub">
+                            {amount(asset.knownCostSubtotal)} known
+                          </span>
+                        )
                       )}
                     </>
                   )

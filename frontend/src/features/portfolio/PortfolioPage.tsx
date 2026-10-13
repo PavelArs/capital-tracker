@@ -262,8 +262,14 @@ function Summary({
                   <span className="portfolio-sub">
                     {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
                   </span>
-                  {portfolio.costBasis !== null && (
+                  {portfolio.costBasis !== null ? (
                     <span className="portfolio-sub">{amount(portfolio.costBasis)} paid</span>
+                  ) : (
+                    Number(portfolio.knownCostSubtotal) > 0 && (
+                      <span className="portfolio-sub">
+                        {amount(portfolio.knownCostSubtotal)} known
+                      </span>
+                    )
                   )}
                 </>
               ) : (
