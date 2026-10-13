@@ -887,6 +887,7 @@ describe('Portfolio after inflation', () => {
         costBasis: null,
         unrealizedPnl: null,
         knownCostSubtotal: '40000',
+        knownUnrealizedPnl: '12000',
         unknownCostCount: 1,
         real: { official: null, personal: null },
       }),
@@ -895,6 +896,7 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(summary()).toHaveTextContent("Cost in today's money—");
     expect(summary()).toHaveTextContent('$40,000.00 known');
+    expect(summary()).toHaveTextContent('Nominal +$12,000.00 known');
     expect(summary()).not.toHaveTextContent('paid');
   });
 
@@ -982,6 +984,7 @@ describe('Portfolio after inflation', () => {
           costBasis: null,
           unrealizedPnl: null,
           knownCostSubtotal: '40000',
+          knownUnrealizedPnl: '12000',
           unknownCostQuantity: '0.5',
           real: { official: null, personal: null },
         },
@@ -991,6 +994,7 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent("Cost in today's money—");
     expect(position()).toHaveTextContent('$40,000.00 known');
+    expect(position()).toHaveTextContent('Nominal +$12,000.00 known');
     expect(position()).not.toHaveTextContent('paid');
   });
 

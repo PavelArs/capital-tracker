@@ -315,10 +315,16 @@ function Summary({
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
-                {portfolio.unrealizedPnl !== null && (
+                {portfolio.unrealizedPnl !== null ? (
                   <span className="portfolio-sub">
                     Nominal {money(portfolio.unrealizedPnl, currency, true)}
                   </span>
+                ) : (
+                  partialProfit && (
+                    <span className="portfolio-sub">
+                      Nominal {money(portfolio.knownUnrealizedPnl, currency, true)} known
+                    </span>
+                  )
                 )}
               </>
             ) : partialProfit ? (
