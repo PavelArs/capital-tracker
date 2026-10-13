@@ -5,7 +5,7 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
-import { today } from './goal-format';
+import { rateText, today } from './goal-format';
 import '../transactions/transactions.css';
 import './goals.css';
 
@@ -192,7 +192,7 @@ export function GoalDialog({
   const [currency, setCurrency] = useState<GoalCurrency>(goal?.currency ?? defaultCurrency);
   const [target, setTarget] = useState(goal ? goal.targetAmount : '');
   const [deadline, setDeadline] = useState(goal?.deadline ?? '');
-  const [rate, setRate] = useState(goal ? goal.expectedReturnPercent.replace(/\.?0+$/, '') : '8');
+  const [rate, setRate] = useState(goal ? rateText(goal.expectedReturnPercent) : '8');
   const [monthly, setMonthly] = useState(
     goal?.monthlyContribution && Number(goal.monthlyContribution) > 0
       ? goal.monthlyContribution

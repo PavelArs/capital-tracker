@@ -220,6 +220,22 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     );
   });
 
+  it.each([
+    ['10.0000', '10'],
+    ['100', '100'],
+    ['0.0000', '0'],
+  ])('fills a whole-number return of %s without losing digits', async (stored, shown) => {
+    const user = userEvent.setup();
+    vi.spyOn(goalsApi, 'list').mockResolvedValue(
+      list([{ ...flat, expectedReturnPercent: stored }]),
+    );
+    open();
+    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
+    expect(within(dialog).getByLabelText('Expected return, % a year')).toHaveValue(shown);
+  });
+
   it('deletes a goal after asking', async () => {
     const user = userEvent.setup();
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));
