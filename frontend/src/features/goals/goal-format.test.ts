@@ -8,6 +8,7 @@ import {
   ordered,
   rateText,
   span,
+  timeLeft,
   verdict,
   wholeMoney,
 } from './goal-format';
@@ -183,5 +184,13 @@ describe('GOAL-AGAINST a projection against the sum', () => {
   it('shows no sum for a figure written in scientific notation', () => {
     expect(wholeMoney('9.27e+127', 'USD')).toBe('—');
     expect(againstTarget('9.27e+127', 'USD')).toBeNull();
+  });
+});
+
+describe('GOAL-TIME-LEFT time left to the date', () => {
+  it('counts from the day of the forecast, not the browser date', () => {
+    expect(timeLeft('2027-01-13', '2026-10-13')).toBe('3 months');
+    expect(timeLeft('2026-10-13', '2026-10-13')).toBeNull();
+    expect(timeLeft('2026-10-12', '2026-10-13')).toBeNull();
   });
 });

@@ -175,10 +175,13 @@ export function againstTarget(
   return { text, hint: short ? text : `${text} than the sum`, tone: short ? 'short' : 'more' };
 }
 
-/** How long is left until a date: "2 years 3 months", or null once it has passed. */
-export function timeLeft(deadline: string): string | null {
-  const months = monthsFrom(today(), deadline);
-  return months < 0 || (months === 0 && deadline <= today()) ? null : span(months);
+/**
+ * How long is left until a date: "2 years 3 months", or null once it has passed. Counted from the
+ * day the forecast was made, so it agrees with the status next to it.
+ */
+export function timeLeft(deadline: string, asOf: string = today()): string | null {
+  const months = monthsFrom(asOf, deadline);
+  return months < 0 || (months === 0 && deadline <= asOf) ? null : span(months);
 }
 
 /** Open goals first, by date (none last), then the reached ones. */

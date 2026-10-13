@@ -166,7 +166,7 @@ export default function GoalPage() {
   const money = (value: string | null) => (goal ? wholeMoney(value, goal.currency) : '');
   const base = goal?.scenarios.find((scenario) => scenario.key === 'base') ?? null;
   const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
-  const left = goal?.deadline ? timeLeft(goal.deadline) : null;
+  const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
   const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
   const gap = goal ? offsets(goal) : null;
   const against = againstTarget(base?.gap ?? null, goal?.currency ?? 'USD');
