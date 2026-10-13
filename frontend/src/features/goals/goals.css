@@ -53,8 +53,19 @@
   min-width: 0;
 }
 
-.goal-card__title b {
+.goal-card__title b,
+.goal-card__name {
   overflow-wrap: anywhere;
+}
+
+.goal-card__name {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.goal-card__name:hover {
+  text-decoration: underline;
 }
 
 .goal-card__title small {
@@ -150,4 +161,101 @@
 
 .goal-rate__input {
   width: 96px;
+}
+
+/* The goal page (GOAL-PAGE). */
+.goal-back {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.goal-head {
+  display: grid;
+  gap: 12px;
+}
+
+.goal-head__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.goal-head__top small {
+  color: var(--ink-3);
+}
+
+.goal-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--sp-4);
+}
+
+.goal-stat {
+  display: grid;
+  gap: 4px;
+}
+
+.goal-stat__label,
+.goal-stat__hint {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.goal-stat__value {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.goal-cases__base td {
+  background: var(--sunken);
+}
+
+.goal-pos {
+  color: var(--pos);
+}
+
+.goal-neg {
+  color: var(--neg);
+}
+
+/* On a phone each case is a block of labelled lines instead of a table that scrolls sideways. */
+@media (max-width: 640px) {
+  .goal-cases thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .goal-cases,
+  .goal-cases tbody,
+  .goal-cases tr {
+    display: block;
+  }
+
+  .goal-cases tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .goal-cases td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: 4px 0;
+    border: 0;
+    text-align: right;
+  }
+
+  .goal-cases td[data-label]::before {
+    content: attr(data-label);
+    color: var(--ink-3);
+    text-align: left;
+  }
+
+  .goal-cases__case {
+    text-align: left;
+  }
 }

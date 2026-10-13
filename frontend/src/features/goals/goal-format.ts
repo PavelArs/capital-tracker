@@ -15,7 +15,7 @@ export function monthYear(date: string): string {
 }
 
 /** Whole months from one calendar date to another; a part of a month is not counted. */
-const monthsFrom = (from: string, to: string): number => {
+export const monthsFrom = (from: string, to: string): number => {
   const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
   const [toYear, toMonth, toDay] = to.split('-').map(Number);
   const months = (toYear - fromYear) * 12 + (toMonth - fromMonth);
@@ -155,6 +155,25 @@ export function verdict(goal: Goal): string {
       return 'At this pace it takes more than 100 years. Put in more each month or expect a higher return.';
     }
   }
+}
+
+/** "$1,200 more" or "$600 short": a projection against the sum; null when there is none. */
+export function againstTarget(
+  gap: string | null,
+  currency: GoalCurrency,
+): { text: string; short: boolean } | null {
+  if (gap === null) return null;
+  const short = isPositive(gap);
+  return {
+    text: `${wholeMoney(gap.replace(/^-/, ''), currency)} ${short ? 'short' : 'more'}`,
+    short,
+  };
+}
+
+/** How long is left until a date: "2 years 3 months", or null once it has passed. */
+export function timeLeft(deadline: string): string | null {
+  const months = monthsFrom(today(), deadline);
+  return months < 0 || (months === 0 && deadline <= today()) ? null : span(months);
 }
 
 /** Open goals first, by date (none last), then the reached ones. */

@@ -24,6 +24,7 @@ const {
   brokers: BrokersPage,
   realEstate: RealEstatePage,
   goals: GoalsPage,
+  goal: GoalPage,
   settings: SettingsPage,
   history: HistoryPage,
   forgotPassword: ForgotPasswordPage,
@@ -101,6 +102,7 @@ function AppRoutes() {
         <Route path="brokers" element={inFrame(<BrokersPage />)} />
         <Route path="real-estate" element={inFrame(<RealEstatePage />)} />
         <Route path="goals" element={inFrame(<GoalsPage />)} />
+        <Route path="goals/:goalId" element={inFrame(<GoalPage />)} />
         <Route path="preferences" element={inFrame(<SettingsPage />)} />
         <Route path="history" element={inFrame(<HistoryPage />)} />
         {retiredPaths.map(([from, to]) => (

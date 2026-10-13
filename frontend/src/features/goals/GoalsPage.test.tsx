@@ -103,7 +103,7 @@ describe('GOAL-LIST: the goals and where the portfolio stands against them', () 
     // Open goals come before reached ones.
     const names = screen
       .getAllByRole('listitem')
-      .map((item) => item.querySelector('b')?.textContent);
+      .map((item) => item.querySelector('.goal-card__name')?.textContent);
     expect(names).toEqual(['Down payment A', 'Reserve B']);
   });
 

@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal } from '@api/goals.api';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
 import { Icon } from '../shell/icons';
@@ -66,7 +67,9 @@ function GoalCard({
           <Icon name="target" className="shell-icon shell-icon--sm" />
         </span>
         <div className="goal-card__title">
-          <b>{goal.name}</b>
+          <Link to={`/goals/${goal.id}`} className="goal-card__name">
+            {goal.name}
+          </Link>
           <small>
             {goal.deadline ? `By ${dateText(goal.deadline)}` : 'No date'} ·{' '}
             {rateText(goal.expectedReturnPercent)}% a year
