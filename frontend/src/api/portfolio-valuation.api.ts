@@ -20,6 +20,24 @@ export interface AssetHolding {
   value: string | null;
 }
 
+/**
+ * Cost and profit after inflation (INFL-REAL-PF): each held lot carried to today by the
+ * inflation since its day. Null when a lot has no cost, rate or inflation figure.
+ */
+export interface RealReading {
+  costBasis: string;
+  unrealizedPnl: string | null;
+  unrealizedReturnPercent: string | null;
+  /** Some span reaches past the latest published month, or rests on the owner's own rate. */
+  estimated: boolean;
+  /** Own-rate reading only: false when the currency has no own rate and this is the official one. */
+  ownRate?: boolean;
+}
+export interface RealReadings {
+  official: RealReading | null;
+  personal: RealReading | null;
+}
+
 export interface AssetValuation {
   instrumentId: string;
   name: string;
@@ -50,6 +68,8 @@ export interface AssetValuation {
   knownRealizedSubtotal: string;
   unknownRealizedCount: number;
   holdings: AssetHolding[];
+  /** Absent in an answer the browser saved before this was added. */
+  real?: RealReadings;
 }
 
 export interface AllocationSlice {
@@ -92,6 +112,8 @@ export interface PortfolioValuation {
   knownRealizedSubtotal: string;
   unknownRealizedCount: number;
   assets: AssetValuation[];
+  /** Absent in an answer the browser saved before this was added. */
+  real?: RealReadings;
   allocation: {
     complete: boolean;
     byAsset: AllocationSlice[];
