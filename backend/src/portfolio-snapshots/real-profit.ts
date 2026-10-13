@@ -6,7 +6,8 @@ import { profitToDate, type StatedFlow } from './capital-flows';
 // INFL-REAL: profit after inflation. Money put in is carried to today by the inflation since
 // the day it came in, so a deposit of a year ago has to earn that year's inflation just to
 // break even. Real profit is the value today less all the money put in, in today's money.
-// A day is the Moscow calendar day, as for the rate of each flow.
+// A day is the Moscow calendar day, as for the rate of each flow; a holding carried into a
+// journal counts from the day it was acquired, not from the journal's start.
 
 const FACTOR_SCALE = 10n ** 10n;
 
@@ -36,7 +37,7 @@ export function realProfit(
   let estimated = false;
   for (const flow of flows) {
     if (flow.amount === null) return null;
-    const factor = factorOf(moscowDate(new Date(flow.at)));
+    const factor = factorOf(flow.rateDate ?? moscowDate(new Date(flow.at)));
     if (factor === null) return null;
     estimated ||= factor.estimated;
     invested += (flow.amount * BigInt(Math.round(factor.factor * 1e10))) / FACTOR_SCALE;

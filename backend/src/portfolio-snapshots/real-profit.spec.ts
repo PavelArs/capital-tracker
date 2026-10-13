@@ -70,6 +70,20 @@ describe('real profit (INFL-REAL)', () => {
     expect(days).toEqual(['2025-03-15', '2025-03-15', '2025-03-14']);
   });
 
+  it('INFL-REAL-CARRY-IN carries a holding from its acquisition day, not from the journal start', () => {
+    const days: string[] = [];
+    const seen = (day: string) => {
+      days.push(day);
+      return { factor: 1, estimated: false };
+    };
+    const carried: StatedFlow = {
+      ...flow('2026-09-10T00:00:00.000Z', 100),
+      rateDate: '2025-03-03',
+    };
+    realProfit('10', false, [carried], seen);
+    expect(days).toEqual(['2025-03-03']);
+  });
+
   it('INFL-REAL-EMPTY says nothing was put in rather than a profit of the whole value', () => {
     const result = realProfit('300', false, [], official);
     expect(result).toEqual({ invested: '0', profit: '300', profitPercent: null, estimated: false });
