@@ -174,6 +174,19 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
   });
 });
 
+describe('GOAL-VERDICT with assets that have no price', () => {
+  const unpriced = { current: '5000.00', complete: false, percent: '25.00', remaining: null };
+
+  it('gives no date or sum worked out from an understated value', () => {
+    expect(verdict(goal({ progress: unpriced }))).toBe(
+      'On track even without the assets that have no price or rate yet.',
+    );
+    expect(verdict(goal({ progress: unpriced, status: 'open', deadline: null }))).toContain(
+      'no date or monthly sum is worked out',
+    );
+  });
+});
+
 describe('GOAL-AGAINST a projection against the sum', () => {
   it('says short, more, or on the sum when the gap rounds to nothing', () => {
     expect(againstTarget('600.00', 'USD')?.text).toBe('$600 short');
