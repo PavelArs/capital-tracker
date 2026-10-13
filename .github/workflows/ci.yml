@@ -306,7 +306,7 @@ jobs:
           name: release-images
           path: release-images/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
           compression-level: 0
       # The receipt job needs only the manifest, not the images themselves.
       - name: Upload the image manifest for the acceptance receipt
@@ -316,7 +316,7 @@ jobs:
           name: release-images-manifest
           path: release-images/manifest.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       # Reuse: the very images the pull request run built, scanned and ran acceptance on.
       - name: Download the images the pull request tested
         if: steps.reuse.outputs.reuse == 'true'

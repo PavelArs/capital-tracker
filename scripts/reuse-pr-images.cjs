@@ -18,6 +18,11 @@ const { join } = require('node:path');
 const { waitForCheck, githubRequest } = require('./check-merged-pr-ci.cjs');
 const { validateRelease } = require('./validate-manual-mvp-release.cjs');
 
+// A pull request merged while its CI still runs is waited for, as "Merged Pull Request CI" waits:
+// that gate cannot finish before the pull request run does, so waiting loses nothing against a
+// parallel full build, and it turns the common mid-CI merge into a reuse.
+const WAIT = { attempts: 60, delayMs: 30_000 };
+
 const ARTIFACTS = ['release-images', 'release-images-manifest', 'critical-release-acceptance'];
 
 class NoReuse extends Error {}
@@ -82,7 +87,7 @@ function decideWithGitHub(env) {
     find: () =>
       waitForCheck(
         { request, repository, commit },
-        { attempts: 3, delayMs: 15_000, log: (message) => console.log(message) },
+        { ...WAIT, log: (message) => console.log(message) },
       ),
     downloadManifest: (run) => downloadManifest(repository, run),
     treeOf,
@@ -112,7 +117,7 @@ async function main(env, decideReuse = decideWithGitHub) {
   return result;
 }
 
-module.exports = { ARTIFACTS, NoReuse, decide, main };
+module.exports = { ARTIFACTS, WAIT, NoReuse, decide, main };
 
 if (require.main === module) {
   // Never fails the job: a push without reuse simply builds and tests.

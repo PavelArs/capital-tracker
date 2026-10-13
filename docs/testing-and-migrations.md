@@ -77,7 +77,7 @@ A push to main does not repeat this when its pull request run already did it. In
 the pushed commit (the same lookup as `Merged Pull Request CI`, which still must pass) and
 reuses its run only if all of this holds: that run passed the full suite; its `release-images`,
 `release-images-manifest` and `critical-release-acceptance` artifacts are still available
-(`release-images` is kept one day); its manifest is valid for that run; and the commit it
+(`release-images` is kept three days); its manifest is valid for that run; and the commit it
 tested (the manifest's `commit`, the pull request's test merge) has exactly the same git
 tree as the pushed commit. Then main loads the pull request's images and verifies them
 against that manifest, exports them as the release candidate for the pushed commit and run,
@@ -87,7 +87,12 @@ every other case, on any error or doubt, in a re-run of the push run, and when t
 variable `REUSE_PR_IMAGES` is `false`, main builds, tests and scans as before. The job
 names, the required results of `CI Status` and the deploy provenance are unchanged; the
 reuse is decided step by step so each release job still has to end in success. The step
-summary of `Build Release Images` says which way a push went and why.
+summary of `Build Release Images` says which way a push went and why. A pull request merged
+while its own CI still runs is waited for (up to 30 minutes, as `Merged Pull Request CI`
+waits; the push cannot finish before it anyway). The tree check is what keeps this safe, and it
+is the one case that still runs everything on main: another pull request landed after this
+one's last CI run, so the tested code is not the shipped code. Merging the base branch into
+the pull request and letting its CI finish before merging restores the reuse.
 
 Shard mode needs a CI run id and prebuilt images; locally keep using
 `pnpm test:e2e:critical` (serial, builds its own images) or `pnpm test:e2e`. Print the

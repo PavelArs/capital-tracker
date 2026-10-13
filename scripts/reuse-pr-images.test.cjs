@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { mkdtempSync, readFileSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const { ARTIFACTS, decide, main } = require('./reuse-pr-images.cjs');
+const { ARTIFACTS, WAIT, decide, main } = require('./reuse-pr-images.cjs');
 
 const pins = require('../deploy/manual-mvp-infrastructure-pins.json');
 const repository = 'pavelars/capital-tracker';
@@ -141,4 +141,9 @@ test('REUSE-003-C a re-run of the push run never reuses: it builds and tests eve
   assert.equal(result.reuse, false);
   assert.match(result.reason, /re-run/);
   assert.equal(readFileSync(output, 'utf8'), 'reuse=false\n');
+});
+
+test('REUSE-004-A waits for a pull request run that is still going, as long as a CI run normally takes', () => {
+  assert.ok(WAIT.attempts * WAIT.delayMs >= 20 * 60_000);
+  assert.ok(WAIT.delayMs >= 10_000);
 });
