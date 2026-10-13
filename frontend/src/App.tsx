@@ -23,6 +23,7 @@ const {
   deposit: DepositPage,
   brokers: BrokersPage,
   realEstate: RealEstatePage,
+  goals: GoalsPage,
   settings: SettingsPage,
   history: HistoryPage,
   forgotPassword: ForgotPasswordPage,
@@ -99,6 +100,7 @@ function AppRoutes() {
         <Route path="deposits/:depositId" element={inFrame(<DepositPage />)} />
         <Route path="brokers" element={inFrame(<BrokersPage />)} />
         <Route path="real-estate" element={inFrame(<RealEstatePage />)} />
+        <Route path="goals" element={inFrame(<GoalsPage />)} />
         <Route path="preferences" element={inFrame(<SettingsPage />)} />
         <Route path="history" element={inFrame(<HistoryPage />)} />
         {retiredPaths.map(([from, to]) => (
