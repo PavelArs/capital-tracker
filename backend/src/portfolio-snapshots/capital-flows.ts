@@ -29,6 +29,8 @@ export interface CapitalFlow {
 /** A flow in one accounting currency at scale 60, like snapshot values; null without a rate. */
 export interface StatedFlow {
   at: number;
+  /** The Moscow day whose rate states the flow; a carry-in keeps its acquisition day, not `at`. */
+  rateDate?: string;
   instrumentId?: string;
   amount: bigint | null;
 }
@@ -111,6 +113,7 @@ export function stateFlows(flows: readonly CapitalFlow[], fx: FxConverter): Stat
         : fx.convert(flow.usd, 'USD', flow.rateDate);
     return {
       at: flow.at,
+      rateDate: flow.rateDate,
       ...(flow.instrumentId === undefined ? {} : { instrumentId: flow.instrumentId }),
       amount: amount === null ? null : amount * ATOM_SCALE,
     };

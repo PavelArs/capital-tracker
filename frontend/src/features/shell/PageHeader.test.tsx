@@ -12,6 +12,7 @@ import { assetIdentity } from './asset-identity';
 import { MainCurrencyProvider } from './main-currency';
 import PageHeader from './PageHeader';
 import SettingsPage from './SettingsPage';
+import { setValueView } from './value-view';
 
 // Settings → Security has its own tests; here it only has to render.
 vi.mock('@contexts/AuthContext', () => ({ useAuth: () => ({ logoutEverywhere: vi.fn() }) }));
@@ -70,6 +71,31 @@ describe('Shared page header', () => {
       '/transactions?asset=BTC&currency=RUB',
     );
     expect(within(switcher()).getByRole('radio', { name: 'RUB' })).toBeChecked();
+  });
+
+  it('INFL-REAL-SWITCH shows Nominal / Real only on a page that has values after inflation', () => {
+    setValueView('nominal');
+    renderAt('/transactions', <PageHeader title="Transactions" />);
+    expect(screen.queryByRole('radiogroup', { name: 'Values' })).toBeNull();
+    cleanup();
+    renderAt('/dashboard', <PageHeader title="Dashboard" valueSwitch />);
+    const values = screen.getByRole('radiogroup', { name: 'Values' });
+    expect(within(values).getByRole('radio', { name: 'Nominal' })).toBeChecked();
+  });
+
+  it('INFL-REAL-SWITCH changes every page at once and is kept for the next visit', async () => {
+    setValueView('nominal');
+    renderAt(
+      '/dashboard',
+      <>
+        <PageHeader title="Dashboard" valueSwitch />
+        <PageHeader title="Portfolio" valueSwitch />
+      </>,
+    );
+    const [first, second] = screen.getAllByRole('radiogroup', { name: 'Values' });
+    await userEvent.click(within(first).getByRole('radio', { name: 'Real' }));
+    expect(within(second).getByRole('radio', { name: 'Real' })).toBeChecked();
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('value-view', 'real');
   });
 
   it('prefers the asked currency, then the page data, then the main currency', async () => {
