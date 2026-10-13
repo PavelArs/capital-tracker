@@ -49,6 +49,19 @@ describe('goal view', () => {
     expect(Number(poor.scenarios[1].gap)).toBeGreaterThan(0);
   });
 
+  it('judges the status on the unrounded projection, not the gap shown to the cent', () => {
+    const short = {
+      ...row,
+      targetAmount: '61.01',
+      deadline: '2026-11-13',
+      expectedReturnPercent: '0.1',
+      monthlyContribution: null,
+    };
+    const view = goalView(short, now('61.00'), today);
+    expect(view.scenarios[1].gap).toBe('0.00');
+    expect(view.status).toBe('behind');
+  });
+
   it('shows the contribution a deadline needs, and the month the plan arrives without one', () => {
     const view = goalView(
       { ...row, monthlyContribution: null, deadline: '2027-10-13' },

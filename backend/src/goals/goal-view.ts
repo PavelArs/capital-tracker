@@ -61,6 +61,9 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   const plan = row.monthlyContribution === null ? 0 : Number(row.monthlyContribution);
   const months = row.deadline === null ? null : monthsBetween(today, row.deadline);
   const payments = row.deadline === null ? 0 : paymentsBetween(today, row.deadline);
+  // The status reads the raw base projection: the displayed gap is rounded to the cent and
+  // would call a goal on track that falls a fraction of a cent short.
+  let baseShort = false;
   const scenarios: GoalScenario[] =
     current === null
       ? []
@@ -76,6 +79,7 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
             months !== null && months > 0
               ? futureValue(current, plan, rate, months, payments)
               : null;
+          if (key === 'base') baseShort = projected === null || !(projected >= target);
           return {
             key,
             returnPercent: percent(yearly),
@@ -89,13 +93,12 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
             gap: projected === null ? null : figure(target - projected),
           };
         });
-  const base = scenarios.find((scenario) => scenario.key === 'base');
   let status: GoalStatus;
   if (current === null) status = 'unknown';
   else if (current >= target) status = 'reached';
   else if (months === null) status = 'open';
   else if (months <= 0) status = 'overdue';
-  else status = Number(base?.gap) <= 0 ? 'on-track' : 'behind';
+  else status = baseShort ? 'behind' : 'on-track';
   // A value that leaves out an asset without a price or rate only understates the portfolio:
   // reaching the goal stays true, falling behind does not.
   if (!now.complete && (status === 'behind' || status === 'overdue')) status = 'unknown';
