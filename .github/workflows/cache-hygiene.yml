@@ -18,6 +18,10 @@ on:
         options: [report, sweep-dry-run, sweep]
         default: report
 
+  # TEMPORARY: proves the warm job from this pull request's own run.
+  pull_request:
+    paths: ['.github/workflows/cache-hygiene.yml']
+
 permissions: {}
 
 concurrency:
@@ -84,3 +88,32 @@ jobs:
           if [[ "$SKIP_SWEEP" == true ]]; then exit 0; fi
           # shellcheck disable=SC2086
           node scripts/actions-caches.cjs sweep $SWEEP_FLAGS
+
+  # Pull requests read the vulnerability database from the cache of main, but a normal push to main
+  # reuses the images its pull request scanned, so no scan of main saves it any more.
+  warm-trivy:
+    name: Keep the vulnerability database cache of main fresh
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.74.0
+      - name: Download the vulnerability databases
+        env:
+          # The path and key the image scan job in ci.yml restores.
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+        run: |
+          trivy image --download-db-only
+          trivy image --download-java-db-only
+      - name: Find the day of the vulnerability database
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Save the vulnerability databases
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.cache/trivy
+          key: cache-trivy-${{ steps.day.outputs.day }}
