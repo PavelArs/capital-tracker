@@ -13,5 +13,6 @@ import { SnapshotsAfterChangeInterceptor } from './snapshots-after-change.interc
     PortfolioSnapshotsService,
     { provide: APP_INTERCEPTOR, useClass: SnapshotsAfterChangeInterceptor },
   ],
+  exports: [PortfolioSnapshotsService],
 })
 export class PortfolioSnapshotsModule {}

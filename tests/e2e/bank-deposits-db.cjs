@@ -19,7 +19,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 64;
+const MIGRATIONS = 65;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -396,7 +396,7 @@ async function backfill() {
       timeout: 60000,
     });
     assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
-    assert.match(migrated.stdout, /Migrations applied: 1/);
+    assert.match(migrated.stdout, /Migrations applied: 2/);
     const events = await prior.query(
       `SELECT version, kind, name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
           to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,
