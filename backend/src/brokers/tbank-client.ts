@@ -20,6 +20,8 @@ export interface TBankAccount {
   id: string;
   name: string;
   open: boolean;
+  /** Closed for good: nothing can be done with it, whatever the token allows. */
+  closed: boolean;
   access: TBankAccess;
 }
 
@@ -59,6 +61,8 @@ export function parseAccounts(body: unknown): TBankAccount[] {
       id,
       name,
       open: item.status === 'ACCOUNT_STATUS_OPEN',
+      // Any other status (new, unspecified or one the contract adds) may still become usable.
+      closed: item.status === 'ACCOUNT_STATUS_CLOSED',
       // A token or an account the contract does not describe is treated as able to trade.
       access: level ?? 'full_access',
     };

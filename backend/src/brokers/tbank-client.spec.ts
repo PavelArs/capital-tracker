@@ -31,9 +31,39 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         ],
       }),
     ).toEqual([
-      { id: '2000000001', name: 'Synthetic account', open: true, access: 'read_only' },
-      { id: '2000000002', name: 'Synthetic account', open: false, access: 'read_only' },
-      { id: '2000000003', name: 'Synthetic account', open: true, access: 'full_access' },
+      {
+        id: '2000000001',
+        name: 'Synthetic account',
+        open: true,
+        closed: false,
+        access: 'read_only',
+      },
+      {
+        id: '2000000002',
+        name: 'Synthetic account',
+        open: false,
+        closed: true,
+        access: 'read_only',
+      },
+      {
+        id: '2000000003',
+        name: 'Synthetic account',
+        open: true,
+        closed: false,
+        access: 'full_access',
+      },
+    ]);
+  });
+
+  it('does not call an account closed unless T-Bank says so', () => {
+    const [created, unknown] = parseAccounts({
+      accounts: [account({ status: 'ACCOUNT_STATUS_NEW' }), account({ status: undefined })],
+    });
+    expect([created.open, created.closed, unknown.open, unknown.closed]).toEqual([
+      false,
+      false,
+      false,
+      false,
     ]);
   });
 
@@ -96,7 +126,15 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
     const result = await new TBankClient({ baseUrl: base }).accounts(token);
     expect(result).toEqual({
       ok: true,
-      value: [{ id: '2000000001', name: 'Synthetic account', open: true, access: 'read_only' }],
+      value: [
+        {
+          id: '2000000001',
+          name: 'Synthetic account',
+          open: true,
+          closed: false,
+          access: 'read_only',
+        },
+      ],
     });
     expect(seen?.method).toBe('POST');
     expect(seen?.url).toBe('/rest/tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts');

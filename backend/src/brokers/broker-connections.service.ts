@@ -117,13 +117,15 @@ export class BrokerConnectionsService {
         'T-Bank could not be reached. Try again in a few minutes.',
       );
     }
-    // An account the token has no access to cannot be traded with, so it neither blocks the
-    // token nor can be picked.
-    const open = result.value.filter((item) => item.open && item.access !== 'no_access');
-    if (open.some((item) => item.access !== 'read_only'))
+    // A token able to trade on any account that is not closed is refused, including one still
+    // being opened: it can trade there once it opens. An account the token has no access to
+    // cannot be traded with, so it neither blocks the token nor can be picked.
+    const live = result.value.filter((item) => !item.closed && item.access !== 'no_access');
+    if (live.some((item) => item.access !== 'read_only'))
       throw new UnprocessableEntityException(
         'This token can trade. Create a read-only token in T-Bank Investments and paste that one.',
       );
+    const open = live.filter((item) => item.open);
     if (open.length === 0)
       throw new UnprocessableEntityException('This token reaches no open T-Bank account.');
     return open;

@@ -13,7 +13,13 @@ import type { TBankTokenBox } from './tbank-token-box';
 const owner = '8b0f2f3e-5a53-4f63-9a2a-0d6f5b9a1c01';
 const account = 'a0e1f7c2-0a53-4a0f-8d3a-6b8f2a0d9e02';
 const token = 't.SyntheticToken000000000000000001';
-const mine: TBankAccount = { id: '2000000001', name: 'Synthetic', open: true, access: 'read_only' };
+const mine: TBankAccount = {
+  id: '2000000001',
+  name: 'Synthetic',
+  open: true,
+  closed: false,
+  access: 'read_only',
+};
 
 function build(accounts: TBankResult<TBankAccount[]>, found = true) {
   const writes: unknown[][] = [];
@@ -46,7 +52,7 @@ const ok = (...items: TBankAccount[]): TBankResult<TBankAccount[]> => ({ ok: tru
 
 describe('broker connections service', () => {
   it('lists the open accounts a read-only token reaches', async () => {
-    const { service } = build(ok(mine, { ...mine, id: '2000000002', open: false }));
+    const { service } = build(ok(mine, { ...mine, id: '2000000002', open: false, closed: true }));
     expect(await service.check(owner, account, { token })).toEqual({
       accounts: [{ id: mine.id, name: 'Synthetic' }],
     });
@@ -67,6 +73,17 @@ describe('broker connections service', () => {
     await expect(service.check(owner, account, { token })).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
+  });
+
+  it('refuses a token that can trade on an account still being opened, not on a closed one', async () => {
+    const opening = { ...mine, id: '2000000005', open: false, access: 'full_access' as const };
+    await expect(
+      build(ok(mine, opening)).service.check(owner, account, { token }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    const { service } = build(ok(mine, { ...opening, closed: true }));
+    expect(await service.check(owner, account, { token })).toEqual({
+      accounts: [{ id: mine.id, name: 'Synthetic' }],
+    });
   });
 
   it('refuses a rejected token, a token without accounts and an unreachable T-Bank', async () => {
