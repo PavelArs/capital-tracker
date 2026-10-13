@@ -14,6 +14,7 @@ import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, percent, quantity, tone } from '../portfolio/format';
 import AboutChart from '../shell/AboutChart';
 import { useAttention } from '../shell/attention-context';
+import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
@@ -94,15 +95,6 @@ function Amount({ text }: { text: string }) {
 
 const NO_REAL =
   'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.';
-
-// Which rate the real figure rests on, said beside that figure only.
-const basisText = (basis: 'official' | 'personal', real: RealProfit, currency: string) => {
-  if (basis === 'personal' && real.ownRate !== false) return 'at your own rate';
-  const estimated = real.estimated ? ', latest months estimated' : '';
-  return basis === 'official'
-    ? `at the official rate${estimated}`
-    : `no rate of your own for ${currency}, so the official one${estimated}`;
-};
 
 // The other reading of the profit, always on screen beside the one the switch picked, so
 // nothing moves when it changes: the real profit under Nominal, the nominal one under Real.

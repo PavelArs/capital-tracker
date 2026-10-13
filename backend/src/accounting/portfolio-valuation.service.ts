@@ -6,9 +6,13 @@ import {
   type AccountingCurrency,
   FxConverter,
   isAccountingCurrency,
+  moscowDate,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
+import { readEffectiveChanges, readPersonalRate } from '../inflation/inflation.service';
+import { buildSeries, officialFactor, personalFactor } from '../inflation/inflation-math';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
+import { personalReading } from '../portfolio-snapshots/real-profit';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { Network } from '../wallet-addresses/chain-assets';
 import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
@@ -35,6 +39,7 @@ import {
 import { parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms } from './money';
 import type { OwnedProjection } from './owned-transfer-fifo';
+import { type RealReading, realReadings } from './portfolio-real';
 import {
   DAY_MS,
   type PortfolioAccountInput,
@@ -527,7 +532,68 @@ export class PortfolioValuationService {
             asset.value === '0'
           ),
       );
-      return { ...report, assets, mainCurrency };
+      const real = await realReadingsFor(
+        manager,
+        owner,
+        fx,
+        report.assets,
+        accounts,
+        now,
+        report.unavailableAccountCount === 0,
+      );
+      return {
+        ...report,
+        assets: assets.map((asset) => ({ ...asset, real: real.of(asset.instrumentId) })),
+        real: real.total(),
+        mainCurrency,
+      };
     });
   }
+}
+
+/**
+ * INFL-REAL-PF: the held lots' cost in today's money and the profit over it, after official
+ * inflation and after the owner's own rate (the official one for a currency with no own rate).
+ */
+async function realReadingsFor(
+  manager: EntityManager,
+  owner: string,
+  fx: FxConverter,
+  assets: readonly { instrumentId: string; value: string | null }[],
+  accounts: readonly PortfolioAccountInput[],
+  now: Date,
+  complete: boolean,
+) {
+  const today = moscowDate(now);
+  const series = buildSeries((await readEffectiveChanges(manager, owner, fx.currency)).changes);
+  const rate = await readPersonalRate(manager, owner, fx.currency);
+  const official = realReadings(
+    assets,
+    accounts,
+    fx,
+    (day) => officialFactor(series, day, today),
+    complete,
+  );
+  const own =
+    rate === null
+      ? null
+      : realReadings(
+          assets,
+          accounts,
+          fx,
+          (day) => personalFactor(Number(rate), day, today),
+          complete,
+        );
+  const pair = (pick: (readings: typeof official) => RealReading | null) => ({
+    official: pick(official),
+    personal: personalReading(
+      pick(official),
+      () => (own === null ? null : pick(own)),
+      rate !== null,
+    ),
+  });
+  return {
+    of: (instrumentId: string) => pair((readings) => readings.byAsset.get(instrumentId) ?? null),
+    total: () => pair((readings) => readings.total),
+  };
 }
