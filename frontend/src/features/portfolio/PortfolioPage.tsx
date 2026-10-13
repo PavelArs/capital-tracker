@@ -265,7 +265,7 @@ function Summary({
                   {portfolio.costBasis !== null ? (
                     <span className="portfolio-sub">{amount(portfolio.costBasis)} paid</span>
                   ) : (
-                    Number(portfolio.knownCostSubtotal) > 0 && (
+                    portfolio.assets.some((asset) => Number(asset.knownCostQuantity) > 0) && (
                       <span className="portfolio-sub">
                         {amount(portfolio.knownCostSubtotal)} known
                       </span>

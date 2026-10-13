@@ -883,14 +883,17 @@ describe('Portfolio after inflation', () => {
   it('PF-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
-      portfolio([{ ...bitcoin, real: { official: null, personal: null } }], {
-        costBasis: null,
-        unrealizedPnl: null,
-        knownCostSubtotal: '40000',
-        knownUnrealizedPnl: '12000',
-        unknownCostCount: 1,
-        real: { official: null, personal: null },
-      }),
+      portfolio(
+        [{ ...bitcoin, knownCostQuantity: '0.7', real: { official: null, personal: null } }],
+        {
+          costBasis: null,
+          unrealizedPnl: null,
+          knownCostSubtotal: '40000',
+          knownUnrealizedPnl: '12000',
+          unknownCostCount: 1,
+          real: { official: null, personal: null },
+        },
+      ),
     );
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
@@ -985,6 +988,7 @@ describe('Portfolio after inflation', () => {
           unrealizedPnl: null,
           knownCostSubtotal: '40000',
           knownUnrealizedPnl: '12000',
+          knownCostQuantity: '0.7',
           unknownCostQuantity: '0.5',
           real: { official: null, personal: null },
         },
@@ -996,6 +1000,37 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent('$40,000.00 known');
     expect(position()).toHaveTextContent('Nominal +$12,000.00 known');
     expect(position()).not.toHaveTextContent('paid');
+  });
+
+  it('ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        {
+          ...bitcoin,
+          costBasis: null,
+          unrealizedPnl: null,
+          knownCostSubtotal: '0',
+          knownCostQuantity: '0.7',
+          unknownCostQuantity: '0.5',
+          real: { official: null, personal: null },
+        },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('$0.00 known');
+  });
+
+  it('ASSET-REAL-INCOMPLETE says the reading leaves out an account whose history starts later', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({ unavailableAccountCount: 1 }),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Real P&L+$21,000.00');
+    expect(position()).toHaveTextContent('leaves out 1 account whose history starts later');
   });
 
   it('ASSET-REAL-SOLD does not call a fully sold asset incomplete', async () => {

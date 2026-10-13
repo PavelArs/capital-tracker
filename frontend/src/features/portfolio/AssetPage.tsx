@@ -438,7 +438,7 @@ function AssetDetails({
                       {asset.costBasis !== null ? (
                         <span className="portfolio-sub">{amount(asset.costBasis)} paid</span>
                       ) : (
-                        Number(asset.knownCostSubtotal) > 0 && (
+                        Number(asset.knownCostQuantity) > 0 && (
                           <span className="portfolio-sub">
                             {amount(asset.knownCostSubtotal)} known
                           </span>
@@ -516,7 +516,12 @@ function AssetDetails({
         </dl>
         {showReal && reading !== null && (
           <p className="shell-note portfolio-real-note">
-            In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
+            In today&apos;s {currency}, {basisText(basis, reading, currency)}
+            {portfolio.unavailableAccountCount > 0 &&
+              `, leaves out ${portfolio.unavailableAccountCount} ${
+                portfolio.unavailableAccountCount === 1 ? 'account' : 'accounts'
+              } whose history starts later`}{' '}
+            ·{' '}
             <Link className="shell-link" to="/settings">
               Settings
             </Link>
