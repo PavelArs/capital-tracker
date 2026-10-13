@@ -77,6 +77,8 @@ interface SavedHolding {
   /** The asset was made by this form, not an existing cash asset. */
   made: boolean;
   receipt: TradeReceipt | null;
+  /** A buy went out and no definite answer came back, so it may be saved. */
+  unsure: boolean;
   priced: boolean;
 }
 
@@ -122,12 +124,12 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
 
   // Closing keeps what cannot be taken back: once anything it holds is saved, the account stays
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
-  // A position whose asset was made but whose buy was not saved would show as an empty asset in
-  // Portfolio, so it is hidden first.
+  // A position whose asset was made but whose buy was refused would show as an empty asset in
+  // Portfolio, so it is hidden first. One whose buy may have been saved after all is left as is.
   const finish = async () => {
     const done = saved.current;
-    const empty = done.holdings.flatMap(({ asset, made, receipt }) =>
-      asset && made && !receipt ? [asset.id] : [],
+    const empty = done.holdings.flatMap(({ asset, made, receipt, unsure }) =>
+      asset && made && !receipt && !unsure ? [asset.id] : [],
     );
     if (empty.length) {
       setSaving(true);
@@ -197,7 +199,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     while (requests.current.holdings.length < holdings.length)
       requests.current.holdings.push([newRequestId(), newRequestId(), newRequestId()]);
     while (done.holdings.length < holdings.length)
-      done.holdings.push({ asset: null, made: false, receipt: null, priced: false });
+      done.holdings.push({ asset: null, made: false, receipt: null, unsure: false, priced: false });
 
     if (!done.accountId) {
       try {
@@ -233,13 +235,21 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           step.made = made.made;
         }
         if (!step.receipt) {
-          step.receipt = await tradesApi.create(
-            accountId,
-            holdingTrade({ ...holding, currency }, step.asset.id, now, {
-              requestId: tradeRequest,
-              expectedJournalRevision: done.revision,
-            }),
-          );
+          try {
+            step.receipt = await tradesApi.create(
+              accountId,
+              holdingTrade({ ...holding, currency }, step.asset.id, now, {
+                requestId: tradeRequest,
+                expectedJournalRevision: done.revision,
+              }),
+            );
+          } catch (caught) {
+            // Without an answer, or after a server error, the buy may have been saved.
+            const code = status(caught);
+            step.unsure = code === undefined || code >= 500;
+            throw caught;
+          }
+          step.unsure = false;
           done.revision = step.receipt.journalRevision;
         }
         // A position starts at the price it was entered with; cash is always worth its amount.
@@ -470,7 +480,13 @@ async function cashAsset(
   const found = assets.find(
     (asset) => asset.assetType === 'fiat' && asset.symbol?.toUpperCase() === currency,
   );
-  if (found) return { asset: found, made: false };
+  if (found) {
+    // A hidden cash asset is left out of Portfolio, so the cash held here would not count.
+    const hidden = await hiddenAssetsApi.list();
+    if (hidden.some(({ instrumentId }) => instrumentId === found.id))
+      await hiddenAssetsApi.show(found.id);
+    return { asset: found, made: false };
+  }
   const asset = await portfolioAssetsApi.create({
     requestId,
     name: cashNames[currency],

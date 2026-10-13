@@ -13,10 +13,26 @@ export interface BrokerAccount {
   name: string;
   /** Securities first, most valuable first, then the cash. */
   positions: BrokerPosition[];
-  /** What the priced positions are worth. */
-  value: number;
+  /** What the priced positions are worth, exactly. */
+  value: string;
   /** Positions without a price, left out of the value. */
   unpriced: number;
+}
+
+const SCALE = 30;
+const units = (value: string) => {
+  const negative = value.startsWith('-');
+  const [whole, fraction = ''] = value.replace(/^[-+]/, '').split('.');
+  const scaled = BigInt(whole + fraction.padEnd(SCALE, '0').slice(0, SCALE));
+  return negative ? -scaled : scaled;
+};
+
+/** The exact sum of decimal strings, without binary floating point. */
+export function sumDecimals(values: readonly string[]): string {
+  const total = values.reduce((sum, value) => sum + units(value), 0n);
+  const digits = (total < 0n ? -total : total).toString().padStart(SCALE + 1, '0');
+  const fraction = digits.slice(-SCALE).replace(/0+$/, '');
+  return `${total < 0n ? '-' : ''}${digits.slice(0, -SCALE)}${fraction ? `.${fraction}` : ''}`;
 }
 
 const byValue = (left: BrokerPosition, right: BrokerPosition) =>
@@ -44,15 +60,18 @@ export function brokerAccountsOf(
           ...positions.filter((position) => !cash(position)).sort(byValue),
           ...positions.filter(cash).sort(byValue),
         ],
-        value: positions.reduce((sum, position) => sum + Number(position.value ?? 0), 0),
+        value: sumDecimals(positions.flatMap(({ value }) => (value === null ? [] : [value]))),
         unpriced: positions.filter((position) => position.value === null).length,
       };
     })
-    .sort((left, right) => right.value - left.value || left.name.localeCompare(right.name, 'en'));
+    .sort(
+      (left, right) =>
+        Number(right.value) - Number(left.value) || left.name.localeCompare(right.name, 'en'),
+    );
 }
 
 /** The share of net worth held at brokers, or null while the net worth is unknown. */
-export function brokerShare(total: number, portfolio: PortfolioValuation): number | null {
+export function brokerShare(total: string, portfolio: PortfolioValuation): number | null {
   const worth = Number(portfolio.totalValue ?? Number.NaN);
-  return worth > 0 ? (total / worth) * 100 : null;
+  return worth > 0 ? (Number(total) / worth) * 100 : null;
 }

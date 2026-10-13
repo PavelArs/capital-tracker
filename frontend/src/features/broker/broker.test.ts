@@ -11,7 +11,7 @@ import {
   positionAsset,
   times,
 } from './broker';
-import { brokerAccountsOf, brokerShare } from './brokers';
+import { brokerAccountsOf, brokerShare, sumDecimals } from './brokers';
 
 // Synthetic names, ids and amounts only.
 const entry = (changes: Partial<BrokerEntry> = {}): BrokerEntry => ({
@@ -190,14 +190,21 @@ describe('BROKERS the page figures', () => {
         positions.map(({ asset, quantity }) => `${asset.name} ${quantity}`),
       ]),
     ).toEqual([
-      ['Sample Broker', 13263, 1, ['VWRA 30', 'BOND 5', 'USD 9000']],
-      ['Other Broker', 1421, 0, ['VWRA 10']],
-      ['Empty Broker', 0, 0, []],
+      ['Sample Broker', '13263', 1, ['VWRA 30', 'BOND 5', 'USD 9000']],
+      ['Other Broker', '1421', 0, ['VWRA 10']],
+      ['Empty Broker', '0', 0, []],
     ]);
   });
 
   it('gives the share of net worth only while the net worth is known', () => {
-    expect(brokerShare(5000, portfolio)).toBe(25);
-    expect(brokerShare(5000, { ...portfolio, totalValue: null })).toBeNull();
+    expect(brokerShare('5000', portfolio)).toBe(25);
+    expect(brokerShare('5000', { ...portfolio, totalValue: null })).toBeNull();
+  });
+
+  it('adds values exactly', () => {
+    // Codex P2: 0.001 + 1.134 in binary floating point shows as $1.13.
+    expect(sumDecimals(['0.001', '1.134'])).toBe('1.135');
+    expect(sumDecimals(['9007199254740993', '0.01'])).toBe('9007199254740993.01');
+    expect(sumDecimals([])).toBe('0');
   });
 });

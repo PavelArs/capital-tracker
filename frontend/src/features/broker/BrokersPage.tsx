@@ -14,7 +14,13 @@ import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import AddBrokerDialog from './AddBrokerDialog';
-import { type BrokerAccount, type BrokerPosition, brokerAccountsOf, brokerShare } from './brokers';
+import {
+  type BrokerAccount,
+  type BrokerPosition,
+  brokerAccountsOf,
+  brokerShare,
+  sumDecimals,
+} from './brokers';
 import '../shell/shell-page.css';
 import './broker.css';
 
@@ -71,7 +77,7 @@ function Account({
             <small>{plural(securities, 'position')}</small>
           </div>
           <div className="broker-account__total">
-            <b>{money(String(account.value), portfolio.currency)}</b>
+            <b>{money(account.value, portfolio.currency)}</b>
           </div>
         </div>
         {account.positions.length ? (
@@ -130,7 +136,7 @@ export default function BrokersPage() {
   }, [load]);
 
   const brokers = portfolio && accounts ? brokerAccountsOf(portfolio, accounts) : null;
-  const total = brokers?.reduce((sum, account) => sum + account.value, 0) ?? 0;
+  const total = sumDecimals(brokers?.map((account) => account.value) ?? []);
   const unpriced = brokers?.reduce((sum, account) => sum + account.unpriced, 0) ?? 0;
   const share = portfolio && brokerShare(total, portfolio);
   const addButton = (primary: boolean) => (
@@ -183,9 +189,7 @@ export default function BrokersPage() {
           <section className="shell-card broker-summary" aria-label="Total at brokers">
             <div className="broker-summary__item">
               <span className="broker-summary__label">At brokers</span>
-              <strong className="broker-summary__value">
-                {money(String(total), portfolio.currency)}
-              </strong>
+              <strong className="broker-summary__value">{money(total, portfolio.currency)}</strong>
             </div>
             <div className="broker-summary__item">
               <span className="broker-summary__label">Share of net worth</span>

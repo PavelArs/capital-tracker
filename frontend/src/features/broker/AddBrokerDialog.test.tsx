@@ -49,6 +49,7 @@ let createTrade: Mock<typeof tradesApi.create>;
 let setPrice: Mock<typeof manualPricesApi.set>;
 let removeAccount: Mock<typeof accountingApi.removeAccount>;
 let hideAsset: Mock<typeof hiddenAssetsApi.hide>;
+let showAsset: Mock<typeof hiddenAssetsApi.show>;
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
@@ -97,6 +98,9 @@ beforeEach(() => {
   vi.spyOn(accountingApi, 'removeAccount').mockImplementation(removeAccount);
   hideAsset = vi.fn<typeof hiddenAssetsApi.hide>(async () => ({}) as HiddenAsset);
   vi.spyOn(hiddenAssetsApi, 'hide').mockImplementation(hideAsset);
+  vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
+  showAsset = vi.fn<typeof hiddenAssetsApi.show>(async () => undefined);
+  vi.spyOn(hiddenAssetsApi, 'show').mockImplementation(showAsset);
 });
 afterEach(() => {
   cleanup();
@@ -186,6 +190,26 @@ describe('BROKER-ADD Add broker account', () => {
     expect(createTrade).toHaveBeenCalledWith(
       id(2),
       expect.objectContaining({ instrumentId: id(30), quantity: '250' }),
+    );
+  });
+
+  it('shows a hidden cash asset again before putting the cash into it', async () => {
+    // Codex P2: cash in a hidden asset would be left out of Brokers and net worth.
+    listAssets.mockResolvedValue([
+      created(30, { name: 'US dollar', symbol: 'USD', assetType: 'fiat', priceSource: 'fixed' }),
+    ]);
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([
+      { instrumentId: id(30), name: 'US dollar', symbol: 'USD', hiddenAt: '2026-10-01T00:00:00Z' },
+    ]);
+    const user = userEvent.setup();
+    const { dialog, onAdded } = open();
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(onAdded).toHaveBeenCalled();
+    expect(showAsset).toHaveBeenCalledWith(id(30));
+    expect(createTrade).toHaveBeenCalledWith(
+      id(2),
+      expect.objectContaining({ instrumentId: id(30) }),
     );
   });
 
@@ -300,9 +324,27 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
+  it('leaves a position whose buy may have been saved when closed', async () => {
+    // Codex P1: a lost answer or a server error does not prove the buy was not saved.
+    createTrade.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(hideAsset).not.toHaveBeenCalled();
+  });
+
   it('hides a position whose buy was not saved when closed', async () => {
     // Codex P2: an asset made without its buy would show in Portfolio as an empty asset.
-    createTrade.mockRejectedValueOnce(refused(503));
+    createTrade.mockRejectedValueOnce(refused(400));
     const user = userEvent.setup();
     const { dialog, onAdded, onClose } = open();
     await fill(user, dialog, {
