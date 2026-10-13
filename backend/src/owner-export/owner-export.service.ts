@@ -10,6 +10,10 @@ import {
   type ExportAccount,
   type ExportAsset,
   type ExportChainTransaction,
+  type ExportDeposit,
+  type ExportDepositCheck,
+  type ExportDepositMovement,
+  type ExportDepositRate,
   type ExportOperation,
   type ExportWallet,
   exportFiles,
@@ -121,7 +125,7 @@ const fee = (row: Row) =>
 export class OwnerExportService {
   constructor(private readonly source: DataSource) {}
 
-  /** EXP-CSV: assets, accounts, wallets, operations and chain classifications, one CSV each. */
+  /** EXP-CSV: assets, accounts, wallets, operations, chain classifications and bank deposits, one CSV each. */
   async archive(ownerId: string, now = new Date()): Promise<ExportDownload> {
     const owner = parseUuid(ownerId);
     const data = await this.snapshot(async (manager) => ({
@@ -130,6 +134,7 @@ export class OwnerExportService {
       wallets: await this.wallets(manager, owner),
       operations: await this.operations(manager, owner),
       chain: await this.chain(manager, owner),
+      ...(await this.deposits(manager, owner)),
     }));
     return {
       filename: `capital-tracker-export-${day(now)}.zip`,
@@ -424,6 +429,87 @@ export class OwnerExportService {
         }),
       ),
     ];
+  }
+
+  /** The deposits as entered: terms, rate changes, movements and the bank balances checked. */
+  private async deposits(
+    manager: EntityManager,
+    owner: string,
+  ): Promise<{
+    deposits: ExportDeposit[];
+    depositRates: ExportDepositRate[];
+    depositMovements: ExportDepositMovement[];
+    depositChecks: ExportDepositCheck[];
+  }> {
+    const deposits: Row[] = await manager.query(
+      `SELECT id, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+          to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis",
+          "earlyClose", "createdAt"
+        FROM bank_deposits WHERE "ownerId"=$1`,
+      [owner],
+    );
+    const names = new Map(deposits.map((row) => [String(row.id), String(row.name)]));
+    const rates: Row[] = await manager.query(
+      `SELECT "depositId", to_char("effectiveFrom", 'YYYY-MM-DD') AS "effectiveFrom",
+          ${exact('"ratePercent"')} AS "ratePercent"
+        FROM bank_deposit_rates WHERE "ownerId"=$1`,
+      [owner],
+    );
+    const movements: Row[] = await manager.query(
+      `SELECT id, "depositId", to_char("occurredOn", 'YYYY-MM-DD') AS "occurredOn", kind,
+          amount::text AS amount, comment, "createdAt", "position"
+        FROM bank_deposit_movements WHERE "ownerId"=$1
+        ORDER BY "occurredOn", "depositId", "position"`,
+      [owner],
+    );
+    const checks: Row[] = await manager.query(
+      `SELECT id, "depositId", to_char("checkedOn", 'YYYY-MM-DD') AS "checkedOn",
+          "bankBalance"::text AS "bankBalance", "position"
+        FROM bank_deposit_checks WHERE "ownerId"=$1
+        ORDER BY "checkedOn", "depositId", "position"`,
+      [owner],
+    );
+    const nameOf = (row: Row) => names.get(String(row.depositId)) ?? '';
+    return {
+      deposits: deposits.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        bank: String(row.bank),
+        currency: String(row.currency),
+        startDate: String(row.startDate),
+        endDate: text(row.endDate),
+        payout: String(row.payout),
+        capitalized: row.capitalized === true,
+        dayBasis: String(row.dayBasis),
+        earlyClose: String(row.earlyClose),
+        createdAt: iso(row.createdAt),
+      })),
+      depositRates: rates.map((row) => ({
+        depositId: String(row.depositId),
+        deposit: nameOf(row),
+        effectiveFrom: String(row.effectiveFrom),
+        ratePercent: String(row.ratePercent),
+      })),
+      depositMovements: movements.map((row) => ({
+        id: String(row.id),
+        depositId: String(row.depositId),
+        deposit: nameOf(row),
+        occurredOn: String(row.occurredOn),
+        kind: String(row.kind),
+        amount: String(row.amount),
+        comment: text(row.comment),
+        recordedAt: iso(row.createdAt),
+        position: Number(row.position),
+      })),
+      depositChecks: checks.map((row) => ({
+        id: String(row.id),
+        depositId: String(row.depositId),
+        deposit: nameOf(row),
+        checkedOn: String(row.checkedOn),
+        bankBalance: String(row.bankBalance),
+        position: Number(row.position),
+      })),
+    };
   }
 
   private async chain(manager: EntityManager, owner: string): Promise<ExportChainTransaction[]> {

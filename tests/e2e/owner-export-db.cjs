@@ -386,6 +386,41 @@ async function seed(db, s, f) {
     classification: null,
   });
   await db.query(`INSERT INTO owner_settings("ownerId","mainCurrency") VALUES ($1,'EUR')`, [owner]);
+  // A bank deposit with a later rate, a top-up and a balance read in the bank's own app.
+  const { DepositsService } = require('/app/backend/dist/deposits/deposits.service.js');
+  const bankDeposits = new DepositsService(db);
+  const depositTerms = {
+    name: '=Savings, ruble',
+    bank: 'Synthetic Bank',
+    currency: 'RUB',
+    startDate: '2025-07-01',
+    endDate: '2026-07-01',
+    payout: 'daily',
+    capitalized: true,
+    dayBasis: 'actual-365',
+    earlyClose: 'forfeits-interest',
+    ratePercent: '12',
+    amount: '10000.00',
+  };
+  const deposit = await bankDeposits.create(owner, { requestId: randomUUID(), ...depositTerms });
+  await bankDeposits.addRate(owner, deposit.id, { effectiveFrom: '2025-09-01', ratePercent: '10' });
+  await bankDeposits.addMovement(owner, deposit.id, {
+    requestId: randomUUID(),
+    date: '2025-08-01',
+    kind: 'topup',
+    amount: '5000.50',
+    comment: 'Salary "bonus"',
+  });
+  await bankDeposits.addCheck(owner, deposit.id, {
+    requestId: randomUUID(),
+    checkedOn: '2025-08-02',
+    bankBalance: '15100.25',
+  });
+  await bankDeposits.create(other, {
+    requestId: randomUUID(),
+    ...depositTerms,
+    name: 'Foreign deposit',
+  });
   // Another owner's records never mix in.
   const foreignBtc = await instrument(s, other, {
     name: 'Foreign bitcoin',
@@ -398,6 +433,7 @@ async function seed(db, s, f) {
     feeUsd: '0',
   });
   return {
+    deposit: deposit.id,
     btc,
     usdt,
     bybit,
@@ -421,7 +457,17 @@ async function csvArchive(db, s, f, made) {
   const files = unzip(download.data);
   assert.deepEqual(
     [...files.keys()],
-    ['assets.csv', 'accounts.csv', 'wallets.csv', 'operations.csv', 'chain-transactions.csv'],
+    [
+      'assets.csv',
+      'accounts.csv',
+      'wallets.csv',
+      'operations.csv',
+      'chain-transactions.csv',
+      'deposits.csv',
+      'deposit-rates.csv',
+      'deposit-movements.csv',
+      'deposit-checks.csv',
+    ],
   );
   const table = (name) => parseCsv(files.get(name));
 
@@ -527,6 +573,39 @@ async function csvArchive(db, s, f, made) {
       [txid(3), 'out', '0.00001000', '0.00051000', '0.00000300', 'unclassified', '', '', ''],
     ],
   );
+  stage = 'EXP-CSV bank deposits as entered, formula-like names kept as text';
+  const [depositRow] = table('deposits.csv');
+  assert.deepEqual(
+    [
+      depositRow.id,
+      depositRow.name,
+      depositRow.bank,
+      depositRow.currency,
+      depositRow.start_date,
+      depositRow.end_date,
+      depositRow.payout,
+      depositRow.capitalized,
+    ],
+    [made.deposit, `'=Savings, ruble`, 'Synthetic Bank', 'RUB', '2025-07-01', '2026-07-01', 'daily', 'true'],
+  );
+  assert.deepEqual(
+    table('deposit-rates.csv').map((row) => [row.deposit_id, row.effective_from, row.rate_percent]),
+    [
+      [made.deposit, '2025-07-01', '12'],
+      [made.deposit, '2025-09-01', '10'],
+    ],
+  );
+  assert.deepEqual(
+    table('deposit-movements.csv').map((row) => [row.occurred_on, row.kind, row.amount, row.comment]),
+    [
+      ['2025-07-01', 'topup', '10000.00', ''],
+      ['2025-08-01', 'topup', '5000.50', 'Salary "bonus"'],
+    ],
+  );
+  assert.deepEqual(
+    table('deposit-checks.csv').map((row) => [row.deposit_id, row.checked_on, row.bank_balance, row.position]),
+    [[made.deposit, '2025-08-02', '15100.25', '1']],
+  );
   assert.equal(await fingerprint(db), before, 'Export changes no row');
 
   const foreign = unzip((await s.exports.archive(f.other, now)).data);
@@ -535,6 +614,12 @@ async function csvArchive(db, s, f, made) {
     [['buy', 'BTC', 'Foreign']],
   );
   assert.deepEqual(parseCsv(foreign.get('wallets.csv')), []);
+  assert.deepEqual(
+    parseCsv(foreign.get('deposits.csv')).map((row) => row.name),
+    ['Foreign deposit'],
+    'Only the other owner’s own deposit',
+  );
+  assert.equal(parseCsv(foreign.get('deposit-movements.csv')).length, 1);
   const empty = unzip((await s.exports.archive(f.third, now)).data);
   for (const [name, text] of empty) assert.deepEqual(parseCsv(text), [], `${name} is empty`);
   await rejected(() => s.exports.archive('not-a-uuid', now), 400);

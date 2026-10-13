@@ -20,6 +20,11 @@ const transferId = '88888888-8888-4888-8888-888888888888';
 const swapId = '99999999-9999-4999-8999-999999999999';
 const address = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
 const txid = 'a'.repeat(64);
+const depositId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const topupId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const payoutId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const checkId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const earlierCheckId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 const blankOperation = {
   accountId: null,
@@ -231,6 +236,67 @@ const data: ExportData = {
       classifiedAt: null,
     },
   ],
+  deposits: [
+    {
+      id: depositId,
+      name: '=Synthetic, deposit',
+      bank: 'Synthetic Bank',
+      currency: 'RUB',
+      startDate: '2025-03-01',
+      endDate: '2026-03-01',
+      payout: 'daily',
+      capitalized: true,
+      dayBasis: 'actual-365',
+      earlyClose: 'forfeits-interest',
+      createdAt: '2025-03-01T08:00:00.000Z',
+    },
+  ],
+  depositRates: [
+    { depositId, deposit: '=Synthetic, deposit', effectiveFrom: '2025-09-01', ratePercent: '14' },
+    { depositId, deposit: '=Synthetic, deposit', effectiveFrom: '2025-03-01', ratePercent: '16.5' },
+  ],
+  depositMovements: [
+    {
+      id: payoutId,
+      depositId,
+      deposit: '=Synthetic, deposit',
+      occurredOn: '2025-04-01',
+      kind: 'interest-payout',
+      amount: '120.50',
+      comment: null,
+      recordedAt: '2025-04-01T09:00:00.000Z',
+      position: 2,
+    },
+    {
+      id: topupId,
+      depositId,
+      deposit: '=Synthetic, deposit',
+      occurredOn: '2025-03-01',
+      kind: 'topup',
+      amount: '100000.00',
+      comment: 'First "money"',
+      recordedAt: '2025-03-01T08:00:01.000Z',
+      position: 1,
+    },
+  ],
+  depositChecks: [
+    {
+      id: checkId,
+      depositId,
+      deposit: '=Synthetic, deposit',
+      checkedOn: '2025-04-02',
+      bankBalance: '100320.75',
+      position: 2,
+    },
+    {
+      id: earlierCheckId,
+      depositId,
+      deposit: '=Synthetic, deposit',
+      checkedOn: '2025-04-02',
+      bankBalance: '100300.10',
+      position: 1,
+    },
+  ],
 };
 
 const files = () =>
@@ -251,6 +317,10 @@ describe('owner data export (EXP-CSV)', () => {
       'wallets.csv',
       'operations.csv',
       'chain-transactions.csv',
+      'deposits.csv',
+      'deposit-rates.csv',
+      'deposit-movements.csv',
+      'deposit-checks.csv',
     ]);
   });
 
@@ -300,6 +370,30 @@ describe('owner data export (EXP-CSV)', () => {
     expect(rows).toEqual([
       `${walletId},solana,So1anaSyntheticAddress111111111111111111111,,,${'b'.repeat(88)},300000000,2025-06-20T08:00:00.000Z,out,SOL,0.000000000,2.000005000,SOL,0.000005000,-2.000000000,unclassified,,,,,,,,`,
       `${walletId},bitcoin,${address},Savings,"Холодный, кошелёк",${txid},800002,2025-06-21T08:00:00.000Z,out,BTC,0.00001000,0.00051000,BTC,0.00000300,,classified,transfer,"{""type"":""transfer""}",,true,,transfer:${transferId},1,2025-06-21T09:00:00.000Z`,
+    ]);
+  });
+
+  it('lists deposits as entered, with their rates, movements and bank balance checks', () => {
+    const name = `"'=Synthetic, deposit"`;
+    expect(lines('deposits.csv')).toEqual([
+      'id,name,bank,currency,start_date,end_date,payout,capitalized,day_basis,early_close,created_at',
+      `${depositId},${name},Synthetic Bank,RUB,2025-03-01,2026-03-01,daily,true,actual-365,forfeits-interest,2025-03-01T08:00:00.000Z`,
+    ]);
+    expect(lines('deposit-rates.csv')).toEqual([
+      'deposit_id,deposit,effective_from,rate_percent',
+      `${depositId},${name},2025-03-01,16.5`,
+      `${depositId},${name},2025-09-01,14`,
+    ]);
+    expect(lines('deposit-movements.csv')).toEqual([
+      'id,deposit_id,deposit,occurred_on,kind,amount,comment,recorded_at,position',
+      `${topupId},${depositId},${name},2025-03-01,topup,100000.00,"First ""money""",2025-03-01T08:00:01.000Z,1`,
+      `${payoutId},${depositId},${name},2025-04-01,interest-payout,120.50,,2025-04-01T09:00:00.000Z,2`,
+    ]);
+    expect(lines('deposit-checks.csv')).toEqual([
+      'id,deposit_id,deposit,checked_on,bank_balance,position',
+      // The same day: the check entered later comes last, whatever its id sorts like.
+      `${earlierCheckId},${depositId},${name},2025-04-02,100300.10,1`,
+      `${checkId},${depositId},${name},2025-04-02,100320.75,2`,
     ]);
   });
 
