@@ -18,8 +18,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AttentionProvider } from '../shell/attention-context';
+import { setInflationBasis } from '../shell/inflation-basis';
 import { MainCurrencyProvider } from '../shell/main-currency';
 import SyncIndicator from '../shell/SyncIndicator';
+import { setValueView } from '../shell/value-view';
 import { useNeedsClassification } from '../transactions/useNeedsClassification';
 import DashboardPage from './DashboardPage';
 
@@ -747,5 +749,100 @@ describe('show-dashboard-top-assets', () => {
     expect(wallets).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledTimes(1);
     expect(settings).toHaveBeenCalledTimes(1);
+  });
+});
+
+// INFL-REAL: the profit to date after inflation, beside the nominal one, under one switch.
+describe('Dashboard after inflation', () => {
+  const real = {
+    official: { invested: '96000', profit: '19000', profitPercent: '19.79', estimated: true },
+    personal: { invested: '92500', profit: '22500', profitPercent: '24.32', estimated: true },
+  };
+  beforeEach(() => {
+    setValueView('nominal');
+    setInflationBasis('official');
+    get.mockImplementation(async (period: HistoryPeriod, currency?: AccountingCurrency) =>
+      history({ period, currency: currency ?? 'USD', real }),
+    );
+  });
+  const profitLine = (hero: HTMLElement, name: string) => within(hero).getByLabelText(name);
+
+  it('DASH-REAL-NOMINAL opens on the nominal profit and shows the real one beside it', async () => {
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(profitLine(hero, 'Profit or loss to date')).toHaveTextContent(
+      '▲ +$25,000.00+27.78%on $90,000.00 net invested',
+    );
+    const other = profitLine(hero, 'Profit or loss after inflation');
+    expect(other).toHaveTextContent('After inflation+$19,000.00+19.79%');
+    expect(other).toHaveTextContent('at the official rate, latest months estimated');
+    expect(within(other).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
+  });
+
+  it('DASH-REAL-SWITCH Real puts the real profit first and keeps the nominal one in sight', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    expect(profitLine(hero, 'Real profit or loss to date')).toHaveTextContent(
+      "▲ +$19,000.00+19.79%real, on $96,000.00 put in, in today's money",
+    );
+    expect(profitLine(hero, 'Profit or loss after inflation')).toHaveTextContent(
+      'Nominal+$25,000.00+27.78%',
+    );
+    // The net worth itself is the same in both readings.
+    expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('value-view', 'real');
+  });
+
+  it('DASH-REAL-REMEMBER opens on the last choice', async () => {
+    setValueView('real');
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(profitLine(hero, 'Real profit or loss to date')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Real' })).toBeChecked();
+  });
+
+  it('DASH-REAL-OWN-RATE reads the profit after the owner own rate when that is chosen', async () => {
+    setInflationBasis('personal');
+    const user = userEvent.setup();
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const other = profitLine(hero, 'Profit or loss after inflation');
+    expect(other).toHaveTextContent('After inflation+$22,500.00+24.32%');
+    expect(other).toHaveTextContent('at your own rate');
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    expect(profitLine(hero, 'Real profit or loss to date')).toHaveTextContent(
+      "+$22,500.00+24.32%real, on $92,500.00 put in, in today's money",
+    );
+  });
+
+  it('DASH-REAL-UNKNOWN keeps the nominal profit and says why there is no real one', async () => {
+    setValueView('real');
+    get.mockImplementation(async (period: HistoryPeriod) =>
+      history({ period, real: { official: null, personal: null } }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(profitLine(hero, 'Profit or loss to date')).toHaveTextContent(
+      '▲ +$25,000.00+27.78%on $90,000.00 net invested',
+    );
+    expect(profitLine(hero, 'Profit or loss after inflation')).toHaveTextContent(
+      'Inflation figures are missing for some of your deposits',
+    );
+    setInflationBasis('personal');
+    expect(await within(hero).findByText(/Set your yearly rate in Settings/)).toBeInTheDocument();
+  });
+
+  it('DASH-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
+    get.mockImplementation(async (period: HistoryPeriod) => history({ period }));
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(hero).queryByLabelText('Profit or loss after inflation')).toBeNull();
+    expect(within(hero).getByLabelText('Profit or loss to date')).toBeInTheDocument();
   });
 });

@@ -1,0 +1,69 @@
+import { buildSeries, officialFactor, personalFactor } from '../inflation/inflation-math';
+import type { StatedFlow } from './capital-flows';
+import { realProfit } from './real-profit';
+
+const SCALE = 10n ** 60n;
+const flow = (iso: string, amount: number | null): StatedFlow => ({
+  at: Date.parse(iso),
+  amount: amount === null ? null : BigInt(amount) * SCALE,
+});
+const TO = '2026-03-01';
+
+describe('real profit (INFL-REAL)', () => {
+  // One percent a month from 2025-01 to 2026-02, so a day's level is known up to Feb 2026.
+  const changes = new Map<string, number>();
+  for (let month = 0; month < 14; month++) {
+    const year = 2025 + Math.floor(month / 12);
+    changes.set(`${year}-${String((month % 12) + 1).padStart(2, '0')}`, 1);
+  }
+  const series = buildSeries(changes);
+  const official = (day: string) => officialFactor(series, day, TO);
+
+  it('INFL-REAL-OFFICIAL grows each deposit by the inflation since its day and takes it from the value', () => {
+    const flows = [flow('2025-03-15T00:00:00.000Z', 1000), flow('2025-09-15T00:00:00.000Z', 500)];
+    const result = realProfit('1700', false, flows, official);
+    // 1000 over 12 months and 500 over 6 months of 1% a month, plus the estimated 15 days to March.
+    expect(result).not.toBeNull();
+    const march = Number(official('2025-03-15')?.factor);
+    const september = Number(official('2025-09-15')?.factor);
+    const invested = 1000 * march + 500 * september;
+    expect(Number(result?.invested)).toBeCloseTo(invested, 6);
+    expect(Number(result?.profit)).toBeCloseTo(1700 - invested, 6);
+    expect(Number(result?.profitPercent)).toBeCloseTo(((1700 - invested) / invested) * 100, 1);
+    expect(result?.estimated).toBe(true);
+  });
+
+  it('INFL-REAL-WITHDRAWAL lowers the money put in at its own factor', () => {
+    const flows = [flow('2025-03-15T00:00:00.000Z', 1000), flow('2025-09-15T00:00:00.000Z', -400)];
+    const result = realProfit('700', false, flows, official);
+    const invested =
+      1000 * Number(official('2025-03-15')?.factor) - 400 * Number(official('2025-09-15')?.factor);
+    expect(Number(result?.invested)).toBeCloseTo(invested, 6);
+  });
+
+  it('INFL-REAL-PERSONAL carries money forward at the owner own yearly rate', () => {
+    const flows = [flow('2025-03-01T00:00:00.000Z', 1000)];
+    const result = realProfit('1100', false, flows, (day) => personalFactor(10, day, TO));
+    // 365 days at 10% a year.
+    expect(Number(result?.invested)).toBeCloseTo(1100, 6);
+    expect(Number(result?.profit)).toBeCloseTo(0, 6);
+  });
+
+  it('INFL-REAL-UNKNOWN is unknown when one deposit has no factor or no rate', () => {
+    const before = [flow('2008-01-15T00:00:00.000Z', 100), flow('2025-03-15T00:00:00.000Z', 100)];
+    expect(realProfit('300', false, before, official)).toBeNull();
+    const unrated = [flow('2025-03-15T00:00:00.000Z', null)];
+    expect(realProfit('300', false, unrated, official)).toBeNull();
+    expect(realProfit(null, false, [flow('2025-03-15T00:00:00.000Z', 100)], official)).toBeNull();
+  });
+
+  it('INFL-REAL-EMPTY says nothing was put in rather than a profit of the whole value', () => {
+    const result = realProfit('300', false, [], official);
+    expect(result).toEqual({ invested: '0', profit: '300', profitPercent: null, estimated: false });
+  });
+
+  it('INFL-REAL-UNPRICED gives no profit when no held asset is priced at all', () => {
+    const result = realProfit('0', true, [flow('2025-03-15T00:00:00.000Z', 100)], official);
+    expect(result?.profit).toBeNull();
+  });
+});

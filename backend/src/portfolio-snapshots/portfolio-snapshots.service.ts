@@ -25,6 +25,8 @@ import {
   moscowDate,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
+import { readEffectiveChanges, readPersonalRate } from '../inflation/inflation.service';
+import { buildSeries, officialFactor, personalFactor } from '../inflation/inflation-math';
 import { trackJob } from '../observability/metrics';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
@@ -34,9 +36,11 @@ import {
   investedAt,
   profitToDate,
   type SplitPoint,
+  type StatedFlow,
   splitChange,
   stateFlows,
 } from './capital-flows';
+import { realProfit } from './real-profit';
 import {
   DEFAULT_PERIOD,
   firstValuedPoint,
@@ -452,9 +456,38 @@ export class PortfolioSnapshotsService {
           ? { profit: null, profitPercent: null }
           : profitToDate(current.value, invested.at(-1) ?? null, current.unpriced)),
         ...splitChange(start, series.at(-1)!, flows),
+        real: current.unrated
+          ? { official: null, personal: null }
+          : await this.realProfits(manager, owner, currency, current, flows, now),
         points,
       };
     });
+  }
+
+  /** INFL-REAL: profit to date after official inflation and after the owner's own rate. */
+  private async realProfits(
+    manager: EntityManager,
+    owner: string,
+    currency: AccountingCurrency,
+    current: { value: string | null; unpriced: boolean },
+    allFlows: readonly StatedFlow[],
+    now: Date,
+  ) {
+    const today = now.toISOString().slice(0, 10);
+    const flows = allFlows.filter((flow) => flow.at <= now.getTime());
+    const series = buildSeries((await readEffectiveChanges(manager, owner, currency)).changes);
+    const rate = await readPersonalRate(manager, owner, currency);
+    return {
+      official: realProfit(current.value, current.unpriced, flows, (day) =>
+        officialFactor(series, day, today),
+      ),
+      personal:
+        rate === null
+          ? null
+          : realProfit(current.value, current.unpriced, flows, (day) =>
+              personalFactor(Number(rate), day, today),
+            ),
+    };
   }
 
   /**

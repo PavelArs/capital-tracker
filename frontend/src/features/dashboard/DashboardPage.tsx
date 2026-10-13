@@ -3,6 +3,7 @@ import {
   type HistoryPeriod,
   historyPeriods,
   type PortfolioHistory,
+  type RealProfit,
 } from '@api/portfolio-history.api';
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,8 +15,10 @@ import { money, percent, quantity, tone } from '../portfolio/format';
 import AboutChart from '../shell/AboutChart';
 import { useAttention } from '../shell/attention-context';
 import { Icon } from '../shell/icons';
+import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
+import { useValueView } from '../shell/value-view';
 import DashboardLoading from './DashboardLoading';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
@@ -89,8 +92,57 @@ function Amount({ text }: { text: string }) {
   );
 }
 
+const NO_REAL: Record<'official' | 'personal', string> = {
+  official: 'Inflation figures are missing for some of your deposits, so there is no real profit.',
+  personal: 'Set your yearly rate in Settings to see the profit after your own inflation.',
+};
+
+// The other reading of the profit, always on screen beside the one the switch picked, so
+// nothing moves when it changes: the real profit under Nominal, the nominal one under Real.
+function OtherReading({
+  history,
+  real,
+  basis,
+  view,
+}: {
+  history: PortfolioHistory;
+  real: RealProfit | null;
+  basis: 'official' | 'personal';
+  view: 'nominal' | 'real';
+}) {
+  const { currency } = history;
+  if (real === null)
+    return (
+      <div className="dashboard-hero__real" aria-label="Profit or loss after inflation">
+        <span className="dashboard-hero__period">{NO_REAL[basis]}</span>
+      </div>
+    );
+  const [label, profit, percentText] =
+    view === 'real'
+      ? ['Nominal', history.profit, history.profitPercent]
+      : ['After inflation', real.profit, real.profitPercent];
+  const direction = tone(profit);
+  return (
+    <div className="dashboard-hero__real" aria-label="Profit or loss after inflation">
+      <span className="dashboard-hero__period">{label}</span>
+      <span className={direction ? `portfolio-${direction}` : undefined}>
+        {money(profit, currency, true)}
+      </span>
+      {percentText !== null && <span>{percent(percentText)}</span>}
+      <span className="dashboard-hero__period">
+        {basis === 'official'
+          ? `at the official rate${real.estimated ? ', latest months estimated' : ''}`
+          : 'at your own rate'}
+        {' · '}
+        <Link to="/settings">Settings</Link>
+      </span>
+    </div>
+  );
+}
+
 // Under the net worth: profit or loss to date against all the money put in, whatever the
-// period; the period itself only drives the chart and the split below.
+// period; the period itself only drives the chart and the split below. Under Real, money put
+// in is grown by the inflation since each deposit's day (INFL-REAL).
 function NetWorth({
   history,
   portfolio,
@@ -100,7 +152,15 @@ function NetWorth({
   portfolio: PortfolioValuation | null;
   asked: AccountingCurrency | undefined;
 }) {
-  const { currency, profit } = history;
+  const { currency } = history;
+  const [view] = useValueView();
+  const [basis] = useInflationBasis();
+  const real = history.real?.[basis] ?? null;
+  // Without a real figure the nominal one stays, and the line below says why.
+  const shownReal = view === 'real' && real !== null;
+  const profit = shownReal ? real.profit : history.profit;
+  const profitPercent = shownReal ? real.profitPercent : history.profitPercent;
+  const invested = shownReal ? real.invested : history.invested;
   const direction = tone(profit);
   // What is left out of these figures is said once, in a tooltip, not as lines of text.
   const note = [unknownCostNote(portfolio), history.complete ? null : INCOMPLETE_NOTE]
@@ -114,16 +174,18 @@ function NetWorth({
       </div>
       <div
         className={`dashboard-hero__delta${direction ? ` portfolio-${direction}` : ''}`}
-        aria-label="Profit or loss to date"
+        aria-label={shownReal ? 'Real profit or loss to date' : 'Profit or loss to date'}
       >
         <span>
           {direction === 'neg' ? '▼ ' : direction === 'pos' ? '▲ ' : ''}
           {money(profit, currency, true)}
         </span>
-        {history.profitPercent !== null && <span>{percent(history.profitPercent)}</span>}
-        {history.invested !== null && (
+        {profitPercent !== null && <span>{percent(profitPercent)}</span>}
+        {invested !== null && (
           <span className="dashboard-hero__period">
-            on {money(history.invested, currency)} net invested
+            {shownReal
+              ? `real, on ${money(invested, currency)} put in, in today's money`
+              : `on ${money(invested, currency)} net invested`}
           </span>
         )}
         {note !== '' && (
@@ -138,6 +200,9 @@ function NetWorth({
           </span>
         )}
       </div>
+      {history.real !== undefined && (
+        <OtherReading history={history} real={real} basis={basis} view={view} />
+      )}
       {portfolio !== null &&
         portfolio.currency === currency &&
         Number(portfolio.depositsValue) > 0 && (
@@ -253,7 +318,7 @@ export default function DashboardPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Dashboard" currency={shown?.currency} />
+      <PageHeader title="Dashboard" currency={shown?.currency} valueSwitch />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>
