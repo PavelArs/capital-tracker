@@ -93,8 +93,10 @@ function Amount({ text }: { text: string }) {
 }
 
 const NO_REAL: Record<'official' | 'personal', string> = {
-  official: 'Inflation figures are missing for some of your deposits, so there is no real profit.',
-  personal: 'Set your yearly rate in Settings to see the profit after your own inflation.',
+  official:
+    'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.',
+  personal:
+    'Real profit at your own rate is unknown: set a yearly rate in Settings, or an exchange rate or price is missing.',
 };
 
 // Which rate the real figure rests on, said beside that figure only.
@@ -129,7 +131,10 @@ function OtherReading({
       : ['After inflation', real.profit, real.profitPercent];
   const direction = tone(profit);
   return (
-    <div className="dashboard-hero__real" aria-label="Profit or loss after inflation">
+    <div
+      className="dashboard-hero__real"
+      aria-label={view === 'real' ? 'Nominal profit or loss' : 'Profit or loss after inflation'}
+    >
       <span className="dashboard-hero__period">{label}</span>
       <span className={direction ? `portfolio-${direction}` : undefined}>
         {money(profit, currency, true)}

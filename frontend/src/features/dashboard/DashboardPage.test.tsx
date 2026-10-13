@@ -797,7 +797,7 @@ describe('Dashboard after inflation', () => {
       '/settings',
     );
     // The rate belongs to the real figure: the nominal row beside it does not repeat it.
-    const nominal = profitLine(hero, 'Profit or loss after inflation');
+    const nominal = profitLine(hero, 'Nominal profit or loss');
     expect(nominal).toHaveTextContent('Nominal+$25,000.00+27.78%before inflation');
     expect(nominal).not.toHaveTextContent('official rate');
     expect(within(nominal).queryByRole('link')).toBeNull();
@@ -827,7 +827,7 @@ describe('Dashboard after inflation', () => {
     expect(real).toHaveTextContent(
       "+$22,500.00+24.32%real, on $92,500.00 put in, in today's money · at your own rate · Settings",
     );
-    expect(profitLine(hero, 'Profit or loss after inflation')).not.toHaveTextContent('own rate');
+    expect(profitLine(hero, 'Nominal profit or loss')).not.toHaveTextContent('own rate');
   });
 
   it('DASH-REAL-UNKNOWN keeps the nominal profit and says why there is no real one', async () => {
@@ -841,10 +841,12 @@ describe('Dashboard after inflation', () => {
       '▲ +$25,000.00+27.78%on $90,000.00 net invested',
     );
     expect(profitLine(hero, 'Profit or loss after inflation')).toHaveTextContent(
-      'Inflation figures are missing for some of your deposits',
+      'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.',
     );
     setInflationBasis('personal');
-    expect(await within(hero).findByText(/Set your yearly rate in Settings/)).toBeInTheDocument();
+    expect(
+      await within(hero).findByText(/Real profit at your own rate is unknown: set a yearly rate/),
+    ).toBeInTheDocument();
   });
 
   it('DASH-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
