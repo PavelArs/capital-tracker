@@ -7,6 +7,7 @@ import { useId } from 'react';
 import { Link } from 'react-router-dom';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { Change } from '../portfolio/asset-parts';
 import { withCurrency } from '../portfolio/currency';
 import {
   missingLabel,
@@ -17,7 +18,6 @@ import {
   sourceLabels,
   tone,
 } from '../portfolio/format';
-import { Change } from '../portfolio/PortfolioPage';
 import AssetIcon from '../shell/AssetIcon';
 import { onlyChain, type TokenChains, withChains } from '../shell/token-chains';
 

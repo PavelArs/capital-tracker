@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prefetchSection, resetPrefetch } from './prefetch';
+import { prefetchSection, resetPrefetch, warmPages } from './prefetch';
+import { sectionPage } from './route-pages';
 
 vi.mock('@api/cached-reads', () => ({
   cachedReads: {
@@ -9,6 +10,13 @@ vi.mock('@api/cached-reads', () => ({
     operations: { prefetch: vi.fn() },
     transferProposals: { prefetch: vi.fn() },
     duplicateProposals: { prefetch: vi.fn() },
+  },
+}));
+
+vi.mock('./route-pages', () => ({
+  sectionPage: {
+    '/portfolio': vi.fn(() => Promise.resolve({})),
+    '/settings-broken': vi.fn(() => Promise.reject(new Error('offline'))),
   },
 }));
 
@@ -71,5 +79,33 @@ describe('prefetchSection', () => {
     vi.mocked(cachedReads.portfolio.prefetch).mockReturnValue(failed as never);
     expect(() => prefetchSection('/portfolio', 'USD')).not.toThrow();
     expect(handled).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches the screen file of a section, and a failed fetch is left alone', async () => {
+    prefetchSection('/portfolio', 'USD', 1_000);
+    // The file is asked for every time; only the data reads are held back for 30 seconds.
+    prefetchSection('/portfolio', 'USD', 2_000);
+    expect(sectionPage['/portfolio']).toHaveBeenCalledTimes(2);
+    expect(() => prefetchSection('/settings-broken', 'USD')).not.toThrow();
+    await Promise.resolve();
+  });
+});
+
+describe('warmPages', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('fetches the screen files one after another once things have settled, and can be stopped', async () => {
+    vi.useFakeTimers();
+    const loaders = Object.values(sectionPage) as ReturnType<typeof vi.fn>[];
+    for (const load of loaders) load.mockClear();
+    const stop = warmPages();
+    expect(loaders[0]).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    // Browsers without idle callbacks (and jsdom) space them out by a quarter of a second.
+    await vi.advanceTimersByTimeAsync(250);
+    expect(loaders[0]).toHaveBeenCalledTimes(1);
+    stop();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(loaders[1]).not.toHaveBeenCalled();
   });
 });

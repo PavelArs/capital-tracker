@@ -62,6 +62,37 @@ function landingPath(address: string): string {
 }
 
 /**
+ * The page part of the frame: an empty head and grey blocks in the layout of the section the
+ * path names. The frame draws it while the sign-in check is on its way, and a page that is still
+ * being fetched (it comes as a separate file) draws it inside the real frame.
+ */
+export function BootPage() {
+  const { pathname } = useLocation();
+  const here = landingPath(pathname);
+  const [section = '', ...rest] = here.split('/').filter(Boolean);
+  const show =
+    (rest.length > 0 ? nestedBlocksOf[section] : undefined) ??
+    blocksOf[section] ??
+    blocksOf.portfolio;
+  return (
+    <div className="shell-page shell-page--boot">
+      <header className="shell-page__head">
+        <h1>
+          <Bone width={180} height={29} />
+        </h1>
+        <SegmentedPlaceholder labels={accountingCurrencies} />
+      </header>
+      {here === '/dashboard' ? (
+        // The Dashboard draws its own stand-in (a net-worth hero, then the chart).
+        <DashboardLoading />
+      ) : (
+        <PageSkeleton label="Loading" show={show} rows={rowsOf[section]} />
+      )}
+    </div>
+  );
+}
+
+/**
  * The frame of the application (navigation, an empty page head, grey blocks) drawn while the
  * sign-in check is on its way, so the first thing on screen is the place the owner is going to,
  * not a sentence. It asks for nothing: no data is read until the owner is known.
@@ -77,7 +108,6 @@ export default function BootShell() {
   }, []);
 
   const here = landingPath(pathname);
-  const [section = '', ...rest] = here.split('/').filter(Boolean);
 
   // Phones show the sections as a strip: keep the current one in view, as Layout does.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
@@ -87,10 +117,6 @@ export default function BootShell() {
     if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
     strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
   }, [pathname]);
-  const show =
-    (rest.length > 0 ? nestedBlocksOf[section] : undefined) ??
-    blocksOf[section] ??
-    blocksOf.portfolio;
   return (
     <div className="shell">
       <nav className="shell-nav" aria-label="Main navigation">
@@ -137,20 +163,7 @@ export default function BootShell() {
         </div>
       </nav>
       <main id="main-content" className="shell-main">
-        <div className="shell-page shell-page--boot">
-          <header className="shell-page__head">
-            <h1>
-              <Bone width={180} height={29} />
-            </h1>
-            <SegmentedPlaceholder labels={accountingCurrencies} />
-          </header>
-          {here === '/dashboard' ? (
-            // The Dashboard draws its own stand-in (a net-worth hero, then the chart).
-            <DashboardLoading />
-          ) : (
-            <PageSkeleton label="Loading" show={show} rows={rowsOf[section]} />
-          )}
-        </div>
+        <BootPage />
       </main>
     </div>
   );

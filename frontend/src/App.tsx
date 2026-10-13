@@ -1,27 +1,36 @@
 import { setErrorHandler } from '@api';
-import BootShell from '@components/BootShell';
+import BootShell, { BootPage } from '@components/BootShell';
 import Layout from '@components/Layout';
 import ToastViewport from '@components/Toast';
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import DashboardPage from '@features/dashboard/DashboardPage';
-import DepositPage from '@features/deposits/DepositPage';
-import DepositsPage from '@features/deposits/DepositsPage';
-import HistoryPage from '@features/history/HistoryPage';
-import ForgotPasswordPage from '@features/password-reset/ForgotPasswordPage';
-import ResetPasswordPage from '@features/password-reset/ResetPasswordPage';
-import AssetPage from '@features/portfolio/AssetPage';
-import PortfolioPage from '@features/portfolio/PortfolioPage';
-import RealEstatePage from '@features/property/RealEstatePage';
 import { retiredPaths } from '@features/shell/navigation';
-import SettingsPage from '@features/shell/SettingsPage';
-import TransactionsPage from '@features/transactions/TransactionsPage';
-import WalletPage from '@features/wallets/WalletPage';
-import WalletsPage from '@features/wallets/WalletsPage';
+import { pages } from '@features/shell/route-pages';
 import Login from '@pages/Login';
-import React, { useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+
+const {
+  portfolio: PortfolioPage,
+  asset: AssetPage,
+  transactions: TransactionsPage,
+  wallets: WalletsPage,
+  wallet: WalletPage,
+  deposits: DepositsPage,
+  deposit: DepositPage,
+  realEstate: RealEstatePage,
+  settings: SettingsPage,
+  history: HistoryPage,
+  forgotPassword: ForgotPasswordPage,
+  resetPassword: ResetPasswordPage,
+} = pages;
+
+// A screen that is still being fetched shows the grey blocks of its layout inside the real frame.
+function inFrame(page: React.ReactNode) {
+  return <Suspense fallback={<BootPage />}>{page}</Suspense>;
+}
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -40,8 +49,22 @@ function AppRoutes() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/password-reset" element={<ForgotPasswordPage />} />
-      <Route path="/password-reset/new" element={<ResetPasswordPage />} />
+      <Route
+        path="/password-reset"
+        element={
+          <Suspense fallback={null}>
+            <ForgotPasswordPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/password-reset/new"
+        element={
+          <Suspense fallback={null}>
+            <ResetPasswordPage />
+          </Suspense>
+        }
+      />
 
       {/* Protected routes */}
       <Route
@@ -54,16 +77,16 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="portfolio" element={<PortfolioPage />} />
-        <Route path="portfolio/:assetId" element={<AssetPage />} />
-        <Route path="transactions" element={<TransactionsPage />} />
-        <Route path="wallets" element={<WalletsPage />} />
-        <Route path="wallets/:accountId" element={<WalletPage />} />
-        <Route path="deposits" element={<DepositsPage />} />
-        <Route path="deposits/:depositId" element={<DepositPage />} />
-        <Route path="real-estate" element={<RealEstatePage />} />
-        <Route path="preferences" element={<SettingsPage />} />
-        <Route path="history" element={<HistoryPage />} />
+        <Route path="portfolio" element={inFrame(<PortfolioPage />)} />
+        <Route path="portfolio/:assetId" element={inFrame(<AssetPage />)} />
+        <Route path="transactions" element={inFrame(<TransactionsPage />)} />
+        <Route path="wallets" element={inFrame(<WalletsPage />)} />
+        <Route path="wallets/:accountId" element={inFrame(<WalletPage />)} />
+        <Route path="deposits" element={inFrame(<DepositsPage />)} />
+        <Route path="deposits/:depositId" element={inFrame(<DepositPage />)} />
+        <Route path="real-estate" element={inFrame(<RealEstatePage />)} />
+        <Route path="preferences" element={inFrame(<SettingsPage />)} />
+        <Route path="history" element={inFrame(<HistoryPage />)} />
         {retiredPaths.map(([from, to]) => (
           <Route key={from} path={`${from.slice(1)}/*`} element={<Navigate to={to} replace />} />
         ))}

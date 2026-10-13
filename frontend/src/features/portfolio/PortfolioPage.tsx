@@ -19,6 +19,7 @@ import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shel
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
 import Allocation from './Allocation';
+import { assetCaption, Change, Signed } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
@@ -26,11 +27,6 @@ import './portfolio.css';
 import EmptyState from '@/ui/EmptyState';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 
-export const typeLabels: Record<AssetType, string> = {
-  crypto: 'Crypto',
-  fiat: 'Cash',
-  manual: 'Manual',
-};
 type Filter = 'all' | AssetType;
 const filters: [Filter, string][] = [
   ['all', 'All'],
@@ -38,51 +34,6 @@ const filters: [Filter, string][] = [
   ['fiat', 'Cash'],
   ['manual', 'Manual'],
 ];
-
-/**
- * "BTC · Crypto · USD": ticker, type and value currency of an asset; a token held in tracked
- * wallets names their blockchains, "USDT on Ethereum, Solana" (TOKEN-CHAIN).
- */
-export function assetCaption(asset: AssetValuation, chains: TokenChains = new Map()): string {
-  return [
-    asset.symbol && withChains(asset.symbol, asset.symbol, chains),
-    typeLabels[asset.assetType],
-    asset.valuationCurrency,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-export function Signed({
-  value,
-  currency,
-  ratio,
-  inline,
-}: {
-  value: string | null;
-  currency: AccountingCurrency;
-  ratio?: string | null;
-  /** The percentage beside the amount, on one line, as in a table row. */
-  inline?: boolean;
-}) {
-  return (
-    <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>
-      {money(value, currency, true)}
-      {ratio !== undefined && value !== null && ratio !== null && (
-        <span className={`portfolio-sub${inline ? ' portfolio-sub--inline' : ''}`}>
-          {percent(ratio)}
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** A signed percentage in the gain or loss colour: "+2.10%", "-1.40%", or a dash. */
-export function Change({ value }: { value: string | null }) {
-  return (
-    <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>{percent(value)}</span>
-  );
-}
 
 export type SortKey =
   | 'name'
