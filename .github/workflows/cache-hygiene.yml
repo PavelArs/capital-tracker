@@ -18,10 +18,6 @@ on:
         options: [report, sweep-dry-run, sweep]
         default: report
 
-  # TEMPORARY: proves the warm job from this pull request's own run.
-  pull_request:
-    paths: ['.github/workflows/cache-hygiene.yml']
-
 permissions: {}
 
 concurrency:
@@ -93,7 +89,7 @@ jobs:
   # reuses the images its pull request scanned, so no scan of main saves it any more.
   warm-trivy:
     name: Keep the vulnerability database cache of main fresh
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -106,9 +102,8 @@ jobs:
         env:
           # The path and key the image scan job in ci.yml restores.
           TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
-        run: |
-          trivy image --download-db-only
-          trivy image --download-java-db-only
+        # Only the vulnerability database: the Java database is 0.9 GiB and the scans never use it.
+        run: trivy image --download-db-only
       - name: Find the day of the vulnerability database
         id: day
         run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
