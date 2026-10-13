@@ -52,8 +52,11 @@ const cashNames: Record<ValuationCurrency, string> = {
   RUB: 'Russian ruble',
 };
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
-// Refusals that say nothing about what is saved: an expired session, a timeout, too many requests.
+// Whether a failed request was answered for certain. No answer, a server error, an expired
+// session, a timeout or too many requests says nothing about what was saved.
 const UNANSWERED = [401, 403, 408, 429];
+const answered = (code: number | undefined): code is number =>
+  code !== undefined && code < 500 && !UNANSWERED.includes(code);
 
 const failure = (error: unknown, saved: string) => {
   const code = status(error);
@@ -155,13 +158,11 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     setSaving(true);
     setError(null);
     let settled = true;
-    // Whether a failed request settled the question. No answer, a server error, an expired
-    // session or a request to slow down says nothing about what was saved.
+    // A failed request without a certain answer leaves the question open.
     const definite = (caught: unknown) => {
-      const code = status(caught);
-      const answered = code !== undefined && code < 500 && !UNANSWERED.includes(code);
-      if (!answered) settled = false;
-      return answered;
+      const certain = answered(status(caught));
+      if (!certain) settled = false;
+      return certain;
     };
     await Promise.all(
       done.holdings.map(async (step) => {
@@ -320,7 +321,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
         done.accountId = account.id;
       } catch (caught) {
         const code = status(caught);
-        done.accountUnsure = code === undefined || code >= 500;
+        done.accountUnsure = !answered(code);
         setError(failure(caught, 'Nothing was saved. '));
         setSaving(false);
         return;
@@ -349,9 +350,9 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
               }),
             );
           } catch (caught) {
-            // Without an answer, or after a server error, the buy may have been saved.
+            // Without a certain answer, the buy may have been saved.
             const code = status(caught);
-            step.unsure = code === undefined || code >= 500;
+            step.unsure = !answered(code);
             throw caught;
           }
           step.unsure = false;
@@ -609,9 +610,9 @@ async function assetFor(
   try {
     step.asset = await portfolioAssetsApi.create(step.making);
   } catch (caught) {
-    // Refused outright, nothing was made; without an answer, or after a server error, it may be.
+    // Refused for certain, nothing was made; without a certain answer, it may have been.
     const code = status(caught);
-    if (code !== undefined && code < 500) step.making = null;
+    if (answered(code)) step.making = null;
     throw caught;
   }
   return step.asset;

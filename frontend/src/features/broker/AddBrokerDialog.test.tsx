@@ -411,9 +411,9 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset.mock.calls).toEqual([[id(10)]]);
   });
 
-  it('finds and hides a position asset whose answer was lost when closed', async () => {
-    // Codex P2: the asset may have been made although no answer came back.
-    createAsset.mockRejectedValueOnce(refused(503));
+  it.each([503, 408])('finds and hides a position asset after a %i when closed', async (code) => {
+    // Codex P2: the asset may have been made although no certain answer came back.
+    createAsset.mockRejectedValueOnce(refused(code));
     const user = userEvent.setup();
     const { dialog, onClose } = open();
     await fill(user, dialog, {
