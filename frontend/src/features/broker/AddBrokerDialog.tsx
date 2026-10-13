@@ -15,7 +15,6 @@ import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
-import { unitPrice } from '../portfolio/add-asset';
 import { ambiguousComma, numberProblem } from '../portfolio/add-transaction';
 import CloseButton from '../shell/CloseButton';
 import { Icon } from '../shell/icons';
@@ -36,6 +35,7 @@ import {
   moscowDate,
   type PositionEntry,
   type PositionField,
+  perUnit,
   positionAsset,
   times,
 } from './broker';
@@ -132,6 +132,8 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   });
   const startedAt = useRef<Date | null>(null);
   const retried = useRef(false);
+  // Once closing has begun, the form only finishes undoing; it saves nothing more.
+  const [closing, setClosing] = useState(false);
   const [locked, setLocked] = useState(false);
   const id = useId();
   const first = useRef<HTMLInputElement>(null);
@@ -146,6 +148,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // again retries; a second failure closes it and leaves the rest as it is.
   const finish = async () => {
     const done = saved.current;
+    setClosing(true);
     setSaving(true);
     setError(null);
     let settled = true;
@@ -251,7 +254,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (brokerProblems(entry).size) return;
+    if (closing || brokerProblems(entry).size) return;
     setSaving(true);
     setError(null);
     const done = saved.current;
@@ -356,7 +359,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
             requestId: priceRequest,
             expectedRevision: 0,
             observedAt: trade.occurredAt,
-            priceUsd: unitPrice(trade.grossUsd, trade.quantity),
+            priceUsd: perUnit(trade.grossUsd, trade.quantity),
             assertReviewed: true,
           });
           step.priced = true;
@@ -559,7 +562,11 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           >
             {saved.current.holdings.some((holding) => holding.receipt) ? 'Close' : 'Cancel'}
           </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          <button
+            type="submit"
+            className="shell-button shell-button--primary"
+            disabled={saving || closing}
+          >
             Add account
           </button>
         </div>

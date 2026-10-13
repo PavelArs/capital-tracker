@@ -10,6 +10,7 @@ import {
   freshRates,
   holdingTrade,
   moscowDate,
+  perUnit,
   positionAsset,
   times,
 } from './broker';
@@ -143,6 +144,19 @@ describe('BROKER-ADD the entry', () => {
     expect(times('0.1', '0.2')).toBe('0.02');
     expect(times('1 500', '2,5')).toBe('3750');
     expect(times('3', '0.333333333333333333')).toBe('0.999999999999999999');
+  });
+
+  it('divides a total by its quantity at the 30 places the server keeps', () => {
+    // Codex P2: rounding the unit price to 18 places loses value on a large holding.
+    expect(perUnit('4263', '30')).toBe('142.1');
+    expect(perUnit('1', '3')).toBe(`0.${'3'.repeat(30)}`);
+    expect(perUnit('2', '3')).toBe(`0.${'6'.repeat(29)}7`);
+    expect(perUnit('117000000000000000000000.5', '100000000000000000000000')).toBe(
+      '1.170000000000000000000005',
+    );
+    expect(perUnit('0.000000000000000000000000000001', '0.5')).toBe(
+      '0.000000000000000000000000000002',
+    );
   });
 
   it('records a holding as money put in at the current minute', () => {

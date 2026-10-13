@@ -130,6 +130,20 @@ export function times(quantity: string, price: string): string {
   return fraction ? `${digits.slice(0, -places)}.${fraction}` : digits.slice(0, -places);
 }
 
+/** `total ÷ quantity`, half up at the 30 places the server keeps a price at, zeros trimmed. */
+export function perUnit(total: string, quantity: string): string {
+  const numerator = scaled(total);
+  const denominator = scaled(quantity);
+  // units = total.units × 10^(30 − total.places + quantity.places) ÷ quantity.units
+  const shift = MAX_PLACES - numerator.places + denominator.places;
+  const top = numerator.units * 10n ** BigInt(Math.max(shift, 0));
+  const bottom = denominator.units * 10n ** BigInt(Math.max(-shift, 0));
+  const units = (top * 2n + bottom) / (bottom * 2n);
+  const digits = units.toString().padStart(MAX_PLACES + 1, '0');
+  const fraction = digits.slice(-MAX_PLACES).replace(/0+$/, '');
+  return fraction ? `${digits.slice(0, -MAX_PLACES)}.${fraction}` : digits.slice(0, -MAX_PLACES);
+}
+
 /**
  * A holding as a buy of its quantity for what it is worth now, at the current minute. It
  * carries no settlement currency, so it counts as money put in, as an opening balance does.

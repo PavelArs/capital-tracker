@@ -498,6 +498,8 @@ describe('BROKER-ADD Add broker account', () => {
       ),
     );
     expect(onClose).not.toHaveBeenCalled();
+    // Codex P2: the account is gone, so saving again would add to a removed account.
+    expect(within(dialog).getByRole('button', { name: 'Add account' })).toBeDisabled();
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(hideAsset.mock.calls).toEqual([[id(10)], [id(10)]]);
