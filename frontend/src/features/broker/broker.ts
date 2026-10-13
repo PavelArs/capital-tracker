@@ -165,3 +165,29 @@ export function freshRates(currency: 'EUR' | 'RUB', report: FxRatesReport, today
     return age <= MAX_RATE_AGE_DAYS;
   });
 }
+
+const atoms = (value: string) => {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole + fraction.padEnd(MAX_PLACES, '0').slice(0, MAX_PLACES));
+};
+const MAX_SERVER_ATOMS = 10n ** 78n - 1n;
+
+/**
+ * Whether a RUB or EUR amount converts to a dollar amount the server keeps: it converts at the
+ * Bank of Russia rates, rounding half up at 30 places, and refuses zero or more than 48 digits.
+ */
+export function convertible(
+  total: string,
+  currency: 'EUR' | 'RUB',
+  report: FxRatesReport,
+): boolean {
+  const rubPer = (code: 'USD' | 'EUR') =>
+    report.rates.find((rate) => rate.currency === code)?.rubPerUnit ?? null;
+  const usd = rubPer('USD');
+  const unit = currency === 'RUB' ? '1' : rubPer('EUR');
+  if (!usd || !unit) return false;
+  const rubles = atoms(decimal(total) ?? total) * atoms(unit);
+  const target = atoms(usd);
+  const dollars = (rubles * 2n + target) / (target * 2n);
+  return dollars > 0n && dollars <= MAX_SERVER_ATOMS;
+}

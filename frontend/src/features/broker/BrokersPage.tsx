@@ -51,9 +51,11 @@ function Position({
           }
           amount={money(position.value, currency)}
           value={
-            cash
-              ? undefined
-              : (priced ?? (asset.missingPrice === 'no-rate' ? 'No rate' : 'No price yet'))
+            asset.missingPrice === 'no-rate'
+              ? 'No rate'
+              : cash
+                ? undefined
+                : (priced ?? 'No price yet')
           }
         />
       </Link>

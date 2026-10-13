@@ -6,6 +6,7 @@ import {
   blankPosition,
   brokerAccountName,
   brokerProblems,
+  convertible,
   freshRates,
   holdingTrade,
   moscowDate,
@@ -75,6 +76,25 @@ describe('BROKER-ADD the entry', () => {
     expect(freshRates('RUB', report('2026-09-27', null), '2026-10-13')).toBe(false);
     expect(freshRates('EUR', report('2026-10-13', null), '2026-10-13')).toBe(false);
     expect(freshRates('EUR', report('2026-10-12', '2026-10-12'), '2026-10-13')).toBe(true);
+  });
+
+  it('accepts only amounts that convert to dollars the server keeps', () => {
+    // Codex P2: the server rounds the dollar amount half up at 30 places and refuses zero.
+    const report = {
+      date: '2026-10-13',
+      source: 'cbr' as const,
+      rates: [
+        { currency: 'USD' as const, rubPerUnit: '90', date: '2026-10-13' },
+        { currency: 'EUR' as const, rubPerUnit: '100', date: '2026-10-13' },
+      ],
+      sync: null,
+    };
+    expect(convertible('15000', 'RUB', report)).toBe(true);
+    expect(convertible(`0.${'0'.repeat(29)}1`, 'RUB', report)).toBe(false);
+    expect(convertible(`0.${'0'.repeat(27)}45`, 'RUB', report)).toBe(true);
+    expect(convertible('9'.repeat(48), 'EUR', report)).toBe(false);
+    expect(convertible('9'.repeat(47), 'EUR', report)).toBe(true);
+    expect(convertible('1', 'EUR', { ...report, rates: report.rates.slice(0, 1) })).toBe(false);
   });
 
   it('dates the rate by the Moscow calendar, as the server does', () => {

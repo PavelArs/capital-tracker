@@ -26,6 +26,7 @@ import {
   brokerAccountName,
   brokerAccountTypes,
   brokerProblems,
+  convertible,
   filledPositions,
   freshRates,
   holdingTrade,
@@ -138,13 +139,13 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
   // A request whose answer was lost is asked again under the same id, which finds what it made.
   // An asset this form made, or showed again, without a saved buy would show as an empty asset
-  // in Portfolio, so it is hidden. A buy whose answer was lost may have been saved: the server
-  // removes only an account without buys, so once the account is gone, none was. While the
-  // account stays, its journal tells: a saved buy would have moved it past the revision the
-  // buy expected, and only the last buy sent can be in doubt.
+  // in Portfolio, so it is hidden. A buy whose answer was lost may have been saved: its asset is
+  // hidden only once the account is gone (the server removes only an account without buys) or
+  // holds none of it. If hiding fails, the form stays open so that closing again retries.
   const finish = async () => {
     const done = saved.current;
     setSaving(true);
+    setError(null);
     await Promise.allSettled(
       done.holdings.map(async (step) => {
         if (!step.asset && step.making) step.asset = await portfolioAssetsApi.create(step.making);
@@ -152,32 +153,50 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     );
     if (!done.accountId && done.accountUnsure)
       done.accountId = await accountingApi.createAccount(accountRequest()).then(
-        (account) => account.id,
+        (account) => {
+          done.accountUnsure = false;
+          return account.id;
+        },
         () => null,
       );
     const kept = done.holdings.some((step) => step.receipt);
-    const bare =
+    if (
       !kept &&
-      (!done.accountId ||
-        (await accountingApi.removeAccount(done.accountId).then(
+      done.accountId &&
+      (await accountingApi.removeAccount(done.accountId).then(
+        () => true,
+        () => false,
+      ))
+    )
+      done.accountId = null;
+    const bare = !kept && !done.accountId;
+    const accountId = done.accountId;
+    const empty = async (step: SavedHolding) => {
+      if (!step.asset || !(step.making || step.wasHidden) || step.receipt) return false;
+      if (!step.unsure || bare) return true;
+      if (!accountId) return false;
+      const held = await tradesApi
+        .available(accountId, { instrumentId: step.asset.id, at: new Date().toISOString() })
+        .then(
+          ({ quantity }) => /[1-9]/.test(quantity),
           () => true,
-          () => false,
-        )));
-    const doubt = done.holdings.some((step) => step.unsure && !step.receipt);
-    const unsaved =
-      bare ||
-      (doubt &&
-        !!done.accountId &&
-        (await tradesApi.state(done.accountId).then(
-          (state) => (state.journal?.journalRevision ?? 0) === done.revision,
-          () => false,
-        )));
-    const empty = done.holdings.flatMap((step) =>
-      step.asset && (step.making || step.wasHidden) && !step.receipt && (!step.unsure || unsaved)
-        ? [step.asset.id]
-        : [],
+        );
+      return !held;
+    };
+    const hiding = await Promise.all(
+      done.holdings.map(async (step) => (step.asset && (await empty(step)) ? [step.asset.id] : [])),
     );
-    await Promise.allSettled(empty.map((asset) => hiddenAssetsApi.hide(asset)));
+    const hidden = await Promise.allSettled(
+      hiding.flat().map((asset) => hiddenAssetsApi.hide(asset)),
+    );
+    // An asset that is gone needs no hiding.
+    if (hidden.some((result) => result.status === 'rejected' && status(result.reason) !== 404)) {
+      setError(
+        'Could not hide the empty assets this form added, so Portfolio would show them. Close the form again to retry.',
+      );
+      setSaving(false);
+      return;
+    }
     if (bare) onClose();
     else onAdded();
   };
@@ -217,23 +236,6 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     // be held, so nothing is saved, and neither is anything while the rates cannot be read.
     const currency = entry.currency;
     const now = startedAt.current ?? new Date();
-    if (currency !== 'USD' && !done.accountId) {
-      const fresh = await cachedReads.rates.load().then(
-        (report) => freshRates(currency, report, moscowDate(now)),
-        () => undefined,
-      );
-      if (fresh !== true) {
-        setError(
-          fresh === undefined
-            ? `Could not check the Bank of Russia rate for ${currency}. Nothing was saved; try again.`
-            : `No recent Bank of Russia rate is stored, so ${currency} amounts cannot be converted. Nothing was saved; try again later.`,
-        );
-        setSaving(false);
-        return;
-      }
-    }
-    startedAt.current = now;
-    setLocked(true);
     const cash = entry.cash.trim();
     const holdings: Holding[] = [
       ...filledPositions(entry).map((position) => ({
@@ -243,6 +245,31 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
       })),
       ...(cash ? [{ quantity: cash, total: cash, position: null }] : []),
     ];
+    if (currency !== 'USD' && !done.accountId) {
+      // An amount that converts to zero dollars, or past what the server keeps, is refused too.
+      const check = await cachedReads.rates.load().then(
+        (report) =>
+          !freshRates(currency, report, moscowDate(now))
+            ? ('stale' as const)
+            : holdings.every(({ total }) => convertible(total, currency, report))
+              ? ('ok' as const)
+              : ('amount' as const),
+        () => 'unread' as const,
+      );
+      if (check !== 'ok') {
+        setError(
+          {
+            unread: `Could not check the Bank of Russia rate for ${currency}. Nothing was saved; try again.`,
+            stale: `No recent Bank of Russia rate is stored, so ${currency} amounts cannot be converted. Nothing was saved; try again later.`,
+            amount: `An amount is too small or too large to convert to US dollars at the Bank of Russia rate. Nothing was saved; change it and try again.`,
+          }[check],
+        );
+        setSaving(false);
+        return;
+      }
+    }
+    startedAt.current = now;
+    setLocked(true);
     while (requests.current.holdings.length < holdings.length)
       requests.current.holdings.push([newRequestId(), newRequestId(), newRequestId()]);
     while (done.holdings.length < holdings.length)

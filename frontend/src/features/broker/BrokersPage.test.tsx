@@ -161,6 +161,23 @@ describe('BROKERS the Brokers page', () => {
     expect(screen.getByRole('dialog', { name: 'Add broker account' })).toBeInTheDocument();
   });
 
+  it('says which cash balance has no exchange rate', async () => {
+    // Codex P2: euro cash without a rate to the shown currency is left out; its row says why.
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      valuation([
+        asset(
+          6,
+          'Euro',
+          [{ accountId: broker, accountName: 'Sample Broker', quantity: '300', value: null }],
+          { symbol: 'EUR', assetType: 'fiat', priceSource: 'fixed', missingPrice: 'no-rate' },
+        ),
+      ]),
+    );
+    renderPage();
+    const sample = await screen.findByRole('region', { name: 'Sample Broker' });
+    expect(within(sample).getByRole('link')).toHaveTextContent('Cash, EUR300—No rate');
+  });
+
   it('offers to add the first broker account', async () => {
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [account(wallet, 'Home safe', null)],

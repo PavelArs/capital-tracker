@@ -4,7 +4,7 @@ import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { forgetReads } from '@api/read-cache';
-import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type AvailableQuantity, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -92,7 +92,7 @@ beforeEach(() => {
       }) as TradeReceipt,
   );
   vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
-  vi.spyOn(tradesApi, 'state').mockRejectedValue(new Error('offline'));
+  vi.spyOn(tradesApi, 'available').mockRejectedValue(new Error('offline'));
   setPrice = vi.fn<typeof manualPricesApi.set>(async () => ({}) as PriceReceipt);
   vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
   removeAccount = vi.fn<typeof accountingApi.removeAccount>(async () => undefined);
@@ -300,6 +300,24 @@ describe('BROKER-ADD Add broker account', () => {
     expect(createAccount).not.toHaveBeenCalled();
   });
 
+  it('saves nothing when an amount would convert to zero dollars', async () => {
+    // Codex P2: the server refuses a buy whose dollar amount rounds to zero.
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'SBER',
+      'Quantity 1': '0.000000000000001',
+      'Price 1': '0.000000000000001',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'An amount is too small or too large to convert to US dollars',
+    );
+    expect(createAccount).not.toHaveBeenCalled();
+  });
+
   it('retries only what is missing after a failure, under the same requests', async () => {
     createTrade.mockRejectedValueOnce(refused(503));
     const user = userEvent.setup();
@@ -451,6 +469,34 @@ describe('BROKER-ADD Add broker account', () => {
     expect(onAdded).not.toHaveBeenCalled();
   });
 
+  it('stays open to retry when hiding an empty asset fails', async () => {
+    // Codex P2: closing anyway would leave the empty asset showing in Portfolio.
+    createTrade.mockRejectedValueOnce(refused(400));
+    hideAsset.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'Could not hide the empty assets this form added',
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(hideAsset.mock.calls).toEqual([[id(10)], [id(10)]]);
+    expect(removeAccount).toHaveBeenCalledTimes(1);
+    expect(createAccount).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps an account that holds something when closed after a later failure', async () => {
     setPrice.mockRejectedValueOnce(refused(503));
     const user = userEvent.setup();
@@ -521,9 +567,9 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
-  it('hides a later position whose buy got no answer once the journal shows it was not saved', async () => {
-    // Codex P2: a saved buy would have moved the journal past the revision the buy expected.
-    const state = vi.spyOn(tradesApi, 'state');
+  it('hides a later position whose buy got no answer once the account shows none of it', async () => {
+    // Codex P2: the account holding none of the asset settles whether its buy was saved.
+    const available = vi.spyOn(tradesApi, 'available');
     const twoPositions = async () => {
       createTrade.mockImplementationOnce(async (_account, command) => ({
         accountId: id(2),
@@ -554,15 +600,18 @@ describe('BROKER-ADD Add broker account', () => {
       );
       await vi.waitFor(() => expect(rendered.onAdded).toHaveBeenCalled());
     };
-    state.mockResolvedValueOnce({ journal: { journalRevision: 1 } } as JournalState);
+    available.mockResolvedValueOnce({ quantity: '0' } as AvailableQuantity);
     await twoPositions();
-    expect(state).toHaveBeenCalledWith(id(2));
+    expect(available).toHaveBeenCalledWith(
+      id(2),
+      expect.objectContaining({ instrumentId: id(11) }),
+    );
     expect(hideAsset.mock.calls).toEqual([[id(11)]]);
     expect(removeAccount).not.toHaveBeenCalled();
 
     cleanup();
     hideAsset.mockClear();
-    state.mockResolvedValueOnce({ journal: { journalRevision: 2 } } as JournalState);
+    available.mockResolvedValueOnce({ quantity: '5' } as AvailableQuantity);
     await twoPositions();
     expect(hideAsset).not.toHaveBeenCalled();
   });
