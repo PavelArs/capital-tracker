@@ -27,6 +27,7 @@ import Allocation from './Allocation';
 import { assetCaption, Change, Signed } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
+import { inflationAdjustment } from './real-cost';
 import '../shell/shell-page.css';
 import './portfolio.css';
 import EmptyState from '@/ui/EmptyState';
@@ -268,7 +269,7 @@ function Summary({
                   {portfolio.costBasis !== null && (
                     <span className="portfolio-sub">
                       {amount(portfolio.costBasis)} paid +{' '}
-                      {amount(String(Number(reading.costBasis) - Number(portfolio.costBasis)))}{' '}
+                      {amount(inflationAdjustment(reading.costBasis, portfolio.costBasis))}{' '}
                       inflation
                     </span>
                   )}

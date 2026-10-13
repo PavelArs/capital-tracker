@@ -821,6 +821,19 @@ describe('Portfolio after inflation', () => {
     expect(order()).toEqual(['US doll', 'Bitcoin']);
   });
 
+  it('PF-REAL-EXACT states the inflation added to a cost wider than a float holds', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({
+        costBasis: '9007199254740993',
+        real: { official: read('9007199254740995', '1', '0'), personal: null },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent('+ $2.00 inflation');
+  });
+
   it('PF-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
