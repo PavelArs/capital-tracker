@@ -121,6 +121,22 @@ async function connection(db, service, owner, other) {
   console.log('PASS BROKER-CONNECT');
 }
 
+async function removal(db, service, owner) {
+  stage = 'removing an empty broker account scrubs its token';
+  const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
+  const broker = await account(db, owner, 'broker');
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  assert.equal((await service.read(owner, broker)).connected, true);
+  await new AccountingService(db).removeAccount(owner, broker);
+  assert.equal(
+    (await db.query('SELECT count(*)::int AS n FROM broker_connections WHERE "accountId" = $1', [broker]))[0].n,
+    0,
+    'The token goes with the account',
+  );
+  await rejected(() => service.read(owner, broker), 404);
+  console.log('PASS BROKER-CONNECT-REMOVE');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -170,6 +186,7 @@ async function main() {
     const tbank = { accounts: async () => ({ ok: true, value: [brokerAccount] }) };
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
+    await removal(db, service, owner.id);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });

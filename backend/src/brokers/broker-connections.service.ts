@@ -117,7 +117,9 @@ export class BrokerConnectionsService {
         'T-Bank could not be reached. Try again in a few minutes.',
       );
     }
-    const open = result.value.filter((item) => item.open);
+    // An account the token has no access to cannot be traded with, so it neither blocks the
+    // token nor can be picked.
+    const open = result.value.filter((item) => item.open && item.access !== 'no_access');
     if (open.some((item) => item.access !== 'read_only'))
       throw new UnprocessableEntityException(
         'This token can trade. Create a read-only token in T-Bank Investments and paste that one.',

@@ -52,6 +52,16 @@ describe('broker connections service', () => {
     });
   });
 
+  it('ignores an account the token has no access to', async () => {
+    const { service } = build(ok(mine, { ...mine, id: '2000000004', access: 'no_access' }));
+    expect(await service.check(owner, account, { token })).toEqual({
+      accounts: [{ id: mine.id, name: 'Synthetic' }],
+    });
+    await expect(
+      build(ok({ ...mine, access: 'no_access' })).service.check(owner, account, { token }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
   it('refuses a token that can trade, even on one of several accounts', async () => {
     const { service } = build(ok(mine, { ...mine, id: '2000000003', access: 'full_access' }));
     await expect(service.check(owner, account, { token })).rejects.toBeInstanceOf(
