@@ -12,12 +12,13 @@ import { useCachedRead } from '../shell/useCachedRead';
 import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
 import {
   dateText,
+  enteredText,
+  flooredText,
   ordered,
   rateText,
   statusText,
   statusTone,
   verdict,
-  wholeMoney,
 } from './goal-format';
 import '../shell/shell-page.css';
 import './goals.css';
@@ -44,8 +45,8 @@ export function GoalFigures({ goal }: { goal: Goal }) {
   const percent = goal.progress.percent === null ? null : Math.floor(Number(goal.progress.percent));
   return (
     <span className="goal-figures">
-      <b>{wholeMoney(goal.progress.current, goal.currency)}</b>
-      <span>of {wholeMoney(goal.targetAmount, goal.currency)}</span>
+      <b>{flooredText(goal.progress.current, goal.currency)}</b>
+      <span>of {enteredText(goal.targetAmount, goal.currency)}</span>
       {percent !== null && <span className="goal-figures__share">{percent}%</span>}
     </span>
   );

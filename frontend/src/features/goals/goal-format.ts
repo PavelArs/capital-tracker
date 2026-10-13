@@ -85,6 +85,14 @@ export function sumText(value: string | null, currency: GoalCurrency): string {
   return `${cents < 0n ? '-' : ''}${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`;
 }
 
+/** A sum in whole units rounded down, so a figure that is short of a sum never reads as having it. */
+export function flooredText(value: string | null, currency: GoalCurrency): string {
+  if (value === null || !PLAIN.test(value)) return DASH;
+  const cents = toCents(value);
+  if (cents <= 0n) return wholeMoney(value, currency);
+  return wholeMoney(`${cents / 100n}.00`, currency);
+}
+
 /** A sum the owner entered, as entered: whole units stay whole, cents are not rounded away. */
 export function enteredText(value: string | null, currency: GoalCurrency): string {
   if (value === null || !PLAIN.test(value)) return DASH;

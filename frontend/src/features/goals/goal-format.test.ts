@@ -5,6 +5,7 @@ import {
   dateText,
   difference,
   enteredText,
+  flooredText,
   monthsFrom,
   monthYear,
   neededText,
@@ -227,6 +228,14 @@ describe('GOAL-ENTERED a sum as the owner entered it', () => {
     expect(enteredText('1234567.05', 'EUR')).toBe('€1,234,567.05');
     expect(enteredText('150000.00', 'RUB')).toBe('₽150,000');
     expect(enteredText(null, 'USD')).toBe('—');
+  });
+});
+
+describe('GOAL-FLOORED a value short of the sum', () => {
+  it('rounds down so it never reads as the sum', () => {
+    expect(flooredText('1.99', 'USD')).toBe('$1');
+    expect(flooredText('5500000.60', 'RUB')).toBe('₽5,500,000');
+    expect(flooredText(null, 'USD')).toBe('—');
   });
 });
 
