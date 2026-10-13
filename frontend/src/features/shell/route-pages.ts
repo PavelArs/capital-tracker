@@ -28,3 +28,14 @@ export const sectionPage: Record<string, () => Promise<unknown>> = {
   '/preferences': pages.settings.preload,
   '/history': pages.history.preload,
 };
+
+/**
+ * What the idle warm-up fetches: the sections, then the screens opened from their lists (an
+ * asset, a wallet, a deposit), which have no menu link to visit first.
+ */
+export const warmedPages: Array<() => Promise<unknown>> = [
+  ...Object.values(sectionPage),
+  pages.asset.preload,
+  pages.wallet.preload,
+  pages.deposit.preload,
+];

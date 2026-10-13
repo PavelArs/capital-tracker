@@ -13,11 +13,18 @@ vi.mock('@api/cached-reads', () => ({
   },
 }));
 
+const pageFiles = vi.hoisted(() => ({
+  portfolio: vi.fn(() => Promise.resolve({})),
+  broken: vi.fn(() => Promise.reject(new Error('offline'))),
+  detail: vi.fn(() => Promise.resolve({})),
+}));
+
 vi.mock('./route-pages', () => ({
   sectionPage: {
-    '/portfolio': vi.fn(() => Promise.resolve({})),
-    '/settings-broken': vi.fn(() => Promise.reject(new Error('offline'))),
+    '/portfolio': pageFiles.portfolio,
+    '/settings-broken': pageFiles.broken,
   },
+  warmedPages: [pageFiles.portfolio, pageFiles.broken, pageFiles.detail],
 }));
 
 const loads = [
@@ -96,16 +103,41 @@ describe('warmPages', () => {
 
   it('fetches the screen files one after another once things have settled, and can be stopped', async () => {
     vi.useFakeTimers();
-    const loaders = Object.values(sectionPage) as ReturnType<typeof vi.fn>[];
+    const loaders = Object.values(pageFiles);
     for (const load of loaders) load.mockClear();
     const stop = warmPages();
-    expect(loaders[0]).not.toHaveBeenCalled();
+    expect(pageFiles.portfolio).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1_500);
     // Browsers without idle callbacks (and jsdom) space them out by a quarter of a second.
     await vi.advanceTimersByTimeAsync(250);
-    expect(loaders[0]).toHaveBeenCalledTimes(1);
+    expect(pageFiles.portfolio).toHaveBeenCalledTimes(1);
     stop();
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(loaders[1]).not.toHaveBeenCalled();
+    expect(pageFiles.broken).not.toHaveBeenCalled();
+  });
+
+  it('asks for the next file only after the one before has arrived, and reaches the detail screens', async () => {
+    vi.useFakeTimers();
+    for (const load of Object.values(pageFiles)) load.mockClear();
+    let arrive: (value: object) => void = () => {};
+    pageFiles.portfolio.mockImplementationOnce(
+      () =>
+        new Promise<object>((resolve) => {
+          arrive = resolve;
+        }),
+    );
+    const stop = warmPages();
+    await vi.advanceTimersByTimeAsync(1_500 + 250);
+    expect(pageFiles.portfolio).toHaveBeenCalledTimes(1);
+    // A slow file holds the queue however long the wait.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(pageFiles.broken).not.toHaveBeenCalled();
+    arrive({});
+    // A failed file does not stop the ones after it.
+    await vi.advanceTimersByTimeAsync(250);
+    expect(pageFiles.broken).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(pageFiles.detail).toHaveBeenCalledTimes(1);
+    stop();
   });
 });
