@@ -379,6 +379,11 @@ export class AccountingService {
           `This wallet has recorded transactions (${parts.join(', ')}), so it stays in your history. Remove its addresses to stop syncing them.`,
         );
       await stopTracking(manager, owner, { accountId: id });
+      // BROKER-CONNECT: a removed broker account keeps no usable API token.
+      await manager.query('DELETE FROM broker_connections WHERE "ownerId"=$1 AND "accountId"=$2', [
+        owner,
+        id,
+      ]);
       await manager.query(
         'UPDATE manual_accounts SET "removedAt"=clock_timestamp() WHERE "ownerId"=$1 AND id=$2',
         [owner, id],

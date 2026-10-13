@@ -75,6 +75,7 @@ const legacyChecks = [
   'bank-deposits-db',
   'inflation-db',
   'goals-db',
+  'broker-connections-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
