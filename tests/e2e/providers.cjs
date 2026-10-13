@@ -17,7 +17,7 @@ const allowedHosts = new Set([
   'open.er-api.com',
   'api.kraken.com',
   'www.cbr.ru',
-  'api.bls.gov',
+  'sdmx.oecd.org',
   'ec.europa.eu',
   'api.bybit.com',
   'api.trongrid.io',
@@ -254,7 +254,7 @@ function cbrDynamic(response, url) {
 }
 
 // INFL-OFFICIAL: synthetic consumer price indices, 0.3% a month since December 2024 and the
-// latest two months not published yet, in the shapes of the BLS API, Eurostat JSON-stat and the Bank of Russia table.
+// latest two months not published yet, in the shapes of the OECD CSV, Eurostat JSON-stat and the Bank of Russia table.
 function inflationMonths() {
   const now = new Date();
   const last = now.getUTCFullYear() * 12 + now.getUTCMonth() - 2;
@@ -266,48 +266,22 @@ function inflationMonths() {
 function inflationLevel(position) {
   return Math.round(100 * 1.003 ** position * 1000) / 1000;
 }
-function blsInflation(request, response) {
-  const chunks = [];
-  request.on('data', (chunk) => chunks.push(chunk));
-  request.on('end', () => {
-    let query = {};
-    try {
-      query = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    } catch {}
-    const from = Number(query.startyear);
-    const to = Number(query.endyear);
-    const ok =
-      request.method === 'POST' &&
-      Array.isArray(query.seriesid) &&
-      query.seriesid[0] === 'CUUR0000SA0' &&
-      Number.isInteger(from) &&
-      Number.isInteger(to) &&
-      to - from < 10;
-    response.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
-    if (!ok)
-      return response.end(
-        JSON.stringify({ status: 'REQUEST_NOT_PROCESSED', message: ['Invalid request'], Results: {} }),
-      );
-    const data = inflationMonths()
-      .map((month, position) => ({ month, position }))
-      .filter(({ month }) => Number(month.slice(0, 4)) >= from && Number(month.slice(0, 4)) <= to)
-      .reverse()
-      .map(({ month, position }) => ({
-        year: month.slice(0, 4),
-        period: `M${month.slice(5)}`,
-        periodName: month,
-        value: inflationLevel(position).toFixed(3),
-        footnotes: [{}],
-      }));
-    response.end(
-      JSON.stringify({
-        status: 'REQUEST_SUCCEEDED',
-        responseTime: 5,
-        message: [],
-        Results: { series: [{ seriesID: 'CUUR0000SA0', data }] },
-      }),
+function oecdInflation(response) {
+  // Rows in no particular order, a label with a comma quoted, as the OECD sends them.
+  const rows = inflationMonths()
+    .map((month, position) => ({ month, position }))
+    .reverse()
+    .map(
+      ({ month, position }) =>
+        `DATAFLOW,OECD.SDD.TPS:DSD_PRICES@DF_PRICES_ALL(1.0),"Consumer price indices (CPIs, HICPs), COICOP 1999",I,USA,United States,M,IX,Index,${month},,${inflationLevel(position).toFixed(4)},`,
     );
-  });
+  response.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', connection: 'close' });
+  response.end(
+    [
+      'STRUCTURE,STRUCTURE_ID,STRUCTURE_NAME,ACTION,REF_AREA,Reference area,FREQ,UNIT_MEASURE,Unit of measure,TIME_PERIOD,Time period,OBS_VALUE,Observation value',
+      ...rows,
+    ].join('\r\n'),
+  );
 }
 function cbrInflation(response) {
   const months = inflationMonths().slice(1);
@@ -1034,8 +1008,12 @@ function provider(request, response, url) {
     return cbrDynamic(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/hd_base/infl/')
     return cbrInflation(response);
-  if (url.hostname === 'api.bls.gov' && url.pathname === '/publicAPI/v1/timeseries/data/')
-    return blsInflation(request, response);
+  if (
+    url.hostname === 'sdmx.oecd.org' &&
+    url.pathname ===
+      '/public/rest/data/OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0/USA.M.N.CPI.IX._T.N._Z'
+  )
+    return oecdInflation(response);
   if (
     url.hostname === 'ec.europa.eu' &&
     url.pathname === '/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_minr'

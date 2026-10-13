@@ -3,6 +3,8 @@ import axios from 'axios';
 import type { AccountingCurrency } from '../fx-rates/fx-conversion';
 import { nextMonth, previousMonth } from './inflation-math';
 
+// `bls` is the stored key of the US CPI-U series (the publisher the data comes from); the client
+// reads it through the OECD, because the BLS website refuses the owner's server.
 export type InflationProvider = 'bls' | 'eurostat' | 'cbr';
 export type InflationFailure = 'rate_limited' | 'unavailable' | 'invalid_response';
 /** Percent change of the consumer price level from the previous month, per month. */
@@ -21,7 +23,7 @@ export const OFFICIAL_SOURCES: Partial<Record<AccountingCurrency, InflationProvi
   RUB: 'cbr',
 };
 export const PROVIDER_NAMES: Record<InflationProvider, string> = {
-  bls: 'BLS (US CPI-U)',
+  bls: 'OECD (US CPI-U)',
   eurostat: 'Eurostat (euro area HICP)',
   cbr: 'Bank of Russia (annual inflation)',
 };
@@ -71,52 +73,75 @@ export function levelsToChanges(levels: readonly Level[]): MonthlyChange[] {
 }
 
 const positive = (text: string, where: string): number => {
-  if (!/^\d{1,7}(?:\.\d{1,8})?$/.test(text)) invalid(`value ${excerpt(text)} ${where}`);
+  if (!/^\d{1,7}(?:\.\d{1,12})?$/.test(text)) invalid(`value ${excerpt(text)} ${where}`);
   const value = Number(text);
   return value > 0 ? value : invalid(`value 0 ${where}`);
 };
 
+// RFC 4180 enough for the OECD file: quoted fields may hold commas and doubled quotes.
+function csvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (quoted) {
+      if (char !== '"') field += char;
+      else if (text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === ',') {
+      row.push(field);
+      field = '';
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && text[i + 1] === '\n') i++;
+      row.push(field);
+      field = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else field += char;
+  }
+  if (quoted) invalid('unterminated quote');
+  row.push(field);
+  if (row.length > 1 || row[0] !== '') rows.push(row);
+  return rows;
+}
+
 /**
- * BLS public API v1 answer for one series: `{"status":"REQUEST_SUCCEEDED","Results":{"series":
- * [{"seriesID":"CUUR0000SA0","data":[{"year":"2026","period":"M08","value":"334.980"},…]}]}}`,
- * newest first. Annual averages (M13) are ignored and a month marked "-" (not published) has no
- * value. A refusal such as the daily limit also comes with HTTP 200 and a message, which is named.
+ * The OECD consumer price index of the United States as a SDMX CSV (`format=csvfilewithlabels`),
+ * one row per month with TIME_PERIOD ("2026-08") and OBS_VALUE, in no particular order. The
+ * request names one series, so another area or unit, a month twice or a month without a value
+ * is a different answer from the one expected; a row with an empty OBS_VALUE is a month not
+ * published.
  */
-export function parseBlsLevels(body: string, series: string): Level[] {
-  let data: unknown;
-  try {
-    data = JSON.parse(body);
-  } catch {
-    return invalid(`not JSON: ${excerpt(body.trimStart())}`);
-  }
-  const root = data as {
-    status?: unknown;
-    message?: unknown;
-    Results?: { series?: unknown };
-  };
-  if (root.status !== 'REQUEST_SUCCEEDED') {
-    const message = Array.isArray(root.message) ? String(root.message[0] ?? '') : '';
-    invalid(`status ${excerpt(String(root.status))}: ${excerpt(message, 120)}`);
-  }
-  const list = root.Results?.series;
-  const entry = Array.isArray(list) && list.length === 1 ? list[0] : undefined;
-  if (!entry || entry.seriesID !== series || !Array.isArray(entry.data))
-    invalid(`no series ${excerpt(series)}`);
+export function parseOecdCpiLevels(body: string): Level[] {
+  const rows = csvRows(body.replace(/^\uFEFF/, ''));
+  if (rows.length === 0) return invalid(`not CSV: ${excerpt(body.trimStart())}`);
+  const header = rows[0];
+  const column = (name: string) => header.indexOf(name);
+  const time = column('TIME_PERIOD');
+  const value = column('OBS_VALUE');
+  if (time < 0 || value < 0)
+    return invalid(`no TIME_PERIOD and OBS_VALUE: ${excerpt(rows[0].join(','))}`);
+  const area = column('REF_AREA');
+  const unit = column('UNIT_MEASURE');
   const seen = new Set<string>();
   const levels: Level[] = [];
-  for (const row of entry.data as Record<string, unknown>[]) {
-    const { year, period, value } = row;
-    if (typeof year !== 'string' || typeof period !== 'string' || typeof value !== 'string')
-      invalid('unexpected row');
-    const month = /^M(0[1-9]|1[0-2])$/.exec(period as string);
-    if (!month || !/^\d{4}$/.test(year as string)) continue;
-    const key = `${year}-${month[1]}`;
-    if (seen.has(key)) invalid(`${key} twice`);
-    seen.add(key);
-    if (value === '-') continue;
-    levels.push({ month: key, value: positive(value as string, `on ${key}`) });
+  for (const row of rows.slice(1)) {
+    if (row.length !== header.length) invalid('a row of another width');
+    if ((area >= 0 && row[area] !== 'USA') || (unit >= 0 && row[unit] !== 'IX'))
+      invalid(`another series ${excerpt(`${row[area] ?? ''} ${row[unit] ?? ''}`)}`);
+    const month = row[time];
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) invalid(`month ${excerpt(month)}`);
+    if (seen.has(month)) invalid(`${month} twice`);
+    seen.add(month);
+    if (row[value] === '') continue;
+    levels.push({ month, value: positive(row[value], `on ${month}`) });
   }
-  return levels.sort((a, b) => (a.month < b.month ? -1 : 1));
+  return levels.sort((x, y) => (x.month < y.month ? -1 : 1));
 }
 
 /**
@@ -259,9 +284,8 @@ export function yearOverYearToChanges(rows: readonly YearOverYear[]): MonthlyCha
 const cbrDate = (date: Date) =>
   `${String(date.getUTCDate()).padStart(2, '0')}.${String(date.getUTCMonth() + 1).padStart(2, '0')}.${date.getUTCFullYear()}`;
 
-// BLS answers at most ten years per request.
-const BLS_YEARS_PER_REQUEST = 10;
-const BLS_SERIES = 'CUUR0000SA0';
+// United States, monthly, not seasonally adjusted, all-items CPI as an index (2015 = 100).
+const OECD_US_CPI = 'OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0/USA.M.N.CPI.IX._T.N._Z';
 
 interface Download {
   text: string;
@@ -276,7 +300,7 @@ export class InflationClient {
 
   constructor(
     options: {
-      blsUrl?: string;
+      oecdUrl?: string;
       eurostatUrl?: string;
       cbrUrl?: string;
       timeoutMs?: number;
@@ -284,7 +308,7 @@ export class InflationClient {
     } = {},
   ) {
     this.urls = {
-      bls: options.blsUrl ?? 'https://api.bls.gov',
+      bls: options.oecdUrl ?? 'https://sdmx.oecd.org',
       eurostat: options.eurostatUrl ?? 'https://ec.europa.eu',
       cbr: options.cbrUrl ?? 'https://www.cbr.ru',
     };
@@ -303,13 +327,10 @@ export class InflationClient {
   private async download(
     url: string,
     accept: string,
-    body?: unknown,
   ): Promise<{ ok: true; value: Download } | { ok: false; reason: InflationFailure }> {
     try {
       const response = await axios.request<ArrayBuffer>({
         url,
-        method: body === undefined ? 'GET' : 'POST',
-        data: body,
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
         maxRedirects: 0,
@@ -319,7 +340,6 @@ export class InflationClient {
         headers: {
           Accept: accept,
           'User-Agent': 'Mozilla/5.0 (compatible; capital-tracker)',
-          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
       });
       if (response.status === 429) return { ok: false, reason: 'rate_limited' };
@@ -339,9 +359,14 @@ export class InflationClient {
   private async request(provider: InflationProvider, now: Date): Promise<InflationResult> {
     const base = this.urls[provider];
     const downloads: Download[] = [];
-    const sources: [string, string, unknown?][] =
+    const sources: [string, string][] =
       provider === 'bls'
-        ? this.blsRequests(base, now)
+        ? [
+            [
+              `${base}/public/rest/data/${OECD_US_CPI}?startPeriod=${INFLATION_HISTORY_FROM}&format=csvfilewithlabels`,
+              'text/csv, */*;q=0.1',
+            ],
+          ]
         : provider === 'eurostat'
           ? [
               [
@@ -356,17 +381,15 @@ export class InflationClient {
                 'text/html',
               ],
             ];
-    for (const [url, accept, body] of sources) {
-      const result = await this.download(url, accept, body);
+    for (const [url, accept] of sources) {
+      const result = await this.download(url, accept);
       if (!result.ok) return result;
       downloads.push(result.value);
     }
     try {
       const changes = {
         bls: () => {
-          const levels = downloads
-            .flatMap(({ text }) => parseBlsLevels(text, BLS_SERIES))
-            .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+          const levels = parseOecdCpiLevels(downloads[0].text);
           if (levels.length === 0) invalid('no values');
           return levelsToChanges(levels);
         },
@@ -382,21 +405,5 @@ export class InflationClient {
       }
       throw error;
     }
-  }
-
-  // The public v1 API takes a POSTed series and years, ten years at most, from December 2008 on.
-  private blsRequests(base: string, now: Date): [string, string, unknown][] {
-    const requests: [string, string, unknown][] = [];
-    const last = now.getUTCFullYear();
-    for (let from = Number(INFLATION_HISTORY_FROM.slice(0, 4)); from <= last; ) {
-      const to = Math.min(from + BLS_YEARS_PER_REQUEST - 1, last);
-      requests.push([
-        `${base}/publicAPI/v1/timeseries/data/`,
-        'application/json',
-        { seriesid: [BLS_SERIES], startyear: String(from), endyear: String(to) },
-      ]);
-      from = to + 1;
-    }
-    return requests;
   }
 }
