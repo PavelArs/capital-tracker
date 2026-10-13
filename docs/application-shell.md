@@ -84,6 +84,14 @@ read, a sign-in, a sign-out or a refused session empties it, in memory and in th
 answer kept for another owner is never used and is deleted. Where the browser has no IndexedDB
 or refuses it, the cache stays in memory as before.
 
+Every page reads through one hook, `useCachedRead(cachedReads.<name>, ...args)`
+(`features/shell/useCachedRead.ts`). It paints the kept answer at once, loads in the background,
+lets only the newest load change the page, drops an answer that arrives after the page was left
+or the arguments changed, and keeps what is shown if a later load fails. `reload(quiet)` asks
+again and `replace(next)` shows the answer of a save. A new page adds one `cachedRead` entry in
+`api/cached-reads.ts`, a line in `features/shell/prefetch.ts` if the menu should warm it, and
+uses the hook instead of its own state and effect; Deposits is the example.
+
 The earlier Russian shell is described in the archived change
 `2026-09-26-redesign-application-shell`. Verification for this change is in
 `openspec/changes/archive/2026-10-04-add-app-shell/verification.md` (hosted CI run

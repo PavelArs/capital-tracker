@@ -1,4 +1,5 @@
 import { type Deposit, type DepositDetail, type DepositList, depositsApi } from '@api/deposits.api';
+import { forgetReads } from '@api/read-cache';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -79,7 +80,10 @@ const detail = (deposit: Deposit, change: Partial<DepositDetail> = {}): DepositD
   ...change,
 });
 
-beforeEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  vi.restoreAllMocks();
+  forgetReads();
+});
 afterEach(cleanup);
 
 function open(path: string) {
@@ -94,6 +98,17 @@ function open(path: string) {
 }
 
 describe('DEP-LIST: the deposits and what they are worth', () => {
+  it('paints the deposits it kept at once when the page is opened again', async () => {
+    const answer = vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
+    open('/deposits');
+    await screen.findByRole('link', { name: /Savings A/ });
+    cleanup();
+    answer.mockReturnValue(new Promise(() => undefined));
+    open('/deposits');
+    expect(screen.getByRole('link', { name: /Savings A/ })).toBeTruthy();
+    expect(screen.queryByText('Loading deposits')).toBeNull();
+  });
+
   it('shows each deposit with its terms, value in the chosen currency and what needs a look', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
     open('/deposits?currency=RUB');
