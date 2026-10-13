@@ -92,7 +92,15 @@ function Cases({ goal }: { goal: Goal }) {
                     </td>
                     <td className="ui-num" data-label="Against the sum">
                       {against && (
-                        <span className={against.short ? 'goal-neg' : 'goal-pos'}>
+                        <span
+                          className={
+                            against.tone === 'short'
+                              ? 'goal-neg'
+                              : against.tone === 'more'
+                                ? 'goal-pos'
+                                : ''
+                          }
+                        >
                           {against.text}
                         </span>
                       )}
@@ -257,9 +265,7 @@ export default function GoalPage() {
               <Stat
                 label={`Forecast for ${monthYear(goal.deadline)}`}
                 value={money(base?.projectedAtDeadline ?? null)}
-                hint={
-                  against ? `${against.text}${against.short ? '' : ' than the sum'}` : undefined
-                }
+                hint={against?.hint}
               />
             ) : (
               <Stat

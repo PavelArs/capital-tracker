@@ -1,6 +1,7 @@
 import type { Goal, GoalScenario } from '@api/goals.api';
 import { describe, expect, it } from 'vitest';
 import {
+  againstTarget,
   dateText,
   difference,
   monthYear,
@@ -168,5 +169,19 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
         }),
       ),
     ).toContain('could be valued');
+  });
+});
+
+describe('GOAL-AGAINST a projection against the sum', () => {
+  it('says short, more, or on the sum when the gap rounds to nothing', () => {
+    expect(againstTarget('600.00', 'USD')?.text).toBe('$600 short');
+    expect(againstTarget('-1200.00', 'USD')?.hint).toBe('$1,200 more than the sum');
+    expect(againstTarget('0.00', 'USD')).toMatchObject({ text: 'On the sum', tone: 'level' });
+    expect(againstTarget(null, 'USD')).toBeNull();
+  });
+
+  it('shows no sum for a figure written in scientific notation', () => {
+    expect(wholeMoney('9.27e+127', 'USD')).toBe('—');
+    expect(againstTarget('9.27e+127', 'USD')).toBeNull();
   });
 });
