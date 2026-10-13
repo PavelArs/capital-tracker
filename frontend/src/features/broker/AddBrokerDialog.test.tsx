@@ -577,7 +577,7 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
-  const twoPositions = async () => {
+  const twoPositions = async (second = refused(503)) => {
     createTrade.mockImplementationOnce(async (_account, command) => ({
       accountId: id(2),
       journalRevision: 1,
@@ -587,7 +587,7 @@ describe('BROKER-ADD Add broker account', () => {
         occurredAt: command.occurredAt,
       } as TradeReceipt['trade'],
     }));
-    createTrade.mockRejectedValueOnce(refused(503));
+    createTrade.mockRejectedValueOnce(second);
     const user = userEvent.setup();
     const rendered = open();
     await user.click(within(rendered.dialog).getByRole('button', { name: 'Add position' }));
@@ -622,6 +622,46 @@ describe('BROKER-ADD Add broker account', () => {
     listTrades.mockResolvedValue(page([id(10), id(11), id(11)]));
     await twoPositions();
     expect(hideAsset).not.toHaveBeenCalled();
+  });
+
+  it('keeps a refused later position that the kept account has a trade of', async () => {
+    // Codex P2: another tab may have traded the asset before this buy was refused.
+    listTrades.mockResolvedValue(page([id(10), id(11)]));
+    await twoPositions(refused(409));
+    expect(listTrades).toHaveBeenCalledWith(id(2));
+    expect(hideAsset).not.toHaveBeenCalled();
+  });
+
+  it('hides a refused later position only once the kept account’s trades are read', async () => {
+    listTrades.mockResolvedValue(page([id(10)]));
+    await twoPositions(refused(409));
+    expect(hideAsset.mock.calls).toEqual([[id(11)]]);
+  });
+
+  it('stays open when undoing is refused because the session expired', async () => {
+    // Codex P2: a 401 or 403 leaves the empty asset showing, so nothing is settled.
+    createTrade.mockRejectedValueOnce(refused(400));
+    hideAsset.mockRejectedValueOnce(refused(403));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'Could not undo everything this form added',
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(hideAsset.mock.calls).toEqual([[id(10)], [id(10)]]);
   });
 
   it('stays open when what was made cannot be found again, and retries on the next close', async () => {

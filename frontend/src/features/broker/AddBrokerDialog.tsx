@@ -52,6 +52,8 @@ const cashNames: Record<ValuationCurrency, string> = {
   RUB: 'Russian ruble',
 };
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
+// Refusals that say nothing about what is saved: an expired session, a timeout, too many requests.
+const UNANSWERED = [401, 403, 408, 429];
 
 const failure = (error: unknown, saved: string) => {
   const code = status(error);
@@ -142,21 +144,24 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
   // A request whose answer was lost is asked again under the same id, which finds what it made.
   // An asset this form made, or showed again, without a saved buy would show as an empty asset
-  // in Portfolio, so it is hidden. A buy whose answer was lost may have been saved: its asset is
-  // hidden only once the account is gone (the server removes only an account without trades) or
-  // has no trade in it at all. Whatever cannot be settled now keeps the form open, so closing
-  // again retries; a second failure closes it and leaves the rest as it is.
+  // in Portfolio, so it is hidden: once the account is gone (the server removes only an account
+  // without trades), or while the account stays, only if its trades are read in full and none is
+  // of that asset, since a lost answer or another tab may have saved one. Whatever cannot be
+  // settled now keeps the form open, so closing again retries; a second failure closes it and
+  // leaves the rest as it is.
   const finish = async () => {
     const done = saved.current;
     setClosing(true);
     setSaving(true);
     setError(null);
     let settled = true;
-    // Whether a failed request got a definite answer; without one, nothing is settled yet.
+    // Whether a failed request settled the question. No answer, a server error, an expired
+    // session or a request to slow down says nothing about what was saved.
     const definite = (caught: unknown) => {
       const code = status(caught);
-      if (code === undefined || code >= 500) settled = false;
-      return code !== undefined && code < 500;
+      const answered = code !== undefined && code < 500 && !UNANSWERED.includes(code);
+      if (!answered) settled = false;
+      return answered;
     };
     await Promise.all(
       done.holdings.map(async (step) => {
@@ -189,9 +194,10 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     }
     const bare = !kept && !done.accountId && !done.accountUnsure;
     const accountId = done.accountId;
-    const doubtful = done.holdings.some((step) => step.unsure && !step.receipt);
+    const unbought = (step: SavedHolding) =>
+      !!step.asset && !!(step.making || step.wasHidden) && !step.receipt;
     const traded =
-      doubtful && !bare && accountId
+      !bare && accountId && done.holdings.some(unbought)
         ? await tradesApi.list(accountId).then(
             (page) =>
               page.nextOffset === null
@@ -204,17 +210,16 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           )
         : null;
     const empty = (step: SavedHolding) =>
-      !!step.asset &&
-      !!(step.making || step.wasHidden) &&
-      !step.receipt &&
-      (!step.unsure || bare || (traded !== null && !traded.has(step.asset.id)));
+      unbought(step) &&
+      (bare || (accountId ? traded !== null && !traded.has(step.asset?.id ?? '') : !step.unsure));
     const hidden = await Promise.allSettled(
       done.holdings.flatMap((step) =>
         step.asset && empty(step) ? [hiddenAssetsApi.hide(step.asset.id)] : [],
       ),
     );
-    // An asset that is gone needs no hiding.
-    for (const result of hidden) if (result.status === 'rejected') definite(result.reason);
+    // Only an asset that is gone needs no hiding; any other failure leaves it showing.
+    for (const result of hidden)
+      if (result.status === 'rejected' && status(result.reason) !== 404) settled = false;
     if (!settled && !retried.current) {
       retried.current = true;
       setError(
