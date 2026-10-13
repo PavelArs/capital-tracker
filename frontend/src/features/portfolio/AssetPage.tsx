@@ -28,10 +28,10 @@ import {
 } from '../transactions/operation-format';
 import { classedOf, kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
+import { assetCaption, Change, Signed } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
 import HideAsset from './HideAsset';
-import { assetCaption, Change, Signed } from './PortfolioPage';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';

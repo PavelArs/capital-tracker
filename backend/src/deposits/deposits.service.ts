@@ -10,6 +10,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { canonicalDecimalToAtoms } from '../accounting/money';
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
+import { recordDepositEvent } from './deposit-events';
 import {
   parseAsOfDate,
   parseCheck,
@@ -149,6 +150,11 @@ export class DepositsService {
          VALUES ($1,$2,$3,$4,'opening',$5,'topup',$6,1)`,
         [randomUUID(), owner, depositId, randomUUID(), input.startDate, input.amount],
       );
+      await recordDepositEvent(manager, owner, depositId, 'opened', {
+        occurredOn: input.startDate,
+        amount: input.amount,
+        ratePercent: input.ratePercent,
+      });
       return depositId;
     });
     return this.get(owner, id, undefined);
@@ -197,6 +203,12 @@ export class DepositsService {
           input.comment,
         ],
       );
+      await recordDepositEvent(manager, owner, depositId, 'movement-added', {
+        occurredOn: input.date,
+        movementKind: input.kind,
+        amount: input.amount,
+        comment: input.comment,
+      });
     });
     return this.get(owner, depositId, undefined);
   }
@@ -224,6 +236,13 @@ export class DepositsService {
         owner,
         moveId,
       ]);
+      const gone = stored.movements[index];
+      await recordDepositEvent(manager, owner, depositId, 'movement-removed', {
+        occurredOn: gone.occurredOn,
+        movementKind: gone.kind,
+        amount: gone.amount,
+        comment: gone.comment,
+      });
     });
     return this.get(owner, depositId, undefined);
   }
@@ -263,6 +282,10 @@ export class DepositsService {
          ON CONFLICT ("depositId", "effectiveFrom") DO UPDATE SET "ratePercent" = EXCLUDED."ratePercent"`,
         [owner, depositId, input.effectiveFrom, input.ratePercent],
       );
+      await recordDepositEvent(manager, owner, depositId, 'rate-added', {
+        occurredOn: input.effectiveFrom,
+        ratePercent: input.ratePercent,
+      });
     });
     return this.get(owner, depositId, undefined);
   }
@@ -295,6 +318,10 @@ export class DepositsService {
            (SELECT coalesce(max("position"), 0) + 1 FROM bank_deposit_checks WHERE "depositId"=$3))`,
         [randomUUID(), owner, depositId, requestId, payload, input.checkedOn, input.bankBalance],
       );
+      await recordDepositEvent(manager, owner, depositId, 'check-added', {
+        occurredOn: input.checkedOn,
+        bankBalance: input.bankBalance,
+      });
     });
     return this.get(owner, depositId, undefined);
   }
@@ -304,6 +331,7 @@ export class DepositsService {
     const depositId = parseUuid(id);
     await this.source.transaction(async (manager) => {
       await this.locked(manager, owner, depositId);
+      await recordDepositEvent(manager, owner, depositId, 'deleted');
       await manager.query('DELETE FROM bank_deposits WHERE "ownerId"=$1 AND id=$2', [
         owner,
         depositId,

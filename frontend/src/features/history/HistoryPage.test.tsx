@@ -92,6 +92,26 @@ const quiet: AuditEvent = {
   fields: [],
 };
 
+const rub = (value: string): AuditValue => ({ kind: 'quantity', value, unit: 'RUB' });
+const topup: AuditEvent = {
+  id: 'deposit:d1:000002',
+  at: '2026-10-09T10:10:00.000Z',
+  entity: 'deposit',
+  entityId: 'd1',
+  version: 2,
+  change: 'changed',
+  actor: 'owner',
+  title: 'Savings account',
+  asset: null,
+  account: 'Example Bank',
+  occurredAt: '2026-10-09T00:00:00.000Z',
+  fields: [
+    { label: 'Action', before: null, after: text('Top-up added') },
+    { label: 'Amount', before: null, after: rub('5000.5') },
+    { label: 'Date', before: null, after: text('2026-10-09') },
+  ],
+};
+
 const page = (events: AuditEvent[], next: string | null = null): AuditHistory => ({
   at: '2026-10-09T20:00:00.000Z',
   events,
@@ -179,6 +199,25 @@ describe('audit history screen (BR 14)', () => {
         /without a visible difference/,
       ),
     ).toBeInTheDocument();
+  });
+
+  it('HIST-DEPOSIT: a bank deposit event names its action, amount and bank and opens with its facts', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([topup]));
+    renderPage();
+    await screen.findByRole('button', { name: 'Savings account' });
+    expect(bodyRows().map(cells)).toEqual([
+      ['10:10', 'Changed', 'Savings accountExample Bank', 'Top-up added · 5,000.5 RUB', 'You'],
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Savings account' }));
+    const drawer = screen.getByRole('dialog', { name: 'Savings account' });
+    const fields = within(drawer).getByRole('region', { name: 'What happened' });
+    expect(within(fields).getByText('Top-up added')).toBeInTheDocument();
+    expect(within(fields).getByText('5,000.5 RUB')).toBeInTheDocument();
+    expect(within(fields).getByText('2026-10-09')).toBeInTheDocument();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(within(facts).getByText('Bank').nextSibling).toHaveTextContent('Example Bank');
+    expect(within(facts).queryByText('Operation date')).toBeNull();
   });
 
   it('HIST-FILTER: chips, selects and dates ask the server and live in the address', async () => {

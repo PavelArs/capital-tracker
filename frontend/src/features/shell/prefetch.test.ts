@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prefetchSection, resetPrefetch } from './prefetch';
+import { prefetchSection, resetPrefetch, warmPages } from './prefetch';
+import { sectionPage } from './route-pages';
 
 vi.mock('@api/cached-reads', () => ({
   cachedReads: {
@@ -9,7 +10,22 @@ vi.mock('@api/cached-reads', () => ({
     operations: { prefetch: vi.fn() },
     transferProposals: { prefetch: vi.fn() },
     duplicateProposals: { prefetch: vi.fn() },
+    deposits: { prefetch: vi.fn() },
   },
+}));
+
+const pageFiles = vi.hoisted(() => ({
+  portfolio: vi.fn(() => Promise.resolve({})),
+  broken: vi.fn(() => Promise.reject(new Error('offline'))),
+  detail: vi.fn(() => Promise.resolve({})),
+}));
+
+vi.mock('./route-pages', () => ({
+  sectionPage: {
+    '/portfolio': pageFiles.portfolio,
+    '/settings-broken': pageFiles.broken,
+  },
+  warmedPages: [pageFiles.portfolio, pageFiles.broken, pageFiles.detail],
 }));
 
 const loads = [
@@ -18,6 +34,7 @@ const loads = [
   cachedReads.operations.prefetch,
   cachedReads.transferProposals.prefetch,
   cachedReads.duplicateProposals.prefetch,
+  cachedReads.deposits.prefetch,
 ];
 
 describe('prefetchSection', () => {
@@ -50,6 +67,12 @@ describe('prefetchSection', () => {
     expect(cachedReads.duplicateProposals.prefetch).toHaveBeenCalledTimes(1);
   });
 
+  it('asks the deposit list for the deposits page', () => {
+    prefetchSection('/deposits', 'USD');
+    expect(cachedReads.deposits.prefetch).toHaveBeenCalledTimes(1);
+    expect(cachedReads.operations.prefetch).not.toHaveBeenCalled();
+  });
+
   it('does nothing for a section it has no reads for', () => {
     prefetchSection('/settings', 'USD');
     for (const load of loads) expect(load).not.toHaveBeenCalled();
@@ -71,5 +94,58 @@ describe('prefetchSection', () => {
     vi.mocked(cachedReads.portfolio.prefetch).mockReturnValue(failed as never);
     expect(() => prefetchSection('/portfolio', 'USD')).not.toThrow();
     expect(handled).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches the screen file of a section, and a failed fetch is left alone', async () => {
+    prefetchSection('/portfolio', 'USD', 1_000);
+    // The file is asked for every time; only the data reads are held back for 30 seconds.
+    prefetchSection('/portfolio', 'USD', 2_000);
+    expect(sectionPage['/portfolio']).toHaveBeenCalledTimes(2);
+    expect(() => prefetchSection('/settings-broken', 'USD')).not.toThrow();
+    await Promise.resolve();
+  });
+});
+
+describe('warmPages', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('fetches the screen files one after another once things have settled, and can be stopped', async () => {
+    vi.useFakeTimers();
+    const loaders = Object.values(pageFiles);
+    for (const load of loaders) load.mockClear();
+    const stop = warmPages();
+    expect(pageFiles.portfolio).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    // Browsers without idle callbacks (and jsdom) space them out by a quarter of a second.
+    await vi.advanceTimersByTimeAsync(250);
+    expect(pageFiles.portfolio).toHaveBeenCalledTimes(1);
+    stop();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(pageFiles.broken).not.toHaveBeenCalled();
+  });
+
+  it('asks for the next file only after the one before has arrived, and reaches the detail screens', async () => {
+    vi.useFakeTimers();
+    for (const load of Object.values(pageFiles)) load.mockClear();
+    let arrive: (value: object) => void = () => {};
+    pageFiles.portfolio.mockImplementationOnce(
+      () =>
+        new Promise<object>((resolve) => {
+          arrive = resolve;
+        }),
+    );
+    const stop = warmPages();
+    await vi.advanceTimersByTimeAsync(1_500 + 250);
+    expect(pageFiles.portfolio).toHaveBeenCalledTimes(1);
+    // A slow file holds the queue however long the wait.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(pageFiles.broken).not.toHaveBeenCalled();
+    arrive({});
+    // A failed file does not stop the ones after it.
+    await vi.advanceTimersByTimeAsync(250);
+    expect(pageFiles.broken).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(pageFiles.detail).toHaveBeenCalledTimes(1);
+    stop();
   });
 });

@@ -6,6 +6,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
+const { readdirSync } = require('node:fs');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
 const { DataSource } = require('typeorm');
@@ -18,7 +19,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 63;
+const MIGRATIONS = 64;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -325,6 +326,185 @@ async function movements(db, service, owner, other, ids) {
   console.log('PASS DEP-MOVEMENT-DEPENDS');
 }
 
+async function backfill() {
+  stage = 'DEP-HISTORY deposits entered before the event log are listed from when they were entered';
+  const name = 'capital_tracker_bank_deposits_backfill_e2e';
+  const admin = new Client({
+    host: settings.DB_HOST,
+    port: 5432,
+    user: settings.DB_USERNAME,
+    password: settings.DB_PASSWORD,
+    database: settings.DB_NAME,
+  });
+  await admin.connect();
+  try {
+    assert.equal(
+      (await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount,
+      0,
+      'Never reuse or drop an existing database',
+    );
+    await admin.query(`CREATE DATABASE "${name}"`);
+  } finally {
+    await admin.end();
+  }
+  const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
+  const options = new TypeOrmConfigService(
+    new ConfigService({ ...settings, DB_NAME: name }),
+  ).createTypeOrmOptions();
+  const prior = new DataSource({
+    ...options,
+    extra: { ...options.extra, max: 1 },
+    // Only building a newly created synthetic schema as it was before the event log.
+    migrations: readdirSync('/app/backend/dist/migrations')
+      .filter((file) => file.endsWith('.js') && file < '1797100000000')
+      .map((file) => `/app/backend/dist/migrations/${file}`),
+  });
+  try {
+    await prior.initialize();
+    await prior.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+    await prior.runMigrations({ transaction: 'all' });
+    const [{ id: owner }] = await prior.query(`INSERT INTO users(email,password)
+      VALUES('deposit-backfill@example.invalid','synthetic-not-a-hash') RETURNING id`);
+    const deposit = randomUUID();
+    await prior.query(
+      `INSERT INTO bank_deposits (id,"ownerId","requestId","canonicalPayload",name,bank,currency,
+         "startDate","endDate",payout,capitalized,"dayBasis","earlyClose","createdAt")
+       VALUES ($1,$2,$3,'{}','Old deposit','Synthetic Bank','RUB','2026-01-01','2027-01-01',
+         'monthly',false,'actual-365','forfeits-interest','2026-01-02T08:00:00Z')`,
+      [deposit, owner, randomUUID()],
+    );
+    await prior.query(
+      `INSERT INTO bank_deposit_rates ("ownerId","depositId","effectiveFrom","ratePercent")
+       VALUES ($1,$2,'2026-01-01',11.5), ($1,$2,'2026-04-01',9)`,
+      [owner, deposit],
+    );
+    for (const [position, date, kind, amount, comment, created] of [
+      [1, '2026-01-01', 'topup', '5000.00', null, '2026-01-02T08:00:00Z'],
+      [2, '2026-03-01', 'topup', '700.10', 'Later top-up', '2026-03-02T09:00:00Z'],
+      [3, '2026-02-01', 'withdrawal', '100.00', null, '2026-03-03T09:00:00Z'],
+    ])
+      await prior.query(
+        `INSERT INTO bank_deposit_movements (id,"ownerId","depositId","requestId","canonicalPayload",
+           "occurredOn",kind,amount,comment,"createdAt","position")
+         VALUES ($1,$2,$3,$4,'{}',$5,$6,$7,$8,$9,$10)`,
+        [randomUUID(), owner, deposit, randomUUID(), date, kind, amount, comment, created, position],
+      );
+    const migrated = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], {
+      cwd: '/app/backend',
+      env: { ...settings, ...process.env, DB_NAME: name },
+      encoding: 'utf8',
+      timeout: 60000,
+    });
+    assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
+    assert.match(migrated.stdout, /Migrations applied: 1/);
+    const events = await prior.query(
+      `SELECT version, kind, name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
+          to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,
+          "ratePercent"::text AS rate, comment, to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI') AS at
+        FROM bank_deposit_events WHERE "depositId"=$1 ORDER BY version`,
+      [deposit],
+    );
+    assert.deepEqual(events, [
+      {
+        version: 1, kind: 'opened', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        day: '2026-01-01', endDate: '2027-01-01', payout: 'monthly', movementKind: null,
+        amount: '5000.00', rate: '11.5000', comment: null, at: '2026-01-02T08:00',
+      },
+      {
+        version: 2, kind: 'movement-added', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        day: '2026-03-01', endDate: null, payout: null, movementKind: 'topup',
+        amount: '700.10', rate: null, comment: 'Later top-up', at: '2026-03-02T09:00',
+      },
+      {
+        version: 3, kind: 'movement-added', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        day: '2026-02-01', endDate: null, payout: null, movementKind: 'withdrawal',
+        amount: '100.00', rate: null, comment: null, at: '2026-03-03T09:00',
+      },
+    ]);
+    assert.equal(
+      (await prior.query('SELECT count(*)::int AS n FROM bank_deposit_events'))[0].n,
+      3,
+      'Nothing for the later rate change: it carries no entry time',
+    );
+    console.log('PASS DEP-HISTORY-BACKFILL');
+  } finally {
+    if (prior.isInitialized) await prior.destroy();
+  }
+}
+
+async function history(db, service, owner, other) {
+  stage = 'DEP-HISTORY every action on a deposit is a History event, a deletion included';
+  const { AuditHistoryService } = require('/app/backend/dist/accounting/audit-history.service.js');
+  const audit = new AuditHistoryService(db);
+  const plain = Object.getPrototypeOf(service);
+  const events = async (who) =>
+    (await audit.read(who, { entity: 'deposit', limit: '200' })).events.reverse();
+  const action = (event) => (event.fields[0].after ?? event.fields[0].before).value;
+  assert.deepEqual(await events(owner), [], 'Nothing before the owner has a deposit');
+
+  const made = await service.create(owner, { ...savings, name: 'History A', endDate: null });
+  const topup = await service.addMovement(owner, made.id, {
+    date: '2026-08-01',
+    kind: 'topup',
+    amount: '500.25',
+    comment: 'Salary',
+  });
+  // Refused and replayed requests change nothing, so they leave no event.
+  await rejected(
+    () => service.addMovement(owner, made.id, { date: '2026-06-30', kind: 'topup', amount: '1' }),
+    422,
+  );
+  const retry = { requestId: randomUUID(), date: '2026-08-02', kind: 'topup', amount: '1.00' };
+  await plain.addMovement(owner, made.id, retry);
+  await plain.addMovement(owner, made.id, retry);
+  await service.addRate(owner, made.id, { effectiveFrom: '2026-09-01', ratePercent: '10' });
+  await service.addCheck(owner, made.id, { checkedOn: '2026-09-02', bankBalance: '101234.56' });
+  const gone = topup.movements.find((movement) => movement.amount === '500.25');
+  await service.removeMovement(owner, made.id, gone.id);
+  await service.remove(owner, made.id);
+
+  const listed = await events(owner);
+  assert.deepEqual(listed.map(action), [
+    'Deposit opened',
+    'Top-up added',
+    'Top-up added',
+    'Rate changed',
+    'Bank balance checked',
+    'Top-up removed',
+    'Deposit deleted',
+  ]);
+  assert.deepEqual(
+    listed.map((event) => [event.version, event.change]),
+    [
+      [1, 'created'],
+      [2, 'changed'],
+      [3, 'changed'],
+      [4, 'changed'],
+      [5, 'changed'],
+      [6, 'changed'],
+      [7, 'deleted'],
+    ],
+  );
+  assert.ok(listed.every((event) => event.title === 'History A' && event.entityId === made.id));
+  assert.ok(listed.every((event) => event.account === 'Synthetic Bank' && event.actor === 'owner'));
+  const fact = (event, label) => (event.fields.find((field) => field.label === label) ?? {}).after;
+  assert.deepEqual(fact(listed[0], 'Amount'), { kind: 'quantity', value: '100000', unit: 'RUB' });
+  assert.deepEqual(fact(listed[0], 'Rate'), { kind: 'text', value: '12% a year', unit: null });
+  assert.deepEqual(fact(listed[1], 'Amount'), { kind: 'quantity', value: '500.25', unit: 'RUB' });
+  assert.equal(fact(listed[1], 'Date').value, '2026-08-01');
+  assert.equal(fact(listed[1], 'Comment').value, 'Salary');
+  assert.equal(fact(listed[3], 'Rate').value, '10% a year');
+  assert.deepEqual(fact(listed[4], 'Bank balance'), { kind: 'quantity', value: '101234.56', unit: 'RUB' });
+  assert.deepEqual(listed[6].fields.map((field) => field.after), [null], 'A deletion names only itself');
+  assert.equal(await db.query('SELECT 1 FROM bank_deposits WHERE id=$1', [made.id]).then((r) => r.length), 0);
+  const filtered = await audit.read(owner, { entity: 'deposit', change: 'deleted' });
+  assert.equal(filtered.events.length, 1);
+  const created = await audit.read(owner, { change: 'created' });
+  assert.ok(created.events.some((event) => event.entity === 'deposit'), 'In the unfiltered list');
+  assert.deepEqual(await events(other), [], 'An owner with no deposit sees none of it');
+  console.log('PASS DEP-HISTORY');
+}
+
 async function checks(db, service, owner, ids) {
   stage = 'synthetic balance check against the balance read in the bank';
   const before = await service.get(owner, ids.usd, '2026-10-04');
@@ -562,11 +742,13 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other, third, fourth] = await db.query(`INSERT INTO users(email,password) VALUES
+    const [owner, other, third, fourth, fifth, sixth] = await db.query(`INSERT INTO users(email,password) VALUES
       ('deposit-owner@example.invalid','synthetic-not-a-hash'),
       ('deposit-other@example.invalid','synthetic-not-a-hash'),
       ('deposit-third@example.invalid','synthetic-not-a-hash'),
-      ('deposit-fourth@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('deposit-fourth@example.invalid','synthetic-not-a-hash'),
+      ('deposit-fifth@example.invalid','synthetic-not-a-hash'),
+      ('deposit-sixth@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { DepositsService } = require(modulePath);
     const plain = new DepositsService(db);
     // Every call carries a fresh request id unless a stage names one to test a replay.
@@ -583,6 +765,8 @@ async function main() {
     await checks(db, service, owner.id, ids);
     await owners(db, service, owner.id, other.id, ids);
     await wholePortfolio(db, third.id);
+    await history(db, service, fifth.id, sixth.id);
+    await backfill();
   } finally {
     if (db.isInitialized) await db.destroy();
   }

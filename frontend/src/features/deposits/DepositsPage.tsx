@@ -1,5 +1,6 @@
-import { type Deposit, type DepositList, depositsApi } from '@api/deposits.api';
-import { useEffect, useState } from 'react';
+import { cachedReads } from '@api/cached-reads';
+import type { Deposit } from '@api/deposits.api';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
@@ -8,6 +9,7 @@ import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
+import { useCachedRead } from '../shell/useCachedRead';
 import { AddDepositDialog } from './DepositDialogs';
 import { attention, dateText, money, statusText, statusTone, termText } from './deposit-format';
 import '../shell/shell-page.css';
@@ -83,24 +85,12 @@ function Card({
 
 // DEP-LIST: every deposit with what it is worth today and what needs a look.
 export default function DepositsPage() {
-  const [list, setList] = useState<DepositList | null>(null);
-  const [failed, setFailed] = useState(false);
+  const { data: list, error } = useCachedRead(cachedReads.deposits);
   const [adding, setAdding] = useState(false);
   const [asked] = useAskedCurrency();
   const { main } = useMainCurrency();
   const navigate = useNavigate();
   const shown = asked ?? main ?? 'USD';
-
-  useEffect(() => {
-    let live = true;
-    depositsApi
-      .list()
-      .then((loaded) => live && setList(loaded))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, []);
 
   return (
     <div className="shell-page">
@@ -117,7 +107,7 @@ export default function DepositsPage() {
           </button>
         }
       />
-      {failed ? (
+      {error && list === null ? (
         <p className="shell-note" role="alert">
           Could not load the deposits. Try again later.
         </p>

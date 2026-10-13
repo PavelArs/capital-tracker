@@ -89,6 +89,32 @@ describe('summary', () => {
   });
 });
 
+describe('summary of a bank deposit event', () => {
+  const rub = (value: string) => ({ kind: 'quantity' as const, value, unit: 'RUB' });
+  const deposit = (overrides: Partial<AuditEvent>) =>
+    event({
+      entity: 'deposit',
+      title: 'Savings',
+      asset: null,
+      account: 'Example Bank',
+      ...overrides,
+    });
+
+  it('names the action and its amount, whether the deposit was opened, changed or deleted', () => {
+    const topup: AuditField[] = [
+      { label: 'Action', before: null, after: text('Top-up added') },
+      { label: 'Amount', before: null, after: rub('5000.5') },
+      { label: 'Date', before: null, after: text('2025-08-01') },
+    ];
+    expect(summary(deposit({ change: 'changed', fields: topup }))).toBe(
+      'Top-up added · 5,000.5 RUB',
+    );
+    expect(summary(deposit({ change: 'created', fields: topup.slice(0, 1) }))).toBe('Top-up added');
+    const gone: AuditField[] = [{ label: 'Action', before: text('Deposit deleted'), after: null }];
+    expect(summary(deposit({ change: 'deleted', fields: gone }))).toBe('Deposit deleted');
+  });
+});
+
 describe('glyphOf', () => {
   it('marks each kind of entry', () => {
     expect(glyphOf(event({ entity: 'trade', title: 'Buy BTC' }))).toBe('buy');
@@ -99,6 +125,7 @@ describe('glyphOf', () => {
     expect(glyphOf(event({ entity: 'flow', title: 'Deposit' }))).toBe('in');
     expect(glyphOf(event({ entity: 'flow', title: 'Withdrawal' }))).toBe('out');
     expect(glyphOf(event({ entity: 'price' }))).toBe('opening');
+    expect(glyphOf(event({ entity: 'deposit' }))).toBe('opening');
     expect(glyphOf(event({ entity: 'classification' }))).toBe('chain');
   });
 });

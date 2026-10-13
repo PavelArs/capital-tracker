@@ -6,7 +6,7 @@ import { BellSlotContext } from '@features/shell/bell-slot';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { shellSections } from '@features/shell/navigation';
-import { prefetchSection } from '@features/shell/prefetch';
+import { prefetchSection, warmPages } from '@features/shell/prefetch';
 import SyncIndicator from '@features/shell/SyncIndicator';
 import { useHeldClasses } from '@features/shell/useHeldClasses';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
@@ -36,6 +36,8 @@ export default function Layout() {
     (section) => !section.held || held.has(section.held) || pathname.startsWith(section.path),
   );
   const menuRef = useRef<HTMLDivElement>(null);
+  // The other screens' files are fetched in the background once this one has settled.
+  useEffect(() => warmPages(), []);
   const mainRef = useRef<HTMLElement>(null);
   // PHONE-BELL: where the page header draws the notifications bell on a phone.
   const [bellSlot, setBellSlot] = useState<HTMLElement | null>(null);

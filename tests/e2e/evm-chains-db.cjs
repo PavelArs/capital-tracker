@@ -185,7 +185,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 63/);
+  assert.match(migrate(database), /Migrations applied: 64/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -520,7 +520,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS EVM-MIGRATION fresh 63 applies once; down refuses');
+    console.log('PASS EVM-MIGRATION fresh 64 applies once; down refuses');
   } finally {
     await db.destroy();
   }
