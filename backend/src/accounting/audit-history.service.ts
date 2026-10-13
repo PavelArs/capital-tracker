@@ -114,6 +114,17 @@ const sources = `
     JOIN wallet_addresses w ON w."ownerId" = v."ownerId" AND w.id = v."addressId"
     JOIN wallet_address_transactions t ON t."addressId" = v."addressId" AND t.txid = v.txid
     LEFT JOIN manual_accounts a ON a."ownerId" = w."ownerId" AND a.id = w."accountId"
+    WHERE v."ownerId" = $1
+  UNION ALL
+  SELECT 'deposit', v."depositId"::text, v.version,
+      CASE v.kind WHEN 'opened' THEN 'created' WHEN 'deleted' THEN 'deleted' ELSE 'changed' END,
+      v."createdAt", v."occurredOn"::timestamp AT TIME ZONE 'UTC', v.bank, 'owner',
+      jsonb_build_object('event', v.kind, 'movement', v."movementKind", 'name', v.name,
+        'currency', v.currency, 'amount', v.amount::text,
+        'ratePercent', trim_scale(v."ratePercent")::text, 'bankBalance', v."bankBalance"::text,
+        'date', v."occurredOn"::text, 'endDate', v."endDate"::text, 'payout', v.payout,
+        'comment', v.comment)
+    FROM bank_deposit_events v
     WHERE v."ownerId" = $1`;
 
 interface Row extends Omit<AuditRow, 'snapshot' | 'previous'> {

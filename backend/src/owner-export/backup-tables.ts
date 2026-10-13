@@ -11,6 +11,7 @@ export const backupTables = [
   'bank_deposit_rates',
   'bank_deposit_movements',
   'bank_deposit_checks',
+  'bank_deposit_events',
   'inflation_manual_months',
   'inflation_personal_rates',
   'manual_usd_price_versions',

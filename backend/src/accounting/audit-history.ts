@@ -3,7 +3,8 @@ import { chainAsset, networkNames } from '../wallet-addresses/chain-assets';
 // audit-history (M27, BR 14): who changed what and when, read from the immutable version
 // rows every journal already keeps. Nothing is stored for this screen; each version of a
 // trade, transfer, swap, reward, external flow, manual price or chain classification is one
-// event, compared with the version before it.
+// event, compared with the version before it. A bank deposit keeps a log of what the owner did
+// to it instead (DEP-HISTORY): each action is one event that lists its own facts.
 
 export const auditEntities = [
   'trade',
@@ -13,6 +14,7 @@ export const auditEntities = [
   'flow',
   'price',
   'classification',
+  'deposit',
 ] as const;
 export type AuditEntity = (typeof auditEntities)[number];
 
@@ -189,6 +191,45 @@ function classificationFields(s: Snapshot): Fields {
     ['Comment', text(s.comment)],
   ];
 }
+const depositActions: Record<string, string> = {
+  opened: 'Deposit opened',
+  'movement-added': 'added',
+  'movement-removed': 'removed',
+  'rate-added': 'Rate changed',
+  'check-added': 'Bank balance checked',
+  deleted: 'Deposit deleted',
+};
+const movementNames: Record<string, string> = {
+  topup: 'Top-up',
+  withdrawal: 'Withdrawal',
+  'interest-payout': 'Interest payout',
+};
+const payoutNames: Record<string, string> = {
+  daily: 'Every day',
+  monthly: 'Every month',
+  quarterly: 'Every quarter',
+  'at-end': 'At the end of the term',
+};
+/** "Top-up added", "Rate changed", "Deposit deleted": what the owner did to the deposit. */
+function depositAction(s: Snapshot): string | null {
+  const action = depositActions[s.event ?? ''];
+  if (!action) return null;
+  return s.event?.startsWith('movement')
+    ? `${movementNames[s.movement ?? ''] ?? 'Movement'} ${action}`
+    : action;
+}
+function depositFields(s: Snapshot): Fields {
+  return [
+    ['Action', text(depositAction(s))],
+    ['Amount', quantity(s.amount, s.currency)],
+    ['Rate', s.ratePercent ? text(`${s.ratePercent}% a year`) : null],
+    ['Bank balance', quantity(s.bankBalance, s.currency)],
+    [s.event === 'opened' ? 'Starts' : 'Date', text(s.date)],
+    ['Ends', text(s.endDate)],
+    ['Interest', text(s.payout ? (payoutNames[s.payout] ?? humanize(s.payout)) : null)],
+    ['Comment', text(s.comment)],
+  ];
+}
 const fieldsOf: Record<AuditEntity, (snapshot: Snapshot) => Fields> = {
   trade: tradeFields,
   transfer: transferFields,
@@ -197,6 +238,7 @@ const fieldsOf: Record<AuditEntity, (snapshot: Snapshot) => Fields> = {
   flow: flowFields,
   price: priceFields,
   classification: classificationFields,
+  deposit: depositFields,
 };
 
 const same = (left: AuditValue | null, right: AuditValue | null) =>
@@ -211,6 +253,17 @@ const same = (left: AuditValue | null, right: AuditValue | null) =>
  */
 export function auditFields(row: AuditRow): AuditField[] {
   const read = fieldsOf[row.entity];
+  // A deposit event is not a version of the one before it: it lists the facts of its own action.
+  if (row.entity === 'deposit')
+    return read(row.snapshot).flatMap(([label, value]) =>
+      value
+        ? [
+            row.change === 'deleted'
+              ? { label, before: value, after: null }
+              : { label, before: null, after: value },
+          ]
+        : [],
+    );
   if (row.change === 'created' || !row.previous)
     return read(row.snapshot).flatMap(([label, after]) =>
       after ? [{ label, before: null, after }] : [],
@@ -252,6 +305,8 @@ function titleOf(row: AuditRow): { title: string; asset: string | null } {
       return { title: s.direction === 'withdrawal' ? 'Withdrawal' : 'Deposit', asset: null };
     case 'price':
       return { title: `Manual price ${s.asset ?? ''}`.trim(), asset: s.asset };
+    case 'deposit':
+      return { title: s.name ?? 'Bank deposit', asset: null };
     case 'classification': {
       const symbol = legSymbol(s.network, s.asset);
       return {

@@ -483,7 +483,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 63/);
+  assert.match(migrate(database), /Migrations applied: 64/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -1445,7 +1445,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS SOL-MIGRATION fresh 63 applies once; both Solana migrations refuse down');
+    console.log('PASS SOL-MIGRATION fresh 64 applies once; both Solana migrations refuse down');
   } finally {
     await db.destroy();
   }

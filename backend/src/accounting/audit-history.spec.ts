@@ -172,6 +172,123 @@ describe('auditFields', () => {
   });
 });
 
+describe('bank deposit events (DEP-HISTORY)', () => {
+  const base = {
+    name: 'Savings',
+    currency: 'RUB',
+    movement: null,
+    amount: null,
+    ratePercent: null,
+    bankBalance: null,
+    date: null,
+    endDate: null,
+    payout: null,
+    comment: null,
+  };
+  const deposit = (snapshot: Record<string, string | null>, overrides: Partial<AuditRow> = {}) =>
+    row({
+      entity: 'deposit',
+      entityId: 'deposit-1',
+      account: 'Synthetic Bank',
+      snapshot: { ...base, ...snapshot },
+      ...overrides,
+    });
+  const pairs = (fields: ReturnType<typeof auditFields>) =>
+    fields.map((field) => [field.label, field.after?.value ?? field.before?.value]);
+
+  it('lists what opening a deposit recorded', () => {
+    const fields = auditFields(
+      deposit({
+        event: 'opened',
+        amount: '10000.00',
+        ratePercent: '12',
+        date: '2025-07-01',
+        endDate: '2026-07-01',
+        payout: 'daily',
+      }),
+    );
+    expect(pairs(fields)).toEqual([
+      ['Action', 'Deposit opened'],
+      ['Amount', '10000'],
+      ['Rate', '12% a year'],
+      ['Starts', '2025-07-01'],
+      ['Ends', '2026-07-01'],
+      ['Interest', 'Every day'],
+    ]);
+    expect(fields[1].after).toEqual({ kind: 'quantity', value: '10000', unit: 'RUB' });
+  });
+
+  it('lists the facts of each later action, not a difference from the action before', () => {
+    const topup = auditFields(
+      deposit(
+        { event: 'movement-added', movement: 'topup', amount: '5000.50', date: '2025-08-01' },
+        { version: 2, change: 'changed', previous: { ...base, event: 'opened' } },
+      ),
+    );
+    expect(pairs(topup)).toEqual([
+      ['Action', 'Top-up added'],
+      ['Amount', '5000.5'],
+      ['Date', '2025-08-01'],
+    ]);
+    const removed = auditFields(
+      deposit(
+        {
+          event: 'movement-removed',
+          movement: 'interest-payout',
+          amount: '100.00',
+          date: '2025-09-01',
+        },
+        { version: 3, change: 'changed' },
+      ),
+    );
+    expect(removed[0].after?.value).toBe('Interest payout removed');
+    const rate = auditFields(
+      deposit(
+        { event: 'rate-added', ratePercent: '10', date: '2025-09-01' },
+        { change: 'changed' },
+      ),
+    );
+    expect(pairs(rate)).toEqual([
+      ['Action', 'Rate changed'],
+      ['Rate', '10% a year'],
+      ['Date', '2025-09-01'],
+    ]);
+    const check = auditFields(
+      deposit(
+        { event: 'check-added', bankBalance: '15100.25', date: '2025-08-02' },
+        { change: 'changed' },
+      ),
+    );
+    expect(pairs(check)[0]).toEqual(['Action', 'Bank balance checked']);
+    expect(check[1].after).toEqual({ kind: 'quantity', value: '15100.25', unit: 'RUB' });
+  });
+
+  it('shows a deleted deposit as removed, named as it was', () => {
+    const event = projectEvent(
+      deposit({ event: 'deleted' }, { version: 4, change: 'deleted', occurredAt: null }),
+    );
+    expect(event).toMatchObject({
+      entity: 'deposit',
+      change: 'deleted',
+      title: 'Savings',
+      account: 'Synthetic Bank',
+      asset: null,
+      occurredAt: null,
+    });
+    expect(event.fields).toEqual([
+      {
+        label: 'Action',
+        before: { kind: 'text', value: 'Deposit deleted', unit: null },
+        after: null,
+      },
+    ]);
+  });
+
+  it('accepts the deposit entity in the query', () => {
+    expect(parseAuditQuery({ entity: 'deposit' }).entity).toBe('deposit');
+  });
+});
+
 describe('projectEvent', () => {
   it('names the operation and keeps its own date apart from the time of the change', () => {
     const event = projectEvent(row({ snapshot: buy }));

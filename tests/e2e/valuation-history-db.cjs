@@ -428,7 +428,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 63);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 64);
     const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
       ('chart-owner@example.invalid','synthetic-not-a-hash'),('chart-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
