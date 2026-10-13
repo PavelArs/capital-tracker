@@ -460,7 +460,7 @@ function AssetDetails({
               </Stat>
               <Stat label="Real P&L">
                 <Signed
-                  value={reading?.unrealizedPnl ?? null}
+                  value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
