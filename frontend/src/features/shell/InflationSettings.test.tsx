@@ -17,6 +17,7 @@ const row = (over: Partial<CurrencyInflation> = {}): CurrencyInflation => ({
   lastMonth: monthsAgo(3),
   comparableFrom: '2009-01',
   trailingYearPercent: '2.9412',
+  officialTrailingYearPercent: '2.9412',
   estimatedMonthlyPercent: '0.24',
   personalRatePercent: null,
   manualMonths: [],
@@ -35,12 +36,14 @@ const standard = () =>
       currency: 'EUR',
       officialSource: 'Eurostat HICP (euro area)',
       trailingYearPercent: '2.2',
+      officialTrailingYearPercent: '2.2',
       officialLastMonth: monthsAgo(1),
     }),
     row({
       currency: 'RUB',
       officialSource: 'Bank of Russia',
       trailingYearPercent: '8.1',
+      officialTrailingYearPercent: '8.1',
       personalRatePercent: '14',
       officialLastMonth: monthsAgo(2),
     }),
@@ -263,6 +266,58 @@ describe('INFL-UI Settings → Inflation', () => {
     );
     expect(await screen.findByText('Saved. Your USD rate is 5.5% a year.')).toBeInTheDocument();
     expect(input).toHaveValue('5.5');
+  });
+
+  it('INFL-UI-P: a slow older read does not undo a newer save', async () => {
+    let releaseFirst: (value: InflationOverview) => void = () => undefined;
+    const slow = new Promise<InflationOverview>((resolve) => {
+      releaseFirst = resolve;
+    });
+    vi.spyOn(inflationApi, 'overview')
+      .mockResolvedValueOnce(standard())
+      // read after the first save: slow, and it knows nothing of the second save
+      .mockReturnValueOnce(slow)
+      .mockResolvedValue(
+        overview([
+          row({ personalRatePercent: '5' }),
+          row({ currency: 'EUR', personalRatePercent: '6' }),
+          row({ currency: 'RUB', personalRatePercent: '14' }),
+        ]),
+      );
+    vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<InflationSettings />);
+    const usd = await screen.findByLabelText('USD · my rate a year');
+    await user.type(usd, '5');
+    await user.click(
+      within(usd.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
+    );
+    const eur = screen.getByLabelText('EUR · my rate a year');
+    await user.type(eur, '6');
+    await user.click(
+      within(eur.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
+    );
+    await waitFor(() => expect(inflationApi.overview).toHaveBeenCalledTimes(3));
+    // the first, older answer arrives last, with USD and EUR still unset
+    releaseFirst(standard());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByLabelText('USD · my rate a year')).toHaveValue('5');
+    expect(screen.getByLabelText('EUR · my rate a year')).toHaveValue('6');
+  });
+
+  it('INFL-UI-Q: names the published figure as official even when an entered month is in the year', async () => {
+    vi.spyOn(inflationApi, 'overview').mockResolvedValue(
+      overview([
+        row({
+          trailingYearPercent: '3.4',
+          officialTrailingYearPercent: '2.9412',
+          manualMonths: [{ month: monthsAgo(1), changePercent: '0.6' }],
+        }),
+      ]),
+    );
+    render(<InflationSettings />);
+    expect(await screen.findByText(/^Official 2\.9% over 12 months/)).toBeInTheDocument();
+    expect(screen.queryByText(/3\.4%/)).not.toBeInTheDocument();
   });
 
   it('INFL-UI-M: reports when the rates cannot be loaded', async () => {

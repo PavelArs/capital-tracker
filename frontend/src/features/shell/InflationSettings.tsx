@@ -1,6 +1,6 @@
 import { type CurrencyInflation, type InflationOverview, inflationApi } from '@api/inflation.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
-import { type FormEvent, useCallback, useEffect, useId, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { dayText } from '@/utils/dates';
@@ -83,7 +83,7 @@ function CurrencyRow({
   // What the server holds changes only through this row, so it follows the answer.
   useEffect(() => setText(row.personalRatePercent ?? ''), [row.personalRatePercent]);
 
-  const official = percentText(row.trailingYearPercent);
+  const official = percentText(row.officialTrailingYearPercent);
   const save = async (event: FormEvent) => {
     event.preventDefault();
     const rate = text.trim() === '' ? null : typedPercent(text, -50, 1000);
@@ -110,7 +110,7 @@ function CurrencyRow({
         ? 'Saved. Your rate now follows the official one.'
         : `Saved. Your ${row.currency} rate is ${percentText(row.personalRatePercent)} a year.`;
     if (row.officialSource === null) return 'No official index for this currency yet.';
-    if (row.trailingYearPercent === null)
+    if (row.officialTrailingYearPercent === null)
       return `${row.officialSource} has no twelve full months yet.`;
     return `Official ${official} over 12 months · ${row.officialSource}${
       row.officialLastMonth ? ` · published to ${monthText(row.officialLastMonth)}` : ''
@@ -324,6 +324,8 @@ export default function InflationSettings() {
   const [entering, setEntering] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
+  // The newest read of the rates; an older answer arriving after it would undo a newer save.
+  const newest = useRef(0);
 
   // A save shows at once from what was sent; the server's own answer is read right after, and if
   // that read fails the page already shows what was saved.
@@ -339,8 +341,11 @@ export default function InflationSettings() {
             }
           : current,
       );
+      const mine = ++newest.current;
       inflationApi.overview().then(
-        (loaded) => setOverview(loaded),
+        (loaded) => {
+          if (mine === newest.current) setOverview(loaded);
+        },
         () => undefined,
       );
     },
@@ -348,10 +353,11 @@ export default function InflationSettings() {
   );
   useEffect(() => {
     let live = true;
+    const mine = ++newest.current;
     inflationApi
       .overview()
       .then((loaded) => {
-        if (!live) return;
+        if (!live || mine !== newest.current) return;
         setOverview(loaded);
         setLoadFailed(false);
       })

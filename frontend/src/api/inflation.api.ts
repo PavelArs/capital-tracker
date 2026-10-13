@@ -15,8 +15,10 @@ export interface CurrencyInflation {
   officialLastMonth: string | null;
   lastMonth: string | null;
   comparableFrom: string | null;
-  /** Official price change over the last twelve months, percent. */
+  /** Price change over the last twelve months with the owner's own months laid over, percent. */
   trailingYearPercent: string | null;
+  /** The same from the published months alone, percent; what "official" means on screen. */
+  officialTrailingYearPercent: string | null;
   estimatedMonthlyPercent: string | null;
   /** The owner's own yearly rate; null: not set, the official rate stands in. */
   personalRatePercent: string | null;

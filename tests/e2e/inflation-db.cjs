@@ -181,6 +181,9 @@ async function reading(db, InflationService, owner, other) {
   await service.setMonth(owner, 'USD', '2026-02', { changePercent: '2' });
   const usd = await service.factor(owner, { currency: 'USD', from: '2026-01-15', to: '2026-02-15' });
   assert.equal(usd.factor, '1.0200000000', 'The typed month replaces the published one');
+  const typed = (await service.overview(owner, now)).currencies.find((item) => item.currency === 'USD');
+  assert.match(typed.officialTrailingYearPercent, /^12\.6825/, 'The published months alone, as before');
+  assert.notEqual(typed.trailingYearPercent, typed.officialTrailingYearPercent, 'The typed month is in the effective year');
   const others = await service.factor(other, { currency: 'USD', from: '2026-01-15', to: '2026-02-15' });
   assert.equal(others.factor, '1.0100000000', 'The other owner still reads the published month');
   assert.equal(
