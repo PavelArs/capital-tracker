@@ -492,10 +492,26 @@ jobs:
           zstd -dc release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
+      # The scanner's own cache step saves a copy under every pull request, so one scan job left up
+      # to 130 MiB per pull request behind. Restore the database here (pull requests read the copy
+      # main saved) and save it only from main, or when no copy exists anywhere.
+      - name: Find the day of the vulnerability database
+        id: trivy-day
+        if: needs.release-images.outputs.reuse != 'true'
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Restore the vulnerability database
+        id: trivy-cache
+        if: needs.release-images.outputs.reuse != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/trivy
+          key: cache-trivy-${{ steps.trivy-day.outputs.day }}
+          restore-keys: cache-trivy-
       - name: Scan the backend image
         if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          cache: 'false'
           version: v0.74.0
           scan-type: image
           image-ref: capital-tracker-backend:acceptance
@@ -509,6 +525,7 @@ jobs:
         if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          cache: 'false'
           version: v0.74.0
           skip-setup-trivy: true
           scan-type: image
@@ -523,6 +540,7 @@ jobs:
         if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          cache: 'false'
           version: v0.74.0
           skip-setup-trivy: true
           scan-type: image
@@ -537,6 +555,7 @@ jobs:
         if: needs.release-images.outputs.reuse != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          cache: 'false'
           version: v0.74.0
           skip-setup-trivy: true
           scan-type: image
@@ -547,6 +566,15 @@ jobs:
           output: redis-image-security.json
           exit-code: '0'
           timeout: 10m
+      - name: Save the vulnerability database
+        if: >-
+          needs.release-images.outputs.reuse != 'true'
+          && steps.trivy-cache.outputs.cache-hit != 'true'
+          && (github.event_name == 'push' || steps.trivy-cache.outputs.cache-matched-key == '')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/trivy
+          key: cache-trivy-${{ steps.trivy-day.outputs.day }}
       - name: Redact potentially sensitive scanner details
         id: redact-image-security
         if: always() && needs.release-images.outputs.reuse != 'true'

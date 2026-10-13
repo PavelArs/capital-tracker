@@ -22,10 +22,11 @@ function kindOf(ref) {
   return 'branch';
 }
 
-// Cache keys end in a lockfile hash or a version; the family is what stays the same.
+// Cache keys end in a lockfile hash, a version or a day; the family is what stays the same.
 function familyOf(key) {
   return String(key)
     .replace(/[a-f0-9]{16,}/g, '<hash>')
+    .replace(/[0-9]{4}-[0-9]{2}-[0-9]{2}/g, '<date>')
     .replace(/[0-9]+\.[0-9]+\.[0-9]+[^-]*/g, '<version>');
 }
 

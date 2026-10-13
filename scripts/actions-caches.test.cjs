@@ -29,6 +29,7 @@ test('CACHE-001-B groups keys that differ only by a hash or a version into one f
   assert.equal(familyOf(`node-cache-Linux-x64-pnpm-${'a'.repeat(64)}`), familyOf(`node-cache-Linux-x64-pnpm-${'b'.repeat(64)}`));
   assert.equal(familyOf('playwright-Linux-X64-1.60.0'), familyOf('playwright-Linux-X64-1.61.2'));
   assert.notEqual(familyOf('playwright-Linux-X64-1.60.0'), familyOf('node-cache-Linux-x64-pnpm-x'));
+  assert.equal(familyOf('cache-trivy-2026-10-04'), familyOf('cache-trivy-2026-10-13'));
 });
 
 test('CACHE-001-C summarizes counts and sizes per kind and family', () => {

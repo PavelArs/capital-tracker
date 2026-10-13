@@ -569,6 +569,24 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     );
   });
 
+  it('ENG-005-D saves the vulnerability database only from main or when no copy exists', () => {
+    const steps = workflow('ci').jobs['image-security'].steps ?? [];
+    const scans = steps.filter((step) => step.uses?.startsWith('aquasecurity/trivy-action@'));
+    // The scanner's own cache step would save a copy under every pull request.
+    for (const step of scans) expect(step.with?.cache).toBe('false');
+    const restore = steps.find((step) => step.uses?.startsWith('actions/cache/restore@'));
+    const save = steps.find((step) => step.uses?.startsWith('actions/cache/save@'));
+    expect(restore?.with?.path).toBe('.cache/trivy');
+    expect(save?.with?.path).toBe('.cache/trivy');
+    expect(save?.with?.key).toBe(restore?.with?.key);
+    expect(steps.indexOf(restore as never)).toBeLessThan(steps.indexOf(scans[0]));
+    expect(steps.indexOf(save as never)).toBeGreaterThan(steps.indexOf(scans[3]));
+    const condition = expression(save?.if);
+    expect(condition).toContain("github.event_name == 'push'");
+    expect(condition).toContain("steps.trivy-cache.outputs.cache-matched-key == ''");
+    expect(condition).toContain("steps.trivy-cache.outputs.cache-hit != 'true'");
+  });
+
   it('ENG-005-C exports the candidate only on a push to main, from the images it just built', () => {
     const steps = workflow('ci').jobs['release-images'].steps ?? [];
     const exports = steps.filter(

@@ -17,9 +17,6 @@ on:
         type: choice
         options: [report, sweep-dry-run, sweep]
         default: report
-  # TEMPORARY: read-only look at the real cache from this pull request's own run.
-  pull_request:
-    paths: ['.github/workflows/cache-hygiene.yml', 'scripts/actions-caches.cjs']
 
 permissions: {}
 
@@ -87,26 +84,3 @@ jobs:
           if [[ "$SKIP_SWEEP" == true ]]; then exit 0; fi
           # shellcheck disable=SC2086
           node scripts/actions-caches.cjs sweep $SWEEP_FLAGS
-
-  preview:
-    name: Preview the cache sweep
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-      - name: Report the cache and what the sweep would delete
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MAX_AGE_DAYS: '5'
-        run: |
-          node scripts/actions-caches.cjs report
-          node scripts/actions-caches.cjs sweep
