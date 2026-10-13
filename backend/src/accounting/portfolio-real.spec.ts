@@ -121,4 +121,17 @@ describe('real portfolio readings (INFL-REAL-PF)', () => {
       estimated: true,
     });
   });
+
+  it('INFL-REAL-PF-UNAVAILABLE has no total while an account before its coverage hides holdings', () => {
+    const result = realReadings(
+      [{ instrumentId: id(1), value: '300' }],
+      [account([lot(1, '1', '100', '2025-03-10T09:00:00.000Z')])],
+      fx,
+      factor,
+      false,
+    );
+    // The covered asset is still read; only the whole-portfolio figure would be partial.
+    expect(result.byAsset.get(id(1))?.costBasis).toBe('150');
+    expect(result.total).toBeNull();
+  });
 });

@@ -40,13 +40,16 @@ const reading = (cost: bigint, value: bigint | null, estimated: boolean): RealRe
 /**
  * The real cost and real profit of each held asset and of all of them together. An asset is
  * null when one of its lots has no cost, no rate or no factor (a partial sum would read as a
- * smaller cost and a larger profit); the total is null when any held asset is.
+ * smaller cost and a larger profit); the total is null when any held asset is, and when the
+ * portfolio is not `complete` (an account before its coverage hides holdings, so the nominal
+ * cost and profit are unknown too).
  */
 export function realReadings(
   assets: readonly { instrumentId: string; value: string | null }[],
   accounts: readonly PortfolioAccountInput[],
   fx: FxConverter,
   factorOf: (day: string) => InflationFactor | null,
+  complete = true,
 ) {
   const costs = new Map<string, { cost: bigint; estimated: boolean } | null>();
   for (const account of accounts)
@@ -93,7 +96,7 @@ export function realReadings(
   return {
     byAsset,
     total:
-      total === null || byAsset.size === 0
+      total === null || byAsset.size === 0 || !complete
         ? null
         : reading(total.cost, total.value, total.estimated),
   };

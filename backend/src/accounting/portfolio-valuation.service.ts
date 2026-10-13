@@ -532,7 +532,15 @@ export class PortfolioValuationService {
             asset.value === '0'
           ),
       );
-      const real = await realReadingsFor(manager, owner, fx, report.assets, accounts, now);
+      const real = await realReadingsFor(
+        manager,
+        owner,
+        fx,
+        report.assets,
+        accounts,
+        now,
+        report.unavailableAccountCount === 0,
+      );
       return {
         ...report,
         assets: assets.map((asset) => ({ ...asset, real: real.of(asset.instrumentId) })),
@@ -554,15 +562,28 @@ async function realReadingsFor(
   assets: readonly { instrumentId: string; value: string | null }[],
   accounts: readonly PortfolioAccountInput[],
   now: Date,
+  complete: boolean,
 ) {
   const today = moscowDate(now);
   const series = buildSeries((await readEffectiveChanges(manager, owner, fx.currency)).changes);
   const rate = await readPersonalRate(manager, owner, fx.currency);
-  const official = realReadings(assets, accounts, fx, (day) => officialFactor(series, day, today));
+  const official = realReadings(
+    assets,
+    accounts,
+    fx,
+    (day) => officialFactor(series, day, today),
+    complete,
+  );
   const own =
     rate === null
       ? null
-      : realReadings(assets, accounts, fx, (day) => personalFactor(Number(rate), day, today));
+      : realReadings(
+          assets,
+          accounts,
+          fx,
+          (day) => personalFactor(Number(rate), day, today),
+          complete,
+        );
   const pair = (pick: (readings: typeof official) => RealReading | null) => ({
     official: pick(official),
     personal: personalReading(
