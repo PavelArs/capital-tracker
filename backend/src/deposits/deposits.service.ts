@@ -10,6 +10,8 @@ import { DataSource, EntityManager } from 'typeorm';
 import { canonicalDecimalToAtoms } from '../accounting/money';
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
+import { readEffectiveChanges, readPersonalRate } from '../inflation/inflation.service';
+import { buildSeries } from '../inflation/inflation-math';
 import { recordDepositEvent } from './deposit-events';
 import {
   parseAsOfDate,
@@ -25,11 +27,18 @@ import {
   type DepositCurrency,
   type DepositMovement,
   type DepositTerms,
+  depositBalances,
   firstImpossibleMovement,
   nextPayout,
   payoutSchedules,
   projectDeposit,
 } from './deposit-interest';
+import {
+  depositReal,
+  type InflationReadings,
+  inflationReadings,
+  periodsAfterInflation,
+} from './deposit-real';
 import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
 import { ratesAreFresh } from './deposit-valuation';
 
@@ -54,9 +63,11 @@ export class DepositsService {
       const all = await loadDeposits(manager, owner);
       const converters = await this.converters(manager);
       // A deposit that has not started by the asked day is not part of that day's picture.
-      const items = all
-        .filter((stored) => stored.deposit.startDate <= date)
-        .map((stored) => this.view(stored, date, converters));
+      const started = all.filter((stored) => stored.deposit.startDate <= date);
+      const readings = await this.inflation(manager, owner, started);
+      const items = started.map((stored) =>
+        this.view(stored, date, converters, readings.get(stored.deposit.currency)),
+      );
       // A closed deposit still counts while interest posted before the closure is unpaid.
       const open = items.filter(
         (item) => item.status !== 'closed' || canonicalDecimalToAtoms(item.balance) > 0n,
@@ -93,7 +104,13 @@ export class DepositsService {
         throw new UnprocessableEntityException('The date is too far in the future');
       if (stored.deposit.startDate > date)
         throw new NotFoundException('The deposit had not started on that date');
-      return this.detail(stored, date, await this.converters(manager));
+      const readings = await this.inflation(manager, owner, [stored]);
+      return this.detail(
+        stored,
+        date,
+        await this.converters(manager),
+        readings.get(stored.deposit.currency),
+      );
     });
   }
 
@@ -347,6 +364,23 @@ export class DepositsService {
     );
   }
 
+  /** How inflation reads for each currency the deposits are in: the official and the own rate. */
+  private async inflation(manager: EntityManager, owner: string, deposits: readonly Stored[]) {
+    const readings = new Map<DepositCurrency, InflationReadings>();
+    for (const { deposit } of deposits) {
+      if (readings.has(deposit.currency)) continue;
+      const { changes } = await readEffectiveChanges(manager, owner, deposit.currency);
+      readings.set(
+        deposit.currency,
+        inflationReadings(
+          buildSeries(changes),
+          await readPersonalRate(manager, owner, deposit.currency),
+        ),
+      );
+    }
+    return readings;
+  }
+
   private read<T>(action: (manager: EntityManager) => Promise<T>): Promise<T> {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
@@ -384,7 +418,12 @@ export class DepositsService {
     ) as Record<AccountingCurrency, string | null>;
   }
 
-  private view(stored: Stored, asOf: string, converters: Map<AccountingCurrency, FxConverter>) {
+  private view(
+    stored: Stored,
+    asOf: string,
+    converters: Map<AccountingCurrency, FxConverter>,
+    readings: InflationReadings | undefined,
+  ) {
     const terms = termsOf(stored);
     const movements = movementsOf(stored);
     const now = projectDeposit(terms, movements, asOf);
@@ -420,6 +459,24 @@ export class DepositsService {
           };
         })()
       : null;
+    const ratePercent =
+      [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf)?.ratePercent ??
+      terms.rates[0]?.ratePercent ??
+      '0';
+    const afterInflation = (reading: InflationReadings['official'] | undefined) =>
+      reading
+        ? depositReal(
+            {
+              balance: now.balance,
+              active: status === 'active',
+              ratePercent,
+              terms,
+              movements: known,
+              asOf,
+            },
+            reading,
+          )
+        : null;
     return {
       id: stored.deposit.id,
       name: stored.deposit.name,
@@ -431,16 +488,21 @@ export class DepositsService {
       capitalized: terms.capitalized,
       dayBasis: terms.dayBasis,
       earlyClose: terms.earlyClose,
-      ratePercent:
-        [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf)?.ratePercent ??
-        terms.rates[0]?.ratePercent ??
-        '0',
+      ratePercent,
       status,
       closedOn: now.closedOn,
       principal: now.principal,
       accrued: now.accrued,
       due: now.due,
       balance: now.balance,
+      // Everything the deposit has earned, posted or not, less what was forfeited.
+      interestEarned: centsText(
+        canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
+      ),
+      real: {
+        official: afterInflation(readings?.official),
+        personal: afterInflation(readings?.personal),
+      },
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
       nextPayout: status === 'active' ? nextPayout(knownTerms, known, asOf) : null,
       atMaturity: maturity
@@ -454,11 +516,24 @@ export class DepositsService {
     };
   }
 
-  private detail(stored: Stored, asOf: string, converters: Map<AccountingCurrency, FxConverter>) {
+  private detail(
+    stored: Stored,
+    asOf: string,
+    converters: Map<AccountingCurrency, FxConverter>,
+    readings: InflationReadings | undefined,
+  ) {
     const terms = termsOf(stored);
     const projection = projectDeposit(terms, movementsOf(stored), asOf);
+    // One replay gives the money held at the start of every period.
+    const held = depositBalances(
+      terms,
+      movementsOf(stored),
+      projection.periods.map((period) => period.from),
+    );
+    const official = readings && periodsAfterInflation(projection.periods, held, readings.official);
+    const personal = readings && periodsAfterInflation(projection.periods, held, readings.personal);
     return {
-      ...this.view(stored, asOf, converters),
+      ...this.view(stored, asOf, converters, readings),
       asOf,
       // Only what was on record by the asked day, so a past view shows no later activity.
       rates: stored.rates
@@ -473,7 +548,13 @@ export class DepositsService {
           amount: row.amount,
           comment: row.comment,
         })),
-      periods: projection.periods,
+      periods: projection.periods.map((period, index) => ({
+        ...period,
+        afterInflation: {
+          official: official?.[index] ?? null,
+          personal: personal?.[index] ?? null,
+        },
+      })),
       interestPosted: projection.interestPosted,
       interestPaidOut: projection.interestPaidOut,
       interestForfeited: projection.interestForfeited,

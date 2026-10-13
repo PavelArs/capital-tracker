@@ -6,12 +6,23 @@ import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { Icon } from '../shell/icons';
+import { useInflationBasis } from '../shell/inflation-basis';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { AddDepositDialog } from './DepositDialogs';
-import { attention, dateText, money, statusText, statusTone, termText } from './deposit-format';
+import {
+  attention,
+  dateText,
+  money,
+  realOf,
+  realRateText,
+  statusText,
+  statusTone,
+  termText,
+  toneClass,
+} from './deposit-format';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './deposits.css';
@@ -26,9 +37,12 @@ function Card({
   shown: keyof Deposit['values'];
 }) {
   const [asked] = useAskedCurrency();
+  const [basis] = useInflationBasis();
   const note = attention(deposit, asOf);
   const check = deposit.lastCheck;
   const inOwn = shown === deposit.currency;
+  const real = realOf(deposit, basis);
+  const rate = realRateText(real);
   return (
     <li>
       <Link className="deposit-card" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
@@ -44,7 +58,26 @@ function Card({
           {!inOwn && <span>{money(deposit.balance, deposit.currency)}</span>}
         </div>
         <p className="deposit-card__terms">{termText(deposit)}</p>
+        {rate && (
+          <p className={`deposit-card__terms ${toneClass(real?.ratePercent ?? null) ?? ''}`}>
+            {rate}
+          </p>
+        )}
         <dl className="deposit-card__facts">
+          {deposit.interestEarned !== undefined && (
+            <div>
+              <dt>Interest earned</dt>
+              <dd>
+                {money(deposit.interestEarned, deposit.currency)}
+                {real?.gain != null && (
+                  <span className={toneClass(real.gain)}>
+                    {' '}
+                    ({money(real.gain, deposit.currency, true)} after inflation)
+                  </span>
+                )}
+              </dd>
+            </div>
+          )}
           {deposit.nextPayout && (
             <div>
               <dt>Next interest</dt>

@@ -20,6 +20,22 @@ export interface DepositCheck {
   difference: string;
 }
 
+/**
+ * A deposit after inflation, in its own currency (INFL-DEPOSIT): the yearly rate less the
+ * inflation of a year, and what it earned less the inflation on all the money put in. Each is
+ * null where the inflation figures do not reach.
+ */
+export interface DepositReal {
+  inflationPercent: string | null;
+  /** Null unless the deposit is active. */
+  ratePercent: string | null;
+  gain: string | null;
+  /** A factor reaches past the latest published month or rests on the owner's own rate. */
+  estimated: boolean;
+  /** Own-rate reading only: false when the currency has no own rate and this is the official one. */
+  ownRate?: boolean;
+}
+
 export interface Deposit {
   id: string;
   name: string;
@@ -38,6 +54,9 @@ export interface Deposit {
   accrued: string;
   due: string;
   balance: string;
+  /** All the interest earned, posted or not. Absent in an answer the browser saved before this. */
+  interestEarned?: string;
+  real?: { official: DepositReal | null; personal: DepositReal | null };
   values: Values;
   nextPayout: { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null;
   atMaturity: { date: string; balance: string; interest: string } | null;
@@ -59,6 +78,8 @@ export interface DepositDetail extends Deposit {
     to: string;
     interest: string;
     treatment: 'capitalized' | 'payable';
+    /** The interest less the inflation on the money held at the period's start. */
+    afterInflation?: { official: string | null; personal: string | null };
   }[];
   interestPosted: string;
   interestPaidOut: string;
