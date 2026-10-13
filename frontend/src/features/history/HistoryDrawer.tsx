@@ -21,8 +21,13 @@ export default function HistoryDrawer({
   const closeButton = useRef<HTMLButtonElement>(null);
   const facts: [string, string][] = [
     ['Version', `${event.version}`],
-    ...(event.account ? [['Account', event.account] as [string, string]] : []),
-    ...(event.occurredAt ? [['Operation date', moment(event.occurredAt)] as [string, string]] : []),
+    ...(event.account
+      ? [[event.entity === 'deposit' ? 'Bank' : 'Account', event.account] as [string, string]]
+      : []),
+    // A bank deposit event states its own day among its facts.
+    ...(event.occurredAt && event.entity !== 'deposit'
+      ? [['Operation date', moment(event.occurredAt)] as [string, string]]
+      : []),
   ];
   return (
     <Drawer titleId="history-title" onClose={onClose} initialFocus={() => closeButton.current}>
@@ -48,11 +53,13 @@ export default function HistoryDrawer({
         </div>
         <section aria-labelledby="history-changes">
           <h3 id="history-changes" className="transactions-section">
-            {event.change === 'changed'
-              ? 'What changed'
-              : event.change === 'created'
-                ? 'What was recorded'
-                : 'What was removed'}
+            {event.entity === 'deposit'
+              ? 'What happened'
+              : event.change === 'changed'
+                ? 'What changed'
+                : event.change === 'created'
+                  ? 'What was recorded'
+                  : 'What was removed'}
           </h3>
           {event.fields.length === 0 ? (
             <p className="transactions-info">

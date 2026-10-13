@@ -36,6 +36,7 @@ export const entityLabels: Record<AuditEntity, string> = {
   flow: 'Deposits and withdrawals',
   price: 'Manual prices',
   classification: 'Blockchain answers',
+  deposit: 'Bank deposits',
 };
 
 /** One stored value as the owner reads it. */
@@ -66,6 +67,16 @@ const headline = (field: AuditField) => field.label !== 'Date' && field.label !=
 
 /** One line for the list: what changed, or the main facts of a created or deleted entry. */
 export function summary(event: AuditEvent): string {
+  // A bank deposit event lists its own facts: "Top-up added · 5,000.5 RUB".
+  if (event.entity === 'deposit') {
+    const facts = event.fields.filter(headline).slice(0, 2);
+    return facts
+      .flatMap((field) => {
+        const value = event.change === 'deleted' ? field.before : field.after;
+        return value ? [valueText(value)] : [];
+      })
+      .join(' · ');
+  }
   if (event.change === 'changed') {
     if (event.fields.length === 0) return 'No visible field changed';
     const [first, ...rest] = event.fields;
@@ -96,6 +107,7 @@ export function glyphOf(
     case 'flow':
       return event.title === 'Withdrawal' ? 'out' : 'in';
     case 'price':
+    case 'deposit':
       return 'opening';
     default:
       return 'chain';

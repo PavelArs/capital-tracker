@@ -63,7 +63,7 @@ decimals in the deposit's currency.
 
 `tables` holds every row of the owner in each table listed in
 `backend/src/owner-export/backup-tables.ts`, including every version of every journal entry
-(the audit history), the raw chain transactions, classifications and the uploaded CSV files
+(the audit history), the log of what was done to each bank deposit (`bank_deposit_events`, DEP-HISTORY), the raw chain transactions, classifications and the uploaded CSV files
 (`originalBytes`, base64). Rows keep the database column names without `ownerId`; decimals are
 strings so 30-place amounts stay exact; times are ISO 8601 in UTC.
 

@@ -9,7 +9,8 @@ export type AuditEntity =
   | 'reward'
   | 'flow'
   | 'price'
-  | 'classification';
+  | 'classification'
+  | 'deposit';
 export type AuditChange = 'created' | 'changed' | 'deleted';
 /** The owner, an import of a CSV file, or the app itself (wallet sync, own-transfer links). */
 export type AuditActor = 'owner' | 'csv' | 'automatic';
