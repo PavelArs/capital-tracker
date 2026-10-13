@@ -130,6 +130,24 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(within(rows[2]).getByText('5 years 10 months')).toBeInTheDocument();
   });
 
+  it('shows a goal that is already reached as reached in every case', async () => {
+    answers({
+      ...open,
+      status: 'reached',
+      progress: { current: '120000.00', complete: true, percent: '100.00', remaining: '0.00' },
+      scenarios: open.scenarios.map((scenario) => ({
+        ...scenario,
+        monthsToTarget: 0,
+        reachedOn: '2026-10-13',
+      })),
+    });
+    show(open);
+    expect(await screen.findByRole('heading', { name: 'Reserve B' })).toBeInTheDocument();
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
+    expect(within(rows[2]).getByText('Already')).toBeInTheDocument();
+    expect(screen.queryByText('under a month')).toBeNull();
+  });
+
   it('says so when the goal does not exist', async () => {
     answers(open);
     show(dated);

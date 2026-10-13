@@ -49,8 +49,9 @@ const bannerTone = {
 function Cases({ goal }: { goal: Goal }) {
   const money = (value: string | null) => wholeMoney(value, goal.currency);
   const dated = goal.deadline !== null;
+  const done = goal.status === 'reached';
   const reached = (scenario: GoalScenario) =>
-    scenario.reachedOn ? monthYear(scenario.reachedOn) : 'Over 100 years';
+    done ? 'Already' : scenario.reachedOn ? monthYear(scenario.reachedOn) : 'Over 100 years';
   return (
     <div className="ui-table-wrap">
       <table className="ui-table goal-cases">
@@ -109,7 +110,9 @@ function Cases({ goal }: { goal: Goal }) {
                       {reached(scenario)}
                     </td>
                     <td className="ui-num" data-label="Takes">
-                      {scenario.monthsToTarget === null ? '—' : span(scenario.monthsToTarget)}
+                      {done || scenario.monthsToTarget === null
+                        ? '—'
+                        : span(scenario.monthsToTarget)}
                     </td>
                   </>
                 )}
