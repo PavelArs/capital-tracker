@@ -7,10 +7,11 @@ import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import DashboardPage from '@features/dashboard/DashboardPage';
 import { retiredPaths } from '@features/shell/navigation';
+import PageLoadBoundary from '@features/shell/PageLoadBoundary';
 import { pages } from '@features/shell/route-pages';
 import Login from '@pages/Login';
 import React, { Suspense, useEffect } from 'react';
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 
 const {
   portfolio: PortfolioPage,
@@ -27,10 +28,17 @@ const {
   resetPassword: ResetPasswordPage,
 } = pages;
 
-// A screen that is still being fetched shows the grey blocks of its layout inside the real frame.
-function inFrame(page: React.ReactNode) {
-  return <Suspense fallback={<BootPage />}>{page}</Suspense>;
+// A screen that is still being fetched shows the grey blocks of its layout inside the real frame;
+// one that cannot be fetched says so there, and another path starts afresh.
+function InFrame({ page }: { page: React.ReactNode }) {
+  const { pathname } = useLocation();
+  return (
+    <PageLoadBoundary resetKey={pathname}>
+      <Suspense fallback={<BootPage />}>{page}</Suspense>
+    </PageLoadBoundary>
+  );
 }
+const inFrame = (page: React.ReactNode) => <InFrame page={page} />;
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -52,17 +60,21 @@ function AppRoutes() {
       <Route
         path="/password-reset"
         element={
-          <Suspense fallback={null}>
-            <ForgotPasswordPage />
-          </Suspense>
+          <PageLoadBoundary>
+            <Suspense fallback={null}>
+              <ForgotPasswordPage />
+            </Suspense>
+          </PageLoadBoundary>
         }
       />
       <Route
         path="/password-reset/new"
         element={
-          <Suspense fallback={null}>
-            <ResetPasswordPage />
-          </Suspense>
+          <PageLoadBoundary>
+            <Suspense fallback={null}>
+              <ResetPasswordPage />
+            </Suspense>
+          </PageLoadBoundary>
         }
       />
 
