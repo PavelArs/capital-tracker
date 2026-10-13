@@ -128,15 +128,6 @@ export function realRateText(real: DepositReal | null): string | null {
   return `Real ${percent(real.ratePercent)} a year after ${percent(real.inflationPercent, false)} inflation`;
 }
 
-/** Which rate the figures rest on, said beside them only. */
-export function basisNote(real: DepositReal, currency: AccountingCurrency): string {
-  const estimated = real.estimated && real.ownRate !== true ? ', latest months estimated' : '';
-  if (real.ownRate === true) return 'at your own rate';
-  if (real.ownRate === false)
-    return `no rate of your own for ${currency}, so the official one${estimated}`;
-  return `at the official rate${estimated}`;
-}
-
 /** The colour of a signed figure: green above zero, red below it, none at zero or without one. */
 export const toneClass = (value: string | null): string | undefined => {
   const direction = tone(value);

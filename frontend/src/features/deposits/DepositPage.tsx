@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import Pager, { usePages } from '@/ui/Pager';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
+import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import { useMainCurrency } from '../shell/main-currency';
@@ -16,7 +17,6 @@ import { useCachedRead } from '../shell/useCachedRead';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
 import {
   attention,
-  basisNote,
   capitalizedInterest,
   dateText,
   money,
@@ -308,7 +308,7 @@ export default function DepositPage() {
                 value={money(deposit.interestEarned, own)}
                 hint={
                   real?.gain != null
-                    ? `${money(real.gain, own, true)} after ${own} inflation, ${basisNote(real, own)}`
+                    ? `${money(real.gain, own, true)} after ${own} inflation, ${basisText(basis, real, own)}`
                     : `No ${own} inflation figures for the whole time yet`
                 }
               />
