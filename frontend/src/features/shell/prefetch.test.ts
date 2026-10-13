@@ -9,6 +9,7 @@ vi.mock('@api/cached-reads', () => ({
     operations: { prefetch: vi.fn() },
     transferProposals: { prefetch: vi.fn() },
     duplicateProposals: { prefetch: vi.fn() },
+    deposits: { prefetch: vi.fn() },
   },
 }));
 
@@ -18,6 +19,7 @@ const loads = [
   cachedReads.operations.prefetch,
   cachedReads.transferProposals.prefetch,
   cachedReads.duplicateProposals.prefetch,
+  cachedReads.deposits.prefetch,
 ];
 
 describe('prefetchSection', () => {
@@ -48,6 +50,12 @@ describe('prefetchSection', () => {
     expect(cachedReads.operations.prefetch).toHaveBeenCalledWith('USD');
     expect(cachedReads.transferProposals.prefetch).toHaveBeenCalledTimes(1);
     expect(cachedReads.duplicateProposals.prefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks the deposit list for the deposits page', () => {
+    prefetchSection('/deposits', 'USD');
+    expect(cachedReads.deposits.prefetch).toHaveBeenCalledTimes(1);
+    expect(cachedReads.operations.prefetch).not.toHaveBeenCalled();
   });
 
   it('does nothing for a section it has no reads for', () => {

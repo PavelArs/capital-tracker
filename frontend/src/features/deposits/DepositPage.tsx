@@ -1,7 +1,8 @@
+import { cachedReads } from '@api/cached-reads';
 import { type DepositDetail, depositsApi } from '@api/deposits.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import Pager, { usePages } from '@/ui/Pager';
@@ -10,6 +11,7 @@ import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
+import { useCachedRead } from '../shell/useCachedRead';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
 import {
   attention,
@@ -173,9 +175,7 @@ function Checks({
 // DEP-DETAIL: one deposit with its computed interest, its movements and its checks.
 export default function DepositPage() {
   const { depositId = '' } = useParams();
-  const [deposit, setDeposit] = useState<DepositDetail | null>(null);
-  const [missing, setMissing] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const { data: deposit, error, replace } = useCachedRead(cachedReads.deposit, depositId);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
   const [asked] = useAskedCurrency();
@@ -183,19 +183,11 @@ export default function DepositPage() {
   const navigate = useNavigate();
   const shown = asked ?? main ?? 'USD';
 
-  const load = useCallback(() => {
-    depositsApi
-      .get(depositId)
-      .then(setDeposit)
-      .catch((error) => {
-        if (isAxiosError(error) && error.response?.status === 404) setMissing(true);
-        else setFailed(true);
-      });
-  }, [depositId]);
-  useEffect(load, [load]);
+  const missing = isAxiosError(error) && error.response?.status === 404;
+  const failed = error !== null && !missing && deposit === null;
 
   const saved = (next: DepositDetail) => {
-    setDeposit(next);
+    replace(next);
     setDialog(null);
   };
   const back = withCurrency('/deposits', asked);
@@ -203,7 +195,7 @@ export default function DepositPage() {
   const removeMovement = async (id: string) => {
     setRemoveFailed(null);
     try {
-      setDeposit(await depositsApi.removeMovement(depositId, id));
+      replace(await depositsApi.removeMovement(depositId, id));
     } catch (error) {
       const message = isAxiosError(error) ? error.response?.data?.message : null;
       setRemoveFailed(typeof message === 'string' ? message : 'Could not remove it. Try again.');

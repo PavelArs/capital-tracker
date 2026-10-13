@@ -1,6 +1,7 @@
 import { type AccountSummary, accountingApi } from './accounting.api';
 import { type AssetHistory, assetHistoryApi } from './asset-history.api';
 import { type AuditHistory, auditHistoryApi } from './audit-history.api';
+import { type DepositDetail, type DepositList, depositsApi } from './deposits.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
 import { type HiddenAsset, hiddenAssetsApi } from './hidden-assets.api';
 import {
@@ -185,6 +186,8 @@ export const cachedReads = {
   wallets: cachedRead('wallets', (): Promise<WalletAddress[]> => walletAddressesApi.list()),
   settings: cachedRead('settings', (): Promise<OwnerSettings> => ownerSettingsApi.get()),
   rates: cachedRead('rates', (): Promise<FxRatesReport> => fxRatesApi.get()),
+  deposits: cachedRead('deposits', (): Promise<DepositList> => depositsApi.list()),
+  deposit: cachedRead('deposit', (id: string): Promise<DepositDetail> => depositsApi.get(id)),
   /** One page of the change history for a filter: the newest, or the one older than `before`. */
   audit: cachedRead(
     'audit',

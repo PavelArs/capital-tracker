@@ -17,6 +17,7 @@ const sectionReads: Record<string, Reads> = {
     cachedReads.portfolio.prefetch(currency),
   ],
   '/portfolio': (currency) => [cachedReads.portfolio.prefetch(currency)],
+  '/deposits': () => [cachedReads.deposits.prefetch()],
   // The page paints its list only with the cards above it, so all three are read together.
   '/transactions': (currency) => [
     cachedReads.operations.prefetch(currency),
