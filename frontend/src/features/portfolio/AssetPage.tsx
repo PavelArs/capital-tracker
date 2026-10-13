@@ -464,9 +464,9 @@ function AssetDetails({
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
-                {asset.unrealizedPnl !== null ? (
+                {asset.unrealizedPnl !== null || sold ? (
                   <span className="portfolio-sub">
-                    Nominal {money(asset.unrealizedPnl, currency, true)}
+                    Nominal {money(sold ? '0' : asset.unrealizedPnl, currency, true)}
                   </span>
                 ) : (
                   asset.knownUnrealizedPnl !== null && (

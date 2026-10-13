@@ -1042,7 +1042,8 @@ describe('Portfolio after inflation', () => {
           quantity: '0',
           value: '0',
           costBasis: '0',
-          unrealizedPnl: '0',
+          unrealizedPnl: null,
+          knownUnrealizedPnl: null,
           real: { official: null, personal: null },
         },
       ]),
@@ -1051,7 +1052,7 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent("Cost in today's money$0.00");
     expect(position()).toHaveTextContent('Nothing held, so there is no real cost or profit');
-    expect(position()).toHaveTextContent('Real P&L$0.00');
+    expect(position()).toHaveTextContent('Real P&L$0.00Nominal $0.00');
     expect(position()).not.toHaveTextContent('is missing');
   });
 
