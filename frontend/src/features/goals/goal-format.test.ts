@@ -181,6 +181,13 @@ describe('GOAL-AGAINST a projection against the sum', () => {
     expect(againstTarget(null, 'USD')).toBeNull();
   });
 
+  it('treats a gap under half a unit as on the sum, as it would show as $0', () => {
+    expect(againstTarget('0.49', 'USD')).toMatchObject({ text: 'On the sum', tone: 'level' });
+    expect(againstTarget('-0.49', 'USD')).toMatchObject({ text: 'On the sum', tone: 'level' });
+    expect(againstTarget('0.50', 'USD')?.text).toBe('$1 short');
+    expect(againstTarget('-0.50', 'USD')?.text).toBe('$1 more');
+  });
+
   it('shows no sum for a figure written in scientific notation', () => {
     expect(wholeMoney('9.27e+127', 'USD')).toBe('—');
     expect(againstTarget('9.27e+127', 'USD')).toBeNull();

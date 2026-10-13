@@ -161,16 +161,19 @@ export function verdict(goal: Goal): string {
 }
 
 /**
- * A projection against the sum: "$1,200 more", "$600 short" or "On the sum" when the gap rounds to
- * nothing; null when there is none or it is not a plain number.
+ * A projection against the sum: "$1,200 more", "$600 short" or "On the sum" when the gap shows as
+ * $0; null when there is none or it is not a plain number.
  */
 export function againstTarget(
   gap: string | null,
   currency: GoalCurrency,
 ): { text: string; hint: string; tone: 'short' | 'more' | 'level' } | null {
   if (gap === null || !PLAIN.test(gap)) return null;
-  if (toCents(gap) === 0n) return { text: 'On the sum', hint: 'Right on the sum', tone: 'level' };
-  const short = isPositive(gap);
+  const cents = toCents(gap);
+  // Less than half a unit shows as $0, so it counts as on the sum.
+  if ((cents < 0n ? -cents : cents) < 50n)
+    return { text: 'On the sum', hint: 'Right on the sum', tone: 'level' };
+  const short = cents > 0n;
   const text = `${wholeMoney(gap.replace(/^-/, ''), currency)} ${short ? 'short' : 'more'}`;
   return { text, hint: short ? text : `${text} than the sum`, tone: short ? 'short' : 'more' };
 }
