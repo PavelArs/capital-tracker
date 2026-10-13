@@ -193,11 +193,7 @@ export function GoalDialog({
   const [target, setTarget] = useState(goal ? goal.targetAmount : '');
   const [deadline, setDeadline] = useState(goal?.deadline ?? '');
   const [rate, setRate] = useState(goal ? rateText(goal.expectedReturnPercent) : '8');
-  const [monthly, setMonthly] = useState(
-    goal?.monthlyContribution && Number(goal.monthlyContribution) > 0
-      ? goal.monthlyContribution
-      : '',
-  );
+  const [monthly, setMonthly] = useState(goal?.monthlyContribution ?? '');
   const attempt = useAttempt();
   const nameId = useId();
   const targetId = useId();

@@ -14,11 +14,12 @@ export function monthYear(date: string): string {
   return `${MONTHS[month - 1]} ${year}`;
 }
 
-/** Whole months from one calendar date's month to another's. */
+/** Whole months from one calendar date to another; a part of a month is not counted. */
 const monthsFrom = (from: string, to: string): number => {
-  const [fromYear, fromMonth] = from.split('-').map(Number);
-  const [toYear, toMonth] = to.split('-').map(Number);
-  return (toYear - fromYear) * 12 + (toMonth - fromMonth);
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
+  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  const months = (toYear - fromYear) * 12 + (toMonth - fromMonth);
+  return toDay < fromDay ? months - 1 : months;
 };
 
 /** "3 years 2 months", "1 year", "5 months". */

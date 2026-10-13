@@ -100,6 +100,17 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
     ).toBe('On track. The portfolio grows to the sum by Oct 2029 without further contributions.');
   });
 
+  it('counts only whole months early, by the day', () => {
+    const near = (reachedOn: string, deadline: string) =>
+      verdict(goal({ deadline, scenarios: [scenario({ reachedOn })] }));
+    expect(near('2029-01-31', '2029-02-01')).toBe(
+      'On track. $1,200 a month gets there by Jan 2029.',
+    );
+    expect(near('2029-01-15', '2029-02-15')).toBe(
+      'On track. $1,200 a month gets there by Jan 2029, 1 month early.',
+    );
+  });
+
   it('says what a goal that is behind lacks', () => {
     const behind = goal({
       status: 'behind',
