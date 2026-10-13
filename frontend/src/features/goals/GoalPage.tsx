@@ -14,6 +14,7 @@ import {
   againstTarget,
   dateText,
   enteredText,
+  flooredText,
   monthYear,
   neededText,
   rateText,
@@ -22,7 +23,6 @@ import {
   span,
   statusText,
   statusTone,
-  sumText,
   timeLeft,
   verdict,
 } from './goal-format';
@@ -50,7 +50,7 @@ const bannerTone = {
 
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
 function Cases({ goal }: { goal: Goal }) {
-  const money = (value: string | null) => sumText(value, goal.currency);
+  const money = (value: string | null) => flooredText(value, goal.currency);
   const needed = (value: string | null) => neededText(value, goal.currency);
   const dated = goal.deadline !== null;
   const done = goal.status === 'reached';
@@ -169,7 +169,7 @@ export default function GoalPage() {
       </div>
     );
 
-  const money = (value: string | null) => (goal ? sumText(value, goal.currency) : '');
+  const money = (value: string | null) => (goal ? flooredText(value, goal.currency) : '');
   const needed = (value: string | null) => (goal ? neededText(value, goal.currency) : '');
   const entered = (value: string | null) => (goal ? enteredText(value, goal.currency) : '');
   const base = goal?.scenarios.find((scenario) => scenario.key === 'base') ?? null;

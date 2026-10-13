@@ -73,18 +73,6 @@ export function wholeMoney(value: string | null, currency: GoalCurrency): string
   return `${negative && units > 0n ? '-' : ''}${currencySymbols[currency]}${grouped}`;
 }
 
-/**
- * Like wholeMoney, but a sub-unit amount keeps its cents instead of reading $0: what a plan still
- * has to put in, or what it falls short by, is not nothing.
- */
-export function sumText(value: string | null, currency: GoalCurrency): string {
-  if (value === null || !PLAIN.test(value)) return DASH;
-  const cents = toCents(value);
-  const abs = cents < 0n ? -cents : cents;
-  if (abs === 0n || abs >= 50n) return wholeMoney(value, currency);
-  return `${cents < 0n ? '-' : ''}${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`;
-}
-
 /** A sum in whole units rounded down, so a figure that is short of a sum never reads as having it. */
 export function flooredText(value: string | null, currency: GoalCurrency): string {
   if (value === null || !PLAIN.test(value)) return DASH;
@@ -172,7 +160,7 @@ export const scenarioText: Record<GoalScenario['key'], string> = {
 
 /** The sentence under a goal: where it stands and what it takes, from the base case. */
 export function verdict(goal: Goal): string {
-  const money = (value: string | null) => sumText(value, goal.currency);
+  const money = (value: string | null) => flooredText(value, goal.currency);
   const needed = (value: string | null) => neededText(value, goal.currency);
   const entered = (value: string | null) => enteredText(value, goal.currency);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
@@ -224,7 +212,7 @@ export function verdict(goal: Goal): string {
     }
     case 'overdue': {
       const date = goal.deadline ? `The date, ${dateText(goal.deadline)}, has passed. ` : '';
-      const left = `${money(remaining)} to go.`;
+      const left = `${needed(remaining)} to go.`;
       const later =
         planned !== null && base?.reachedOn
           ? ` At ${entered(planned)} a month you get there in ${monthYear(base.reachedOn)}.`

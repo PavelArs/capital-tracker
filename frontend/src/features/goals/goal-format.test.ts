@@ -13,7 +13,6 @@ import {
   rateText,
   reachedDate,
   span,
-  sumText,
   timeLeft,
   verdict,
   wholeMoney,
@@ -189,16 +188,6 @@ describe('GOAL-VERDICT with assets that have no price', () => {
     expect(verdict(goal({ progress: unpriced, status: 'open', deadline: null }))).toContain(
       'no date or monthly sum is worked out',
     );
-  });
-});
-
-describe('GOAL-SUM a sum that is not nothing', () => {
-  it('keeps the cents of a sub-unit amount instead of reading $0', () => {
-    expect(sumText('0.40', 'USD')).toBe('$0.40');
-    expect(sumText('-0.05', 'USD')).toBe('-$0.05');
-    expect(sumText('0.00', 'USD')).toBe('$0');
-    expect(sumText('1234.50', 'EUR')).toBe('€1,235');
-    expect(sumText('9.27e+127', 'USD')).toBe('—');
   });
 });
 
