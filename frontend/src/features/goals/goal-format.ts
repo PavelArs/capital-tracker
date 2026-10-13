@@ -78,6 +78,8 @@ export function flooredText(value: string | null, currency: GoalCurrency): strin
   if (value === null || !PLAIN.test(value)) return DASH;
   const cents = toCents(value);
   if (cents <= 0n) return wholeMoney(value, currency);
+  // Under one unit the cents stay, so a positive value never reads as nothing.
+  if (cents < 100n) return `${currencySymbols[currency]}0.${cents.toString().padStart(2, '0')}`;
   return wholeMoney(`${cents / 100n}.00`, currency);
 }
 

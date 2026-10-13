@@ -223,6 +223,7 @@ describe('GOAL-ENTERED a sum as the owner entered it', () => {
 describe('GOAL-FLOORED a value short of the sum', () => {
   it('rounds down so it never reads as the sum', () => {
     expect(flooredText('1.99', 'USD')).toBe('$1');
+    expect(flooredText('0.75', 'USD')).toBe('$0.75');
     expect(flooredText('5500000.60', 'RUB')).toBe('₽5,500,000');
     expect(flooredText(null, 'USD')).toBe('—');
   });
