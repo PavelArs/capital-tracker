@@ -14,12 +14,27 @@ export function monthYear(date: string): string {
   return `${MONTHS[month - 1]} ${year}`;
 }
 
-/** Whole months from one calendar date to another; a part of a month is not counted. */
+/** A calendar date some months later; a day the month lacks falls on its last day. */
+function addMonths(date: string, months: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const index = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(index / 12);
+  const targetMonth = index % 12;
+  const last = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const text = (value: number, width: number) => String(value).padStart(width, '0');
+  return `${text(targetYear, 4)}-${text(targetMonth + 1, 2)}-${text(Math.min(day, last), 2)}`;
+}
+
+/**
+ * Whole months from one calendar date to another; a part of a month is not counted. A month
+ * ends on its anniversary as the server's payment schedule has it, so Jan 31 to Feb 28 is one.
+ */
 export const monthsFrom = (from: string, to: string): number => {
-  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
-  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  const [fromYear, fromMonth] = from.split('-').map(Number);
+  const [toYear, toMonth] = to.split('-').map(Number);
   const months = (toYear - fromYear) * 12 + (toMonth - fromMonth);
-  return toDay < fromDay ? months - 1 : months;
+  if (months <= 0) return months === 0 && to >= from ? 0 : months - 1;
+  return addMonths(from, months) <= to ? months : months - 1;
 };
 
 /** "3 years 2 months", "1 year", "5 months". */
@@ -68,6 +83,17 @@ export function sumText(value: string | null, currency: GoalCurrency): string {
   const abs = cents < 0n ? -cents : cents;
   if (abs === 0n || abs >= 50n) return wholeMoney(value, currency);
   return `${cents < 0n ? '-' : ''}${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * A sum that has to be put in, in whole units rounded up so that the figure shown always reaches
+ * what is needed: $1.40 is $2, not $1.
+ */
+export function neededText(value: string | null, currency: GoalCurrency): string {
+  if (value === null || !PLAIN.test(value)) return DASH;
+  const cents = toCents(value);
+  if (cents <= 0n) return wholeMoney(value, currency);
+  return wholeMoney(`${(cents + 99n) / 100n}.00`, currency);
 }
 
 /** The difference of two decimal strings, as a decimal string with two decimals. */
@@ -128,6 +154,7 @@ export const scenarioText: Record<GoalScenario['key'], string> = {
 /** The sentence under a goal: where it stands and what it takes, from the base case. */
 export function verdict(goal: Goal): string {
   const money = (value: string | null) => sumText(value, goal.currency);
+  const needed = (value: string | null) => neededText(value, goal.currency);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
   const baseReached = base ? reachedDate(goal, base) : null;
   const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
@@ -166,14 +193,14 @@ export function verdict(goal: Goal): string {
       if (needs === null || goal.deadline === null)
         return 'Behind. No monthly payment is left before the date.';
       const short = difference(needs, goal.monthlyContribution ?? '0');
-      const head = planned !== null ? `Behind by ${money(short)} a month. ` : 'Behind. ';
+      const head = planned !== null ? `Behind by ${needed(short)} a month. ` : 'Behind. ';
       const tail =
         planned === null
           ? ''
           : base?.reachedOn
             ? `; at ${money(planned)} it takes until ${monthYear(base.reachedOn)}`
             : `; at ${money(planned)} it is not reached in 100 years`;
-      return `${head}Reaching it by ${monthYear(goal.deadline)} needs ${money(needs)} a month${tail}.`;
+      return `${head}Reaching it by ${monthYear(goal.deadline)} needs ${needed(needs)} a month${tail}.`;
     }
     case 'overdue': {
       const date = goal.deadline ? `The date, ${dateText(goal.deadline)}, has passed. ` : '';

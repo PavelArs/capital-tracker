@@ -14,6 +14,7 @@ import {
   againstTarget,
   dateText,
   monthYear,
+  neededText,
   rateText,
   reachedDate,
   scenarioText,
@@ -49,6 +50,7 @@ const bannerTone = {
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
 function Cases({ goal }: { goal: Goal }) {
   const money = (value: string | null) => sumText(value, goal.currency);
+  const needed = (value: string | null) => neededText(value, goal.currency);
   const dated = goal.deadline !== null;
   const done = goal.status === 'reached';
   const reached = (scenario: GoalScenario) => {
@@ -109,7 +111,7 @@ function Cases({ goal }: { goal: Goal }) {
                       )}
                     </td>
                     <td className="ui-num" data-label="Needed a month">
-                      {money(scenario.requiredMonthly)}
+                      {needed(scenario.requiredMonthly)}
                     </td>
                     <td className="ui-num" data-label="Reached">
                       {reached(scenario)}
@@ -167,6 +169,7 @@ export default function GoalPage() {
     );
 
   const money = (value: string | null) => (goal ? sumText(value, goal.currency) : '');
+  const needed = (value: string | null) => (goal ? neededText(value, goal.currency) : '');
   const base = goal?.scenarios.find((scenario) => scenario.key === 'base') ?? null;
   const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
   const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
@@ -258,7 +261,7 @@ export default function GoalPage() {
               value={planned ? money(goal.monthlyContribution) : 'Nothing'}
               hint={
                 known && base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
-                  ? `Needed for the date: ${money(base.requiredMonthly)}`
+                  ? `Needed for the date: ${needed(base.requiredMonthly)}`
                   : undefined
               }
             />

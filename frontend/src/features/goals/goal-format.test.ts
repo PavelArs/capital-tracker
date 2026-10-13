@@ -4,7 +4,9 @@ import {
   againstTarget,
   dateText,
   difference,
+  monthsFrom,
   monthYear,
+  neededText,
   ordered,
   rateText,
   reachedDate,
@@ -195,6 +197,26 @@ describe('GOAL-SUM a sum that is not nothing', () => {
     expect(sumText('0.00', 'USD')).toBe('$0');
     expect(sumText('1234.50', 'EUR')).toBe('€1,235');
     expect(sumText('9.27e+127', 'USD')).toBe('—');
+  });
+});
+
+describe('GOAL-NEEDED a sum to put in', () => {
+  it('rounds up so that the figure shown reaches the need', () => {
+    expect(neededText('1.40', 'USD')).toBe('$2');
+    expect(neededText('0.40', 'USD')).toBe('$1');
+    expect(neededText('420000.00', 'RUB')).toBe('₽420,000');
+    expect(neededText('0.00', 'USD')).toBe('$0');
+    expect(neededText(null, 'USD')).toBe('—');
+  });
+});
+
+describe('GOAL-MONTHS whole months by the payment schedule', () => {
+  it('counts a clipped anniversary at the end of a short month as a month', () => {
+    expect(monthsFrom('2026-01-31', '2026-02-28')).toBe(1);
+    expect(monthsFrom('2026-01-31', '2026-02-27')).toBe(0);
+    expect(monthsFrom('2026-10-13', '2027-01-12')).toBe(2);
+    expect(monthsFrom('2026-10-13', '2027-01-13')).toBe(3);
+    expect(monthsFrom('2026-10-13', '2026-10-12')).toBe(-1);
   });
 });
 
