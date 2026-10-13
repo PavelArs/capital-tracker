@@ -181,9 +181,10 @@ describe('GOAL-AGAINST a projection against the sum', () => {
     expect(againstTarget(null, 'USD')).toBeNull();
   });
 
-  it('treats a gap under half a unit as on the sum, as it would show as $0', () => {
-    expect(againstTarget('0.49', 'USD')).toMatchObject({ text: 'On the sum', tone: 'level' });
-    expect(againstTarget('-0.49', 'USD')).toMatchObject({ text: 'On the sum', tone: 'level' });
+  it('writes out the cents of a gap under half a unit instead of showing $0', () => {
+    expect(againstTarget('0.49', 'USD')).toMatchObject({ text: '$0.49 short', tone: 'short' });
+    expect(againstTarget('-0.49', 'USD')).toMatchObject({ text: '$0.49 more', tone: 'more' });
+    expect(againstTarget('0.05', 'USD')?.text).toBe('$0.05 short');
     expect(againstTarget('0.50', 'USD')?.text).toBe('$1 short');
     expect(againstTarget('-0.50', 'USD')?.text).toBe('$1 more');
   });

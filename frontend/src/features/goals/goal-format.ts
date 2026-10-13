@@ -161,8 +161,8 @@ export function verdict(goal: Goal): string {
 }
 
 /**
- * A projection against the sum: "$1,200 more", "$600 short" or "On the sum" when the gap shows as
- * $0; null when there is none or it is not a plain number.
+ * A projection against the sum: "$1,200 more", "$600 short" or "On the sum" when there is no gap,
+ * with the cents when it is under half a unit; null when there is none or it is not a plain number.
  */
 export function againstTarget(
   gap: string | null,
@@ -170,11 +170,16 @@ export function againstTarget(
 ): { text: string; hint: string; tone: 'short' | 'more' | 'level' } | null {
   if (gap === null || !PLAIN.test(gap)) return null;
   const cents = toCents(gap);
-  // Less than half a unit shows as $0, so it counts as on the sum.
-  if ((cents < 0n ? -cents : cents) < 50n)
-    return { text: 'On the sum', hint: 'Right on the sum', tone: 'level' };
+  if (cents === 0n) return { text: 'On the sum', hint: 'Right on the sum', tone: 'level' };
   const short = cents > 0n;
-  const text = `${wholeMoney(gap.replace(/^-/, ''), currency)} ${short ? 'short' : 'more'}`;
+  const abs = short ? cents : -cents;
+  // Under half a unit the whole-unit figures would read $0 or contradict the sums shown beside
+  // it, so the cents are written out.
+  const amount =
+    abs < 50n
+      ? `${currencySymbols[currency]}0.${abs.toString().padStart(2, '0')}`
+      : wholeMoney(gap.replace(/^-/, ''), currency);
+  const text = `${amount} ${short ? 'short' : 'more'}`;
   return { text, hint: short ? text : `${text} than the sum`, tone: short ? 'short' : 'more' };
 }
 
