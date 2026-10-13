@@ -250,7 +250,15 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       [{ at: at('2025-01-10T00:00:00.000Z'), usd: 10n ** 30n, rateDate: '2025-01-10' }],
       new FxConverter(rates, 'RUB'),
     );
-    expect(early).toEqual([{ at: at('2025-01-10T00:00:00.000Z'), amount: null }]);
+    expect(early).toEqual([
+      { at: at('2025-01-10T00:00:00.000Z'), rateDate: '2025-01-10', amount: null },
+    ]);
+    // A carry-in keeps the day it was acquired, however late the journal starts.
+    const [carried] = stateFlows(
+      [{ at: at('2026-09-10T00:00:00.000Z'), usd: 10n ** 30n, rateDate: '2025-03-03' }],
+      new FxConverter(rates, 'USD'),
+    );
+    expect(carried.rateDate).toBe('2025-03-03');
   });
 
   it('CUR-PAID-RUB a trade paid in RUB or EUR is exact in its own currency, USD as stored', () => {

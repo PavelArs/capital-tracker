@@ -116,6 +116,12 @@ export interface TradeVersion extends TradeExecution {
   instrumentName: string;
   instrumentSymbol: string | null;
 }
+export interface TradePage {
+  journalRevision: number;
+  items: TradeVersion[];
+  /** Where the next page starts; null on the last page. */
+  nextOffset: number | null;
+}
 export interface TradeReceipt {
   accountId: string;
   journalRevision: number;
@@ -230,6 +236,9 @@ export const tradesApi = {
     (await apiClient.post<TradeReceipt>(`${tradePath(id, tradeId)}/corrections`, input)).data,
   void: async (id: string, tradeId: string, input: VoidCommand): Promise<TradeReceipt> =>
     (await apiClient.post<TradeReceipt>(`${tradePath(id, tradeId)}/voids`, input)).data,
+  /** The account's trades as they stand now, latest version of each, a page at a time. */
+  list: async (id: string): Promise<TradePage> =>
+    (await apiClient.get<TradePage>(`${accountPath(id)}/trades`, { params: { limit: 100 } })).data,
   available: async (id: string, query: AvailableQuery): Promise<AvailableQuantity> =>
     (await apiClient.get<AvailableQuantity>(`${accountPath(id)}/available`, { params: query }))
       .data,

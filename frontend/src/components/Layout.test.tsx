@@ -115,6 +115,51 @@ describe('SHELL-001 the sections, no Legacy group', () => {
     expect(await sections()).toContain('Real estate');
   });
 
+  it('adds Brokers before Real estate once a broker account is held (v8)', async () => {
+    const sections = async (path?: string) =>
+      linksOf((await markup(path)).querySelector('[data-nav-group="sections"]')).map(
+        ([label]) => label,
+      );
+    expect(await sections('/brokers')).toEqual([
+      'Dashboard',
+      'Portfolio',
+      'Transactions',
+      'Wallets',
+      'Deposits',
+      'Brokers',
+      'Settings',
+    ]);
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          name: 'Sample Broker',
+          kind: null,
+          assetClass: 'broker',
+          currentRevision: 1,
+          createdAt: '2026-10-12T00:00:00Z',
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          name: 'Studio',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 1,
+          createdAt: '2026-10-12T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    await cachedReads.accounts.load();
+    const held = await sections();
+    expect(held.slice(held.indexOf('Deposits'))).toEqual([
+      'Deposits',
+      'Brokers',
+      'Real estate',
+      'Settings',
+    ]);
+  });
+
   it('has no Legacy group and no link to the retired older screens (G1)', async () => {
     const document = await markup();
     expect(

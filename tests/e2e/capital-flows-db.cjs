@@ -318,6 +318,53 @@ async function allTime(db, s, f) {
   );
 }
 
+async function realProfit(db, s, f) {
+  stage = 'INFL-REAL profit to date after inflation: unknown without data, then flat and rising prices';
+  const read = () => s.snapshots.history(f.owner, { period: 'ALL', currency: 'USD' }, now);
+  const none = await read();
+  assert.deepEqual(none.real, { official: null, personal: null }, 'No inflation data stored');
+  // No price change at all: every deposit keeps its value, so real equals nominal.
+  await db.query(
+    `INSERT INTO inflation_manual_months ("ownerId", currency, month, "changePercent")
+     SELECT $1, 'USD', month::date, 0 FROM generate_series('2025-01-01'::date, '2026-10-01'::date, '1 month') month`,
+    [f.owner],
+  );
+  try {
+    // No own rate yet: the own-rate reading follows the official one and says so.
+    const follow = await read();
+    assert.deepEqual(follow.real.personal, { ...follow.real.official, ownRate: false });
+    await db.query(
+      `INSERT INTO inflation_personal_rates ("ownerId", currency, "annualPercent") VALUES ($1, 'USD', 0)`,
+      [f.owner],
+    );
+    const flat = await read();
+    const nominal = { invested: flat.invested, profit: flat.profit, profitPercent: flat.profitPercent };
+    assert.deepEqual(flat.real.official, { ...nominal, estimated: false });
+    assert.deepEqual(flat.real.personal, { ...nominal, estimated: true, ownRate: true });
+    // The owner's own rate of 10% a year makes the money put in worth more today, so less is left.
+    await db.query(
+      `UPDATE inflation_personal_rates SET "annualPercent" = 10 WHERE "ownerId" = $1 AND currency = 'USD'`,
+      [f.owner],
+    );
+    const rising = await read();
+    assert.ok(scaled(rising.real.personal.invested) > scaled(flat.invested), 'Money put in grows');
+    assert.ok(scaled(rising.real.personal.profit) < scaled(flat.profit), 'Real profit is lower');
+    assert.equal(
+      rising.real.personal.profit,
+      minus(rising.value, rising.real.personal.invested),
+      'Real profit is value minus the money put in, in today money',
+    );
+    assert.equal(rising.invested, flat.invested, 'The nominal figures do not change');
+    // Another currency has no data of its own.
+    const rub = await s.snapshots.history(f.owner, { period: 'ALL', currency: 'RUB' }, now);
+    assert.deepEqual(rub.real, { official: null, personal: null });
+  } finally {
+    await db.query('DELETE FROM inflation_manual_months WHERE "ownerId" = $1', [f.owner]);
+    await db.query('DELETE FROM inflation_personal_rates WHERE "ownerId" = $1', [f.owner]);
+  }
+  console.log('PASS INFL-REAL profit after inflation: flat prices equal nominal, a 10% rate lowers it');
+}
+
 async function legacy(db, s, f) {
   stage = 'legacy owner-declared USD flows change neither holdings nor flows';
   const before = await s.snapshots.history(f.owner, { period: '1M', currency: 'USD' }, now);
@@ -599,7 +646,7 @@ async function main() {
     };
     await storedHistory(db);
     await operations(db, s, f);
-    for (const check of [month, transfer, allTime, legacy, rates, paidTrades, unpricedEnd, unpricedStart])
+    for (const check of [month, transfer, allTime, realProfit, legacy, rates, paidTrades, unpricedEnd, unpricedStart])
       await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();

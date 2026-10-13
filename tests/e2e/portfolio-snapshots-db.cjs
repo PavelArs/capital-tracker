@@ -215,6 +215,7 @@ async function backfill(db, s, f) {
       'points',
       'profit',
       'profitPercent',
+      'real',
       'value',
       'withdrawals',
     ].sort(),

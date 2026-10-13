@@ -33,6 +33,27 @@
   font-weight: 400;
 }
 
+.dashboard-hero__real {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-hero__real .dashboard-hero__period {
+  font-size: var(--fs-sm);
+}
+
+.dashboard-hero__period a,
+.dashboard-hero__real a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .dashboard-hero__note {
   color: var(--ink-3);
   font-size: var(--fs-md);
