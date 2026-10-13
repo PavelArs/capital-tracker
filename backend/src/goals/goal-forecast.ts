@@ -1,6 +1,7 @@
-// GOAL-FORECAST: closed-form projections for a savings goal. Contributions are added at the end
-// of every month and grow at the effective yearly return. Figures are plain numbers because a
-// projection is an estimate; stored money never passes through here.
+// GOAL-FORECAST: closed-form projections for a savings goal. Contributions are added on the same
+// day of every month, the first one a month from today, and grow at the effective yearly return.
+// Figures are plain numbers because a projection is an estimate; stored money never passes
+// through here.
 
 /** Days in an average month, to turn a number of days into months. */
 export const DAYS_PER_MONTH = 365.25 / 12;
@@ -21,8 +22,8 @@ export const scenarioReturns = (base: number): Record<ScenarioKey, number> => ({
 export const monthlyRate = (yearlyPercent: number) => (1 + yearlyPercent / 100) ** (1 / 12) - 1;
 
 /**
- * The value after `months` of growth with `contribution` added at the end of each of the first
- * `payments` whole months; the part of a month after the last payment only grows.
+ * The value after `months` of growth with `contribution` added on each of the first `payments`
+ * monthly anniversaries of today; the part of a month after the last payment only grows.
  */
 export function futureValue(
   current: number,
@@ -34,7 +35,7 @@ export function futureValue(
   return current * (1 + rate) ** months + contribution * paymentsGrowth(rate, months, payments);
 }
 
-/** What one unit paid at the end of each of `payments` months is worth after `months`. */
+/** What one unit paid on each of `payments` monthly anniversaries is worth after `months`. */
 function paymentsGrowth(rate: number, months: number, payments: number) {
   if (payments <= 0) return 0;
   if (rate === 0) return payments;
@@ -88,7 +89,7 @@ export function addMonths(date: string, months: number): string {
   return `${text(targetYear, 4)}-${text(targetMonth + 1, 2)}-${text(Math.min(day, last), 2)}`;
 }
 
-/** The whole months from one ISO day to a later one: how many month ends fall before it. */
+/** The monthly anniversaries of one ISO day that fall on or before a later one. */
 export function paymentsBetween(from: string, to: string) {
   const [fromYear, fromMonth] = from.split('-').map(Number);
   const [toYear, toMonth] = to.split('-').map(Number);

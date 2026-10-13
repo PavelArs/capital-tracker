@@ -142,4 +142,14 @@ describe('goal view', () => {
     expect(view.scenarios[1].gap).toBe('100.00');
     expect(view.scenarios[1].requiredMonthly).toBeNull();
   });
+
+  it('rounds the contribution a deadline needs up, so that it reaches the target', () => {
+    const flat = { ...row, expectedReturnPercent: '0', targetAmount: '100.00' };
+    // Three payments of 33.33 fall a cent short, so the plan has to say 33.34.
+    const three = goalView({ ...flat, deadline: '2027-01-13' }, now('0.00'), today);
+    expect(three.scenarios[1].requiredMonthly).toBe('33.34');
+    // Four payments of exactly 25 need no extra cent.
+    const four = goalView({ ...flat, deadline: '2027-02-13' }, now('0.00'), today);
+    expect(four.scenarios[1].requiredMonthly).toBe('25.00');
+  });
 });
