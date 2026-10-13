@@ -986,6 +986,12 @@ describe('ENG-008: a push to main reuses what its pull request run already teste
     });
   });
 
+  it('ENG-008-A2 leaves the job time for a full build after waiting the whole pull request wait', () => {
+    const job = ci.jobs['release-images'] as WorkflowJob & { 'timeout-minutes'?: number };
+    // The wait is 45 minutes; a cold full build and upload of the images has taken up to 30.
+    expect(job['timeout-minutes']).toBeGreaterThanOrEqual(45 + 30);
+  });
+
   it('ENG-008-B loads the pull request images and verifies them against the tested commit and run', () => {
     const steps = ci.jobs['release-images'].steps ?? [];
     const download = steps.find(

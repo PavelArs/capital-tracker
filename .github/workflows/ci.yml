@@ -232,7 +232,9 @@ jobs:
   release-images:
     name: Build Release Images
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Up to 45 minutes waiting for the pull request run (scripts/check-merged-pr-ci.cjs WAIT), then
+    # a full build and upload if its images cannot be reused.
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
