@@ -98,9 +98,16 @@ export function paymentsBetween(from: string, to: string) {
   return addMonths(from, months) <= to ? months : months - 1;
 }
 
-/** Months from one ISO day to a later one, fractional; zero or less when it has passed. */
+const daysBetween = (from: string, to: string) =>
+  (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+
+/**
+ * Months from one ISO day to a later one, fractional; zero or less when it has passed. Every
+ * monthly anniversary counts as exactly one month, whatever its length in days, so a payment
+ * on the deadline has aged zero months; only the days after the last anniversary are prorated.
+ */
 export function monthsBetween(from: string, to: string) {
-  return (
-    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 / DAYS_PER_MONTH
-  );
+  const payments = paymentsBetween(from, to);
+  const rest = daysBetween(addMonths(from, payments), to) / DAYS_PER_MONTH;
+  return payments + (payments > 0 ? Math.min(rest, 1) : rest);
 }

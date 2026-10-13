@@ -90,4 +90,21 @@ describe('goal forecast', () => {
     expect(paymentsBetween('2026-01-31', '2026-03-31')).toBe(2);
     expect(paymentsBetween('2026-10-13', '2026-10-13')).toBe(0);
   });
+
+  it('ages a payment made on the deadline by zero months, whatever the month length', () => {
+    const rate = monthlyRate(12);
+    for (const [from, to] of [
+      ['2026-01-31', '2026-02-28'],
+      ['2026-02-01', '2026-03-01'],
+      ['2026-10-13', '2026-11-13'],
+    ]) {
+      const months = monthsBetween(from, to);
+      expect(months).toBe(1);
+      expect(futureValue(0, 100, rate, months, paymentsBetween(from, to))).toBeCloseTo(100, 10);
+    }
+    // A day past the second anniversary only grows.
+    const months = monthsBetween('2026-10-13', '2026-12-14');
+    expect(months).toBeGreaterThan(2);
+    expect(months).toBeLessThan(2.05);
+  });
 });
