@@ -204,6 +204,7 @@ async function wholePortfolio(db, s, f) {
       'assets',
       'allocation',
       'accounts',
+      'real',
     ].sort(),
   );
   // No Bank of Russia rate is stored here: USD is the default main currency and needs none.
@@ -324,6 +325,42 @@ async function wholePortfolio(db, s, f) {
   assert.equal(await fingerprint(db), before, 'Every read and refusal preserves all rows');
   assert.deepEqual(await providerRequests(), providers, 'Reads never call any provider');
   console.log('PASS PV-TOTAL/MARKET/STALE/MANUAL/FIXED/REALIZED/ALLOC/PRIVATE/24H');
+
+  stage = 'INFL-REAL-PF the held lots in today money: unknown without data, flat and rising prices';
+  const bitcoinOf = (view) => asset(view, btc);
+  assert.deepEqual(report.real, { official: null, personal: null }, 'No inflation data stored');
+  assert.deepEqual(bitcoinOf(report).real, { official: null, personal: null });
+  await db.query(
+    `INSERT INTO inflation_manual_months ("ownerId", currency, month, "changePercent")
+     SELECT $1, 'USD', month::date, 0 FROM generate_series('2024-10-01'::date, date_trunc('month', now())::date, '1 month') month`,
+    [owner],
+  );
+  try {
+    // No own rate: the own-rate reading follows the official one and says so.
+    const flat = await read(s, owner);
+    assert.deepEqual(flat.real.personal, { ...flat.real.official, ownRate: false });
+    // No price change at all: every lot keeps its value, so real equals nominal.
+    assert.equal(flat.real.official.costBasis, flat.costBasis);
+    assert.equal(flat.real.official.unrealizedPnl, flat.unrealizedPnl);
+    assert.equal(bitcoinOf(flat).real.official.costBasis, bitcoinOf(flat).costBasis);
+    assert.equal(bitcoinOf(flat).real.official.unrealizedPnl, bitcoinOf(flat).unrealizedPnl);
+    // A held asset has a reading, an asset with nothing held none.
+    assert.deepEqual(asset(flat, ton).real, { official: null, personal: null });
+    await db.query(
+      `INSERT INTO inflation_personal_rates ("ownerId", currency, "annualPercent") VALUES ($1, 'USD', 10)`,
+      [owner],
+    );
+    const rising = await read(s, owner);
+    assert.equal(rising.real.personal.ownRate, true);
+    assert.ok(Number(rising.real.personal.costBasis) > Number(rising.costBasis), 'Cost grows');
+    assert.ok(Number(rising.real.personal.unrealizedPnl) < Number(rising.unrealizedPnl), 'Profit shrinks');
+    assert.deepEqual(rising.real.official, flat.real.official, 'The official reading is the same');
+    assert.equal(rising.costBasis, flat.costBasis, 'The nominal figures do not change');
+  } finally {
+    await db.query('DELETE FROM inflation_manual_months WHERE "ownerId" = $1', [owner]);
+    await db.query('DELETE FROM inflation_personal_rates WHERE "ownerId" = $1', [owner]);
+  }
+  console.log('PASS INFL-REAL-PF real cost and profit: flat prices equal nominal, a 10% rate lowers it');
 }
 
 async function gapsAndInvalidHistory(db, s, f) {

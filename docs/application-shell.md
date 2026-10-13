@@ -50,11 +50,14 @@ already say what needs attention). **Skip to content** jumps to the main area. D
 and 1280 show the full sidebar. On phones (under 560 px) a page header is the title, then the
 currency switch with **Add transaction** on one row, then the page's own buttons.
 
-Pages that show values after inflation (the Dashboard so far) add a **Nominal / Real** switch
+Pages that show values after inflation (the Dashboard and the Portfolio so far) add a **Nominal / Real** switch
 beside the currency switch, one choice for all of them, kept in this browser and Nominal on the
 first visit. Both readings stay on screen, so nothing moves when it changes: under Nominal the
 profit to date is first and the real profit sits below it, under Real the other way round. The
 rate behind "real" (the published index, or the owner's own yearly rate) is picked in Settings.
+On the Portfolio, Real shows the cost of what is held in today's money (each purchase grown by the
+inflation since its day) and the profit over it, for the portfolio and for each asset; an asset
+with a purchase that has no price, rate or inflation figure shows a dash.
 
 The bell in every page header (between the currency switch and **Add transaction**) holds what
 needs the owner: old prices or rates, blockchain transactions to classify, wallets that failed
