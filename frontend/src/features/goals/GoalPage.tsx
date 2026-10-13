@@ -172,7 +172,10 @@ export default function GoalPage() {
   const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
   const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
   const gap = goal ? offsets(goal) : null;
-  const against = againstTarget(base?.gap ?? null, goal?.currency ?? 'USD');
+  // With assets that have no price the value is understated, so the projections from it are not
+  // figures to act on; a reached goal is still reached.
+  const known = goal ? goal.progress.complete || goal.status === 'reached' : false;
+  const against = known ? againstTarget(base?.gap ?? null, goal?.currency ?? 'USD') : null;
 
   return (
     <div className="shell-page">
@@ -254,7 +257,7 @@ export default function GoalPage() {
               label="You put in a month"
               value={planned ? money(goal.monthlyContribution) : 'Nothing'}
               hint={
-                base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
+                known && base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
                   ? `Needed for the date: ${money(base.requiredMonthly)}`
                   : undefined
               }
@@ -267,7 +270,7 @@ export default function GoalPage() {
             {goal.deadline ? (
               <Stat
                 label={`Forecast for ${monthYear(goal.deadline)}`}
-                value={money(base?.projectedAtDeadline ?? null)}
+                value={known ? money(base?.projectedAtDeadline ?? null) : '—'}
                 hint={against?.hint}
               />
             ) : (
@@ -276,19 +279,27 @@ export default function GoalPage() {
                 value={
                   goal.status === 'reached'
                     ? 'Already'
-                    : base?.reachedOn
-                      ? monthYear(base.reachedOn)
-                      : 'Over 100 years'
+                    : !known
+                      ? 'Not known'
+                      : base?.reachedOn
+                        ? monthYear(base.reachedOn)
+                        : 'Over 100 years'
                 }
                 hint={
-                  base?.monthsToTarget != null && goal.status !== 'reached'
+                  known && base?.monthsToTarget != null && goal.status !== 'reached'
                     ? `In ${span(base.monthsToTarget)}`
                     : undefined
                 }
               />
             )}
           </div>
-          {goal.scenarios.length > 0 && (
+          {goal.scenarios.length > 0 && !known && (
+            <p className="shell-note" role="note">
+              <Icon name="info" className="shell-icon shell-icon--sm" /> The three cases need every
+              asset priced. Some have no price or rate yet, so no sum or date is worked out.
+            </p>
+          )}
+          {goal.scenarios.length > 0 && known && (
             <section className="shell-card" aria-labelledby="goal-cases">
               <h2 id="goal-cases">Three cases</h2>
               <p className="shell-note">

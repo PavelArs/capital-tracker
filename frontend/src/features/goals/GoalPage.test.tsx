@@ -149,6 +149,20 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(screen.queryByText('under a month')).toBeNull();
   });
 
+  it('works out no sums or dates while some assets have no price', async () => {
+    answers({
+      ...dated,
+      status: 'unknown',
+      progress: { current: '5500000.00', complete: false, percent: '25.00', remaining: null },
+    });
+    show(dated);
+    expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByText(/need every asset priced/i)).toBeInTheDocument();
+    expect(screen.getByText('Forecast for Dec 2999').nextSibling).toHaveTextContent('—');
+    expect(screen.queryByText(/Needed for the date/)).toBeNull();
+  });
+
   it('says so when the goal does not exist', async () => {
     answers(open);
     show(dated);

@@ -213,6 +213,11 @@ describe('GOAL-REACHED-DATE when a case gets the sum', () => {
     expect(verdict(dated)).toContain('by Nov 2026');
   });
 
+  it('keeps the server date for a shortfall that rounds to 0.00', () => {
+    const missed = scenario({ reachedOn: '2026-12-13', gap: '0.00' });
+    expect(reachedDate(goal({ deadline: '2026-11-30' }), missed)).toBe('2026-12-13');
+  });
+
   it('keeps the server date when the case is short at the deadline', () => {
     const short = scenario({ reachedOn: '2026-12-13', gap: '480.00' });
     expect(reachedDate(goal({ deadline: '2026-11-30' }), short)).toBe('2026-12-13');

@@ -81,8 +81,9 @@ export function rateText(percent: string): string {
 export function reachedDate(goal: Goal, scenario: GoalScenario): string | null {
   const { reachedOn } = scenario;
   if (reachedOn === null || goal.deadline === null) return reachedOn;
+  // Only a real surplus counts: a shortfall that rounds to 0.00 is still a missed date.
   const metByDeadline =
-    scenario.gap !== null && PLAIN.test(scenario.gap) && toCents(scenario.gap) <= 0n;
+    scenario.gap !== null && PLAIN.test(scenario.gap) && toCents(scenario.gap) < 0n;
   return metByDeadline && reachedOn.slice(0, 7) > goal.deadline.slice(0, 7)
     ? goal.deadline
     : reachedOn;
