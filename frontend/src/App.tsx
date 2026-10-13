@@ -21,6 +21,7 @@ const {
   wallet: WalletPage,
   deposits: DepositsPage,
   deposit: DepositPage,
+  brokers: BrokersPage,
   realEstate: RealEstatePage,
   settings: SettingsPage,
   history: HistoryPage,
@@ -96,6 +97,7 @@ function AppRoutes() {
         <Route path="wallets/:accountId" element={inFrame(<WalletPage />)} />
         <Route path="deposits" element={inFrame(<DepositsPage />)} />
         <Route path="deposits/:depositId" element={inFrame(<DepositPage />)} />
+        <Route path="brokers" element={inFrame(<BrokersPage />)} />
         <Route path="real-estate" element={inFrame(<RealEstatePage />)} />
         <Route path="preferences" element={inFrame(<SettingsPage />)} />
         <Route path="history" element={inFrame(<HistoryPage />)} />

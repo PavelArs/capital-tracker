@@ -8,6 +8,7 @@ import type {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
+import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
@@ -657,6 +658,12 @@ export default function PortfolioPage() {
         />
       )}
       {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
+      {adding === 'broker' && (
+        <AddBrokerDialog
+          onClose={() => setAdding(null)}
+          onAdded={() => navigate(withCurrency('/brokers', asked))}
+        />
+      )}
       {adding === 'property' && (
         <AddPropertyDialog
           onClose={() => setAdding(null)}

@@ -1,0 +1,178 @@
+/* "Add broker account": the two account types wrap under each other on a phone. */
+.broker-account-type .ui-seg {
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
+/* What the account holds: ticker, quantity and price side by side, one row a position. */
+.broker-positions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.broker-positions legend {
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.broker-positions__grid {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.broker-positions__grid,
+.broker-positions__row {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.3fr);
+}
+
+.broker-positions__row {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--sp-2);
+}
+
+.broker-positions__head {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.broker-positions__add {
+  justify-self: start;
+  margin-top: var(--sp-1);
+}
+
+/* A page that could not load: the reason and Try again on one line, as on Real estate. */
+.broker-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--ink-2);
+}
+
+.broker-state p {
+  margin: 0;
+}
+
+/* Brokers (v8): what is held at brokers and its share of net worth, then a card per account. */
+.broker-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-7, 48px);
+}
+
+.broker-summary__item {
+  display: grid;
+  gap: 4px;
+}
+
+.broker-summary__label,
+.broker-account__head small,
+.broker-summary__note {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.broker-summary__value {
+  font-size: var(--fs-2xl, 28px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.broker-summary__note {
+  flex-basis: 100%;
+  font-size: var(--fs-xs);
+}
+
+.broker-accounts {
+  display: grid;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.broker-account {
+  padding: 0;
+  overflow: hidden;
+}
+
+.broker-account__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px;
+}
+
+.broker-account__icon {
+  display: grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+}
+
+.broker-account__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.broker-account__title b,
+.broker-account__total b {
+  display: block;
+}
+
+.broker-account__title b {
+  overflow: hidden;
+  font-size: var(--fs-lg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.broker-account__total {
+  text-align: right;
+}
+
+.broker-account__total b {
+  font-size: var(--fs-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.broker-account .ui-rows {
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.broker-account .ui-row {
+  padding: 10px 22px;
+}
+
+.broker-account .ui-rows li:last-child .ui-row {
+  border-bottom: 0;
+}
+
+.broker-account__empty {
+  margin: 0;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 560px) {
+  .broker-account__head {
+    padding: 16px;
+  }
+
+  .broker-account .ui-row,
+  .broker-account__empty {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}

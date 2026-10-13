@@ -16,6 +16,7 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/transactions', label: 'Transactions', icon: 'transactions' },
   { path: '/wallets', label: 'Wallets', icon: 'wallets' },
   { path: '/deposits', label: 'Deposits', icon: 'archive' },
+  { path: '/brokers', label: 'Brokers', icon: 'briefcase', held: 'broker' },
   { path: '/real-estate', label: 'Real estate', icon: 'home', held: 'property' },
   // `/settings` was the legacy settings screen; it now redirects here (M20).
   { path: '/preferences', label: 'Settings', icon: 'settings' },

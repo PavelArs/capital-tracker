@@ -3,10 +3,9 @@ import Modal from '@/ui/Modal';
 import CloseButton from '../shell/CloseButton';
 import { Icon, type IconName } from '../shell/icons';
 
-export type AddChoice = 'crypto' | 'bank' | 'property' | 'other';
+export type AddChoice = 'crypto' | 'bank' | 'broker' | 'property' | 'other';
 
 // "Add to portfolio" from the accepted mockups (v8): pick what it is, then that class's own form.
-// Broker accounts join this list once their form exists.
 const choices: readonly { key: AddChoice; title: string; detail: string; icon: IconName }[] = [
   {
     key: 'crypto',
@@ -19,6 +18,12 @@ const choices: readonly { key: AddChoice; title: string; detail: string; icon: I
     title: 'Bank',
     detail: 'A deposit or a savings account. The app counts the interest.',
     icon: 'archive',
+  },
+  {
+    key: 'broker',
+    title: 'Broker',
+    detail: 'Stocks, bonds and funds at a broker. Prices by hand for now.',
+    icon: 'briefcase',
   },
   {
     key: 'property',
