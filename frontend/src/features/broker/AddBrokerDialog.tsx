@@ -32,6 +32,7 @@ import {
   MAX_BROKER_NAME,
   MAX_POSITIONS,
   MAX_TICKER,
+  moscowDate,
   type PositionEntry,
   type PositionField,
   positionAsset,
@@ -138,7 +139,9 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // A request whose answer was lost is asked again under the same id, which finds what it made.
   // An asset this form made, or showed again, without a saved buy would show as an empty asset
   // in Portfolio, so it is hidden. A buy whose answer was lost may have been saved: the server
-  // removes only an account without buys, so once the account is gone, none was.
+  // removes only an account without buys, so once the account is gone, none was. While the
+  // account stays, its journal tells: a saved buy would have moved it past the revision the
+  // buy expected, and only the last buy sent can be in doubt.
   const finish = async () => {
     const done = saved.current;
     setSaving(true);
@@ -160,8 +163,17 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           () => true,
           () => false,
         )));
+    const doubt = done.holdings.some((step) => step.unsure && !step.receipt);
+    const unsaved =
+      bare ||
+      (doubt &&
+        !!done.accountId &&
+        (await tradesApi.state(done.accountId).then(
+          (state) => (state.journal?.journalRevision ?? 0) === done.revision,
+          () => false,
+        )));
     const empty = done.holdings.flatMap((step) =>
-      step.asset && (step.making || step.wasHidden) && !step.receipt && (!step.unsure || bare)
+      step.asset && (step.making || step.wasHidden) && !step.receipt && (!step.unsure || unsaved)
         ? [step.asset.id]
         : [],
     );
@@ -207,7 +219,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     const now = startedAt.current ?? new Date();
     if (currency !== 'USD' && !done.accountId) {
       const fresh = await cachedReads.rates.load().then(
-        (report) => freshRates(currency, report, now.toISOString().slice(0, 10)),
+        (report) => freshRates(currency, report, moscowDate(now)),
         () => undefined,
       );
       if (fresh !== true) {

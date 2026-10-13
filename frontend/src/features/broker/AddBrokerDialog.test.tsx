@@ -4,7 +4,7 @@ import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { forgetReads } from '@api/read-cache';
-import { type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -92,6 +92,7 @@ beforeEach(() => {
       }) as TradeReceipt,
   );
   vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
+  vi.spyOn(tradesApi, 'state').mockRejectedValue(new Error('offline'));
   setPrice = vi.fn<typeof manualPricesApi.set>(async () => ({}) as PriceReceipt);
   vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
   removeAccount = vi.fn<typeof accountingApi.removeAccount>(async () => undefined);
@@ -274,6 +275,27 @@ describe('BROKER-ADD Add broker account', () => {
       expect(within(dialog).getByRole('alert')).toHaveTextContent(
         'Could not check the Bank of Russia rate for EUR. Nothing was saved; try again.',
       ),
+    );
+    expect(createAccount).not.toHaveBeenCalled();
+  });
+
+  it('checks the rate against the Moscow date, as the server does', async () => {
+    // Codex P2: at 21:30 UTC it is already the 14th in Moscow, so a rate of Sep 28 is 16 days old.
+    vi.setSystemTime(new Date('2026-10-13T21:30:00Z'));
+    vi.spyOn(fxRatesApi, 'get').mockResolvedValue({
+      ...rates('90.12'),
+      rates: [
+        { currency: 'USD', rubPerUnit: '90.12', date: '2026-09-28' },
+        { currency: 'EUR', rubPerUnit: '100.5', date: '2026-09-28' },
+      ],
+    });
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'No recent Bank of Russia rate is stored, so RUB amounts cannot be converted.',
     );
     expect(createAccount).not.toHaveBeenCalled();
   });
@@ -496,6 +518,52 @@ describe('BROKER-ADD Add broker account', () => {
     await within(dialog).findByRole('alert');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(hideAsset).not.toHaveBeenCalled();
+  });
+
+  it('hides a later position whose buy got no answer once the journal shows it was not saved', async () => {
+    // Codex P2: a saved buy would have moved the journal past the revision the buy expected.
+    const state = vi.spyOn(tradesApi, 'state');
+    const twoPositions = async () => {
+      createTrade.mockImplementationOnce(async (_account, command) => ({
+        accountId: id(2),
+        journalRevision: 1,
+        trade: {
+          quantity: command.quantity,
+          grossUsd: '100',
+          occurredAt: command.occurredAt,
+        } as TradeReceipt['trade'],
+      }));
+      createTrade.mockRejectedValueOnce(refused(503));
+      const user = userEvent.setup();
+      const rendered = open();
+      await user.click(within(rendered.dialog).getByRole('button', { name: 'Add position' }));
+      await fill(user, rendered.dialog, {
+        Broker: 'Sample Broker',
+        'Ticker or name 1': 'VWRA',
+        'Quantity 1': '30',
+        'Price 1': '142.10',
+        'Ticker or name 2': 'BOND',
+        'Quantity 2': '5',
+        'Price 2': '90',
+      });
+      await user.click(within(rendered.dialog).getByRole('button', { name: 'Add account' }));
+      await within(rendered.dialog).findByRole('alert');
+      await user.click(
+        within(rendered.dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
+      );
+      await vi.waitFor(() => expect(rendered.onAdded).toHaveBeenCalled());
+    };
+    state.mockResolvedValueOnce({ journal: { journalRevision: 1 } } as JournalState);
+    await twoPositions();
+    expect(state).toHaveBeenCalledWith(id(2));
+    expect(hideAsset.mock.calls).toEqual([[id(11)]]);
+    expect(removeAccount).not.toHaveBeenCalled();
+
+    cleanup();
+    hideAsset.mockClear();
+    state.mockResolvedValueOnce({ journal: { journalRevision: 2 } } as JournalState);
+    await twoPositions();
     expect(hideAsset).not.toHaveBeenCalled();
   });
 });

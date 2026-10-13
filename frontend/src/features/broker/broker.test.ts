@@ -8,6 +8,7 @@ import {
   brokerProblems,
   freshRates,
   holdingTrade,
+  moscowDate,
   positionAsset,
   times,
 } from './broker';
@@ -74,6 +75,12 @@ describe('BROKER-ADD the entry', () => {
     expect(freshRates('RUB', report('2026-09-27', null), '2026-10-13')).toBe(false);
     expect(freshRates('EUR', report('2026-10-13', null), '2026-10-13')).toBe(false);
     expect(freshRates('EUR', report('2026-10-12', '2026-10-12'), '2026-10-13')).toBe(true);
+  });
+
+  it('dates the rate by the Moscow calendar, as the server does', () => {
+    // Codex P2: from 21:00 UTC it is already the next day in Moscow.
+    expect(moscowDate(new Date('2026-10-13T20:59:00Z'))).toBe('2026-10-13');
+    expect(moscowDate(new Date('2026-10-13T21:00:00Z'))).toBe('2026-10-14');
   });
 
   it('names an individual investment account after its broker', () => {
