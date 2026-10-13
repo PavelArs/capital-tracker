@@ -50,7 +50,11 @@ function Position({
               : `${asset.symbol && asset.symbol !== asset.name.toUpperCase() ? `${asset.symbol} · ` : ''}${quantity(position.quantity)} × ${price(asset.price?.value ?? null, currency)}`
           }
           amount={money(position.value, currency)}
-          value={cash ? undefined : (priced ?? 'No price yet')}
+          value={
+            cash
+              ? undefined
+              : (priced ?? (asset.missingPrice === 'no-rate' ? 'No rate' : 'No price yet'))
+          }
         />
       </Link>
     </li>
@@ -138,6 +142,7 @@ export default function BrokersPage() {
   const brokers = portfolio && accounts ? brokerAccountsOf(portfolio, accounts) : null;
   const total = sumDecimals(brokers?.map((account) => account.value) ?? []);
   const unpriced = brokers?.reduce((sum, account) => sum + account.unpriced, 0) ?? 0;
+  const unrated = brokers?.reduce((sum, account) => sum + account.unrated, 0) ?? 0;
   const share = portfolio && brokerShare(total, portfolio);
   const addButton = (primary: boolean) => (
     <button
@@ -199,9 +204,15 @@ export default function BrokersPage() {
                   : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`}
               </strong>
             </div>
-            {unpriced > 0 && (
+            {unpriced + unrated > 0 && (
               <span className="broker-summary__note">
-                {plural(unpriced, 'position')} without a price left out.
+                {[
+                  unpriced > 0 && `${plural(unpriced, 'position')} without a price left out.`,
+                  unrated > 0 &&
+                    `${plural(unrated, 'position')} without an exchange rate left out.`,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
               </span>
             )}
           </section>

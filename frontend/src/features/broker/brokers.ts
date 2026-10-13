@@ -17,6 +17,8 @@ export interface BrokerAccount {
   value: string;
   /** Positions without a price, left out of the value. */
   unpriced: number;
+  /** Positions with a price but no exchange rate to the shown currency, left out too. */
+  unrated: number;
 }
 
 const SCALE = 30;
@@ -34,6 +36,8 @@ export function sumDecimals(values: readonly string[]): string {
   const fraction = digits.slice(-SCALE).replace(/0+$/, '');
   return `${total < 0n ? '-' : ''}${digits.slice(0, -SCALE)}${fraction ? `.${fraction}` : ''}`;
 }
+
+const unrated = (position: BrokerPosition) => position.asset.missingPrice === 'no-rate';
 
 const byValue = (left: BrokerPosition, right: BrokerPosition) =>
   Number(right.value ?? 0) - Number(left.value ?? 0) ||
@@ -61,7 +65,10 @@ export function brokerAccountsOf(
           ...positions.filter(cash).sort(byValue),
         ],
         value: sumDecimals(positions.flatMap(({ value }) => (value === null ? [] : [value]))),
-        unpriced: positions.filter((position) => position.value === null).length,
+        unpriced: positions.filter((position) => position.value === null && !unrated(position))
+          .length,
+        unrated: positions.filter((position) => position.value === null && unrated(position))
+          .length,
       };
     })
     .sort(

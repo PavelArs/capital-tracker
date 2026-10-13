@@ -168,6 +168,12 @@ describe('BROKERS the page figures', () => {
         [{ accountId: id(1), accountName: 'Sample Broker', quantity: '9000', value: '9000' }],
         'fiat',
       ),
+      {
+        ...held(25, 'EUFUND', [
+          { accountId: id(2), accountName: 'Other Broker', quantity: '2', value: null },
+        ]),
+        missingPrice: 'no-rate',
+      },
       held(24, 'BTC', [
         { accountId: id(3), accountName: 'Cold wallet', quantity: '1', value: '5' },
       ]),
@@ -183,16 +189,17 @@ describe('BROKERS the page figures', () => {
   it('groups what each broker account holds, securities first, then its cash', () => {
     const brokers = brokerAccountsOf(portfolio, accounts);
     expect(
-      brokers.map(({ name, value, unpriced, positions }) => [
+      brokers.map(({ name, value, unpriced, unrated, positions }) => [
         name,
         value,
         unpriced,
+        unrated,
         positions.map(({ asset, quantity }) => `${asset.name} ${quantity}`),
       ]),
     ).toEqual([
-      ['Sample Broker', '13263', 1, ['VWRA 30', 'BOND 5', 'USD 9000']],
-      ['Other Broker', '1421', 0, ['VWRA 10']],
-      ['Empty Broker', '0', 0, []],
+      ['Sample Broker', '13263', 1, 0, ['VWRA 30', 'BOND 5', 'USD 9000']],
+      ['Other Broker', '1421', 0, 1, ['VWRA 10', 'EUFUND 2']],
+      ['Empty Broker', '0', 0, 0, []],
     ]);
   });
 

@@ -3,6 +3,7 @@ import { cachedReads } from '@api/cached-reads';
 import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi } from '@api/manual-prices.api';
 import {
+  type NewPortfolioAsset,
   type PortfolioAsset,
   portfolioAssetsApi,
   type ValuationCurrency,
@@ -74,8 +75,11 @@ interface Props {
 /** One holding as it is saved: the asset, the buy that gives it a balance, then its price. */
 interface SavedHolding {
   asset: PortfolioAsset | null;
-  /** The asset was made, or shown again, by this form: it is hidden again if no buy is saved. */
-  undo: boolean;
+  /** The asset this form asks to make; asked again under the same id, it finds the same one. */
+  making: NewPortfolioAsset | null;
+  /** The cash asset was hidden: it is shown for the buy, and hidden again if none is saved. */
+  wasHidden: boolean;
+  shown: boolean;
   receipt: TradeReceipt | null;
   /** A buy went out and no definite answer came back, so it may be saved. */
   unsure: boolean;
@@ -131,25 +135,39 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
 
   // Closing keeps what cannot be taken back: once anything it holds is saved, the account stays
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
-  // A position whose asset was made but whose buy was refused would show as an empty asset in
-  // Portfolio, so it is hidden first, and a cash asset this form showed again is hidden again.
-  // One whose buy may have been saved after all is left as is. An account whose answer was lost
-  // is asked for again under the same request, which finds it rather than making another.
+  // A request whose answer was lost is asked again under the same id, which finds what it made.
+  // An asset this form made, or showed again, without a saved buy would show as an empty asset
+  // in Portfolio, so it is hidden. A buy whose answer was lost may have been saved: the server
+  // removes only an account without buys, so once the account is gone, none was.
   const finish = async () => {
     const done = saved.current;
-    const empty = done.holdings.flatMap(({ asset, undo, receipt, unsure }) =>
-      asset && undo && !receipt && !unsure ? [asset.id] : [],
-    );
     setSaving(true);
-    await Promise.allSettled(empty.map((asset) => hiddenAssetsApi.hide(asset)));
-    if (done.holdings.some((holding) => holding.receipt)) return onAdded();
+    await Promise.allSettled(
+      done.holdings.map(async (step) => {
+        if (!step.asset && step.making) step.asset = await portfolioAssetsApi.create(step.making);
+      }),
+    );
     if (!done.accountId && done.accountUnsure)
       done.accountId = await accountingApi.createAccount(accountRequest()).then(
         (account) => account.id,
         () => null,
       );
-    if (done.accountId) void accountingApi.removeAccount(done.accountId).catch(() => undefined);
-    onClose();
+    const kept = done.holdings.some((step) => step.receipt);
+    const bare =
+      !kept &&
+      (!done.accountId ||
+        (await accountingApi.removeAccount(done.accountId).then(
+          () => true,
+          () => false,
+        )));
+    const empty = done.holdings.flatMap((step) =>
+      step.asset && (step.making || step.wasHidden) && !step.receipt && (!step.unsure || bare)
+        ? [step.asset.id]
+        : [],
+    );
+    await Promise.allSettled(empty.map((asset) => hiddenAssetsApi.hide(asset)));
+    if (bare) onClose();
+    else onAdded();
   };
   const accountRequest = () => ({
     requestId: requests.current.account,
@@ -216,7 +234,15 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     while (requests.current.holdings.length < holdings.length)
       requests.current.holdings.push([newRequestId(), newRequestId(), newRequestId()]);
     while (done.holdings.length < holdings.length)
-      done.holdings.push({ asset: null, undo: false, receipt: null, unsure: false, priced: false });
+      done.holdings.push({
+        asset: null,
+        making: null,
+        wasHidden: false,
+        shown: false,
+        receipt: null,
+        unsure: false,
+        priced: false,
+      });
 
     if (!done.accountId) {
       try {
@@ -236,24 +262,18 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
       const step = done.holdings[index];
       const [assetRequest, tradeRequest, priceRequest] = requests.current.holdings[index];
       try {
-        if (!step.asset) {
-          const made = holding.position
-            ? {
-                asset: await portfolioAssetsApi.create({
-                  requestId: assetRequest,
-                  ...positionAsset(holding.position, currency),
-                }),
-                undo: true,
-              }
-            : await cashAsset(currency, assetRequest);
-          step.asset = made.asset;
-          step.undo = made.undo;
+        const asset =
+          step.asset ?? (await assetFor(step, holding.position, currency, assetRequest));
+        // A hidden cash asset is left out of Portfolio, so the cash held here would not count.
+        if (step.wasHidden && !step.shown) {
+          await hiddenAssetsApi.show(asset.id);
+          step.shown = true;
         }
         if (!step.receipt) {
           try {
             step.receipt = await tradesApi.create(
               accountId,
-              holdingTrade({ ...holding, currency }, step.asset.id, now, {
+              holdingTrade({ ...holding, currency }, asset.id, now, {
                 requestId: tradeRequest,
                 expectedJournalRevision: done.revision,
               }),
@@ -268,9 +288,9 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           done.revision = step.receipt.journalRevision;
         }
         // A position starts at the price it was entered with; cash is always worth its amount.
-        if (step.asset.priceSource === 'manual' && !step.priced) {
+        if (asset.priceSource === 'manual' && !step.priced) {
           const trade = step.receipt.trade;
-          await manualPricesApi.set(step.asset.id, {
+          await manualPricesApi.set(asset.id, {
             requestId: priceRequest,
             expectedRevision: 0,
             observedAt: trade.occurredAt,
@@ -486,27 +506,39 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   );
 }
 
-/** The owner's cash asset in the currency, made the first time it is needed. */
-async function cashAsset(
+/**
+ * The position's asset, or the owner's cash asset in the currency, made the first time it is
+ * needed. What it asks to make, and whether the cash asset was hidden, is noted before asking.
+ */
+async function assetFor(
+  step: SavedHolding,
+  position: PositionEntry | null,
   currency: ValuationCurrency,
   requestId: string,
-): Promise<{ asset: PortfolioAsset; undo: boolean }> {
-  const assets = await portfolioAssetsApi.listAll();
-  const found = assets.find(
-    (asset) => asset.assetType === 'fiat' && asset.symbol?.toUpperCase() === currency,
-  );
-  if (found) {
-    // A hidden cash asset is left out of Portfolio, so the cash held here would not count.
-    const hidden = await hiddenAssetsApi.list();
-    const shown = hidden.some(({ instrumentId }) => instrumentId === found.id);
-    if (shown) await hiddenAssetsApi.show(found.id);
-    return { asset: found, undo: shown };
+): Promise<PortfolioAsset> {
+  if (!step.making) {
+    if (position) step.making = { requestId, ...positionAsset(position, currency) };
+    else {
+      const assets = await portfolioAssetsApi.listAll();
+      const found = assets.find(
+        (asset) => asset.assetType === 'fiat' && asset.symbol?.toUpperCase() === currency,
+      );
+      if (found) {
+        const hidden = await hiddenAssetsApi.list();
+        step.wasHidden = hidden.some(({ instrumentId }) => instrumentId === found.id);
+        step.asset = found;
+        return found;
+      }
+      step.making = { requestId, name: cashNames[currency], symbol: currency, assetType: 'fiat' };
+    }
   }
-  const asset = await portfolioAssetsApi.create({
-    requestId,
-    name: cashNames[currency],
-    symbol: currency,
-    assetType: 'fiat',
-  });
-  return { asset, undo: true };
+  try {
+    step.asset = await portfolioAssetsApi.create(step.making);
+  } catch (caught) {
+    // Refused outright, nothing was made; without an answer, or after a server error, it may be.
+    const code = status(caught);
+    if (code !== undefined && code < 500) step.making = null;
+    throw caught;
+  }
+  return step.asset;
 }

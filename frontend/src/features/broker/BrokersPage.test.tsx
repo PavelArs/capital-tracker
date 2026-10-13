@@ -97,6 +97,12 @@ const held = [
     [{ accountId: broker, accountName: 'Sample Broker', quantity: '250', value: '250' }],
     { symbol: 'USD', assetType: 'fiat', priceSource: 'fixed' },
   ),
+  asset(
+    5,
+    'Euro bond fund',
+    [{ accountId: iis, accountName: 'Sample Broker · IIS', quantity: '3', value: null }],
+    { symbol: null, valuationCurrency: 'EUR', missingPrice: 'no-rate' },
+  ),
   asset(4, 'Gold coins', [
     { accountId: wallet, accountName: 'Home safe', quantity: '1', value: '900' },
   ]),
@@ -144,9 +150,11 @@ describe('BROKERS the Brokers page', () => {
     expect(rows[1]).toHaveTextContent('Bond fund 20304 × ——No price yet');
     expect(rows[2]).toHaveTextContent('Cash, USD250$250.00');
     const other = screen.getByRole('region', { name: 'Sample Broker · IIS' });
-    expect(within(other).getByText('1 position')).toBeInTheDocument();
+    expect(within(other).getByText('2 positions')).toBeInTheDocument();
+    // Codex P2: a stored price without an exchange rate is not a missing price.
+    expect(within(other).getAllByRole('link')[1]).toHaveTextContent('Euro bond fund3 × ——No rate');
     expect(screen.getByRole('region', { name: 'Total at brokers' })).toHaveTextContent(
-      'At brokers$5,934.00Share of net worth14.8%1 position without a price left out.',
+      'At brokers$5,934.00Share of net worth14.8%1 position without a price left out. 1 position without an exchange rate left out.',
     );
     expect(screen.queryByText('Gold coins')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Add broker account' }));

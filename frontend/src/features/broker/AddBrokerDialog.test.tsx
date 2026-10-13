@@ -306,7 +306,7 @@ describe('BROKER-ADD Add broker account', () => {
   });
 
   it('removes an account that holds nothing yet when closed after a failure', async () => {
-    createAsset.mockRejectedValueOnce(refused(503));
+    createAsset.mockRejectedValueOnce(refused(400));
     const user = userEvent.setup();
     const { dialog, onAdded, onClose } = open();
     await fill(user, dialog, {
@@ -324,8 +324,28 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
-  it('leaves a position whose buy may have been saved when closed', async () => {
+  it('leaves a position whose buy may have been saved when its account cannot be removed', async () => {
     // Codex P1: a lost answer or a server error does not prove the buy was not saved.
+    createTrade.mockRejectedValueOnce(refused(503));
+    removeAccount.mockRejectedValueOnce(refused(409));
+    const user = userEvent.setup();
+    const { dialog, onAdded, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onAdded).toHaveBeenCalled());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(hideAsset).not.toHaveBeenCalled();
+  });
+
+  it('hides a position whose buy got no answer once its account is removed', async () => {
+    // Codex P2: the server removes only an account without buys, so none was saved.
     createTrade.mockRejectedValueOnce(refused(503));
     const user = userEvent.setup();
     const { dialog, onClose } = open();
@@ -339,7 +359,54 @@ describe('BROKER-ADD Add broker account', () => {
     await within(dialog).findByRole('alert');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(hideAsset).not.toHaveBeenCalled();
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
+    expect(hideAsset.mock.calls).toEqual([[id(10)]]);
+  });
+
+  it('finds and hides a position asset whose answer was lost when closed', async () => {
+    // Codex P2: the asset may have been made although no answer came back.
+    createAsset.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(createAsset).toHaveBeenCalledTimes(2);
+    expect(createAsset.mock.calls[1][0]).toEqual(createAsset.mock.calls[0][0]);
+    expect(hideAsset.mock.calls).toEqual([[id(10)]]);
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
+  });
+
+  it('hides a hidden cash asset again after a lost answer to showing it', async () => {
+    // Codex P2: showing it may have worked although no answer came back.
+    listAssets.mockResolvedValue([
+      created(30, { name: 'US dollar', symbol: 'USD', assetType: 'fiat', priceSource: 'fixed' }),
+    ]);
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([
+      { instrumentId: id(30), name: 'US dollar', symbol: 'USD', hiddenAt: '2026-10-01T00:00:00Z' },
+    ]);
+    showAsset.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    // Retrying shows it again rather than taking it for one the owner keeps visible.
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
+    createTrade.mockRejectedValueOnce(refused(400));
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await vi.waitFor(() => expect(createTrade).toHaveBeenCalled());
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(showAsset.mock.calls).toEqual([[id(30)], [id(30)]]);
+    expect(hideAsset.mock.calls).toEqual([[id(30)]]);
   });
 
   it('hides a position whose buy was not saved when closed', async () => {
