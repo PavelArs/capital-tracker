@@ -1,3 +1,4 @@
+import type { FxRatesReport } from '@api/fx-rates.api';
 import type { NewPortfolioAsset, ValuationCurrency } from '@api/portfolio-assets.api';
 import type { TradeCommand } from '@api/trades.api';
 import { decimal, positive, tradeFromEntry } from '../portfolio/add-transaction';
@@ -45,6 +46,20 @@ export const brokerAccountName = (entry: Pick<BrokerEntry, 'broker' | 'account'>
 export const filledPositions = (entry: BrokerEntry) =>
   entry.positions.filter((position) => !blank(position));
 
+// The server keeps 48 whole digits and 30 places; a quantity times a price stays within both.
+const MAX_WHOLE_DIGITS = 24;
+const MAX_PLACES_ENTERED = 15;
+
+/** A positive amount the server can store, alone and multiplied by another such amount. */
+export function amount(value: string): string | null {
+  const text = positive(value);
+  if (text === null) return null;
+  const [whole, fraction = ''] = text.split('.');
+  return whole.replace(/^0+/, '').length > MAX_WHOLE_DIGITS || fraction.length > MAX_PLACES_ENTERED
+    ? null
+    : text;
+}
+
 export function brokerProblems(entry: BrokerEntry): Set<BrokerProblem> {
   const found = new Set<BrokerProblem>();
   const broker = entry.broker.trim();
@@ -54,11 +69,11 @@ export function brokerProblems(entry: BrokerEntry): Set<BrokerProblem> {
     const ticker = position.ticker.trim();
     if (!ticker || ticker.length > MAX_TICKER || /[\r\n]/.test(ticker))
       found.add(`ticker-${index}`);
-    if (positive(position.quantity) === null) found.add(`quantity-${index}`);
-    if (positive(position.price) === null) found.add(`price-${index}`);
+    if (amount(position.quantity) === null) found.add(`quantity-${index}`);
+    if (amount(position.price) === null) found.add(`price-${index}`);
   });
   const cash = entry.cash.trim();
-  if (cash && positive(cash) === null) found.add('cash');
+  if (cash && amount(cash) === null) found.add('cash');
   if (!filledPositions(entry).length && !cash) found.add('holdings');
   return found;
 }
@@ -130,4 +145,19 @@ export function holdingTrade(
     undefined,
     false,
   );
+}
+
+/** The server converts at a Bank of Russia rate at most this many days old (MAX_RATE_AGE_DAYS). */
+export const MAX_RATE_AGE_DAYS = 15;
+
+/** Whether the rates a RUB or EUR amount needs today are stored and recent enough. */
+export function freshRates(currency: 'EUR' | 'RUB', report: FxRatesReport, today: string): boolean {
+  const needed: readonly ('USD' | 'EUR')[] = currency === 'RUB' ? ['USD'] : ['USD', 'EUR'];
+  return needed.every((code) => {
+    const rate = report.rates.find((item) => item.currency === code);
+    if (!rate?.rubPerUnit || !rate.date) return false;
+    const age =
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${rate.date}T00:00:00Z`)) / 86_400_000;
+    return age <= MAX_RATE_AGE_DAYS;
+  });
 }

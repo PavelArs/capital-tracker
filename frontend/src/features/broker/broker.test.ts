@@ -6,6 +6,7 @@ import {
   blankPosition,
   brokerAccountName,
   brokerProblems,
+  freshRates,
   holdingTrade,
   positionAsset,
   times,
@@ -45,6 +46,34 @@ describe('BROKER-ADD the entry', () => {
         }),
       ),
     ).toEqual(new Set(['ticker-2', 'quantity-2', 'price-2']));
+  });
+
+  it('keeps amounts within what the server stores, alone and multiplied', () => {
+    // Codex P2: the server keeps 48 whole digits and 30 places.
+    const row = (quantity: string, price = '1') =>
+      brokerProblems(entry({ positions: [{ ticker: 'VWRA', quantity, price }] }));
+    expect(row(`0.${'1'.repeat(15)}`)).toEqual(new Set());
+    expect(row(`0.${'1'.repeat(16)}`)).toEqual(new Set(['quantity-0']));
+    expect(row('9'.repeat(24))).toEqual(new Set());
+    expect(row('9'.repeat(25))).toEqual(new Set(['quantity-0']));
+    expect(row('1', `1.${'5'.repeat(16)}`)).toEqual(new Set(['price-0']));
+    expect(brokerProblems(entry({ cash: `1.${'0'.repeat(15)}1` }))).toEqual(new Set(['cash']));
+  });
+
+  it('accepts only recent rates for RUB and EUR amounts', () => {
+    const report = (usd: string | null, eur: string | null) => ({
+      date: '2026-10-13',
+      source: 'cbr' as const,
+      rates: [
+        { currency: 'USD' as const, rubPerUnit: usd && '90.12', date: usd },
+        { currency: 'EUR' as const, rubPerUnit: eur && '100.5', date: eur },
+      ],
+      sync: null,
+    });
+    expect(freshRates('RUB', report('2026-09-28', null), '2026-10-13')).toBe(true);
+    expect(freshRates('RUB', report('2026-09-27', null), '2026-10-13')).toBe(false);
+    expect(freshRates('EUR', report('2026-10-13', null), '2026-10-13')).toBe(false);
+    expect(freshRates('EUR', report('2026-10-12', '2026-10-12'), '2026-10-13')).toBe(true);
   });
 
   it('names an individual investment account after its broker', () => {

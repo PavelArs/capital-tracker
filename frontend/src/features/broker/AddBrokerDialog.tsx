@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi } from '@api/manual-prices.api';
 import {
   type PortfolioAsset,
@@ -14,7 +15,7 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { unitPrice } from '../portfolio/add-asset';
-import { ambiguousComma, bankRate, numberProblem } from '../portfolio/add-transaction';
+import { ambiguousComma, numberProblem } from '../portfolio/add-transaction';
 import CloseButton from '../shell/CloseButton';
 import { Icon } from '../shell/icons';
 import {
@@ -25,6 +26,7 @@ import {
   brokerAccountTypes,
   brokerProblems,
   filledPositions,
+  freshRates,
   holdingTrade,
   MAX_BROKER_NAME,
   MAX_POSITIONS,
@@ -72,6 +74,8 @@ interface Props {
 /** One holding as it is saved: the asset, the buy that gives it a balance, then its price. */
 interface SavedHolding {
   asset: PortfolioAsset | null;
+  /** The asset was made by this form, not an existing cash asset. */
+  made: boolean;
   receipt: TradeReceipt | null;
   priced: boolean;
 }
@@ -118,8 +122,17 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
 
   // Closing keeps what cannot be taken back: once anything it holds is saved, the account stays
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
-  const finish = () => {
+  // A position whose asset was made but whose buy was not saved would show as an empty asset in
+  // Portfolio, so it is hidden first.
+  const finish = async () => {
     const done = saved.current;
+    const empty = done.holdings.flatMap(({ asset, made, receipt }) =>
+      asset && made && !receipt ? [asset.id] : [],
+    );
+    if (empty.length) {
+      setSaving(true);
+      await Promise.allSettled(empty.map((asset) => hiddenAssetsApi.hide(asset)));
+    }
     if (done.holdings.some((holding) => holding.receipt)) return onAdded();
     if (done.accountId) void accountingApi.removeAccount(done.accountId).catch(() => undefined);
     onClose();
@@ -151,23 +164,25 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     setSaving(true);
     setError(null);
     const done = saved.current;
-    // RUB and EUR amounts are converted at today's Bank of Russia rate: without it nothing would
-    // be held, so nothing is saved.
+    // RUB and EUR amounts are converted at a recent Bank of Russia rate: without one nothing would
+    // be held, so nothing is saved, and neither is anything while the rates cannot be read.
     const currency = entry.currency;
+    const now = startedAt.current ?? new Date();
     if (currency !== 'USD' && !done.accountId) {
-      const rate = await cachedReads.rates.load().then(
-        (report) => bankRate(currency, report),
-        () => undefined, // Unknown: the first buy itself reports a missing rate.
+      const fresh = await cachedReads.rates.load().then(
+        (report) => freshRates(currency, report, now.toISOString().slice(0, 10)),
+        () => undefined,
       );
-      if (rate === null) {
+      if (fresh !== true) {
         setError(
-          `No Bank of Russia rate is stored for today yet, so ${currency} amounts cannot be converted. Nothing was saved; try again later.`,
+          fresh === undefined
+            ? `Could not check the Bank of Russia rate for ${currency}. Nothing was saved; try again.`
+            : `No recent Bank of Russia rate is stored, so ${currency} amounts cannot be converted. Nothing was saved; try again later.`,
         );
         setSaving(false);
         return;
       }
     }
-    const now = startedAt.current ?? new Date();
     startedAt.current = now;
     setLocked(true);
     const cash = entry.cash.trim();
@@ -182,7 +197,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     while (requests.current.holdings.length < holdings.length)
       requests.current.holdings.push([newRequestId(), newRequestId(), newRequestId()]);
     while (done.holdings.length < holdings.length)
-      done.holdings.push({ asset: null, receipt: null, priced: false });
+      done.holdings.push({ asset: null, made: false, receipt: null, priced: false });
 
     if (!done.accountId) {
       try {
@@ -204,13 +219,19 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
       const step = done.holdings[index];
       const [assetRequest, tradeRequest, priceRequest] = requests.current.holdings[index];
       try {
-        if (!step.asset)
-          step.asset = holding.position
-            ? await portfolioAssetsApi.create({
-                requestId: assetRequest,
-                ...positionAsset(holding.position, currency),
-              })
+        if (!step.asset) {
+          const made = holding.position
+            ? {
+                asset: await portfolioAssetsApi.create({
+                  requestId: assetRequest,
+                  ...positionAsset(holding.position, currency),
+                }),
+                made: true,
+              }
             : await cashAsset(currency, assetRequest);
+          step.asset = made.asset;
+          step.made = made.made;
+        }
         if (!step.receipt) {
           step.receipt = await tradesApi.create(
             accountId,
@@ -441,18 +462,20 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
 }
 
 /** The owner's cash asset in the currency, made the first time it is needed. */
-async function cashAsset(currency: ValuationCurrency, requestId: string): Promise<PortfolioAsset> {
+async function cashAsset(
+  currency: ValuationCurrency,
+  requestId: string,
+): Promise<{ asset: PortfolioAsset; made: boolean }> {
   const assets = await portfolioAssetsApi.listAll();
   const found = assets.find(
     (asset) => asset.assetType === 'fiat' && asset.symbol?.toUpperCase() === currency,
   );
-  return (
-    found ??
-    portfolioAssetsApi.create({
-      requestId,
-      name: cashNames[currency],
-      symbol: currency,
-      assetType: 'fiat',
-    })
-  );
+  if (found) return { asset: found, made: false };
+  const asset = await portfolioAssetsApi.create({
+    requestId,
+    name: cashNames[currency],
+    symbol: currency,
+    assetType: 'fiat',
+  });
+  return { asset, made: true };
 }

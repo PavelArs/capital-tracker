@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { forgetReads } from '@api/read-cache';
@@ -47,6 +48,7 @@ let listAssets: Mock<typeof portfolioAssetsApi.listAll>;
 let createTrade: Mock<typeof tradesApi.create>;
 let setPrice: Mock<typeof manualPricesApi.set>;
 let removeAccount: Mock<typeof accountingApi.removeAccount>;
+let hideAsset: Mock<typeof hiddenAssetsApi.hide>;
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
@@ -93,6 +95,8 @@ beforeEach(() => {
   vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
   removeAccount = vi.fn<typeof accountingApi.removeAccount>(async () => undefined);
   vi.spyOn(accountingApi, 'removeAccount').mockImplementation(removeAccount);
+  hideAsset = vi.fn<typeof hiddenAssetsApi.hide>(async () => ({}) as HiddenAsset);
+  vi.spyOn(hiddenAssetsApi, 'hide').mockImplementation(hideAsset);
 });
 afterEach(() => {
   cleanup();
@@ -217,7 +221,35 @@ describe('BROKER-ADD Add broker account', () => {
     });
     await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'No Bank of Russia rate is stored for today yet, so RUB amounts cannot be converted. Nothing was saved',
+      'No recent Bank of Russia rate is stored, so RUB amounts cannot be converted. Nothing was saved',
+    );
+    expect(createAccount).not.toHaveBeenCalled();
+  });
+
+  it('saves nothing with a stale rate, or while the rates cannot be read', async () => {
+    // Codex P2: the server refuses a rate older than 15 days, and an unread report proves nothing.
+    const get = vi.spyOn(fxRatesApi, 'get').mockResolvedValue({
+      ...rates('90.12'),
+      rates: [
+        { currency: 'USD', rubPerUnit: '90.12', date: '2026-09-20' },
+        { currency: 'EUR', rubPerUnit: '100.5', date: '2026-10-13' },
+      ],
+    });
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await user.click(within(dialog).getByRole('radio', { name: 'EUR' }));
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'No recent Bank of Russia rate is stored, so EUR amounts cannot be converted.',
+    );
+    forgetReads();
+    get.mockRejectedValue(new Error('offline'));
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await vi.waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'Could not check the Bank of Russia rate for EUR. Nothing was saved; try again.',
+      ),
     );
     expect(createAccount).not.toHaveBeenCalled();
   });
@@ -264,6 +296,27 @@ describe('BROKER-ADD Add broker account', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(removeAccount).toHaveBeenCalledWith(id(2));
     expect(onClose).toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+    expect(hideAsset).not.toHaveBeenCalled();
+  });
+
+  it('hides a position whose buy was not saved when closed', async () => {
+    // Codex P2: an asset made without its buy would show in Portfolio as an empty asset.
+    createTrade.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onAdded, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(hideAsset.mock.calls).toEqual([[id(10)]]);
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
     expect(onAdded).not.toHaveBeenCalled();
   });
 
