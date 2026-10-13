@@ -97,6 +97,12 @@ const NO_REAL: Record<'official' | 'personal', string> = {
   personal: 'Set your yearly rate in Settings to see the profit after your own inflation.',
 };
 
+// Which rate the real figure rests on, said beside that figure only.
+const basisText = (basis: 'official' | 'personal', real: RealProfit) =>
+  basis === 'official'
+    ? `at the official rate${real.estimated ? ', latest months estimated' : ''}`
+    : 'at your own rate';
+
 // The other reading of the profit, always on screen beside the one the switch picked, so
 // nothing moves when it changes: the real profit under Nominal, the nominal one under Real.
 function OtherReading({
@@ -130,11 +136,15 @@ function OtherReading({
       </span>
       {percentText !== null && <span>{percent(percentText)}</span>}
       <span className="dashboard-hero__period">
-        {basis === 'official'
-          ? `at the official rate${real.estimated ? ', latest months estimated' : ''}`
-          : 'at your own rate'}
-        {' · '}
-        <Link to="/settings">Settings</Link>
+        {view === 'real' ? (
+          'before inflation'
+        ) : (
+          <>
+            {basisText(basis, real)}
+            {' · '}
+            <Link to="/settings">Settings</Link>
+          </>
+        )}
       </span>
     </div>
   );
@@ -183,9 +193,14 @@ function NetWorth({
         {profitPercent !== null && <span>{percent(profitPercent)}</span>}
         {invested !== null && (
           <span className="dashboard-hero__period">
-            {shownReal
-              ? `real, on ${money(invested, currency)} put in, in today's money`
-              : `on ${money(invested, currency)} net invested`}
+            {shownReal ? (
+              <>
+                {`real, on ${money(invested, currency)} put in, in today's money · ${basisText(basis, real)} · `}
+                <Link to="/settings">Settings</Link>
+              </>
+            ) : (
+              `on ${money(invested, currency)} net invested`
+            )}
           </span>
         )}
         {note !== '' && (

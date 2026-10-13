@@ -47,6 +47,7 @@
   font-size: var(--fs-sm);
 }
 
+.dashboard-hero__period a,
 .dashboard-hero__real a {
   color: inherit;
   text-decoration: underline;

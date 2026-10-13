@@ -788,12 +788,19 @@ describe('Dashboard after inflation', () => {
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     await user.click(screen.getByRole('radio', { name: 'Real' }));
-    expect(profitLine(hero, 'Real profit or loss to date')).toHaveTextContent(
-      "▲ +$19,000.00+19.79%real, on $96,000.00 put in, in today's money",
+    const real = profitLine(hero, 'Real profit or loss to date');
+    expect(real).toHaveTextContent(
+      "▲ +$19,000.00+19.79%real, on $96,000.00 put in, in today's money · at the official rate, latest months estimated · Settings",
     );
-    expect(profitLine(hero, 'Profit or loss after inflation')).toHaveTextContent(
-      'Nominal+$25,000.00+27.78%',
+    expect(within(real).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
     );
+    // The rate belongs to the real figure: the nominal row beside it does not repeat it.
+    const nominal = profitLine(hero, 'Profit or loss after inflation');
+    expect(nominal).toHaveTextContent('Nominal+$25,000.00+27.78%before inflation');
+    expect(nominal).not.toHaveTextContent('official rate');
+    expect(within(nominal).queryByRole('link')).toBeNull();
     // The net worth itself is the same in both readings.
     expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
     expect(window.localStorage.setItem).toHaveBeenCalledWith('value-view', 'real');
@@ -816,9 +823,11 @@ describe('Dashboard after inflation', () => {
     expect(other).toHaveTextContent('After inflation+$22,500.00+24.32%');
     expect(other).toHaveTextContent('at your own rate');
     await user.click(screen.getByRole('radio', { name: 'Real' }));
-    expect(profitLine(hero, 'Real profit or loss to date')).toHaveTextContent(
-      "+$22,500.00+24.32%real, on $92,500.00 put in, in today's money",
+    const real = profitLine(hero, 'Real profit or loss to date');
+    expect(real).toHaveTextContent(
+      "+$22,500.00+24.32%real, on $92,500.00 put in, in today's money · at your own rate · Settings",
     );
+    expect(profitLine(hero, 'Profit or loss after inflation')).not.toHaveTextContent('own rate');
   });
 
   it('DASH-REAL-UNKNOWN keeps the nominal profit and says why there is no real one', async () => {
