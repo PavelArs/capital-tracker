@@ -254,6 +254,21 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     );
   });
 
+  it('asks for a later date or none when an overdue goal is changed', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([{ ...flat, deadline: '2020-01-01' }]));
+    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue(flat);
+    open();
+    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'By: pick a date after today, or clear it',
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('deletes a goal after asking', async () => {
     const user = userEvent.setup();
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));

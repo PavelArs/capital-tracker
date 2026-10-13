@@ -167,7 +167,9 @@ const problemOf = (terms: {
   (!DATE.test(terms.deadline) || Number.isNaN(Date.parse(`${terms.deadline}T00:00:00Z`)))
     ? 'By: pick a date'
     : null) ??
-  (terms.deadline && terms.deadline <= today() ? 'By: pick a date after today' : null) ??
+  (terms.deadline && terms.deadline <= today()
+    ? 'By: pick a date after today, or clear it'
+    : null) ??
   (RATE.test(terms.rate.trim())
     ? null
     : 'Expected return: percent a year, from 0 to 999.9999 with up to four decimals') ??
