@@ -795,3 +795,7 @@ a.portfolio-asset__name:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.portfolio-real-note {
+  margin: var(--sp-3) 0 0;
+}
