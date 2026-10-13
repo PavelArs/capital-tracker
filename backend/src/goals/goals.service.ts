@@ -8,6 +8,7 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
+import { addMonths, MAX_MONTHS } from './goal-forecast';
 import { type GoalInput, parseGoal, parseGoalUpdate, parseUuid } from './goal-input';
 import { type GoalRow, goalView, type PortfolioNow } from './goal-view';
 
@@ -142,8 +143,12 @@ export class GoalsService {
   }
 
   private checkDeadline(input: GoalInput) {
-    if (input.deadline !== null && input.deadline <= moscowDate(new Date()))
+    const today = moscowDate(new Date());
+    if (input.deadline !== null && input.deadline <= today)
       throw new UnprocessableEntityException('The deadline must be after today');
+    // Beyond this the compounding leaves the range of a number, and no plan reaches that far.
+    if (input.deadline !== null && input.deadline > addMonths(today, MAX_MONTHS))
+      throw new UnprocessableEntityException('The deadline is more than 100 years away');
   }
 
   private rows(manager: EntityManager, owner: string, id?: string): Promise<GoalRow[]> {
@@ -160,7 +165,9 @@ export class GoalsService {
     const now = new Map<string, PortfolioNow>();
     for (const currency of new Set(rows.map((row) => row.currency))) {
       const history = await this.snapshots.history(owner, { period: '24H', currency });
-      now.set(currency, { value: history.value, complete: history.complete });
+      // The last point is the portfolio now; an hour in the past that lacked a price is not.
+      const current = history.points.at(-1);
+      now.set(currency, { value: history.value, complete: current?.complete ?? history.complete });
     }
     return rows.map((row) => goalView(row, now.get(row.currency) as PortfolioNow, today));
   }

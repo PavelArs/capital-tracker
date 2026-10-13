@@ -46,6 +46,8 @@ export interface GoalScenario {
 }
 
 const cents = (value: number) => (Math.round(value * 100) / 100).toFixed(2);
+/** Cents of a projected figure, or null when the maths left the range of a number. */
+const figure = (value: number) => (Number.isFinite(value) ? cents(value) : null);
 const percent = (value: number) => value.toFixed(4).replace(/\.?0+$/, '');
 
 /** One goal with its progress and the three return cases (GOAL-FORECAST). */
@@ -72,12 +74,12 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
             returnPercent: percent(yearly),
             requiredMonthly:
               months !== null && months > 0
-                ? cents(requiredContribution(current, target, rate, months))
+                ? figure(requiredContribution(current, target, rate, months))
                 : null,
             monthsToTarget: left === null ? null : Math.ceil(left),
             reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),
-            projectedAtDeadline: projected === null ? null : cents(projected),
-            gap: projected === null ? null : cents(target - projected),
+            projectedAtDeadline: projected === null ? null : figure(projected),
+            gap: projected === null ? null : figure(target - projected),
           };
         });
   const base = scenarios.find((scenario) => scenario.key === 'base');

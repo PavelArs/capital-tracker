@@ -68,6 +68,7 @@ async function terms(service, owner, other) {
   await rejected(() => service.create(owner, { ...reserve(), currency: 'KZT' }), 400);
   await rejected(() => service.create(owner, { ...reserve(), deadline: '2020-01-01' }), 422);
   await rejected(() => service.create(owner, { ...reserve(), deadline: inYears(0) }), 422);
+  await rejected(() => service.create(owner, { ...reserve(), deadline: '2999-01-01' }), 422);
   const open = await service.create(owner, {
     ...reserve(),
     deadline: null,

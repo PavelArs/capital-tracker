@@ -107,4 +107,22 @@ describe('goal view', () => {
     expect(view.progress.complete).toBe(false);
     expect(view.scenarios[0]).toMatchObject({ monthsToTarget: null, reachedOn: null });
   });
+
+  it('never reports NaN when compounding leaves the range of a number', () => {
+    const view = goalView(
+      {
+        ...row,
+        deadline: '2999-12-31',
+        expectedReturnPercent: '999.9',
+        monthlyContribution: '0.00',
+      },
+      now('10000.00'),
+      today,
+    );
+    for (const scenario of view.scenarios) {
+      expect(scenario.projectedAtDeadline).toBeNull();
+      expect(scenario.gap).toBeNull();
+      expect(JSON.stringify(scenario)).not.toContain('NaN');
+    }
+  });
 });
