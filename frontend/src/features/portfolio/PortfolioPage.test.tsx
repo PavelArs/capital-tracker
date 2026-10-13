@@ -838,6 +838,21 @@ describe('Portfolio after inflation', () => {
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
   });
 
+  it('PF-REAL-UNAVAILABLE names the account history that starts later, not a missing lot figure', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: withReal().assets[0].real }], {
+        unavailableAccountCount: 1,
+        real: { official: null, personal: null },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent("Cost in today's money—");
+    expect(summary()).toHaveTextContent('an account history starts later');
+    expect(summary()).not.toHaveTextContent('a purchase price, exchange rate or inflation');
+  });
+
   it('PF-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
     renderAt('/portfolio');

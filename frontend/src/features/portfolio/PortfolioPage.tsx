@@ -184,6 +184,7 @@ const PARTIAL_NOTE =
 const hasDeposits = (portfolio: PortfolioValuation) =>
   Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0;
 
+const NO_REAL_ACCOUNT = 'an account history starts later';
 const NO_REAL_COST = 'a purchase price, exchange rate or inflation figure is missing for some lots';
 
 function Summary({
@@ -257,7 +258,9 @@ function Summary({
               reading === null ? (
                 <>
                   {DASH}
-                  <span className="portfolio-sub">{NO_REAL_COST}</span>
+                  <span className="portfolio-sub">
+                    {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
+                  </span>
                 </>
               ) : (
                 <>
@@ -288,7 +291,7 @@ function Summary({
                   ? 'part has no purchase price'
                   : portfolio.missingRateCount > 0
                     ? 'part predates the stored rates'
-                    : 'an account history starts later'}
+                    : NO_REAL_ACCOUNT}
               </span>
             )}
           </dd>
