@@ -950,6 +950,27 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent('Real P&L—');
   });
 
+  it('ASSET-REAL-SOLD does not call a fully sold asset incomplete', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        {
+          ...bitcoin,
+          quantity: '0',
+          value: '0',
+          costBasis: '0',
+          unrealizedPnl: '0',
+          real: { official: null, personal: null },
+        },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost in today's money$0.00");
+    expect(position()).toHaveTextContent('Nothing held, so there is no real cost or profit');
+    expect(position()).not.toHaveTextContent('is missing');
+  });
+
   it('ASSET-REAL-LEGACY stays nominal for an answer saved before real figures existed', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));

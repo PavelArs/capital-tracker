@@ -351,6 +351,8 @@ function AssetDetails({
   const [basis] = useInflationBasis();
   const reading = asset.real?.[basis] ?? null;
   const showReal = view === 'real' && asset.real !== undefined;
+  // A fully sold asset has no lots left, so no real reading: that is not missing data.
+  const sold = Number(asset.quantity) === 0;
   return (
     <>
       <div className="portfolio-head">
@@ -412,12 +414,21 @@ function AssetDetails({
             <>
               <Stat label="Cost in today's money">
                 {reading === null ? (
-                  <>
-                    {DASH}
-                    <span className="portfolio-sub">
-                      a purchase price, exchange rate or inflation figure is missing for some lots
-                    </span>
-                  </>
+                  sold ? (
+                    <>
+                      {amount('0')}
+                      <span className="portfolio-sub">
+                        Nothing held, so there is no real cost or profit
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {DASH}
+                      <span className="portfolio-sub">
+                        a purchase price, exchange rate or inflation figure is missing for some lots
+                      </span>
+                    </>
+                  )
                 ) : (
                   <>
                     {amount(reading.costBasis)}
