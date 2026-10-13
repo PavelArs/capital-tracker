@@ -74,9 +74,22 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
     expect(depositReal(savings(), official).estimated).toBe(false);
     const result = depositReal(savings({ asOf: '2026-11-20' }), official);
     expect(result.estimated).toBe(true);
-    expect(Number(result.inflationPercent)).toBeCloseTo(12.68, 2);
+    expect(Number(result.inflationPercent)).toBeCloseTo(12.7, 1);
     expect(Number(result.gain)).toBeLessThan(328.77);
     expect(result.ownRate).toBeUndefined();
+  });
+
+  it('INFL-DEPOSIT-AS-OF reads the year ending on the day asked, not the months published after it', () => {
+    // 1% a month up to 2026-05, then 5% a month: a view of 2026-05 must not feel the jump.
+    const spike = new Map(monthly);
+    for (const month of ['2026-06', '2026-07', '2026-08']) spike.set(month, 5);
+    const { official } = inflationReadings(buildSeries(spike), null);
+    const before = depositReal(savings({ asOf: '2026-05-15' }), official);
+    expect(Number(before.inflationPercent)).toBeCloseTo(12.68, 1);
+    const after = depositReal(savings({ asOf: '2026-08-31' }), official);
+    expect(Number(after.inflationPercent)).toBeGreaterThan(25);
+    // No year of figures before 2025-06: the rate is not stated for a day before it.
+    expect(depositReal(savings({ asOf: '2026-02-10' }), official).inflationPercent).toBeNull();
   });
 
   it('INFL-DEPOSIT-NO-OWN-RATE follows the official reading and says it has no rate of its own', () => {

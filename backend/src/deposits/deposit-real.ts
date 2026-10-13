@@ -4,7 +4,6 @@ import {
   type InflationSeries,
   officialFactor,
   personalFactor,
-  trailingYearPercent,
 } from '../inflation/inflation-math';
 import type { StatedFlow } from '../portfolio-snapshots/capital-flows';
 import { realProfit } from '../portfolio-snapshots/real-profit';
@@ -26,8 +25,8 @@ const FACTOR_STEP = 10n ** 10n;
 /** One way of reading inflation: the factor between two days and the yearly figure. */
 export interface InflationReading {
   factor: (from: string, to: string) => InflationFactor | null;
-  /** Inflation over a year in percent; null with too little history. */
-  yearPercent: number | null;
+  /** Inflation over the year ending on a day in percent; null when the figures do not reach. */
+  yearPercent: (day: string) => number | null;
   /** Own-rate reading only: false when the currency has no own rate and this is the official one. */
   ownRate?: boolean;
 }
@@ -37,6 +36,12 @@ export interface InflationReadings {
   personal: InflationReading;
 }
 
+/** The same day a year earlier (29 February goes to the 28th). */
+const yearBefore = (day: string) => {
+  const rest = day.slice(4);
+  return `${Number(day.slice(0, 4)) - 1}${rest === '-02-29' ? '-02-28' : rest}`;
+};
+
 /** The two readings of a currency; with no own rate set, the own-rate one is the official one. */
 export function inflationReadings(
   series: InflationSeries,
@@ -44,7 +49,11 @@ export function inflationReadings(
 ): InflationReadings {
   const official: InflationReading = {
     factor: (from, to) => officialFactor(series, from, to),
-    yearPercent: trailingYearPercent(series),
+    // The year ending on the day asked: a past view never reads months published after it.
+    yearPercent: (day) => {
+      const year = officialFactor(series, yearBefore(day), day);
+      return year === null ? null : (year.factor - 1) * 100;
+    },
   };
   if (ownRate === null) return { official, personal: { ...official, ownRate: false } };
   const annual = Number(ownRate);
@@ -52,7 +61,7 @@ export function inflationReadings(
     official,
     personal: {
       factor: (from, to) => personalFactor(annual, from, to),
-      yearPercent: annual,
+      yearPercent: () => annual,
       ownRate: true,
     },
   };
@@ -109,7 +118,7 @@ export function depositReal(input: RealDepositInput, reading: InflationReading):
       ATOM_SCALE,
   }));
   const profit = realProfit(input.balance, false, flows, (day) => reading.factor(day, input.asOf));
-  const inflation = reading.yearPercent;
+  const inflation = reading.yearPercent(input.asOf);
   const rate =
     input.active && inflation !== null
       ? ((1 + effectiveRatePercent(input.ratePercent, input.terms) / 100) / (1 + inflation / 100) -
