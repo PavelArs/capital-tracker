@@ -904,6 +904,61 @@ describe('Portfolio after inflation', () => {
     expect(screen.getByRole('button', { name: 'Unrealized P&L' })).toBeInTheDocument();
   });
 
+  const position = () => screen.getByRole('region', { name: 'Position' });
+
+  it('ASSET-REAL-NOMINAL shows the real cost and profit beside the nominal ones', async () => {
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost basis$66,000.00$75,000.00 in today's money");
+    expect(position()).toHaveTextContent('Unrealized P&L+$30,000.00+45.45%Real +$21,000.00');
+    expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
+  });
+
+  it('ASSET-REAL-SWITCH Real puts the cost in today money and the real profit first', async () => {
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    expect(position()).toHaveTextContent(
+      "Cost in today's money$75,000.00$66,000.00 paid + $9,000.00 inflation",
+    );
+    expect(position()).toHaveTextContent('Real P&L+$21,000.00+28.00%Nominal +$30,000.00');
+    expect(position()).toHaveTextContent("In today's USD, at the official rate");
+    // The choice is the same one the Portfolio and the Dashboard use.
+    await user.click(screen.getByRole('radio', { name: 'Nominal' }));
+    expect(position()).toHaveTextContent('Unrealized P&L');
+  });
+
+  it('ASSET-REAL-OWN-RATE follows the basis chosen in Settings', async () => {
+    setValueView('real');
+    setInflationBasis('personal');
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Real P&L+$16,000.00+20.00%');
+    expect(position()).toHaveTextContent("In today's USD, at your own rate");
+  });
+
+  it('ASSET-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: { official: null, personal: null } }]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost in today's money—");
+    expect(position()).toHaveTextContent('a purchase price, exchange rate or inflation figure');
+    expect(position()).toHaveTextContent('Real P&L—');
+  });
+
+  it('ASSET-REAL-LEGACY stays nominal for an answer saved before real figures existed', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Cost basis');
+    expect(position()).not.toHaveTextContent('is missing');
+  });
+
   it('PF-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
     renderAt('/portfolio');

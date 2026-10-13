@@ -13,10 +13,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
+import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
+import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
+import { useValueView } from '../shell/value-view';
 import {
   assetKey,
   day,
@@ -30,8 +33,18 @@ import { classedOf, kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { assetCaption, Change, Signed } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
-import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
+import {
+  age,
+  DASH,
+  missingLabel,
+  money,
+  price,
+  quantity,
+  sourceLabels,
+  sourceName,
+} from './format';
 import HideAsset from './HideAsset';
+import { inflationAdjustment } from './real-cost';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
@@ -332,6 +345,12 @@ function AssetDetails({
   // Part of the coins has no cost: show the rest on its own, marked as the known part.
   const partial =
     asset.costBasis === null && Number(asset.knownCostQuantity) > 0 && (unknown || missingRate);
+  // INFL-REAL-PF: the cost grown by the inflation since each purchase, and the profit over it.
+  // An answer saved before real figures existed has none, so it stays nominal.
+  const [view] = useValueView();
+  const [basis] = useInflationBasis();
+  const reading = asset.real?.[basis] ?? null;
+  const showReal = view === 'real' && asset.real !== undefined;
   return (
     <>
       <div className="portfolio-head">
@@ -389,16 +408,67 @@ function AssetDetails({
           <Stat label="Average buy price">
             {asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
           </Stat>
-          <Stat label="Cost basis">
-            {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
-          </Stat>
-          <Stat label="Unrealized P&L">
-            <Signed
-              value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
-              currency={currency}
-              ratio={partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent}
-            />
-          </Stat>
+          {showReal ? (
+            <>
+              <Stat label="Cost in today's money">
+                {reading === null ? (
+                  <>
+                    {DASH}
+                    <span className="portfolio-sub">
+                      a purchase price, exchange rate or inflation figure is missing for some lots
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {amount(reading.costBasis)}
+                    {asset.costBasis !== null && (
+                      <span className="portfolio-sub">
+                        {amount(asset.costBasis)} paid +{' '}
+                        {amount(inflationAdjustment(reading.costBasis, asset.costBasis))} inflation
+                      </span>
+                    )}
+                  </>
+                )}
+              </Stat>
+              <Stat label="Real P&L">
+                <Signed
+                  value={reading?.unrealizedPnl ?? null}
+                  currency={currency}
+                  ratio={reading?.unrealizedReturnPercent ?? null}
+                />
+                {reading !== null && asset.unrealizedPnl !== null && (
+                  <span className="portfolio-sub">
+                    Nominal {money(asset.unrealizedPnl, currency, true)}
+                  </span>
+                )}
+              </Stat>
+            </>
+          ) : (
+            <>
+              <Stat label="Cost basis">
+                {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
+                {reading !== null && asset.costBasis !== null && (
+                  <span className="portfolio-sub">
+                    {amount(reading.costBasis)} in today&apos;s money
+                  </span>
+                )}
+              </Stat>
+              <Stat label="Unrealized P&L">
+                <Signed
+                  value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
+                  currency={currency}
+                  ratio={
+                    partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
+                  }
+                />
+                {reading?.unrealizedPnl != null && asset.unrealizedPnl !== null && (
+                  <span className="portfolio-sub">
+                    Real {money(reading.unrealizedPnl, currency, true)}
+                  </span>
+                )}
+              </Stat>
+            </>
+          )}
           <Stat label="Realized P&L">
             <Signed
               value={
@@ -410,6 +480,14 @@ function AssetDetails({
             />
           </Stat>
         </dl>
+        {showReal && reading !== null && (
+          <p className="shell-note portfolio-real-note">
+            In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
+            <Link className="shell-link" to="/settings">
+              Settings
+            </Link>
+          </p>
+        )}
         {unknown && (
           <p className="ui-banner ui-banner--warn ui-banner--action portfolio-warn" role="note">
             <Icon name="alert" className="shell-icon shell-icon--sm" />
@@ -561,7 +639,7 @@ export default function AssetPage() {
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
     <div className="shell-page">
-      <PageHeader title={asset?.name ?? 'Asset'} currency={portfolio?.currency} />
+      <PageHeader title={asset?.name ?? 'Asset'} currency={portfolio?.currency} valueSwitch />
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
