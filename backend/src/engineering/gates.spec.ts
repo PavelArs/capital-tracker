@@ -576,8 +576,8 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     for (const step of scans) expect(step.with?.cache).toBe('false');
     const restore = steps.find((step) => step.uses?.startsWith('actions/cache/restore@'));
     const save = steps.find((step) => step.uses?.startsWith('actions/cache/save@'));
-    expect(restore?.with?.path).toBe('.cache/trivy');
-    expect(save?.with?.path).toBe('.cache/trivy');
+    expect(restore?.with?.path).toBe(ghExpr('github.workspace') + '/.cache/trivy');
+    expect(save?.with?.path).toBe(restore?.with?.path);
     expect(save?.with?.key).toBe(restore?.with?.key);
     expect(steps.indexOf(restore as never)).toBeLessThan(steps.indexOf(scans[0]));
     expect(steps.indexOf(save as never)).toBeGreaterThan(steps.indexOf(scans[3]));
