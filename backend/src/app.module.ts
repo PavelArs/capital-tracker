@@ -9,6 +9,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApplicationThrottlerModule } from './auth/application-throttler.module';
 import { AuthModule } from './auth/auth.module';
+import { BrokersModule } from './brokers/brokers.module';
 import { RedisCacheModule } from './cache/cache.module';
 import { validateEnvironment } from './config/env.validation';
 import { TypeOrmConfigService } from './config/typeorm.config';
@@ -52,6 +53,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     RedisCacheModule,
     AuthModule,
     AccountingModule,
+    BrokersModule,
     DepositsModule,
     FxRatesModule,
     GoalsModule,

@@ -3,6 +3,7 @@ import { type AssetHistory, assetHistoryApi } from './asset-history.api';
 import { type AuditHistory, auditHistoryApi } from './audit-history.api';
 import { type DepositDetail, type DepositList, depositsApi } from './deposits.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
+import { type GoalList, goalsApi } from './goals.api';
 import { type HiddenAsset, hiddenAssetsApi } from './hidden-assets.api';
 import {
   CLASSIFICATION_CHANGED,
@@ -188,6 +189,7 @@ export const cachedReads = {
   rates: cachedRead('rates', (): Promise<FxRatesReport> => fxRatesApi.get()),
   deposits: cachedRead('deposits', (): Promise<DepositList> => depositsApi.list()),
   deposit: cachedRead('deposit', (id: string): Promise<DepositDetail> => depositsApi.get(id)),
+  goals: cachedRead('goals', (): Promise<GoalList> => goalsApi.list()),
   /** One page of the change history for a filter: the newest, or the one older than `before`. */
   audit: cachedRead(
     'audit',

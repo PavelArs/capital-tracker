@@ -80,6 +80,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       ['Transactions', '/transactions'],
       ['Wallets', '/wallets'],
       ['Deposits', '/deposits'],
+      ['Goals', '/goals'],
       ['Settings', '/preferences'],
     ]);
   });
@@ -96,6 +97,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Wallets',
       'Deposits',
       'Real estate',
+      'Goals',
       'Settings',
     ]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
@@ -127,6 +129,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Wallets',
       'Deposits',
       'Brokers',
+      'Goals',
       'Settings',
     ]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
@@ -156,6 +159,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Deposits',
       'Brokers',
       'Real estate',
+      'Goals',
       'Settings',
     ]);
   });

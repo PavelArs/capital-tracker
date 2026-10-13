@@ -13,6 +13,7 @@ export const pages = {
   deposit: lazyPage(() => import('@features/deposits/DepositPage')),
   brokers: lazyPage(() => import('@features/broker/BrokersPage')),
   realEstate: lazyPage(() => import('@features/property/RealEstatePage')),
+  goals: lazyPage(() => import('@features/goals/GoalsPage')),
   settings: lazyPage(() => import('@features/shell/SettingsPage')),
   history: lazyPage(() => import('@features/history/HistoryPage')),
   forgotPassword: lazyPage(() => import('@features/password-reset/ForgotPasswordPage')),
@@ -27,6 +28,7 @@ export const sectionPage: Record<string, () => Promise<unknown>> = {
   '/deposits': pages.deposits.preload,
   '/brokers': pages.brokers.preload,
   '/real-estate': pages.realEstate.preload,
+  '/goals': pages.goals.preload,
   '/preferences': pages.settings.preload,
   '/history': pages.history.preload,
 };
