@@ -1,6 +1,6 @@
 import type { HistoryPeriod, HistoryPoint } from '@api/portfolio-history.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
 import { currencySymbols, money, tone } from '../portfolio/format';
 
 const HEIGHT = 290;
@@ -120,9 +120,14 @@ export default function HistoryChart({
   const [width, setWidth] = useState(800);
   const [active, setActive] = useState<number | null>(null);
 
-  useEffect(() => {
+  // Read the real width before the first paint: drawing at the default width and then redrawing
+  // makes the chart jump (labels and lines change size) every time the Dashboard opens.
+  useLayoutEffect(() => {
     const element = box.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
+    if (!element) return;
+    const measured = element.getBoundingClientRect().width;
+    if (measured > 0) setWidth(measured);
+    if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(([entry]) => {
       if (entry.contentRect.width > 0) setWidth(entry.contentRect.width);
     });
