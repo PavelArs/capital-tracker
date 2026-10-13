@@ -41,6 +41,7 @@ const blocksOf: Record<string, Blocks> = {
   deposits: ['cards'],
   brokers: ['cards'],
   'real-estate': ['cards'],
+  goals: ['cards'],
   preferences: ['cards'],
 };
 

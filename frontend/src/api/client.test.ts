@@ -256,6 +256,17 @@ describe('cookie session API client', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it('leaves a refused goal request to the goal dialog', async () => {
+    const onError = vi.fn();
+    setErrorHandler(onError);
+    apiClient.defaults.adapter = async (config) => {
+      throw rejected(config, 409);
+    };
+
+    await expect(apiClient.get('/goals')).rejects.toMatchObject({ response: { status: 409 } });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('reuses anonymous CSRF after invalid credentials and leaves login feedback to the form', async () => {
     const sent: InternalAxiosRequestConfig[] = [];
     const onError = vi.fn();

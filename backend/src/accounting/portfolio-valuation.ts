@@ -388,6 +388,21 @@ interface RealizedTotals {
 }
 
 /**
+ * A cost or proceeds amount in the converter's currency at its own Moscow day's rate; an amount
+ * paid in RUB or EUR is exact in its own currency and converts from it (CUR-PAID-RUB).
+ */
+export function convertAmount(
+  fx: FxConverter,
+  usd: string,
+  instant: string,
+  native?: NativeAmount,
+): bigint | null {
+  return native && fx.currency !== 'USD'
+    ? fx.convert(signedAtoms(native.amount), native.currency, moscowDate(instant))
+    : fx.convert(signedAtoms(usd), 'USD', moscowDate(instant));
+}
+
+/**
  * Whole-portfolio valuation from one database snapshot (portfolio-valuation, PV-1..4) in one
  * accounting currency (CUR-*): costs at each acquisition date's rate, proceeds at each sale
  * date's rate and current values at today's rate.
@@ -407,9 +422,7 @@ export function projectPortfolio(
   // An amount paid in RUB or EUR is exact in its own currency and converts from it; USD
   // figures stay the USD amounts derived at the trade's date (CUR-PAID-RUB).
   const toCurrency = (usd: string, instant: string, native?: NativeAmount) =>
-    native && fx.currency !== 'USD'
-      ? fx.convert(signedAtoms(native.amount), native.currency, moscowDate(instant))
-      : fx.convert(signedAtoms(usd), 'USD', moscowDate(instant));
+    convertAmount(fx, usd, instant, native);
   const unavailableAccountCount = accounts.filter(
     (account) => account.coverage === 'before-coverage',
   ).length;
