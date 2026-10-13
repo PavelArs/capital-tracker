@@ -262,6 +262,9 @@ function Summary({
                   <span className="portfolio-sub">
                     {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
                   </span>
+                  {portfolio.costBasis !== null && (
+                    <span className="portfolio-sub">{amount(portfolio.costBasis)} paid</span>
+                  )}
                 </>
               ) : (
                 <>
@@ -306,7 +309,7 @@ function Summary({
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
-                {reading !== null && portfolio.unrealizedPnl !== null && (
+                {portfolio.unrealizedPnl !== null && (
                   <span className="portfolio-sub">
                     Nominal {money(portfolio.unrealizedPnl, currency, true)}
                   </span>

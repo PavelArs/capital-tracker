@@ -875,6 +875,8 @@ describe('Portfolio after inflation', () => {
     expect(summary()).toHaveTextContent(
       'a purchase price, exchange rate or inflation figure is missing',
     );
+    expect(summary()).toHaveTextContent('$70,000.00 paid');
+    expect(summary()).toHaveTextContent('Nominal +$30,000.00');
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
   });
 
@@ -948,6 +950,9 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent("Cost in today's money—");
     expect(position()).toHaveTextContent('a purchase price, exchange rate or inflation figure');
     expect(position()).toHaveTextContent('Real P&L—');
+    // Both nominal figures stay on screen beside the dashes.
+    expect(position()).toHaveTextContent('$66,000.00 paid');
+    expect(position()).toHaveTextContent('Nominal +$30,000.00');
   });
 
   it('ASSET-REAL-SOLD does not call a fully sold asset incomplete', async () => {

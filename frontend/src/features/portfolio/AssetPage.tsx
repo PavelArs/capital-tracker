@@ -435,6 +435,9 @@ function AssetDetails({
                       <span className="portfolio-sub">
                         a purchase price, exchange rate or inflation figure is missing for some lots
                       </span>
+                      {asset.costBasis !== null && (
+                        <span className="portfolio-sub">{amount(asset.costBasis)} paid</span>
+                      )}
                     </>
                   )
                 ) : (
@@ -455,7 +458,7 @@ function AssetDetails({
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
-                {reading !== null && asset.unrealizedPnl !== null && (
+                {asset.unrealizedPnl !== null && (
                   <span className="portfolio-sub">
                     Nominal {money(asset.unrealizedPnl, currency, true)}
                   </span>
