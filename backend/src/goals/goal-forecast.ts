@@ -78,13 +78,13 @@ export function monthsToReach(current: number, target: number, contribution: num
   if (!Number.isFinite(months) || months > MAX_MONTHS) return null;
   // A target reached exactly on a payment can come out a hair above the whole number through
   // floating-point noise and round up to the next month: settle a near-whole answer by checking
-  // the plan itself, to a billionth of the target.
+  // the plan itself, to a tenth of a cent.
   const whole = Math.round(months);
   if (
     whole > 0 &&
     months > whole &&
     months - whole < 1e-6 &&
-    futureValue(current, contribution, rate, whole, whole) >= target * (1 - 1e-9)
+    futureValue(current, contribution, rate, whole, whole) >= target - 1e-3
   )
     return whole;
   return months;

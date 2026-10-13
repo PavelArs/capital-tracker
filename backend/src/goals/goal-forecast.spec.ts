@@ -44,6 +44,9 @@ describe('goal forecast', () => {
     expect(monthsToReach(10_000, 20_000, 0, 0)).toBeNull();
     // A cent-denominated target met exactly on payment 46 is not pushed to month 47 by float noise.
     expect(monthsToReach(750.88, 4549.11, 82.57, monthlyRate(0.0001))).toBe(46);
+    // A real one-cent deficit on a very large goal is not noise: the sixth payment is needed.
+    expect(monthsToReach(0, 500_000_000_000.01, 100_000_000_000, 0)).toBeGreaterThan(5);
+    expect(Math.ceil(monthsToReach(0, 500_000_000_000.01, 100_000_000_000, 0) as number)).toBe(6);
     // Growth alone reaches it in about nine years at 8%.
     expect(monthsToReach(10_000, 20_000, 0, rate) as number).toBeCloseTo(108.2, 0);
     // A target beyond one hundred years is not promised.
