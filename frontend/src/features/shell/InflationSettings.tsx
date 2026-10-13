@@ -45,6 +45,9 @@ export function pendingMonths(officialLastMonth: string | null, now = new Date()
   return months.slice(-12);
 }
 
+// numeric text as the server writes it back: no trailing zeros.
+const exact = (value: string) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
+
 const percentText = (value: string | null, places = 1) =>
   value === null ? null : `${Number(value).toFixed(places)}%`;
 
@@ -68,10 +71,10 @@ const saveFailure = (what: string) => (error: unknown) =>
 /** One currency: the official rate for reference and the owner's own yearly rate beside it. */
 function CurrencyRow({
   row,
-  onChanged,
+  onSaved,
 }: {
   row: CurrencyInflation;
-  onChanged: () => Promise<void>;
+  onSaved: (rate: string | null) => void;
 }) {
   const id = useId();
   const [text, setText] = useState(row.personalRatePercent ?? '');
@@ -91,7 +94,7 @@ function CurrencyRow({
     setState('saving');
     try {
       await inflationApi.setPersonalRate(row.currency, rate);
-      await onChanged();
+      onSaved(rate === null ? null : exact(rate));
       setState('saved');
     } catch (error) {
       setFailure(saveFailure(`your ${row.currency} rate`)(error));
@@ -168,7 +171,7 @@ function MonthDialog({
 }: {
   rows: CurrencyInflation[];
   onClose: () => void;
-  onSaved: (currency: AccountingCurrency, month: string) => Promise<void>;
+  onSaved: (currency: AccountingCurrency, month: string, changePercent: string) => void;
 }) {
   const id = useId();
   const open = rows.filter((row) => pendingMonths(row.officialLastMonth).length > 0);
@@ -197,7 +200,7 @@ function MonthDialog({
     setError(null);
     try {
       await inflationApi.setMonth(currency, chosen, change);
-      await onSaved(currency, chosen);
+      onSaved(currency, chosen, exact(change));
     } catch (caught) {
       setError(saveFailure(`${currency} ${monthText(chosen)}`)(caught));
       setSaving(false);
@@ -322,14 +325,27 @@ export default function InflationSettings() {
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
 
-  // After a save the figures are read again; if that read fails the save still stands.
-  const refresh = useCallback(async () => {
-    try {
-      setOverview(await inflationApi.overview());
-    } catch {
-      // the next visit reads them again
-    }
-  }, []);
+  // A save shows at once from what was sent; the server's own answer is read right after, and if
+  // that read fails the page already shows what was saved.
+  const changed = useCallback(
+    (currency: AccountingCurrency, update: (row: CurrencyInflation) => CurrencyInflation) => {
+      setOverview((current) =>
+        current
+          ? {
+              ...current,
+              currencies: current.currencies.map((row) =>
+                row.currency === currency ? update(row) : row,
+              ),
+            }
+          : current,
+      );
+      inflationApi.overview().then(
+        (loaded) => setOverview(loaded),
+        () => undefined,
+      );
+    },
+    [],
+  );
   useEffect(() => {
     let live = true;
     inflationApi
@@ -351,7 +367,10 @@ export default function InflationSettings() {
     setRemoveFailed(null);
     try {
       await inflationApi.removeMonth(currency, month);
-      await refresh();
+      changed(currency, (row) => ({
+        ...row,
+        manualMonths: row.manualMonths.filter((item) => item.month !== month),
+      }));
     } catch {
       setRemoveFailed(key);
     } finally {
@@ -408,7 +427,13 @@ export default function InflationSettings() {
       ) : (
         <>
           {rows.map((row) => (
-            <CurrencyRow key={row.currency} row={row} onChanged={refresh} />
+            <CurrencyRow
+              key={row.currency}
+              row={row}
+              onSaved={(rate) =>
+                changed(row.currency, (current) => ({ ...current, personalRatePercent: rate }))
+              }
+            />
           ))}
           <div className="shell-setting">
             <div className="shell-setting__text">
@@ -467,8 +492,14 @@ export default function InflationSettings() {
         <MonthDialog
           rows={rows}
           onClose={() => setEntering(false)}
-          onSaved={async () => {
-            await refresh();
+          onSaved={(currency, month, changePercent) => {
+            changed(currency, (row) => ({
+              ...row,
+              manualMonths: [
+                ...row.manualMonths.filter((item) => item.month !== month),
+                { month, changePercent },
+              ].sort((a, b) => a.month.localeCompare(b.month)),
+            }));
             setEntering(false);
           }}
         />

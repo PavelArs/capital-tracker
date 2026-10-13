@@ -228,6 +228,43 @@ describe('INFL-UI Settings → Inflation', () => {
     );
   });
 
+  it('INFL-UI-N: shows a saved month and a removed month even when reading the rates again fails', async () => {
+    const first = overview([row(), row({ currency: 'EUR' }), row({ currency: 'RUB' })]);
+    vi.spyOn(inflationApi, 'overview')
+      .mockResolvedValueOnce(first)
+      .mockRejectedValue(new Error('offline'));
+    vi.spyOn(inflationApi, 'setMonth').mockResolvedValue(undefined);
+    const remove = vi.spyOn(inflationApi, 'removeMonth').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<InflationSettings />);
+    await user.click(await screen.findByRole('button', { name: 'Enter a month' }));
+    const dialog = screen.getByRole('dialog', { name: 'Enter a month' });
+    await user.type(within(dialog).getByLabelText(/How much prices changed/), '0.6');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText(/Entered by you · prices rose 0\.60% over the month/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Remove USD/ }));
+    await waitFor(() => expect(remove).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/Entered by you/)).not.toBeInTheDocument());
+  });
+
+  it('INFL-UI-O: shows a saved rate even when reading the rates again fails', async () => {
+    vi.spyOn(inflationApi, 'overview')
+      .mockResolvedValueOnce(standard())
+      .mockRejectedValue(new Error('offline'));
+    vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<InflationSettings />);
+    const input = await screen.findByLabelText('USD · my rate a year');
+    await user.type(input, '5.50');
+    await user.click(
+      within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
+    );
+    expect(await screen.findByText('Saved. Your USD rate is 5.5% a year.')).toBeInTheDocument();
+    expect(input).toHaveValue('5.5');
+  });
+
   it('INFL-UI-M: reports when the rates cannot be loaded', async () => {
     vi.spyOn(inflationApi, 'overview').mockRejectedValue(new Error('offline'));
     render(<InflationSettings />);
