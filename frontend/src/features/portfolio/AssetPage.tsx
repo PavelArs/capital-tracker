@@ -516,15 +516,18 @@ function AssetDetails({
         </dl>
         {showReal && reading !== null && (
           <p className="shell-note portfolio-real-note">
-            In today&apos;s {currency}, {basisText(basis, reading, currency)}
-            {portfolio.unavailableAccountCount > 0 &&
-              `, leaves out ${portfolio.unavailableAccountCount} ${
-                portfolio.unavailableAccountCount === 1 ? 'account' : 'accounts'
-              } whose history starts later`}{' '}
-            ·{' '}
+            In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
             <Link className="shell-link" to="/settings">
               Settings
             </Link>
+          </p>
+        )}
+        {portfolio.unavailableAccountCount > 0 && (
+          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+            {portfolio.unavailableAccountCount === 1
+              ? '1 account whose history starts later is'
+              : `${portfolio.unavailableAccountCount} accounts whose history starts later are`}{' '}
+            left out of these figures.
           </p>
         )}
         {unknown && (

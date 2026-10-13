@@ -1022,15 +1022,32 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent('$0.00 known');
   });
 
-  it('ASSET-REAL-INCOMPLETE says the reading leaves out an account whose history starts later', async () => {
-    setValueView('real');
+  it('ASSET-REAL-INCOMPLETE says the figures leave out an account whose history starts later, in every view', async () => {
+    const user = userEvent.setup();
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
-      withReal({ unavailableAccountCount: 1 }),
+      withReal({ unavailableAccountCount: 2 }),
     );
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
+    const notice = '2 accounts whose history starts later are left out of these figures';
+    expect(position()).toHaveTextContent(notice);
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
     expect(position()).toHaveTextContent('Real P&L+$21,000.00');
-    expect(position()).toHaveTextContent('leaves out 1 account whose history starts later');
+    expect(position()).toHaveTextContent(notice);
+  });
+
+  it('ASSET-REAL-INCOMPLETE-NULL keeps the notice when there is no real reading', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: { official: null, personal: null } }], {
+        unavailableAccountCount: 1,
+      }),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent(
+      '1 account whose history starts later is left out of these figures',
+    );
   });
 
   it('ASSET-REAL-SOLD does not call a fully sold asset incomplete', async () => {
