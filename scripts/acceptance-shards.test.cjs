@@ -74,6 +74,7 @@ const legacyChecks = [
   'wallet-removal-db',
   'bank-deposits-db',
   'inflation-db',
+  'goals-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
