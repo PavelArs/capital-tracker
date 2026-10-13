@@ -49,7 +49,6 @@ export class GoalsService {
   async create(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const { requestId, ...input } = parseGoal(raw);
-    this.checkDeadline(input);
     const payload = JSON.stringify(input);
     const id = await this.source.transaction(async (manager) => {
       // One lock per owner keeps the count honest and a retry of the same request a no-op.
@@ -66,6 +65,8 @@ export class GoalsService {
           throw new ConflictException('This request was already used for a different goal');
         return earlier.id;
       }
+      // Only a goal that is new has to name a day still ahead; a replay answers as it did.
+      this.checkDeadline(input);
       const [{ count }]: { count: string }[] = await manager.query(
         'SELECT count(*) AS count FROM savings_goals WHERE "ownerId"=$1',
         [owner],

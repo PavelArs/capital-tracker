@@ -17,7 +17,10 @@ const row = {
 const today = new Date().toISOString().slice(0, 10);
 
 function service(points: { complete: boolean }[], complete = false) {
-  const source = { manager: { query: async () => [{ ...row, deadline: addMonths(today, 36) }] } };
+  const source = {
+    manager: { query: async () => [{ ...row, deadline: addMonths(today, 36) }] },
+    transaction: async (work: (manager: unknown) => unknown) => work({ query: async () => [] }),
+  };
   const snapshots = { history: async () => ({ value: '5000.00', complete, points }) };
   return new GoalsService(source as unknown as DataSource, snapshots as never);
 }

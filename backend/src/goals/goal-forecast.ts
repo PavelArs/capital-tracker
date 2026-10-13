@@ -20,25 +20,42 @@ export const scenarioReturns = (base: number): Record<ScenarioKey, number> => ({
 /** The monthly growth rate that compounds to the effective yearly return. */
 export const monthlyRate = (yearlyPercent: number) => (1 + yearlyPercent / 100) ** (1 / 12) - 1;
 
-/** The value after `months` of growth with `contribution` added every month. */
-export function futureValue(current: number, contribution: number, rate: number, months: number) {
-  if (rate === 0) return current + contribution * months;
-  const growth = (1 + rate) ** months;
-  return current * growth + (contribution * (growth - 1)) / rate;
+/**
+ * The value after `months` of growth with `contribution` added at the end of each of the first
+ * `payments` whole months; the part of a month after the last payment only grows.
+ */
+export function futureValue(
+  current: number,
+  contribution: number,
+  rate: number,
+  months: number,
+  payments = Math.floor(months),
+) {
+  return current * (1 + rate) ** months + contribution * paymentsGrowth(rate, months, payments);
 }
 
-/** The monthly contribution that reaches the target in `months`; zero when growth is enough. */
+/** What one unit paid at the end of each of `payments` months is worth after `months`. */
+function paymentsGrowth(rate: number, months: number, payments: number) {
+  if (payments <= 0) return 0;
+  if (rate === 0) return payments;
+  return ((1 + rate) ** (months - payments) * ((1 + rate) ** payments - 1)) / rate;
+}
+
+/**
+ * The monthly contribution that reaches the target in `months`, zero when growth is enough, and
+ * infinite when it is not and no whole month is left to pay in.
+ */
 export function requiredContribution(
   current: number,
   target: number,
   rate: number,
   months: number,
+  payments = Math.floor(months),
 ) {
-  if (months <= 0) return Math.max(target - current, 0);
-  const growth = (1 + rate) ** months;
-  const missing = target - current * growth;
+  const missing = target - current * (1 + rate) ** months;
   if (missing <= 0) return 0;
-  return rate === 0 ? missing / months : (missing * rate) / (growth - 1);
+  const growth = paymentsGrowth(rate, months, payments);
+  return growth > 0 ? missing / growth : Number.POSITIVE_INFINITY;
 }
 
 /**
@@ -69,6 +86,15 @@ export function addMonths(date: string, months: number): string {
   const last = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
   const text = (value: number, width: number) => String(value).padStart(width, '0');
   return `${text(targetYear, 4)}-${text(targetMonth + 1, 2)}-${text(Math.min(day, last), 2)}`;
+}
+
+/** The whole months from one ISO day to a later one: how many month ends fall before it. */
+export function paymentsBetween(from: string, to: string) {
+  const [fromYear, fromMonth] = from.split('-').map(Number);
+  const [toYear, toMonth] = to.split('-').map(Number);
+  const months = toYear * 12 + toMonth - (fromYear * 12 + fromMonth);
+  if (months <= 0) return 0;
+  return addMonths(from, months) <= to ? months : months - 1;
 }
 
 /** Months from one ISO day to a later one, fractional; zero or less when it has passed. */

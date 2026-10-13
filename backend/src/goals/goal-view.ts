@@ -4,6 +4,7 @@ import {
   monthlyRate,
   monthsBetween,
   monthsToReach,
+  paymentsBetween,
   requiredContribution,
   type ScenarioKey,
   scenarioReturns,
@@ -56,6 +57,7 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   const current = now.value === null ? null : Number(now.value);
   const plan = row.monthlyContribution === null ? 0 : Number(row.monthlyContribution);
   const months = row.deadline === null ? null : monthsBetween(today, row.deadline);
+  const payments = row.deadline === null ? 0 : paymentsBetween(today, row.deadline);
   const scenarios: GoalScenario[] =
     current === null
       ? []
@@ -68,13 +70,15 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
           const rate = monthlyRate(yearly);
           const left = monthsToReach(current, target, plan, rate);
           const projected =
-            months !== null && months > 0 ? futureValue(current, plan, rate, months) : null;
+            months !== null && months > 0
+              ? futureValue(current, plan, rate, months, payments)
+              : null;
           return {
             key,
             returnPercent: percent(yearly),
             requiredMonthly:
               months !== null && months > 0
-                ? figure(requiredContribution(current, target, rate, months))
+                ? figure(requiredContribution(current, target, rate, months, payments))
                 : null,
             monthsToTarget: left === null ? null : Math.ceil(left),
             reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),

@@ -125,4 +125,21 @@ describe('goal view', () => {
       expect(JSON.stringify(scenario)).not.toContain('NaN');
     }
   });
+
+  it('does not count a contribution that cannot be paid before the deadline', () => {
+    const view = goalView(
+      {
+        ...row,
+        targetAmount: '100.00',
+        deadline: '2026-10-14',
+        monthlyContribution: '3100.00',
+      },
+      now('0.00'),
+      today,
+    );
+    expect(view.status).toBe('behind');
+    expect(view.scenarios[1].projectedAtDeadline).toBe('0.00');
+    expect(view.scenarios[1].gap).toBe('100.00');
+    expect(view.scenarios[1].requiredMonthly).toBeNull();
+  });
 });

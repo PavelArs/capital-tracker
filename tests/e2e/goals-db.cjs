@@ -39,6 +39,11 @@ const inYears = (years) => {
   date.setUTCFullYear(date.getUTCFullYear() + years);
   return date.toISOString().slice(0, 10);
 };
+const inDays = (days) => {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
 const reserve = () => ({
   requestId: randomUUID(),
   name: 'Reserve A',
@@ -49,7 +54,7 @@ const reserve = () => ({
   monthlyContribution: '200',
 });
 
-async function terms(service, owner, other) {
+async function terms(db, service, owner, other) {
   stage = 'synthetic goal entered once, read back, retried, changed and deleted';
   assert.deepEqual((await service.list(owner)).items, []);
   const body = reserve();
@@ -69,6 +74,16 @@ async function terms(service, owner, other) {
   await rejected(() => service.create(owner, { ...reserve(), deadline: '2020-01-01' }), 422);
   await rejected(() => service.create(owner, { ...reserve(), deadline: inYears(0) }), 422);
   await rejected(() => service.create(owner, { ...reserve(), deadline: '2999-01-01' }), 422);
+  // A lost answer is retried after the deadline it named has arrived: the goal, not a refusal.
+  const soon = { ...reserve(), deadline: inDays(1) };
+  const soonMade = await service.create(owner, soon);
+  await db.query('UPDATE savings_goals SET deadline = current_date - 1 WHERE id=$1', [soonMade.id]);
+  assert.equal(
+    (await service.create(owner, soon)).id,
+    soonMade.id,
+    'A replay needs no new deadline',
+  );
+  await service.remove(owner, soonMade.id);
   const open = await service.create(owner, {
     ...reserve(),
     deadline: null,
@@ -229,7 +244,7 @@ async function main() {
       PortfolioSnapshotsService,
     } = require('/app/backend/dist/portfolio-snapshots/portfolio-snapshots.service.js');
     const service = new GoalsService(db, new PortfolioSnapshotsService(db, new ConfigService({})));
-    await terms(service, owner.id, other.id);
+    await terms(db, service, owner.id, other.id);
     await limit(service, third.id);
     await forecast(db, service, fourth.id);
   } finally {
