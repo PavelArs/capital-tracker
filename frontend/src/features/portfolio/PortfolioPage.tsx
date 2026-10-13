@@ -581,8 +581,9 @@ export default function PortfolioPage() {
   const phone = useNarrowScreen();
   const [view] = useValueView();
   const [basis] = useInflationBasis();
-  // Under Real the profit column is the profit after inflation on the chosen basis.
-  const real = view === 'real' ? basis : null;
+  // Under Real the profit column is the profit after inflation on the chosen basis. An answer
+  // saved before real figures existed has none to show, so it stays nominal until a fresh one.
+  const real = view === 'real' && portfolio?.real !== undefined ? basis : null;
   // Add opens the kind picker; the kind then opens its own form, or the page it is added on.
   const [adding, setAdding] = useState<'pick' | Exclude<AddChoice, 'crypto'> | null>(null);
   const navigate = useNavigate();
