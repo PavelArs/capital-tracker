@@ -380,4 +380,55 @@ describe('BROKER-ADD Add broker account', () => {
     expect(removeAccount).not.toHaveBeenCalled();
     expect(onAdded).toHaveBeenCalled();
   });
+
+  it('removes an account whose creation answer was lost when closed', async () => {
+    // Codex P2: a lost answer or a server error does not prove the account was not made.
+    createAccount.mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    const { dialog, onAdded, onClose } = open();
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(createAccount).toHaveBeenCalledTimes(2);
+    expect(createAccount.mock.calls[1][0].requestId).toBe(createAccount.mock.calls[0][0].requestId);
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it('hides a hidden cash asset again when its buy was refused and the form is closed', async () => {
+    // Codex P2: the form showed the cash asset, so it puts it back as it was.
+    listAssets.mockResolvedValue([
+      created(30, { name: 'US dollar', symbol: 'USD', assetType: 'fiat', priceSource: 'fixed' }),
+    ]);
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([
+      { instrumentId: id(30), name: 'US dollar', symbol: 'USD', hiddenAt: '2026-10-01T00:00:00Z' },
+    ]);
+    createTrade.mockRejectedValueOnce(refused(400));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(showAsset).toHaveBeenCalledWith(id(30));
+    expect(hideAsset.mock.calls).toEqual([[id(30)]]);
+  });
+
+  it('leaves an existing visible cash asset as it is when its buy was refused', async () => {
+    listAssets.mockResolvedValue([
+      created(30, { name: 'US dollar', symbol: 'USD', assetType: 'fiat', priceSource: 'fixed' }),
+    ]);
+    createTrade.mockRejectedValueOnce(refused(400));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(hideAsset).not.toHaveBeenCalled();
+  });
 });

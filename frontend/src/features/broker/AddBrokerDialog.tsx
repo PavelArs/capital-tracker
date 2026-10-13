@@ -74,8 +74,8 @@ interface Props {
 /** One holding as it is saved: the asset, the buy that gives it a balance, then its price. */
 interface SavedHolding {
   asset: PortfolioAsset | null;
-  /** The asset was made by this form, not an existing cash asset. */
-  made: boolean;
+  /** The asset was made, or shown again, by this form: it is hidden again if no buy is saved. */
+  undo: boolean;
   receipt: TradeReceipt | null;
   /** A buy went out and no definite answer came back, so it may be saved. */
   unsure: boolean;
@@ -84,6 +84,8 @@ interface SavedHolding {
 
 interface Saved {
   accountId: string | null;
+  /** The account request went out and no definite answer came back, so it may be saved. */
+  accountUnsure: boolean;
   /** The account's journal revision the next buy expects. */
   revision: number;
   holdings: SavedHolding[];
@@ -112,7 +114,12 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // What is saved stays saved: a retry adds only what is still missing, under the same ids.
-  const saved = useRef<Saved>({ accountId: null, revision: 0, holdings: [] });
+  const saved = useRef<Saved>({
+    accountId: null,
+    accountUnsure: false,
+    revision: 0,
+    holdings: [],
+  });
   const requests = useRef<{ account: string; holdings: string[][] }>({
     account: newRequestId(),
     holdings: [],
@@ -125,20 +132,30 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // Closing keeps what cannot be taken back: once anything it holds is saved, the account stays
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
   // A position whose asset was made but whose buy was refused would show as an empty asset in
-  // Portfolio, so it is hidden first. One whose buy may have been saved after all is left as is.
+  // Portfolio, so it is hidden first, and a cash asset this form showed again is hidden again.
+  // One whose buy may have been saved after all is left as is. An account whose answer was lost
+  // is asked for again under the same request, which finds it rather than making another.
   const finish = async () => {
     const done = saved.current;
-    const empty = done.holdings.flatMap(({ asset, made, receipt, unsure }) =>
-      asset && made && !receipt && !unsure ? [asset.id] : [],
+    const empty = done.holdings.flatMap(({ asset, undo, receipt, unsure }) =>
+      asset && undo && !receipt && !unsure ? [asset.id] : [],
     );
-    if (empty.length) {
-      setSaving(true);
-      await Promise.allSettled(empty.map((asset) => hiddenAssetsApi.hide(asset)));
-    }
+    setSaving(true);
+    await Promise.allSettled(empty.map((asset) => hiddenAssetsApi.hide(asset)));
     if (done.holdings.some((holding) => holding.receipt)) return onAdded();
+    if (!done.accountId && done.accountUnsure)
+      done.accountId = await accountingApi.createAccount(accountRequest()).then(
+        (account) => account.id,
+        () => null,
+      );
     if (done.accountId) void accountingApi.removeAccount(done.accountId).catch(() => undefined);
     onClose();
   };
+  const accountRequest = () => ({
+    requestId: requests.current.account,
+    name: brokerAccountName(entry),
+    assetClass: 'broker' as const,
+  });
   const update = (changes: Partial<BrokerEntry>) =>
     setEntry((current) => ({ ...current, ...changes }));
   const updatePosition = (index: number, changes: Partial<PositionEntry>) =>
@@ -199,17 +216,15 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     while (requests.current.holdings.length < holdings.length)
       requests.current.holdings.push([newRequestId(), newRequestId(), newRequestId()]);
     while (done.holdings.length < holdings.length)
-      done.holdings.push({ asset: null, made: false, receipt: null, unsure: false, priced: false });
+      done.holdings.push({ asset: null, undo: false, receipt: null, unsure: false, priced: false });
 
     if (!done.accountId) {
       try {
-        const account = await accountingApi.createAccount({
-          requestId: requests.current.account,
-          name: brokerAccountName(entry),
-          assetClass: 'broker',
-        });
+        const account = await accountingApi.createAccount(accountRequest());
         done.accountId = account.id;
       } catch (caught) {
+        const code = status(caught);
+        done.accountUnsure = code === undefined || code >= 500;
         setError(failure(caught, 'Nothing was saved. '));
         setSaving(false);
         return;
@@ -228,11 +243,11 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
                   requestId: assetRequest,
                   ...positionAsset(holding.position, currency),
                 }),
-                made: true,
+                undo: true,
               }
             : await cashAsset(currency, assetRequest);
           step.asset = made.asset;
-          step.made = made.made;
+          step.undo = made.undo;
         }
         if (!step.receipt) {
           try {
@@ -475,7 +490,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
 async function cashAsset(
   currency: ValuationCurrency,
   requestId: string,
-): Promise<{ asset: PortfolioAsset; made: boolean }> {
+): Promise<{ asset: PortfolioAsset; undo: boolean }> {
   const assets = await portfolioAssetsApi.listAll();
   const found = assets.find(
     (asset) => asset.assetType === 'fiat' && asset.symbol?.toUpperCase() === currency,
@@ -483,9 +498,9 @@ async function cashAsset(
   if (found) {
     // A hidden cash asset is left out of Portfolio, so the cash held here would not count.
     const hidden = await hiddenAssetsApi.list();
-    if (hidden.some(({ instrumentId }) => instrumentId === found.id))
-      await hiddenAssetsApi.show(found.id);
-    return { asset: found, made: false };
+    const shown = hidden.some(({ instrumentId }) => instrumentId === found.id);
+    if (shown) await hiddenAssetsApi.show(found.id);
+    return { asset: found, undo: shown };
   }
   const asset = await portfolioAssetsApi.create({
     requestId,
@@ -493,5 +508,5 @@ async function cashAsset(
     symbol: currency,
     assetType: 'fiat',
   });
-  return { asset, made: true };
+  return { asset, undo: true };
 }
