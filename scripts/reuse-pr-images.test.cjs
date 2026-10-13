@@ -143,7 +143,9 @@ test('REUSE-003-C a re-run of the push run never reuses: it builds and tests eve
   assert.equal(readFileSync(output, 'utf8'), 'reuse=false\n');
 });
 
-test('REUSE-004-A waits for a pull request run that is still going, as long as a CI run normally takes', () => {
-  assert.ok(WAIT.attempts * WAIT.delayMs >= 20 * 60_000);
+test('REUSE-004-A waits for a pull request run that is still going, as long as the merged-CI gate does', () => {
+  // The longest measured workflow takes 38 minutes (docs/post-mvp-backlog.md).
+  assert.ok(WAIT.attempts * WAIT.delayMs >= 40 * 60_000);
   assert.ok(WAIT.delayMs >= 10_000);
+  assert.strictEqual(WAIT, require('./check-merged-pr-ci.cjs').WAIT);
 });

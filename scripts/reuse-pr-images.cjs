@@ -15,13 +15,13 @@ const { execFileSync } = require('node:child_process');
 const { appendFileSync, mkdtempSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const { waitForCheck, githubRequest } = require('./check-merged-pr-ci.cjs');
+const { WAIT, waitForCheck, githubRequest } = require('./check-merged-pr-ci.cjs');
 const { validateRelease } = require('./validate-manual-mvp-release.cjs');
 
 // A pull request merged while its CI still runs is waited for, as "Merged Pull Request CI" waits:
 // that gate cannot finish before the pull request run does, so waiting loses nothing against a
-// parallel full build, and it turns the common mid-CI merge into a reuse.
-const WAIT = { attempts: 60, delayMs: 30_000 };
+// parallel full build, and it turns the common mid-CI merge into a reuse. Both wait for the same
+// time (WAIT), so the shortcut covers every run the gate would still wait for.
 
 const ARTIFACTS = ['release-images', 'release-images-manifest', 'critical-release-acceptance'];
 

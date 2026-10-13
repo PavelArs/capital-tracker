@@ -88,7 +88,7 @@ variable `REUSE_PR_IMAGES` is `false`, main builds, tests and scans as before. T
 names, the required results of `CI Status` and the deploy provenance are unchanged; the
 reuse is decided step by step so each release job still has to end in success. The step
 summary of `Build Release Images` says which way a push went and why. A pull request merged
-while its own CI still runs is waited for (up to 30 minutes, as `Merged Pull Request CI`
+while its own CI still runs is waited for (up to 45 minutes, as `Merged Pull Request CI`
 waits; the push cannot finish before it anyway). The tree check is what keeps this safe, and it
 is the one case that still runs everything on main: another pull request landed after this
 one's last CI run, so the tested code is not the shipped code. Merging the base branch into
