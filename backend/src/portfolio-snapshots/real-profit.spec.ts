@@ -57,6 +57,19 @@ describe('real profit (INFL-REAL)', () => {
     expect(realProfit(null, false, [flow('2025-03-15T00:00:00.000Z', 100)], official)).toBeNull();
   });
 
+  it('INFL-REAL-MOSCOW-DAY dates each flow by its Moscow calendar day, like its rate', () => {
+    const days: string[] = [];
+    const seen = (day: string) => {
+      days.push(day);
+      return { factor: 1, estimated: false };
+    };
+    // 22:30 UTC is already the next day in Moscow, midnight Moscow is the evening before in UTC.
+    realProfit('10', false, [flow('2025-03-14T22:30:00.000Z', 1)], seen);
+    realProfit('10', false, [flow('2025-03-14T21:00:00.000Z', 1)], seen);
+    realProfit('10', false, [flow('2025-03-14T20:59:59.000Z', 1)], seen);
+    expect(days).toEqual(['2025-03-15', '2025-03-15', '2025-03-14']);
+  });
+
   it('INFL-REAL-EMPTY says nothing was put in rather than a profit of the whole value', () => {
     const result = realProfit('300', false, [], official);
     expect(result).toEqual({ invested: '0', profit: '300', profitPercent: null, estimated: false });

@@ -473,7 +473,7 @@ export class PortfolioSnapshotsService {
     allFlows: readonly StatedFlow[],
     now: Date,
   ) {
-    const today = now.toISOString().slice(0, 10);
+    const today = moscowDate(now);
     const flows = allFlows.filter((flow) => flow.at <= now.getTime());
     const series = buildSeries((await readEffectiveChanges(manager, owner, currency)).changes);
     const rate = await readPersonalRate(manager, owner, currency);
