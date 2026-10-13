@@ -245,6 +245,10 @@ export class InflationService {
         const series = buildSeries(changes);
         const provider = OFFICIAL_SOURCES[currency];
         const yearly = trailingYearPercent(series);
+        // The published months alone, without the owner's own months laid over them.
+        const publishedYearly = trailingYearPercent(
+          buildSeries(new Map(official.map((row) => [row.month, Number(row.changePercent)]))),
+        );
         currencies.push({
           currency,
           officialSource: provider ? PROVIDER_NAMES[provider] : null,
@@ -253,6 +257,7 @@ export class InflationService {
           // A gap in the middle of the series leaves only the stretch after it comparable.
           comparableFrom: series.chainStart,
           trailingYearPercent: yearly === null ? null : yearly.toFixed(4),
+          officialTrailingYearPercent: publishedYearly === null ? null : publishedYearly.toFixed(4),
           estimatedMonthlyPercent: series.last === null ? null : (series.trend * 100).toFixed(6),
           personalRatePercent: await readPersonalRate(manager, owner, currency),
           manualMonths: manual.map(({ month, changePercent }) => ({

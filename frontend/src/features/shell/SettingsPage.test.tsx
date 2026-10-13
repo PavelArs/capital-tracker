@@ -1,5 +1,6 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
+import { inflationApi } from '@api/inflation.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { securityApi } from '@api/security.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
@@ -34,6 +35,7 @@ beforeEach(() => {
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(hiddenAssetsApi, 'list').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(inflationApi, 'overview').mockReturnValue(new Promise(() => {}));
   stored.clear();
   listeners.clear();
   vi.mocked(window.localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
