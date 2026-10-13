@@ -40,7 +40,7 @@ import {
   splitChange,
   stateFlows,
 } from './capital-flows';
-import { realProfit } from './real-profit';
+import { personalReading, realProfit } from './real-profit';
 import {
   DEFAULT_PERIOD,
   firstValuedPoint,
@@ -477,16 +477,19 @@ export class PortfolioSnapshotsService {
     const flows = allFlows.filter((flow) => flow.at <= now.getTime());
     const series = buildSeries((await readEffectiveChanges(manager, owner, currency)).changes);
     const rate = await readPersonalRate(manager, owner, currency);
+    const official = realProfit(current.value, current.unpriced, flows, (day) =>
+      officialFactor(series, day, today),
+    );
     return {
-      official: realProfit(current.value, current.unpriced, flows, (day) =>
-        officialFactor(series, day, today),
+      official,
+      personal: personalReading(
+        official,
+        () =>
+          realProfit(current.value, current.unpriced, flows, (day) =>
+            personalFactor(Number(rate), day, today),
+          ),
+        rate !== null,
       ),
-      personal:
-        rate === null
-          ? null
-          : realProfit(current.value, current.unpriced, flows, (day) =>
-              personalFactor(Number(rate), day, today),
-            ),
     };
   }
 

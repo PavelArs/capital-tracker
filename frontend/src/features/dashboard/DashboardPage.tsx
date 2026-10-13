@@ -92,18 +92,17 @@ function Amount({ text }: { text: string }) {
   );
 }
 
-const NO_REAL: Record<'official' | 'personal', string> = {
-  official:
-    'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.',
-  personal:
-    'Real profit at your own rate is unknown: set a yearly rate in Settings, or an exchange rate or price is missing.',
-};
+const NO_REAL =
+  'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.';
 
 // Which rate the real figure rests on, said beside that figure only.
-const basisText = (basis: 'official' | 'personal', real: RealProfit) =>
-  basis === 'official'
-    ? `at the official rate${real.estimated ? ', latest months estimated' : ''}`
-    : 'at your own rate';
+const basisText = (basis: 'official' | 'personal', real: RealProfit, currency: string) => {
+  if (basis === 'personal' && real.ownRate !== false) return 'at your own rate';
+  const estimated = real.estimated ? ', latest months estimated' : '';
+  return basis === 'official'
+    ? `at the official rate${estimated}`
+    : `no rate of your own for ${currency}, so the official one${estimated}`;
+};
 
 // The other reading of the profit, always on screen beside the one the switch picked, so
 // nothing moves when it changes: the real profit under Nominal, the nominal one under Real.
@@ -122,7 +121,7 @@ function OtherReading({
   if (real === null)
     return (
       <div className="dashboard-hero__real" aria-label="Profit or loss after inflation">
-        <span className="dashboard-hero__period">{NO_REAL[basis]}</span>
+        <span className="dashboard-hero__period">{NO_REAL}</span>
       </div>
     );
   const [label, profit, percentText] =
@@ -145,7 +144,7 @@ function OtherReading({
           'before inflation'
         ) : (
           <>
-            {basisText(basis, real)}
+            {basisText(basis, real, currency)}
             {' · '}
             <Link to="/settings">Settings</Link>
           </>
@@ -200,7 +199,7 @@ function NetWorth({
           <span className="dashboard-hero__period">
             {shownReal ? (
               <>
-                {`real, on ${money(invested, currency)} put in, in today's money · ${basisText(basis, real)} · `}
+                {`real, on ${money(invested, currency)} put in, in today's money · ${basisText(basis, real, currency)} · `}
                 <Link to="/settings">Settings</Link>
               </>
             ) : (

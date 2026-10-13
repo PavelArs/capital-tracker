@@ -329,15 +329,18 @@ async function realProfit(db, s, f) {
      SELECT $1, 'USD', month::date, 0 FROM generate_series('2025-01-01'::date, '2026-10-01'::date, '1 month') month`,
     [f.owner],
   );
-  await db.query(
-    `INSERT INTO inflation_personal_rates ("ownerId", currency, "annualPercent") VALUES ($1, 'USD', 0)`,
-    [f.owner],
-  );
   try {
+    // No own rate yet: the own-rate reading follows the official one and says so.
+    const follow = await read();
+    assert.deepEqual(follow.real.personal, { ...follow.real.official, ownRate: false });
+    await db.query(
+      `INSERT INTO inflation_personal_rates ("ownerId", currency, "annualPercent") VALUES ($1, 'USD', 0)`,
+      [f.owner],
+    );
     const flat = await read();
     const nominal = { invested: flat.invested, profit: flat.profit, profitPercent: flat.profitPercent };
     assert.deepEqual(flat.real.official, { ...nominal, estimated: false });
-    assert.deepEqual(flat.real.personal, { ...nominal, estimated: true });
+    assert.deepEqual(flat.real.personal, { ...nominal, estimated: true, ownRate: true });
     // The owner's own rate of 10% a year makes the money put in worth more today, so less is left.
     await db.query(
       `UPDATE inflation_personal_rates SET "annualPercent" = 10 WHERE "ownerId" = $1 AND currency = 'USD'`,

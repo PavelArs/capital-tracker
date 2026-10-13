@@ -756,7 +756,13 @@ describe('show-dashboard-top-assets', () => {
 describe('Dashboard after inflation', () => {
   const real = {
     official: { invested: '96000', profit: '19000', profitPercent: '19.79', estimated: true },
-    personal: { invested: '92500', profit: '22500', profitPercent: '24.32', estimated: true },
+    personal: {
+      invested: '92500',
+      profit: '22500',
+      profitPercent: '24.32',
+      estimated: true,
+      ownRate: true,
+    },
   };
   beforeEach(() => {
     setValueView('nominal');
@@ -845,8 +851,24 @@ describe('Dashboard after inflation', () => {
     );
     setInflationBasis('personal');
     expect(
-      await within(hero).findByText(/Real profit at your own rate is unknown: set a yearly rate/),
+      await within(hero).findByText(/No real profit: an inflation figure, exchange rate or price/),
     ).toBeInTheDocument();
+  });
+
+  it('DASH-REAL-FOLLOW-OFFICIAL says so when My rate has no rate for the currency', async () => {
+    setInflationBasis('personal');
+    get.mockImplementation(async (period: HistoryPeriod) =>
+      history({
+        period,
+        real: { official: real.official, personal: { ...real.official, ownRate: false } },
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const other = profitLine(hero, 'Profit or loss after inflation');
+    expect(other).toHaveTextContent('After inflation+$19,000.00+19.79%');
+    expect(other).toHaveTextContent('no rate of your own for USD, so the official one');
+    expect(other).not.toHaveTextContent('at your own rate');
   });
 
   it('DASH-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {

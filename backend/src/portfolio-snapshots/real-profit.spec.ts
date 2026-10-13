@@ -1,6 +1,6 @@
 import { buildSeries, officialFactor, personalFactor } from '../inflation/inflation-math';
 import type { StatedFlow } from './capital-flows';
-import { realProfit } from './real-profit';
+import { personalReading, realProfit } from './real-profit';
 
 const SCALE = 10n ** 60n;
 const flow = (iso: string, amount: number | null): StatedFlow => ({
@@ -78,5 +78,17 @@ describe('real profit (INFL-REAL)', () => {
   it('INFL-REAL-UNPRICED gives no profit when no held asset is priced at all', () => {
     const result = realProfit('0', true, [flow('2025-03-15T00:00:00.000Z', 100)], official);
     expect(result?.profit).toBeNull();
+  });
+
+  it('INFL-REAL-FOLLOW-OFFICIAL reads the official figure for a currency with no own rate', () => {
+    const official = { invested: '100', profit: '5', profitPercent: '5', estimated: false };
+    const own = { invested: '110', profit: '-5', profitPercent: '-4.5', estimated: true };
+    const unused = jest.fn(() => own);
+    expect(personalReading(official, unused, false)).toEqual({ ...official, ownRate: false });
+    expect(unused).not.toHaveBeenCalled();
+    expect(personalReading(official, () => own, true)).toEqual({ ...own, ownRate: true });
+    // Without an official figure the data itself is missing: nothing to follow.
+    expect(personalReading(null, unused, false)).toBeNull();
+    expect(personalReading(official, () => null, true)).toBeNull();
   });
 });

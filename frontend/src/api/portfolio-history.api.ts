@@ -18,13 +18,16 @@ export interface HistoryPoint {
 // Profit to date after inflation (INFL-REAL): every deposit and withdrawal is carried to today
 // by the inflation since its day, in the currency of the history. `invested` is that money in
 // today's currency, `profit` the value less it. Null when a deposit lies before the inflation
-// history, a deposit had no rate, or (own rate) no rate is set for the currency.
+// history, a deposit had no rate, or a price or rate is missing. With no own rate set, the
+// own-rate reading is the official one.
 export interface RealProfit {
   invested: string;
   profit: string | null;
   profitPercent: string | null;
   /** The span reaches past the latest published month, or rests on the owner's own rate. */
   estimated: boolean;
+  /** Own-rate reading only: false when the currency has no own rate and this is the official one. */
+  ownRate?: boolean;
 }
 
 export interface PortfolioHistory {
