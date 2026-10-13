@@ -2,6 +2,7 @@ import { accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi } from '@api/manual-prices.api';
+import { type Operation, operationsApi } from '@api/operations.api';
 import {
   type NewPortfolioAsset,
   type PortfolioAsset,
@@ -147,10 +148,11 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   // and Brokers shows it. An account that holds nothing yet goes rather than stay out of reach.
   // A request whose answer was lost is asked again under the same id, which finds what it made.
   // An asset this form made, or showed again, without a saved buy would show as an empty asset
-  // in Portfolio, so it is hidden: once the account is gone (the server removes only an account
-  // without trades), or while the account stays, only if its trades are read in full and none is
-  // of that asset, since a lost answer or another tab may have saved one. Whatever cannot be
-  // settled now keeps the form open, so closing again retries; a second failure closes it and
+  // in Portfolio, so it is hidden, but only if the owner's operations are read and none of them
+  // involves it where it matters, since a lost answer or another tab may have saved one: for an
+  // asset this form made, any operation at all; for one it showed again, any in the account while
+  // the account stays (the server removes only an account without operations). Whatever cannot
+  // be settled now keeps the form open, so closing again retries; a second failure closes it and
   // leaves the rest as it is.
   const finish = async () => {
     const done = saved.current;
@@ -197,22 +199,33 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     const accountId = done.accountId;
     const unbought = (step: SavedHolding) =>
       !!step.asset && !!(step.making || step.wasHidden) && !step.receipt;
-    const traded =
-      !bare && accountId && done.holdings.some(unbought)
-        ? await tradesApi.list(accountId).then(
-            (page) =>
-              page.nextOffset === null
-                ? new Set(page.items.map((trade) => trade.instrumentId))
-                : null,
-            (caught) => {
-              definite(caught);
-              return null;
-            },
-          )
-        : null;
-    const empty = (step: SavedHolding) =>
-      unbought(step) &&
-      (bare || (accountId ? traded !== null && !traded.has(step.asset?.id ?? '') : !step.unsure));
+    const asked = (step: SavedHolding) =>
+      unbought(step) && (!!step.making || (!bare && !!accountId));
+    const used = done.holdings.some(asked)
+      ? await operationsApi.list().then(
+          ({ operations }) => ({
+            anywhere: new Set(operations.flatMap(instruments)),
+            here: new Set(
+              operations
+                .filter(
+                  ({ account, counterAccount }) =>
+                    !!accountId && (account?.id === accountId || counterAccount?.id === accountId),
+                )
+                .flatMap(instruments),
+            ),
+          }),
+          (caught) => {
+            definite(caught);
+            return null;
+          },
+        )
+      : null;
+    const empty = (step: SavedHolding) => {
+      const asset = step.asset?.id ?? '';
+      if (!unbought(step) || (asked(step) && used === null)) return false;
+      if (step.making && used?.anywhere.has(asset)) return false;
+      return bare || (accountId ? !used?.here.has(asset) : !step.unsure);
+    };
     const hidden = await Promise.allSettled(
       done.holdings.flatMap((step) =>
         step.asset && empty(step) ? [hiddenAssetsApi.hide(step.asset.id)] : [],
@@ -580,6 +593,12 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     </Modal>
   );
 }
+
+/** Every asset an operation moves, receives, pays its fee in or settles with. */
+const instruments = (operation: Operation) =>
+  [operation.asset, operation.counterAsset, operation.fee?.asset, operation.settlement?.asset]
+    .map((asset) => asset?.instrumentId)
+    .filter((instrumentId): instrumentId is string => !!instrumentId);
 
 /**
  * The position's asset, or the owner's cash asset in the currency, made the first time it is

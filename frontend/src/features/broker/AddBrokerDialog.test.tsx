@@ -2,9 +2,10 @@ import { accountingApi } from '@api/accounting.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
+import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { forgetReads } from '@api/read-cache';
-import { type TradePage, type TradeReceipt, type TradeVersion, tradesApi } from '@api/trades.api';
+import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -50,11 +51,29 @@ let setPrice: Mock<typeof manualPricesApi.set>;
 let removeAccount: Mock<typeof accountingApi.removeAccount>;
 let hideAsset: Mock<typeof hiddenAssetsApi.hide>;
 let showAsset: Mock<typeof hiddenAssetsApi.show>;
-let listTrades: Mock<typeof tradesApi.list>;
-const page = (instruments: string[]): TradePage => ({
-  journalRevision: instruments.length,
-  items: instruments.map((instrumentId) => ({ instrumentId }) as TradeVersion),
-  nextOffset: null,
+let listOperations: Mock<typeof operationsApi.list>;
+// The owner's operations: each one's asset, and its account (this form's account by default).
+const list = (
+  instruments: string[],
+  extra: Partial<Operation>[] = [],
+  account = id(2),
+): OperationList => ({
+  at: '2026-10-13T08:15:42Z',
+  quoteCurrency: 'USD',
+  needsClassificationCount: 0,
+  dustThresholdUsd: null,
+  operations: [
+    ...instruments.map(
+      (instrumentId) =>
+        ({
+          kind: 'trade',
+          asset: { instrumentId, symbol: null, name: 'Asset' },
+          account: { id: account, name: 'Account' },
+          counterAccount: null,
+        }) as Operation,
+    ),
+    ...extra.map((operation) => operation as Operation),
+  ],
 });
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -98,8 +117,8 @@ beforeEach(() => {
       }) as TradeReceipt,
   );
   vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
-  listTrades = vi.fn<typeof tradesApi.list>(async () => page([]));
-  vi.spyOn(tradesApi, 'list').mockImplementation(listTrades);
+  listOperations = vi.fn<typeof operationsApi.list>(async () => list([]));
+  vi.spyOn(operationsApi, 'list').mockImplementation(listOperations);
   setPrice = vi.fn<typeof manualPricesApi.set>(async () => ({}) as PriceReceipt);
   vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
   removeAccount = vi.fn<typeof accountingApi.removeAccount>(async () => undefined);
@@ -375,7 +394,7 @@ describe('BROKER-ADD Add broker account', () => {
     // Codex P1: a lost answer or a server error does not prove the buy was not saved.
     createTrade.mockRejectedValueOnce(refused(503));
     removeAccount.mockRejectedValueOnce(refused(409));
-    listTrades.mockResolvedValue(page([id(10)]));
+    listOperations.mockResolvedValue(list([id(10)]));
     const user = userEvent.setup();
     const { dialog, onAdded, onClose } = open();
     await fill(user, dialog, {
@@ -577,7 +596,7 @@ describe('BROKER-ADD Add broker account', () => {
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
-  const twoPositions = async (second = refused(503)) => {
+  const twoPositions = async (second = refused(503), closes = 1) => {
     createTrade.mockImplementationOnce(async (_account, command) => ({
       accountId: id(2),
       journalRevision: 1,
@@ -602,40 +621,106 @@ describe('BROKER-ADD Add broker account', () => {
     });
     await user.click(within(rendered.dialog).getByRole('button', { name: 'Add account' }));
     await within(rendered.dialog).findByRole('alert');
-    await user.click(
-      within(rendered.dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
-    );
+    for (let close = 1; close <= closes; close++) {
+      await user.click(
+        within(rendered.dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
+      );
+      if (close < closes)
+        await vi.waitFor(() =>
+          expect(within(rendered.dialog).getByRole('alert')).toHaveTextContent(
+            'Could not undo everything this form added',
+          ),
+        );
+    }
     await vi.waitFor(() => expect(rendered.onAdded).toHaveBeenCalled());
   };
 
   it('hides a later position whose buy got no answer when the account has no trade of it', async () => {
-    // Codex P2: the account's trades settle whether the buy was saved.
-    listTrades.mockResolvedValue(page([id(10)]));
+    // Codex P2: the owner's operations settle whether the buy was saved.
+    listOperations.mockResolvedValue(list([id(10)]));
     await twoPositions();
-    expect(listTrades).toHaveBeenCalledWith(id(2));
+    expect(listOperations).toHaveBeenCalled();
     expect(hideAsset.mock.calls).toEqual([[id(11)]]);
     expect(removeAccount).not.toHaveBeenCalled();
   });
 
   it('keeps a later position whose buy was saved, even once sold again', async () => {
     // Codex P2: a balance sold back to zero still has its buy, so the asset stays.
-    listTrades.mockResolvedValue(page([id(10), id(11), id(11)]));
+    listOperations.mockResolvedValue(list([id(10), id(11), id(11)]));
     await twoPositions();
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
   it('keeps a refused later position that the kept account has a trade of', async () => {
     // Codex P2: another tab may have traded the asset before this buy was refused.
-    listTrades.mockResolvedValue(page([id(10), id(11)]));
+    listOperations.mockResolvedValue(list([id(10), id(11)]));
     await twoPositions(refused(409));
-    expect(listTrades).toHaveBeenCalledWith(id(2));
+    expect(listOperations).toHaveBeenCalled();
     expect(hideAsset).not.toHaveBeenCalled();
   });
 
-  it('hides a refused later position only once the kept account’s trades are read', async () => {
-    listTrades.mockResolvedValue(page([id(10)]));
+  it('hides a refused later position only once the owner’s operations are read', async () => {
+    listOperations.mockResolvedValue(list([id(10)]));
     await twoPositions(refused(409));
     expect(hideAsset.mock.calls).toEqual([[id(11)]]);
+  });
+
+  it.each([
+    ['a reward', { kind: 'reward', asset: { instrumentId: id(11), symbol: null, name: 'Bond' } }],
+    [
+      'a swap',
+      {
+        kind: 'swap',
+        asset: { instrumentId: id(3), symbol: null, name: 'Cash' },
+        counterAsset: { instrumentId: id(11), symbol: null, name: 'Bond' },
+      },
+    ],
+    [
+      'a transfer in',
+      {
+        kind: 'transfer',
+        asset: { instrumentId: id(11), symbol: null, name: 'Bond' },
+        account: { id: id(4), name: 'Other' },
+        counterAccount: { id: id(2), name: 'Account' },
+      },
+    ],
+  ] as [string, Partial<Operation>][])(
+    'keeps a refused later position that %s of the kept account involves',
+    async (_, operation) => {
+      // Codex P2: an account stays for openings, transfers, swaps and rewards as well as trades.
+      listOperations.mockResolvedValue(
+        list([id(10)], [{ account: { id: id(2), name: 'Account' }, ...operation }]),
+      );
+      await twoPositions(refused(409));
+      expect(hideAsset).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps a later position when the owner’s operations cannot be read, and retries once', async () => {
+    listOperations.mockRejectedValue(refused(503));
+    await twoPositions(refused(409), 2);
+    expect(hideAsset).not.toHaveBeenCalled();
+    expect(listOperations).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a new asset that another account uses, even once this account is removed', async () => {
+    // Codex P2: another tab may have recorded the asset this form made anywhere.
+    createTrade.mockRejectedValueOnce(refused(400));
+    listOperations.mockResolvedValue(list([id(10)], [], id(4)));
+    const user = userEvent.setup();
+    const { dialog, onClose } = open();
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'VWRA',
+      'Quantity 1': '30',
+      'Price 1': '142.10',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(removeAccount).toHaveBeenCalledWith(id(2));
+    expect(hideAsset).not.toHaveBeenCalled();
   });
 
   it('stays open when undoing is refused because the session expired', async () => {
