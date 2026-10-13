@@ -108,3 +108,17 @@ test('CACHE-003-A lists every page, opens refs from open pull requests and delet
   await deleteCaches(call, 'o/r', [{ id: 41 }, { id: 42 }]);
   assert.deepEqual(calls.slice(-2), ['DELETE repos/o/r/actions/caches/41', 'DELETE repos/o/r/actions/caches/42']);
 });
+
+test('CACHE-003-B a cache that is already gone does not stop the deletion of the rest, other errors do', async () => {
+  const deleted = [];
+  const gone = async (method, path) => {
+    deleted.push(path);
+    if (path.endsWith('/41')) throw Object.assign(new Error('not found'), { status: 404 });
+  };
+  await deleteCaches(gone, 'o/r', [{ id: 41 }, { id: 42 }]);
+  assert.deepEqual(deleted, ['repos/o/r/actions/caches/41', 'repos/o/r/actions/caches/42']);
+  const denied = async () => {
+    throw Object.assign(new Error('forbidden'), { status: 403 });
+  };
+  await assert.rejects(deleteCaches(denied, 'o/r', [{ id: 1 }]), /forbidden/);
+});

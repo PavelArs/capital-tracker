@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: report (counts and sizes), sweep-dry-run (what the sweep would delete) or sweep
+        description: report (counts and sizes), sweep-dry-run (what the sweep would delete), sweep, or warm-trivy (save today's vulnerability database)
         type: choice
-        options: [report, sweep-dry-run, sweep]
+        options: [report, sweep-dry-run, sweep, warm-trivy]
         default: report
 
 permissions: {}
@@ -56,7 +56,7 @@ jobs:
 
   sweep:
     name: Sweep old caches
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'warm-trivy')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -89,7 +89,7 @@ jobs:
   # reuses the images its pull request scanned, so no scan of main saves it any more.
   warm-trivy:
     name: Keep the vulnerability database cache of main fresh
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'warm-trivy')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

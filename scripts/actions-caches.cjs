@@ -92,7 +92,11 @@ function githubClient(token, api = 'https://api.github.com') {
         'x-github-api-version': '2022-11-28',
       },
     });
-    if (!response.ok) throw new Error(`GitHub API ${method} request failed with ${response.status}`);
+    if (!response.ok) {
+      throw Object.assign(new Error(`GitHub API ${method} request failed with ${response.status}`), {
+        status: response.status,
+      });
+    }
     return response.status === 204 ? undefined : response.json();
   };
 }
@@ -128,8 +132,16 @@ function formatSummary(summary) {
   return lines.join('\n');
 }
 
+// A cache that is already gone (another cleanup run deleted it first, or it was evicted) is the
+// result asked for, so it never stops the deletion of the rest.
 async function deleteCaches(call, repository, caches) {
-  for (const cache of caches) await call('DELETE', `repos/${repository}/actions/caches/${cache.id}`);
+  for (const cache of caches) {
+    try {
+      await call('DELETE', `repos/${repository}/actions/caches/${cache.id}`);
+    } catch (error) {
+      if (error?.status !== 404) throw error;
+    }
+  }
 }
 
 module.exports = { kindOf, familyOf, summarize, selectForSweep, listCaches, openRefsOf, formatSummary, deleteCaches };
