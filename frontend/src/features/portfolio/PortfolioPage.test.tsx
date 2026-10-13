@@ -971,6 +971,43 @@ describe('Portfolio after inflation', () => {
     expect(position()).not.toHaveTextContent('is missing');
   });
 
+  it('ASSET-REAL-DEFLATION words a fall in prices as deflation', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        { ...bitcoin, real: { official: read('60000', '36000', '60.00'), personal: null } },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('$66,000.00 paid − $6,000.00 deflation');
+    expect(position()).not.toHaveTextContent('+ -');
+  });
+
+  it('ASSET-REAL-SOLD-PARTIAL keeps the missing-history state when an account is unavailable', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio(
+        [{ ...bitcoin, quantity: '0', value: '0', real: { official: null, personal: null } }],
+        { unavailableAccountCount: 1 },
+      ),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('an account history starts later');
+    expect(position()).not.toHaveTextContent('Nothing held');
+  });
+
+  it('PF-REAL-DEFLATION words a fall in prices as deflation in the summary', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({ real: { official: read('65000', '35000', '53.85'), personal: null } }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent('$70,000.00 paid − $5,000.00 deflation');
+  });
+
   it('ASSET-REAL-LEGACY stays nominal for an answer saved before real figures existed', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));

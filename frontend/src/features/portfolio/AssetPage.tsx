@@ -44,7 +44,7 @@ import {
   sourceName,
 } from './format';
 import HideAsset from './HideAsset';
-import { inflationAdjustment } from './real-cost';
+import { adjustmentText } from './real-cost';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
@@ -352,7 +352,10 @@ function AssetDetails({
   const reading = asset.real?.[basis] ?? null;
   const showReal = view === 'real' && asset.real !== undefined;
   // A fully sold asset has no lots left, so no real reading: that is not missing data.
-  const sold = Number(asset.quantity) === 0;
+  const empty = Number(asset.quantity) === 0;
+  // With an account whose history starts later, nothing held may only mean nothing known.
+  const sold = empty && portfolio.unavailableAccountCount === 0;
+  const emptyUnknown = empty && !sold;
   return (
     <>
       <div className="portfolio-head">
@@ -421,6 +424,11 @@ function AssetDetails({
                         Nothing held, so there is no real cost or profit
                       </span>
                     </>
+                  ) : emptyUnknown ? (
+                    <>
+                      {DASH}
+                      <span className="portfolio-sub">an account history starts later</span>
+                    </>
                   ) : (
                     <>
                       {DASH}
@@ -434,8 +442,8 @@ function AssetDetails({
                     {amount(reading.costBasis)}
                     {asset.costBasis !== null && (
                       <span className="portfolio-sub">
-                        {amount(asset.costBasis)} paid +{' '}
-                        {amount(inflationAdjustment(reading.costBasis, asset.costBasis))} inflation
+                        {amount(asset.costBasis)} paid{' '}
+                        {adjustmentText(reading.costBasis, asset.costBasis, amount)}
                       </span>
                     )}
                   </>
