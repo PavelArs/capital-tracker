@@ -1,5 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal, GoalScenario } from '@api/goals.api';
+import { isAxiosError } from 'axios';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
@@ -121,24 +122,27 @@ function Cases({ goal }: { goal: Goal }) {
   );
 }
 
-/** How many points a year the pessimistic and optimistic cases sit away from the base one. */
-const spread = (goal: Goal) => {
-  const base = goal.scenarios.find((scenario) => scenario.key === 'base');
-  const high = goal.scenarios.find((scenario) => scenario.key === 'optimistic');
-  return base && high
-    ? rateText((Number(high.returnPercent) - Number(base.returnPercent)).toFixed(4))
-    : '';
-};
+/** How many points a year the pessimistic and optimistic cases sit below and above the base. */
+function offsets(goal: Goal): { less: string; more: string } | null {
+  const rate = (key: GoalScenario['key']) =>
+    goal.scenarios.find((scenario) => scenario.key === key)?.returnPercent;
+  const [low, base, high] = [rate('pessimistic'), rate('base'), rate('optimistic')];
+  if (low === undefined || base === undefined || high === undefined) return null;
+  return {
+    less: rateText((Number(base) - Number(low)).toFixed(4)),
+    more: rateText((Number(high) - Number(base)).toFixed(4)),
+  };
+}
 
 // GOAL-PAGE: one goal with its figures, the verdict and the three return cases.
 export default function GoalPage() {
   const { goalId = '' } = useParams();
-  const { data: list, error, reload } = useCachedRead(cachedReads.goals);
+  const { data: goal, error, replace } = useCachedRead(cachedReads.goal, goalId);
   const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
   const navigate = useNavigate();
-  const goal = list?.items.find((item) => item.id === goalId) ?? null;
+  const missing = isAxiosError(error) && error.response?.status === 404;
 
-  if (list !== null && goal === null)
+  if (missing)
     return (
       <div className="shell-page">
         <PageHeader title="Goal" />
@@ -153,6 +157,7 @@ export default function GoalPage() {
   const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
   const left = goal?.deadline ? timeLeft(goal.deadline) : null;
   const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
+  const gap = goal ? offsets(goal) : null;
   const against = againstTarget(base?.gap ?? null, goal?.currency ?? 'USD');
 
   return (
@@ -185,7 +190,7 @@ export default function GoalPage() {
       <p className="goal-back">
         <Link to="/goals">← Goals</Link>
       </p>
-      {error && list === null ? (
+      {error && goal === null ? (
         <p className="shell-note" role="alert">
           Could not load the goal. Try again later.
         </p>
@@ -275,8 +280,13 @@ export default function GoalPage() {
             <section className="shell-card" aria-labelledby="goal-cases">
               <h2 id="goal-cases">Three cases</h2>
               <p className="shell-note">
-                The same plan at {spread(goal)} points less and more a year than the{' '}
-                {rateText(goal.expectedReturnPercent)}% you expect.
+                The same plan at{' '}
+                {gap
+                  ? gap.less === gap.more
+                    ? `${gap.less} points less and more`
+                    : `${gap.less} points less and ${gap.more} more`
+                  : 'other rates'}{' '}
+                a year than the {rateText(goal.expectedReturnPercent)}% you expect.
               </p>
               <Cases goal={goal} />
               <p className="shell-note">
@@ -292,9 +302,9 @@ export default function GoalPage() {
               goal={goal}
               defaultCurrency={goal.currency}
               onClose={() => setDialog(null)}
-              onSaved={() => {
+              onSaved={(saved) => {
                 setDialog(null);
-                reload();
+                replace(saved);
               }}
             />
           )}

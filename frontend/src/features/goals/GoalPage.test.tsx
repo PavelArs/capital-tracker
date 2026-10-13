@@ -1,7 +1,8 @@
-import { type Goal, type GoalList, goalsApi } from '@api/goals.api';
+import { type Goal, goalsApi } from '@api/goals.api';
 import { forgetReads } from '@api/read-cache';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { AxiosError } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GoalPage from './GoalPage';
@@ -55,7 +56,18 @@ const open: Goal = {
     gap: null,
   })),
 };
-const list = (items: Goal[]): GoalList => ({ asOf: '2026-10-13', items });
+const answers = (...items: Goal[]) =>
+  vi.spyOn(goalsApi, 'get').mockImplementation(async (id) => {
+    const found = items.find((item) => item.id === id);
+    if (found) return found;
+    throw new AxiosError('Not found', undefined, undefined, undefined, {
+      status: 404,
+      data: { message: 'Not found' },
+      statusText: 'Not Found',
+      headers: {},
+      config: {} as never,
+    });
+  });
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -76,7 +88,7 @@ function show(goal: Goal) {
 
 describe('GOAL-PAGE: one goal with its figures and the three return cases', () => {
   it('shows the figures, the verdict and the cases of a goal with a date', async () => {
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([dated, open]));
+    answers(dated, open);
     show(dated);
     expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
     expect(screen.getByText('Behind')).toBeInTheDocument();
@@ -104,7 +116,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
   });
 
   it('shows when a goal without a date is reached, in each case', async () => {
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([dated, open]));
+    answers(dated, open);
     show(open);
     expect(await screen.findByRole('heading', { name: 'Reserve B' })).toBeInTheDocument();
     expect(screen.getByText('No date', { selector: '.goal-stat__value' })).toBeInTheDocument();
@@ -119,7 +131,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
   });
 
   it('says so when the goal does not exist', async () => {
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([open]));
+    answers(open);
     show(dated);
     expect(await screen.findByRole('alert')).toHaveTextContent('This goal does not exist');
     expect(screen.getByRole('link', { name: 'Back to goals' })).toHaveAttribute('href', '/goals');
@@ -127,23 +139,34 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
 
   it('changes the goal and shows the new entries', async () => {
     const user = userEvent.setup();
-    const answer = vi.spyOn(goalsApi, 'list').mockResolvedValue(list([dated]));
-    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue(dated);
+    answers(dated);
+    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...dated, name: 'Flat' });
     show(dated);
     await screen.findByRole('heading', { name: 'Down payment A' });
     await user.click(screen.getByRole('button', { name: 'Edit goal' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
     await user.clear(within(dialog).getByLabelText('Name'));
     await user.type(within(dialog).getByLabelText('Name'), 'Flat');
-    answer.mockResolvedValue(list([{ ...dated, name: 'Flat' }]));
     await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(await screen.findByRole('heading', { name: 'Flat' })).toBeInTheDocument();
   });
 
+  it('names the real offsets when the pessimistic case is held at 0%', async () => {
+    answers({ ...dated, expectedReturnPercent: '2.0000', scenarios: scenarios(['0', '2', '6']) });
+    show(dated);
+    expect(await screen.findByText(/at 2 points less and 4 more a year/i)).toBeInTheDocument();
+  });
+
+  it('shows the real failure instead of a missing goal when the read fails', async () => {
+    vi.spyOn(goalsApi, 'get').mockRejectedValue(new Error('offline'));
+    show(dated);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the goal');
+  });
+
   it('deletes the goal and goes back to the list', async () => {
     const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([dated]));
+    answers(dated);
     const remove = vi.spyOn(goalsApi, 'remove').mockResolvedValue();
     show(dated);
     await screen.findByRole('heading', { name: 'Down payment A' });
