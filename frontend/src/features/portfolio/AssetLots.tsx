@@ -5,7 +5,7 @@ import {
   type LotAfterInflation,
   type LotReading,
 } from '@api/portfolio-valuation.api';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { dayText } from '@/utils/dates';
@@ -16,6 +16,10 @@ import { useCachedRead } from '../shell/useCachedRead';
 import { Signed } from './asset-parts';
 import { DASH, money, percent, quantity, tone } from './format';
 import './portfolio.css';
+
+// The figures whose refresh failed, by asset and currency, for the whole session: a card shown again
+// (the page was left and came back) warns about the figures the cache still keeps for it.
+const failedRefreshes = new Map<string, AssetLots>();
 
 /** Two lots of one account can share an instant, so a repeat gets a number to keep keys unique. */
 function keyed(lots: readonly LotAfterInflation[]): [string, LotAfterInflation][] {
@@ -228,13 +232,12 @@ export default function AssetLotsCard({
   const { data: answer, error, reload } = read;
   // The hook clears its error when a load starts, so the warning is kept here, for each asset and
   // currency. It belongs to the figures that were on screen when its load failed: it stays until
-  // an answer replaces those figures.
+  // an answer replaces those figures, also when the card is shown again (the cache keeps them).
   const scope = `${instrumentId}:${asked ?? ''}`;
-  const [failures, setFailures] = useState<Record<string, AssetLots | null>>({});
   useEffect(() => {
-    if (error !== null) setFailures((previous) => ({ ...previous, [scope]: answer }));
+    if (error !== null && answer !== null) failedRefreshes.set(scope, answer);
   }, [error, answer, scope]);
-  const stale = scope in failures && failures[scope] === answer;
+  const stale = error !== null || (answer !== null && failedRefreshes.get(scope) === answer);
   // A fresh portfolio answer (a saved price) changes the values, so the lots are asked again.
   // The mount already asked, so only a change of `at` asks.
   const shownAt = useRef(at);
