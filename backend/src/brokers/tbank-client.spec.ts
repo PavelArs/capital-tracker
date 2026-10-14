@@ -6,7 +6,7 @@ import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decimal, isTBankToken, parsePositions, parseAccounts, TBankClient } from './tbank-client';
+import { decimal, isTBankToken, parseAccounts, parsePositions, TBankClient } from './tbank-client';
 
 // BROKER-CONNECT: synthetic tokens and ids only; never an owner's account.
 const token = 't.SyntheticToken000000000000000001';

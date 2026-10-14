@@ -30,7 +30,8 @@ function build(
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
-    if (sql.includes('SELECT credentials')) return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
+    if (sql.includes('SELECT credentials'))
+      return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
     if (sql.includes('INSERT INTO broker_connections')) writes.push(parameters);
     if (sql.includes('FROM broker_connections'))
       return writes.length
