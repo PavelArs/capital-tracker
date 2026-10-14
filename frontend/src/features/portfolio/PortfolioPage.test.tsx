@@ -1348,6 +1348,14 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     );
   });
 
+  it('LOTS-NOTE-READING explains the dash when only the inflation figure is missing', async () => {
+    withLots([lot({ real: { official: null, personal: null } })]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(region).toHaveTextContent('$12,000.00');
+    expect(region).toHaveTextContent('A dash means a purchase price');
+  });
+
   it('LOTS-EMPTY says nothing is held instead of drawing an empty table', async () => {
     withLots([]);
     renderAt(`/portfolio/${bitcoin.instrumentId}`);

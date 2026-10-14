@@ -288,7 +288,7 @@ export default function AssetLotsCard({
             <p className="shell-note portfolio-note">
               A purchase is ahead in real terms when it is worth more than what you paid grown by{' '}
               {answer.currency} inflation since that day.
-              {answer.lots.some((lot) => lot.paid === null) &&
+              {answer.lots.some((lot) => readingOf(lot, basis) === null) &&
                 ' A dash means a purchase price, a Bank of Russia rate or an inflation figure is missing for that purchase.'}
             </p>
           )}
