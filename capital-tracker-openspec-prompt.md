@@ -1,5 +1,9 @@
 # Capital Tracker — Brownfield Refactor with OpenSpec, Agentic ATDD and GitHub Actions
 
+> Status: the owner decisions in [docs/product-requirements.md §1](docs/product-requirements.md#1-owner-answers-and-decisions)
+> supersede this brief where they differ; for example, D6 makes the interface English. This brief in
+> turn supersedes older MVP exclusions and stale architecture or status descriptions in other docs.
+
 You are the lead engineer working inside my existing Capital Tracker repository. Refactor and simplify it into a private, single-owner, self-hosted cryptocurrency portfolio application.
 
 Use OpenSpec for specification-driven development and acceptance-test-driven development (ATDD) for implementation. Deliver working vertical slices, executable acceptance tests, and a reproducible deployment pipeline—not just a plan or a UI prototype.
