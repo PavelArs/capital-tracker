@@ -1379,6 +1379,21 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(errors.mock.calls.flat().join(' ')).not.toContain('same key');
   });
 
+  it('LOTS-PHONE-NOMINAL-READ shows the nominal profit under the real one in a phone row', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    withLots([lot()]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent(
+      '+$2,800.00 · +21.21%nominal +$4,000.00',
+    );
+  });
+
   it('LOTS-PHONE-NOMINAL keeps the nominal profit of a purchase whose real reading is missing', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: true,

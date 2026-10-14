@@ -178,17 +178,24 @@ function LotsList({
                     )}
                   </>
                 ) : (
-                  <span
-                    className={
-                      tone(reading.unrealizedPnl)
-                        ? `portfolio-${tone(reading.unrealizedPnl)}`
-                        : undefined
-                    }
-                  >
-                    {money(reading.unrealizedPnl, currency, true)}
-                    {reading.unrealizedReturnPercent !== null &&
-                      ` · ${percent(reading.unrealizedReturnPercent)}`}
-                  </span>
+                  <>
+                    <span
+                      className={
+                        tone(reading.unrealizedPnl)
+                          ? `portfolio-${tone(reading.unrealizedPnl)}`
+                          : undefined
+                      }
+                    >
+                      {money(reading.unrealizedPnl, currency, true)}
+                      {reading.unrealizedReturnPercent !== null &&
+                        ` · ${percent(reading.unrealizedReturnPercent)}`}
+                    </span>
+                    {lot.nominalPnl !== null && (
+                      <span className="portfolio-sub">
+                        nominal {money(lot.nominalPnl, currency, true)}
+                      </span>
+                    )}
+                  </>
                 )
               }
             />
