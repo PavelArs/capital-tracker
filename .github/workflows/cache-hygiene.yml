@@ -1,0 +1,114 @@
+name: Cache hygiene
+
+# Keeps the Actions cache from filling up with copies nobody will read again (owner request
+# 2026-10-13). A closed pull request loses its caches at once; a daily sweep removes caches under
+# refs without an open pull request, older copies of the same key family and caches unused for
+# MAX_AGE_DAYS days. scripts/actions-caches.cjs holds the rules and their tests.
+on:
+  # Runs the workflow of the base branch and checks out no pull request code.
+  pull_request_target:
+    types: [closed]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: report (counts and sizes), sweep-dry-run (what the sweep would delete), sweep, or warm-trivy (save today's vulnerability database)
+        type: choice
+        options: [report, sweep-dry-run, sweep, warm-trivy]
+        default: report
+
+permissions: {}
+
+concurrency:
+  group: cache-hygiene-${{ github.event_name }}-${{ github.event.pull_request.number || 'all' }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "26.10.0"
+
+jobs:
+  closed-pull-request:
+    name: Delete the caches of a closed pull request
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Delete the caches saved under the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: node scripts/actions-caches.cjs delete-ref "$PULL_REF"
+      - name: Delete the caches saved under its branch
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref != github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_REF: refs/heads/${{ github.event.pull_request.head.ref }}
+        run: node scripts/actions-caches.cjs delete-ref "$BRANCH_REF"
+
+  sweep:
+    name: Sweep old caches
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'warm-trivy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Report the cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/actions-caches.cjs report
+      - name: Sweep the cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_AGE_DAYS: '5'
+          # A manual run may only look; the daily schedule and mode=sweep delete.
+          SWEEP_FLAGS: ${{ github.event_name == 'schedule' && '--apply' || (inputs.mode == 'sweep' && '--apply' || '') }}
+          SKIP_SWEEP: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'report' }}
+        run: |
+          if [[ "$SKIP_SWEEP" == true ]]; then exit 0; fi
+          # shellcheck disable=SC2086
+          node scripts/actions-caches.cjs sweep $SWEEP_FLAGS
+
+  # Pull requests read the vulnerability database from the cache of main, but a normal push to main
+  # reuses the images its pull request scanned, so no scan of main saves it any more.
+  warm-trivy:
+    name: Keep the vulnerability database cache of main fresh
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'warm-trivy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.74.0
+      - name: Download the vulnerability databases
+        env:
+          # The path and key the image scan job in ci.yml restores.
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+        # Only the vulnerability database: the Java database is 0.9 GiB and the scans never use it.
+        run: trivy image --download-db-only
+      - name: Find the day of the vulnerability database
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Save the vulnerability databases
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.cache/trivy
+          key: cache-trivy-${{ steps.day.outputs.day }}
