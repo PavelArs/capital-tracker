@@ -38,6 +38,36 @@ export interface RealReadings {
   personal: RealReading | null;
 }
 
+/** One purchase carried to today (INFL-REAL-LOTS): the reading of one lot of one asset. */
+export interface LotReading extends RealReading {
+  /** What prices rose by since the day the lot was acquired, in percent. */
+  inflationPercent: string;
+}
+
+export interface LotAfterInflation {
+  accountId: string;
+  accountName: string;
+  acquiredAt: string;
+  quantity: string;
+  /** Null when the lot has no cost, or none can be stated in the report currency. */
+  paid: string | null;
+  value: string | null;
+  nominalPnl: string | null;
+  real: {
+    official: LotReading | null;
+    personal: LotReading | null;
+  };
+}
+
+export interface AssetLots {
+  instrumentId: string;
+  currency: AccountingCurrency;
+  /** False while an account whose history starts later may hold more lots than are listed. */
+  complete: boolean;
+  /** Newest first. */
+  lots: LotAfterInflation[];
+}
+
 export interface AssetValuation {
   instrumentId: string;
   name: string;
@@ -135,6 +165,14 @@ export const portfolioValuationApi = {
     const response = await apiClient.get<PortfolioValuation>('/accounting/portfolio', {
       params: currency ? { currency } : undefined,
     });
+    return response.data;
+  },
+  /** The held lots of one asset with their cost and profit after inflation, newest first. */
+  lots: async (instrumentId: string, currency?: AccountingCurrency): Promise<AssetLots> => {
+    const response = await apiClient.get<AssetLots>(
+      `/accounting/portfolio/assets/${encodeURIComponent(instrumentId)}/lots`,
+      { params: currency ? { currency } : undefined },
+    );
     return response.data;
   },
 };

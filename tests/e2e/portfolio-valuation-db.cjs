@@ -356,6 +356,37 @@ async function wholePortfolio(db, s, f) {
     assert.ok(Number(rising.real.personal.unrealizedPnl) < Number(rising.unrealizedPnl), 'Profit shrinks');
     assert.deepEqual(rising.real.official, flat.real.official, 'The official reading is the same');
     assert.equal(rising.costBasis, flat.costBasis, 'The nominal figures do not change');
+    // INFL-REAL-LOTS: the lots of one asset add up to the asset's own reading.
+    const lotsOf = await s.portfolio.lots(owner, btc, {}, now);
+    assert.equal(lotsOf.instrumentId, btc);
+    assert.equal(lotsOf.currency, rising.currency);
+    assert.ok(lotsOf.lots.length > 0, 'A held asset lists its lots');
+    // Exact decimal sums: a float tolerance would let a lost fraction or whole units pass.
+    const SCALE = 60;
+    const exact = (text) => {
+      const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(text));
+      assert.ok(match, `${text} is not a decimal amount`);
+      const fraction = match[3] ?? '';
+      assert.ok(fraction.length <= SCALE, `${text} has more than ${SCALE} decimals`);
+      const value = BigInt(`${match[2]}${fraction.padEnd(SCALE, '0')}`);
+      return match[1] === '-' ? -value : value;
+    };
+    const sum = (pick) =>
+      lotsOf.lots.reduce((total, lot) => total + (pick(lot) === null ? 0n : exact(pick(lot))), 0n);
+    const same = (total, expected) =>
+      assert.equal(total, expected === null ? 0n : exact(expected), `${total} is not ${expected}`);
+    // Bitcoin here holds only purchases (0.05 for 3500 and 0.01 for 600 USD, no sale), so its held
+    // cost is 4100 and the purchase lots add up to that subtotal. A reward or a gift in this
+    // fixture would make the asset-wide figures larger than the purchases; then compare to the
+    // purchase subtotal instead.
+    same(exact(bitcoinOf(rising).costBasis), '4100');
+    same(sum((lot) => lot.paid), '4100');
+    same(sum((lot) => lot.real.official.costBasis), bitcoinOf(rising).real.official.costBasis);
+    same(sum((lot) => lot.real.personal.costBasis), bitcoinOf(rising).real.personal.costBasis);
+    assert.ok(lotsOf.lots.every((lot) => lot.real.personal.ownRate === true));
+    const days = lotsOf.lots.map((lot) => lot.acquiredAt);
+    assert.deepEqual(days, [...days].sort().reverse(), 'Newest first');
+    await assert.rejects(s.portfolio.lots(owner, randomUUID(), {}, now), /Not found/);
   } finally {
     await db.query('DELETE FROM inflation_manual_months WHERE "ownerId" = $1', [owner]);
     await db.query('DELETE FROM inflation_personal_rates WHERE "ownerId" = $1', [owner]);

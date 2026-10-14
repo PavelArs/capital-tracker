@@ -1,7 +1,18 @@
 import { type FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import type { InflationFactor } from '../inflation/inflation-math';
-import { canonicalDecimalToAtoms, formatAtoms, formatPercent, formatSignedProduct } from './money';
-import { convertAmount, type PortfolioAccountInput } from './portfolio-valuation';
+import { personalReading } from '../portfolio-snapshots/real-profit';
+import {
+  canonicalDecimalToAtoms,
+  formatAtoms,
+  formatPercent,
+  formatProduct,
+  formatSignedProduct,
+} from './money';
+import {
+  convertAmount,
+  type PortfolioAccountInput,
+  type PortfolioLot,
+} from './portfolio-valuation';
 
 // INFL-REAL-PF: what the held lots cost in today's money. Each lot is carried to today by the
 // inflation since the Moscow day it was acquired, so the real profit is the value less that.
@@ -37,6 +48,30 @@ const reading = (cost: bigint, value: bigint | null, estimated: boolean): RealRe
   };
 };
 
+/** What one lot cost in the report currency at its day's rate; null without a cost or a rate. */
+const paidOf = (lot: PortfolioLot, fx: FxConverter) =>
+  lot.costUsd === null ? null : convertAmount(fx, lot.costUsd, lot.acquiredAt, lot.native);
+
+/**
+ * What one lot cost, carried to today by the inflation since its day. Null when the lot has no
+ * cost, no rate or no factor.
+ */
+function grownCost(
+  lot: PortfolioLot,
+  fx: FxConverter,
+  factorOf: (day: string) => InflationFactor | null,
+): { cost: bigint; percent: string; estimated: boolean } | null {
+  const paid = paidOf(lot, fx);
+  const factor = paid === null ? null : factorOf(moscowDate(lot.acquiredAt));
+  if (paid === null || factor === null) return null;
+  const scaled = BigInt(Math.round(factor.factor * 1e10));
+  return {
+    cost: (paid * scaled) / FACTOR_SCALE,
+    percent: formatPercent(scaled - FACTOR_SCALE, FACTOR_SCALE),
+    estimated: factor.estimated,
+  };
+}
+
 /**
  * The real cost and real profit of each held asset and of all of them together. An asset is
  * null when one of its lots has no cost, no rate or no factor (a partial sum would read as a
@@ -57,17 +92,14 @@ export function realReadings(
       if (canonicalDecimalToAtoms(lot.quantity) === 0n) continue;
       const entry = costs.get(lot.instrumentId);
       if (entry === null) continue;
-      const base =
-        lot.costUsd === null ? null : convertAmount(fx, lot.costUsd, lot.acquiredAt, lot.native);
-      const factor = base === null ? null : factorOf(moscowDate(lot.acquiredAt));
-      if (base === null || factor === null) {
+      const grown = grownCost(lot, fx, factorOf);
+      if (grown === null) {
         costs.set(lot.instrumentId, null);
         continue;
       }
-      const grown = (base * BigInt(Math.round(factor.factor * 1e10))) / FACTOR_SCALE;
       costs.set(lot.instrumentId, {
-        cost: (entry?.cost ?? 0n) + grown,
-        estimated: (entry?.estimated ?? false) || factor.estimated,
+        cost: (entry?.cost ?? 0n) + grown.cost,
+        estimated: (entry?.estimated ?? false) || grown.estimated,
       });
     }
   const byAsset = new Map<string, RealReading | null>();
@@ -100,4 +132,79 @@ export function realReadings(
         ? null
         : reading(total.cost, total.value, total.estimated),
   };
+}
+
+/** One purchase (a FIFO lot still held) read on its own. */
+export interface LotAfterInflation {
+  accountId: string;
+  accountName: string;
+  acquiredAt: string;
+  quantity: string;
+  /** What it cost at its day's rate; null without a cost or a rate. */
+  paid: string | null;
+  /** The lot's quantity at today's price; null without a price. */
+  value: string | null;
+  nominalPnl: string | null;
+  real: {
+    official: LotReading | null;
+    personal: (LotReading & { ownRate: boolean }) | null;
+  };
+}
+/** A lot's `RealReading`, with the inflation since its day in percent. */
+export interface LotReading extends RealReading {
+  inflationPercent: string;
+}
+
+/**
+ * INFL-REAL-LOTS: each held lot of one asset, newest first, with what it cost in today's money
+ * and the profit over it. A lot with no cost, no rate or no factor is unread on its own; the
+ * others still read. A currency with no own rate follows the official one (`ownRate: false`).
+ */
+export function lotsAfterInflation(input: {
+  instrumentId: string;
+  accounts: readonly PortfolioAccountInput[];
+  fx: FxConverter;
+  /** One unit's price in the report currency; null without a price. */
+  price: string | null;
+  official: (day: string) => InflationFactor | null;
+  personal: ((day: string) => InflationFactor | null) | null;
+}): LotAfterInflation[] {
+  const { instrumentId, accounts, fx, price } = input;
+  const unit = price === null ? null : canonicalDecimalToAtoms(price);
+  const rows: LotAfterInflation[] = [];
+  for (const account of accounts)
+    for (const lot of account.lots) {
+      // Only purchases are listed: a reward or a received coin has no price paid to show.
+      if (lot.instrumentId !== instrumentId || lot.purchase !== true) continue;
+      const quantity = canonicalDecimalToAtoms(lot.quantity);
+      if (quantity === 0n) continue;
+      const value = unit === null ? null : quantity * unit;
+      const read = (factorOf: (day: string) => InflationFactor | null) => {
+        const grown = grownCost(lot, fx, factorOf);
+        return grown === null
+          ? null
+          : { inflationPercent: grown.percent, ...reading(grown.cost, value, grown.estimated) };
+      };
+      const official = read(input.official);
+      const paid = paidOf(lot, fx);
+      rows.push({
+        accountId: account.accountId,
+        accountName: account.name,
+        acquiredAt: lot.acquiredAt,
+        quantity: lot.quantity,
+        paid: paid === null ? null : formatAtoms(paid),
+        value: value === null ? null : formatProduct(value),
+        nominalPnl:
+          value === null || paid === null ? null : formatSignedProduct(value - paid * ATOM_SCALE),
+        real: {
+          official,
+          personal: personalReading(
+            official,
+            () => (input.personal === null ? null : read(input.personal)),
+            input.personal !== null,
+          ),
+        },
+      });
+    }
+  return rows.sort((a, b) => b.acquiredAt.localeCompare(a.acquiredAt));
 }

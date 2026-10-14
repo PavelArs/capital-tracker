@@ -34,6 +34,27 @@ export interface NativeAmount {
   currency: PaidCurrency;
   amount: string;
 }
+/**
+ * Whether a held FIFO lot was bought, however it moved since: an own transfer keeps its origin.
+ * A reward, a swap, a coin received without a purchase and an opening (carry-in) lot are not:
+ * opening cost is not a recorded purchase. `isBoughtTrade` says whether a buy trade is a purchase:
+ * income, gifts received and the cash a sale brought in are buys in FIFO too, but not paid for.
+ */
+export function isPurchase(
+  lot: {
+    sourceKind?: string;
+    origin?: LotOrigin;
+    buyTradeId?: string;
+    buyVersion?: number;
+  },
+  isBoughtTrade: (tradeId: string, version: number) => boolean,
+): boolean {
+  if (lot.buyTradeId !== undefined) {
+    return lot.buyVersion !== undefined && isBoughtTrade(lot.buyTradeId, lot.buyVersion);
+  }
+  return lot.origin?.kind === 'trade' && isBoughtTrade(lot.origin.tradeId, lot.origin.version);
+}
+
 /** A held FIFO fragment with its original acquisition instant (Q1: cost at that date). */
 export interface PortfolioLot {
   instrumentId: string;
@@ -41,6 +62,8 @@ export interface PortfolioLot {
   costUsd: string | null;
   acquiredAt: string;
   native?: NativeAmount;
+  /** Set on a lot bought or carried in as a purchase; a reward, swap or received coin is not. */
+  purchase?: true;
 }
 export interface ConsumedCost {
   costUsd: string | null;
@@ -244,6 +267,14 @@ export function portfolioAccount(
       .filter((trade) => trade.paid)
       .map((trade) => [tradeKey(trade.tradeId, trade.version), trade]),
   );
+  // A purchase is a buy with no purpose; the cash a sale brought in is a buy of the sale's trade.
+  const bought = new Set(
+    [...(journal.linkedTrades ?? []), ...journal.trades]
+      .filter((trade) => trade.side === 'buy' && trade.purpose === undefined)
+      .map((trade) => tradeKey(trade.tradeId, trade.version)),
+  );
+  const isBoughtTrade = (tradeId: string, version: number) =>
+    bought.has(tradeKey(tradeId, version));
   const fromOrigin = (origin: LotOrigin, quantity: string) =>
     origin.kind === 'trade'
       ? nativeShare(paid.get(tradeKey(origin.tradeId, origin.version)), quantity)
@@ -271,6 +302,7 @@ export function portfolioAccount(
       quantity: lot.remainingQuantity,
       costUsd: lot.remainingCostUsd,
       acquiredAt,
+      ...(isPurchase(lot, isBoughtTrade) ? { purchase: true as const } : {}),
       ...native(
         'origin' in lot
           ? fromOrigin(lot.origin, lot.remainingQuantity)
