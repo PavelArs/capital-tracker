@@ -22,6 +22,7 @@ import {
   parseUuid,
 } from './deposit-input';
 import {
+  addMonths,
   bankBalanceOf,
   centsText,
   type DepositCurrency,
@@ -34,9 +35,11 @@ import {
   projectDeposit,
 } from './deposit-interest';
 import {
+  depositChart,
   depositReal,
   type InflationReadings,
   inflationReadings,
+  inTodaysMoney,
   periodsAfterInflation,
 } from './deposit-real';
 import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
@@ -510,6 +513,10 @@ export class DepositsService {
             date: terms.endDate as string,
             balance: maturity.balance,
             interest: centsText(canonicalDecimalToAtoms(maturity.interestPosted)),
+            // The balance on the end date in the money of the day asked (null past the end).
+            inTodaysMoney: readings
+              ? inTodaysMoney(maturity.balance, asOf, terms.endDate as string, readings)
+              : { official: null, personal: null },
           }
         : null,
       lastCheck,
@@ -532,6 +539,23 @@ export class DepositsService {
     );
     const official = readings && periodsAfterInflation(projection.periods, held, readings.official);
     const personal = readings && periodsAfterInflation(projection.periods, held, readings.personal);
+    // The value by month from the start to the day asked, and the day itself.
+    const dates: string[] = [];
+    for (let months = 0; ; months++) {
+      const date = addMonths(terms.startDate, months);
+      if (date > asOf) break;
+      dates.push(date);
+    }
+    if (dates.at(-1) !== asOf) dates.push(asOf);
+    const chart = readings
+      ? depositChart(
+          dates,
+          depositBalances(terms, movementsOf(stored), dates),
+          movementsOf(stored),
+          asOf,
+          readings,
+        )
+      : [];
     return {
       ...this.view(stored, asOf, converters, readings),
       asOf,
@@ -548,6 +572,7 @@ export class DepositsService {
           amount: row.amount,
           comment: row.comment,
         })),
+      chart,
       periods: projection.periods.map((period, index) => ({
         ...period,
         afterInflation: {

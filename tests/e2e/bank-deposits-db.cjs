@@ -632,6 +632,18 @@ async function afterInflation(db, service, owner) {
     );
     assert.equal(rising.interestEarned, flat.interestEarned, 'The nominal figures do not change');
     assert.ok((await service.list(owner, at)).items[0].real.personal.gain !== null);
+    // The chart runs monthly to the day asked, and on that day the figures are the balance itself.
+    const last = rising.chart.at(-1);
+    assert.equal(last.date, at);
+    assert.equal(last.balance, rising.balance);
+    assert.equal(last.real.personal.balance, rising.balance, 'Money of the day asked: no carrying');
+    assert.equal(last.real.official.balance, rising.balance);
+    const first = rising.chart[0];
+    assert.ok(
+      Number(first.real.personal.invested) > Number(first.invested),
+      'Money put in a year ago is worth more today at 10% inflation',
+    );
+    assert.equal(first.real.official.invested, first.invested, 'Zero official inflation');
   } finally {
     await db.query('DELETE FROM inflation_manual_months WHERE "ownerId" = $1', [owner]);
     await db.query('DELETE FROM inflation_personal_rates WHERE "ownerId" = $1', [owner]);

@@ -14,6 +14,8 @@ import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
+import { useValueView } from '../shell/value-view';
+import DepositChart from './DepositChart';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
 import {
   attention,
@@ -197,6 +199,7 @@ export default function DepositPage() {
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
   const [asked] = useAskedCurrency();
   const [basis] = useInflationBasis();
+  const [view] = useValueView();
   const { main } = useMainCurrency();
   const navigate = useNavigate();
   const shown = asked ?? main ?? 'USD';
@@ -346,7 +349,14 @@ export default function DepositPage() {
               <Stat
                 label="At the end of the term"
                 value={money(deposit.atMaturity.balance, own)}
-                hint={`${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`}
+                hint={[
+                  `${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`,
+                  deposit.atMaturity.inTodaysMoney &&
+                    deposit.atMaturity.inTodaysMoney[basis] !== null &&
+                    `≈ ${money(deposit.atMaturity.inTodaysMoney[basis], own)} in today's money`,
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
               />
             )}
             {check && (
@@ -359,6 +369,15 @@ export default function DepositPage() {
               />
             )}
           </div>
+
+          {deposit.chart && deposit.chart.length > 0 && (
+            <DepositChart
+              points={deposit.chart}
+              currency={own}
+              real={view === 'real'}
+              basis={basis}
+            />
+          )}
 
           <section className="shell-card" aria-labelledby="deposit-periods">
             <h2 id="deposit-periods">Interest by period</h2>
