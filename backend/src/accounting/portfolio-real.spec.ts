@@ -1,5 +1,5 @@
 import type { InflationFactor } from '../inflation/inflation-math';
-import { realReadings } from './portfolio-real';
+import { lotsAfterInflation, realReadings } from './portfolio-real';
 import { type PortfolioAccountInput, type PortfolioLot, usdOnly } from './portfolio-valuation';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -13,6 +13,7 @@ const lot = (
   quantity,
   costUsd,
   acquiredAt,
+  purchase: true,
 });
 const account = (lots: PortfolioLot[]): PortfolioAccountInput => ({
   accountId: id(100),
@@ -133,5 +134,130 @@ describe('real portfolio readings (INFL-REAL-PF)', () => {
     // The covered asset is still read; only the whole-portfolio figure would be partial.
     expect(result.byAsset.get(id(1))?.costBasis).toBe('150');
     expect(result.total).toBeNull();
+  });
+});
+
+describe('lots after inflation (INFL-REAL-LOTS)', () => {
+  const fx = usdOnly();
+  const lots = [
+    lot(1, '1', '100', '2025-01-10T09:00:00.000Z'),
+    lot(1, '2', '200', '2026-01-10T09:00:00.000Z'),
+  ];
+  const rows = (
+    options: {
+      lots?: PortfolioLot[];
+      price?: string | null;
+      personal?: ((day: string) => InflationFactor | null) | null;
+    } = {},
+  ) =>
+    lotsAfterInflation({
+      instrumentId: id(1),
+      accounts: [account(options.lots ?? lots)],
+      fx,
+      price: options.price === undefined ? '200' : options.price,
+      official: factor,
+      personal: options.personal ?? null,
+    });
+
+  it('INFL-REAL-LOTS-ROW reads each purchase on its own, newest first', () => {
+    const [newest, oldest] = rows();
+    expect(newest).toEqual({
+      accountId: id(100),
+      accountName: 'Wallet',
+      acquiredAt: '2026-01-10T09:00:00.000Z',
+      quantity: '2',
+      paid: '200',
+      value: '400',
+      nominalPnl: '200',
+      real: {
+        official: {
+          inflationPercent: '10.00',
+          costBasis: '220',
+          unrealizedPnl: '180',
+          unrealizedReturnPercent: '81.82',
+          estimated: true,
+        },
+        personal: {
+          inflationPercent: '10.00',
+          costBasis: '220',
+          unrealizedPnl: '180',
+          unrealizedReturnPercent: '81.82',
+          estimated: true,
+          ownRate: false,
+        },
+      },
+    });
+    expect(oldest.paid).toBe('100');
+    expect(oldest.value).toBe('200');
+    expect(oldest.nominalPnl).toBe('100');
+    expect(oldest.real.official).toEqual({
+      inflationPercent: '50.00',
+      costBasis: '150',
+      unrealizedPnl: '50',
+      unrealizedReturnPercent: '33.33',
+      estimated: false,
+    });
+  });
+
+  it('INFL-REAL-LOTS-OWN-RATE reads the owner own rate beside the official one', () => {
+    const [newest] = rows({ personal: () => ({ factor: 2, estimated: true }) });
+    expect(newest.real.personal).toEqual({
+      inflationPercent: '100.00',
+      costBasis: '400',
+      unrealizedPnl: '0',
+      unrealizedReturnPercent: '0.00',
+      estimated: true,
+      ownRate: true,
+    });
+    expect(newest.real.official?.costBasis).toBe('220');
+  });
+
+  it('INFL-REAL-LOTS-UNKNOWN leaves a lot without a cost or a factor unread, not the others', () => {
+    const result = rows({
+      lots: [
+        lot(1, '1', null, '2025-03-10T09:00:00.000Z'),
+        lot(1, '1', '100', '2024-03-10T09:00:00.000Z'),
+        lot(1, '1', '100', '2025-06-10T09:00:00.000Z'),
+      ],
+    });
+    // Newest first: the readable lot, the lot with no cost, the lot before the inflation history.
+    expect(result.map((row) => row.real.official?.costBasis ?? null)).toEqual(['150', null, null]);
+    expect(result[1].paid).toBeNull();
+    expect(result[1].nominalPnl).toBeNull();
+    expect(result[1].value).toBe('200');
+    expect(result[2].paid).toBe('100');
+    expect(result[2].real.personal).toBeNull();
+  });
+
+  it('INFL-REAL-LOTS-NO-PRICE keeps the cost in today money and leaves the profit unknown', () => {
+    const [newest] = rows({ price: null });
+    expect(newest.value).toBeNull();
+    expect(newest.nominalPnl).toBeNull();
+    expect(newest.real.official).toEqual({
+      inflationPercent: '10.00',
+      costBasis: '220',
+      unrealizedPnl: null,
+      unrealizedReturnPercent: null,
+      estimated: true,
+    });
+  });
+
+  it('INFL-REAL-LOTS-PURCHASE leaves out a lot that is not a purchase, such as a reward', () => {
+    const reward: PortfolioLot = {
+      ...lot(1, '1', '100', '2025-03-10T09:00:00.000Z'),
+      purchase: undefined,
+    };
+    expect(rows({ lots: [reward] })).toEqual([]);
+  });
+
+  it('INFL-REAL-LOTS-SKIP leaves out empty lots and other assets', () => {
+    const result = rows({
+      lots: [
+        lot(1, '0', '0', '2025-03-10T09:00:00.000Z'),
+        lot(2, '1', '100', '2025-03-10T09:00:00.000Z'),
+        lot(1, '1', '100', '2025-03-10T09:00:00.000Z'),
+      ],
+    });
+    expect(result).toHaveLength(1);
   });
 });
