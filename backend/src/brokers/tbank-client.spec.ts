@@ -6,7 +6,7 @@ import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isTBankToken, parseAccounts, TBankClient } from './tbank-client';
+import { decimal, isTBankToken, parseAccounts, parsePositions, TBankClient } from './tbank-client';
 
 // BROKER-CONNECT: synthetic tokens and ids only; never an owner's account.
 const token = 't.SyntheticToken000000000000000001';
@@ -37,6 +37,7 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         open: true,
         closed: false,
         access: 'read_only',
+        investBox: false,
       },
       {
         id: '2000000002',
@@ -44,6 +45,7 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         open: false,
         closed: true,
         access: 'read_only',
+        investBox: false,
       },
       {
         id: '2000000003',
@@ -51,8 +53,16 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         open: true,
         closed: false,
         access: 'full_access',
+        investBox: false,
       },
     ]);
+  });
+
+  it('marks an Invest Box, whose portfolio T-Bank does not give', () => {
+    const [box, broker] = parseAccounts({
+      accounts: [account({ type: 'ACCOUNT_TYPE_INVEST_BOX' }), account()],
+    });
+    expect([box.investBox, broker.investBox]).toEqual([true, false]);
   });
 
   it('does not call an account closed unless T-Bank says so', () => {
@@ -89,6 +99,153 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
     expect(isTBankToken(`${token} `)).toBe(false);
     expect(isTBankToken(`${token}\n`)).toBe(false);
     expect(isTBankToken(undefined)).toBe(false);
+  });
+});
+
+describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
+  const positionsOf = (body: unknown) => parsePositions(body, '2000000001');
+
+  it('reads a Quotation or MoneyValue as exact decimal text', () => {
+    expect(decimal({ units: '12', nano: 340_000_000 })).toBe('12.34');
+    expect(decimal({ units: '0', nano: 5_000_000 })).toBe('0.005');
+    expect(decimal({ units: '-3', nano: -250_000_000 })).toBe('-3.25');
+    expect(decimal({ units: '0', nano: -500_000_000 })).toBe('-0.5');
+    expect(decimal({ units: '7', nano: 0 })).toBe('7');
+    expect(decimal({ units: '0', nano: 0 })).toBe('0');
+  });
+
+  it('reads a part JSON leaves out as zero', () => {
+    expect(decimal({ nano: 500_000_000 })).toBe('0.5');
+    expect(decimal({ units: '3' })).toBe('3');
+    expect(decimal({})).toBe('0');
+  });
+
+  it('refuses a number that is not an int64 text or a nano out of range', () => {
+    expect(() => decimal({ units: 12, nano: 0 })).toThrow();
+    expect(() => decimal({ units: '1.5', nano: 0 })).toThrow();
+    expect(() => decimal({ units: '1', nano: 1_000_000_000 })).toThrow();
+    expect(() => decimal({ units: '1', nano: '5' })).toThrow();
+    expect(() => decimal(null)).toThrow();
+  });
+
+  it('refuses parts of opposite signs instead of guessing the value', () => {
+    expect(() => decimal({ units: '3', nano: -250_000_000 })).toThrow();
+    expect(() => decimal({ units: '-3', nano: 250_000_000 })).toThrow();
+  });
+
+  it('reads each position with its quantity and prices and no other field', () => {
+    expect(
+      positionsOf({
+        positions: [
+          {
+            instrumentUid: 'synthetic-uid-0001',
+            instrumentType: 'share',
+            quantity: { units: '10', nano: 500_000_000 },
+            averagePositionPrice: { currency: 'rub', units: '100', nano: 250_000_000 },
+            currentPrice: { currency: 'usd', units: '101', nano: 0 },
+            figi: 'SYNTHETIC0001',
+          },
+          { instrumentUid: 'synthetic-uid-0002', instrumentType: 'weird-type', quantity: {} },
+          {
+            instrumentUid: 'synthetic-uid-0003',
+            instrumentType: 'bond',
+            quantity: { units: '1' },
+            currentPrice: { currency: 'rub', units: '99' },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        instrumentUid: 'synthetic-uid-0001',
+        instrumentType: 'share',
+        quantity: '10.5',
+        averagePrice: '100.25',
+        averagePriceCurrency: 'rub',
+        currentPrice: '101',
+        currentPriceCurrency: 'usd',
+        virtual: false,
+        expiresAt: '',
+      },
+      {
+        instrumentUid: 'synthetic-uid-0002',
+        instrumentType: 'unknown',
+        quantity: '0',
+        averagePrice: '',
+        averagePriceCurrency: '',
+        currentPrice: '',
+        currentPriceCurrency: '',
+        virtual: false,
+        expiresAt: '',
+      },
+      {
+        instrumentUid: 'synthetic-uid-0003',
+        instrumentType: 'bond',
+        quantity: '1',
+        averagePrice: '',
+        averagePriceCurrency: '',
+        currentPrice: '99',
+        currentPriceCurrency: 'rub',
+        virtual: false,
+        expiresAt: '',
+      },
+    ]);
+  });
+
+  it('refuses a body without positions of plain ids and quantities, or with too many', () => {
+    expect(() => positionsOf({ positions: [{ instrumentUid: 'a b', quantity: {} }] })).toThrow();
+    expect(() => positionsOf({ positions: [{ instrumentUid: 'a' }] })).toThrow();
+    expect(() => positionsOf({ positions: 'x' })).toThrow();
+    expect(() =>
+      positionsOf({
+        positions: Array.from({ length: 501 }, () => ({ instrumentUid: 'a', quantity: {} })),
+      }),
+    ).toThrow();
+    expect(positionsOf({ positions: [{ instrumentUid: 'a', quantity: {} }] })).toHaveLength(1);
+    expect(positionsOf({ accountId: '2000000001' })).toEqual([]);
+    expect(() => positionsOf({})).toThrow();
+    expect(() => positionsOf({ accountId: '2000000002', positions: [] })).toThrow();
+  });
+
+  it('reads an empty price object as no price, and a zero price with its currency as zero', () => {
+    const [empty, zero] = positionsOf({
+      positions: [
+        { instrumentUid: 'a', quantity: {}, currentPrice: {}, averagePositionPrice: {} },
+        { instrumentUid: 'b', quantity: {}, currentPrice: { currency: 'rub' } },
+      ],
+    });
+    expect([empty.currentPrice, empty.averagePrice, empty.currentPriceCurrency]).toEqual([
+      '',
+      '',
+      '',
+    ]);
+    expect([zero.currentPrice, zero.currentPriceCurrency]).toEqual(['0', 'rub']);
+  });
+
+  it('lists virtual (gift) positions after held ones, marked with when they expire', () => {
+    const read = positionsOf({
+      positions: [{ instrumentUid: 'synthetic-uid-0001', quantity: { units: '2' } }],
+      virtualPositions: [
+        {
+          instrumentUid: 'synthetic-uid-0004',
+          instrumentType: 'share',
+          quantity: { units: '1' },
+          expireDate: '2026-12-01T00:00:00Z',
+        },
+        { instrumentUid: 'synthetic-uid-0005', quantity: { units: '1' }, expireDate: 'soon' },
+      ],
+    });
+    expect(read.map((item) => [item.instrumentUid, item.virtual, item.expiresAt])).toEqual([
+      ['synthetic-uid-0001', false, ''],
+      ['synthetic-uid-0004', true, '2026-12-01T00:00:00Z'],
+      ['synthetic-uid-0005', true, ''],
+    ]);
+    expect(() => positionsOf({ accountId: '2000000001', virtualPositions: 'x' })).toThrow();
+    expect(() =>
+      positionsOf({
+        positions: Array.from({ length: 300 }, () => ({ instrumentUid: 'a', quantity: {} })),
+        virtualPositions: Array.from({ length: 201 }, () => ({ instrumentUid: 'b', quantity: {} })),
+      }),
+    ).toThrow();
   });
 });
 
@@ -133,6 +290,7 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
           open: true,
           closed: false,
           access: 'read_only',
+          investBox: false,
         },
       ],
     });
