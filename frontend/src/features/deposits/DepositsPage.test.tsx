@@ -1,10 +1,17 @@
-import { type Deposit, type DepositDetail, type DepositList, depositsApi } from '@api/deposits.api';
+import {
+  type Deposit,
+  type DepositChartPoint,
+  type DepositDetail,
+  type DepositList,
+  depositsApi,
+} from '@api/deposits.api';
 import { forgetReads } from '@api/read-cache';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setInflationBasis } from '../shell/inflation-basis';
+import { setValueView } from '../shell/value-view';
 import DepositPage from './DepositPage';
 import DepositsPage from './DepositsPage';
 
@@ -576,5 +583,151 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     await screen.findByRole('heading', { level: 1, name: 'Savings A' });
     expect(screen.queryByRole('columnheader', { name: 'After inflation' })).toBeNull();
     expect(screen.queryByText(/inflation/)).toBeNull();
+  });
+});
+
+describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
+  const chart: DepositChartPoint[] = [
+    {
+      date: '2026-07-01',
+      balance: '100000.00',
+      invested: '100000.00',
+      real: {
+        official: { balance: '100000.00', invested: '100000.00', estimated: false },
+        personal: { balance: '110000.00', invested: '110000.00', estimated: true },
+      },
+    },
+    {
+      date: '2026-08-01',
+      balance: '101019.18',
+      invested: '100000.00',
+      real: {
+        // The latest published month is behind this day: the official figure is an estimate.
+        official: { balance: '101000.00', invested: '100000.00', estimated: true },
+        personal: null,
+      },
+    },
+    {
+      date: '2026-10-11',
+      balance: '102000.00',
+      invested: '100000.00',
+      real: { official: null, personal: null },
+    },
+  ];
+  const withChart = (change: Partial<DepositDetail> = {}) => detail(savings, { chart, ...change });
+  /** Focuses the chart and returns it; the arrow keys then read each month. */
+  const focusChart = async () => {
+    const group = await screen.findByRole('group', { name: /Use the arrow keys/ });
+    act(() => group.focus());
+    return within(group);
+  };
+
+  afterEach(() => {
+    setValueView('nominal');
+    setInflationBasis('official');
+  });
+
+  it('draws the value and the money put in by month, nominal by default', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    const legend = screen.getByLabelText('Chart legend');
+    expect(within(legend).getByText('Value')).toBeInTheDocument();
+    expect(within(legend).getByText('Money put in')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: /Value and money put in over the life of the deposit/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('reads each month with the arrow keys', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    const user = userEvent.setup();
+    const plot = await focusChart();
+    await user.keyboard('{ArrowLeft}');
+    expect(plot.getByText('₽101,019.18')).toBeInTheDocument();
+    expect(plot.getByText('Money put in')).toBeInTheDocument();
+  });
+
+  it('shows today’s money by each reading when the real view is chosen', async () => {
+    setValueView('real');
+    setInflationBasis('official');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    const legend = screen.getByLabelText('Chart legend');
+    expect(within(legend).getByText("Value in today's money")).toBeInTheDocument();
+    expect(within(legend).getByText('Money put in, grown by inflation')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Estimated after the latest published inflation month/),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps a net money put in below zero on the scale', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      withChart({
+        chart: [
+          { ...chart[0], invested: '100.00', balance: '0.00' },
+          { ...chart[1], invested: '-10.00', balance: '0.00' },
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('group', { name: /Use the arrow keys/ });
+    const ticks = Array.from(document.querySelectorAll('.dashboard-chart__tick')).map(
+      (tick) => tick.textContent ?? '',
+    );
+    expect(ticks.some((text) => text.includes('-'))).toBe(true);
+  });
+
+  it('says the inflation figures do not reach the life of the deposit when none are known', async () => {
+    setValueView('real');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      withChart({
+        chart: chart.map((point) => ({ ...point, real: { official: null, personal: null } })),
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    expect(
+      await screen.findByText('Inflation figures do not reach the whole life of this deposit yet.'),
+    ).toBeInTheDocument();
+  });
+
+  it('follows the rate the owner chose in Settings in the real view', async () => {
+    setValueView('real');
+    setInflationBasis('personal');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    const user = userEvent.setup();
+    const plot = await focusChart();
+    // Only the first month has an own-rate figure, so one step back lands on it.
+    await user.keyboard('{ArrowLeft}');
+    expect(plot.getByRole('status')).toHaveTextContent('₽110,000.00');
+  });
+
+  it('gives the end balance in today’s money by the chosen reading', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      withChart({
+        atMaturity: {
+          date: '2026-12-01',
+          balance: '104000.00',
+          interest: '4000.00',
+          inTodaysMoney: {
+            official: { amount: '98000.00', estimated: false },
+            personal: { amount: '99000.00', estimated: true },
+          },
+        },
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    expect(await screen.findByText(/≈ ₽98,000\.00 in today's money/)).toBeInTheDocument();
+    cleanup();
+    setInflationBasis('personal');
+    open(`/deposits/${savings.id}`);
+    expect(
+      await screen.findByText(/≈ ₽99,000\.00 in today's money \(estimated\)/),
+    ).toBeInTheDocument();
   });
 });

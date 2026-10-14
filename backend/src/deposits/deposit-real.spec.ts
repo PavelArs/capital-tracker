@@ -1,9 +1,12 @@
-import { buildSeries } from '../inflation/inflation-math';
+import { buildSeries, personalFactor } from '../inflation/inflation-math';
 import { depositBalances, projectDeposit } from './deposit-interest';
 import {
+  chartDates,
+  depositChart,
   depositReal,
   effectiveRatePercent,
   inflationReadings,
+  inTodaysMoney,
   periodsAfterInflation,
   type RealDepositInput,
 } from './deposit-real';
@@ -175,5 +178,93 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
     expect(periodsAfterInflation(periods, new Map([['2026-07-01', 10n ** 30n]]), official)).toEqual(
       [null],
     );
+  });
+
+  it('INFL-DEPOSIT-CHART gives the value and the money put in by day, and the same in today money by each reading', () => {
+    const { personal, official } = inflationReadings(noSeries, '10');
+    const terms = {
+      startDate: '2026-07-01',
+      endDate: null,
+      payout: 'monthly' as const,
+      capitalized: false,
+      dayBasis: 'actual-365' as const,
+      earlyClose: 'forfeits-interest' as const,
+      rates: [{ effectiveFrom: '2026-07-01', ratePercent: '12' }],
+    };
+    const movements = [
+      { date: '2026-07-01', kind: 'topup' as const, amount: '100000.00' },
+      { date: '2026-09-01', kind: 'withdrawal' as const, amount: '40000.00' },
+    ];
+    const dates = ['2026-07-01', '2026-08-01', '2026-09-15', '2027-07-01'];
+    const chart = depositChart(
+      dates,
+      depositBalances(terms, movements, dates),
+      movements,
+      '2027-07-01',
+      { official, personal },
+    );
+    expect(chart.map((point) => point.date)).toEqual(dates);
+    expect(chart.map((point) => point.invested)).toEqual([
+      '100000.00',
+      '100000.00',
+      '60000.00',
+      '60000.00',
+    ]);
+    // Money put in on 1 July 2026 is worth 110,000 a year later at 10%; the withdrawn 40,000 too.
+    // The own rate is an estimate by its nature, so every figure at it says so.
+    expect(chart[0].real.personal).toEqual({
+      balance: '110000.00',
+      invested: '110000.00',
+      estimated: true,
+    });
+    // The withdrawal of 1 September is carried from that day to 1 July 2027 at the same 10%.
+    const withdrawn = 40000 * personalFactor(10, '2026-09-01', '2027-07-01')!.factor;
+    expect(Number(chart[2].real.personal?.invested)).toBeCloseTo(110000 - withdrawn, 1);
+    // On the day asked nothing is carried further: the value is the bank's, the money put in the same.
+    expect(chart[3].real.personal?.balance).toBe(chart[3].balance);
+    expect(Number(chart[3].real.personal?.invested)).toBeCloseTo(110000 - withdrawn, 1);
+    // Without an official series no day has a figure in today's money, and the page says so.
+    expect(chart.every((point) => point.real.official === null)).toBe(true);
+  });
+
+  it('INFL-DEPOSIT-CHART-PAYOUT counts interest paid out as money taken out, as the gain does', () => {
+    const { personal, official } = inflationReadings(noSeries, '10');
+    const movements = [
+      { date: '2026-07-01', kind: 'topup' as const, amount: '100.00' },
+      { date: '2026-08-01', kind: 'interest-payout' as const, amount: '10.00' },
+    ];
+    const dates = ['2026-07-15', '2026-08-01'];
+    const chart = depositChart(
+      dates,
+      new Map([
+        ['2026-07-15', 100n * 10n ** 30n],
+        ['2026-08-01', 100n * 10n ** 30n],
+      ]),
+      movements,
+      '2026-08-01',
+      { official, personal },
+    );
+    expect(chart.map((point) => point.invested)).toEqual(['100.00', '90.00']);
+  });
+
+  it('INFL-DEPOSIT-CHART-DAYS samples each month, every movement day and the day asked, in order', () => {
+    expect(
+      chartDates('2026-07-01', '2026-09-10', ['2026-08-15', '2026-12-01', '2026-08-15']),
+    ).toEqual(['2026-07-01', '2026-08-01', '2026-08-14', '2026-08-15', '2026-09-01', '2026-09-10']);
+    // A day asked before the first month still gives that day alone, with no movement after it.
+    expect(chartDates('2026-07-01', '2026-06-20', ['2026-07-01'])).toEqual(['2026-06-20']);
+  });
+
+  it('INFL-DEPOSIT-TODAY-MONEY states the end-of-term balance in the money of the day asked', () => {
+    const { personal, official } = inflationReadings(noSeries, '10');
+    expect(inTodaysMoney('110000.00', '2026-07-01', '2027-07-01', { official, personal })).toEqual({
+      official: null,
+      personal: { amount: '100000.00', estimated: true },
+    });
+    // A day after the end has no span to carry the balance across.
+    expect(inTodaysMoney('110000.00', '2027-08-01', '2027-07-01', { official, personal })).toEqual({
+      official: null,
+      personal: null,
+    });
   });
 });

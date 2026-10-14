@@ -9,6 +9,7 @@ import type { StatedFlow } from '../portfolio-snapshots/capital-flows';
 import { realProfit } from '../portfolio-snapshots/real-profit';
 import { valueAtoms } from '../portfolio-snapshots/snapshot-series';
 import {
+  addMonths,
   centsText,
   type DepositMovement,
   type DepositTerms,
@@ -95,6 +96,10 @@ export function effectiveRatePercent(
 /** A scale-60 amount as cents (the money is exact to the cent; only the factor is a ratio). */
 const centsOfProduct = (text: string) => centsText(valueAtoms(text) / ATOM_SCALE);
 
+/** An exact amount carried by a factor, to the same scale; the factor is the only rounding. */
+const carry = (atoms: bigint, factor: number) =>
+  (atoms * BigInt(Math.round(factor * 1e10))) / FACTOR_STEP;
+
 export interface RealDepositInput {
   /** What the deposit is worth on the day, in its currency. */
   balance: string;
@@ -132,6 +137,133 @@ export function depositReal(input: RealDepositInput, reading: InflationReading):
     estimated: profit?.estimated ?? false,
     ...(reading.ownRate === undefined ? {} : { ownRate: reading.ownRate }),
   };
+}
+
+/** A figure in the money of a day asked: estimated where its inflation reaches past the published months. */
+export interface TodaysMoney {
+  amount: string;
+  estimated: boolean;
+}
+
+export interface ChartValues {
+  balance: string;
+  invested: string;
+  /** A factor used reaches past the latest published month or rests on the owner's own rate. */
+  estimated: boolean;
+}
+
+export interface DepositChartPoint {
+  date: string;
+  /** What the deposit is worth on the day, in its currency. */
+  balance: string;
+  /** Money put in less taken out up to the day, in its currency. */
+  invested: string;
+  /** The two figures in the money of the day asked, by each reading; null where a factor is unknown. */
+  real: { official: ChartValues | null; personal: ChartValues | null };
+}
+
+// Money put in is positive; a withdrawal or paid-out interest is money taken out, as in depositReal.
+const signed = (movement: DepositMovement) =>
+  (movement.kind === 'topup' ? 1n : -1n) * canonicalDecimalToAtoms(movement.amount);
+
+/** The figures of one day in the money of the day asked, or null where the series does not reach. */
+function realPoint(
+  date: string,
+  balance: bigint,
+  flows: readonly DepositMovement[],
+  asOf: string,
+  reading: InflationReading,
+): ChartValues | null {
+  const held = reading.factor(date, asOf);
+  if (held === null) return null;
+  let invested = 0n;
+  let estimated = held.estimated;
+  for (const flow of flows) {
+    const factor = reading.factor(flow.date, asOf);
+    if (factor === null) return null;
+    invested += carry(signed(flow), factor.factor);
+    estimated = estimated || factor.estimated;
+  }
+  return {
+    balance: centsText(carry(balance, held.factor)),
+    invested: centsText(invested),
+    estimated,
+  };
+}
+
+const dayBefore = (date: string) =>
+  new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The days a chart samples: each month from the start, every movement day, the day before each
+ * movement (so its jump is drawn on the day, not as a slope from the last month) and the day asked.
+ * In order and without repeats, none after the day asked, none before the start.
+ */
+export function chartDates(
+  start: string,
+  asOf: string,
+  movementDates: readonly string[],
+): string[] {
+  const dates = new Set<string>([asOf]);
+  for (let months = 0; ; months++) {
+    const date = addMonths(start, months);
+    if (date > asOf) break;
+    dates.add(date);
+  }
+  for (const date of movementDates) {
+    if (date > asOf) continue;
+    dates.add(date);
+    if (dayBefore(date) >= start) dates.add(dayBefore(date));
+  }
+  return [...dates].sort();
+}
+
+/**
+ * The deposit day by day at the dates given: its value and the money put in, nominal and in the
+ * money of `asOf` by each reading. Money put in is carried from its own day to `asOf`, the same
+ * factors as the gain above (INFL-DEPOSIT-CHART).
+ */
+export function depositChart(
+  dates: readonly string[],
+  balances: ReadonlyMap<string, bigint>,
+  movements: readonly DepositMovement[],
+  asOf: string,
+  readings: InflationReadings,
+): DepositChartPoint[] {
+  return dates.map((date) => {
+    const balance = balances.get(date) ?? 0n;
+    const flows = movements.filter((movement) => movement.date <= date);
+    const invested = flows.reduce((sum, flow) => sum + signed(flow), 0n);
+    return {
+      date,
+      balance: centsText(balance),
+      invested: centsText(invested),
+      real: {
+        official: realPoint(date, balance, flows, asOf, readings.official),
+        personal: realPoint(date, balance, flows, asOf, readings.personal),
+      },
+    };
+  });
+}
+
+/**
+ * A balance on the end date in the money of `asOf`: the inflation between the two days takes
+ * part of it. Null by a reading where the day asked is after the end (no span to carry).
+ */
+export function inTodaysMoney(
+  balance: string,
+  asOf: string,
+  end: string,
+  readings: InflationReadings,
+): { official: TodaysMoney | null; personal: TodaysMoney | null } {
+  const atoms = canonicalDecimalToAtoms(balance);
+  const at = (reading: InflationReading): TodaysMoney | null => {
+    const factor = reading.factor(asOf, end);
+    return factor === null
+      ? null
+      : { amount: centsText(carry(atoms, 1 / factor.factor)), estimated: factor.estimated };
+  };
+  return { official: at(readings.official), personal: at(readings.personal) };
 }
 
 /**
