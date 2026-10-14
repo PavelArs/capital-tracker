@@ -153,6 +153,9 @@ export const cachedReads = {
   portfolio: cachedRead('portfolio', (currency?: Parameters<typeof portfolioValuationApi.get>[0]) =>
     portfolioValuationApi.get(currency),
   ),
+  assetLots: cachedRead('asset-lots', (...args: Parameters<typeof portfolioValuationApi.lots>) =>
+    portfolioValuationApi.lots(...args),
+  ),
   history: cachedRead(
     'history',
     (...args: Parameters<typeof portfolioHistoryApi.get>): Promise<PortfolioHistory> =>

@@ -177,6 +177,9 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     .getByRole('button', { name: /^Something else/ })
     .click();
   const dialog = page.getByRole('dialog', { name: 'Add asset' });
+  // The dialog loads every account's journal as it opens; the nightly twice lost the first click
+  // on a kind while that was still running, so the kind is chosen once the accounts are in.
+  await expect(dialog.getByLabel('Wallet or account')).toBeVisible();
   await dialog.getByRole('radio', { name: 'Deposit', exact: true }).check();
   await dialog.getByLabel('Name', { exact: true }).fill(depositName);
   await dialog.getByLabel('Amount', { exact: true }).fill('2500');

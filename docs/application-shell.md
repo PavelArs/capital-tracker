@@ -58,7 +58,12 @@ rate behind "real" (the published index, or the owner's own yearly rate) is pick
 On the Portfolio, Real shows the cost of what is held in today's money (each purchase grown by the
 inflation since its day) and the profit over it, for the portfolio and for each asset; an asset
 with a purchase that has no price, rate or inflation figure shows a dash. An asset's page shows
-the same two figures for that asset under its own switch.
+the same two figures for that asset under its own switch, and below the chart a **Purchases after
+inflation** card lists each purchase still held (newest first) with what it cost, the inflation
+since its day, the cost in today's money, its value now and the real profit with the nominal one
+beneath. The card follows the chosen rate, shows a dash for a purchase it cannot read, and warns
+while an account whose history starts later may hold more purchases than are listed. It is read
+on its own from `GET /accounting/portfolio/assets/:instrumentId/lots`; phones get two-line rows.
 
 The bell in every page header (between the currency switch and **Add transaction**) holds what
 needs the owner: old prices or rates, blockchain transactions to classify, wallets that failed

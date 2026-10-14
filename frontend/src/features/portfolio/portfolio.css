@@ -799,3 +799,8 @@ a.portfolio-asset__name:hover {
 .portfolio-real-note {
   margin: var(--sp-3) 0 0;
 }
+
+/* A purchase row has no icon, so its text is the row's first child and must still shrink. */
+.ui-row.portfolio-lot > .ui-row__main {
+  flex: 1;
+}
