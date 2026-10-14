@@ -1,17 +1,18 @@
+import { cachedReads } from '@api/cached-reads';
 import {
   type AccountingCurrency,
   type AssetLots,
   type LotAfterInflation,
   type LotReading,
-  portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { dayText } from '@/utils/dates';
 import { basisText } from '../shell/basis-text';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import { InlineSkeleton } from '../shell/Skeleton';
+import { useCachedRead } from '../shell/useCachedRead';
 import { Signed } from './asset-parts';
 import { DASH, money, percent, quantity, tone } from './format';
 import './portfolio.css';
@@ -223,33 +224,24 @@ export default function AssetLotsCard({
 }) {
   const phone = useNarrowScreen();
   const [basis] = useInflationBasis();
-  const [loaded, setLoaded] = useState<{ scope: string; answer: AssetLots } | null>(null);
-  // The scope whose last load failed: the warning stays until a retry of that scope succeeds.
-  const [failedScope, setFailedScope] = useState<string | null>(null);
-  const scope = `${instrumentId}:${asked ?? ''}`;
-  const failed = failedScope === scope;
-  // Only the latest request may fill the card: an earlier asset's answer can arrive later.
-  const latest = useRef(0);
-  const load = useCallback(async () => {
-    const request = ++latest.current;
-    try {
-      const answer = await portfolioValuationApi.lots(instrumentId, asked);
-      if (request === latest.current) {
-        setLoaded({ scope, answer });
-        setFailedScope(null);
-      }
-    } catch {
-      if (request === latest.current) setFailedScope(scope);
-    }
-  }, [instrumentId, asked, scope]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a fresh portfolio answer (a saved price) changes the values, so the lots are asked again.
+  const read = useCachedRead(cachedReads.assetLots, instrumentId, asked);
+  const { data: answer, error, reload } = read;
+  // The hook clears its error when a load starts, so the warning is kept here. It belongs to the
+  // figures on screen when a load failed: it stays until an answer replaces those figures.
+  const [failedOver, setFailedOver] = useState<{ answer: AssetLots | null } | null>(null);
   useEffect(() => {
-    void load();
-  }, [load, at]);
+    if (error !== null) setFailedOver({ answer });
+  }, [error, answer]);
+  const stale = failedOver !== null && failedOver.answer === answer;
+  // A fresh portfolio answer (a saved price) changes the values, so the lots are asked again.
+  // The mount already asked, so only a change of `at` asks.
+  const shownAt = useRef(at);
+  useEffect(() => {
+    if (shownAt.current === at) return;
+    shownAt.current = at;
+    reload(true);
+  }, [at, reload]);
 
-  // What was loaded for another asset or currency is not shown, but the same one stays while
-  // it reloads.
-  const answer = loaded?.scope === scope ? loaded.answer : null;
   const line = answer ? basisLine(answer.lots, basis, answer.currency) : null;
   return (
     <section className="shell-card" aria-labelledby="asset-lots">
@@ -257,10 +249,10 @@ export default function AssetLotsCard({
         <h2 id="asset-lots">Purchases after inflation</h2>
         {line && <span className="portfolio-sub">{line}</span>}
       </div>
-      {failed && answer === null ? (
+      {stale && answer === null ? (
         <div className="portfolio-state" role="alert">
           <p>Could not load the purchases. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
+          <button type="button" className="shell-button" onClick={() => reload(true)}>
             Try again
           </button>
         </div>
@@ -268,10 +260,10 @@ export default function AssetLotsCard({
         <InlineSkeleton label="Loading purchases" />
       ) : (
         <>
-          {failed && (
+          {stale && (
             <div className="ui-banner ui-banner--warn portfolio-warn" role="alert">
               <p>Could not refresh the purchases. The figures below may be out of date.</p>
-              <button type="button" className="shell-button" onClick={() => void load()}>
+              <button type="button" className="shell-button" onClick={() => reload(true)}>
                 Try again
               </button>
             </div>
