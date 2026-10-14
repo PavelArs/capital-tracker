@@ -148,7 +148,8 @@ try {
     { mode: 0o755 },
   );
   fs.chmodSync(hook, 0o755);
-  fs.writeFileSync(key, randomBytes(48), { mode: 0o600 });
+  // openssl reads the password up to the first newline, so raw random bytes sometimes gave an empty one.
+  fs.writeFileSync(key, randomBytes(48).toString('base64'), { mode: 0o600 });
   const source = start(sourceName, [
     '-v',
     `${hook}:/docker-entrypoint-initdb.d/00-hold.sh:ro`,
