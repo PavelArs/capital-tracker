@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { BrokerConnectionsService } from './broker-connections.service';
-import type { TBankAccount, TBankClient, TBankResult } from './tbank-client';
+import type { TBankAccount, TBankClient, TBankOperation, TBankResult } from './tbank-client';
 import type { TBankTokenBox } from './tbank-token-box';
 
 // BROKER-CONNECT with a stubbed T-Bank client; the stored rows are probed against PostgreSQL.
@@ -27,6 +27,7 @@ function build(
   found = true,
   stored = false,
   positions: TBankResult<unknown[]> = { ok: true, value: [] },
+  operations: TBankResult<TBankOperation[]> = { ok: true, value: [] },
 ) {
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
@@ -46,11 +47,16 @@ function build(
     transaction: async (_level: string, work: (manager: unknown) => unknown) => work({ query }),
   };
   const portfolios: string[] = [];
+  const histories: string[] = [];
   const tbank = {
     accounts: async () => accounts,
     portfolio: async (_token: string, id: string) => {
       portfolios.push(id);
       return positions;
+    },
+    operations: async (_token: string, id: string) => {
+      histories.push(id);
+      return operations;
     },
   };
   const box = {
@@ -65,9 +71,28 @@ function build(
     ),
     writes,
     portfolios,
+    histories,
   };
 }
 const ok = (...items: TBankAccount[]): TBankResult<TBankAccount[]> => ({ ok: true, value: items });
+const operation = (over: Partial<TBankOperation>): TBankOperation => ({
+  id: '900000001',
+  parentId: '',
+  type: 'OPERATION_TYPE_BUY',
+  state: 'executed',
+  occurredAt: '2024-03-01T10:00:00Z',
+  instrumentUid: '00000000-0000-4000-8000-000000000001',
+  instrumentType: 'share',
+  ticker: 'SYNTH',
+  quantity: '2',
+  payment: '-200',
+  paymentCurrency: 'rub',
+  price: '100',
+  priceCurrency: 'rub',
+  commission: '',
+  commissionCurrency: '',
+  ...over,
+});
 
 describe('broker connections service', () => {
   it('lists the open accounts a read-only token reaches', async () => {
@@ -206,5 +231,93 @@ describe('broker connections service', () => {
 
   it('reads a broker account that has no connection as not connected', async () => {
     expect(await build(ok(mine)).service.read(owner, account)).toEqual({ connected: false });
+  });
+});
+
+describe('BROKER-SYNC: previewing the operations of a connected account', () => {
+  const history = [
+    operation({
+      id: '900000003',
+      type: 'OPERATION_TYPE_DIVIDEND',
+      occurredAt: '2024-05-01T00:00:00Z',
+    }),
+    operation({
+      id: '900000002',
+      parentId: '900000001',
+      type: 'OPERATION_TYPE_BROKER_FEE',
+      payment: '-0.3',
+    }),
+    operation({}),
+    operation({ id: '900000004', type: 'OPERATION_TYPE_SOMETHING_NEW' }),
+    operation({ id: '900000005', state: 'canceled', type: 'OPERATION_TYPE_SELL' }),
+    operation({ id: '', state: 'progress', occurredAt: '' }),
+    // Half a second after the trades: later, although its text sorts before theirs.
+    operation({
+      id: '900000006',
+      type: 'OPERATION_TYPE_INPUT',
+      occurredAt: '2024-03-01T10:00:00.5Z',
+    }),
+  ];
+
+  it('lists executed operations in time order with what each would become, recording nothing', async () => {
+    const { service, histories, writes } = build(ok(mine), true, true, undefined, {
+      ok: true,
+      value: history,
+    });
+    const preview = await service.operations(owner, account);
+    expect(histories).toEqual([mine.id]);
+    expect(writes).toEqual([]);
+    expect(preview.operations.map((item) => [item.id, item.kind])).toEqual([
+      ['900000001', 'buy'],
+      ['900000002', 'fee'],
+      ['900000004', 'unsupported'],
+      ['900000006', 'deposit'],
+      ['900000003', 'income'],
+    ]);
+    expect(preview.operations[1].parentId).toBe('900000001');
+    expect(preview.byKind).toEqual({ deposit: 1, buy: 1, fee: 1, unsupported: 1, income: 1 });
+    expect(preview.unsupportedTypes).toEqual({ OPERATION_TYPE_SOMETHING_NEW: 1 });
+    expect(preview.notExecuted).toBe(2);
+  });
+
+  it('reads the history of a closed account and of an Invest Box', async () => {
+    for (const target of [
+      { ...mine, closed: true, open: false },
+      { ...mine, investBox: true },
+    ]) {
+      const { service, histories } = build(ok(target), true, true);
+      expect(await service.operations(owner, account)).toEqual({
+        operations: [],
+        byKind: {},
+        unsupportedTypes: {},
+        notExecuted: 0,
+      });
+      expect(histories).toEqual([mine.id]);
+    }
+  });
+
+  it('refuses an unconnected account or one the token no longer reaches, without asking T-Bank', async () => {
+    const unconnected = build(ok(mine));
+    await expect(unconnected.service.operations(owner, account)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    const moved = build(ok({ ...mine, id: '2000000009' }), true, true);
+    await expect(moved.service.operations(owner, account)).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+    expect([...unconnected.histories, ...moved.histories]).toEqual([]);
+  });
+
+  it('names a rejected token, too long a history and an unreachable T-Bank', async () => {
+    const failing = (reason: 'token_rejected' | 'too_many_operations' | 'unavailable') =>
+      build(ok(mine), true, true, undefined, { ok: false, reason }).service.operations(
+        owner,
+        account,
+      );
+    await expect(failing('token_rejected')).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(failing('too_many_operations')).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+    await expect(failing('unavailable')).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

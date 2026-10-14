@@ -6,7 +6,14 @@ import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decimal, isTBankToken, parseAccounts, parsePositions, TBankClient } from './tbank-client';
+import {
+  decimal,
+  isTBankToken,
+  parseAccounts,
+  parseOperationsPage,
+  parsePositions,
+  TBankClient,
+} from './tbank-client';
 
 // BROKER-CONNECT: synthetic tokens and ids only; never an owner's account.
 const token = 't.SyntheticToken000000000000000001';
@@ -17,6 +24,26 @@ const account = (over: Record<string, unknown> = {}) => ({
   status: 'ACCOUNT_STATUS_OPEN',
   openedDate: '2024-01-01T00:00:00Z',
   accessLevel: 'ACCOUNT_ACCESS_LEVEL_READ_ONLY',
+  ...over,
+});
+
+// One operation as the REST gateway gives it: int64 as text, zero parts and empty fields left out.
+const item = (over: Record<string, unknown> = {}) => ({
+  id: '900000001',
+  name: 'Synthetic operation',
+  date: '2024-03-01T10:00:00.123456Z',
+  type: 'OPERATION_TYPE_BUY',
+  state: 'OPERATION_STATE_EXECUTED',
+  instrumentUid: '00000000-0000-4000-8000-000000000001',
+  figi: 'SYNTH0000001',
+  instrumentType: 'share',
+  ticker: 'SYNTH',
+  payment: { currency: 'rub', units: '-200', nano: -500000000 },
+  price: { currency: 'rub', units: '100', nano: 250000000 },
+  commission: { currency: 'rub' },
+  quantity: '2',
+  quantityRest: '0',
+  quantityDone: '2',
   ...over,
 });
 
@@ -249,10 +276,120 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
   });
 });
 
+describe('BROKER-SYNC: operations T-Bank lists', () => {
+  it('reads each operation with exact amounts and no other field', () => {
+    expect(parseOperationsPage({ items: [item()] })).toEqual({
+      operations: [
+        {
+          id: '900000001',
+          parentId: '',
+          type: 'OPERATION_TYPE_BUY',
+          state: 'executed',
+          occurredAt: '2024-03-01T10:00:00.123456Z',
+          instrumentUid: '00000000-0000-4000-8000-000000000001',
+          instrumentType: 'share',
+          ticker: 'SYNTH',
+          quantity: '2',
+          payment: '-200.5',
+          paymentCurrency: 'rub',
+          price: '100.25',
+          priceCurrency: 'rub',
+          commission: '0',
+          commissionCurrency: 'rub',
+        },
+      ],
+      nextCursor: '',
+    });
+  });
+
+  it('keeps the trade a fee belongs to and reads a cash operation without an instrument', () => {
+    const [fee, input] = parseOperationsPage({
+      items: [
+        item({
+          id: '900000002',
+          parentOperationId: '900000001',
+          type: 'OPERATION_TYPE_BROKER_FEE',
+        }),
+        {
+          id: '900000003',
+          date: '2024-03-01T09:00:00Z',
+          type: 'OPERATION_TYPE_INPUT',
+          state: 'OPERATION_STATE_EXECUTED',
+          payment: { currency: 'rub', units: '1000' },
+        },
+      ],
+    }).operations;
+    expect(fee.parentId).toBe('900000001');
+    expect(input).toMatchObject({
+      instrumentUid: '',
+      ticker: '',
+      quantity: '0',
+      payment: '1000',
+      price: '',
+      priceCurrency: '',
+    });
+  });
+
+  it('names a state or type it does not know instead of guessing', () => {
+    const [odd] = parseOperationsPage({
+      items: [item({ state: 'OPERATION_STATE_LATER', type: 'not a type' })],
+    }).operations;
+    expect(odd.state).toBe('unspecified');
+    expect(odd.type).toBe('unknown');
+  });
+
+  it('reads a whole-number quantity a lenient encoder may send', () => {
+    expect(parseOperationsPage({ items: [item({ quantity: 3 })] }).operations[0].quantity).toBe(
+      '3',
+    );
+  });
+
+  it('refuses an executed operation without an id, a time or a whole quantity', () => {
+    for (const broken of [
+      item({ id: undefined }),
+      item({ id: 'has space' }),
+      item({ date: '2024-03-01' }),
+      item({ date: undefined }),
+      item({ quantity: '1.5' }),
+      item({ quantity: 1.5 }),
+      item({ payment: { currency: 'rub', units: '-1', nano: 5 } }),
+    ])
+      expect(() => parseOperationsPage({ items: [broken] })).toThrow();
+  });
+
+  it('counts an odd canceled or pending operation without failing the page', () => {
+    const [canceled, pending] = parseOperationsPage({
+      items: [
+        item({ state: 'OPERATION_STATE_CANCELED', date: undefined }),
+        item({ state: 'OPERATION_STATE_PROGRESS', quantity: 'x' }),
+      ],
+    }).operations;
+    expect(canceled).toMatchObject({ id: '', state: 'canceled', occurredAt: '' });
+    expect(pending).toMatchObject({ id: '', state: 'progress' });
+  });
+
+  it('reads an account with no operations and refuses a page without a usable cursor', () => {
+    expect(parseOperationsPage({})).toEqual({ operations: [], nextCursor: '' });
+    expect(parseOperationsPage({ items: [], hasNext: false, nextCursor: 'x' })).toEqual({
+      operations: [],
+      nextCursor: '',
+    });
+    expect(() => parseOperationsPage({ items: [], hasNext: true })).toThrow();
+    expect(() => parseOperationsPage({ items: [], hasNext: true, nextCursor: 'a b' })).toThrow();
+    expect(() => parseOperationsPage({ items: 'x' })).toThrow();
+    expect(() =>
+      parseOperationsPage({ items: Array.from({ length: 501 }, () => item()) }),
+    ).toThrow();
+  });
+});
+
 describe('BROKER-CONNECT: the T-Bank client', () => {
   let server: Server;
   let base: string;
   let reply: { status: number; body: string };
+  /** Answers given in turn before `reply`, and every request body in order. */
+  let queue: { status: number; body: string }[];
+  let bodies: string[];
   let seen: { url?: string; method?: string; headers: IncomingHttpHeaders; body: string } | null;
 
   beforeAll(async () => {
@@ -263,8 +400,10 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
       });
       request.on('end', () => {
         seen = { url: request.url, method: request.method, headers: request.headers, body };
-        response.writeHead(reply.status, { 'Content-Type': 'application/json' });
-        response.end(reply.body);
+        bodies.push(body);
+        const answer = queue.shift() ?? reply;
+        response.writeHead(answer.status, { 'Content-Type': 'application/json' });
+        response.end(answer.body);
       });
     });
     server.listen(0, '127.0.0.1');
@@ -276,6 +415,8 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
   });
   beforeEach(() => {
     seen = null;
+    queue = [];
+    bodies = [];
     reply = { status: 200, body: JSON.stringify({ accounts: [account()] }) };
   });
 
@@ -315,6 +456,63 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
     expect(await client.accounts(token)).toEqual({ ok: false, reason: 'invalid_response' });
     reply = { status: 200, body: '{"accounts":"x"}' };
     expect(await client.accounts(token)).toEqual({ ok: false, reason: 'invalid_response' });
+  });
+
+  it('reads every page of operations by cursor, oldest first, with fees and without fills', async () => {
+    queue = [
+      { status: 200, body: JSON.stringify({ items: [item()], hasNext: true, nextCursor: 'c1' }) },
+      {
+        status: 200,
+        body: JSON.stringify({
+          items: [item({ id: '900000002' })],
+          hasNext: true,
+          nextCursor: 'c2',
+        }),
+      },
+    ];
+    reply = { status: 200, body: JSON.stringify({ items: [item({ id: '900000003' })] }) };
+    const result = await new TBankClient({ baseUrl: base }).operations(token, '2000000001');
+    expect(result.ok && result.value.map((operation) => operation.id)).toEqual([
+      '900000001',
+      '900000002',
+      '900000003',
+    ]);
+    expect(seen?.url).toBe(
+      '/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetOperationsByCursor',
+    );
+    const sent = bodies.map((body) => JSON.parse(body));
+    expect(sent.map((body) => body.cursor)).toEqual([undefined, 'c1', 'c2']);
+    expect(sent[0]).toMatchObject({
+      accountId: '2000000001',
+      from: '2000-01-01T00:00:00Z',
+      limit: 500,
+      withoutTrades: true,
+      withoutCommissions: false,
+      withoutOvernights: false,
+    });
+    expect(bodies.join('')).not.toContain(token);
+  });
+
+  it('stops at a failed page and at a history longer than one read takes', async () => {
+    const client = new TBankClient({ baseUrl: base });
+    queue = [
+      { status: 200, body: JSON.stringify({ items: [item()], hasNext: true, nextCursor: 'c1' }) },
+    ];
+    reply = { status: 429, body: '{}' };
+    expect(await client.operations(token, '2000000001')).toEqual({
+      ok: false,
+      reason: 'rate_limited',
+    });
+    bodies = [];
+    reply = {
+      status: 200,
+      body: JSON.stringify({ items: [], hasNext: true, nextCursor: 'again' }),
+    };
+    expect(await client.operations(token, '2000000001')).toEqual({
+      ok: false,
+      reason: 'too_many_operations',
+    });
+    expect(bodies).toHaveLength(100);
   });
 
   it('reports an unreachable host as unavailable', async () => {
