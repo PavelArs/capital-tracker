@@ -116,7 +116,7 @@ CI fails when these drift, except where noted:
 - Work on a feature branch and never commit directly to `main`. In a cloud session keep the assigned `claude/<slug>` branch; elsewhere use a short descriptive name.
 - PRs are squash-merged. GitHub takes the `main` subject from the single commit's message, or from the PR title when there are several commits, and every commit message lands in the body. Use Conventional Commits for both: a lowercase, plain outcome and no trailing period, for example `feat(goals): show the nearest goal on the dashboard`.
 - One change per PR. The body covers Before / After / How and any migration or server step.
-- For every screen a UI change touches, add one phone screenshot (390 px, light theme) and one desktop screenshot (1440 px, dark theme), with synthetic data, under `docs/screenshots/<feature>/`.
+- `docs/screenshots/` holds the current look of each screen, with synthetic data: `<screen>-390-light.png` (phone, light theme) and `<screen>-1440-dark.png` (desktop, dark theme), where `<screen>` names the page, dialog or state (for example `dashboard`, `add-transaction`, `goals-empty`). A PR that changes a screen replaces or adds that screen's two images, and deletes them when the screen goes away, so the folder always matches `main`.
 
 ## Parallel work
 
