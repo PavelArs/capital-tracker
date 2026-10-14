@@ -142,6 +142,8 @@ export function depositReal(input: RealDepositInput, reading: InflationReading):
 export interface ChartValues {
   balance: string;
   invested: string;
+  /** A factor used reaches past the latest published month or rests on the owner's own rate. */
+  estimated: boolean;
 }
 
 export interface DepositChartPoint {
@@ -169,12 +171,18 @@ function realPoint(
   const held = reading.factor(date, asOf);
   if (held === null) return null;
   let invested = 0n;
+  let estimated = held.estimated;
   for (const flow of flows) {
     const factor = reading.factor(flow.date, asOf);
     if (factor === null) return null;
     invested += carry(signed(flow), factor.factor);
+    estimated = estimated || factor.estimated;
   }
-  return { balance: centsText(carry(balance, held.factor)), invested: centsText(invested) };
+  return {
+    balance: centsText(carry(balance, held.factor)),
+    invested: centsText(invested),
+    estimated,
+  };
 }
 
 /**

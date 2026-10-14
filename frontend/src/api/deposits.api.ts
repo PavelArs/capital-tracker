@@ -42,8 +42,8 @@ export interface DepositChartPoint {
   balance: string;
   invested: string;
   real: {
-    official: { balance: string; invested: string } | null;
-    personal: { balance: string; invested: string } | null;
+    official: { balance: string; invested: string; estimated: boolean } | null;
+    personal: { balance: string; invested: string; estimated: boolean } | null;
   };
 }
 

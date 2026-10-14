@@ -593,8 +593,8 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
       balance: '100000.00',
       invested: '100000.00',
       real: {
-        official: { balance: '100000.00', invested: '100000.00' },
-        personal: { balance: '110000.00', invested: '110000.00' },
+        official: { balance: '100000.00', invested: '100000.00', estimated: false },
+        personal: { balance: '110000.00', invested: '110000.00', estimated: true },
       },
     },
     {
@@ -602,7 +602,8 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
       balance: '101019.18',
       invested: '100000.00',
       real: {
-        official: { balance: '101000.00', invested: '100000.00' },
+        // The latest published month is behind this day: the official figure is an estimate.
+        official: { balance: '101000.00', invested: '100000.00', estimated: true },
         personal: null,
       },
     },
@@ -658,6 +659,9 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     const legend = screen.getByLabelText('Chart legend');
     expect(within(legend).getByText("Value in today's money")).toBeInTheDocument();
     expect(within(legend).getByText('Money put in, grown by inflation')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Estimated after the latest published inflation month/),
+    ).toBeInTheDocument();
   });
 
   it('keeps a net money put in below zero on the scale', async () => {

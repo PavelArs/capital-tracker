@@ -211,7 +211,12 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
       '60000.00',
     ]);
     // Money put in on 1 July 2026 is worth 110,000 a year later at 10%; the withdrawn 40,000 too.
-    expect(chart[0].real.personal).toEqual({ balance: '110000.00', invested: '110000.00' });
+    // The own rate is an estimate by its nature, so every figure at it says so.
+    expect(chart[0].real.personal).toEqual({
+      balance: '110000.00',
+      invested: '110000.00',
+      estimated: true,
+    });
     // The withdrawal of 1 September is carried from that day to 1 July 2027 at the same 10%.
     const withdrawn = 40000 * personalFactor(10, '2026-09-01', '2027-07-01')!.factor;
     expect(Number(chart[2].real.personal?.invested)).toBeCloseTo(110000 - withdrawn, 1);

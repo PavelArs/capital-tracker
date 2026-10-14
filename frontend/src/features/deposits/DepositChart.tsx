@@ -22,6 +22,7 @@ interface Plotted {
   invested: number;
   balance: string;
   paidIn: string;
+  estimated: boolean;
 }
 
 /** Consecutive points that have a figure, so a missing one breaks the line instead of joining. */
@@ -66,7 +67,9 @@ export default function DepositChart({
   }, []);
 
   const figures = points.map((point) =>
-    real ? point.real[basis] : { balance: point.balance, invested: point.invested },
+    real
+      ? point.real[basis]
+      : { balance: point.balance, invested: point.invested, estimated: false },
   );
   const plotted: Plotted[] = points.flatMap((point, index) => {
     const figure = figures[index];
@@ -80,6 +83,7 @@ export default function DepositChart({
             invested: Number(figure.invested),
             balance: figure.balance,
             paidIn: figure.invested,
+            estimated: figure.estimated,
           },
         ];
   });
@@ -309,9 +313,15 @@ export default function DepositChart({
               <span>{legend.paid}</span>
               <span>{money(current.paidIn, currency)}</span>
             </div>
+            {current.estimated && <div className="dashboard-tip__flow">Estimated</div>}
           </div>
         )}
       </div>
+      {real && plotted.some((entry) => entry.estimated) && (
+        <p className="shell-note">
+          Estimated after the latest published inflation month, or at your own rate.
+        </p>
+      )}
     </section>
   );
 }
