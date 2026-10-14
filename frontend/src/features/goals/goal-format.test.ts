@@ -1,12 +1,19 @@
 import type { Goal, GoalScenario } from '@api/goals.api';
 import { describe, expect, it } from 'vitest';
 import {
+  againstTarget,
   dateText,
   difference,
+  enteredText,
+  flooredText,
+  monthsFrom,
   monthYear,
+  neededText,
   ordered,
   rateText,
+  reachedDate,
   span,
+  timeLeft,
   verdict,
   wholeMoney,
 } from './goal-format';
@@ -168,5 +175,110 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
         }),
       ),
     ).toContain('could be valued');
+  });
+});
+
+describe('GOAL-VERDICT with assets that have no price', () => {
+  const unpriced = { current: '5000.00', complete: false, percent: '25.00', remaining: null };
+
+  it('gives no date or sum worked out from an understated value', () => {
+    expect(verdict(goal({ progress: unpriced }))).toBe(
+      'On track even without the assets that have no price or rate yet.',
+    );
+    expect(verdict(goal({ progress: unpriced, status: 'open', deadline: null }))).toContain(
+      'no date or monthly sum is worked out',
+    );
+  });
+});
+
+describe('GOAL-NEEDED a sum to put in', () => {
+  it('rounds up so that the figure shown reaches the need', () => {
+    expect(neededText('1.40', 'USD')).toBe('$2');
+    expect(neededText('0.40', 'USD')).toBe('$1');
+    expect(neededText('420000.00', 'RUB')).toBe('₽420,000');
+    expect(neededText('0.00', 'USD')).toBe('$0');
+    expect(neededText(null, 'USD')).toBe('—');
+  });
+});
+
+describe('GOAL-MONTHS whole months by the payment schedule', () => {
+  it('counts a clipped anniversary at the end of a short month as a month', () => {
+    expect(monthsFrom('2026-01-31', '2026-02-28')).toBe(1);
+    expect(monthsFrom('2026-01-31', '2026-02-27')).toBe(0);
+    expect(monthsFrom('2026-10-13', '2027-01-12')).toBe(2);
+    expect(monthsFrom('2026-10-13', '2027-01-13')).toBe(3);
+    expect(monthsFrom('2026-10-13', '2026-10-12')).toBe(-1);
+  });
+});
+
+describe('GOAL-ENTERED a sum as the owner entered it', () => {
+  it('keeps the cents of an entered sum and leaves whole sums whole', () => {
+    expect(enteredText('1.40', 'USD')).toBe('$1.40');
+    expect(enteredText('1234567.05', 'EUR')).toBe('€1,234,567.05');
+    expect(enteredText('150000.00', 'RUB')).toBe('₽150,000');
+    expect(enteredText(null, 'USD')).toBe('—');
+  });
+});
+
+describe('GOAL-FLOORED a value short of the sum', () => {
+  it('rounds down so it never reads as the sum', () => {
+    expect(flooredText('1.99', 'USD')).toBe('$1');
+    expect(flooredText('0.75', 'USD')).toBe('$0.75');
+    expect(flooredText('5500000.60', 'RUB')).toBe('₽5,500,000');
+    expect(flooredText(null, 'USD')).toBe('—');
+  });
+});
+
+describe('GOAL-AGAINST a projection against the sum', () => {
+  it('says short, more, or on the sum when the gap rounds to nothing', () => {
+    expect(againstTarget('600.00', 'USD')?.text).toBe('$600 short');
+    expect(againstTarget('-1200.00', 'USD')?.hint).toBe('$1,200 more than the sum');
+    expect(againstTarget('0.00', 'USD')).toMatchObject({ text: 'On the sum', tone: 'level' });
+    expect(againstTarget(null, 'USD')).toBeNull();
+  });
+
+  it('writes out the cents of a gap under half a unit instead of showing $0', () => {
+    expect(againstTarget('0.49', 'USD')).toMatchObject({ text: '$0.49 short', tone: 'short' });
+    expect(againstTarget('-0.49', 'USD')).toMatchObject({ text: '$0.49 more', tone: 'more' });
+    expect(againstTarget('0.05', 'USD')?.text).toBe('$0.05 short');
+    expect(againstTarget('0.50', 'USD')?.text).toBe('$0.50 short');
+    expect(againstTarget('1.40', 'USD')?.text).toBe('$2 short');
+    expect(againstTarget('-1.60', 'USD')?.text).toBe('$1 more');
+  });
+
+  it('shows no sum for a figure written in scientific notation', () => {
+    expect(wholeMoney('9.27e+127', 'USD')).toBe('—');
+    expect(againstTarget('9.27e+127', 'USD')).toBeNull();
+  });
+});
+
+describe('GOAL-TIME-LEFT time left to the date', () => {
+  it('counts from the day of the forecast, not the browser date', () => {
+    expect(timeLeft('2027-01-13', '2026-10-13')).toBe('3 months');
+    expect(timeLeft('2026-10-13', '2026-10-13')).toBeNull();
+    expect(timeLeft('2026-10-12', '2026-10-13')).toBeNull();
+  });
+});
+
+describe('GOAL-REACHED-DATE when a case gets the sum', () => {
+  const late = scenario({ reachedOn: '2026-12-13', gap: '-480.00', metByDeadline: true });
+  const dated = goal({ deadline: '2026-11-30', scenarios: [late] });
+
+  it('gives the deadline when the sum is already there by it but the whole months run past', () => {
+    expect(reachedDate(dated, late)).toBe('2026-11-30');
+    expect(verdict(dated)).toContain('by Nov 2026');
+  });
+
+  it('follows the unrounded verdict, whatever the rounded gap reads', () => {
+    const surplus = scenario({ reachedOn: '2026-12-13', gap: '0.00', metByDeadline: true });
+    expect(reachedDate(goal({ deadline: '2026-11-30' }), surplus)).toBe('2026-11-30');
+    const missed = scenario({ reachedOn: '2026-12-13', gap: '0.00', metByDeadline: false });
+    expect(reachedDate(goal({ deadline: '2026-11-30' }), missed)).toBe('2026-12-13');
+  });
+
+  it('keeps the server date when the case is short at the deadline', () => {
+    const short = scenario({ reachedOn: '2026-12-13', gap: '480.00' });
+    expect(reachedDate(goal({ deadline: '2026-11-30' }), short)).toBe('2026-12-13');
+    expect(reachedDate(goal({ deadline: null }), late)).toBe('2026-12-13');
   });
 });

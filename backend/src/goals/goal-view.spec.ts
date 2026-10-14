@@ -44,9 +44,11 @@ describe('goal view', () => {
     const rich = goalView({ ...row, monthlyContribution: '1000.00' }, now('10000.00'), today);
     expect(rich.status).toBe('on-track');
     expect(Number(rich.scenarios[1].gap)).toBeLessThanOrEqual(0);
+    expect(rich.scenarios[1].metByDeadline).toBe(true);
     const poor = goalView({ ...row, monthlyContribution: '10.00' }, now('10000.00'), today);
     expect(poor.status).toBe('behind');
     expect(Number(poor.scenarios[1].gap)).toBeGreaterThan(0);
+    expect(poor.scenarios[1].metByDeadline).toBe(false);
   });
 
   it('judges the status on the unrounded projection, not the gap shown to the cent', () => {
@@ -59,6 +61,7 @@ describe('goal view', () => {
     };
     const view = goalView(short, now('61.00'), today);
     expect(view.scenarios[1].gap).toBe('0.00');
+    expect(view.scenarios[1].metByDeadline).toBe(false);
     expect(view.status).toBe('behind');
   });
 
@@ -135,6 +138,7 @@ describe('goal view', () => {
     for (const scenario of view.scenarios) {
       expect(scenario.projectedAtDeadline).toBeNull();
       expect(scenario.gap).toBeNull();
+      expect(scenario.metByDeadline).toBeNull();
       expect(JSON.stringify(scenario)).not.toContain('NaN');
     }
   });

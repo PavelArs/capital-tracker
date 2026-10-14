@@ -44,6 +44,8 @@ export interface GoalScenario {
   projectedAtDeadline: string | null;
   /** Target minus the projection at the deadline; negative is a surplus. */
   gap: string | null;
+  /** Whether the unrounded projection reaches the target by the deadline; null without one. */
+  metByDeadline: boolean | null;
 }
 
 const cents = (value: number) => (Math.round(value * 100) / 100).toFixed(2);
@@ -91,6 +93,8 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
             reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),
             projectedAtDeadline: projected === null ? null : figure(projected),
             gap: projected === null ? null : figure(target - projected),
+            metByDeadline:
+              projected === null || !Number.isFinite(projected) ? null : projected >= target,
           };
         });
   let status: GoalStatus;

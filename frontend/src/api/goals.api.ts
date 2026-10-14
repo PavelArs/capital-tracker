@@ -20,6 +20,8 @@ export interface GoalScenario {
   projectedAtDeadline: string | null;
   /** Target minus the projection at the deadline; negative is a surplus. */
   gap: string | null;
+  /** Whether the unrounded projection reaches the sum by the date; null without a date. */
+  metByDeadline?: boolean | null;
 }
 
 export interface Goal {
