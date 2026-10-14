@@ -379,7 +379,7 @@ async function wholePortfolio(db, s, f) {
     // cost is 4100 and the purchase lots add up to that subtotal. A reward or a gift in this
     // fixture would make the asset-wide figures larger than the purchases; then compare to the
     // purchase subtotal instead.
-    same(bitcoinOf(rising).costBasis, '4100');
+    same(exact(bitcoinOf(rising).costBasis), '4100');
     same(sum((lot) => lot.paid), '4100');
     same(sum((lot) => lot.real.official.costBasis), bitcoinOf(rising).real.official.costBasis);
     same(sum((lot) => lot.real.personal.costBasis), bitcoinOf(rising).real.personal.costBasis);
