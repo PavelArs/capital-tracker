@@ -35,10 +35,10 @@ export interface NativeAmount {
   amount: string;
 }
 /**
- * Whether a held FIFO lot was bought (or carried in from a purchase), however it moved since: an
- * own transfer keeps its origin. A reward, a swap or a coin received without a purchase is not.
- * `isBoughtTrade` says whether a buy trade is a purchase: income, gifts received and the cash a
- * sale brought in are buys in FIFO too, but they were not paid for.
+ * Whether a held FIFO lot was bought, however it moved since: an own transfer keeps its origin.
+ * A reward, a swap, a coin received without a purchase and an opening (carry-in) lot are not:
+ * opening cost is not a recorded purchase. `isBoughtTrade` says whether a buy trade is a purchase:
+ * income, gifts received and the cash a sale brought in are buys in FIFO too, but not paid for.
  */
 export function isPurchase(
   lot: {
@@ -52,8 +52,6 @@ export function isPurchase(
   if (lot.buyTradeId !== undefined) {
     return lot.buyVersion !== undefined && isBoughtTrade(lot.buyTradeId, lot.buyVersion);
   }
-  if (lot.sourceKind === 'carry-in') return true;
-  if (lot.origin?.kind === 'carry-in') return true;
   return lot.origin?.kind === 'trade' && isBoughtTrade(lot.origin.tradeId, lot.origin.version);
 }
 

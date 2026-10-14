@@ -44,9 +44,20 @@ const buy = (tradeId: string, purpose?: FifoTrade['purpose']): FifoTrade => ({
 });
 
 describe('INFL-REAL-LOTS-ORIGIN which held lots are purchases', () => {
-  it('a bought lot is a purchase, and so is one carried in from a purchase', () => {
+  it('a bought lot is a purchase', () => {
     expect(isPurchase({ buyTradeId: 't1', buyVersion: 1 }, isBoughtTrade)).toBe(true);
-    expect(isPurchase({ sourceKind: 'carry-in' }, isBoughtTrade)).toBe(true);
+  });
+
+  it('a carried-in opening lot is not a purchase: its cost is not a recorded purchase', () => {
+    expect(isPurchase({ sourceKind: 'carry-in' }, isBoughtTrade)).toBe(false);
+    const opening: LotOrigin = {
+      ...trade,
+      kind: 'carry-in',
+      lotId: 'l',
+      openingRevision: 1,
+      ordinal: 1,
+    } as LotOrigin;
+    expect(isPurchase({ sourceKind: 'transfer', origin: opening }, isBoughtTrade)).toBe(false);
   });
 
   it('an own transfer keeps the origin: a bought coin stays a purchase after it moved', () => {
