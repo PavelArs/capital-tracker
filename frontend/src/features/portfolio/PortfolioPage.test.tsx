@@ -1508,6 +1508,18 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(within(again).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
   });
 
+  it('LOTS-EMPTY-INCOMPLETE lists the purchases of an asset with none held while an account history starts later', async () => {
+    const emptied = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([emptied], { unavailableAccountCount: 1 }),
+    );
+    withLots([], false);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).getByRole('note')).toHaveTextContent('may hold more purchases');
+    expect(portfolioValuationApi.lots).toHaveBeenCalledWith(bitcoin.instrumentId, undefined);
+  });
+
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
     const sold = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([sold]));

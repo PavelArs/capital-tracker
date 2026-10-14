@@ -375,7 +375,12 @@ async function wholePortfolio(db, s, f) {
       lotsOf.lots.reduce((total, lot) => total + (pick(lot) === null ? 0n : exact(pick(lot))), 0n);
     const same = (total, expected) =>
       assert.equal(total, expected === null ? 0n : exact(expected), `${total} is not ${expected}`);
-    same(sum((lot) => lot.paid), bitcoinOf(rising).costBasis);
+    // Bitcoin here holds only purchases (0.05 for 3500 and 0.01 for 600 USD, no sale), so its held
+    // cost is 4100 and the purchase lots add up to that subtotal. A reward or a gift in this
+    // fixture would make the asset-wide figures larger than the purchases; then compare to the
+    // purchase subtotal instead.
+    same(bitcoinOf(rising).costBasis, '4100');
+    same(sum((lot) => lot.paid), '4100');
     same(sum((lot) => lot.real.official.costBasis), bitcoinOf(rising).real.official.costBasis);
     same(sum((lot) => lot.real.personal.costBasis), bitcoinOf(rising).real.personal.costBasis);
     assert.ok(lotsOf.lots.every((lot) => lot.real.personal.ownRate === true));
