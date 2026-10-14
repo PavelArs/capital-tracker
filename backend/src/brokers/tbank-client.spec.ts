@@ -161,6 +161,8 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
         averagePriceCurrency: 'rub',
         currentPrice: '101',
         currentPriceCurrency: 'usd',
+        virtual: false,
+        expiresAt: '',
       },
       {
         instrumentUid: 'synthetic-uid-0002',
@@ -170,6 +172,8 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
         averagePriceCurrency: '',
         currentPrice: '',
         currentPriceCurrency: '',
+        virtual: false,
+        expiresAt: '',
       },
       {
         instrumentUid: 'synthetic-uid-0003',
@@ -179,6 +183,8 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
         averagePriceCurrency: '',
         currentPrice: '99',
         currentPriceCurrency: 'rub',
+        virtual: false,
+        expiresAt: '',
       },
     ]);
   });
@@ -194,6 +200,33 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
     ).toThrow();
     expect(parsePositions({ positions: [{ instrumentUid: 'a', quantity: {} }] })).toHaveLength(1);
     expect(parsePositions({})).toEqual([]);
+  });
+
+  it('lists virtual (gift) positions after held ones, marked with when they expire', () => {
+    const read = parsePositions({
+      positions: [{ instrumentUid: 'synthetic-uid-0001', quantity: { units: '2' } }],
+      virtualPositions: [
+        {
+          instrumentUid: 'synthetic-uid-0004',
+          instrumentType: 'share',
+          quantity: { units: '1' },
+          expireDate: '2026-12-01T00:00:00Z',
+        },
+        { instrumentUid: 'synthetic-uid-0005', quantity: { units: '1' }, expireDate: 'soon' },
+      ],
+    });
+    expect(read.map((item) => [item.instrumentUid, item.virtual, item.expiresAt])).toEqual([
+      ['synthetic-uid-0001', false, ''],
+      ['synthetic-uid-0004', true, '2026-12-01T00:00:00Z'],
+      ['synthetic-uid-0005', true, ''],
+    ]);
+    expect(() => parsePositions({ virtualPositions: 'x' })).toThrow();
+    expect(() =>
+      parsePositions({
+        positions: Array.from({ length: 300 }, () => ({ instrumentUid: 'a', quantity: {} })),
+        virtualPositions: Array.from({ length: 201 }, () => ({ instrumentUid: 'b', quantity: {} })),
+      }),
+    ).toThrow();
   });
 });
 

@@ -37,6 +37,10 @@ export interface TBankPosition {
   averagePriceCurrency: string;
   currentPrice: string;
   currentPriceCurrency: string;
+  /** A gift (virtual) position: shown, but not owned until sold before it expires. */
+  virtual: boolean;
+  /** When a virtual position expires (RFC 3339), '' for a held one or when T-Bank gives none. */
+  expiresAt: string;
 }
 
 class InvalidResponse extends Error {}
@@ -115,28 +119,42 @@ function price(value: unknown): { amount: string; currency: string } {
   };
 }
 
+const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
+
+function position(value: unknown, virtual: boolean): TBankPosition {
+  const item = record(value);
+  const uid = item.instrumentUid;
+  if (typeof uid !== 'string' || !idPattern.test(uid)) return invalid();
+  const type = typeof item.instrumentType === 'string' ? item.instrumentType : '';
+  const average = price(item.averagePositionPrice);
+  const current = price(item.currentPrice);
+  const expires = virtual && typeof item.expireDate === 'string' ? item.expireDate : '';
+  return {
+    instrumentUid: uid,
+    // T-Bank names the type in lower case: share, bond, etf, currency, futures.
+    instrumentType: /^[a-z_]{1,40}$/.test(type) ? type : 'unknown',
+    // A position without a quantity is a broken answer, not an empty holding.
+    quantity: decimal(item.quantity),
+    averagePrice: average.amount,
+    averagePriceCurrency: average.currency,
+    currentPrice: current.amount,
+    currentPriceCurrency: current.currency,
+    virtual,
+    expiresAt: timestampPattern.test(expires) ? expires : '',
+  };
+}
+
+/** The held positions, then the virtual (gift) ones T-Bank lists apart from them. */
 export function parsePositions(body: unknown): TBankPosition[] {
-  const list = record(body).positions ?? [];
-  if (!Array.isArray(list) || list.length > 500) return invalid();
-  return list.map((value) => {
-    const item = record(value);
-    const uid = item.instrumentUid;
-    if (typeof uid !== 'string' || !idPattern.test(uid)) return invalid();
-    const type = typeof item.instrumentType === 'string' ? item.instrumentType : '';
-    const average = price(item.averagePositionPrice);
-    const current = price(item.currentPrice);
-    return {
-      instrumentUid: uid,
-      // T-Bank names the type in lower case: share, bond, etf, currency, futures.
-      instrumentType: /^[a-z_]{1,40}$/.test(type) ? type : 'unknown',
-      // A position without a quantity is a broken answer, not an empty holding.
-      quantity: decimal(item.quantity),
-      averagePrice: average.amount,
-      averagePriceCurrency: average.currency,
-      currentPrice: current.amount,
-      currentPriceCurrency: current.currency,
-    };
-  });
+  const answer = record(body);
+  const held = answer.positions ?? [];
+  const gifts = answer.virtualPositions ?? [];
+  if (!Array.isArray(held) || !Array.isArray(gifts) || held.length + gifts.length > 500)
+    return invalid();
+  return [
+    ...held.map((value) => position(value, false)),
+    ...gifts.map((value) => position(value, true)),
+  ];
 }
 
 export class TBankClient {
