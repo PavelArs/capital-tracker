@@ -336,6 +336,55 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(capitalFlows(hiddenInputs)).toHaveLength(2);
   });
 
+  it('ASSET-HIDE-CASH a trade across the hidden boundary moves money in or out of what is shown', () => {
+    const usdt = { instrumentId: 'usdt', instrumentName: 'Tether', instrumentSymbol: 'USDT' };
+    const rub = { instrumentId: 'rub', instrumentName: 'Russian ruble', instrumentSymbol: 'RUB' };
+    const trades: FifoTrade[] = [
+      // USDT put in from outside, then spent on BTC and refilled by a BTC sale.
+      { ...trade('buy', '2025-06-10T00:00:00.000Z', '1000'), instrumentId: 'usdt' },
+      {
+        ...trade('buy', '2025-06-11T00:00:00.000Z', '1000'),
+        settlement: { ...usdt, quantity: '1000' },
+      },
+      {
+        ...trade('sell', '2025-06-12T00:00:00.000Z', '1200', '10'),
+        settlement: { ...usdt, quantity: '1190' },
+      },
+      // Paid in rubles, a quarter from the account's ruble cash.
+      {
+        ...trade('buy', '2025-06-13T00:00:00.000Z', '1000'),
+        paid: {
+          currency: 'RUB',
+          gross: '80000',
+          fee: '0',
+          rateDate: '2025-06-13',
+          perUsd: '80',
+          rateSource: 'owner',
+        },
+        settlement: { ...rub, quantity: '20000' },
+      },
+    ];
+    const account = { id: 'bybit', coverageFrom: '2025-06-01T00:00:00.000Z', trades };
+    // The cash hidden: BTC bought with it is all money put in, BTC sold into it all taken out.
+    const cashHidden = capitalFlows({ ...inputs([account]), hidden: new Set(['usdt', 'rub']) });
+    expect(shown(cashHidden)).toEqual([
+      ['2025-06-11T00:00:00.000Z', units(1000), '2025-06-11'],
+      ['2025-06-12T00:00:00.000Z', units(-1190), '2025-06-12'],
+      ['2025-06-13T00:00:00.000Z', units(1000), '2025-06-13'],
+    ]);
+    expect(cashHidden[2].native).toEqual({ currency: 'RUB', amount: BigInt(units(80000)) });
+    // BTC hidden: the cash spent on it leaves what is shown and its proceeds come back.
+    const coinHidden = capitalFlows({ ...inputs([account]), hidden: new Set(['btc']) });
+    expect(shown(coinHidden)).toEqual([
+      ['2025-06-10T00:00:00.000Z', units(1000), '2025-06-10'],
+      ['2025-06-11T00:00:00.000Z', units(-1000), '2025-06-11'],
+      ['2025-06-12T00:00:00.000Z', units(1190), '2025-06-12'],
+      ['2025-06-13T00:00:00.000Z', units(-250), '2025-06-13'],
+    ]);
+    expect(coinHidden.slice(1).map((flow) => flow.instrumentId)).toEqual(['usdt', 'usdt', 'rub']);
+    expect(coinHidden[3].native).toEqual({ currency: 'RUB', amount: BigInt(units(-20000)) });
+  });
+
   it('FLOW-SPLIT-DEPOSIT V0 100000, a 10000 buy paid from outside, V1 110000', () => {
     const start = { at: at('2026-09-05T00:00:00.000Z'), value: '100000' };
     const end = { at: at('2026-10-05T00:00:00.000Z'), value: '110000' };

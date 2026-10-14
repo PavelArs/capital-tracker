@@ -72,18 +72,27 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
         });
       }
       for (const trade of account.trades) {
-        // A sale kept as cash moves no money; a fee only lowers the return (PR-OPS-2).
-        if ((trade.settlement && trade.side === 'sell') || trade.purpose === 'fee') continue;
-        if (inputs.hidden.has(trade.instrumentId)) continue;
-        // The part of a buy's cost the account's cash paid, in USD and as paid.
+        // A fee only lowers the return (PR-OPS-2).
+        if (trade.purpose === 'fee') continue;
+        // The cash side: what a buy spent of the account's cash or a sale kept as cash, in USD
+        // and as paid. A sale kept as cash moves no money in or out.
         const cash = settlementLeg(trade);
-        const flow = (gross: bigint, fee: bigint, spent: bigint) =>
-          trade.side === 'buy' ? gross + fee - spent : fee - gross;
+        if (trade.settlement && trade.side === 'sell' && cash === null) continue;
+        // ASSET-HIDE: what is hidden is outside, so a trade between a shown and a hidden side
+        // moves money in or out of what is shown, like a trade settled from outside.
+        const shownAsset = !inputs.hidden.has(trade.instrumentId);
+        const shownCash = cash !== null && !inputs.hidden.has(trade.settlement!.instrumentId);
+        if (!shownAsset && !shownCash) continue;
+        // A buy brings in its gross plus fee and a sale takes out its proceeds net of fee; the
+        // cash side shown pays a buy's share or keeps a sale's proceeds.
+        const sign = trade.side === 'buy' ? 1n : -1n;
+        const flow = (gross: bigint, fee: bigint, settled: bigint) =>
+          sign * ((shownAsset ? gross + sign * fee : 0n) - (shownCash ? settled : 0n));
         const usd = flow(signed(trade.grossUsd), signed(trade.feeUsd), cash?.usd ?? 0n);
         if (trade.settlement && usd === 0n) continue;
         flows.push({
           at: Date.parse(trade.occurredAt),
-          instrumentId: trade.instrumentId,
+          instrumentId: shownAsset ? trade.instrumentId : trade.settlement!.instrumentId,
           usd,
           rateDate: moscowDate(trade.occurredAt),
           ...(trade.paid
