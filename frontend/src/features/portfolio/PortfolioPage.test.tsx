@@ -1448,6 +1448,23 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(bodyRows(region)).toHaveLength(1);
   });
 
+  it('LOTS-SCOPE-FAILURE does not show another asset a failure while its purchases load', async () => {
+    const other = '00000000-0000-4000-8000-0000000000aa';
+    vi.spyOn(portfolioValuationApi, 'lots')
+      .mockRejectedValueOnce(httpError(500))
+      .mockReturnValueOnce(new Promise(() => undefined));
+    const { rerender } = render(
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+    );
+    const region = await screen.findByRole('region', { name: 'Purchases after inflation' });
+    await within(region).findByRole('alert');
+    rerender(<AssetLotsCard instrumentId={other} asked={undefined} at="a" />);
+    await waitFor(() =>
+      expect(portfolioValuationApi.lots).toHaveBeenLastCalledWith(other, undefined),
+    );
+    expect(within(region).queryByRole('alert')).toBeNull();
+  });
+
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
     const sold = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([sold]));

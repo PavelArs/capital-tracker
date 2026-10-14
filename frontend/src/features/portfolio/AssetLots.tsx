@@ -228,11 +228,15 @@ export default function AssetLotsCard({
   const { data: answer, error, reload } = read;
   // The hook clears its error when a load starts, so the warning is kept here. It belongs to the
   // figures on screen when a load failed: it stays until an answer replaces those figures.
-  const [failedOver, setFailedOver] = useState<{ answer: AssetLots | null } | null>(null);
+  // It is also kept for the asset and currency it failed for: another one can have no answer yet.
+  const scope = `${instrumentId}:${asked ?? ''}`;
+  const [failedOver, setFailedOver] = useState<{ scope: string; answer: AssetLots | null } | null>(
+    null,
+  );
   useEffect(() => {
-    if (error !== null) setFailedOver({ answer });
-  }, [error, answer]);
-  const stale = failedOver !== null && failedOver.answer === answer;
+    if (error !== null) setFailedOver({ scope, answer });
+  }, [error, answer, scope]);
+  const stale = failedOver !== null && failedOver.scope === scope && failedOver.answer === answer;
   // A fresh portfolio answer (a saved price) changes the values, so the lots are asked again.
   // The mount already asked, so only a change of `at` asks.
   const shownAt = useRef(at);
