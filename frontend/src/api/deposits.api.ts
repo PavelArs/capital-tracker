@@ -75,7 +75,10 @@ export interface Deposit {
     balance: string;
     interest: string;
     /** The end balance in today's money by each reading; absent in an answer saved before this. */
-    inTodaysMoney?: { official: string | null; personal: string | null };
+    inTodaysMoney?: {
+      official: { amount: string; estimated: boolean } | null;
+      personal: { amount: string; estimated: boolean } | null;
+    };
   } | null;
   lastCheck: DepositCheck | null;
 }

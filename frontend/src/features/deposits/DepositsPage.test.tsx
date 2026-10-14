@@ -714,7 +714,10 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
           date: '2026-12-01',
           balance: '104000.00',
           interest: '4000.00',
-          inTodaysMoney: { official: '98000.00', personal: '99000.00' },
+          inTodaysMoney: {
+            official: { amount: '98000.00', estimated: false },
+            personal: { amount: '99000.00', estimated: true },
+          },
         },
       }),
     );
@@ -723,6 +726,8 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     cleanup();
     setInflationBasis('personal');
     open(`/deposits/${savings.id}`);
-    expect(await screen.findByText(/≈ ₽99,000\.00 in today's money/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/≈ ₽99,000\.00 in today's money \(estimated\)/),
+    ).toBeInTheDocument();
   });
 });

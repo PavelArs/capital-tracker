@@ -139,6 +139,12 @@ export function depositReal(input: RealDepositInput, reading: InflationReading):
   };
 }
 
+/** A figure in the money of a day asked: estimated where its inflation reaches past the published months. */
+export interface TodaysMoney {
+  amount: string;
+  estimated: boolean;
+}
+
 export interface ChartValues {
   balance: string;
   invested: string;
@@ -185,9 +191,13 @@ function realPoint(
   };
 }
 
+const dayBefore = (date: string) =>
+  new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
 /**
- * The days a chart samples: each month from the start, every movement day and the day asked, in
- * order and without repeats, none after the day asked.
+ * The days a chart samples: each month from the start, every movement day, the day before each
+ * movement (so its jump is drawn on the day, not as a slope from the last month) and the day asked.
+ * In order and without repeats, none after the day asked, none before the start.
  */
 export function chartDates(
   start: string,
@@ -200,7 +210,11 @@ export function chartDates(
     if (date > asOf) break;
     dates.add(date);
   }
-  for (const date of movementDates) if (date <= asOf) dates.add(date);
+  for (const date of movementDates) {
+    if (date > asOf) continue;
+    dates.add(date);
+    if (dayBefore(date) >= start) dates.add(dayBefore(date));
+  }
   return [...dates].sort();
 }
 
@@ -241,11 +255,13 @@ export function inTodaysMoney(
   asOf: string,
   end: string,
   readings: InflationReadings,
-): { official: string | null; personal: string | null } {
+): { official: TodaysMoney | null; personal: TodaysMoney | null } {
   const atoms = canonicalDecimalToAtoms(balance);
-  const at = (reading: InflationReading) => {
+  const at = (reading: InflationReading): TodaysMoney | null => {
     const factor = reading.factor(asOf, end);
-    return factor === null ? null : centsText(carry(atoms, 1 / factor.factor));
+    return factor === null
+      ? null
+      : { amount: centsText(carry(atoms, 1 / factor.factor)), estimated: factor.estimated };
   };
   return { official: at(readings.official), personal: at(readings.personal) };
 }

@@ -351,9 +351,10 @@ export default function DepositPage() {
                 value={money(deposit.atMaturity.balance, own)}
                 hint={[
                   `${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`,
-                  deposit.atMaturity.inTodaysMoney &&
-                    deposit.atMaturity.inTodaysMoney[basis] !== null &&
-                    `≈ ${money(deposit.atMaturity.inTodaysMoney[basis], own)} in today's money`,
+                  deposit.atMaturity.inTodaysMoney?.[basis] &&
+                    `≈ ${money(deposit.atMaturity.inTodaysMoney[basis].amount, own)} in today's money${
+                      deposit.atMaturity.inTodaysMoney[basis].estimated ? ' (estimated)' : ''
+                    }`,
                 ]
                   .filter(Boolean)
                   .join(', ')}

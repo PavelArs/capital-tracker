@@ -250,7 +250,7 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
   it('INFL-DEPOSIT-CHART-DAYS samples each month, every movement day and the day asked, in order', () => {
     expect(
       chartDates('2026-07-01', '2026-09-10', ['2026-08-15', '2026-12-01', '2026-08-15']),
-    ).toEqual(['2026-07-01', '2026-08-01', '2026-08-15', '2026-09-01', '2026-09-10']);
+    ).toEqual(['2026-07-01', '2026-08-01', '2026-08-14', '2026-08-15', '2026-09-01', '2026-09-10']);
     // A day asked before the first month still gives that day alone, with no movement after it.
     expect(chartDates('2026-07-01', '2026-06-20', ['2026-07-01'])).toEqual(['2026-06-20']);
   });
@@ -259,7 +259,7 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
     const { personal, official } = inflationReadings(noSeries, '10');
     expect(inTodaysMoney('110000.00', '2026-07-01', '2027-07-01', { official, personal })).toEqual({
       official: null,
-      personal: '100000.00',
+      personal: { amount: '100000.00', estimated: true },
     });
     // A day after the end has no span to carry the balance across.
     expect(inTodaysMoney('110000.00', '2027-08-01', '2027-07-01', { official, personal })).toEqual({
