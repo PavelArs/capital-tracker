@@ -23,6 +23,8 @@ export interface TBankAccount {
   /** Closed for good: nothing can be done with it, whatever the token allows. */
   closed: boolean;
   access: TBankAccess;
+  /** An Invest Box (Инвесткопилка): T-Bank gives no portfolio for it. */
+  investBox: boolean;
 }
 
 /** One position the token reads in a broker account, with prices as exact decimal text. */
@@ -75,18 +77,20 @@ export function parseAccounts(body: unknown): TBankAccount[] {
       closed: item.status === 'ACCOUNT_STATUS_CLOSED',
       // A token or an account the contract does not describe is treated as able to trade.
       access: level ?? 'full_access',
+      investBox: item.type === 'ACCOUNT_TYPE_INVEST_BOX',
     };
   });
 }
 
 /**
  * A Quotation or MoneyValue (int64 units as text, int32 nano) as exact decimal text, so a price
- * never passes through a float.
+ * never passes through a float. JSON leaves out a zero part, so an absent part reads as zero.
  */
 export function decimal(value: unknown): string {
   const item = record(value);
-  const units = typeof item.units === 'string' ? item.units : invalid();
-  const nano = typeof item.nano === 'number' ? item.nano : 0;
+  const units =
+    item.units === undefined ? '0' : typeof item.units === 'string' ? item.units : invalid();
+  const nano = item.nano === undefined ? 0 : typeof item.nano === 'number' ? item.nano : invalid();
   if (!/^-?\d{1,18}$/.test(units) || !Number.isInteger(nano) || Math.abs(nano) > 999_999_999)
     return invalid();
   const negative = units.startsWith('-') || nano < 0;
@@ -106,9 +110,11 @@ export function parsePositions(body: unknown): TBankPosition[] {
     const type = typeof item.instrumentType === 'string' ? item.instrumentType : '';
     return {
       instrumentUid: uid,
-      instrumentType: /^[A-Z_]{1,40}$/.test(type) ? type : 'UNKNOWN',
+      // T-Bank names the type in lower case: share, bond, etf, currency, futures.
+      instrumentType: /^[a-z_]{1,40}$/.test(type) ? type : 'unknown',
       currency: typeof average.currency === 'string' ? average.currency : '',
-      quantity: decimal(item.quantity ?? { units: '0', nano: 0 }),
+      // A position without a quantity is a broken answer, not an empty holding.
+      quantity: decimal(item.quantity),
       averagePrice: item.averagePositionPrice ? decimal(average) : '',
       currentPrice: item.currentPrice ? decimal(item.currentPrice) : '',
     };

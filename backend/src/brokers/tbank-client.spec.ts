@@ -37,6 +37,7 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         open: true,
         closed: false,
         access: 'read_only',
+        investBox: false,
       },
       {
         id: '2000000002',
@@ -44,6 +45,7 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         open: false,
         closed: true,
         access: 'read_only',
+        investBox: false,
       },
       {
         id: '2000000003',
@@ -51,8 +53,16 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
         open: true,
         closed: false,
         access: 'full_access',
+        investBox: false,
       },
     ]);
+  });
+
+  it('marks an Invest Box, whose portfolio T-Bank does not give', () => {
+    const [box, broker] = parseAccounts({
+      accounts: [account({ type: 'ACCOUNT_TYPE_INVEST_BOX' }), account()],
+    });
+    expect([box.investBox, broker.investBox]).toEqual([true, false]);
   });
 
   it('does not call an account closed unless T-Bank says so', () => {
@@ -102,10 +112,17 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
     expect(decimal({ units: '0', nano: 0 })).toBe('0');
   });
 
+  it('reads a part JSON leaves out as zero', () => {
+    expect(decimal({ nano: 500_000_000 })).toBe('0.5');
+    expect(decimal({ units: '3' })).toBe('3');
+    expect(decimal({})).toBe('0');
+  });
+
   it('refuses a number that is not an int64 text or a nano out of range', () => {
     expect(() => decimal({ units: 12, nano: 0 })).toThrow();
     expect(() => decimal({ units: '1.5', nano: 0 })).toThrow();
     expect(() => decimal({ units: '1', nano: 1_000_000_000 })).toThrow();
+    expect(() => decimal({ units: '1', nano: '5' })).toThrow();
     expect(() => decimal(null)).toThrow();
   });
 
@@ -115,19 +132,19 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
         positions: [
           {
             instrumentUid: 'synthetic-uid-0001',
-            instrumentType: 'INSTRUMENT_TYPE_SHARE',
+            instrumentType: 'share',
             quantity: { units: '10', nano: 500_000_000 },
             averagePositionPrice: { currency: 'rub', units: '100', nano: 250_000_000 },
             currentPrice: { currency: 'rub', units: '101', nano: 0 },
             figi: 'SYNTHETIC0001',
           },
-          { instrumentUid: 'synthetic-uid-0002', instrumentType: 'weird-type' },
+          { instrumentUid: 'synthetic-uid-0002', instrumentType: 'weird-type', quantity: {} },
         ],
       }),
     ).toEqual([
       {
         instrumentUid: 'synthetic-uid-0001',
-        instrumentType: 'INSTRUMENT_TYPE_SHARE',
+        instrumentType: 'share',
         currency: 'rub',
         quantity: '10.5',
         averagePrice: '100.25',
@@ -135,7 +152,7 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
       },
       {
         instrumentUid: 'synthetic-uid-0002',
-        instrumentType: 'UNKNOWN',
+        instrumentType: 'unknown',
         currency: '',
         quantity: '0',
         averagePrice: '',
@@ -144,12 +161,16 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
     ]);
   });
 
-  it('refuses a body without positions of plain ids, or with too many', () => {
-    expect(() => parsePositions({ positions: [{ instrumentUid: 'a b' }] })).toThrow();
+  it('refuses a body without positions of plain ids and quantities, or with too many', () => {
+    expect(() => parsePositions({ positions: [{ instrumentUid: 'a b', quantity: {} }] })).toThrow();
+    expect(() => parsePositions({ positions: [{ instrumentUid: 'a' }] })).toThrow();
     expect(() => parsePositions({ positions: 'x' })).toThrow();
     expect(() =>
-      parsePositions({ positions: Array.from({ length: 501 }, () => ({ instrumentUid: 'a' })) }),
+      parsePositions({
+        positions: Array.from({ length: 501 }, () => ({ instrumentUid: 'a', quantity: {} })),
+      }),
     ).toThrow();
+    expect(parsePositions({ positions: [{ instrumentUid: 'a', quantity: {} }] })).toHaveLength(1);
     expect(parsePositions({})).toEqual([]);
   });
 });
@@ -195,6 +216,7 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
           open: true,
           closed: false,
           access: 'read_only',
+          investBox: false,
         },
       ],
     });

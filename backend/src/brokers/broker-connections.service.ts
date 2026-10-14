@@ -9,6 +9,7 @@ import { parseCheck, parseConnection, parseUuid } from './broker-connection-inpu
 import {
   type TBankAccount,
   TBankClient,
+  type TBankFailure,
   type TBankPosition,
   type TBankResult,
 } from './tbank-client';
@@ -19,6 +20,17 @@ interface ConnectionRow {
   brokerAccountId: string;
   savedAt: string;
   checkedAt: string;
+}
+
+/** Why a request made with the saved token gave nothing, as the owner should hear it. */
+function savedTokenFailure(reason: TBankFailure) {
+  if (reason === 'token_rejected')
+    return new UnprocessableEntityException(
+      'T-Bank no longer accepts the saved token. Create a new read-only token and connect again.',
+    );
+  return new ServiceUnavailableException(
+    'T-Bank could not be reached. Try again in a few minutes.',
+  );
 }
 
 const iso = (column: string) =>
@@ -104,19 +116,21 @@ export class BrokerConnectionsService {
     const token = this.box.open(rows[0].credentials, owner, account);
     if (token === null)
       throw new ServiceUnavailableException('The saved token cannot be opened on this server.');
-    const result: TBankResult<TBankPosition[]> = await this.tbank.portfolio(
-      token,
-      rows[0].brokerAccountId,
-    );
-    if (!result.ok) {
-      if (result.reason === 'token_rejected')
-        throw new UnprocessableEntityException(
-          'T-Bank no longer accepts the saved token. Create a new read-only token and connect again.',
-        );
-      throw new ServiceUnavailableException(
-        'T-Bank could not be reached. Try again in a few minutes.',
+    // The account's type is not stored, so ask for it: T-Bank gives no portfolio for an Invest
+    // Box, and retrying would never help.
+    const listed: TBankResult<TBankAccount[]> = await this.tbank.accounts(token);
+    if (!listed.ok) throw savedTokenFailure(listed.reason);
+    const target = listed.value.find((item) => item.id === rows[0].brokerAccountId);
+    if (!target || target.closed || target.access === 'no_access')
+      throw new UnprocessableEntityException(
+        'The saved token no longer reaches that T-Bank account. Connect it again.',
       );
-    }
+    if (target.investBox)
+      throw new UnprocessableEntityException(
+        'T-Bank does not give positions for an Invest Box account.',
+      );
+    const result: TBankResult<TBankPosition[]> = await this.tbank.portfolio(token, target.id);
+    if (!result.ok) throw savedTokenFailure(result.reason);
     return { positions: result.value };
   }
 
