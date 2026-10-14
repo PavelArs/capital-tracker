@@ -76,7 +76,7 @@ export function parseGoalUpdate(input: unknown): GoalInput {
   return goalFields(object(input, fields, fields));
 }
 
-/** The terms a goal would have, read from a query string: no name, and an empty date is none. */
+/** The terms a goal would have, without a name; a missing, null or empty date or sum is none. */
 export type GoalPreviewInput = Omit<GoalInput, 'name'>;
 
 const previewFields = fields.filter((key) => key !== 'name');
@@ -89,7 +89,8 @@ export function parseGoalPreview(input: unknown): GoalPreviewInput {
     'expectedReturnPercent',
   ]);
   if (!(goalCurrencies as readonly unknown[]).includes(record.currency)) return bad();
-  const given = (value: unknown) => (value === undefined || value === '' ? null : value);
+  const given = (value: unknown) =>
+    value === undefined || value === null || value === '' ? null : value;
   const deadline = given(record.deadline);
   const monthly = given(record.monthlyContribution);
   return {

@@ -15,7 +15,7 @@ export function monthYear(date: string): string {
 }
 
 /** A calendar date some months later; a day the month lacks falls on its last day. */
-function addMonths(date: string, months: number): string {
+export function addMonths(date: string, months: number): string {
   const [year, month, day] = date.split('-').map(Number);
   const index = year * 12 + (month - 1) + months;
   const targetYear = Math.floor(index / 12);

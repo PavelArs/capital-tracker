@@ -396,6 +396,23 @@ describe('cookie session API client', () => {
     expect(cache.recall('page')).toBeUndefined();
   });
 
+  it('keeps the reads after a POST that only reads, and still sends it with CSRF', async () => {
+    const cache = await import('./read-cache');
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      return config.url === '/auth/csrf'
+        ? response(config, { csrfToken: 'csrf' })
+        : response(config, {});
+    };
+    cache.remember('page', { total: 1 }, cache.generationNow());
+
+    await apiClient.post('/goals/preview', { targetAmount: '1000' }, { changesNothing: true });
+
+    expect(cache.recall('page')).toEqual({ total: 1 });
+    expect(sent.at(-1)?.headers.get('X-CSRF-Token')).toBe('csrf');
+  });
+
   it('keeps the reads after a write the server refused', async () => {
     const cache = await import('./read-cache');
     apiClient.defaults.adapter = async (config) => {

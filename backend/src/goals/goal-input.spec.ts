@@ -98,6 +98,9 @@ describe('GOAL-PREVIEW input', () => {
       monthlyContribution: null,
     });
     expect(parseGoalPreview(required)).toMatchObject({ deadline: null, monthlyContribution: null });
+    expect(
+      parseGoalPreview({ ...required, deadline: null, monthlyContribution: null }),
+    ).toMatchObject({ deadline: null, monthlyContribution: null });
   });
 
   it.each([

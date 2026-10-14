@@ -24,7 +24,7 @@ const dated: Goal = {
   name: 'Down payment A',
   currency: 'RUB',
   targetAmount: '22000000.00',
-  deadline: '2999-12-01',
+  deadline: '2099-12-01',
   expectedReturnPercent: '14.0000',
   monthlyContribution: '150000.00',
   createdAt: '2026-10-01T00:00:00.000Z',
@@ -95,13 +95,13 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
     expect(screen.getByText('Behind')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Behind by ₽270,000 a month. Reaching it by Dec 2999 needs ₽420,000 a month; at ₽150,000 it takes until Aug 2032.',
+      'Behind by ₽270,000 a month. Reaching it by Dec 2099 needs ₽420,000 a month; at ₽150,000 it takes until Aug 2032.',
     );
     expect(screen.getByText('Portfolio now').nextSibling).toHaveTextContent('₽5,500,000');
     expect(screen.getByText('25% of the sum')).toBeInTheDocument();
     expect(screen.getByText('You put in a month').nextSibling).toHaveTextContent('₽150,000');
     expect(screen.getByText('Needed for the date: ₽420,000')).toBeInTheDocument();
-    expect(screen.getByText('Forecast for Dec 2999').nextSibling).toHaveTextContent('₽15,000,000');
+    expect(screen.getByText('Forecast for Dec 2099').nextSibling).toHaveTextContent('₽15,000,000');
     expect(screen.getAllByText('₽7,000,000 short')).toHaveLength(2);
 
     const table = screen.getByRole('table');
@@ -161,7 +161,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getByText(/need every asset priced/i)).toBeInTheDocument();
-    expect(screen.getByText('Forecast for Dec 2999').nextSibling).toHaveTextContent('—');
+    expect(screen.getByText('Forecast for Dec 2099').nextSibling).toHaveTextContent('—');
     expect(screen.queryByText(/Needed for the date/)).toBeNull();
   });
 

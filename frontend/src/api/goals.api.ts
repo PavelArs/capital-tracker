@@ -78,18 +78,10 @@ export const goalsApi = {
 
   get: async (id: string): Promise<Goal> => (await apiClient.get<Goal>(one(id))).data,
 
-  /** A read, not a save: it keeps the kept answers and needs no CSRF token. */
+  /** A read sent as a POST so the sums stay out of the address; it saves nothing. */
   preview: async (terms: Omit<GoalTerms, 'name'>, signal?: AbortSignal): Promise<GoalPreview> =>
-    (
-      await apiClient.get<GoalPreview>(`${path}/preview`, {
-        params: {
-          ...terms,
-          deadline: terms.deadline ?? undefined,
-          monthlyContribution: terms.monthlyContribution ?? undefined,
-        },
-        signal,
-      })
-    ).data,
+    (await apiClient.post<GoalPreview>(`${path}/preview`, terms, { signal, changesNothing: true }))
+      .data,
 
   create: async (goal: NewGoal): Promise<Goal> => (await apiClient.post<Goal>(path, goal)).data,
 

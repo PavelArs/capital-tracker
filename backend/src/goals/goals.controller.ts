@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { GoalsService } from './goals.service';
 
@@ -11,16 +11,17 @@ export class GoalsController {
     return this.goals.list(owner.userId);
   }
 
+  // The terms travel in the body, not the address: sums and dates stay out of URLs and proxy
+  // logs. It stores nothing, so it answers 200, not 201.
+  @Post('preview')
+  @HttpCode(200)
+  preview(@CurrentUser() owner: OwnerIdentity, @Body() body: unknown) {
+    return this.goals.preview(owner.userId, body);
+  }
+
   @Post()
   create(@CurrentUser() owner: OwnerIdentity, @Body() body: unknown) {
     return this.goals.create(owner.userId, body);
-  }
-
-  // A read, so it changes nothing and keeps the browser's kept answers; before ':id' so the word
-  // is not taken for an id.
-  @Get('preview')
-  preview(@CurrentUser() owner: OwnerIdentity, @Query() query: unknown) {
-    return this.goals.preview(owner.userId, query);
   }
 
   @Get(':id')
