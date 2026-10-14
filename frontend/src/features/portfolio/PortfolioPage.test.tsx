@@ -6,7 +6,9 @@ import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type Operation, operationsApi } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import {
+  type AssetLots,
   type AssetValuation,
+  type LotAfterInflation,
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
@@ -272,6 +274,12 @@ beforeEach(() => {
   vi.spyOn(assetHistoryApi, 'get').mockImplementation(async (instrumentId) =>
     emptyHistory(instrumentId),
   );
+  vi.spyOn(portfolioValuationApi, 'lots').mockImplementation(async (instrumentId) => ({
+    instrumentId,
+    currency: 'USD',
+    complete: true,
+    lots: [],
+  }));
 });
 afterEach(cleanup);
 
@@ -1144,6 +1152,258 @@ describe('Portfolio after inflation', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('INFL-REAL-LOTS Purchases after inflation', () => {
+  const lot = (changes: Partial<LotAfterInflation> = {}): LotAfterInflation => ({
+    accountId: id(101),
+    accountName: 'Trust Wallet',
+    acquiredAt: '2026-01-10T09:00:00.000Z',
+    quantity: '0.2',
+    paid: '12000',
+    value: '16000',
+    nominalPnl: '4000',
+    real: {
+      official: {
+        inflationPercent: '10.00',
+        costBasis: '13200',
+        unrealizedPnl: '2800',
+        unrealizedReturnPercent: '21.21',
+        estimated: true,
+      },
+      personal: {
+        inflationPercent: '7.00',
+        costBasis: '12840',
+        unrealizedPnl: '3160',
+        unrealizedReturnPercent: '24.61',
+        estimated: true,
+        ownRate: true,
+      },
+    },
+    ...changes,
+  });
+  const older = lot({
+    accountName: 'Bybit',
+    acquiredAt: '2025-01-10T09:00:00.000Z',
+    quantity: '1',
+    paid: '54000',
+    value: '80000',
+    nominalPnl: '26000',
+    real: {
+      official: {
+        inflationPercent: '50.00',
+        costBasis: '81000',
+        unrealizedPnl: '-1000',
+        unrealizedReturnPercent: '-1.23',
+        estimated: false,
+      },
+      personal: null,
+    },
+  });
+  const unreadable = lot({
+    accountName: 'Old exchange',
+    acquiredAt: '2024-05-01T09:00:00.000Z',
+    quantity: '0.05',
+    paid: null,
+    value: '4000',
+    nominalPnl: null,
+    real: { official: null, personal: null },
+  });
+  const answer = (lots: LotAfterInflation[], complete = true): AssetLots => ({
+    instrumentId: bitcoin.instrumentId,
+    currency: 'USD',
+    complete,
+    lots,
+  });
+  const withLots = (lots: LotAfterInflation[], complete = true) =>
+    vi.spyOn(portfolioValuationApi, 'lots').mockResolvedValue(answer(lots, complete));
+  // The card is there while it loads; its answer is in once the placeholder is gone.
+  const card = async () => {
+    const region = await screen.findByRole('region', { name: 'Purchases after inflation' });
+    await waitFor(() => expect(within(region).queryByRole('status')).toBeNull());
+    return region;
+  };
+  const bodyRows = (region: HTMLElement) => within(region).getAllByRole('row').slice(1);
+
+  beforeEach(() => {
+    setValueView('nominal');
+    setInflationBasis('official');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+  });
+  afterEach(() => {
+    setValueView('nominal');
+    setInflationBasis('official');
+    vi.unstubAllGlobals();
+  });
+
+  it('LOTS-ROWS lists each purchase newest first with what it cost in today money', async () => {
+    withLots([lot(), older]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(portfolioValuationApi.lots).toHaveBeenCalledWith(bitcoin.instrumentId, undefined);
+    const rows = bodyRows(region);
+    expect(rows).toHaveLength(2);
+    expect(cells(rows[0])).toEqual([
+      'Jan 10, 2026Trust Wallet',
+      '0.2',
+      '$12,000.00',
+      '+10.00%',
+      '$13,200.00',
+      '$16,000.00',
+      '+$2,800.00+21.21%nominal +$4,000.00',
+    ]);
+    expect(cells(rows[1])).toEqual([
+      'Jan 10, 2025Bybit',
+      '1',
+      '$54,000.00',
+      '+50.00%',
+      '$81,000.00',
+      '$80,000.00',
+      '-$1,000.00-1.23%nominal +$26,000.00',
+    ]);
+    expect(within(region).getByText(/at the official rate, latest months estimated/)).toBeVisible();
+  });
+
+  it('LOTS-OWN-RATE reads each purchase at the own rate when that is chosen', async () => {
+    setInflationBasis('personal');
+    withLots([lot()]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(cells(bodyRows(region)[0])).toEqual([
+      'Jan 10, 2026Trust Wallet',
+      '0.2',
+      '$12,000.00',
+      '+7.00%',
+      '$12,840.00',
+      '$16,000.00',
+      '+$3,160.00+24.61%nominal +$4,000.00',
+    ]);
+    expect(within(region).getByText(/at your own rate/)).toBeVisible();
+  });
+
+  it('LOTS-UNREADABLE shows dashes for the figures a purchase lacks and keeps its value', async () => {
+    withLots([unreadable]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(cells(bodyRows(region)[0])).toEqual([
+      'May 1, 2024Old exchange',
+      '0.05',
+      '—',
+      '—',
+      '—',
+      '$4,000.00',
+      '—',
+    ]);
+    expect(region).toHaveTextContent('A dash means a purchase price');
+  });
+
+  it('LOTS-NOMINAL-ONLY keeps the paid, value and nominal profit when a basis has no reading', async () => {
+    setInflationBasis('personal');
+    withLots([older]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(cells(bodyRows(region)[0]).slice(2)).toEqual([
+      '$54,000.00',
+      '—',
+      '—',
+      '$80,000.00',
+      '—nominal +$26,000.00',
+    ]);
+  });
+
+  it('LOTS-OWN-FALLBACK says so when the currency has no own rate and the official one is used', async () => {
+    setInflationBasis('personal');
+    const fallback = lot();
+    withLots([
+      {
+        ...fallback,
+        real: {
+          ...fallback.real,
+          personal: { ...fallback.real.personal!, ownRate: false, inflationPercent: '10.00' },
+        },
+      },
+    ]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(region).toHaveTextContent('no rate of your own for USD, so the official one');
+  });
+
+  it('LOTS-INCOMPLETE warns while an account whose history starts later may hold more', async () => {
+    withLots([lot()], false);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).getByRole('note')).toHaveTextContent(
+      'An account whose history starts later may hold more purchases than are listed',
+    );
+  });
+
+  it('LOTS-NOTE explains when a purchase is ahead in real terms', async () => {
+    withLots([lot()]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(region).toHaveTextContent(
+      'A purchase is ahead in real terms when it is worth more than what you paid grown by USD inflation since that day.',
+    );
+  });
+
+  it('LOTS-EMPTY says nothing is held instead of drawing an empty table', async () => {
+    withLots([]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).queryByRole('table')).toBeNull();
+    expect(region).toHaveTextContent('No purchases to show.');
+  });
+
+  it('LOTS-FAILED offers to try again without hiding the rest of the page', async () => {
+    const user = userEvent.setup();
+    const lots = vi
+      .spyOn(portfolioValuationApi, 'lots')
+      .mockRejectedValueOnce(httpError(500))
+      .mockResolvedValue(answer([lot()]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).getByRole('alert')).toHaveTextContent('Could not load the purchases');
+    expect(screen.getByRole('region', { name: 'Position' })).toBeInTheDocument();
+    await user.click(within(region).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(bodyRows(region)).toHaveLength(1));
+    expect(lots).toHaveBeenCalledTimes(2);
+  });
+
+  it('LOTS-SAME-INSTANT lists two purchases of one account made at the same moment', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    withLots([lot(), lot({ quantity: '0.3', paid: '18000' })]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(bodyRows(region)).toHaveLength(2);
+    expect(errors.mock.calls.flat().join(' ')).not.toContain('same key');
+  });
+
+  it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
+    const sold = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([sold]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(screen.queryByRole('region', { name: 'Purchases after inflation' })).toBeNull();
+    expect(portfolioValuationApi.lots).not.toHaveBeenCalled();
+  });
+
+  it('LOTS-PHONE draws a list of rows instead of a table below 640 px', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    withLots([lot(), unreadable]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).queryByRole('table')).toBeNull();
+    const rows = within(region).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent(
+      'Jan 10, 2026Trust Wallet · 0.2 · paid $12,000.00 → $13,200.00 (+10.00%)$16,000.00+$2,800.00 · +21.21%',
+    );
+    expect(rows[1]).toHaveTextContent('May 1, 2024Old exchange · 0.05$4,000.00—');
   });
 });
 

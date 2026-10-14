@@ -31,6 +31,7 @@ import {
 } from '../transactions/operation-format';
 import { classedOf, kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
+import AssetLotsCard from './AssetLots';
 import { assetCaption, Change, Signed } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import {
@@ -561,6 +562,9 @@ function AssetDetails({
         )}
       </section>
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
+      {!empty && (
+        <AssetLotsCard instrumentId={asset.instrumentId} asked={asked} at={portfolio.at} />
+      )}
       <div className="portfolio-split">
         <section className="shell-card" aria-labelledby="asset-holdings">
           <div className="ui-toolbar">
