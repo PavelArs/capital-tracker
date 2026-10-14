@@ -284,6 +284,67 @@ describe('a reload does not ask again for what was just said', () => {
     expect(count).toHaveBeenCalledTimes(1);
   });
 
+  it('READ-STALE-RELOAD keeps a failed refresh across a reload until an answer replaces it', async () => {
+    const { rows, store } = memoryStore();
+    setReadStore(store);
+    adoptReads(OWNER);
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio)
+      .mockRejectedValueOnce(new Error('offline'));
+    await cachedReads.portfolio.load('EUR');
+    expect(cachedReads.portfolio.failed('EUR')).toBe(false);
+    await expect(cachedReads.portfolio.load('EUR')).rejects.toThrow('offline');
+    await settle();
+    // The figures stay painted, marked as possibly out of date, here and in the browser.
+    expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
+    expect(cachedReads.portfolio.failed('EUR')).toBe(true);
+    expect(rows.get('portfolio:["EUR"]')).toMatchObject({ value: portfolio, failed: true });
+
+    // A reload: memory is empty, the browser still has the row.
+    const kept = [...rows.values()];
+    releaseReads();
+    await settle();
+    await reloaded(kept);
+    expect(cachedReads.portfolio.last('EUR')).toEqual(portfolio);
+    expect(cachedReads.portfolio.failed('EUR')).toBe(true);
+
+    // It is asked again at once, not reused, and an answer clears the warning everywhere.
+    get.mockResolvedValueOnce({ fresh: true } as never);
+    await expect(cachedReads.portfolio.load('EUR')).resolves.toEqual({ fresh: true });
+    await settle();
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(cachedReads.portfolio.failed('EUR')).toBe(false);
+    expect(rows.get('portfolio:["EUR"]')?.failed).toBeUndefined();
+  });
+
+  it('READ-STALE-NOTHING marks nothing when no answer was kept or the cache was dropped meanwhile', async () => {
+    let fail: (reason: unknown) => void = () => undefined;
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(portfolio)
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+      );
+    await reloaded([]);
+    await expect(cachedReads.portfolio.load('EUR')).rejects.toThrow('offline');
+    expect(cachedReads.portfolio.failed('EUR')).toBe(false);
+    await cachedReads.portfolio.load('EUR');
+    const asking = cachedReads.portfolio.load('EUR');
+    forgetReads();
+    remember('portfolio:["EUR"]', portfolio, generationNow());
+    fail(new Error('offline'));
+    await expect(asking).rejects.toThrow('offline');
+    expect(cachedReads.portfolio.failed('EUR')).toBe(false);
+  });
+
+  it('reads a row saved before the warning was kept as a good answer', async () => {
+    await reloaded([{ key: 'portfolio:["EUR"]', at: Date.now(), value: portfolio }]);
+    expect(cachedReads.portfolio.failed('EUR')).toBe(false);
+  });
+
   it('drops what was kept when a background sync has finished since', async () => {
     const source = (lastSuccessAt: string) => ({
       key: 'wallet:1',

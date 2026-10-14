@@ -16,6 +16,39 @@ function source(kept?: string) {
   return { last, load, asks };
 }
 
+describe('READ-HOOK-STALE: figures whose refresh failed', () => {
+  it('warns about kept figures whose refresh failed before, until an answer replaces them', async () => {
+    const read = { ...source('kept'), failed: vi.fn(() => true) };
+    const { result } = renderHook(() => useCachedRead(read, 'a'));
+    expect(result.current.data).toBe('kept');
+    expect(result.current.stale).toBe(true);
+    expect(read.failed).toHaveBeenCalledWith('a');
+    read.failed.mockReturnValue(false);
+    await act(async () => read.asks[0].resolve('fresh'));
+    expect(result.current.stale).toBe(false);
+  });
+
+  it('warns when a load fails while figures are shown, not when there are none', async () => {
+    const shown = source('kept');
+    const { result } = renderHook(() => useCachedRead(shown));
+    await act(async () => shown.asks[0].reject(new Error('offline')));
+    expect(result.current.stale).toBe(true);
+    const empty = source();
+    const { result: none } = renderHook(() => useCachedRead(empty));
+    await act(async () => empty.asks[0].reject(new Error('offline')));
+    expect(none.current.error).not.toBeNull();
+    expect(none.current.stale).toBe(false);
+  });
+
+  it('does not warn about an answer the page got elsewhere', async () => {
+    const read = { ...source('kept'), failed: () => true };
+    const { result } = renderHook(() => useCachedRead(read));
+    act(() => result.current.replace('saved'));
+    expect(result.current.data).toBe('saved');
+    expect(result.current.stale).toBe(false);
+  });
+});
+
 describe('READ-HOOK: the way a page reads', () => {
   it('shows the last answer at once and the server answer when it arrives', async () => {
     const read = source('kept');

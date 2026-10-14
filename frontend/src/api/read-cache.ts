@@ -11,7 +11,12 @@ const MAX_AGE_MS = 15 * 60_000;
 const HYDRATE_TIMEOUT_MS = 2_000;
 
 // `restored`: kept by the browser from before a reload and not asked again since.
-const entries = new Map<string, { value: unknown; at: number; restored: boolean }>();
+// `failed`: the last time it was asked again, the server did not answer, so the page warns that
+// the figures may be out of date. Kept in the browser too, so the warning survives a reload.
+const entries = new Map<
+  string,
+  { value: unknown; at: number; restored: boolean; failed: boolean }
+>();
 let generation = 0;
 let owner: string | null = null;
 let store: ReadStore | null | undefined;
@@ -53,7 +58,8 @@ export function recall<T>(key: string): T | undefined {
  */
 export function recallRestored<T>(key: string, within: number): T | undefined {
   const entry = entries.get(key);
-  if (!entry?.restored || Date.now() - entry.at >= within) return undefined;
+  // An answer whose refresh failed is asked again: the server may answer now.
+  if (!entry?.restored || entry.failed || Date.now() - entry.at >= within) return undefined;
   return recall<T>(key);
 }
 
@@ -61,9 +67,29 @@ export function recallRestored<T>(key: string, within: number): T | undefined {
 export function remember(key: string, value: unknown, startedIn: number): void {
   if (startedIn !== generation) return;
   const at = Date.now();
-  entries.set(key, { value, at, restored: false });
+  entries.set(key, { value, at, restored: false, failed: false });
   const who = owner;
   if (who) enqueue((target) => target.save({ key, owner: who, at, value }));
+}
+
+/**
+ * A read asked again and failed: the answer kept for it stays shown, marked as possibly out of
+ * date until an answer replaces it, also after a reload. Nothing is marked when nothing is kept
+ * or the cache was dropped while the read was on its way.
+ */
+export function rememberFailure(key: string, startedIn: number): void {
+  if (startedIn !== generation) return;
+  const entry = entries.get(key);
+  if (!entry || entry.failed) return;
+  entry.failed = true;
+  const who = owner;
+  const { value, at } = entry;
+  if (who) enqueue((target) => target.save({ key, owner: who, at, value, failed: true }));
+}
+
+/** Whether the last refresh of the answer kept for a key failed. */
+export function refreshFailed(key: string): boolean {
+  return recall(key) !== undefined && entries.get(key)?.failed === true;
 }
 
 /** Marks the start of a read, so an answer that lands after a drop is not kept. */
@@ -101,7 +127,12 @@ export async function hydrateReads(ownerId: string): Promise<void> {
     const now = Date.now();
     for (const row of rows) {
       if (now - row.at <= MAX_AGE_MS && !entries.has(row.key))
-        entries.set(row.key, { value: row.value, at: row.at, restored: true });
+        entries.set(row.key, {
+          value: row.value,
+          at: row.at,
+          restored: true,
+          failed: row.failed === true,
+        });
     }
   } catch {
     // Nothing kept, or the browser would not say: the pages ask the server as usual.

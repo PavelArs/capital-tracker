@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 interface CachedSource<A extends unknown[], T> {
   last: (...args: A) => T | undefined;
   load: (...args: A) => Promise<T>;
+  /** Whether asking again for the last answer failed, also before a reload. */
+  failed?: (...args: A) => boolean;
 }
 
 /** What the hook holds, and the arguments (as a key) it was read for. */
@@ -18,6 +20,11 @@ export interface CachedRead<T> {
   data: T | null;
   /** Why the newest load failed (data keeps what was shown before); null when it did not. */
   error: unknown;
+  /**
+   * The answer shown may be out of date: asking again failed, now or before a reload, and no
+   * answer has replaced it since. A load on its way keeps the warning until it answers.
+   */
+  stale: boolean;
   /** Asks again. `quiet` keeps what is shown meanwhile; otherwise the kept answer (or nothing). */
   reload: (quiet?: boolean) => void;
   /** Shows an answer the page got elsewhere (a save returns the new state) instead of asking. */
@@ -92,5 +99,10 @@ export function useCachedRead<A extends unknown[], T>(
     setState({ key: asked.current.key, data: next, error: null });
   }, []);
 
-  return { data: held.data, error: held.error, reload, replace };
+  const kept = source.last(...args);
+  const stale =
+    held.data !== null &&
+    (held.error !== null || (held.data === kept && source.failed?.(...args) === true));
+
+  return { data: held.data, error: held.error, stale, reload, replace };
 }
