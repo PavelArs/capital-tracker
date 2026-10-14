@@ -109,8 +109,12 @@ async function check({ request, repository, commit }) {
   }
 }
 
+// How long a push to main waits for a pull request run: 45 minutes, above the longest measured
+// workflow. scripts/reuse-pr-images.cjs waits for the same time before it builds again.
+const WAIT = { attempts: 90, delayMs: 30_000 };
+
 // Waits while the pull request is not yet linked or its CI still runs; failures end at once.
-async function waitForCheck(options, { attempts = 90, delayMs = 30_000, log = () => {} } = {}) {
+async function waitForCheck(options, { attempts = WAIT.attempts, delayMs = WAIT.delayMs, log = () => {} } = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await check(options);
@@ -138,7 +142,7 @@ function githubRequest(token, api = 'https://api.github.com') {
   };
 }
 
-module.exports = { REQUIRED_JOBS, PendingError, check, waitForCheck, githubRequest };
+module.exports = { REQUIRED_JOBS, WAIT, PendingError, check, waitForCheck, githubRequest };
 
 if (require.main === module) {
   const { GITHUB_REPOSITORY, GITHUB_SHA, GH_TOKEN, GITHUB_API_URL, GITHUB_STEP_SUMMARY } =
