@@ -1,3 +1,4 @@
+import { goalsApi } from '@api/goals.api';
 import { operationsApi } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
@@ -240,6 +241,7 @@ const toClassify = vi.spyOn(operationsApi, 'needsClassification');
 const valued = vi.spyOn(portfolioValuationApi, 'get');
 const sources = vi.spyOn(syncStatusApi, 'get');
 const wallets = vi.spyOn(walletAddressesApi, 'list');
+const goals = vi.spyOn(goalsApi, 'list');
 
 beforeEach(() => {
   toClassify.mockReset();
@@ -252,6 +254,8 @@ beforeEach(() => {
   sources.mockResolvedValue([pricesSource()]);
   wallets.mockReset();
   wallets.mockResolvedValue([]);
+  goals.mockReset();
+  goals.mockResolvedValue({ asOf: '2026-10-04', items: [] });
   get.mockReset();
   get.mockImplementation(async (period: HistoryPeriod, currency?: AccountingCurrency) =>
     history({ period, currency: currency ?? 'USD' }),
@@ -508,6 +512,49 @@ describe('record-portfolio-snapshots dashboard', () => {
     tip = within(chart).getByRole('status');
     expect(tip).toHaveTextContent('Net invested$90,000.00');
     expect(tip).not.toHaveTextContent('Deposit');
+  });
+
+  it('GOAL-DASH puts the nearest goal between the net worth and the chart, only when there is one', async () => {
+    goals.mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [
+        {
+          id: id(90),
+          name: 'Reserve',
+          currency: 'USD',
+          targetAmount: '200000.00',
+          deadline: null,
+          expectedReturnPercent: '7.0000',
+          monthlyContribution: null,
+          createdAt: '2026-10-01T00:00:00.000Z',
+          asOf: '2026-10-04',
+          progress: {
+            current: '115000.00',
+            complete: true,
+            percent: '57.50',
+            remaining: '85000.00',
+          },
+          status: 'open',
+          scenarios: [],
+        },
+      ],
+    });
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const card = await screen.findByRole('region', { name: 'Nearest goal' });
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    expect(hero.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(card).getByRole('link', { name: 'Reserve' })).toHaveAttribute(
+      'href',
+      `/goals/${id(90)}`,
+    );
+  });
+
+  it('GOAL-DASH leaves the dashboard as it was without goals', async () => {
+    renderPage();
+    await screen.findByRole('region', { name: 'Net worth' });
+    expect(screen.queryByRole('region', { name: 'Nearest goal' })).toBeNull();
   });
 
   it('DASH-CENTS dims the cents of the net worth', async () => {
