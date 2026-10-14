@@ -8,6 +8,7 @@ import {
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import NearestGoal from '../goals/NearestGoal';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
@@ -340,10 +341,14 @@ export default function DashboardPage() {
       ) : shown === null ? (
         <DashboardLoading />
       ) : isEmptyPortfolio(shown) ? (
-        <Empty onAdd={() => setAdding(true)} />
+        <>
+          <NearestGoal />
+          <Empty onAdd={() => setAdding(true)} />
+        </>
       ) : (
         <>
           <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} asked={asked} />
+          <NearestGoal />
           <section
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"

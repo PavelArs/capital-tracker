@@ -9,7 +9,7 @@ import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
-import { GoalBar, GoalFigures } from './GoalsPage';
+import { GoalBar, GoalFigures } from './GoalProgress';
 import {
   againstTarget,
   dateText,
