@@ -6,7 +6,7 @@ import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isTBankToken, parseAccounts, TBankClient } from './tbank-client';
+import { decimal, isTBankToken, parsePositions, parseAccounts, TBankClient } from './tbank-client';
 
 // BROKER-CONNECT: synthetic tokens and ids only; never an owner's account.
 const token = 't.SyntheticToken000000000000000001';
@@ -89,6 +89,68 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
     expect(isTBankToken(`${token} `)).toBe(false);
     expect(isTBankToken(`${token}\n`)).toBe(false);
     expect(isTBankToken(undefined)).toBe(false);
+  });
+});
+
+describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
+  it('reads a Quotation or MoneyValue as exact decimal text', () => {
+    expect(decimal({ units: '12', nano: 340_000_000 })).toBe('12.34');
+    expect(decimal({ units: '0', nano: 5_000_000 })).toBe('0.005');
+    expect(decimal({ units: '-3', nano: -250_000_000 })).toBe('-3.25');
+    expect(decimal({ units: '0', nano: -500_000_000 })).toBe('-0.5');
+    expect(decimal({ units: '7', nano: 0 })).toBe('7');
+    expect(decimal({ units: '0', nano: 0 })).toBe('0');
+  });
+
+  it('refuses a number that is not an int64 text or a nano out of range', () => {
+    expect(() => decimal({ units: 12, nano: 0 })).toThrow();
+    expect(() => decimal({ units: '1.5', nano: 0 })).toThrow();
+    expect(() => decimal({ units: '1', nano: 1_000_000_000 })).toThrow();
+    expect(() => decimal(null)).toThrow();
+  });
+
+  it('reads each position with its quantity and prices and no other field', () => {
+    expect(
+      parsePositions({
+        positions: [
+          {
+            instrumentUid: 'synthetic-uid-0001',
+            instrumentType: 'INSTRUMENT_TYPE_SHARE',
+            quantity: { units: '10', nano: 500_000_000 },
+            averagePositionPrice: { currency: 'rub', units: '100', nano: 250_000_000 },
+            currentPrice: { currency: 'rub', units: '101', nano: 0 },
+            figi: 'SYNTHETIC0001',
+          },
+          { instrumentUid: 'synthetic-uid-0002', instrumentType: 'weird-type' },
+        ],
+      }),
+    ).toEqual([
+      {
+        instrumentUid: 'synthetic-uid-0001',
+        instrumentType: 'INSTRUMENT_TYPE_SHARE',
+        currency: 'rub',
+        quantity: '10.5',
+        averagePrice: '100.25',
+        currentPrice: '101',
+      },
+      {
+        instrumentUid: 'synthetic-uid-0002',
+        instrumentType: 'UNKNOWN',
+        currency: '',
+        quantity: '0',
+        averagePrice: '',
+        currentPrice: '',
+      },
+    ]);
+  });
+
+  it('refuses a body without positions of plain ids, or with too many', () => {
+    expect(() => parsePositions({ positions: [{ instrumentUid: 'a b' }] })).toThrow();
+    expect(() => parsePositions({ positions: 'x' })).toThrow();
+    expect(() =>
+      parsePositions({ positions: Array.from({ length: 501 }, () => ({ instrumentUid: 'a' })) }),
+    ).toThrow();
+    expect(parsePositions({})).toEqual([]);
   });
 });
 

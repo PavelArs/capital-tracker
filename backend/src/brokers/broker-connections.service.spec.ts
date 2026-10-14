@@ -21,10 +21,16 @@ const mine: TBankAccount = {
   access: 'read_only',
 };
 
-function build(accounts: TBankResult<TBankAccount[]>, found = true) {
+function build(
+  accounts: TBankResult<TBankAccount[]>,
+  found = true,
+  stored = false,
+  positions: TBankResult<unknown[]> = { ok: true, value: [] },
+) {
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
+    if (sql.includes('SELECT credentials')) return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
     if (sql.includes('INSERT INTO broker_connections')) writes.push(parameters);
     if (sql.includes('FROM broker_connections'))
       return writes.length
@@ -37,8 +43,11 @@ function build(accounts: TBankResult<TBankAccount[]>, found = true) {
     query,
     transaction: async (_level: string, work: (manager: unknown) => unknown) => work({ query }),
   };
-  const tbank = { accounts: async () => accounts };
-  const box = { seal: () => ({ v: 1, sealed: true }) };
+  const tbank = { accounts: async () => accounts, portfolio: async () => positions };
+  const box = {
+    seal: () => ({ v: 1, sealed: true }),
+    open: (envelope: unknown) => (envelope ? token : null),
+  };
   return {
     service: new BrokerConnectionsService(
       source as unknown as DataSource,
@@ -137,6 +146,31 @@ describe('broker connections service', () => {
       BadRequestException,
     );
     await expect(service.read('not-a-uuid', account)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reads the positions the saved token sees, recording nothing', async () => {
+    const position = { instrumentUid: 'synthetic-uid-0001', quantity: '2', averagePrice: '10' };
+    const { service, writes } = build(ok(mine), true, true, { ok: true, value: [position] });
+    expect(await service.positions(owner, account)).toEqual({ positions: [position] });
+    expect(writes).toEqual([]);
+  });
+
+  it('answers 404 for positions of an unconnected account and names a rejected token', async () => {
+    await expect(build(ok(mine)).service.positions(owner, account)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      build(ok(mine), true, true, { ok: false, reason: 'token_rejected' }).service.positions(
+        owner,
+        account,
+      ),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(
+      build(ok(mine), true, true, { ok: false, reason: 'rate_limited' }).service.positions(
+        owner,
+        account,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('reads a broker account that has no connection as not connected', async () => {

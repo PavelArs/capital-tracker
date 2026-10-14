@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
-import { type TBankAccount, TBankClient, type TBankResult } from './tbank-client';
+import {
+  type TBankAccount,
+  TBankClient,
+  type TBankPosition,
+  type TBankResult,
+} from './tbank-client';
 import { TBankTokenBox } from './tbank-token-box';
 
 interface ConnectionRow {
@@ -83,6 +88,36 @@ export class BrokerConnectionsService {
     );
     if (rows.length === 0) return { connected: false as const };
     return { connected: true as const, provider: 'tbank' as const, ...rows[0] };
+  }
+
+  /** What the saved token reads in the broker account now. Nothing is recorded. */
+  async positions(ownerId: string, accountId: string) {
+    const owner = parseUuid(ownerId);
+    const account = parseUuid(accountId);
+    await this.brokerAccount(this.source.manager, owner, account);
+    const rows: { credentials: unknown; brokerAccountId: string }[] = await this.source.query(
+      `SELECT credentials, "brokerAccountId" FROM broker_connections
+        WHERE "ownerId" = $1 AND "accountId" = $2`,
+      [owner, account],
+    );
+    if (rows.length === 0) throw new NotFoundException('No T-Bank connection for this account');
+    const token = this.box.open(rows[0].credentials, owner, account);
+    if (token === null)
+      throw new ServiceUnavailableException('The saved token cannot be opened on this server.');
+    const result: TBankResult<TBankPosition[]> = await this.tbank.portfolio(
+      token,
+      rows[0].brokerAccountId,
+    );
+    if (!result.ok) {
+      if (result.reason === 'token_rejected')
+        throw new UnprocessableEntityException(
+          'T-Bank no longer accepts the saved token. Create a new read-only token and connect again.',
+        );
+      throw new ServiceUnavailableException(
+        'T-Bank could not be reached. Try again in a few minutes.',
+      );
+    }
+    return { positions: result.value };
   }
 
   async disconnect(ownerId: string, accountId: string) {

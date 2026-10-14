@@ -25,6 +25,16 @@ export interface TBankAccount {
   access: TBankAccess;
 }
 
+/** One position the token reads in a broker account, with prices as exact decimal text. */
+export interface TBankPosition {
+  instrumentUid: string;
+  instrumentType: string;
+  currency: string;
+  quantity: string;
+  averagePrice: string;
+  currentPrice: string;
+}
+
 class InvalidResponse extends Error {}
 
 function invalid(): never {
@@ -69,6 +79,42 @@ export function parseAccounts(body: unknown): TBankAccount[] {
   });
 }
 
+/**
+ * A Quotation or MoneyValue (int64 units as text, int32 nano) as exact decimal text, so a price
+ * never passes through a float.
+ */
+export function decimal(value: unknown): string {
+  const item = record(value);
+  const units = typeof item.units === 'string' ? item.units : invalid();
+  const nano = typeof item.nano === 'number' ? item.nano : 0;
+  if (!/^-?\d{1,18}$/.test(units) || !Number.isInteger(nano) || Math.abs(nano) > 999_999_999)
+    return invalid();
+  const negative = units.startsWith('-') || nano < 0;
+  const whole = units.replace('-', '');
+  const fraction = Math.abs(nano).toString().padStart(9, '0').replace(/0+$/, '');
+  return `${negative && (whole !== '0' || fraction) ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+export function parsePositions(body: unknown): TBankPosition[] {
+  const list = record(body).positions ?? [];
+  if (!Array.isArray(list) || list.length > 500) return invalid();
+  return list.map((value) => {
+    const item = record(value);
+    const uid = item.instrumentUid;
+    if (typeof uid !== 'string' || !idPattern.test(uid)) return invalid();
+    const average = item.averagePositionPrice ? record(item.averagePositionPrice) : {};
+    const type = typeof item.instrumentType === 'string' ? item.instrumentType : '';
+    return {
+      instrumentUid: uid,
+      instrumentType: /^[A-Z_]{1,40}$/.test(type) ? type : 'UNKNOWN',
+      currency: typeof average.currency === 'string' ? average.currency : '',
+      quantity: decimal(item.quantity ?? { units: '0', nano: 0 }),
+      averagePrice: item.averagePositionPrice ? decimal(average) : '',
+      currentPrice: item.currentPrice ? decimal(item.currentPrice) : '',
+    };
+  });
+}
+
 export class TBankClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -90,6 +136,11 @@ export class TBankClient {
   /** Every broker account the token can see (GetAccounts). */
   accounts(token: string): Promise<TBankResult<TBankAccount[]>> {
     return this.call(token, 'UsersService/GetAccounts', {}, parseAccounts);
+  }
+
+  /** What the token reads in one broker account now (GetPortfolio). */
+  portfolio(token: string, accountId: string): Promise<TBankResult<TBankPosition[]>> {
+    return this.call(token, 'OperationsService/GetPortfolio', { accountId }, parsePositions);
   }
 
   private async call<T>(
