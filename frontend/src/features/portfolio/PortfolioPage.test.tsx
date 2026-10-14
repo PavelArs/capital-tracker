@@ -22,6 +22,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
+import AssetLotsCard from './AssetLots';
 import AssetPage from './AssetPage';
 import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
 
@@ -1405,6 +1406,21 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const region = await card();
     expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent('nominal $0.00');
+  });
+
+  it('LOTS-STALE says when a refresh failed and the figures on screen may be out of date', async () => {
+    withLots([lot()]);
+    const { rerender } = render(
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+    );
+    const region = await card();
+    expect(bodyRows(region)).toHaveLength(1);
+    vi.spyOn(portfolioValuationApi, 'lots').mockRejectedValueOnce(httpError(500));
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    const alert = await within(region).findByRole('alert');
+    expect(alert).toHaveTextContent('Could not refresh the purchases');
+    expect(bodyRows(region)).toHaveLength(1);
+    expect(within(region).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {

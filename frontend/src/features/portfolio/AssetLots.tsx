@@ -264,6 +264,14 @@ export default function AssetLotsCard({
         <InlineSkeleton label="Loading purchases" />
       ) : (
         <>
+          {failed && (
+            <div className="ui-banner ui-banner--warn portfolio-warn" role="alert">
+              <p>Could not refresh the purchases. The figures below may be out of date.</p>
+              <button type="button" className="shell-button" onClick={() => void load()}>
+                Try again
+              </button>
+            </div>
+          )}
           {answer.lots.length === 0 ? (
             <p className="portfolio-none">No purchases to show.</p>
           ) : phone ? (
