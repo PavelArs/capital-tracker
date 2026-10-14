@@ -1379,6 +1379,19 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(errors.mock.calls.flat().join(' ')).not.toContain('same key');
   });
 
+  it('LOTS-PHONE-NOMINAL keeps the nominal profit of a purchase whose real reading is missing', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    withLots([{ ...unreadable, paid: '4000', nominalPnl: '0' }]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent('nominal $0.00');
+  });
+
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
     const sold = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([sold]));

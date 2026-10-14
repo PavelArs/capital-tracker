@@ -169,7 +169,14 @@ function LotsList({
               amount={money(lot.value, currency)}
               value={
                 reading === null ? (
-                  DASH
+                  <>
+                    {DASH}
+                    {lot.nominalPnl !== null && (
+                      <span className="portfolio-sub">
+                        nominal {money(lot.nominalPnl, currency, true)}
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <span
                     className={
