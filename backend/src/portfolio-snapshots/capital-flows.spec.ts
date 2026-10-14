@@ -321,6 +321,20 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(investedAt(flows, instants)).toEqual(['0', '1000', '700', '700', null]);
   });
 
+  it('ASSET-HIDE a hidden asset is no flow: its purchases and carried holdings leave invested', () => {
+    const hiddenInputs = inputs([
+      {
+        id: 'a',
+        coverageFrom: '2025-06-01T00:00:00.000Z',
+        trades: [trade('buy', '2025-06-10T00:00:00.000Z', '1000')],
+        initialLots: [carryIn('2025-06-02T00:00:00.000Z', '400', '2')],
+      },
+    ]);
+    const visible = { ...hiddenInputs, hidden: new Set(['btc']) };
+    expect(capitalFlows(visible)).toEqual([]);
+    expect(capitalFlows(hiddenInputs)).toHaveLength(2);
+  });
+
   it('FLOW-SPLIT-DEPOSIT V0 100000, a 10000 buy paid from outside, V1 110000', () => {
     const start = { at: at('2026-09-05T00:00:00.000Z'), value: '100000' };
     const end = { at: at('2026-10-05T00:00:00.000Z'), value: '110000' };

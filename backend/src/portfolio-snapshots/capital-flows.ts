@@ -58,7 +58,9 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
   for (const ledger of new Set(inputs.ledgers.values()))
     for (const account of ledger.accounts.values()) {
       const start = Date.parse(account.coverageFrom);
-      for (const lot of account.initialLots)
+      for (const lot of account.initialLots) {
+        // ASSET-HIDE: a hidden asset's money is out of the figures, as its holdings are.
+        if (inputs.hidden.has(lot.instrumentId)) continue;
         flows.push({
           at: start,
           instrumentId: lot.instrumentId,
@@ -68,9 +70,11 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
           ),
           rateDate: moscowDate(lot.acquiredAt),
         });
+      }
       for (const trade of account.trades) {
         // A sale kept as cash moves no money; a fee only lowers the return (PR-OPS-2).
         if ((trade.settlement && trade.side === 'sell') || trade.purpose === 'fee') continue;
+        if (inputs.hidden.has(trade.instrumentId)) continue;
         // The part of a buy's cost the account's cash paid, in USD and as paid.
         const cash = settlementLeg(trade);
         const flow = (gross: bigint, fee: bigint, spent: bigint) =>
