@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { loadDeposits } from '../deposits/deposit-store';
 import { type DepositHolding, depositValuesAt } from '../deposits/deposit-valuation';
@@ -39,7 +39,7 @@ import {
 import { parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms } from './money';
 import type { OwnedProjection } from './owned-transfer-fifo';
-import { type RealReading, realReadings } from './portfolio-real';
+import { lotsAfterInflation, type RealReading, realReadings } from './portfolio-real';
 import {
   DAY_MS,
   type PortfolioAccountInput,
@@ -48,6 +48,7 @@ import {
   type PortfolioPrices,
   portfolioAccount,
   projectPortfolio,
+  resolvePrice,
   type StoredPrice,
   withoutAssets,
 } from './portfolio-valuation';
@@ -549,6 +550,56 @@ export class PortfolioValuationService {
       };
     });
   }
+
+  /**
+   * INFL-REAL-LOTS: the lots of one asset still held, each with what it cost in today's money
+   * and the profit over it. The owner's own instrument; a hidden or unknown one is not found.
+   */
+  async lots(ownerId: string, rawInstrumentId: string, rawQuery: unknown, now = new Date()) {
+    const owner = parseUuid(ownerId);
+    const instrumentId = parseUuid(rawInstrumentId);
+    const asked = parseQuery(rawQuery);
+    const at = now.toISOString();
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const inputs = await readValuationInputs(manager, owner, at);
+      const instrument = inputs.instruments.find((item) => item.id === instrumentId);
+      if (!instrument) throw new NotFoundException('Not found');
+      const accounts = accountsAt(inputs, at);
+      const prices = await latestPortfolioPrices(manager, owner, [instrument], now);
+      const mainCurrency = await readMainCurrency(manager, owner);
+      const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
+      const factors = await inflationFactors(manager, owner, fx, now);
+      return {
+        instrumentId,
+        currency: fx.currency,
+        // An account before its coverage may hold more of this asset than the lots show.
+        complete: !accounts.some((account) => account.coverage === 'before-coverage'),
+        lots: lotsAfterInflation({
+          instrumentId,
+          accounts,
+          fx,
+          price: resolvePrice(instrument, prices, now, fx).price?.value ?? null,
+          official: factors.official,
+          personal: factors.personal,
+        }),
+      };
+    });
+  }
+}
+
+/**
+ * The inflation factor from a Moscow day to today, after official inflation and after the
+ * owner's own rate (null for a currency with no own rate).
+ */
+async function inflationFactors(manager: EntityManager, owner: string, fx: FxConverter, now: Date) {
+  const today = moscowDate(now);
+  const series = buildSeries((await readEffectiveChanges(manager, owner, fx.currency)).changes);
+  const rate = await readPersonalRate(manager, owner, fx.currency);
+  return {
+    official: (day: string) => officialFactor(series, day, today),
+    personal: rate === null ? null : (day: string) => personalFactor(Number(rate), day, today),
+  };
 }
 
 /**
@@ -564,32 +615,18 @@ async function realReadingsFor(
   now: Date,
   complete: boolean,
 ) {
-  const today = moscowDate(now);
-  const series = buildSeries((await readEffectiveChanges(manager, owner, fx.currency)).changes);
-  const rate = await readPersonalRate(manager, owner, fx.currency);
-  const official = realReadings(
-    assets,
-    accounts,
-    fx,
-    (day) => officialFactor(series, day, today),
-    complete,
-  );
+  const factors = await inflationFactors(manager, owner, fx, now);
+  const official = realReadings(assets, accounts, fx, factors.official, complete);
   const own =
-    rate === null
+    factors.personal === null
       ? null
-      : realReadings(
-          assets,
-          accounts,
-          fx,
-          (day) => personalFactor(Number(rate), day, today),
-          complete,
-        );
+      : realReadings(assets, accounts, fx, factors.personal, complete);
   const pair = (pick: (readings: typeof official) => RealReading | null) => ({
     official: pick(official),
     personal: personalReading(
       pick(official),
       () => (own === null ? null : pick(own)),
-      rate !== null,
+      factors.personal !== null,
     ),
   });
   return {

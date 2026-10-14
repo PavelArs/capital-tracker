@@ -356,6 +356,20 @@ async function wholePortfolio(db, s, f) {
     assert.ok(Number(rising.real.personal.unrealizedPnl) < Number(rising.unrealizedPnl), 'Profit shrinks');
     assert.deepEqual(rising.real.official, flat.real.official, 'The official reading is the same');
     assert.equal(rising.costBasis, flat.costBasis, 'The nominal figures do not change');
+    // INFL-REAL-LOTS: the lots of one asset add up to the asset's own reading.
+    const lotsOf = await s.portfolio.lots(owner, btc, {}, now);
+    assert.equal(lotsOf.instrumentId, btc);
+    assert.equal(lotsOf.currency, rising.currency);
+    assert.ok(lotsOf.lots.length > 0, 'A held asset lists its lots');
+    const sum = (pick) => lotsOf.lots.reduce((total, lot) => total + Number(pick(lot)), 0);
+    const near = (left, right) => assert.ok(Math.abs(left - right) < 1e-6, `${left} is not ${right}`);
+    near(sum((lot) => lot.paid), Number(bitcoinOf(rising).costBasis));
+    near(sum((lot) => lot.real.official.costBasis), Number(bitcoinOf(rising).real.official.costBasis));
+    near(sum((lot) => lot.real.personal.costBasis), Number(bitcoinOf(rising).real.personal.costBasis));
+    assert.ok(lotsOf.lots.every((lot) => lot.real.personal.ownRate === true));
+    const days = lotsOf.lots.map((lot) => lot.acquiredAt);
+    assert.deepEqual(days, [...days].sort().reverse(), 'Newest first');
+    await assert.rejects(s.portfolio.lots(owner, randomUUID(), {}, now), /Not found/);
   } finally {
     await db.query('DELETE FROM inflation_manual_months WHERE "ownerId" = $1', [owner]);
     await db.query('DELETE FROM inflation_personal_rates WHERE "ownerId" = $1', [owner]);
