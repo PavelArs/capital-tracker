@@ -13,6 +13,7 @@ const lot = (
   quantity,
   costUsd,
   acquiredAt,
+  purchase: true,
 });
 const account = (lots: PortfolioLot[]): PortfolioAccountInput => ({
   accountId: id(100),
@@ -239,6 +240,14 @@ describe('lots after inflation (INFL-REAL-LOTS)', () => {
       unrealizedReturnPercent: null,
       estimated: true,
     });
+  });
+
+  it('INFL-REAL-LOTS-PURCHASE leaves out a lot that is not a purchase, such as a reward', () => {
+    const reward: PortfolioLot = {
+      ...lot(1, '1', '100', '2025-03-10T09:00:00.000Z'),
+      purchase: undefined,
+    };
+    expect(rows({ lots: [reward] })).toEqual([]);
   });
 
   it('INFL-REAL-LOTS-SKIP leaves out empty lots and other assets', () => {

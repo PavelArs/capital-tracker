@@ -34,6 +34,20 @@ export interface NativeAmount {
   currency: PaidCurrency;
   amount: string;
 }
+/**
+ * Whether a held FIFO lot was bought (or carried in from a purchase), however it moved since: an
+ * own transfer keeps its origin. A reward, a swap or a coin received without a purchase is not.
+ */
+export function isPurchase(lot: {
+  sourceKind?: string;
+  origin?: LotOrigin;
+  buyTradeId?: string;
+}): boolean {
+  if (lot.buyTradeId !== undefined) return true;
+  if (lot.sourceKind === 'carry-in') return true;
+  return lot.origin?.kind === 'trade' || lot.origin?.kind === 'carry-in';
+}
+
 /** A held FIFO fragment with its original acquisition instant (Q1: cost at that date). */
 export interface PortfolioLot {
   instrumentId: string;
@@ -41,6 +55,8 @@ export interface PortfolioLot {
   costUsd: string | null;
   acquiredAt: string;
   native?: NativeAmount;
+  /** Set on a lot bought or carried in as a purchase; a reward, swap or received coin is not. */
+  purchase?: true;
 }
 export interface ConsumedCost {
   costUsd: string | null;
@@ -271,6 +287,7 @@ export function portfolioAccount(
       quantity: lot.remainingQuantity,
       costUsd: lot.remainingCostUsd,
       acquiredAt,
+      ...(isPurchase(lot) ? { purchase: true as const } : {}),
       ...native(
         'origin' in lot
           ? fromOrigin(lot.origin, lot.remainingQuantity)

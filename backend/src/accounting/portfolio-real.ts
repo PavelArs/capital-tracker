@@ -174,7 +174,8 @@ export function lotsAfterInflation(input: {
   const rows: LotAfterInflation[] = [];
   for (const account of accounts)
     for (const lot of account.lots) {
-      if (lot.instrumentId !== instrumentId) continue;
+      // Only purchases are listed: a reward or a received coin has no price paid to show.
+      if (lot.instrumentId !== instrumentId || lot.purchase !== true) continue;
       const quantity = canonicalDecimalToAtoms(lot.quantity);
       if (quantity === 0n) continue;
       const value = unit === null ? null : quantity * unit;
