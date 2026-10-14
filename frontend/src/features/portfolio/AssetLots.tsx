@@ -226,17 +226,15 @@ export default function AssetLotsCard({
   const [basis] = useInflationBasis();
   const read = useCachedRead(cachedReads.assetLots, instrumentId, asked);
   const { data: answer, error, reload } = read;
-  // The hook clears its error when a load starts, so the warning is kept here. It belongs to the
-  // figures on screen when a load failed: it stays until an answer replaces those figures.
-  // It is also kept for the asset and currency it failed for: another one can have no answer yet.
+  // The hook clears its error when a load starts, so the warning is kept here, for each asset and
+  // currency. It belongs to the figures that were on screen when its load failed: it stays until
+  // an answer replaces those figures.
   const scope = `${instrumentId}:${asked ?? ''}`;
-  const [failedOver, setFailedOver] = useState<{ scope: string; answer: AssetLots | null } | null>(
-    null,
-  );
+  const [failures, setFailures] = useState<Record<string, AssetLots | null>>({});
   useEffect(() => {
-    if (error !== null) setFailedOver({ scope, answer });
+    if (error !== null) setFailures((previous) => ({ ...previous, [scope]: answer }));
   }, [error, answer, scope]);
-  const stale = failedOver !== null && failedOver.scope === scope && failedOver.answer === answer;
+  const stale = scope in failures && failures[scope] === answer;
   // A fresh portfolio answer (a saved price) changes the values, so the lots are asked again.
   // The mount already asked, so only a change of `at` asks.
   const shownAt = useRef(at);

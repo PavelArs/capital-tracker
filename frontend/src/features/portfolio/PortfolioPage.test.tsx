@@ -1465,6 +1465,30 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(within(region).queryByRole('alert')).toBeNull();
   });
 
+  it('LOTS-SCOPE-KEPT keeps the warning of an asset whose refresh failed after another one failed', async () => {
+    const other = '00000000-0000-4000-8000-0000000000aa';
+    const spy = vi
+      .spyOn(portfolioValuationApi, 'lots')
+      .mockResolvedValueOnce(answer([lot()]))
+      .mockRejectedValueOnce(httpError(500))
+      .mockRejectedValueOnce(httpError(500))
+      .mockReturnValueOnce(new Promise(() => undefined));
+    const { rerender } = render(
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+    );
+    const region = await screen.findByRole('region', { name: 'Purchases after inflation' });
+    await waitFor(() => expect(bodyRows(region)).toHaveLength(1));
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    await within(region).findByRole('alert');
+    rerender(<AssetLotsCard instrumentId={other} asked={undefined} at="b" />);
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    await within(region).findByRole('alert');
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(4));
+    expect(bodyRows(region)).toHaveLength(1);
+    expect(within(region).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
+  });
+
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
     const sold = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([sold]));
