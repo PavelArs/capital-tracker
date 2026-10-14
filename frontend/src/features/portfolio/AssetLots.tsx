@@ -224,18 +224,22 @@ export default function AssetLotsCard({
   const phone = useNarrowScreen();
   const [basis] = useInflationBasis();
   const [loaded, setLoaded] = useState<{ scope: string; answer: AssetLots } | null>(null);
-  const [failed, setFailed] = useState(false);
+  // The scope whose last load failed: the warning stays until a retry of that scope succeeds.
+  const [failedScope, setFailedScope] = useState<string | null>(null);
   const scope = `${instrumentId}:${asked ?? ''}`;
+  const failed = failedScope === scope;
   // Only the latest request may fill the card: an earlier asset's answer can arrive later.
   const latest = useRef(0);
   const load = useCallback(async () => {
     const request = ++latest.current;
-    setFailed(false);
     try {
       const answer = await portfolioValuationApi.lots(instrumentId, asked);
-      if (request === latest.current) setLoaded({ scope, answer });
+      if (request === latest.current) {
+        setLoaded({ scope, answer });
+        setFailedScope(null);
+      }
     } catch {
-      if (request === latest.current) setFailed(true);
+      if (request === latest.current) setFailedScope(scope);
     }
   }, [instrumentId, asked, scope]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a fresh portfolio answer (a saved price) changes the values, so the lots are asked again.

@@ -1431,6 +1431,23 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(within(region).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
+  it('LOTS-STALE-RETRY keeps the stale warning until a retry succeeds', async () => {
+    const user = userEvent.setup();
+    withLots([lot()]);
+    const { rerender } = render(
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+    );
+    const region = await card();
+    vi.spyOn(portfolioValuationApi, 'lots')
+      .mockRejectedValueOnce(httpError(500))
+      .mockReturnValueOnce(new Promise(() => undefined));
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    await within(region).findByRole('alert');
+    await user.click(within(region).getByRole('button', { name: 'Try again' }));
+    expect(within(region).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
+    expect(bodyRows(region)).toHaveLength(1);
+  });
+
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
     const sold = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([sold]));
