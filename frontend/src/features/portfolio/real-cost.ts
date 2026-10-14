@@ -36,3 +36,14 @@ export function compareDecimals(left: string, right: string): number {
   const difference = scaled(a) - scaled(b);
   return difference < 0n ? -1 : difference > 0n ? 1 : 0;
 }
+
+/**
+ * What inflation did to the cost, in words: "+ $9,000.00 inflation", or "− $6,000.00 deflation"
+ * when prices fell over the purchases (a negative rate, or an index that went down).
+ */
+export function adjustmentText(real: string, paid: string, format: (value: string) => string) {
+  const adjustment = inflationAdjustment(real, paid);
+  return adjustment.startsWith('-')
+    ? `− ${format(adjustment.slice(1))} deflation`
+    : `+ ${format(adjustment)} inflation`;
+}

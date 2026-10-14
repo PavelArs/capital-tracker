@@ -875,7 +875,32 @@ describe('Portfolio after inflation', () => {
     expect(summary()).toHaveTextContent(
       'a purchase price, exchange rate or inflation figure is missing',
     );
+    expect(summary()).toHaveTextContent('$70,000.00 paid');
+    expect(summary()).toHaveTextContent('Nominal +$30,000.00');
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
+  });
+
+  it('PF-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio(
+        [{ ...bitcoin, knownCostQuantity: '0.7', real: { official: null, personal: null } }],
+        {
+          costBasis: null,
+          unrealizedPnl: null,
+          knownCostSubtotal: '40000',
+          knownUnrealizedPnl: '12000',
+          unknownCostCount: 1,
+          real: { official: null, personal: null },
+        },
+      ),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent("Cost in today's money—");
+    expect(summary()).toHaveTextContent('$40,000.00 known');
+    expect(summary()).toHaveTextContent('Nominal +$12,000.00 known');
+    expect(summary()).not.toHaveTextContent('paid');
   });
 
   it('PF-REAL-UNAVAILABLE names the account history that starts later, not a missing lot figure', async () => {
@@ -902,6 +927,196 @@ describe('Portfolio after inflation', () => {
     expect(summary()).toHaveTextContent('Unrealized P&L');
     expect(summary()).not.toHaveTextContent('is missing for some lots');
     expect(screen.getByRole('button', { name: 'Unrealized P&L' })).toBeInTheDocument();
+  });
+
+  const position = () => screen.getByRole('region', { name: 'Position' });
+
+  it('ASSET-REAL-NOMINAL shows the real cost and profit beside the nominal ones', async () => {
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost basis$66,000.00$75,000.00 in today's money");
+    expect(position()).toHaveTextContent('Unrealized P&L+$30,000.00+45.45%Real +$21,000.00');
+    expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
+  });
+
+  it('ASSET-REAL-SWITCH Real puts the cost in today money and the real profit first', async () => {
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    expect(position()).toHaveTextContent(
+      "Cost in today's money$75,000.00$66,000.00 paid + $9,000.00 inflation",
+    );
+    expect(position()).toHaveTextContent('Real P&L+$21,000.00+28.00%Nominal +$30,000.00');
+    expect(position()).toHaveTextContent("In today's USD, at the official rate");
+    // The choice is the same one the Portfolio and the Dashboard use.
+    await user.click(screen.getByRole('radio', { name: 'Nominal' }));
+    expect(position()).toHaveTextContent('Unrealized P&L');
+  });
+
+  it('ASSET-REAL-OWN-RATE follows the basis chosen in Settings', async () => {
+    setValueView('real');
+    setInflationBasis('personal');
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Real P&L+$16,000.00+20.00%');
+    expect(position()).toHaveTextContent("In today's USD, at your own rate");
+  });
+
+  it('ASSET-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: { official: null, personal: null } }]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost in today's money—");
+    expect(position()).toHaveTextContent('a purchase price, exchange rate or inflation figure');
+    expect(position()).toHaveTextContent('Real P&L—');
+    // Both nominal figures stay on screen beside the dashes.
+    expect(position()).toHaveTextContent('$66,000.00 paid');
+    expect(position()).toHaveTextContent('Nominal +$30,000.00');
+  });
+
+  it('ASSET-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        {
+          ...bitcoin,
+          costBasis: null,
+          unrealizedPnl: null,
+          knownCostSubtotal: '40000',
+          knownUnrealizedPnl: '12000',
+          knownCostQuantity: '0.7',
+          unknownCostQuantity: '0.5',
+          real: { official: null, personal: null },
+        },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost in today's money—");
+    expect(position()).toHaveTextContent('$40,000.00 known');
+    expect(position()).toHaveTextContent('Nominal +$12,000.00 known');
+    expect(position()).not.toHaveTextContent('paid');
+  });
+
+  it('ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        {
+          ...bitcoin,
+          costBasis: null,
+          unrealizedPnl: null,
+          knownCostSubtotal: '0',
+          knownCostQuantity: '0.7',
+          unknownCostQuantity: '0.5',
+          real: { official: null, personal: null },
+        },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('$0.00 known');
+  });
+
+  it('ASSET-REAL-INCOMPLETE says the figures leave out an account whose history starts later, in every view', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({ unavailableAccountCount: 2 }),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    const notice = '2 accounts whose history starts later are left out of these figures';
+    expect(position()).toHaveTextContent(notice);
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    expect(position()).toHaveTextContent('Real P&L+$21,000.00');
+    expect(position()).toHaveTextContent(notice);
+  });
+
+  it('ASSET-REAL-INCOMPLETE-NULL keeps the notice when there is no real reading', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, real: { official: null, personal: null } }], {
+        unavailableAccountCount: 1,
+      }),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent(
+      '1 account whose history starts later is left out of these figures',
+    );
+  });
+
+  it('ASSET-REAL-SOLD does not call a fully sold asset incomplete', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        {
+          ...bitcoin,
+          quantity: '0',
+          value: '0',
+          costBasis: '0',
+          unrealizedPnl: null,
+          knownUnrealizedPnl: null,
+          real: { official: null, personal: null },
+        },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent("Cost in today's money$0.00");
+    expect(position()).toHaveTextContent('Nothing held, so there is no real cost or profit');
+    expect(position()).toHaveTextContent('Real P&L$0.00Nominal $0.00');
+    expect(position()).not.toHaveTextContent('is missing');
+  });
+
+  it('ASSET-REAL-DEFLATION words a fall in prices as deflation', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        { ...bitcoin, real: { official: read('60000', '36000', '60.00'), personal: null } },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('$66,000.00 paid − $6,000.00 deflation');
+    expect(position()).not.toHaveTextContent('+ -');
+  });
+
+  it('ASSET-REAL-SOLD-PARTIAL keeps the missing-history state when an account is unavailable', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio(
+        [{ ...bitcoin, quantity: '0', value: '0', real: { official: null, personal: null } }],
+        { unavailableAccountCount: 1 },
+      ),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('an account history starts later');
+    expect(position()).not.toHaveTextContent('Nothing held');
+  });
+
+  it('PF-REAL-DEFLATION words a fall in prices as deflation in the summary', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({ real: { official: read('65000', '35000', '53.85'), personal: null } }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent('$70,000.00 paid − $5,000.00 deflation');
+  });
+
+  it('ASSET-REAL-LEGACY stays nominal for an answer saved before real figures existed', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Cost basis');
+    expect(position()).not.toHaveTextContent('is missing');
   });
 
   it('PF-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
