@@ -361,11 +361,23 @@ async function wholePortfolio(db, s, f) {
     assert.equal(lotsOf.instrumentId, btc);
     assert.equal(lotsOf.currency, rising.currency);
     assert.ok(lotsOf.lots.length > 0, 'A held asset lists its lots');
-    const sum = (pick) => lotsOf.lots.reduce((total, lot) => total + Number(pick(lot)), 0);
-    const near = (left, right) => assert.ok(Math.abs(left - right) < 1e-6, `${left} is not ${right}`);
-    near(sum((lot) => lot.paid), Number(bitcoinOf(rising).costBasis));
-    near(sum((lot) => lot.real.official.costBasis), Number(bitcoinOf(rising).real.official.costBasis));
-    near(sum((lot) => lot.real.personal.costBasis), Number(bitcoinOf(rising).real.personal.costBasis));
+    // Exact decimal sums: a float tolerance would let a lost fraction or whole units pass.
+    const SCALE = 60;
+    const exact = (text) => {
+      const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(text));
+      assert.ok(match, `${text} is not a decimal amount`);
+      const fraction = match[3] ?? '';
+      assert.ok(fraction.length <= SCALE, `${text} has more than ${SCALE} decimals`);
+      const value = BigInt(`${match[2]}${fraction.padEnd(SCALE, '0')}`);
+      return match[1] === '-' ? -value : value;
+    };
+    const sum = (pick) =>
+      lotsOf.lots.reduce((total, lot) => total + (pick(lot) === null ? 0n : exact(pick(lot))), 0n);
+    const same = (total, expected) =>
+      assert.equal(total, expected === null ? 0n : exact(expected), `${total} is not ${expected}`);
+    same(sum((lot) => lot.paid), bitcoinOf(rising).costBasis);
+    same(sum((lot) => lot.real.official.costBasis), bitcoinOf(rising).real.official.costBasis);
+    same(sum((lot) => lot.real.personal.costBasis), bitcoinOf(rising).real.personal.costBasis);
     assert.ok(lotsOf.lots.every((lot) => lot.real.personal.ownRate === true));
     const days = lotsOf.lots.map((lot) => lot.acquiredAt);
     assert.deepEqual(days, [...days].sort().reverse(), 'Newest first');
