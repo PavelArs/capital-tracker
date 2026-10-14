@@ -562,7 +562,13 @@ function AssetDetails({
         )}
       </section>
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
-      {!sold && <AssetLotsCard instrumentId={asset.instrumentId} asked={asked} at={portfolio.at} />}
+      {!sold && (
+        <AssetLotsCard
+          instrumentId={asset.instrumentId}
+          asked={asked}
+          values={`${asset.quantity}|${asset.value}|${JSON.stringify(asset.price)}`}
+        />
+      )}
       <div className="portfolio-split">
         <section className="shell-card" aria-labelledby="asset-holdings">
           <div className="ui-toolbar">

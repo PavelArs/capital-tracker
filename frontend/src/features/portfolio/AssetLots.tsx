@@ -219,12 +219,12 @@ function LotsList({
 export default function AssetLotsCard({
   instrumentId,
   asked,
-  at,
+  values,
 }: {
   instrumentId: string;
   asked: AccountingCurrency | undefined;
-  /** When the portfolio answer was read: a fresh one (a saved price) asks for the lots again. */
-  at: string;
+  /** What the page shows of the asset: a change (a saved price) asks for the lots again. */
+  values: string;
 }) {
   const phone = useNarrowScreen();
   const [basis] = useInflationBasis();
@@ -238,14 +238,14 @@ export default function AssetLotsCard({
     if (error !== null && answer !== null) failedRefreshes.set(scope, answer);
   }, [error, answer, scope]);
   const stale = error !== null || (answer !== null && failedRefreshes.get(scope) === answer);
-  // A fresh portfolio answer (a saved price) changes the values, so the lots are asked again.
-  // The mount already asked, so only a change of `at` asks.
-  const shownAt = useRef(at);
+  // A saved price changes the values, so the lots are asked again. A refreshed portfolio that shows
+  // the same values does not: the mount already asked, so only a change of `values` asks.
+  const shownValues = useRef(values);
   useEffect(() => {
-    if (shownAt.current === at) return;
-    shownAt.current = at;
+    if (shownValues.current === values) return;
+    shownValues.current = values;
     reload(true);
-  }, [at, reload]);
+  }, [values, reload]);
 
   const line = answer ? basisLine(answer.lots, basis, answer.currency) : null;
   return (

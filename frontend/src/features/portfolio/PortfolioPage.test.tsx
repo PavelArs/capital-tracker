@@ -1419,12 +1419,12 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
   it('LOTS-STALE says when a refresh failed and the figures on screen may be out of date', async () => {
     withLots([lot()]);
     const { rerender } = render(
-      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="a" />,
     );
     const region = await card();
     expect(bodyRows(region)).toHaveLength(1);
     vi.spyOn(portfolioValuationApi, 'lots').mockRejectedValueOnce(httpError(500));
-    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="b" />);
     const alert = await within(region).findByRole('alert');
     expect(alert).toHaveTextContent('Could not refresh the purchases');
     expect(bodyRows(region)).toHaveLength(1);
@@ -1435,13 +1435,13 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     const user = userEvent.setup();
     withLots([lot()]);
     const { rerender } = render(
-      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="a" />,
     );
     const region = await card();
     vi.spyOn(portfolioValuationApi, 'lots')
       .mockRejectedValueOnce(httpError(500))
       .mockReturnValueOnce(new Promise(() => undefined));
-    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="b" />);
     await within(region).findByRole('alert');
     await user.click(within(region).getByRole('button', { name: 'Try again' }));
     expect(within(region).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
@@ -1454,11 +1454,11 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
       .mockRejectedValueOnce(httpError(500))
       .mockReturnValueOnce(new Promise(() => undefined));
     const { rerender } = render(
-      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="a" />,
     );
     const region = await screen.findByRole('region', { name: 'Purchases after inflation' });
     await within(region).findByRole('alert');
-    rerender(<AssetLotsCard instrumentId={other} asked={undefined} at="a" />);
+    rerender(<AssetLotsCard instrumentId={other} asked={undefined} values="a" />);
     await waitFor(() =>
       expect(portfolioValuationApi.lots).toHaveBeenLastCalledWith(other, undefined),
     );
@@ -1474,16 +1474,16 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
       .mockRejectedValueOnce(httpError(500))
       .mockReturnValueOnce(new Promise(() => undefined));
     const { rerender } = render(
-      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="a" />,
     );
     const region = await screen.findByRole('region', { name: 'Purchases after inflation' });
     await waitFor(() => expect(bodyRows(region)).toHaveLength(1));
-    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="b" />);
     await within(region).findByRole('alert');
-    rerender(<AssetLotsCard instrumentId={other} asked={undefined} at="b" />);
+    rerender(<AssetLotsCard instrumentId={other} asked={undefined} values="b" />);
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
     await within(region).findByRole('alert');
-    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="b" />);
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(4));
     expect(bodyRows(region)).toHaveLength(1);
     expect(within(region).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
@@ -1492,17 +1492,19 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
   it('LOTS-STALE-REMOUNT keeps the stale warning when the card is shown again', async () => {
     withLots([lot()]);
     const first = render(
-      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="a" />,
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="a" />,
     );
     const region = await card();
     expect(bodyRows(region)).toHaveLength(1);
     vi.spyOn(portfolioValuationApi, 'lots')
       .mockRejectedValueOnce(httpError(500))
       .mockReturnValueOnce(new Promise(() => undefined));
-    first.rerender(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    first.rerender(
+      <AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="b" />,
+    );
     await within(region).findByRole('alert');
     first.unmount();
-    render(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} at="b" />);
+    render(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="b" />);
     const again = await card();
     expect(bodyRows(again)).toHaveLength(1);
     expect(within(again).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
@@ -1518,6 +1520,23 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     const region = await card();
     expect(within(region).getByRole('note')).toHaveTextContent('may hold more purchases');
     expect(portfolioValuationApi.lots).toHaveBeenCalledWith(bitcoin.instrumentId, undefined);
+  });
+
+  it('LOTS-SAME-VALUES asks for the purchases once when a refreshed portfolio shows the same values', async () => {
+    let read = 0;
+    withLots([lot()]);
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () =>
+      portfolio([bitcoin], { at: `2026-10-14T13:00:0${++read}.000Z` }),
+    );
+    const first = renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await card();
+    first.unmount();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    await waitFor(() => expect(portfolioValuationApi.get).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bodyRows(region)).toHaveLength(1);
+    expect(portfolioValuationApi.lots).toHaveBeenCalledTimes(2);
   });
 
   it('LOTS-SOLD asks for nothing when the asset is no longer held', async () => {
