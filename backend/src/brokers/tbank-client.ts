@@ -113,6 +113,9 @@ export function decimal(value: unknown): string {
 function price(value: unknown): { amount: string; currency: string } {
   if (value === undefined || value === null) return { amount: '', currency: '' };
   const item = record(value);
+  // An object with neither a currency nor an amount is no price; a real zero names its currency.
+  if (item.currency === undefined && item.units === undefined && item.nano === undefined)
+    return { amount: '', currency: '' };
   return {
     amount: decimal(item),
     currency: typeof item.currency === 'string' ? item.currency : '',
@@ -145,8 +148,12 @@ function position(value: unknown, virtual: boolean): TBankPosition {
 }
 
 /** The held positions, then the virtual (gift) ones T-Bank lists apart from them. */
-export function parsePositions(body: unknown): TBankPosition[] {
+export function parsePositions(body: unknown, accountId: string): TBankPosition[] {
   const answer = record(body);
+  if (answer.accountId !== undefined && answer.accountId !== accountId) return invalid();
+  // JSON may leave out an empty list, but only an answer that names this account says it is
+  // empty; a bare `{}` is a broken answer, not an account with nothing in it.
+  if (answer.positions === undefined && answer.accountId !== accountId) return invalid();
   const held = answer.positions ?? [];
   const gifts = answer.virtualPositions ?? [];
   if (!Array.isArray(held) || !Array.isArray(gifts) || held.length + gifts.length > 500)
@@ -182,7 +189,9 @@ export class TBankClient {
 
   /** What the token reads in one broker account now (GetPortfolio). */
   portfolio(token: string, accountId: string): Promise<TBankResult<TBankPosition[]>> {
-    return this.call(token, 'OperationsService/GetPortfolio', { accountId }, parsePositions);
+    return this.call(token, 'OperationsService/GetPortfolio', { accountId }, (body) =>
+      parsePositions(body, accountId),
+    );
   }
 
   private async call<T>(

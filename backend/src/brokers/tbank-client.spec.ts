@@ -103,6 +103,8 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
 });
 
 describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
+  const positionsOf = (body: unknown) => parsePositions(body, '2000000001');
+
   it('reads a Quotation or MoneyValue as exact decimal text', () => {
     expect(decimal({ units: '12', nano: 340_000_000 })).toBe('12.34');
     expect(decimal({ units: '0', nano: 5_000_000 })).toBe('0.005');
@@ -133,7 +135,7 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
 
   it('reads each position with its quantity and prices and no other field', () => {
     expect(
-      parsePositions({
+      positionsOf({
         positions: [
           {
             instrumentUid: 'synthetic-uid-0001',
@@ -190,20 +192,37 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
   });
 
   it('refuses a body without positions of plain ids and quantities, or with too many', () => {
-    expect(() => parsePositions({ positions: [{ instrumentUid: 'a b', quantity: {} }] })).toThrow();
-    expect(() => parsePositions({ positions: [{ instrumentUid: 'a' }] })).toThrow();
-    expect(() => parsePositions({ positions: 'x' })).toThrow();
+    expect(() => positionsOf({ positions: [{ instrumentUid: 'a b', quantity: {} }] })).toThrow();
+    expect(() => positionsOf({ positions: [{ instrumentUid: 'a' }] })).toThrow();
+    expect(() => positionsOf({ positions: 'x' })).toThrow();
     expect(() =>
-      parsePositions({
+      positionsOf({
         positions: Array.from({ length: 501 }, () => ({ instrumentUid: 'a', quantity: {} })),
       }),
     ).toThrow();
-    expect(parsePositions({ positions: [{ instrumentUid: 'a', quantity: {} }] })).toHaveLength(1);
-    expect(parsePositions({})).toEqual([]);
+    expect(positionsOf({ positions: [{ instrumentUid: 'a', quantity: {} }] })).toHaveLength(1);
+    expect(positionsOf({ accountId: '2000000001' })).toEqual([]);
+    expect(() => positionsOf({})).toThrow();
+    expect(() => positionsOf({ accountId: '2000000002', positions: [] })).toThrow();
+  });
+
+  it('reads an empty price object as no price, and a zero price with its currency as zero', () => {
+    const [empty, zero] = positionsOf({
+      positions: [
+        { instrumentUid: 'a', quantity: {}, currentPrice: {}, averagePositionPrice: {} },
+        { instrumentUid: 'b', quantity: {}, currentPrice: { currency: 'rub' } },
+      ],
+    });
+    expect([empty.currentPrice, empty.averagePrice, empty.currentPriceCurrency]).toEqual([
+      '',
+      '',
+      '',
+    ]);
+    expect([zero.currentPrice, zero.currentPriceCurrency]).toEqual(['0', 'rub']);
   });
 
   it('lists virtual (gift) positions after held ones, marked with when they expire', () => {
-    const read = parsePositions({
+    const read = positionsOf({
       positions: [{ instrumentUid: 'synthetic-uid-0001', quantity: { units: '2' } }],
       virtualPositions: [
         {
@@ -220,9 +239,9 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
       ['synthetic-uid-0004', true, '2026-12-01T00:00:00Z'],
       ['synthetic-uid-0005', true, ''],
     ]);
-    expect(() => parsePositions({ virtualPositions: 'x' })).toThrow();
+    expect(() => positionsOf({ accountId: '2000000001', virtualPositions: 'x' })).toThrow();
     expect(() =>
-      parsePositions({
+      positionsOf({
         positions: Array.from({ length: 300 }, () => ({ instrumentUid: 'a', quantity: {} })),
         virtualPositions: Array.from({ length: 201 }, () => ({ instrumentUid: 'b', quantity: {} })),
       }),
