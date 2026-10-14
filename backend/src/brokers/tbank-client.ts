@@ -31,10 +31,12 @@ export interface TBankAccount {
 export interface TBankPosition {
   instrumentUid: string;
   instrumentType: string;
-  currency: string;
   quantity: string;
+  /** Each price with its own currency; both '' when T-Bank gives no such price. */
   averagePrice: string;
+  averagePriceCurrency: string;
   currentPrice: string;
+  currentPriceCurrency: string;
 }
 
 class InvalidResponse extends Error {}
@@ -93,10 +95,24 @@ export function decimal(value: unknown): string {
   const nano = item.nano === undefined ? 0 : typeof item.nano === 'number' ? item.nano : invalid();
   if (!/^-?\d{1,18}$/.test(units) || !Number.isInteger(nano) || Math.abs(nano) > 999_999_999)
     return invalid();
-  const negative = units.startsWith('-') || nano < 0;
+  // The value is units + nano / 1e9 with both parts of one sign; parts of opposite signs are a
+  // broken answer, not a value to guess at.
+  const negative = units.startsWith('-');
+  if ((negative && nano > 0) || (!negative && units !== '0' && nano < 0)) return invalid();
   const whole = units.replace('-', '');
   const fraction = Math.abs(nano).toString().padStart(9, '0').replace(/0+$/, '');
-  return `${negative && (whole !== '0' || fraction) ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+  const sign = (negative || nano < 0) && (whole !== '0' || fraction) ? '-' : '';
+  return `${sign}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+/** A MoneyValue as its amount and currency, both '' when T-Bank gives none. */
+function price(value: unknown): { amount: string; currency: string } {
+  if (value === undefined || value === null) return { amount: '', currency: '' };
+  const item = record(value);
+  return {
+    amount: decimal(item),
+    currency: typeof item.currency === 'string' ? item.currency : '',
+  };
 }
 
 export function parsePositions(body: unknown): TBankPosition[] {
@@ -106,17 +122,19 @@ export function parsePositions(body: unknown): TBankPosition[] {
     const item = record(value);
     const uid = item.instrumentUid;
     if (typeof uid !== 'string' || !idPattern.test(uid)) return invalid();
-    const average = item.averagePositionPrice ? record(item.averagePositionPrice) : {};
     const type = typeof item.instrumentType === 'string' ? item.instrumentType : '';
+    const average = price(item.averagePositionPrice);
+    const current = price(item.currentPrice);
     return {
       instrumentUid: uid,
       // T-Bank names the type in lower case: share, bond, etf, currency, futures.
       instrumentType: /^[a-z_]{1,40}$/.test(type) ? type : 'unknown',
-      currency: typeof average.currency === 'string' ? average.currency : '',
       // A position without a quantity is a broken answer, not an empty holding.
       quantity: decimal(item.quantity),
-      averagePrice: item.averagePositionPrice ? decimal(average) : '',
-      currentPrice: item.currentPrice ? decimal(item.currentPrice) : '',
+      averagePrice: average.amount,
+      averagePriceCurrency: average.currency,
+      currentPrice: current.amount,
+      currentPriceCurrency: current.currency,
     };
   });
 }

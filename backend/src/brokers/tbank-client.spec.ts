@@ -126,6 +126,11 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
     expect(() => decimal(null)).toThrow();
   });
 
+  it('refuses parts of opposite signs instead of guessing the value', () => {
+    expect(() => decimal({ units: '3', nano: -250_000_000 })).toThrow();
+    expect(() => decimal({ units: '-3', nano: 250_000_000 })).toThrow();
+  });
+
   it('reads each position with its quantity and prices and no other field', () => {
     expect(
       parsePositions({
@@ -135,28 +140,45 @@ describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
             instrumentType: 'share',
             quantity: { units: '10', nano: 500_000_000 },
             averagePositionPrice: { currency: 'rub', units: '100', nano: 250_000_000 },
-            currentPrice: { currency: 'rub', units: '101', nano: 0 },
+            currentPrice: { currency: 'usd', units: '101', nano: 0 },
             figi: 'SYNTHETIC0001',
           },
           { instrumentUid: 'synthetic-uid-0002', instrumentType: 'weird-type', quantity: {} },
+          {
+            instrumentUid: 'synthetic-uid-0003',
+            instrumentType: 'bond',
+            quantity: { units: '1' },
+            currentPrice: { currency: 'rub', units: '99' },
+          },
         ],
       }),
     ).toEqual([
       {
         instrumentUid: 'synthetic-uid-0001',
         instrumentType: 'share',
-        currency: 'rub',
         quantity: '10.5',
         averagePrice: '100.25',
+        averagePriceCurrency: 'rub',
         currentPrice: '101',
+        currentPriceCurrency: 'usd',
       },
       {
         instrumentUid: 'synthetic-uid-0002',
         instrumentType: 'unknown',
-        currency: '',
         quantity: '0',
         averagePrice: '',
+        averagePriceCurrency: '',
         currentPrice: '',
+        currentPriceCurrency: '',
+      },
+      {
+        instrumentUid: 'synthetic-uid-0003',
+        instrumentType: 'bond',
+        quantity: '1',
+        averagePrice: '',
+        averagePriceCurrency: '',
+        currentPrice: '99',
+        currentPriceCurrency: 'rub',
       },
     ]);
   });
