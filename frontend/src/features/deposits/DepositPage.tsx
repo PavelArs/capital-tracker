@@ -7,7 +7,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import Pager, { usePages } from '@/ui/Pager';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
+import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
+import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
@@ -19,9 +21,12 @@ import {
   dateText,
   money,
   movementText,
+  realOf,
+  realRateText,
   statusText,
   statusTone,
   termText,
+  toneClass,
 } from './deposit-format';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -43,10 +48,14 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 function InterestPeriods({
   periods,
   currency,
+  basis,
 }: {
   periods: DepositDetail['periods'];
   currency: AccountingCurrency;
+  basis: InflationBasis;
 }) {
+  // Absent in an answer saved before the figure existed: the column is left out, not filled with dashes.
+  const inflated = periods.some((period) => period.afterInflation !== undefined);
   const paged = usePages([...periods].reverse(), (period) => period.to);
   return (
     <>
@@ -58,6 +67,7 @@ function InterestPeriods({
               <th>To</th>
               <th>What happened to it</th>
               <th className="ui-num">Interest</th>
+              {inflated && <th className="ui-num">After inflation</th>}
             </tr>
           </thead>
           <tbody>
@@ -67,6 +77,13 @@ function InterestPeriods({
                 <td>{dateText(period.to)}</td>
                 <td>{period.treatment === 'capitalized' ? 'Added to the deposit' : 'Payable'}</td>
                 <td className="ui-num">{money(period.interest, currency)}</td>
+                {inflated && (
+                  <td
+                    className={`ui-num ${toneClass(period.afterInflation?.[basis] ?? null) ?? ''}`}
+                  >
+                    {money(period.afterInflation?.[basis] ?? null, currency, true)}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -179,6 +196,7 @@ export default function DepositPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
   const [asked] = useAskedCurrency();
+  const [basis] = useInflationBasis();
   const { main } = useMainCurrency();
   const navigate = useNavigate();
   const shown = asked ?? main ?? 'USD';
@@ -215,6 +233,8 @@ export default function DepositPage() {
   const own = deposit?.currency;
   const note = deposit ? attention(deposit, deposit.asOf) : null;
   const check = deposit?.lastCheck ?? null;
+  const real = deposit ? realOf(deposit, basis) : null;
+  const rate = realRateText(real);
 
   return (
     <div className="shell-page">
@@ -259,6 +279,11 @@ export default function DepositPage() {
               <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
               <h2>{deposit.bank}</h2>
               <p className="deposit-card__terms">{termText(deposit)}</p>
+              {rate && real && (
+                <p className="deposit-card__terms">
+                  <span className={toneClass(real.ratePercent)}>{rate}</span>
+                </p>
+              )}
               <p className="deposit-card__terms">
                 Started {dateText(deposit.startDate)}
                 {deposit.closedOn ? `, closed ${dateText(deposit.closedOn)}` : ''}
@@ -277,6 +302,17 @@ export default function DepositPage() {
           )}
           <div className="deposit-stats">
             <Stat label="In the deposit" value={money(deposit.principal, own)} />
+            {deposit.interestEarned !== undefined && (
+              <Stat
+                label="Interest earned"
+                value={money(deposit.interestEarned, own)}
+                hint={
+                  real?.gain != null
+                    ? `${money(real.gain, own, true)} after ${own} inflation, ${basisText(basis, real, own)}`
+                    : `No ${own} inflation figures for the whole time yet`
+                }
+              />
+            )}
             <Stat
               label="Earned, not posted yet"
               value={money(deposit.accrued, own)}
@@ -329,7 +365,7 @@ export default function DepositPage() {
             {deposit.periods.length === 0 ? (
               <p className="shell-note">No interest has been posted yet.</p>
             ) : (
-              <InterestPeriods periods={deposit.periods} currency={own} />
+              <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
             )}
             {Number(deposit.interestForfeited) > 0 && (
               <p className="shell-note">

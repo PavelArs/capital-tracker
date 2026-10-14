@@ -587,6 +587,58 @@ async function checks(db, service, owner, ids) {
   console.log('PASS DEP-RATE');
 }
 
+async function afterInflation(db, service, owner) {
+  stage = 'INFL-DEPOSIT a 12% ruble deposit after inflation: unknown without data, then flat and rising prices';
+  const made = await service.create(owner, { ...savings, name: 'Inflated', endDate: null });
+  const at = '2026-10-01';
+  const read = () => service.get(owner, made.id, at);
+  const none = await read();
+  const unknown = { inflationPercent: null, ratePercent: null, gain: null, estimated: false };
+  assert.deepEqual(none.real.official, unknown, 'No inflation data stored');
+  assert.deepEqual(none.real.personal, { ...unknown, ownRate: false });
+  // No price change at all: what the deposit earned is what it earned after inflation.
+  await db.query(
+    `INSERT INTO inflation_manual_months ("ownerId", currency, month, "changePercent")
+     SELECT $1, 'RUB', month::date, 0 FROM generate_series('2025-01-01'::date, '2026-10-01'::date, '1 month') month`,
+    [owner],
+  );
+  try {
+    const flat = await read();
+    assert.equal(flat.interestEarned, '3024.66', 'Posted on 1 August, 1 September and 1 October');
+    assert.deepEqual(flat.real.official, {
+      inflationPercent: '0.00',
+      ratePercent: '12.00',
+      gain: flat.interestEarned,
+      estimated: false,
+    });
+    assert.deepEqual(flat.real.personal, { ...flat.real.official, ownRate: false });
+    assert.equal(flat.periods[0].afterInflation.official, flat.periods[0].interest);
+    // The owner's own rate of 10% a year makes the money put in worth more today.
+    await db.query(
+      `INSERT INTO inflation_personal_rates ("ownerId", currency, "annualPercent") VALUES ($1, 'RUB', 10)`,
+      [owner],
+    );
+    const rising = await read();
+    assert.deepEqual(rising.real.official, flat.real.official, 'The official reading does not move');
+    assert.equal(rising.real.personal.ownRate, true);
+    assert.equal(rising.real.personal.inflationPercent, '10.00');
+    assert.equal(rising.real.personal.ratePercent, '1.82', '12% against 10% a year');
+    assert.ok(
+      Number(rising.real.personal.gain) < Number(flat.interestEarned),
+      'Inflation takes part of what was earned',
+    );
+    assert.ok(
+      Number(rising.periods[0].afterInflation.personal) < Number(rising.periods[0].interest),
+    );
+    assert.equal(rising.interestEarned, flat.interestEarned, 'The nominal figures do not change');
+    assert.ok((await service.list(owner, at)).items[0].real.personal.gain !== null);
+  } finally {
+    await db.query('DELETE FROM inflation_manual_months WHERE "ownerId" = $1', [owner]);
+    await db.query('DELETE FROM inflation_personal_rates WHERE "ownerId" = $1', [owner]);
+  }
+  console.log('PASS INFL-DEPOSIT a deposit after inflation: flat prices equal nominal, a 10% rate lowers it');
+}
+
 async function owners(db, service, owner, other, ids) {
   stage = 'synthetic second owner';
   assert.deepEqual((await service.list(other, undefined)).items, []);
@@ -742,13 +794,14 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other, third, fourth, fifth, sixth] = await db.query(`INSERT INTO users(email,password) VALUES
+    const [owner, other, third, fourth, fifth, sixth, seventh] = await db.query(`INSERT INTO users(email,password) VALUES
       ('deposit-owner@example.invalid','synthetic-not-a-hash'),
       ('deposit-other@example.invalid','synthetic-not-a-hash'),
       ('deposit-third@example.invalid','synthetic-not-a-hash'),
       ('deposit-fourth@example.invalid','synthetic-not-a-hash'),
       ('deposit-fifth@example.invalid','synthetic-not-a-hash'),
-      ('deposit-sixth@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('deposit-sixth@example.invalid','synthetic-not-a-hash'),
+      ('deposit-seventh@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { DepositsService } = require(modulePath);
     const plain = new DepositsService(db);
     // Every call carries a fresh request id unless a stage names one to test a replay.
@@ -766,6 +819,7 @@ async function main() {
     await owners(db, service, owner.id, other.id, ids);
     await wholePortfolio(db, third.id);
     await history(db, service, fifth.id, sixth.id);
+    await afterInflation(db, service, seventh.id);
     await backfill();
   } finally {
     if (db.isInitialized) await db.destroy();

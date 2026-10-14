@@ -1,11 +1,18 @@
-import type { Deposit, DepositDetail, DepositStatus, MovementKind } from '@api/deposits.api';
+import type {
+  Deposit,
+  DepositDetail,
+  DepositReal,
+  DepositStatus,
+  MovementKind,
+} from '@api/deposits.api';
 
 type DepositPeriod = DepositDetail['periods'][number];
 
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import type { BadgeTone } from '@/ui/Badge';
 import { dayText } from '@/utils/dates';
-import { currencySymbols, DASH } from '../portfolio/format';
+import { currencySymbols, DASH, percent, tone } from '../portfolio/format';
+import type { InflationBasis } from '../shell/inflation-basis';
 
 const DAY_MS = 86_400_000;
 
@@ -109,3 +116,20 @@ export function capitalizedInterest(
   const text = cents.toString().padStart(3, '0');
   return `${text.slice(0, -2)}.${text.slice(-2)}`;
 }
+
+/** The deposit after inflation by the basis the owner chose; null while the server has none. */
+export function realOf(deposit: Pick<Deposit, 'real'>, basis: InflationBasis): DepositReal | null {
+  return deposit.real?.[basis] ?? null;
+}
+
+/** "Real +3.12% a year after 8.90% inflation", or null where there is no rate to state. */
+export function realRateText(real: DepositReal | null): string | null {
+  if (real === null || real.ratePercent === null || real.inflationPercent === null) return null;
+  return `Real ${percent(real.ratePercent)} a year after ${percent(real.inflationPercent, false)} inflation`;
+}
+
+/** The colour of a signed figure: green above zero, red below it, none at zero or without one. */
+export const toneClass = (value: string | null): string | undefined => {
+  const direction = tone(value);
+  return direction && `portfolio-${direction}`;
+};
