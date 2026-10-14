@@ -341,7 +341,10 @@ export default function DashboardPage() {
       ) : shown === null ? (
         <DashboardLoading />
       ) : isEmptyPortfolio(shown) ? (
-        <Empty onAdd={() => setAdding(true)} />
+        <>
+          <NearestGoal />
+          <Empty onAdd={() => setAdding(true)} />
+        </>
       ) : (
         <>
           <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} asked={asked} />

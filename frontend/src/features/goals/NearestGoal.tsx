@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import { Icon } from '../shell/icons';
 import { useCachedRead } from '../shell/useCachedRead';
-import { GoalBar, GoalFigures } from './GoalsPage';
+import { GoalBar, GoalFigures } from './GoalProgress';
 import { monthYear, ordered, statusText, statusTone, verdict } from './goal-format';
 import '../shell/shell-page.css';
 import './goals.css';

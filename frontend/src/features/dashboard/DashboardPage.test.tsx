@@ -1,4 +1,4 @@
-import { goalsApi } from '@api/goals.api';
+import { type Goal, goalsApi } from '@api/goals.api';
 import { operationsApi } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
@@ -107,6 +107,22 @@ const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')
 const trust = id(10);
 const cold = id(11);
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+// A synthetic goal for the GOAL-DASH cases.
+const reserve: Goal = {
+  id: id(90),
+  name: 'Reserve',
+  currency: 'USD',
+  targetAmount: '200000.00',
+  deadline: null,
+  expectedReturnPercent: '7.0000',
+  monthlyContribution: null,
+  createdAt: '2026-10-01T00:00:00.000Z',
+  asOf: '2026-10-04',
+  progress: { current: '115000.00', complete: true, percent: '57.50', remaining: '85000.00' },
+  status: 'open',
+  scenarios: [],
+};
 
 const asset = (
   n: number,
@@ -515,30 +531,7 @@ describe('record-portfolio-snapshots dashboard', () => {
   });
 
   it('GOAL-DASH puts the nearest goal between the net worth and the chart, only when there is one', async () => {
-    goals.mockResolvedValue({
-      asOf: '2026-10-04',
-      items: [
-        {
-          id: id(90),
-          name: 'Reserve',
-          currency: 'USD',
-          targetAmount: '200000.00',
-          deadline: null,
-          expectedReturnPercent: '7.0000',
-          monthlyContribution: null,
-          createdAt: '2026-10-01T00:00:00.000Z',
-          asOf: '2026-10-04',
-          progress: {
-            current: '115000.00',
-            complete: true,
-            percent: '57.50',
-            remaining: '85000.00',
-          },
-          status: 'open',
-          scenarios: [],
-        },
-      ],
-    });
+    goals.mockResolvedValue({ asOf: '2026-10-04', items: [reserve] });
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     const card = await screen.findByRole('region', { name: 'Nearest goal' });
@@ -549,6 +542,23 @@ describe('record-portfolio-snapshots dashboard', () => {
       'href',
       `/goals/${id(90)}`,
     );
+  });
+
+  it('GOAL-DASH shows a goal set before anything was recorded above the empty state', async () => {
+    get.mockResolvedValue(nothing());
+    goals.mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [
+        {
+          ...reserve,
+          progress: { current: '0.00', complete: true, percent: '0.00', remaining: '200000.00' },
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByRole('region', { name: 'Your portfolio is empty' });
+    const card = await screen.findByRole('region', { name: 'Nearest goal' });
+    expect(within(card).getByRole('link', { name: 'Reserve' })).toBeInTheDocument();
   });
 
   it('GOAL-DASH leaves the dashboard as it was without goals', async () => {
