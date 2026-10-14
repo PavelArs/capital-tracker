@@ -125,18 +125,28 @@ export function stateFlows(flows: readonly CapitalFlow[], fx: FxConverter): Stat
 }
 
 /**
- * Net invested at each ascending instant: deposits minus withdrawals up to and including it.
- * One flow without a rate leaves every later total unknown, never smaller.
+ * INVESTED-RATED: money counts as put in only when its date has a rate. The owner chose to
+ * leave a flow without one out rather than blank every later total, so the money put in can
+ * read lower and the profit to date higher than they are. Nominal and real money put in
+ * follow this one rule.
+ */
+export function isRated(flow: StatedFlow): flow is StatedFlow & { amount: bigint } {
+  return flow.amount !== null;
+}
+
+/**
+ * Net invested at each ascending instant: deposits minus withdrawals up to and including it,
+ * leaving out a flow without a rate (INVESTED-RATED).
  */
 export function investedAt(flows: readonly StatedFlow[], instants: readonly number[]) {
   let index = 0;
-  let total: bigint | null = 0n;
+  let total = 0n;
   return instants.map((at) => {
     for (; index < flows.length && flows[index].at <= at; index++) {
-      const amount = flows[index].amount;
-      total = total === null || amount === null ? null : total + amount;
+      const flow = flows[index];
+      if (isRated(flow)) total += flow.amount;
     }
-    return total === null ? null : formatSignedProduct(total);
+    return formatSignedProduct(total);
   });
 }
 

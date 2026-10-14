@@ -305,7 +305,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(stated('EUR')).toEqual([usd(70), usd(-396)]);
   });
 
-  it('net invested steps with each flow and is unknown after a flow without a rate', () => {
+  it('net invested steps with each flow and leaves out a flow without a rate (INVESTED-RATED)', () => {
     const flows: StatedFlow[] = [
       { at: at('2025-06-13T10:00:00.000Z'), amount: usd(1000) },
       { at: at('2025-06-20T00:00:00.000Z'), amount: usd(-300) },
@@ -318,7 +318,8 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       '2025-06-30T00:00:00.000Z',
       '2025-07-01T00:00:00.000Z',
     ].map(at);
-    expect(investedAt(flows, instants)).toEqual(['0', '1000', '700', '700', null]);
+    // Money without a Bank of Russia rate is not counted, and later totals stay known.
+    expect(investedAt(flows, instants)).toEqual(['0', '1000', '700', '700', '700']);
   });
 
   it('ASSET-HIDE a hidden asset is no flow: its purchases and carried holdings leave invested', () => {
