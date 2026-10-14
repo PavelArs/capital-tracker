@@ -36,6 +36,17 @@ export interface DepositReal {
   ownRate?: boolean;
 }
 
+/** One month of a deposit's life (INFL-DEPOSIT-CHART); the real figures are in the money of the day asked. */
+export interface DepositChartPoint {
+  date: string;
+  balance: string;
+  invested: string;
+  real: {
+    official: { balance: string; invested: string; estimated: boolean } | null;
+    personal: { balance: string; invested: string; estimated: boolean } | null;
+  };
+}
+
 export interface Deposit {
   id: string;
   name: string;
@@ -59,7 +70,16 @@ export interface Deposit {
   real?: { official: DepositReal | null; personal: DepositReal | null };
   values: Values;
   nextPayout: { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null;
-  atMaturity: { date: string; balance: string; interest: string } | null;
+  atMaturity: {
+    date: string;
+    balance: string;
+    interest: string;
+    /** The end balance in today's money by each reading; absent in an answer saved before this. */
+    inTodaysMoney?: {
+      official: { amount: string; estimated: boolean } | null;
+      personal: { amount: string; estimated: boolean } | null;
+    };
+  } | null;
   lastCheck: DepositCheck | null;
 }
 
@@ -85,6 +105,8 @@ export interface DepositDetail extends Deposit {
   interestPaidOut: string;
   interestForfeited: string;
   checks: (DepositCheck & { id: string })[];
+  /** Monthly from the start to the day asked; absent in an answer saved before the chart. */
+  chart?: DepositChartPoint[];
 }
 
 export interface DepositList {

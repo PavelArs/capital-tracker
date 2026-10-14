@@ -34,9 +34,12 @@ import {
   projectDeposit,
 } from './deposit-interest';
 import {
+  chartDates,
+  depositChart,
   depositReal,
   type InflationReadings,
   inflationReadings,
+  inTodaysMoney,
   periodsAfterInflation,
 } from './deposit-real';
 import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
@@ -510,6 +513,10 @@ export class DepositsService {
             date: terms.endDate as string,
             balance: maturity.balance,
             interest: centsText(canonicalDecimalToAtoms(maturity.interestPosted)),
+            // The balance on the end date in the money of the day asked (null past the end).
+            inTodaysMoney: readings
+              ? inTodaysMoney(maturity.balance, asOf, terms.endDate as string, readings)
+              : { official: null, personal: null },
           }
         : null,
       lastCheck,
@@ -532,6 +539,21 @@ export class DepositsService {
     );
     const official = readings && periodsAfterInflation(projection.periods, held, readings.official);
     const personal = readings && periodsAfterInflation(projection.periods, held, readings.personal);
+    // The value by month from the start, each movement day and the day asked.
+    const dates = chartDates(
+      terms.startDate,
+      asOf,
+      movementsOf(stored).map((movement) => movement.date),
+    );
+    const chart = readings
+      ? depositChart(
+          dates,
+          depositBalances(terms, movementsOf(stored), dates),
+          movementsOf(stored),
+          asOf,
+          readings,
+        )
+      : [];
     return {
       ...this.view(stored, asOf, converters, readings),
       asOf,
@@ -548,6 +570,7 @@ export class DepositsService {
           amount: row.amount,
           comment: row.comment,
         })),
+      chart,
       periods: projection.periods.map((period, index) => ({
         ...period,
         afterInflation: {

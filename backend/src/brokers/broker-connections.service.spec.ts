@@ -19,12 +19,20 @@ const mine: TBankAccount = {
   open: true,
   closed: false,
   access: 'read_only',
+  investBox: false,
 };
 
-function build(accounts: TBankResult<TBankAccount[]>, found = true) {
+function build(
+  accounts: TBankResult<TBankAccount[]>,
+  found = true,
+  stored = false,
+  positions: TBankResult<unknown[]> = { ok: true, value: [] },
+) {
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
+    if (sql.includes('SELECT credentials'))
+      return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
     if (sql.includes('INSERT INTO broker_connections')) writes.push(parameters);
     if (sql.includes('FROM broker_connections'))
       return writes.length
@@ -37,8 +45,18 @@ function build(accounts: TBankResult<TBankAccount[]>, found = true) {
     query,
     transaction: async (_level: string, work: (manager: unknown) => unknown) => work({ query }),
   };
-  const tbank = { accounts: async () => accounts };
-  const box = { seal: () => ({ v: 1, sealed: true }) };
+  const portfolios: string[] = [];
+  const tbank = {
+    accounts: async () => accounts,
+    portfolio: async (_token: string, id: string) => {
+      portfolios.push(id);
+      return positions;
+    },
+  };
+  const box = {
+    seal: () => ({ v: 1, sealed: true }),
+    open: (envelope: unknown) => (envelope ? token : null),
+  };
   return {
     service: new BrokerConnectionsService(
       source as unknown as DataSource,
@@ -46,6 +64,7 @@ function build(accounts: TBankResult<TBankAccount[]>, found = true) {
       box as unknown as TBankTokenBox,
     ),
     writes,
+    portfolios,
   };
 }
 const ok = (...items: TBankAccount[]): TBankResult<TBankAccount[]> => ({ ok: true, value: items });
@@ -137,6 +156,52 @@ describe('broker connections service', () => {
       BadRequestException,
     );
     await expect(service.read('not-a-uuid', account)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reads the positions the saved token sees, recording nothing', async () => {
+    const position = { instrumentUid: 'synthetic-uid-0001', quantity: '2', averagePrice: '10' };
+    const { service, writes, portfolios } = build(ok(mine), true, true, {
+      ok: true,
+      value: [position],
+    });
+    expect(await service.positions(owner, account)).toEqual({ positions: [position] });
+    expect(writes).toEqual([]);
+    expect(portfolios).toEqual([mine.id]);
+  });
+
+  it('names an Invest Box or an account the token no longer reaches, without asking for it', async () => {
+    for (const listed of [
+      ok({ ...mine, investBox: true }),
+      ok({ ...mine, id: '2000000009' }),
+      ok({ ...mine, closed: true }),
+    ]) {
+      const { service, portfolios } = build(listed, true, true);
+      await expect(service.positions(owner, account)).rejects.toBeInstanceOf(
+        UnprocessableEntityException,
+      );
+      expect(portfolios).toEqual([]);
+    }
+  });
+
+  it('answers 404 for positions of an unconnected account and names a rejected token', async () => {
+    await expect(build(ok(mine)).service.positions(owner, account)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      build(ok(mine), true, true, { ok: false, reason: 'token_rejected' }).service.positions(
+        owner,
+        account,
+      ),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(
+      build(ok(mine), true, true, { ok: false, reason: 'rate_limited' }).service.positions(
+        owner,
+        account,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(
+      build({ ok: false, reason: 'token_rejected' }, true, true).service.positions(owner, account),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 
   it('reads a broker account that has no connection as not connected', async () => {

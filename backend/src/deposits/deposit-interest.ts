@@ -86,7 +86,7 @@ function daysInMonth(year: number, month: number): number {
 }
 
 /** The date `months` calendar months after `start`, on its day of the month or the last day. */
-function addMonths(start: string, months: number): string {
+export function addMonths(start: string, months: number): string {
   const year = Number(start.slice(0, 4));
   const month = Number(start.slice(5, 7)) - 1;
   const wanted = Number(start.slice(8, 10));

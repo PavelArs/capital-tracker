@@ -23,6 +23,24 @@ export interface TBankAccount {
   /** Closed for good: nothing can be done with it, whatever the token allows. */
   closed: boolean;
   access: TBankAccess;
+  /** An Invest Box (Инвесткопилка): T-Bank gives no portfolio for it. */
+  investBox: boolean;
+}
+
+/** One position the token reads in a broker account, with prices as exact decimal text. */
+export interface TBankPosition {
+  instrumentUid: string;
+  instrumentType: string;
+  quantity: string;
+  /** Each price with its own currency; both '' when T-Bank gives no such price. */
+  averagePrice: string;
+  averagePriceCurrency: string;
+  currentPrice: string;
+  currentPriceCurrency: string;
+  /** A gift (virtual) position: shown, but not owned until sold before it expires. */
+  virtual: boolean;
+  /** When a virtual position expires (RFC 3339), '' for a held one or when T-Bank gives none. */
+  expiresAt: string;
 }
 
 class InvalidResponse extends Error {}
@@ -65,8 +83,85 @@ export function parseAccounts(body: unknown): TBankAccount[] {
       closed: item.status === 'ACCOUNT_STATUS_CLOSED',
       // A token or an account the contract does not describe is treated as able to trade.
       access: level ?? 'full_access',
+      investBox: item.type === 'ACCOUNT_TYPE_INVEST_BOX',
     };
   });
+}
+
+/**
+ * A Quotation or MoneyValue (int64 units as text, int32 nano) as exact decimal text, so a price
+ * never passes through a float. JSON leaves out a zero part, so an absent part reads as zero.
+ */
+export function decimal(value: unknown): string {
+  const item = record(value);
+  const units =
+    item.units === undefined ? '0' : typeof item.units === 'string' ? item.units : invalid();
+  const nano = item.nano === undefined ? 0 : typeof item.nano === 'number' ? item.nano : invalid();
+  if (!/^-?\d{1,18}$/.test(units) || !Number.isInteger(nano) || Math.abs(nano) > 999_999_999)
+    return invalid();
+  // The value is units + nano / 1e9 with both parts of one sign; parts of opposite signs are a
+  // broken answer, not a value to guess at.
+  const negative = units.startsWith('-');
+  if ((negative && nano > 0) || (!negative && units !== '0' && nano < 0)) return invalid();
+  const whole = units.replace('-', '');
+  const fraction = Math.abs(nano).toString().padStart(9, '0').replace(/0+$/, '');
+  const sign = (negative || nano < 0) && (whole !== '0' || fraction) ? '-' : '';
+  return `${sign}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+/** A MoneyValue as its amount and currency, both '' when T-Bank gives none. */
+function price(value: unknown): { amount: string; currency: string } {
+  if (value === undefined || value === null) return { amount: '', currency: '' };
+  const item = record(value);
+  // An object with neither a currency nor an amount is no price; a real zero names its currency.
+  if (item.currency === undefined && item.units === undefined && item.nano === undefined)
+    return { amount: '', currency: '' };
+  return {
+    amount: decimal(item),
+    currency: typeof item.currency === 'string' ? item.currency : '',
+  };
+}
+
+const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
+
+function position(value: unknown, virtual: boolean): TBankPosition {
+  const item = record(value);
+  const uid = item.instrumentUid;
+  if (typeof uid !== 'string' || !idPattern.test(uid)) return invalid();
+  const type = typeof item.instrumentType === 'string' ? item.instrumentType : '';
+  const average = price(item.averagePositionPrice);
+  const current = price(item.currentPrice);
+  const expires = virtual && typeof item.expireDate === 'string' ? item.expireDate : '';
+  return {
+    instrumentUid: uid,
+    // T-Bank names the type in lower case: share, bond, etf, currency, futures.
+    instrumentType: /^[a-z_]{1,40}$/.test(type) ? type : 'unknown',
+    // A position without a quantity is a broken answer, not an empty holding.
+    quantity: decimal(item.quantity),
+    averagePrice: average.amount,
+    averagePriceCurrency: average.currency,
+    currentPrice: current.amount,
+    currentPriceCurrency: current.currency,
+    virtual,
+    expiresAt: timestampPattern.test(expires) ? expires : '',
+  };
+}
+
+/** The held positions, then the virtual (gift) ones T-Bank lists apart from them. */
+export function parsePositions(body: unknown, accountId: string): TBankPosition[] {
+  const answer = record(body);
+  if (answer.accountId !== undefined && answer.accountId !== accountId) return invalid();
+  // JSON may leave out an empty list, but only an answer that names this account says it is
+  // empty; a bare `{}` is a broken answer, not an account with nothing in it.
+  if (answer.positions === undefined && answer.accountId !== accountId) return invalid();
+  const held = answer.positions ?? [];
+  const gifts = answer.virtualPositions ?? [];
+  if (!Array.isArray(held) || !Array.isArray(gifts) || held.length + gifts.length > 500)
+    return invalid();
+  return [
+    ...held.map((value) => position(value, false)),
+    ...gifts.map((value) => position(value, true)),
+  ];
 }
 
 export class TBankClient {
@@ -90,6 +185,13 @@ export class TBankClient {
   /** Every broker account the token can see (GetAccounts). */
   accounts(token: string): Promise<TBankResult<TBankAccount[]>> {
     return this.call(token, 'UsersService/GetAccounts', {}, parseAccounts);
+  }
+
+  /** What the token reads in one broker account now (GetPortfolio). */
+  portfolio(token: string, accountId: string): Promise<TBankResult<TBankPosition[]>> {
+    return this.call(token, 'OperationsService/GetPortfolio', { accountId }, (body) =>
+      parsePositions(body, accountId),
+    );
   }
 
   private async call<T>(
