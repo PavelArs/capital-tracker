@@ -9,7 +9,13 @@ import { DataSource, EntityManager } from 'typeorm';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
 import { addMonths, MAX_MONTHS } from './goal-forecast';
-import { type GoalInput, parseGoal, parseGoalUpdate, parseUuid } from './goal-input';
+import {
+  type GoalPreviewInput,
+  parseGoal,
+  parseGoalPreview,
+  parseGoalUpdate,
+  parseUuid,
+} from './goal-input';
 import { type GoalRow, goalView, type PortfolioNow } from './goal-view';
 
 /** The most goals one owner keeps; a personal list never needs more. */
@@ -44,6 +50,19 @@ export class GoalsService {
     const [row] = await this.rows(this.source.manager, owner, goalId);
     if (!row) throw new NotFoundException('Goal not found');
     return (await this.views(owner, [row]))[0];
+  }
+
+  /**
+   * GOAL-PREVIEW: the progress, status and return cases a goal with these terms would have now,
+   * so the dialogs can show the plan while the owner types. Nothing is stored.
+   */
+  async preview(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseGoalPreview(raw);
+    this.checkDeadline(input);
+    const row: GoalRow = { id: '', name: '', createdAt: '', ...input };
+    const { id, name, createdAt, ...view } = (await this.views(owner, [row]))[0];
+    return view;
   }
 
   async create(ownerId: string, raw: unknown) {
@@ -143,7 +162,7 @@ export class GoalsService {
     if (found.length === 0) throw new NotFoundException('Goal not found');
   }
 
-  private checkDeadline(input: GoalInput) {
+  private checkDeadline(input: GoalPreviewInput) {
     const today = moscowDate(new Date());
     if (input.deadline !== null && input.deadline <= today)
       throw new UnprocessableEntityException('The deadline must be after today');

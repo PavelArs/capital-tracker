@@ -72,6 +72,8 @@ const answers = (...items: Goal[]) =>
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  // The edit dialog asks for its plan; the page tests do not look at it.
+  vi.spyOn(goalsApi, 'preview').mockResolvedValue(dated);
 });
 afterEach(cleanup);
 

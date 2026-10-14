@@ -306,3 +306,20 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The plan under the goal dialog's fields (GOAL-PREVIEW): faded while a newer one is on its way. */
+.goal-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+}
+
+.goal-preview .shell-icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.goal-preview[aria-busy="true"] {
+  opacity: 0.6;
+}

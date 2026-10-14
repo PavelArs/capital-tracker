@@ -1,5 +1,5 @@
 'use strict';
-// savings-goals (GOAL-TERMS, GOAL-FORECAST) against fresh synthetic PostgreSQL: a goal entered
+// savings-goals (GOAL-TERMS, GOAL-FORECAST, GOAL-PREVIEW) against fresh synthetic PostgreSQL: a goal entered
 // once is kept per owner, a retried request makes it once, and its progress and return cases
 // are computed from the whole portfolio on every read. All data is synthetic.
 const assert = require('node:assert/strict');
@@ -170,6 +170,23 @@ async function forecast(db, service, owner) {
   assert.ok(Number(low.monthsToTarget) > Number(base.monthsToTarget));
   assert.ok(Number(base.gap) <= 0, 'A surplus is a negative gap');
   console.log('PASS GOAL-FORECAST');
+
+  stage = 'synthetic goal previewed from its terms before saving';
+  const { requestId: unused, name, ...terms } = reserve();
+  assert.ok(unused && name);
+  const preview = await service.preview(owner, { ...terms, deadline: goal.deadline });
+  assert.equal(preview.id, undefined);
+  assert.deepEqual(preview.progress, goal.progress);
+  assert.equal(preview.status, goal.status);
+  assert.deepEqual(preview.scenarios, goal.scenarios, 'The same terms give the same plan');
+  assert.equal(
+    (await service.preview(owner, { ...terms, deadline: '', monthlyContribution: '' })).status,
+    'open',
+  );
+  await rejected(() => service.preview(owner, { ...terms, deadline: '2020-01-01' }), 422);
+  await rejected(() => service.preview(owner, { ...terms, name: 'Reserve A' }), 400);
+  assert.equal((await service.list(owner)).items.length, 1, 'A preview stores nothing');
+  console.log('PASS GOAL-PREVIEW');
 
   stage = 'synthetic goal in a currency where the dollar deposit has no rate';
   const euro = await service.create(owner, { ...reserve(), currency: 'EUR' });

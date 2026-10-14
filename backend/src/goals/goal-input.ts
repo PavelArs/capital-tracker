@@ -75,3 +75,28 @@ export function parseGoal(input: unknown): GoalInput & { requestId: string } {
 export function parseGoalUpdate(input: unknown): GoalInput {
   return goalFields(object(input, fields, fields));
 }
+
+/** The terms a goal would have, read from a query string: no name, and an empty date is none. */
+export type GoalPreviewInput = Omit<GoalInput, 'name'>;
+
+const previewFields = fields.filter((key) => key !== 'name');
+
+/** GOAL-PREVIEW: what the add and edit dialogs ask about before anything is saved. */
+export function parseGoalPreview(input: unknown): GoalPreviewInput {
+  const record = object(input, previewFields, [
+    'currency',
+    'targetAmount',
+    'expectedReturnPercent',
+  ]);
+  if (!(goalCurrencies as readonly unknown[]).includes(record.currency)) return bad();
+  const given = (value: unknown) => (value === undefined || value === '' ? null : value);
+  const deadline = given(record.deadline);
+  const monthly = given(record.monthlyContribution);
+  return {
+    currency: record.currency as GoalCurrency,
+    targetAmount: parseAmount(record.targetAmount),
+    deadline: deadline === null ? null : parseDate(deadline),
+    expectedReturnPercent: parseRate(record.expectedReturnPercent),
+    monthlyContribution: monthly === null ? null : parseAmount(monthly, true),
+  };
+}

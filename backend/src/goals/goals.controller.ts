@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { GoalsService } from './goals.service';
 
@@ -14,6 +14,13 @@ export class GoalsController {
   @Post()
   create(@CurrentUser() owner: OwnerIdentity, @Body() body: unknown) {
     return this.goals.create(owner.userId, body);
+  }
+
+  // A read, so it changes nothing and keeps the browser's kept answers; before ':id' so the word
+  // is not taken for an id.
+  @Get('preview')
+  preview(@CurrentUser() owner: OwnerIdentity, @Query() query: unknown) {
+    return this.goals.preview(owner.userId, query);
   }
 
   @Get(':id')

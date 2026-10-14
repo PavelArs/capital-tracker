@@ -1,4 +1,4 @@
-import type { Goal, GoalCurrency, GoalScenario, GoalStatus } from '@api/goals.api';
+import type { Goal, GoalCurrency, GoalPreview, GoalScenario, GoalStatus } from '@api/goals.api';
 import type { BadgeTone } from '@/ui/Badge';
 import { dayText } from '@/utils/dates';
 import { currencySymbols, DASH } from '../portfolio/format';
@@ -125,7 +125,7 @@ export function rateText(percent: string): string {
  * in fractional ones, so a case that already has the sum by the deadline can come out a month late;
  * it is then given as the deadline itself.
  */
-export function reachedDate(goal: Goal, scenario: GoalScenario): string | null {
+export function reachedDate(goal: GoalPreview, scenario: GoalScenario): string | null {
   const { reachedOn } = scenario;
   if (reachedOn === null || goal.deadline === null) return reachedOn;
   // The server's unrounded verdict: the displayed gap is rounded to the cent and cannot tell a
@@ -160,8 +160,18 @@ export const scenarioText: Record<GoalScenario['key'], string> = {
   optimistic: 'Optimistic',
 };
 
+/** The banner tone of a verdict, by the goal's status. */
+export const bannerTone = {
+  reached: 'pos',
+  'on-track': 'pos',
+  behind: 'warn',
+  overdue: 'neg',
+  open: 'info',
+  unknown: 'info',
+} as const;
+
 /** The sentence under a goal: where it stands and what it takes, from the base case. */
-export function verdict(goal: Goal): string {
+export function verdict(goal: GoalPreview): string {
   const money = (value: string | null) => flooredText(value, goal.currency);
   const needed = (value: string | null) => neededText(value, goal.currency);
   const entered = (value: string | null) => enteredText(value, goal.currency);

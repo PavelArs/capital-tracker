@@ -12,6 +12,7 @@ import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
 import { GoalBar, GoalFigures } from './GoalProgress';
 import {
   againstTarget,
+  bannerTone,
   dateText,
   enteredText,
   flooredText,
@@ -38,15 +39,6 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
     </div>
   );
 }
-
-const bannerTone = {
-  reached: 'pos',
-  'on-track': 'pos',
-  behind: 'warn',
-  overdue: 'neg',
-  open: 'info',
-  unknown: 'info',
-} as const;
 
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
 function Cases({ goal }: { goal: Goal }) {

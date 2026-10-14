@@ -26,6 +26,52 @@ function service(points: { complete: boolean }[], complete = false) {
 }
 
 describe('goals service', () => {
+  it('GOAL-PREVIEW works out a goal from its terms without storing it', async () => {
+    const stored: unknown[] = [];
+    const goals = service([{ complete: true }], true);
+    // Any query against the table would be a store; the preview needs none.
+    (goals as unknown as { source: { manager: { query: unknown } } }).source.manager.query = async (
+      ...args: unknown[]
+    ) => {
+      stored.push(args);
+      return [];
+    };
+    const view = await goals.preview(owner, {
+      currency: 'USD',
+      targetAmount: '20000',
+      deadline: addMonths(today, 36),
+      expectedReturnPercent: '8',
+      monthlyContribution: '100',
+    });
+    expect(stored).toEqual([]);
+    expect(view).not.toHaveProperty('id');
+    expect(view).not.toHaveProperty('name');
+    expect(view).not.toHaveProperty('createdAt');
+    expect(view).toMatchObject({
+      currency: 'USD',
+      targetAmount: '20000.00',
+      monthlyContribution: '100.00',
+      progress: { current: '5000.00', complete: true, percent: '25.00' },
+      status: 'behind',
+    });
+    expect(view.scenarios.map((scenario) => scenario.key)).toEqual([
+      'pessimistic',
+      'base',
+      'optimistic',
+    ]);
+  });
+
+  it('GOAL-PREVIEW refuses a date that is not ahead, as saving would', async () => {
+    await expect(
+      service([]).preview(owner, {
+        currency: 'USD',
+        targetAmount: '20000',
+        deadline: today,
+        expectedReturnPercent: '8',
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
   it('reads completeness from the portfolio now, not from an hour that lacked a price', async () => {
     // An earlier hour was incomplete, so the period as a whole is; the current point is not.
     const { items } = await service([{ complete: false }, { complete: true }]).list(owner);
