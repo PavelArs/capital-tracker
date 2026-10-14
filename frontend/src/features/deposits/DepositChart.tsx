@@ -111,7 +111,8 @@ export default function DepositChart({
   let low = Math.min(...values);
   let high = Math.max(...values);
   const pad = (high - low) * 0.08 || high * 0.02 || 1;
-  low = Math.max(0, low - pad);
+  // Money put in can fall below zero after a withdrawal of more than was put in: scale below zero then.
+  low = low < 0 ? low - pad : Math.max(0, low - pad);
   high += pad;
   const step = niceStep((high - low) / 4);
   low = Math.floor(low / step) * step;

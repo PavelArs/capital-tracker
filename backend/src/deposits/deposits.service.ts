@@ -22,7 +22,6 @@ import {
   parseUuid,
 } from './deposit-input';
 import {
-  addMonths,
   bankBalanceOf,
   centsText,
   type DepositCurrency,
@@ -35,6 +34,7 @@ import {
   projectDeposit,
 } from './deposit-interest';
 import {
+  chartDates,
   depositChart,
   depositReal,
   type InflationReadings,
@@ -539,14 +539,12 @@ export class DepositsService {
     );
     const official = readings && periodsAfterInflation(projection.periods, held, readings.official);
     const personal = readings && periodsAfterInflation(projection.periods, held, readings.personal);
-    // The value by month from the start to the day asked, and the day itself.
-    const dates: string[] = [];
-    for (let months = 0; ; months++) {
-      const date = addMonths(terms.startDate, months);
-      if (date > asOf) break;
-      dates.push(date);
-    }
-    if (dates.at(-1) !== asOf) dates.push(asOf);
+    // The value by month from the start, each movement day and the day asked.
+    const dates = chartDates(
+      terms.startDate,
+      asOf,
+      movementsOf(stored).map((movement) => movement.date),
+    );
     const chart = readings
       ? depositChart(
           dates,

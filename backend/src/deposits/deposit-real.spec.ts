@@ -1,6 +1,7 @@
 import { buildSeries, personalFactor } from '../inflation/inflation-math';
 import { depositBalances, projectDeposit } from './deposit-interest';
 import {
+  chartDates,
   depositChart,
   depositReal,
   effectiveRatePercent,
@@ -219,6 +220,34 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
     expect(Number(chart[3].real.personal?.invested)).toBeCloseTo(110000 - withdrawn, 1);
     // Without an official series no day has a figure in today's money, and the page says so.
     expect(chart.every((point) => point.real.official === null)).toBe(true);
+  });
+
+  it('INFL-DEPOSIT-CHART-PAYOUT counts interest paid out as money taken out, as the gain does', () => {
+    const { personal, official } = inflationReadings(noSeries, '10');
+    const movements = [
+      { date: '2026-07-01', kind: 'topup' as const, amount: '100.00' },
+      { date: '2026-08-01', kind: 'interest-payout' as const, amount: '10.00' },
+    ];
+    const dates = ['2026-07-15', '2026-08-01'];
+    const chart = depositChart(
+      dates,
+      new Map([
+        ['2026-07-15', 100n * 10n ** 30n],
+        ['2026-08-01', 100n * 10n ** 30n],
+      ]),
+      movements,
+      '2026-08-01',
+      { official, personal },
+    );
+    expect(chart.map((point) => point.invested)).toEqual(['100.00', '90.00']);
+  });
+
+  it('INFL-DEPOSIT-CHART-DAYS samples each month, every movement day and the day asked, in order', () => {
+    expect(
+      chartDates('2026-07-01', '2026-09-10', ['2026-08-15', '2026-12-01', '2026-08-15']),
+    ).toEqual(['2026-07-01', '2026-08-01', '2026-08-15', '2026-09-01', '2026-09-10']);
+    // A day asked before the first month still gives that day alone, with no movement after it.
+    expect(chartDates('2026-07-01', '2026-06-20', ['2026-07-01'])).toEqual(['2026-06-20']);
   });
 
   it('INFL-DEPOSIT-TODAY-MONEY states the end-of-term balance in the money of the day asked', () => {

@@ -9,6 +9,7 @@ import type { StatedFlow } from '../portfolio-snapshots/capital-flows';
 import { realProfit } from '../portfolio-snapshots/real-profit';
 import { valueAtoms } from '../portfolio-snapshots/snapshot-series';
 import {
+  addMonths,
   centsText,
   type DepositMovement,
   type DepositTerms,
@@ -153,8 +154,9 @@ export interface DepositChartPoint {
   real: { official: ChartValues | null; personal: ChartValues | null };
 }
 
+// Money put in is positive; a withdrawal or paid-out interest is money taken out, as in depositReal.
 const signed = (movement: DepositMovement) =>
-  (movement.kind === 'withdrawal' ? -1n : 1n) * canonicalDecimalToAtoms(movement.amount);
+  (movement.kind === 'topup' ? 1n : -1n) * canonicalDecimalToAtoms(movement.amount);
 
 /** The figures of one day in the money of the day asked, or null where the series does not reach. */
 function realPoint(
@@ -176,6 +178,25 @@ function realPoint(
 }
 
 /**
+ * The days a chart samples: each month from the start, every movement day and the day asked, in
+ * order and without repeats, none after the day asked.
+ */
+export function chartDates(
+  start: string,
+  asOf: string,
+  movementDates: readonly string[],
+): string[] {
+  const dates = new Set<string>([asOf]);
+  for (let months = 0; ; months++) {
+    const date = addMonths(start, months);
+    if (date > asOf) break;
+    dates.add(date);
+  }
+  for (const date of movementDates) if (date <= asOf) dates.add(date);
+  return [...dates].sort();
+}
+
+/**
  * The deposit day by day at the dates given: its value and the money put in, nominal and in the
  * money of `asOf` by each reading. Money put in is carried from its own day to `asOf`, the same
  * factors as the gain above (INFL-DEPOSIT-CHART).
@@ -189,9 +210,7 @@ export function depositChart(
 ): DepositChartPoint[] {
   return dates.map((date) => {
     const balance = balances.get(date) ?? 0n;
-    const flows = movements.filter(
-      (movement) => movement.date <= date && movement.kind !== 'interest-payout',
-    );
+    const flows = movements.filter((movement) => movement.date <= date);
     const invested = flows.reduce((sum, flow) => sum + signed(flow), 0n);
     return {
       date,

@@ -660,6 +660,23 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     expect(within(legend).getByText('Money put in, grown by inflation')).toBeInTheDocument();
   });
 
+  it('keeps a net money put in below zero on the scale', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      withChart({
+        chart: [
+          { ...chart[0], invested: '100.00', balance: '0.00' },
+          { ...chart[1], invested: '-10.00', balance: '0.00' },
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('group', { name: /Use the arrow keys/ });
+    const ticks = Array.from(document.querySelectorAll('.dashboard-chart__tick')).map(
+      (tick) => tick.textContent ?? '',
+    );
+    expect(ticks.some((text) => text.includes('-'))).toBe(true);
+  });
+
   it('says the inflation figures do not reach the life of the deposit when none are known', async () => {
     setValueView('real');
     vi.spyOn(depositsApi, 'get').mockResolvedValue(
