@@ -53,6 +53,7 @@ export interface PlanSkip {
     | 'partial-repayment'
     | 'no-quantity'
     | 'fills'
+    | 'card'
     | 'no-amount';
 }
 
@@ -84,6 +85,15 @@ const expectedSign: Partial<Record<ReturnType<typeof operationKind>, 'in' | 'out
   deposit: 'in',
   withdrawal: 'out',
 };
+/**
+ * Trades and dividends T-Bank settles through a card: their money never passes through the
+ * broker account's cash, and whether T-Bank lists that money elsewhere is not known.
+ */
+const cardSettled = new Set([
+  'OPERATION_TYPE_BUY_CARD',
+  'OPERATION_TYPE_SELL_CARD',
+  'OPERATION_TYPE_DIV_EXT',
+]);
 const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
 /**
  * Why a trade's security cannot be recorded: T-Bank names no instrument or does not say what
@@ -108,8 +118,9 @@ interface TradePart {
  * An order's fills as one part per fill time, so nothing another operation did between two
  * fills moves across them. Each part takes its share of the amount by its fills' own prices.
  * Without fills the order is one part at its own time. Null when the fills do not account for
- * the order: they miss part of its quantity, or fills at two or more times lack a price or
- * differ in price currency, so their dates or shares would be guessed.
+ * the order: they miss part of its quantity, fills at two or more times lack a price or
+ * differ in price currency, so their dates or shares would be guessed, or a part's share of the
+ * amount is less than its smallest unit.
  */
 function tradeParts(operation: TBankOperation): TradePart[] | null {
   const whole = atoms(operation.quantity);
@@ -131,9 +142,15 @@ function tradeParts(operation: TBankOperation): TradePart[] | null {
     } else times.set(timeKey(fill.filledAt), { occurredAt: fill.filledAt, quantity, weight });
   }
   if (filled !== whole || (times.size > 1 && !priced)) return null;
-  return [...times.values()].sort((a, b) =>
+  const parts = [...times.values()].sort((a, b) =>
     timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)),
   );
+  // A part too small to cost even the smallest unit would be a lot bought for nothing.
+  const amounts = split(
+    absolute(operation.payment),
+    parts.map((part) => part.weight),
+  );
+  return amounts.some(isZero) ? null : parts;
 }
 
 /**
@@ -169,6 +186,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       .filter(
         (item) =>
           ['buy', 'sell'].includes(operationKind(item.type)) &&
+          !cardSettled.has(item.type) &&
           recordable(item.paymentCurrency) &&
           signOf(item.payment) === expectedSign[operationKind(item.type)] &&
           securityProblem(item) === null &&
@@ -222,6 +240,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     const kind = operationKind(item.type);
     if (kind === 'unsupported') return skip(item, 'unsupported');
     if (kind === 'transfer') return skip(item, 'transfer');
+    if (cardSettled.has(item.type)) return skip(item, 'card');
     if (joins(item)) return [];
     if (isZero(item.payment)) return skip(item, 'no-amount');
     if (!recordable(item.paymentCurrency)) return skip(item, 'currency');

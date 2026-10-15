@@ -258,6 +258,41 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('lists an order too small to split into its fill times instead of a part that cost nothing', () => {
+    const plan = planImport([
+      op({
+        id: '460000001',
+        quantity: '2',
+        payment: '-0.01',
+        fills: [
+          { filledAt: '2024-03-01T10:00:00Z', quantity: '1', price: '0.005', priceCurrency: 'rub' },
+          { filledAt: '2024-03-01T12:00:00Z', quantity: '1', price: '0.005', priceCurrency: 'rub' },
+        ],
+      }),
+    ]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['460000001', 'fills'],
+    ]);
+  });
+
+  it('lists trades and dividends settled through a card, which never touch the broker cash', () => {
+    const plan = planImport([
+      op({ id: '470000001', type: 'OPERATION_TYPE_BUY_CARD' }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.2', { id: '470000002', parentId: '470000001' }),
+      op({ id: '470000003', type: 'OPERATION_TYPE_SELL_CARD', payment: '200' }),
+      cash('OPERATION_TYPE_DIV_EXT', '15', { id: '470000004', instrumentUid: share }),
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['470000001', 'card'],
+      ['470000003', 'card'],
+      ['470000004', 'card'],
+    ]);
+    expect(plan.entries.map((entry) => [entry.action, entry.amount, entry.operationIds])).toEqual([
+      ['fee', '0.2', ['470000002']],
+    ]);
+  });
+
   it('sells units bought at the very same instant, and lists a trade T-Bank does not classify', () => {
     const at = '2024-03-05T10:00:00.123456789Z';
     const plan = planImport([
