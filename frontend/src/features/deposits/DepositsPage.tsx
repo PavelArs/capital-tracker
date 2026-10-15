@@ -183,6 +183,7 @@ export default function DepositsPage() {
       )}
       {adding && (
         <AddDepositDialog
+          banks={list?.items.map((deposit) => deposit.bank)}
           onClose={() => setAdding(false)}
           onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
         />

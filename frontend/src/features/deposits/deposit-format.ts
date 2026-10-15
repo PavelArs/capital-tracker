@@ -3,6 +3,7 @@ import type {
   DepositDetail,
   DepositReal,
   DepositStatus,
+  EarlyClose,
   MovementKind,
 } from '@api/deposits.api';
 
@@ -45,6 +46,12 @@ export const movementText: Record<MovementKind, string> = {
   topup: 'Top-up',
   withdrawal: 'Withdrawal',
   'interest-payout': 'Interest paid out',
+};
+
+/** What closing a deposit before its end does to its interest, in the form and on its page. */
+export const earlyCloseText: Record<EarlyClose, string> = {
+  'forfeits-interest': 'Loses the interest not yet posted',
+  'keeps-interest': 'Keeps the interest earned',
 };
 
 const payoutNames = {

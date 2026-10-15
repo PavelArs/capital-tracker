@@ -131,6 +131,17 @@ export interface NewDeposit {
   amount: string;
 }
 
+/** The terms of a deposit being entered: what adding it sends, without the request id. */
+export type DepositTerms = Omit<NewDeposit, 'requestId'>;
+
+/** DEP-PREVIEW: what a deposit being entered would come to, as exact decimal strings. */
+export interface DepositPreview {
+  /** The balance and its interest on the end date; null for a deposit without a term. */
+  atMaturity: { date: string; balance: string; interest: string } | null;
+  /** The first interest date and its interest; null when there is none. */
+  firstPayout: { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null;
+}
+
 const path = '/deposits';
 const one = (id: string) => `${path}/${encodeURIComponent(id)}`;
 
@@ -142,6 +153,10 @@ export const depositsApi = {
 
   create: async (deposit: NewDeposit): Promise<DepositDetail> =>
     (await apiClient.post<DepositDetail>(path, deposit)).data,
+
+  /** Computes the figures from the terms; the server keeps nothing. */
+  preview: async (terms: DepositTerms): Promise<DepositPreview> =>
+    (await apiClient.post<DepositPreview>(`${path}/preview`, terms)).data,
 
   remove: async (id: string): Promise<void> => {
     await apiClient.delete(one(id));

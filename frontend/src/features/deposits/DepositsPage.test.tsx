@@ -150,21 +150,23 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   it('adds a deposit from the dialog and opens it', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    expect(within(dialog).getByLabelText('Name')).toHaveFocus();
+    expect(within(dialog).getByLabelText('Bank')).toHaveFocus();
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Name');
-    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
+    expect(within(dialog).getByLabelText('Bank')).toHaveAccessibleDescription('Enter the bank');
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Name (optional)'), 'Savings A');
     await user.type(within(dialog).getByLabelText('Amount put in'), '100000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
-    await user.clear(within(dialog).getByLabelText('Start date'));
-    await user.type(within(dialog).getByLabelText('Start date'), '2026-07-01');
-    await user.type(within(dialog).getByLabelText('End date (optional)'), '2026-12-01');
+    await user.clear(within(dialog).getByLabelText('Opened on'));
+    await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
+    await user.type(within(dialog).getByLabelText('Ends on (optional)'), '2026-12-01');
+    await user.click(within(dialog).getByLabelText('Interest is added to the deposit'));
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create).toHaveBeenCalledWith({
@@ -184,13 +186,157 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
   });
 
+  it('classes-07 asks for the bank first, an optional name, the currency as a choice and the terms as the prototype words them', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(dollars));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars));
+    open('/deposits');
+    await user.click(await screen.findByRole('button', { name: 'Add deposit' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const bank = within(dialog).getByLabelText('Bank');
+    expect(bank).toHaveFocus();
+    // The banks already used are one tap away, each once.
+    const chip = within(dialog).getByRole('button', { name: 'Synthetic Bank' });
+    await user.click(chip);
+    expect(bank).toHaveValue('Synthetic Bank');
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    const currency = within(dialog).getByRole('radiogroup', { name: 'Currency' });
+    expect(
+      within(currency)
+        .getAllByRole('radio')
+        .map((radio) => (radio as HTMLInputElement).value),
+    ).toEqual(['RUB', 'USD', 'EUR']);
+    expect(within(currency).getByRole('radio', { name: 'RUB' })).toBeChecked();
+    await user.click(within(currency).getByRole('radio', { name: 'USD' }));
+    const amount = within(dialog).getByLabelText('Amount put in');
+    expect(amount.closest('.ui-affix')).toHaveTextContent('USD');
+    const rate = within(dialog).getByLabelText('Rate, % a year');
+    expect(rate.closest('.ui-affix')).toHaveTextContent('%');
+    expect(rate).toHaveAttribute('placeholder', '16');
+    expect(within(dialog).getByLabelText('Opened on')).toHaveAttribute('type', 'date');
+    expect(within(dialog).getByLabelText('Ends on (optional)')).toHaveAttribute('type', 'date');
+    expect(within(dialog).getByLabelText('Interest comes')).toHaveValue('monthly');
+    expect(within(dialog).getByLabelText('Interest is added to the deposit')).toBeChecked();
+    // The name may stay empty: the deposit is then called Deposit.
+    expect(within(dialog).getByLabelText('Name (optional)')).toHaveAttribute(
+      'placeholder',
+      'Deposit',
+    );
+    await user.type(amount, '5000');
+    await user.type(rate, '4');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({
+      name: 'Deposit',
+      bank: 'Synthetic Bank',
+      currency: 'USD',
+      capitalized: true,
+    });
+  });
+
+  it('classes-04 marks every problem under its field and puts the keyboard on the first one', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Rate, % a year'), '12.34567');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    const amount = within(dialog).getByLabelText('Amount put in');
+    const rate = within(dialog).getByLabelText('Rate, % a year');
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount).toHaveAccessibleDescription('Enter the amount put in');
+    expect(rate).toHaveAttribute('aria-invalid', 'true');
+    expect(rate).toHaveAccessibleDescription('Percent a year, up to four decimals');
+    expect(within(dialog).getByLabelText('Bank')).not.toHaveAttribute('aria-invalid');
+    expect(within(dialog).getAllByRole('alert')).toHaveLength(2);
+    await waitFor(() => expect(amount).toHaveFocus());
+    // Fixing a field clears its message at once.
+    await user.type(amount, '1000');
+    expect(amount).not.toHaveAttribute('aria-invalid');
+    expect(within(dialog).getAllByRole('alert')).toHaveLength(1);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  describe('classes-05: the figures of the deposit being entered', () => {
+    const terms = {
+      name: 'Deposit',
+      bank: 'Synthetic Bank',
+      currency: 'RUB',
+      startDate: '2026-07-01',
+      endDate: null,
+      payout: 'monthly',
+      capitalized: false,
+      dayBasis: 'actual-365',
+      earlyClose: 'forfeits-interest',
+      ratePercent: '12',
+      amount: '100000',
+    };
+    const enter = async (user: ReturnType<typeof userEvent.setup>, end?: string) => {
+      vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+      open('/deposits');
+      await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+      const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+      await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+      await user.type(within(dialog).getByLabelText('Amount put in'), '100000');
+      await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
+      await user.clear(within(dialog).getByLabelText('Opened on'));
+      await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
+      if (end) await user.type(within(dialog).getByLabelText('Ends on (optional)'), end);
+      await user.click(within(dialog).getByLabelText('Interest is added to the deposit'));
+      return dialog;
+    };
+
+    it('classes-05 says when the first interest comes, from the server, and drops it once an entry changes', async () => {
+      const user = userEvent.setup();
+      const preview = vi.spyOn(depositsApi, 'preview').mockResolvedValue({
+        atMaturity: null,
+        firstPayout: { date: '2026-08-01', interest: '1019.18', treatment: 'payable' },
+      });
+      const dialog = await enter(user);
+      expect(
+        await within(dialog).findByText('The first interest, ₽1,019.18, comes on Aug 1, 2026.'),
+      ).toBeInTheDocument();
+      expect(preview).toHaveBeenLastCalledWith(terms);
+      preview.mockReturnValue(new Promise(() => undefined));
+      await user.type(within(dialog).getByLabelText('Amount put in'), '0');
+      expect(within(dialog).queryByText(/The first interest/)).toBeNull();
+    });
+
+    it('classes-05 gives the balance at the end of the term and the interest in it', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(depositsApi, 'preview').mockResolvedValue({
+        atMaturity: { date: '2026-12-01', balance: '105030.14', interest: '5030.14' },
+        firstPayout: { date: '2026-08-01', interest: '1019.18', treatment: 'payable' },
+      });
+      const dialog = await enter(user, '2026-12-01');
+      const note = await within(dialog).findByRole('note');
+      expect(note).toHaveTextContent(
+        'At the end of the term, on Dec 1, 2026: ₽105,030.14, of which ₽5,030.14 interest. The first interest, ₽1,019.18, comes on Aug 1, 2026.',
+      );
+    });
+
+    it('classes-05 shows no figure, and no zero, when the preview cannot be computed', async () => {
+      const user = userEvent.setup();
+      const preview = vi.spyOn(depositsApi, 'preview').mockRejectedValue(new Error('down'));
+      const dialog = await enter(user);
+      await waitFor(() => expect(preview).toHaveBeenCalled());
+      expect(within(dialog).queryByRole('note')).toBeNull();
+      expect(within(dialog).queryByText(/₽0\.00/)).toBeNull();
+    });
+  });
+
   it('offers daily interest and no longer quarterly', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    const interest = within(dialog).getByLabelText('Interest');
+    const interest = within(dialog).getByLabelText('Interest comes');
     expect(
       within(interest)
         .getAllByRole('option')
@@ -206,13 +352,12 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
-    await user.clear(within(dialog).getByLabelText('Start date'));
-    await user.type(within(dialog).getByLabelText('Start date'), '2026-07-01');
-    await user.type(within(dialog).getByLabelText('End date (optional)'), '2999-01-01');
+    await user.clear(within(dialog).getByLabelText('Opened on'));
+    await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
+    await user.type(within(dialog).getByLabelText('Ends on (optional)'), '2999-01-01');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
     expect(within(dialog).getByRole('alert')).toHaveTextContent('at most 30 years');
     expect(create).not.toHaveBeenCalled();
@@ -225,12 +370,11 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000000000000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Amount put in');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('up to 12 digits');
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -401,6 +545,25 @@ describe('DEP-DETAIL: one deposit', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Record' }));
     await waitFor(() => expect(add).toHaveBeenCalledTimes(3));
     expect(add.mock.calls[2][1].requestId).not.toBe(add.mock.calls[0][1].requestId);
+  });
+
+  it('classes-04 marks each problem of a movement under its field and puts the keyboard on the first', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    const add = vi.spyOn(depositsApi, 'addMovement').mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}`);
+    await user.click(await screen.findByRole('button', { name: 'Record movement' }));
+    const dialog = screen.getByRole('dialog', { name: 'Record a movement' });
+    await user.clear(within(dialog).getByLabelText('Date'));
+    await user.click(within(dialog).getByRole('button', { name: 'Record' }));
+    const date = within(dialog).getByLabelText('Date');
+    const amount = within(dialog).getByLabelText('Amount, RUB');
+    expect(date).toHaveAttribute('aria-invalid', 'true');
+    expect(date).toHaveAccessibleDescription('Pick a date');
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount).toHaveAccessibleDescription('Enter the amount');
+    await waitFor(() => expect(date).toHaveFocus());
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('shows the explanation the server gives for a movement the deposit could not have had', async () => {

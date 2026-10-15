@@ -196,3 +196,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The capitalisation toggle sits beside "Interest comes", level with its field. */
+.deposit-toggle {
+  align-self: end;
+  min-height: 40px;
+}
