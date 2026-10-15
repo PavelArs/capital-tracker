@@ -51,4 +51,9 @@
   .ui-banner--action {
     flex-wrap: wrap;
   }
+
+  /* The text keeps at least 12rem beside the icon; a button that leaves less goes below it. */
+  .ui-banner--action > span {
+    flex: 1 1 12rem;
+  }
 }

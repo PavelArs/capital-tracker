@@ -43,7 +43,10 @@
 }
 
 .shell-page__head h1 {
+  min-width: 0;
   margin-right: auto;
+  /* A long name with no break point (a goal's) wraps instead of widening the page. */
+  overflow-wrap: anywhere;
 }
 
 .shell-icon--sm {
@@ -136,6 +139,11 @@
 
 .shell-setting__text {
   min-width: 0;
+}
+
+/* A rate row: a long hint wraps beside the rate field instead of pushing it onto a new line. */
+.shell-setting--rate .shell-setting__text {
+  flex: 1 1 16rem;
 }
 
 .shell-setting__hint {
@@ -339,19 +347,19 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--raised);
+  background: transparent;
   color: var(--ink-2);
   cursor: pointer;
 }
 
 .shell-bell__button:hover,
 .shell-bell__button[aria-expanded="true"] {
-  border-color: var(--ink-3);
+  background: var(--raised);
   color: var(--ink);
 }
 
@@ -362,17 +370,17 @@
 
 .shell-bell__count {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: 3px;
+  right: 2px;
   display: grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--warn);
   color: #1a1205;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
 }

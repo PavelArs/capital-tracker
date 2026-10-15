@@ -74,6 +74,12 @@
   --r-lg: 14px;
 }
 
+/* The canvas, and with it the scrollbar gutter kept on wide screens, takes the shell background
+   in both themes, not the legacy body colour (index.css). */
+html {
+  background-color: var(--bg);
+}
+
 :root[data-theme="light"] {
   --bg: #f3f4f7;
   --surface: #ffffff;

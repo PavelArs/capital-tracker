@@ -118,7 +118,11 @@ function CurrencyRow({
   })();
   const alert = state === 'invalid' || state === 'failed';
   return (
-    <form className="shell-setting" onSubmit={(event) => void save(event)} noValidate>
+    <form
+      className="shell-setting shell-setting--rate"
+      onSubmit={(event) => void save(event)}
+      noValidate
+    >
       <div className="shell-setting__text">
         <label htmlFor={`${id}-rate`} className="shell-setting__label">
           {row.currency} · my rate a year

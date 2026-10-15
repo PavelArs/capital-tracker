@@ -198,8 +198,7 @@ a.shell-sync:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: var(--sp-3) 14px var(--sp-4) 22px;
-  border-top: 1px solid var(--line);
+  padding: 0 4px var(--sp-4) 22px;
 }
 
 .shell-owner__avatar {
@@ -254,14 +253,13 @@ a.shell-sync:hover {
   cursor: wait;
 }
 
-/* Phones: the notifications bell stands left of the avatar; the nav's flat button style must not flatten it. */
+/* Phones: the notifications bell stands left of the avatar, the prototype's flat 34 px icon button. */
 .shell-owner__bell {
   display: none;
 }
 
 .shell-owner .shell-bell__button {
-  border: 1px solid var(--line-strong);
-  background: var(--raised);
+  min-height: 34px;
 }
 
 .shell-owner__logout {
@@ -275,7 +273,8 @@ a.shell-sync:hover {
 .shell-main {
   min-width: 0;
   width: 100%;
-  padding: var(--sp-6);
+  /* The title row starts 20 px down, as the prototype's top bar. */
+  padding: 20px var(--sp-6) var(--sp-6);
   color: var(--ink);
 }
 
@@ -369,8 +368,8 @@ a.shell-sync:hover {
 @media (max-width: 559.98px) {
   .shell-owner__bell {
     display: block;
-    min-width: 36px;
-    height: 36px;
+    min-width: 34px;
+    height: 34px;
   }
 }
 
