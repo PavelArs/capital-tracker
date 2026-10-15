@@ -33,6 +33,12 @@
   font-weight: 400;
 }
 
+.dashboard-hero__period .portfolio-info--inline {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .dashboard-hero__real {
   display: flex;
   flex-wrap: wrap;
@@ -434,6 +440,33 @@
   border-radius: var(--r-md);
 }
 
+.dashboard-loading__goal {
+  height: 76px;
+  border-radius: var(--r-lg);
+}
+
+.dashboard-loading__rows {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-loading__row {
+  height: 32px;
+}
+
+.dashboard-loading__allocation {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-loading__bar {
+  height: 10px;
+}
+
+.dashboard-loading__slice {
+  height: 22px;
+}
+
 @keyframes dashboard-pulse {
   50% {
     opacity: 0.55;
@@ -460,7 +493,9 @@
   align-items: start;
 }
 
-@media (max-width: 1100px) {
+/* Beside the allocation the five-column table needs about 640 px; below 1360 px (the 1280 px
+   screen, sidebar included) it takes the full width instead of scrolling sideways. */
+@media (max-width: 1360px) {
   .dashboard-bottom {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -475,6 +510,25 @@
 
 .dashboard-link:hover {
   text-decoration: underline;
+}
+
+/* A page banner sits in the page grid, which spaces it. */
+.dashboard-banner {
+  margin: 0;
+}
+
+/* A long name or chain list wraps under the icon instead of widening the table. */
+.dashboard-assets .ui-table td:first-child {
+  white-space: normal;
+}
+
+/* DASH-ROW: the whole row opens the asset; its name stays the one keyboard stop. */
+.dashboard-assets .ui-table tbody tr {
+  cursor: pointer;
+}
+
+.dashboard-assets__deposit {
+  background: var(--c-deposit);
 }
 
 .dashboard-assets__state {
