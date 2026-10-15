@@ -3191,7 +3191,7 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
       '—',
     ]);
     expect(screen.getByRole('region', { name: 'Portfolio summary' })).toHaveTextContent(
-      'Cost basis—₽0.00 known, part predates the stored rates',
+      'Cost basis—₽0 known, part predates the stored rates',
     );
     expect(
       screen.getByText(/1 asset has operations dated before the stored Bank of Russia rates/),

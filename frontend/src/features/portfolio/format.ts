@@ -25,17 +25,69 @@ export const currencySymbols: Record<AccountingCurrency, string> = {
   RUB: '₽',
 };
 
-/** $1,234.56, €920.00 or ₽104,500.00; signed adds "+" to gains. Missing is a dash, never 0. */
-export function money(value: string | null, currency: AccountingCurrency, signed = false): string {
-  if (value === null) return DASH;
-  const shown = number(value, 2, 2);
-  return `${sign(value, signed, shown)}${currencySymbols[currency]}${shown}`;
+/**
+ * How a ruble sum is rounded (owner decision, 2026-10-15: whole rubles):
+ * what the owner has rounds down, what is lost or missing rounds up, and an entered amount
+ * is shown as entered, with its kopecks when it has any.
+ */
+export type Rounding = 'down' | 'up' | 'exact';
+
+/** A formatted number with its currency sign before it: "-$1,234.56", "-₽1,234". */
+export const withSymbol = (mark: string, shown: string, currency: AccountingCurrency) =>
+  `${mark}${currencySymbols[currency]}${shown}`;
+
+const group = (digits: string) => digits.replace(/\B(?=(\d{3})+$)/g, ',');
+
+/**
+ * A ruble sum from its exact decimal string, without a floating-point number: whole rubles
+ * rounded as asked, and kopecks under one ruble so that a sum never reads as nothing.
+ */
+export function rubles(value: string, signed: boolean, rounding: Rounding): string | null {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!match) return null;
+  const negative = match[1] === '-';
+  const fraction = match[3] ?? '';
+  const kopecks = BigInt(match[2] + fraction.padEnd(2, '0').slice(0, 2));
+  const finer = /[1-9]/.test(fraction.slice(2));
+  // Rounding a negative sum down makes it larger, so the direction flips with the sign.
+  const outward = rounding === 'down' ? negative : !negative;
+  const step = (units: bigint, rest: boolean) => (outward && rest ? units + 1n : units);
+  const cents = step(kopecks, finer);
+  const whole = rounding === 'exact' || cents < 100n ? cents % 100n === 0n : true;
+  let shown: string;
+  // A sum under one kopeck is shown as nothing, without a sign (portfolio-12).
+  if (kopecks === 0n) shown = '0';
+  else if (!whole)
+    shown = `${group((cents / 100n).toString())}.${(cents % 100n).toString().padStart(2, '0')}`;
+  else shown = group(step(kopecks / 100n, kopecks % 100n !== 0n || finer).toString());
+  return withSymbol(sign(match[1] + shown, signed, shown), shown, 'RUB');
 }
 
-/** Prices below 1 keep up to six decimals. */
+/**
+ * $1,234.56, €920.00 or ₽104,500; signed adds "+" to gains. Missing is a dash, never 0.
+ * Rubles are whole and rounded as `rounding` says; dollars and euros keep their cents.
+ */
+export function money(
+  value: string | null,
+  currency: AccountingCurrency,
+  signed = false,
+  rounding: Rounding = 'down',
+): string {
+  if (value === null) return DASH;
+  if (currency === 'RUB') {
+    const whole = rubles(value, signed, rounding);
+    if (whole !== null) return whole;
+  }
+  // A figure that is not a plain decimal (scientific notation) goes through the number format.
+  const shown = number(value, 2, 2);
+  return withSymbol(sign(value, signed, shown), shown, currency);
+}
+
+/** Prices below 1 keep up to six decimals; a ruble price keeps its kopecks. */
 export function price(value: string | null, currency: AccountingCurrency): string {
   if (value === null) return DASH;
-  return `${currencySymbols[currency]}${number(value, 2, Math.abs(Number(value)) < 1 ? 6 : 2)}`;
+  const shown = number(value, 2, Math.abs(Number(value)) < 1 ? 6 : 2);
+  return withSymbol('', shown, currency);
 }
 
 /** "1 USD = 95.00 RUB" from a Bank of Russia rate. */
