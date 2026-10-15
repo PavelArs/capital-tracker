@@ -11,7 +11,7 @@ type DepositPeriod = DepositDetail['periods'][number];
 
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import type { BadgeTone } from '@/ui/Badge';
-import { dayText } from '@/utils/dates';
+import { dayText, moscowDate } from '@/utils/dates';
 import { currencySymbols, DASH, percent, tone } from '../portfolio/format';
 import type { InflationBasis } from '../shell/inflation-basis';
 
@@ -24,10 +24,8 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 }
 
-const MOSCOW_OFFSET_MS = 3 * 3_600_000;
-
 /** Today's calendar date in Moscow, the day the server counts interest by. */
-export const today = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+export const today = () => moscowDate(Date.now());
 
 /** The badge tone of each status. */
 export const statusTone: Record<DepositStatus, BadgeTone> = {
@@ -122,23 +120,6 @@ export function capitalizedInterest(
   }
   const text = cents.toString().padStart(3, '0');
   return `${text.slice(0, -2)}.${text.slice(-2)}`;
-}
-
-/**
- * The exact sum of amounts with up to two decimals, as integer cents: a total of deposits never
- * goes through a floating-point number. Null when one of them is not such an amount.
- */
-export function sumMoney(values: readonly string[]): string | null {
-  let cents = 0n;
-  for (const value of values) {
-    const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value);
-    if (!match) return null;
-    const amount = BigInt(match[2] + (match[3] ?? '').padEnd(2, '0'));
-    cents += match[1] ? -amount : amount;
-  }
-  const negative = cents < 0n;
-  const text = (negative ? -cents : cents).toString().padStart(3, '0');
-  return `${negative ? '-' : ''}${text.slice(0, -2)}.${text.slice(-2)}`;
 }
 
 const payoutTerms: Record<Deposit['payout'], string> = {

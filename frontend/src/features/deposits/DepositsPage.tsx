@@ -5,6 +5,7 @@ import { useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
+import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { DASH } from '../portfolio/format';
 import { Icon } from '../shell/icons';
@@ -23,7 +24,6 @@ import {
   realRateText,
   statusText,
   statusTone,
-  sumMoney,
   termText,
   toneClass,
 } from './deposit-format';
@@ -148,7 +148,7 @@ function Bank({
   // Missing is not zero: the total of the rest is shown and said to be incomplete.
   const missing = values.length - known.length;
   // A bank whose deposits are all closed and paid out holds nothing: zero, not unknown.
-  const total = values.length === 0 ? '0' : known.length > 0 ? sumMoney(known) : null;
+  const total = values.length === 0 ? '0' : known.length > 0 ? sumDecimals(known) : null;
   return (
     <li>
       <section className="shell-card deposit-bank" aria-labelledby={`${id}-bank`}>

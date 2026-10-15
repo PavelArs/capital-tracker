@@ -3,6 +3,7 @@ import type { FxRatesReport } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
 import type { TransferCommand } from '@api/owned-transfers.api';
 import type { TradeCommand, TradePurpose } from '@api/trades.api';
+import { moscowDate } from '@/utils/dates';
 
 // "Add transaction" from the accepted prototype: buys and sells, the currency they were paid in
 // (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8). The
@@ -196,7 +197,7 @@ export function rateDate(
   const timed = editing ? entry : withDefaultTime(entry, now);
   const time = Date.parse(occurredAt(timed));
   if (Number.isNaN(time)) return entry.date;
-  return new Date(time + 3 * 3_600_000).toISOString().slice(0, 10);
+  return moscowDate(time);
 }
 
 /** Two nonnegative decimal strings as integers of the same scale, and that scale. */
