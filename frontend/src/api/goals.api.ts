@@ -82,6 +82,8 @@ export type GoalPreview = Omit<Goal, 'id' | 'name' | 'createdAt'>;
 export interface GoalForecast {
   currency: GoalCurrency;
   asOf: string;
+  /** False while an asset has no price or rate; the points are then left out. */
+  complete: boolean;
   points: ({ on: string } & Record<ScenarioKey, string | null>)[];
 }
 

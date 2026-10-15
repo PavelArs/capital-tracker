@@ -197,6 +197,7 @@ async function forecast(db, service, owner) {
   stage = 'synthetic goal charted month by month';
   const chart = await service.forecast(owner, goal.id);
   assert.equal(chart.currency, 'USD');
+  assert.equal(chart.complete, true);
   assert.deepEqual(
     chart.points[0],
     { on: chart.asOf, pessimistic: '5000.00', base: '5000.00', optimistic: '5000.00' },

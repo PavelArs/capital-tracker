@@ -59,6 +59,7 @@ const history: PortfolioHistory = {
 const forecast: GoalForecast = {
   currency: 'RUB',
   asOf: '2026-10-13',
+  complete: true,
   points: [
     { on: '2026-10-13', pessimistic: '5500000.00', base: '5500000.00', optimistic: '5500000.00' },
     { on: '2026-11-13', pessimistic: '5690000.10', base: '5710000.20', optimistic: '5730000.30' },
@@ -236,6 +237,64 @@ describe('GOAL-CHART goal chart', () => {
     expect(chart.querySelector('.goal-chart__forecast')).toBeNull();
     expect(screen.queryByText(/Forecast at/)).toBeNull();
     expect(chart.querySelector('.goal-chart__line')).not.toBeNull();
+  });
+
+  it('leaves the forecast out when the server says the value now is incomplete', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({ ...forecast, complete: false, points: [] });
+    const chart = await show();
+    expect(
+      await screen.findByText(
+        'The forecast needs every asset priced, so only the portfolio so far is drawn.',
+      ),
+    ).toBeInTheDocument();
+    expect(chart.querySelector('.goal-chart__forecast')).toBeNull();
+  });
+
+  it('marks a past day whose value left out an asset, and says so in its tooltip', async () => {
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue({
+      ...history,
+      points: history.points.map((point, index) =>
+        index === 2 ? { ...point, complete: false } : point,
+      ),
+    });
+    const user = userEvent.setup();
+    const chart = await show();
+    await within(chart).findByText('Today');
+    expect(chart.querySelectorAll('.goal-chart__incomplete')).toHaveLength(1);
+    chart.focus();
+    await user.keyboard('{Home}{ArrowRight}');
+    const tip = within(chart).getByRole('status');
+    expect(tip).toHaveTextContent('Oct 1, 2026');
+    expect(tip).toHaveTextContent('Incomplete: an asset had no price or rate');
+  });
+
+  it('says so when the history cannot be loaded but the forecast can', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockRejectedValue(new Error('offline'));
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    const chart = await show();
+    expect(
+      await screen.findByText(
+        'Could not load the portfolio history, so only the forecast is drawn.',
+      ),
+    ).toBeInTheDocument();
+    expect(chart.querySelector('.goal-chart__forecast')).not.toBeNull();
+  });
+
+  it('keeps the money put in inside the chart when withdrawals took it below zero', async () => {
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue({
+      ...history,
+      points: history.points.map((point) => ({ ...point, invested: '-3000000.00' })),
+    });
+    const chart = await show();
+    await within(chart).findByText('Today');
+    const invested = chart.querySelector('.goal-chart__invested')?.getAttribute('d') ?? '';
+    const ys = [...invested.matchAll(/[ML][\d.]+ ([\d.-]+)/g)].map((match) => Number(match[1]));
+    expect(ys.length).toBeGreaterThan(1);
+    // The plot box ends 28 px above the 290 px bottom edge.
+    for (const y of ys) expect(y).toBeLessThanOrEqual(262);
   });
 
   it('says so when the portfolio has no figures in the currency yet', async () => {
