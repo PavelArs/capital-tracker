@@ -789,6 +789,33 @@ describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
     ]);
   });
 
+  it('buys dollars before a same-instant security bought with them, whatever the operation ids', () => {
+    const plan = planImport([
+      op({
+        id: '800000001',
+        occurredAt: '2024-03-05T10:00:00Z',
+        paymentCurrency: 'usd',
+        payment: '-600',
+        quantity: '2',
+        price: '300',
+        priceCurrency: 'usd',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '800000002',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: '2024-03-05T10:00:00Z',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds]),
+    ).toEqual([
+      ['buy', 'usd', ['800000002']],
+      ['buy', '', ['800000001']],
+    ]);
+  });
+
   it('keeps gold and currencies the app does not keep as cash as assets priced in rubles', () => {
     const plan = planImport([
       fx('GLDRUB_TOM', gold, { id: '620000001', quantity: '10', payment: '-70000' }),

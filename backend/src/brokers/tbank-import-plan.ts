@@ -468,12 +468,21 @@ function checkHeld(
 /** T-Bank operation numbers in numeric order: 9 before 10. */
 const byNumber = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
 
+/**
+ * Where an entry falls among the entries of one instant. Dollars and euros bought come after
+ * the securities sold, which may have paid for them, and before the securities bought with them
+ * and the dollars or euros sold, so the cash is there when it is spent.
+ */
+const sameInstantRank = (entry: PlanEntry) => {
+  if (!entry.cash) return actionOrder.indexOf(entry.action);
+  return actionOrder.indexOf('sell') + (entry.action === 'buy' ? 0.5 : 0.75);
+};
 const ordered = (list: PlanEntry[]) =>
   buysFirst(
     [...list].sort(
       (a, b) =>
         timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) ||
-        actionOrder.indexOf(a.action) - actionOrder.indexOf(b.action) ||
+        sameInstantRank(a) - sameInstantRank(b) ||
         byNumber(a.operationIds[0], b.operationIds[0]),
     ),
   );
