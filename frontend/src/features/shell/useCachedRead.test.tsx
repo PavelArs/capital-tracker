@@ -40,6 +40,21 @@ describe('READ-HOOK-STALE: figures whose refresh failed', () => {
     expect(none.current.stale).toBe(false);
   });
 
+  it('keeps the warning through a quiet retry after the cache dropped the figures shown', async () => {
+    const read = source('kept');
+    const { result } = renderHook(() => useCachedRead(read));
+    await act(async () => read.asks[0].reject(new Error('offline')));
+    expect(result.current.stale).toBe(true);
+    // A sync emptied the cache (or the figures grew too old to keep); the page still shows them.
+    read.last.mockReturnValue(undefined);
+    act(() => result.current.reload(true));
+    expect(result.current.data).toBe('kept');
+    expect(result.current.error).toBeNull();
+    expect(result.current.stale).toBe(true);
+    await act(async () => read.asks[1].resolve('fresh'));
+    expect(result.current.stale).toBe(false);
+  });
+
   it('does not warn about an answer the page got elsewhere', async () => {
     const read = { ...source('kept'), failed: () => true };
     const { result } = renderHook(() => useCachedRead(read));
