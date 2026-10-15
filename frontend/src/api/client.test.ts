@@ -425,10 +425,13 @@ describe('cookie session API client', () => {
     };
     cache.remember('page', { total: 1 }, cache.generationNow());
 
-    await depositsApi.preview({} as Parameters<typeof depositsApi.preview>[0]);
+    const controller = new AbortController();
+    await depositsApi.preview({} as Parameters<typeof depositsApi.preview>[0], controller.signal);
 
     expect(sent.at(-1)?.url).toBe('/deposits/preview');
     expect(sent.at(-1)?.changesNothing).toBe(true);
+    // A superseded preview can be cancelled.
+    expect(sent.at(-1)?.signal).toBe(controller.signal);
     expect(cache.recall('page')).toEqual({ total: 1 });
   });
 
@@ -474,6 +477,24 @@ describe('cookie session API client', () => {
     await expect(
       apiClient.post('/goals/preview', {}, { changesNothing: true }),
     ).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBe(1);
+  });
+
+  it('keeps the kept reads when a write is cancelled before an answer, as a superseded preview is', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      throw new AxiosError('canceled', 'ERR_CANCELED', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.post('/deposits/preview', {})).rejects.toBeInstanceOf(AxiosError);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      apiClient.post('/goals/preview', {}, { signal: controller.signal }),
+    ).rejects.toBeTruthy();
 
     expect(cache.recall('page')).toBe(1);
   });

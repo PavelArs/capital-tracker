@@ -155,8 +155,13 @@ export const depositsApi = {
     (await apiClient.post<DepositDetail>(path, deposit)).data,
 
   /** Computes the figures from the terms; the server keeps nothing, so kept reads stay. */
-  preview: async (terms: DepositTerms): Promise<DepositPreview> =>
-    (await apiClient.post<DepositPreview>(`${path}/preview`, terms, { changesNothing: true })).data,
+  preview: async (terms: DepositTerms, signal?: AbortSignal): Promise<DepositPreview> =>
+    (
+      await apiClient.post<DepositPreview>(`${path}/preview`, terms, {
+        signal,
+        changesNothing: true,
+      })
+    ).data,
 
   remove: async (id: string): Promise<void> => {
     await apiClient.delete(one(id));
