@@ -160,6 +160,55 @@ async function heldPreview(db, service, owner) {
     'An opening snapshot is history the import would add to',
   );
   console.log('PASS BROKER-SYNC-PREVIEW-HELD');
+  return instrument;
+}
+
+async function voidedTransferPreview(db, service, owner, instrument) {
+  stage = 'the import preview no longer counts a voided transfer';
+  const { TradeService } = require('/app/backend/dist/accounting/trade.service.js');
+  const { OwnedTransferService } = require('/app/backend/dist/accounting/owned-transfer.service.js');
+  const sender = await account(db, owner, null);
+  const broker = await account(db, owner, 'broker');
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await new TradeService(db).create(owner, sender, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 0,
+    instrumentId: instrument,
+    side: 'buy',
+    occurredAt: '2025-01-02T00:00:00.000Z',
+    orderWithinTimestamp: 0,
+    quantity: '1',
+    grossUsd: '100',
+    feeUsd: '0',
+  });
+  const transfers = new OwnedTransferService(db);
+  const moved = await transfers.create(owner, {
+    requestId: randomUUID(),
+    fromAccountId: sender,
+    toAccountId: broker,
+    expectedFromJournalRevision: 1,
+    expectedToJournalRevision: 0,
+    assertInternal: true,
+    instrumentId: instrument,
+    occurredAt: '2025-01-03T00:00:00.000Z',
+    orderWithinTimestamp: 0,
+    quantity: '0.5',
+    feeInstrumentId: null,
+    feeQuantity: '0',
+  });
+  assert.equal((await service.importPreview(owner, broker)).accountHasEntries, true);
+  await transfers.void(owner, moved.value.transfer.transferId, {
+    requestId: randomUUID(),
+    expectedVersion: 1,
+    expectedFromJournalRevision: 2,
+    expectedToJournalRevision: 1,
+  });
+  assert.equal(
+    (await service.importPreview(owner, broker)).accountHasEntries,
+    false,
+    'A voided transfer leaves nothing the import would add to',
+  );
+  console.log('PASS BROKER-SYNC-PREVIEW-VOIDED');
 }
 
 async function main() {
@@ -215,7 +264,8 @@ async function main() {
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
     await removal(db, service, owner.id);
-    await heldPreview(db, service, owner.id);
+    const instrument = await heldPreview(db, service, owner.id);
+    await voidedTransferPreview(db, service, owner.id, instrument);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });

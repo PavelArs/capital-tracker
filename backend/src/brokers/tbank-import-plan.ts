@@ -208,9 +208,9 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     if (kind === 'repayment') {
       // A bond paid back in full leaves the account; one paid back in part keeps its units, and
       // the app has no way to lower its cost, so the money is shown as income.
+      // T-Bank gives no quantity for it; redeemHeld takes the units held then.
       if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
         if (security) return skip(item, security);
-        if (isZero(item.quantity)) return skip(item, 'no-quantity');
         return [
           {
             ...cash(item, 'trade', 'sell'),
@@ -293,6 +293,42 @@ function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry
   return [...kept, ...combined];
 }
 
+/**
+ * A bond paid back in full sells every unit the history holds of it then: payouts for bond
+ * repayment carry no instrument quantity (T-Bank investAPI docs, operations_problems). One the
+ * history never shows held is listed as skipped. A sale with no quantity can only be such a
+ * repayment, as any other trade without one is skipped before.
+ */
+function redeemHeld(list: PlanEntry[], skipped: PlanSkip[]): PlanEntry[] {
+  const held = new Map<string, bigint>();
+  const kept: PlanEntry[] = [];
+  for (const entry of ordered(list)) {
+    if (entry.record !== 'trade' || entry.instrumentUid === '') {
+      kept.push(entry);
+      continue;
+    }
+    const units = held.get(entry.instrumentUid) ?? 0n;
+    let quantity = entry.quantity;
+    if (entry.action === 'sell' && isZero(quantity)) {
+      if (units <= 0n) {
+        skipped.push({
+          operationId: entry.operationIds[0],
+          type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+          reason: 'no-quantity',
+        });
+        continue;
+      }
+      quantity = formatAtoms(units);
+    }
+    held.set(
+      entry.instrumentUid,
+      units + (entry.action === 'buy' ? atoms(quantity) : -atoms(quantity)),
+    );
+    kept.push(quantity === entry.quantity ? entry : { ...entry, quantity });
+  }
+  return kept;
+}
+
 /** T-Bank operation numbers in numeric order: 9 before 10. */
 const byNumber = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
 
@@ -311,7 +347,7 @@ const ordered = (list: PlanEntry[]) =>
  */
 export function planImport(operations: readonly TBankOperation[]): ImportPlan {
   const skipped: PlanSkip[] = [];
-  const single = entries(operations, skipped);
+  const single = redeemHeld(entries(operations, skipped), skipped);
   const tradesIn = (list: PlanEntry[]) => list.filter((entry) => entry.record === 'trade').length;
   let grouping: ImportPlan['grouping'] = 'operation';
   let list = single;

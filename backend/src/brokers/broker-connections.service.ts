@@ -185,8 +185,10 @@ export class BrokerConnectionsService {
           WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
         OR EXISTS (SELECT 1 FROM account_swap_versions v ${swapHeadJoin}
           WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
-        OR EXISTS (SELECT 1 FROM owned_transfers
-          WHERE "ownerId" = $1 AND $2 IN ("fromAccountId", "toAccountId"))
+        OR EXISTS (SELECT 1 FROM owned_transfers t JOIN owned_transfer_versions v
+            ON v."ownerId" = t."ownerId" AND v."transferId" = t.id AND v.version = t."currentVersion"
+          WHERE t."ownerId" = $1 AND $2 IN (t."fromAccountId", t."toAccountId")
+            AND v.kind <> 'void')
         OR EXISTS (SELECT 1 FROM account_opening_snapshots WHERE "ownerId" = $1 AND "accountId" = $2)
         OR EXISTS (SELECT 1 FROM account_trade_journals
           WHERE "ownerId" = $1 AND "accountId" = $2 AND "originKind" <> 'declared-empty')

@@ -130,6 +130,49 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('sells every unit held of a bond paid back in full, as T-Bank gives no quantity for it', () => {
+    // T-Bank documents that payouts for bond repayment carry no instrument quantity.
+    const plan = planImport([
+      op({ id: '300000001', quantity: '5', payment: '-5000' }),
+      op({
+        id: '300000002',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '2',
+        payment: '2000',
+        occurredAt: '2024-03-02T10:00:00Z',
+      }),
+      op({
+        id: '300000003',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        quantity: '0',
+        payment: '3000',
+        occurredAt: '2024-03-03T10:00:00Z',
+      }),
+    ]);
+    const full = plan.entries.find((entry) => entry.operationIds[0] === '300000003');
+    expect([full?.action, full?.quantity, full?.amount]).toEqual(['sell', '3', '3000']);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('lists a bond paid back in full that the history never shows bought', () => {
+    const plan = planImport([
+      op({
+        id: '300000004',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        quantity: '0',
+        payment: '1000',
+      }),
+    ]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.skipped).toEqual([
+      {
+        operationId: '300000004',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        reason: 'no-quantity',
+      },
+    ]);
+  });
+
   it('lists what it cannot record instead of guessing, and ignores what did not happen', () => {
     const plan = planImport([
       op({ id: '200000001', type: 'OPERATION_TYPE_SOMETHING_NEW' }),
