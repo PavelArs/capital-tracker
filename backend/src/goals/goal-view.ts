@@ -30,6 +30,8 @@ export interface GoalRow {
 export interface PortfolioNow {
   value: string | null;
   complete: boolean;
+  /** Held assets valued at a stored market price older than 2 hours (goals-35). */
+  stalePrices: number;
 }
 
 export type GoalStatus = 'reached' | 'on-track' | 'behind' | 'overdue' | 'open' | 'unknown';
@@ -47,6 +49,8 @@ export interface GoalScenario {
   gap: string | null;
   /** Whether the unrounded projection reaches the target by the deadline; null without one. */
   metByDeadline: boolean | null;
+  /** The value after ten years of the planned contribution; only for a goal without a date. */
+  projectedIn10Years: string | null;
 }
 
 // A projection is an estimate in plain numbers, rounded never in the owner's favour: what is still
@@ -87,7 +91,7 @@ function hundredthsText(value: bigint) {
 /**
  * Progress in exact decimals, never better than it is: what the portfolio has is rounded down to
  * the cent, what is still missing up, and the share of the sum down, so it reads 100% only once
- * the sum is reached.
+ * the sum is reached. Beyond the sum the share is the real one (goals-03): 147% is 147%.
  */
 function progressOf(value: Exact, target: Exact) {
   // Both sides over one denominator: value / target = have / need.
@@ -100,8 +104,7 @@ function progressOf(value: Exact, target: Exact) {
   return {
     reached,
     current: hundredthsText(floorDiv(value.units * 100n, value.unit)),
-    // goals-03 (the real share above 100%) waits for the acceptance probe that pins 100.00.
-    percent: hundredthsText(reached && share > 10000n ? 10000n : share),
+    percent: hundredthsText(share),
     remaining: hundredthsText(missing > 0n ? missing : 0n),
   };
 }
@@ -116,6 +119,10 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   const plan = row.monthlyContribution === null ? 0 : estimateOf(row.monthlyContribution);
   const months = row.deadline === null ? null : monthsBetween(today, row.deadline);
   const payments = row.deadline === null ? 0 : paymentsBetween(today, row.deadline);
+  // The deadline is a Moscow day and counts in full (goals-28): on that day the goal is still
+  // open, judged on the value now with no payment left; it is overdue from the next day.
+  const passed = row.deadline !== null && row.deadline < today;
+  const horizon = months === null || passed ? null : Math.max(months, 0);
   // The status reads the raw base projection, not the gap shown to the cent.
   let baseShort = false;
   const scenarios: GoalScenario[] =
@@ -130,30 +137,31 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
           const rate = monthlyRate(yearly);
           const left = monthsToReach(current, target, plan, rate);
           const projected =
-            months !== null && months > 0
-              ? futureValue(current, plan, rate, months, payments)
-              : null;
+            horizon === null ? null : futureValue(current, plan, rate, horizon, payments);
+          const tenYears =
+            row.deadline === null ? futureValue(current, plan, rate, 120, 120) : null;
           if (key === 'base') baseShort = projected === null || !(projected >= target);
           return {
             key,
             returnPercent: percent(yearly),
             requiredMonthly:
-              months !== null && months > 0
-                ? required(requiredContribution(current, target, rate, months, payments))
-                : null,
+              horizon === null
+                ? null
+                : required(requiredContribution(current, target, rate, horizon, payments)),
             monthsToTarget: left === null ? null : Math.ceil(left),
             reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),
             projectedAtDeadline: projected === null ? null : expected(projected),
             gap: projected === null ? null : required(target - projected),
             metByDeadline:
               projected === null || !Number.isFinite(projected) ? null : projected >= target,
+            projectedIn10Years: tenYears === null ? null : expected(tenYears),
           };
         });
   let status: GoalStatus;
   if (progress === null) status = 'unknown';
   else if (progress.reached) status = 'reached';
   else if (months === null) status = 'open';
-  else if (months <= 0) status = 'overdue';
+  else if (passed) status = 'overdue';
   else status = baseShort ? 'behind' : 'on-track';
   // A value that leaves out an asset without a price or rate only understates the portfolio:
   // reaching the goal stays true, falling behind does not.
@@ -173,6 +181,7 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
       complete: now.complete,
       percent: progress?.percent ?? null,
       remaining: progress?.remaining ?? null,
+      stalePrices: now.stalePrices,
     },
     status,
     scenarios,

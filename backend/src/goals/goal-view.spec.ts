@@ -11,7 +11,11 @@ const row: GoalRow = {
   createdAt: '2026-10-01T00:00:00.000Z',
 };
 const today = '2026-10-13';
-const now = (value: string | null, complete = true) => ({ value, complete });
+const now = (value: string | null, complete = true, stalePrices = 0) => ({
+  value,
+  complete,
+  stalePrices,
+});
 
 describe('goal view', () => {
   it('reports progress against the target', () => {
@@ -21,6 +25,7 @@ describe('goal view', () => {
       complete: true,
       percent: '25.00',
       remaining: '15000.00',
+      stalePrices: 0,
     });
   });
 
@@ -81,10 +86,10 @@ describe('goal view', () => {
     expect(open.scenarios[1].reachedOn).toMatch(/^20\d\d-\d\d-13$/);
   });
 
-  it('marks a reached goal and caps progress at one hundred percent', () => {
+  it('goals-03 marks a reached goal with its real share of the target, above one hundred percent', () => {
     const view = goalView(row, now('25000.00'), today);
     expect(view.status).toBe('reached');
-    expect(view.progress.percent).toBe('100.00');
+    expect(view.progress.percent).toBe('125.00');
     expect(view.progress.remaining).toBe('0.00');
     expect(view.scenarios[1].requiredMonthly).toBe('0.00');
     expect(view.scenarios[1].monthsToTarget).toBe(0);
@@ -97,6 +102,7 @@ describe('goal view', () => {
       complete: true,
       percent: '5.24',
       remaining: '47376.45',
+      stalePrices: 0,
     });
     // A stored value with more places than a float keeps, as portfolio snapshots hold them.
     const long = goalView(
@@ -123,6 +129,7 @@ describe('goal view', () => {
       complete: true,
       percent: '50.00',
       remaining: '5000.00',
+      stalePrices: 0,
     });
     expect(goalView(goal, now('-12.345'), today).progress).toMatchObject({
       current: '-12.35',
@@ -156,6 +163,43 @@ describe('goal view', () => {
       percent: '100.00',
       remaining: '0.00',
     });
+  });
+
+  it('goals-28 keeps the deadline day itself open and judges it on the value now', () => {
+    const due = { ...row, deadline: today };
+    const short = goalView(due, now('5000.00'), today);
+    expect(short.status).toBe('behind');
+    expect(short.scenarios[1]).toMatchObject({
+      projectedAtDeadline: '5000.00',
+      gap: '15000.00',
+      metByDeadline: false,
+      requiredMonthly: null,
+    });
+    const reached = goalView(due, now('20000.00'), today);
+    expect(reached.status).toBe('reached');
+    expect(reached.scenarios[1]).toMatchObject({ gap: '0.00', metByDeadline: true });
+    // Overdue from the next day on.
+    expect(goalView(due, now('5000.00'), '2026-10-14').status).toBe('overdue');
+    // Across a month end: Oct 31 is due on Oct 31 and overdue on Nov 1.
+    const monthEnd = { ...row, deadline: '2026-10-31' };
+    expect(goalView(monthEnd, now('5000.00'), '2026-10-31').status).toBe('behind');
+    expect(goalView(monthEnd, now('5000.00'), '2026-11-01').status).toBe('overdue');
+  });
+
+  it('goals-35 keeps the count of prices older than 2 hours with the progress', () => {
+    expect(goalView(row, now('5000.00', true, 3), today).progress.stalePrices).toBe(3);
+    // With no value at all no price was used, so none is old.
+    expect(goalView(row, now(null, false, 0), today).progress.stalePrices).toBe(0);
+  });
+
+  it('goals-07 gives an undated goal the value of each case after ten years of payments', () => {
+    const flat = { ...row, deadline: null, expectedReturnPercent: '0', targetAmount: '90000.00' };
+    const view = goalView(flat, now('10000.00'), today);
+    // 120 payments of 300 at no return: 10000 + 36000.
+    expect(view.scenarios[0].projectedIn10Years).toBe('46000.00');
+    expect(Number(view.scenarios[2].projectedIn10Years)).toBeGreaterThan(46000);
+    const dated = goalView(row, now('10000.00'), today);
+    expect(dated.scenarios.every((scenario) => scenario.projectedIn10Years === null)).toBe(true);
   });
 
   it('marks a deadline that has passed', () => {

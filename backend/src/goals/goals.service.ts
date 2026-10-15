@@ -58,8 +58,13 @@ export class GoalsService {
    */
   async preview(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
-    const input = parseGoalPreview(raw);
-    this.checkDeadline(input);
+    const { goalId, ...input } = parseGoalPreview(raw);
+    this.checkHorizon(input);
+    // For a goal being edited, a date it already has is kept as it is, as saving would keep it.
+    const [stored] =
+      goalId === undefined ? [] : await this.rows(this.source.manager, owner, goalId);
+    if (goalId !== undefined && !stored) throw new NotFoundException('Goal not found');
+    if (stored?.deadline !== input.deadline) this.checkAhead(input);
     const row: GoalRow = { id: '', name: '', createdAt: '', ...input };
     const { id, name, createdAt, ...view } = (await this.views(owner, [row]))[0];
     return view;
@@ -85,7 +90,8 @@ export class GoalsService {
         return earlier.id;
       }
       // Only a goal that is new has to name a day still ahead; a replay answers as it did.
-      this.checkDeadline(input);
+      this.checkAhead(input);
+      this.checkHorizon(input);
       const [{ count }]: { count: string }[] = await manager.query(
         'SELECT count(*) AS count FROM savings_goals WHERE "ownerId"=$1',
         [owner],
@@ -119,9 +125,12 @@ export class GoalsService {
     const owner = parseUuid(ownerId);
     const goalId = parseUuid(id);
     const input = parseGoalUpdate(raw);
-    this.checkDeadline(input);
+    this.checkHorizon(input);
     await this.source.transaction(async (manager) => {
-      await this.locked(manager, owner, goalId);
+      const stored = await this.locked(manager, owner, goalId);
+      // A date the goal already has stays valid on and after its day (goals-28): a name or a
+      // sum can still be changed. A new or moved date has to be ahead.
+      if (input.deadline !== stored.deadline) this.checkAhead(input);
       await manager.query(
         `UPDATE savings_goals SET name=$3, currency=$4, "targetAmount"=$5, deadline=$6,
            "expectedReturnPercent"=$7, "monthlyContribution"=$8, "updatedAt"=now()
@@ -155,19 +164,24 @@ export class GoalsService {
   }
 
   private async locked(manager: EntityManager, owner: string, id: string) {
-    const found: { id: string }[] = await manager.query(
-      'SELECT id FROM savings_goals WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
+    const [found]: { id: string; deadline: string | null }[] = await manager.query(
+      `SELECT id, to_char(deadline, 'YYYY-MM-DD') AS deadline FROM savings_goals
+       WHERE "ownerId"=$1 AND id=$2 FOR UPDATE`,
       [owner, id],
     );
-    if (found.length === 0) throw new NotFoundException('Goal not found');
+    if (!found) throw new NotFoundException('Goal not found');
+    return found;
   }
 
-  private checkDeadline(input: GoalPreviewInput) {
-    const today = moscowDate(new Date());
-    if (input.deadline !== null && input.deadline <= today)
+  /** A new or moved date names a Moscow day still ahead. */
+  private checkAhead(input: GoalPreviewInput) {
+    if (input.deadline !== null && input.deadline <= moscowDate(new Date()))
       throw new UnprocessableEntityException('The deadline must be after today');
-    // Beyond this the compounding leaves the range of a number, and no plan reaches that far.
-    if (input.deadline !== null && input.deadline > addMonths(today, MAX_MONTHS))
+  }
+
+  /** Beyond this the compounding leaves the range of a number, and no plan reaches that far. */
+  private checkHorizon(input: GoalPreviewInput) {
+    if (input.deadline !== null && input.deadline > addMonths(moscowDate(new Date()), MAX_MONTHS))
       throw new UnprocessableEntityException('The deadline is more than 100 years away');
   }
 
