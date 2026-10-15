@@ -30,10 +30,12 @@ export interface PlanEntry {
   action: PlanAction;
   /** When it happened: a trade's last fill, else the operation's own time; the latest of a group. */
   occurredAt: string;
-  /** The T-Bank instrument traded, or that paid a reward; '' for money in, out or spent. */
+  /** The T-Bank instrument traded; '' for money paid in, out, spent or received. */
   instrumentUid: string;
   ticker: string;
   instrumentType: string;
+  /** For a reward, the T-Bank instrument that paid it; the reward itself is cash. */
+  paidBy?: { instrumentUid: string; ticker: string; instrumentType: string };
   /** Units of the security, or the cash amount when the entry moves only cash. */
   quantity: string;
   /** What was paid or received in `currency`, before the fee; positive. */
@@ -139,8 +141,12 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     signOf(item.payment) === 'out' &&
     tradeCurrency.get(item.parentId) === item.paymentCurrency;
   const feesOf = new Map<string, TBankOperation[]>();
-  for (const item of executed)
-    if (joins(item)) feesOf.set(item.parentId, [...(feesOf.get(item.parentId) ?? []), item]);
+  for (const item of executed) {
+    if (!joins(item)) continue;
+    const fees = feesOf.get(item.parentId);
+    if (fees) fees.push(item);
+    else feesOf.set(item.parentId, [item]);
+  }
   const skip = (item: TBankOperation, reason: PlanSkip['reason']) => {
     skipped.push({ operationId: item.id, type: item.type, reason });
     return [];
@@ -158,12 +164,15 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     currency: item.paymentCurrency,
     operationIds: [item.id],
   });
-  // A reward keeps the instrument that paid it, so dividends of two shares stay apart.
+  // A reward is cash received; it names the instrument that paid it, so dividends of two
+  // shares stay apart.
   const reward = (item: TBankOperation, action: PlanAction): PlanEntry => ({
     ...cash(item, 'reward', action),
-    instrumentUid: item.instrumentUid,
-    ticker: item.ticker,
-    instrumentType: item.instrumentType,
+    paidBy: {
+      instrumentUid: item.instrumentUid,
+      ticker: item.ticker,
+      instrumentType: item.instrumentType,
+    },
   });
   return executed.flatMap((item): PlanEntry[] => {
     const kind = operationKind(item.type);
@@ -264,7 +273,9 @@ function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry
       period(entry.occurredAt),
       run,
     ].join('|');
-    groups.set(key, [...(groups.get(key) ?? []), entry]);
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
   }
   const combined = [...groups.values()].map((group) => {
     if (group.length === 1) return group[0];

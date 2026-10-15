@@ -94,7 +94,7 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       ['reward', 'income', '2', '2'],
       ['trade', 'withdrawal', '300', '300'],
     ]);
-    expect(plan.entries[1].ticker).toBe('SYNTH');
+    expect([plan.entries[1].instrumentUid, plan.entries[1].paidBy?.ticker]).toEqual(['', 'SYNTH']);
     expect([plan.trades, plan.rewards, plan.grouping, plan.fitsTradeLimit]).toEqual([
       4,
       2,
@@ -120,11 +120,13 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       '1',
       '1000',
     ]);
-    expect([part.record, part.action, part.instrumentUid, part.quantity]).toEqual([
+    // The money received is cash; the bond only names who paid it.
+    expect([part.record, part.action, part.instrumentUid, part.quantity, part.paidBy]).toEqual([
       'reward',
       'repayment',
-      share,
+      '',
       '250',
+      { instrumentUid: share, ticker: 'SYNTH', instrumentType: 'share' },
     ]);
   });
 
@@ -284,13 +286,18 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
         instrumentUid: share,
       }),
     ]);
-    expect(busyDay(plan).map((entry) => [entry.ticker, entry.instrumentUid, entry.amount])).toEqual(
-      [
-        ['SYNTH', share, '5'],
-        ['OTHER', other, '6'],
-        ['SYNTH', share, '7'],
-      ],
-    );
+    expect(
+      busyDay(plan).map((entry) => [
+        entry.instrumentUid,
+        entry.paidBy?.ticker,
+        entry.paidBy?.instrumentUid,
+        entry.amount,
+      ]),
+    ).toEqual([
+      ['', 'SYNTH', share, '5'],
+      ['', 'OTHER', other, '6'],
+      ['', 'SYNTH', share, '7'],
+    ]);
   });
 
   it('lists an operation whose amount has the wrong sign instead of turning it around', () => {

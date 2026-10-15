@@ -137,6 +137,31 @@ async function removal(db, service, owner) {
   console.log('PASS BROKER-CONNECT-REMOVE');
 }
 
+async function heldPreview(db, service, owner) {
+  stage = 'the import preview counts an opening snapshot as held entries';
+  const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
+  const accounting = new AccountingService(db);
+  const broker = await account(db, owner, 'broker');
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  assert.equal((await service.importPreview(owner, broker)).accountHasEntries, false);
+  const instrument = (
+    await accounting.createInstrument(owner, { requestId: randomUUID(), name: 'Synthetic share' })
+  ).value.id;
+  const opening = await accounting.saveOpening(owner, broker, {
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    asOf: '2025-01-01T00:00:00.000Z',
+    positions: [{ instrumentId: instrument, quantity: '2', costStatus: 'known', totalCostUsd: '300' }],
+  });
+  assert.equal(opening.created, true);
+  assert.equal(
+    (await service.importPreview(owner, broker)).accountHasEntries,
+    true,
+    'An opening snapshot is history the import would add to',
+  );
+  console.log('PASS BROKER-SYNC-PREVIEW-HELD');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -183,10 +208,14 @@ async function main() {
     const box = new TBankTokenBox(
       new ConfigService({ MFA_KEY_FILE: join(directory, 'key'), MFA_KEY_ID: 'probe-key' }),
     );
-    const tbank = { accounts: async () => ({ ok: true, value: [brokerAccount] }) };
+    const tbank = {
+      accounts: async () => ({ ok: true, value: [brokerAccount] }),
+      operations: async () => ({ ok: true, value: [] }),
+    };
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
     await removal(db, service, owner.id);
+    await heldPreview(db, service, owner.id);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });

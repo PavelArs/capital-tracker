@@ -28,12 +28,12 @@ function build(
   stored = false,
   positions: TBankResult<unknown[]> = { ok: true, value: [] },
   operations: TBankResult<TBankOperation[]> = { ok: true, value: [] },
-  held = 0,
+  held = false,
 ) {
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
+    if (sql.includes('account_reward_versions')) return [{ held }];
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
-    if (sql.includes('account_reward_versions')) return [{ entries: held }];
     if (sql.includes('SELECT credentials'))
       return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
     if (sql.includes('INSERT INTO broker_connections')) writes.push(parameters);
@@ -365,7 +365,7 @@ describe('BROKER-SYNC: previewing the import of a connected account', () => {
   });
 
   it('says when the account already holds entries the import would add to', async () => {
-    const { service } = build(ok(mine), true, true, undefined, { ok: true, value: [] }, 3);
+    const { service } = build(ok(mine), true, true, undefined, { ok: true, value: [] }, true);
     expect((await service.importPreview(owner, account)).accountHasEntries).toBe(true);
   });
 

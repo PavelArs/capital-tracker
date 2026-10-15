@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { rewardHeadJoin } from '../accounting/asset-reward.store';
+import { swapHeadJoin } from '../accounting/asset-swap.store';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
   type TBankAccount,
@@ -165,17 +166,35 @@ export class BrokerConnectionsService {
     const { token, target } = await this.savedConnection(ownerId, accountId);
     const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
     if (!result.ok) throw savedTokenFailure(result.reason);
-    // A voided entry no longer counts; the trades and rewards still standing do.
-    const [held]: { entries: number }[] = await this.source.query(
-      `SELECT ((SELECT count(*) FROM account_trade_versions v JOIN account_trades t
+    const held = await this.holdsEntries(parseUuid(ownerId), parseUuid(accountId));
+    return { ...planImport(result.value), accountHasEntries: held };
+  }
+
+  /**
+   * Whether the account holds any history an import would add to: a standing trade, reward or
+   * swap, a transfer in or out, an opening snapshot, a carried-in journal or any revision. A
+   * voided entry no longer counts.
+   */
+  private async holdsEntries(owner: string, account: string) {
+    const [row]: { held: boolean }[] = await this.source.query(
+      `SELECT EXISTS (SELECT 1 FROM account_trade_versions v JOIN account_trades t
             ON t."ownerId" = v."ownerId" AND t."accountId" = v."accountId" AND t.id = v."tradeId"
             AND t."currentVersion" = v.version
           WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
-        + (SELECT count(*) FROM account_reward_versions v ${rewardHeadJoin}
-          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void'))::int AS entries`,
-      [parseUuid(ownerId), parseUuid(accountId)],
+        OR EXISTS (SELECT 1 FROM account_reward_versions v ${rewardHeadJoin}
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM account_swap_versions v ${swapHeadJoin}
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM owned_transfers
+          WHERE "ownerId" = $1 AND $2 IN ("fromAccountId", "toAccountId"))
+        OR EXISTS (SELECT 1 FROM account_opening_snapshots WHERE "ownerId" = $1 AND "accountId" = $2)
+        OR EXISTS (SELECT 1 FROM account_trade_journals
+          WHERE "ownerId" = $1 AND "accountId" = $2 AND "originKind" <> 'declared-empty')
+        OR EXISTS (SELECT 1 FROM manual_accounts
+          WHERE "ownerId" = $1 AND id = $2 AND "currentRevision" IS NOT NULL) AS held`,
+      [owner, account],
     );
-    return { ...planImport(result.value), accountHasEntries: held.entries > 0 };
+    return row.held;
   }
 
   async disconnect(ownerId: string, accountId: string) {
