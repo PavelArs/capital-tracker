@@ -7,6 +7,7 @@ import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.ap
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
+import { networkOf } from './networks';
 import { failureMessage, type SyncRun } from './SyncStatus';
 import { classedOf, hiddenSymbolsOf, kindsOf } from './wallets';
 
@@ -43,6 +44,8 @@ export function useWallets() {
   );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
+  // wallets-02, 07, 21: what the owner's last action did, said once at the top of the page.
+  const [notice, setNotice] = useState<string | null>(null);
   const latest = useRef(0);
   const running = useRef(new Set<string>());
   const mounted = useRef(true);
@@ -118,10 +121,12 @@ export function useWallets() {
       running.current.add(id);
       setRun(id, { state: 'running' });
       try {
+        let synced: WalletAddress | null = null;
         for (let request = 0; request < MAX_SYNC_REQUESTS; request++) {
           const result = await walletAddressesApi.sync(id);
           if (!mounted.current) return;
           replace(result.address);
+          synced = result.address;
           if (result.outcome === 'provider_error') {
             setRun(id, {
               state: 'failed',
@@ -134,15 +139,26 @@ export function useWallets() {
           if (result.outcome === 'complete') break;
         }
         setRun(id, null);
+        if (synced?.sync.state === 'complete')
+          setNotice(`${synced.label ?? networkOf(synced).name} is synced.`);
         // A list asked for while the history loaded may be older than the last page.
         void load(true);
         announceSyncChange();
       } catch (error) {
         if (!mounted.current) return;
+        // wallets-20: only a request that got no answer could not reach the server.
         const status = isAxiosError(error) ? error.response?.status : undefined;
         setRun(id, {
           state: 'failed',
-          message: failureMessage(status === 409 ? 'busy' : 'server'),
+          message: failureMessage(
+            status === undefined
+              ? 'server'
+              : status === 409
+                ? 'busy'
+                : status === 401
+                  ? 'session'
+                  : 'failed',
+          ),
         });
       } finally {
         announceSyncChange();
@@ -178,5 +194,7 @@ export function useWallets() {
     runs,
     sync,
     asked,
+    notice,
+    setNotice,
   };
 }

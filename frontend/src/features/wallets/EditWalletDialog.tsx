@@ -22,7 +22,8 @@ interface Props {
   name: string;
   kind: WalletKind | null;
   onClose: () => void;
-  onSaved: () => void;
+  /** What changed, so the page can say so (wallets-21). */
+  onSaved: (changes: { name?: string; kind?: WalletKind | null }) => void;
 }
 
 const NOT_CHOSEN = '';
@@ -56,7 +57,7 @@ export default function EditWalletDialog({ accountId, name, kind, onClose, onSav
     setError(null);
     try {
       await accountingApi.updateAccount(accountId, changes);
-      onSaved();
+      onSaved(changes);
     } catch (caught) {
       setError(failure(caught));
       setSaving(false);

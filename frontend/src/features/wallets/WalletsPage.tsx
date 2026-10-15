@@ -1,5 +1,5 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { withCurrency } from '../portfolio/currency';
@@ -13,6 +13,7 @@ import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import { useWallets } from './useWallets';
 import {
   AddressRow,
+  connectsBybit,
   holdingsOf,
   ManualRow,
   ReconcileNote,
@@ -68,9 +69,17 @@ export default function WalletsPage() {
     runs,
     sync,
     asked,
+    notice,
+    setNotice,
   } = useWallets();
-  const [adding, setAdding] = useState(false);
+  // true opens Add wallet on its first step; a wallet's id opens it on that wallet's Bybit key.
+  const [adding, setAdding] = useState<boolean | string>(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  // wallets-07: the wallet just added gets the keyboard once its card is on the page.
+  const [arrived, setArrived] = useState<string | null>(null);
+  // wallets-21: a wallet removed on its own page is named here, with the keyboard on the line.
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const [focusNotice, setFocusNotice] = useState(false);
   // Crypto in Portfolio's Add to portfolio comes here and opens Add wallet once the wallets are
   // known, so a duplicate address is still caught; the request is cleared so Back does not repeat it.
   const location = useLocation();
@@ -81,6 +90,26 @@ export default function WalletsPage() {
     setAdding(true);
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [addRequested, addresses, navigate, location.pathname, location.search]);
+  const removed = (location.state as { removedWallet?: unknown } | null)?.removedWallet;
+  useEffect(() => {
+    if (typeof removed !== 'string') return;
+    setNotice(`${removed} was removed.`);
+    setFocusNotice(true);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [removed, setNotice, navigate, location.pathname, location.search]);
+  useEffect(() => {
+    if (!focusNotice || !noticeRef.current) return;
+    noticeRef.current.focus();
+    setFocusNotice(false);
+  });
+  useEffect(() => {
+    if (!arrived) return;
+    const link = document.getElementById(`wallet-${arrived}`)?.querySelector('a');
+    setArrived(null);
+    if (!link) return;
+    link.scrollIntoView?.({ block: 'center' });
+    link.focus({ preventScroll: true });
+  });
   const narrow = useNarrowScreen();
   // Property and broker accounts (v8) are listed in their own sections, not here.
   const walletAccounts = (portfolio?.accounts ?? []).filter(
@@ -141,6 +170,16 @@ export default function WalletsPage() {
   return (
     <div className="shell-page">
       <PageHeader title="Wallets" currency={portfolio?.currency} />
+      {notice && (
+        <p
+          ref={noticeRef}
+          className="ui-banner ui-banner--pos wallets-notice"
+          role="status"
+          tabIndex={-1}
+        >
+          {notice}
+        </p>
+      )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your wallets. Your data is safe; try again.</p>
@@ -217,7 +256,16 @@ export default function WalletsPage() {
                 {own.length > 0 || manual.length > 0 ? (
                   <PagedSources items={own} label={`addresses of ${account.name}`} row={row}>
                     {manual.length > 0 && (
-                      <ManualRow holdings={manual} currency={currency} narrow={narrow} />
+                      <ManualRow
+                        holdings={manual}
+                        currency={currency}
+                        narrow={narrow}
+                        onConnect={
+                          connectsBybit(account.name, own)
+                            ? () => setAdding(account.accountId)
+                            : undefined
+                        }
+                      />
                     )}
                   </PagedSources>
                 ) : (
@@ -238,21 +286,41 @@ export default function WalletsPage() {
           {pagedCards.more && <LoadMore {...pagedCards.more} label="wallets" />}
         </>
       )}
-      {adding && (
+      {adding !== false && (
         <AddWalletDialog
           accounts={accounts}
           addresses={list}
+          {...(typeof adding === 'string'
+            ? {
+                network: 'bybit' as const,
+                wallet: accounts.find((item) => item.accountId === adding)?.name,
+              }
+            : {})}
           onClose={() => setAdding(false)}
           onOpenExisting={(address) => {
             setAdding(false);
             setOpenId(address.id);
           }}
-          onAdded={(address, created) => {
+          onAdded={async (address, created) => {
             setAdding(false);
-            replace(address);
-            void load(true);
-            if (created) void sync(address.id);
-            else setOpenId(address.id);
+            const wallet = accounts.find((item) => item.accountId === address.accountId);
+            // wallets-07: the page says what was added, and a new wallet's address waits for its
+            // card instead of showing as not in a wallet meanwhile.
+            if (created)
+              setNotice(
+                wallet
+                  ? `Added to ${wallet.name}. Syncing transactions…`
+                  : 'Wallet added. Syncing transactions…',
+              );
+            if (address.accountId && !wallet) await load(true);
+            else {
+              replace(address);
+              void load(true);
+            }
+            if (created) {
+              setArrived(address.accountId);
+              void sync(address.id);
+            } else setOpenId(address.id);
             // A Bybit account added again carries a new key: read it at once.
             if (!created && address.network === 'bybit') void sync(address.id);
           }}

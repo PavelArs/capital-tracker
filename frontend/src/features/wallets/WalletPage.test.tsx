@@ -10,9 +10,11 @@ import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.ap
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
+import type { ReactElement } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WalletPage, { accountOperations } from './WalletPage';
+import WalletsPage from './WalletsPage';
 
 // Synthetic ids, names, addresses and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -209,12 +211,16 @@ function setup({
   items = [buy, chainReceipt, transferIn, elsewhere],
   kind = null,
   coldClass = null,
+  valuation = portfolio(),
+  listPage = <p>Wallets list</p>,
 }: {
   account?: string;
   list?: WalletAddress[];
   items?: Operation[];
   kind?: WalletKind | null;
   coldClass?: 'property' | null;
+  valuation?: PortfolioValuation;
+  listPage?: ReactElement;
 } = {}) {
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
@@ -240,15 +246,16 @@ function setup({
     ],
     nextCursor: null,
   });
-  vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio());
+  vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation);
   vi.spyOn(walletAddressesApi, 'list').mockResolvedValue(list);
+  vi.spyOn(walletAddressesApi, 'syncRuns').mockResolvedValue([]);
   vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
   vi.spyOn(operationsApi, 'list').mockResolvedValue(operations(items));
   render(
     <MemoryRouter initialEntries={[`/wallets/${account}`]}>
       <Routes>
         <Route path="/wallets/:accountId" element={<WalletPage />} />
-        <Route path="/wallets" element={<p>Wallets list</p>} />
+        <Route path="/wallets" element={listPage} />
       </Routes>
     </MemoryRouter>,
   );
@@ -619,6 +626,81 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     setup({ account: id(99) });
     expect(await screen.findByRole('heading', { name: 'Wallet not found' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Open Wallets' })).toHaveAttribute('href', '/wallets');
+  });
+});
+
+describe('UI audit: one wallet', () => {
+  it('wallets-02 keeps the keyboard on Sync now while it runs', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    vi.spyOn(walletAddressesApi, 'sync').mockReturnValue(new Promise(() => undefined));
+    await user.click(screen.getByRole('button', { name: 'Sync now' }));
+    const button = screen.getByRole('button', { name: 'Syncing…' });
+    expect(button).toHaveFocus();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('wallets-11 lists the assets by what this wallet holds of each, largest first', async () => {
+    const valuation = portfolio();
+    // Tether comes after Bitcoin in the whole portfolio, but this wallet holds more of it.
+    valuation.assets[1].holdings.push({
+      accountId: trust,
+      accountName: 'Trust Wallet',
+      quantity: '1500',
+      value: '1500',
+    });
+    setup({ valuation });
+    const assets = await screen.findByRole('region', { name: 'Assets' });
+    const names = within(assets)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+    expect(names[0]).toMatch(/^Tether/);
+    expect(names[1]).toMatch(/^Bitcoin/);
+  });
+
+  it('wallets-21 confirms a rename', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    vi.spyOn(accountingApi, 'updateAccount').mockResolvedValue({
+      id: trust,
+      name: 'Ledger',
+      kind: null,
+      currentRevision: 1,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    });
+    vi.mocked(portfolioValuationApi.get).mockResolvedValue(portfolio('Ledger'));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
+    await user.clear(within(dialog).getByLabelText('Name'));
+    await user.type(within(dialog).getByLabelText('Name'), 'Ledger');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Wallet renamed.')).toHaveAttribute('role', 'status');
+  });
+
+  it('wallets-21 lands on Wallets with the keyboard on what was removed', async () => {
+    const user = userEvent.setup();
+    setup({ listPage: <WalletsPage /> });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    vi.spyOn(accountingApi, 'removeAccount').mockResolvedValue(undefined);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = screen.getByRole('dialog', { name: 'Remove Trust Wallet?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
+    const said = await screen.findByText('Trust Wallet was removed.');
+    await waitFor(() => expect(said).toHaveFocus());
+  });
+
+  it('wallets-08 offers to connect the Bybit API on a Bybit wallet tracked by hand', async () => {
+    const user = userEvent.setup();
+    const valuation = portfolio();
+    valuation.accounts[1].name = 'Bybit';
+    setup({ account: cold, valuation });
+    await screen.findByRole('heading', { level: 2, name: 'Bybit' });
+    await user.click(screen.getByRole('button', { name: 'Connect Bybit API' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    expect(within(dialog).getByText('Step 2 of 3')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('API key')).toBeInTheDocument();
   });
 });
 
