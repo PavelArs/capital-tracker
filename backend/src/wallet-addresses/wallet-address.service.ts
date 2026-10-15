@@ -9,8 +9,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { insertAccount } from '../accounting/accounting.service';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
-import { parseUuid } from '../accounting/input';
+import { type AccountInput, parseUuid } from '../accounting/input';
 import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { BybitClient } from './bybit-client';
@@ -629,9 +630,9 @@ export class WalletAddressService {
     const owner = parseUuid(ownerId);
     const registration = parseRegistration(raw);
     if (registration.network === 'bybit') return this.registerBybit(owner, registration);
-    const { network, address, accountId, label } = registration;
+    const { network, address, label } = registration;
     const result = await this.source.transaction('READ COMMITTED', async (manager) => {
-      if (accountId) await this.account(manager, owner, accountId);
+      const accountId = await this.walletFor(manager, owner, network, address, registration);
       // WALLET-REMOVE: an address stopped before comes back with its own history and the
       // account and name of this request; one still tracked is left as it is.
       const inserted: { id: string; fresh: boolean }[] = await manager.query(
@@ -659,7 +660,7 @@ export class WalletAddressService {
       };
     });
     // An address now in an account may complete a transfer between own wallets (D7).
-    if (result.revived && accountId) await this.walletSync.linkOwnTransfers(owner);
+    if (result.revived && result.value.accountId) await this.walletSync.linkOwnTransfers(owner);
     return { created: result.created, value: result.value };
   }
 
@@ -695,7 +696,7 @@ export class WalletAddressService {
       );
     const box = this.box;
     return this.source.transaction('READ COMMITTED', async (manager) => {
-      if (input.accountId) await this.account(manager, owner, input.accountId);
+      const accountId = await this.walletFor(manager, owner, 'bybit', key.userId, input);
       const inserted: { id: string }[] = await manager.query(
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
           VALUES ($1, $2, 'bybit', $3, $4, $5)
@@ -703,7 +704,7 @@ export class WalletAddressService {
             "accountId" = EXCLUDED."accountId", label = EXCLUDED.label
             WHERE wallet_addresses."removedAt" IS NOT NULL
           RETURNING id`,
-        [randomUUID(), owner, key.userId, input.accountId, input.label],
+        [randomUUID(), owner, key.userId, accountId, input.label],
       );
       const [wallet]: { id: string }[] = await manager.query(
         `SELECT id FROM wallet_addresses WHERE "ownerId" = $1 AND network = 'bybit' AND address = $2
@@ -745,9 +746,13 @@ export class WalletAddressService {
   async update(ownerId: string, id: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const addressId = parseUuid(id);
-    const changes = parseUpdate(raw);
+    const { newAccount, ...changes } = parseUpdate(raw);
     const result = await this.source.transaction('READ COMMITTED', async (manager) => {
-      if (changes.accountId) await this.account(manager, owner, changes.accountId);
+      // WAL-INVALID: a wallet made with the move is undone with it when the address is gone.
+      if (newAccount) {
+        await lockAccountingOwner(manager, owner);
+        changes.accountId = (await insertAccount(manager, owner, newAccount)).value.id;
+      } else if (changes.accountId) await this.account(manager, owner, changes.accountId);
       // TypeORM returns [rows, affected] for UPDATE ... RETURNING on PostgreSQL.
       const [updated]: [unknown[], number] = await manager.query(
         `UPDATE wallet_addresses SET
@@ -949,6 +954,33 @@ export class WalletAddressService {
     );
     if (!row) throw new NotFoundException();
     return (await withDust(manager, owner, [row]))[0];
+  }
+
+  /**
+   * The wallet an address joins: the one named, or (WAL-INVALID) one made now, in the address's
+   * transaction and only after the address was read, so a refused address leaves no empty wallet.
+   * The request id keeps a retry from making it twice. An address already tracked keeps its
+   * wallet (WAL-DUP), so no wallet is made for it.
+   */
+  private async walletFor(
+    manager: EntityManager,
+    owner: string,
+    network: Network,
+    address: string,
+    wanted: { accountId: string | null; newAccount?: AccountInput },
+  ): Promise<string | null> {
+    if (!wanted.newAccount) {
+      if (wanted.accountId) await this.account(manager, owner, wanted.accountId);
+      return wanted.accountId;
+    }
+    await lockAccountingOwner(manager, owner);
+    const [tracked]: { accountId: string | null }[] = await manager.query(
+      `SELECT "accountId" FROM wallet_addresses
+        WHERE "ownerId" = $1 AND network = $2 AND address = $3 AND "removedAt" IS NULL`,
+      [owner, network, address],
+    );
+    if (tracked) return tracked.accountId;
+    return (await insertAccount(manager, owner, wanted.newAccount)).value.id;
   }
 
   // Another owner's account is as unknown as a missing one. Accounting writes lock the owner
