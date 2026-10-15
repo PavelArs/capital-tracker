@@ -13,7 +13,6 @@ vi.mock('@contexts/AuthContext', () => ({
   useAuth: () => ({ user: { email: 'owner@example.com' }, logout: vi.fn() }),
 }));
 vi.mock('@contexts/ErrorContext', () => ({ useError: () => ({ showError: vi.fn() }) }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@features/portfolio/AddTransactionDialog', () => ({ default: () => null }));
 
 const phone = (matches: boolean) =>

@@ -5,14 +5,13 @@ import { AttentionProvider } from '@features/shell/attention-context';
 import { BellSlotContext } from '@features/shell/bell-slot';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
-import { shellSections } from '@features/shell/navigation';
+import { appTitle, pageTitle, shellSections } from '@features/shell/navigation';
 import { prefetchSection, warmPages } from '@features/shell/prefetch';
 import SyncIndicator from '@features/shell/SyncIndicator';
 import { useHeldClasses } from '@features/shell/useHeldClasses';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
@@ -26,7 +25,6 @@ export default function Layout() {
   const { pathname } = useLocation();
   // The header's display currency follows the owner from page to page.
   const [asked] = useAskedCurrency();
-  const { t } = useTranslation();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   // CLS-COUNT: blockchain transactions waiting for an answer, next to Transactions.
   const toClassify = useNeedsClassification();
@@ -42,9 +40,21 @@ export default function Layout() {
   // PHONE-BELL: where the page header draws the notifications bell on a phone.
   const [bellSlot, setBellSlot] = useState<HTMLElement | null>(null);
 
+  useEffect(() => {
+    document.title = pageTitle(pathname);
+  }, [pathname]);
+  // Signed out, the tab names only the app again.
+  useEffect(
+    () => () => {
+      document.title = appTitle;
+    },
+    [],
+  );
+
   // Phones show the sections as a swipeable strip: keep the current one in view, also after a
-  // turn of the device.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
+  // turn of the device and when a held section arrives before it (shell-05).
+  const sectionPaths = sections.map((section) => section.path).join(' ');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the path and the listed sections decide where the current link is.
   useEffect(() => {
     const center = () => {
       const strip = menuRef.current;
@@ -55,7 +65,7 @@ export default function Layout() {
     center();
     window.addEventListener('resize', center);
     return () => window.removeEventListener('resize', center);
-  }, [pathname]);
+  }, [pathname, sectionPaths]);
 
   const handleLogout = useCallback(async () => {
     setIsLoggingOut(true);
@@ -65,13 +75,13 @@ export default function Layout() {
     } catch (error) {
       showError(
         isAxiosError(error) && error.response?.status === 403
-          ? t('auth.sessionExpired')
-          : t('auth.logoutFailed'),
+          ? 'Your session has changed. Please try again.'
+          : 'Unable to log out. Please try again.',
       );
     } finally {
       setIsLoggingOut(false);
     }
-  }, [logout, navigate, showError, t]);
+  }, [logout, navigate, showError]);
 
   function followLink() {
     mainRef.current?.focus();

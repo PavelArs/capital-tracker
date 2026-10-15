@@ -23,6 +23,25 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/preferences', label: 'Settings', icon: 'settings' },
 ];
 
+export const appTitle = 'Capital Tracker';
+
+// The pages under a section, named in the browser tab without their record's name.
+const detailTitles: readonly (readonly [string, string])[] = [
+  ['/portfolio/', 'Asset'],
+  ['/wallets/', 'Wallet'],
+  ['/deposits/', 'Deposit'],
+  ['/goals/', 'Goal'],
+];
+
+/** The browser tab title of a page: its section or page kind, then the app (WCAG 2.4.2). */
+export function pageTitle(pathname: string): string {
+  const name =
+    shellSections.find((section) => section.path === pathname)?.label ??
+    detailTitles.find(([prefix]) => pathname.startsWith(prefix))?.[1] ??
+    (pathname === '/history' ? 'History' : null);
+  return name ? `${name} · ${appTitle}` : appTitle;
+}
+
 // Retired screens (M20) send old bookmarks to the section that replaced them. `/assets/*`
 // is not here: the web server keeps that prefix for the built bundle, so the old asset
 // screens were only ever reached by in-app navigation and the browser never asks for them.
