@@ -622,11 +622,11 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 66/);
+  assert.match(migrated.stdout, /Migrations applied: 67/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 66);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 67);
     const [owner, early, other, paid, unpriced, left] =
       await db.query(`INSERT INTO users(email,password) VALUES
       ('flows-owner@example.invalid','synthetic-not-a-hash'),

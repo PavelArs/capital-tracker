@@ -493,6 +493,73 @@ async function hiddenAssets(db, s, f) {
   console.log('PASS ASSET-HIDE hide, list, show and the portfolio without it');
 }
 
+async function handValueCurrency(db, s) {
+  stage = 'AST-MANUAL-VALUE a hand value keeps the currency it was set in';
+  // Runs last: the Bank of Russia rates it stores are shared by every owner.
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+    VALUES ('portfolio-rub@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const flat = await instrument(s, owner, {
+    name: 'Studio',
+    assetType: 'manual',
+    valuationCurrency: 'RUB',
+  });
+  const home = await account(s, owner, 'Home');
+  await trade(s, owner, home, flat, 'buy', '2025-01-05T00:00:00.000Z', '1', '6250');
+  // 80 RUB a dollar when the value was set, 100 RUB a dollar from yesterday on.
+  await db.query(`INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit") VALUES
+    ('USD','cbr','2025-01-05',80), ('EUR','cbr','2025-01-05',90),
+    ('USD','cbr',(now() AT TIME ZONE 'Europe/Moscow')::date - 1,100),
+    ('EUR','cbr',(now() AT TIME ZONE 'Europe/Moscow')::date - 1,110),
+    ('USD','cbr',(now() AT TIME ZONE 'Europe/Moscow')::date,100),
+    ('EUR','cbr',(now() AT TIME ZONE 'Europe/Moscow')::date,110)
+    ON CONFLICT DO NOTHING`);
+  const command = {
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    observedAt: '2025-01-05T00:00:00.000Z',
+    price: '500000.00',
+    currency: 'RUB',
+    assertReviewed: true,
+  };
+  const saved = await s.prices.set(owner, flat, command);
+  assert.equal(saved.created, true);
+  assert.deepEqual(
+    [saved.value.price, saved.value.quoteCurrency, saved.value.priceUsd],
+    ['500000', 'RUB', null],
+    'The receipt states the price in rubles and claims no dollar price',
+  );
+  assert.deepEqual(
+    await db.query(
+      `SELECT "priceUsd"::text AS price, "quoteCurrency" FROM manual_usd_price_versions
+        WHERE "instrumentId"=$1`,
+      [flat],
+    ),
+    [{ price: '500000.000000000000000000000000000000', quoteCurrency: 'RUB' }],
+  );
+  // A replay is the same price; the same request with another currency is refused.
+  assert.equal((await s.prices.set(owner, flat, command)).created, false);
+  await rejected(() => s.prices.set(owner, flat, { ...command, currency: 'EUR' }), 409);
+  await rejected(
+    () => s.prices.set(owner, flat, { ...command, requestId: randomUUID(), currency: 'GBP' }),
+    400,
+  );
+  const book = await s.prices.list(owner, flat, {});
+  assert.equal(book.quoteCurrency, 'RUB', 'The book is in the currency the asset is valued in');
+  assert.deepEqual(
+    book.items.map((item) => [item.price, item.quoteCurrency]),
+    [['500000', 'RUB']],
+  );
+  // The rate moved from 80 to 100, yet 500,000 RUB is still 500,000 RUB, and 5,000 USD today.
+  const rub = asset(await read(s, owner, { currency: 'RUB' }), flat);
+  assert.deepEqual([rub.price.value, rub.value], ['500000', '500000']);
+  assert.equal(rub.price.status, 'manual');
+  const usd = asset(await read(s, owner, { currency: 'USD' }), flat);
+  assert.deepEqual([usd.price.value, usd.value], ['5000', '5000']);
+  const eur = asset(await read(s, owner, { currency: 'EUR' }), flat);
+  assert.equal(eur.value, '4545.454545454545454545454545454545');
+  console.log('PASS AST-MANUAL-VALUE a ruble hand value stays in rubles as the dollar rate moves');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -528,7 +595,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 66);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 67);
     const [owner, other, third, fourth] =
       await db.query(`INSERT INTO users(email,password) VALUES
       ('portfolio-owner@example.invalid','synthetic-not-a-hash'),
@@ -539,6 +606,7 @@ async function main() {
     const f = { owner: owner.id, other: other.id, third: third.id, fourth: fourth.id };
     for (const check of [wholePortfolio, gapsAndInvalidHistory, hiddenAssets])
       await check(db, s, f);
+    await handValueCurrency(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

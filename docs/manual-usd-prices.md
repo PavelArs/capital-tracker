@@ -6,6 +6,14 @@
 > about screens below is historical; the data and API rules still describe the stored records.
 
 
+> **Price currency (AST-MANUAL-VALUE, 2026-10-15).** A price can be set in USD, EUR or RUB
+> (`price` with `currency`; `priceUsd` still means a USD price) and keeps that currency: an asset
+> valued at 500,000 RUB stays at 500,000 RUB as the dollar rate moves, and is shown in another
+> currency at that day's Bank of Russia rate. Each receipt carries its own `quoteCurrency`;
+> `priceUsd` is null for a RUB or EUR price. Prices saved before then were all USD and keep that
+> meaning. The USD-only account valuation and valuation history reads leave a RUB or EUR price
+> out (missing, not converted).
+
 Implemented and verified with scoped unit, real PostgreSQL and HTTPS checks.
 See the [verification record](../openspec/changes/archive/2026-09-23-record-manual-usd-prices/verification.md).
 

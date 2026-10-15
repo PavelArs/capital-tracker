@@ -180,7 +180,8 @@ function flowFields(s: Snapshot): Fields {
 }
 function priceFields(s: Snapshot): Fields {
   return [
-    ['Price', usd(s.price)],
+    // AST-MANUAL-VALUE: a hand value in RUB or EUR reads in its own currency.
+    ['Price', s.currency && s.currency !== 'USD' ? quantity(s.price, s.currency) : usd(s.price)],
     ['Price date', moment(s.occurredAt)],
   ];
 }

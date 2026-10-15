@@ -35,15 +35,34 @@ function command(row: Record<string, unknown>) {
     assertReviewed: true as const,
   };
 }
+const QUOTE_CURRENCIES = ['USD', 'EUR', 'RUB'] as const;
+export type PriceCurrency = (typeof QUOTE_CURRENCIES)[number];
+
+/**
+ * A price in USD (`priceUsd`), or in USD, EUR or RUB (`price` with `currency`): a hand value
+ * keeps the currency it was set in (AST-MANUAL-VALUE). The result's `priceUsd` is the stored
+ * price column, in `currency` when one is given.
+ */
 export function parsePriceSet(raw: unknown) {
   const row = object(raw, [
     'requestId',
     'expectedRevision',
     'observedAt',
     'priceUsd',
+    'price',
+    'currency',
     'assertReviewed',
   ]);
-  return { ...command(row), priceUsd: parseDecimal(row.priceUsd, false) };
+  if (row.priceUsd !== undefined) {
+    if (row.price !== undefined || row.currency !== undefined) return bad();
+    return { ...command(row), priceUsd: parseDecimal(row.priceUsd, false) };
+  }
+  if (!QUOTE_CURRENCIES.includes(row.currency as PriceCurrency)) return bad();
+  return {
+    ...command(row),
+    priceUsd: parseDecimal(row.price, false),
+    currency: row.currency as PriceCurrency,
+  };
 }
 export function parsePriceVoid(raw: unknown) {
   return command(object(raw, ['requestId', 'expectedRevision', 'observedAt', 'assertReviewed']));

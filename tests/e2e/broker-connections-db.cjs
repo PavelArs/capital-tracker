@@ -21,7 +21,7 @@ const settings = {
 };
 const database = 'capital_tracker_broker_connections_e2e';
 const servicePath = '/app/backend/dist/brokers/broker-connections.service.js';
-const MIGRATIONS = 66;
+const MIGRATIONS = 67;
 const token = 't.SyntheticToken000000000000000001';
 const replacement = 't.SyntheticToken000000000000000002';
 const brokerAccount = { id: '2000000001', name: 'Synthetic', open: true, access: 'read_only' };

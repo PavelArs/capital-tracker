@@ -69,7 +69,7 @@ function migrate() {
     timeout: 60000,
   });
   assert.equal(result.status, 0, 'Actual guarded migration CLI must succeed');
-  assert.match(result.stdout, /Migrations applied: 66/);
+  assert.match(result.stdout, /Migrations applied: 67/);
 }
 async function fingerprint(db) {
   const tables = await db.query(

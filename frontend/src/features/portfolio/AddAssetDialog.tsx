@@ -27,7 +27,7 @@ import {
   balanceTrade,
   MAX_ACCOUNT_NAME,
   NEW_ACCOUNT,
-  unitPrice,
+  purchasePrice,
 } from './add-asset';
 import { bankRate, MAX_COMMENT_LENGTH } from './add-transaction';
 
@@ -295,7 +295,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             requestId: priceRequest.current,
             expectedRevision: 0,
             observedAt: trade.occurredAt,
-            priceUsd: unitPrice(trade.grossUsd, trade.quantity),
+            ...purchasePrice(trade, asset.valuationCurrency),
             assertReviewed: true,
           });
         } catch {

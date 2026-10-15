@@ -178,6 +178,7 @@ const migrationNames = [
   'AddDepositEvents1797100000000',
   'AddSavingsGoals1797200000000',
   'AddBrokerConnections1797300000000',
+  'AddManualPriceCurrency1797400000000',
 ];
 
 function connection(database) {
@@ -351,7 +352,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly sixty-six migrations',
+      'Exactly sixty-seven migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1419,6 +1420,8 @@ function sessionDeviceAddition(kind, row) {
 // HideAssets1796400000000, AddBankDeposits1796500000000, AddInflation1796700000000 and
 // AddDepositEvents1797100000000, AddSavingsGoals1797200000000 and AddBrokerConnections1797300000000
 // add only tables;
+// AddManualPriceCurrency1797400000000 adds one quoteCurrency column (text, NOT NULL, default 'USD')
+// and its USD, EUR and RUB check to manual_usd_price_versions;
 // DailyDepositInterest1796800000000 only widens a check of a table they add;
 // ClassOfAccount1796900000000 adds one nullable assetClass column and its check to manual_accounts.
 function walletKindAddition(kind, row) {
@@ -1432,6 +1435,15 @@ function walletKindAddition(kind, row) {
     kind === 'constraints' &&
     row.relname === 'manual_accounts' &&
     ['manual_accounts_kind_check', 'manual_accounts_assetClass_check'].includes(row.conname)
+  );
+}
+function manualPriceCurrencyAddition(kind, row) {
+  if (kind === 'columns')
+    return row.table_name === 'manual_usd_price_versions' && row.column_name === 'quoteCurrency';
+  return (
+    kind === 'constraints' &&
+    row.relname === 'manual_usd_price_versions' &&
+    row.conname.includes('quoteCurrency')
   );
 }
 function replacedOriginCheck(kind, row) {
@@ -2280,6 +2292,20 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
         classificationChecks,
       );
     }
+    assert.deepEqual(
+      after.columns
+        .filter((row) => manualPriceCurrencyAddition('columns', row))
+        .map((row) => [row.data_type, row.is_nullable, row.column_default]),
+      [['text', 'NO', "'USD'::text"]],
+      'Prices gain one NOT NULL quoteCurrency column defaulting to USD',
+    );
+    assert.equal(
+      after.constraints.filter(
+        (row) => manualPriceCurrencyAddition('constraints', row) && row.contype === 'c',
+      ).length,
+      1,
+      'Prices gain exactly one quoteCurrency check',
+    );
     for (const [table, rows] of Object.entries(keptBefore.rows)) {
       if (table !== 'migrations') {
         if (table === 'account_trade_journals' && previousCount < 16) {
@@ -2326,6 +2352,17 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
             parsed,
             rows.map(({ row }) => JSON.parse(row)),
             'Every old account column/value remains identical',
+          );
+        } else if (table === 'manual_usd_price_versions') {
+          const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
+          for (const row of parsed) {
+            assert.equal(row.quoteCurrency, 'USD', 'Prior prices stay quoted in USD');
+            delete row.quoteCurrency;
+          }
+          assert.deepEqual(
+            parsed,
+            rows.map(({ row }) => JSON.parse(row)),
+            'Every old manual price column/value remains identical',
           );
         } else if (table === 'owner_mfa') {
           const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
@@ -2439,6 +2476,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797100000000',
           '1797200000000',
           '1797300000000',
+          '1797400000000',
         ][index - 11],
       );
     }
@@ -2460,6 +2498,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           !mfaStreakAddition(kind, row) &&
           !sessionDeviceAddition(kind, row) &&
           !walletKindAddition(kind, row) &&
+          !manualPriceCurrencyAddition(kind, row) &&
           !replacedScopeCheck(kind, row),
       );
       assert.deepEqual(

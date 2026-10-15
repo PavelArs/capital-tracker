@@ -158,7 +158,12 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
     for (const [key, points] of series) {
       const point = latestAtOrBefore(points, at);
       if (point)
-        prices.set(key, { priceUsd: point.price, observedAt: iso(point.at), source: point.source });
+        prices.set(key, {
+          priceUsd: point.price,
+          observedAt: iso(point.at),
+          source: point.source,
+          ...(point.currency ? { currency: point.currency } : {}),
+        });
     }
     return prices;
   };
@@ -240,8 +245,9 @@ async function readSeriesInputs(
     revision: number;
     kind: 'set' | 'void';
     priceUsd: string | null;
+    quoteCurrency: AccountingCurrency;
   }[] = await manager.query(
-    `SELECT "instrumentId","observedAt",revision,kind,"priceUsd"::text AS "priceUsd"
+    `SELECT "instrumentId","observedAt",revision,kind,"priceUsd"::text AS "priceUsd","quoteCurrency"
       FROM manual_usd_price_versions WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
     [owner, priced.map((instrument) => instrument.id)],
   );

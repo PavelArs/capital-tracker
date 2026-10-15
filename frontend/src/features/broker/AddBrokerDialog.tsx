@@ -374,11 +374,15 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
         // A position starts at the price it was entered with; cash is always worth its amount.
         if (asset.priceSource === 'manual' && !step.priced) {
           const trade = step.receipt.trade;
+          // AST-MANUAL-VALUE: a price entered in RUB or EUR stays in it as the dollar moves.
+          const asPaid = trade.paid?.currency === asset.valuationCurrency ? trade.paid : null;
           await manualPricesApi.set(asset.id, {
             requestId: priceRequest,
             expectedRevision: 0,
             observedAt: trade.occurredAt,
-            priceUsd: perUnit(trade.grossUsd, trade.quantity),
+            ...(asPaid
+              ? { price: perUnit(asPaid.gross, trade.quantity), currency: asPaid.currency }
+              : { price: perUnit(trade.grossUsd, trade.quantity), currency: 'USD' as const }),
             assertReviewed: true,
           });
           step.priced = true;

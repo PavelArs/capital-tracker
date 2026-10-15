@@ -1,5 +1,4 @@
 import { accountingApi } from '@api/accounting.api';
-import { cachedReads } from '@api/cached-reads';
 import { manualPricesApi } from '@api/manual-prices.api';
 import {
   type PortfolioAsset,
@@ -13,8 +12,8 @@ import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
-import { unitPrice } from '../portfolio/add-asset';
-import { bankRate, numberProblem } from '../portfolio/add-transaction';
+import { purchasePrice, unitPrice } from '../portfolio/add-asset';
+import { numberProblem } from '../portfolio/add-transaction';
 import CloseButton from '../shell/CloseButton';
 import {
   MAX_PROPERTY_NAME,
@@ -133,26 +132,6 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     setError(null);
     const done = saved.current;
     const estimate = entry.estimate.trim();
-    // Today's estimate is kept in USD: a RUB or EUR one needs today's Bank of Russia rate, so
-    // without it nothing is saved.
-    let perUsd = '1';
-    if (estimate && entry.currency !== 'USD' && done.prices < 2) {
-      const currency = entry.currency;
-      const rate = await cachedReads.rates.load().then(
-        (report) => bankRate(currency, report),
-        () => null,
-      );
-      if (rate === null) {
-        setError(
-          done.asset
-            ? 'The property is saved, but no Bank of Russia rate is stored for today, so its estimate cannot be converted yet. Try again later.'
-            : `No Bank of Russia rate is stored for today yet, so the ${currency} estimate cannot be converted. Nothing was saved; try again later.`,
-        );
-        setSaving(false);
-        return;
-      }
-      perUsd = rate;
-    }
     startedAt.current = now;
     setLocked(true);
     const name = propertyName(entry);
@@ -192,17 +171,18 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     }
     const trade = done.receipt.trade;
     // The whole property's price: what it cost on the purchase day, then today's estimate. One
-    // bought today starts at the estimate.
-    const estimateUsd = estimate ? unitPrice(estimate, perUsd) : null;
+    // bought today starts at the estimate. Both stay in the currency the property is valued in
+    // (AST-MANUAL-VALUE), so an estimate of 9,000,000 RUB stays 9,000,000 RUB.
+    const currency = asset.valuationCurrency;
+    const estimated = estimate ? { price: unitPrice(estimate, '1'), currency } : null;
     const boughtToday = entry.bought === utcDay(now);
     const prices = [
       {
         observedAt: trade.occurredAt,
-        priceUsd:
-          boughtToday && estimateUsd ? estimateUsd : unitPrice(trade.grossUsd, trade.quantity),
+        ...(boughtToday && estimated ? estimated : purchasePrice(trade, currency)),
       },
-      ...(estimateUsd && !boughtToday
-        ? [{ observedAt: `${now.toISOString().slice(0, 19)}Z`, priceUsd: estimateUsd }]
+      ...(estimated && !boughtToday
+        ? [{ observedAt: `${now.toISOString().slice(0, 19)}Z`, ...estimated }]
         : []),
     ];
     try {
