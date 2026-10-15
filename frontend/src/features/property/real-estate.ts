@@ -15,7 +15,8 @@ export interface Property {
   unrealizedReturnPercent: string | null;
 }
 
-// Exact, so a part never shows a cent more than it is worth; any part without a value leaves it unknown.
+// The exact sum of the parts (the formatter rounds only what is shown); any part without a value
+// leaves it unknown.
 const sumOf = (values: readonly (string | null)[]): string | null =>
   values.every((value) => value !== null) ? sumDecimals(values as string[]) : null;
 
@@ -64,12 +65,12 @@ export function shareText(share: number): string {
 export const propertyTotal = (properties: readonly Pick<Property, 'value'>[]) =>
   sumDecimals(properties.flatMap(({ value }) => (value === null ? [] : [value])));
 
-/** The app reminds the owner of an estimate older than two months (v8 accepted defaults). */
+/** The app reminds the owner of an estimate older than 60 days (v8 accepted defaults: two months). */
 export const ESTIMATE_REMINDER_DAYS = 60;
 
 const DAY_MS = 86_400_000;
 
-/** Whether an estimate is more than two months old, counted in Moscow calendar days. */
+/** Whether an estimate is more than 60 days old, counted in Moscow calendar days. */
 export function estimateOverdue(observedAt: string, now: Date): boolean {
   const days = (Date.parse(moscowDate(now)) - Date.parse(moscowDate(observedAt))) / DAY_MS;
   return days > ESTIMATE_REMINDER_DAYS;

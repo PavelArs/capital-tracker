@@ -169,7 +169,7 @@ describe('PROPERTY-LIST Real estate', () => {
     ]);
     await vi.waitFor(() => expect(cards[0]).toHaveTextContent('Bought'));
     expect(cards[0]).toHaveTextContent(
-      'Studio50% yours$46,000.00Whole property$92,000.00Estimate ofAug 1, 2026Over two months oldBoughtSep 1, 2025Paid$42,500.00Gain+$3,500.00 (+8.24%)',
+      'Studio50% yours$46,000.00Whole property$92,000.00Estimate ofAug 1, 2026Over 60 days oldBoughtSep 1, 2025Paid$42,500.00Gain+$3,500.00 (+8.24%)',
     );
     expect(cards[1]).toHaveTextContent(
       'LandFully yours$15,000.00Estimate ofOct 12, 2026Paid$16,000.00Gain-$1,000.00 (-6.25%)',
@@ -283,15 +283,15 @@ describe('PROPERTY-LIST Real estate', () => {
       vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(studioAt(observedAt));
       renderPage();
       const [card] = within(await screen.findByRole('list')).getAllByRole('link');
-      return within(card).queryByText('Over two months old');
+      return within(card).queryByText('Over 60 days old');
     };
-    // Sep 30, 23:59 in Moscow: 60 days after Aug 1, not yet over two months.
+    // Sep 30, 23:59 in Moscow: 60 days after Aug 1, not yet over 60 days.
     expect(await badge('2026-09-30T20:59:00Z', '2026-07-31T21:30:00.000Z')).toBeNull();
     // Oct 1, 00:00 in Moscow: 61 days.
     const warned = await badge('2026-09-30T21:00:00Z', '2026-07-31T21:30:00.000Z');
     expect(warned).toHaveClass('ui-badge', 'ui-badge--warn');
     expect(screen.getByRole('link', { name: /Studio/ })).toHaveTextContent(
-      'Estimate ofAug 1, 2026Over two months old',
+      'Estimate ofAug 1, 2026Over 60 days old',
     );
     expect(await badge('2026-09-30T21:00:00Z', '2026-08-02T00:00:00.000Z')).toBeNull();
   });

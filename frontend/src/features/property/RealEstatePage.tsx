@@ -69,7 +69,7 @@ function Card({
               {estimated ? day(estimated) : '—'}
               {estimated && estimateOverdue(estimated, new Date()) && (
                 <Badge tone="warn" className="property-card__badge">
-                  Over two months old
+                  Over 60 days old
                 </Badge>
               )}
             </dd>

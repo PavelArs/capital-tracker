@@ -25,7 +25,7 @@ const holding = (accountId: string, value: string | null) => ({
 });
 
 describe('PROPERTY-LIST real estate figures', () => {
-  it('classes-03 sums the part held in property accounts exactly, never rounded up', () => {
+  it('classes-03 sums the part held in property accounts exactly; only the display rounds', () => {
     const value = (values: (string | null)[]) =>
       propertiesOf(
         portfolio([asset([...values.map((item) => holding(house, item)), holding(safe, '7')])]),
