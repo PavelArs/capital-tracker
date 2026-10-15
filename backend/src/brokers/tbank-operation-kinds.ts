@@ -34,6 +34,8 @@ const types: Record<Exclude<OperationKind, 'unsupported'>, string[]> = {
     'OUTPUT_PENALTY',
     'ADVICE_FEE',
     'OVER_COM',
+    // Other fees, named in T-Bank's published method docs.
+    'OTHER_FEE',
   ],
   // Withheld or refunded tax; a refund or correction carries a positive payment.
   tax: [
