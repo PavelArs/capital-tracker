@@ -2585,6 +2585,34 @@ describe('UI audit: Wallets', () => {
     );
   });
 
+  it("wallets-07 still shows a new wallet's address when the page cannot reload after adding it", async () => {
+    setup([]);
+    const added = wallet(3, {
+      address: addresses.fresh,
+      accountId: id(12),
+      label: null,
+      transactionCount: 0,
+      chainBalance: null,
+      sync: { ...wallet(3, {}).sync, state: 'never', completedAt: null },
+    });
+    vi.spyOn(walletAddressesApi, 'add').mockImplementation(async () => {
+      vi.mocked(walletAddressesApi.list).mockRejectedValue(new Error('offline'));
+      return { created: true, address: added };
+    });
+    vi.spyOn(walletAddressesApi, 'sync').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    await user.type(within(dialog).getByLabelText('Bitcoin wallet address'), addresses.fresh);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText(/^Wallet/), 'Ledger');
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The address the server saved stays on the page until a reload can place it in its wallet.
+    expect(
+      await screen.findByRole('button', { name: new RegExp(addresses.fresh) }),
+    ).toBeInTheDocument();
+  });
+
   it('wallets-08 offers to connect the Bybit API from a Bybit wallet tracked by hand', async () => {
     const bybit = id(13);
     const valuation = portfolio();

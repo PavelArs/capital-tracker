@@ -307,8 +307,11 @@ export default function WalletsPage() {
                   ? `Added to ${wallet.name}. Syncing transactions…`
                   : 'Wallet added. Syncing transactions…',
               );
-            if (address.accountId && !wallet) await load(true);
-            else {
+            if (address.accountId && !wallet) {
+              // A reload that fails leaves the saved address on the page rather than nothing.
+              await load(true);
+              replace(address);
+            } else {
               replace(address);
               void load(true);
             }
