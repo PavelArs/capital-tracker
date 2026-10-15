@@ -652,8 +652,9 @@ export default function AssetPage() {
       try {
         setPortfolio(await cachedReads.portfolio.load(asked));
       } catch {
-        if (quiet) setRefreshFailed(true);
-        else if (!kept) setFailed(true);
+        // With an answer on screen (kept or quiet) the page stays and says it is not refreshed.
+        if (quiet || kept) setRefreshFailed(true);
+        else setFailed(true);
       }
     },
     [asked],

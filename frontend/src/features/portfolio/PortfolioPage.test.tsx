@@ -2533,6 +2533,22 @@ describe('CACHE-UI coming back to a page shows the last answer at once', () => {
     expect(screen.getByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
   });
 
+  it('portfolio-refresh the asset page says so when its first load fails behind a kept answer', async () => {
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([bitcoin]))
+      .mockRejectedValueOnce(httpError(500));
+    const first = renderAt('/portfolio');
+    expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    first.unmount();
+
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.map((alert) => alert.textContent).join(' ')).toMatch(
+      /could not refresh the values/i,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: /Bitcoin/ })).toBeInTheDocument();
+  });
+
   it('does not paint another currency or anything older than a change by the owner', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     const first = renderAt('/portfolio');
