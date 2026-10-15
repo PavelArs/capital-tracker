@@ -1,10 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { BrokerConnectionsService } from './broker-connections.service';
+import { BrokerImportService } from './broker-import.service';
 
 @Controller('brokers/:accountId/connection')
 export class BrokerConnectionsController {
-  constructor(private readonly connections: BrokerConnectionsService) {}
+  constructor(
+    private readonly connections: BrokerConnectionsService,
+    private readonly imports: BrokerImportService,
+  ) {}
 
   @Get()
   read(@CurrentUser() owner: OwnerIdentity, @Param('accountId') accountId: string) {
@@ -23,7 +28,19 @@ export class BrokerConnectionsController {
 
   @Get('import-preview')
   importPreview(@CurrentUser() owner: OwnerIdentity, @Param('accountId') accountId: string) {
-    return this.connections.importPreview(owner.userId, accountId);
+    return this.imports.preview(owner.userId, accountId);
+  }
+
+  @Post('import')
+  async import(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('accountId') accountId: string,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.imports.import(owner.userId, accountId, body);
+    response.status(result.created ? 201 : 200);
+    return result.value;
   }
 
   @Post('check')
