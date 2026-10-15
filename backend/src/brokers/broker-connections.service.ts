@@ -5,7 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
-import { rewardHeadJoin } from '../accounting/asset-reward.store';
+import { REWARD_LIMITS, readRewardCounts, rewardHeadJoin } from '../accounting/asset-reward.store';
 import { swapHeadJoin } from '../accounting/asset-swap.store';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
@@ -166,8 +166,16 @@ export class BrokerConnectionsService {
     const { token, target } = await this.savedConnection(ownerId, accountId);
     const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
     if (!result.ok) throw savedTokenFailure(result.reason);
-    const held = await this.holdsEntries(parseUuid(ownerId), parseUuid(accountId));
-    return { ...planImport(result.value), accountHasEntries: held };
+    const owner = parseUuid(ownerId);
+    const held = await this.holdsEntries(owner, parseUuid(accountId));
+    const plan = planImport(result.value);
+    // The reward journal's caps hold across all the owner's accounts, not only this one.
+    const elsewhere = await readRewardCounts(this.source.manager, owner);
+    const fitsRewardLimit =
+      plan.fitsRewardLimit &&
+      elsewhere.activeCount + plan.rewards <= REWARD_LIMITS.activeRewards &&
+      elsewhere.versionCount + plan.rewards <= REWARD_LIMITS.versions;
+    return { ...plan, fitsRewardLimit, accountHasEntries: held };
   }
 
   /**

@@ -211,6 +211,58 @@ async function voidedTransferPreview(db, service, owner, instrument) {
   console.log('PASS BROKER-SYNC-PREVIEW-VOIDED');
 }
 
+async function rewardRoomPreview(db, service, owner, instrument, history) {
+  stage = "the import preview counts the owner's rewards in other accounts";
+  const { AssetRewardService } = require('/app/backend/dist/accounting/asset-reward.service.js');
+  const broker = await account(db, owner, 'broker');
+  const elsewhere = await account(db, owner, null);
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  // 1000 synthetic dividends: exactly what one account's reward journal keeps.
+  for (let index = 0; index < 1000; index += 1)
+    history.push({
+      id: String(700000000 + index),
+      parentId: '',
+      type: 'OPERATION_TYPE_DIVIDEND',
+      state: 'executed',
+      occurredAt: '2025-02-01T10:00:00Z',
+      instrumentUid: '00000000-0000-4000-8000-000000000001',
+      instrumentType: 'share',
+      ticker: 'SYNTH',
+      quantity: '0',
+      payment: '1',
+      paymentCurrency: 'rub',
+      price: '',
+      priceCurrency: '',
+      commission: '',
+      commissionCurrency: '',
+      fills: [],
+    });
+  try {
+    const before = await service.importPreview(owner, broker);
+    assert.deepEqual([before.rewards, before.fitsRewardLimit], [1000, true]);
+    await new AssetRewardService(db).create(owner, elsewhere, {
+      requestId: randomUUID(),
+      expectedJournalRevision: 0,
+      assertReward: true,
+      instrumentId: instrument,
+      category: 'staking',
+      occurredAt: '2025-01-02T00:00:00.000Z',
+      orderWithinTimestamp: 0,
+      quantity: '2',
+      acquisitionBasisUsd: '0',
+      incomeValueUsd: '0',
+    });
+    assert.equal(
+      (await service.importPreview(owner, broker)).fitsRewardLimit,
+      false,
+      'One reward elsewhere leaves room for 999, not 1000',
+    );
+  } finally {
+    history.length = 0;
+  }
+  console.log('PASS BROKER-SYNC-PREVIEW-REWARD-ROOM');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -257,15 +309,17 @@ async function main() {
     const box = new TBankTokenBox(
       new ConfigService({ MFA_KEY_FILE: join(directory, 'key'), MFA_KEY_ID: 'probe-key' }),
     );
+    const history = [];
     const tbank = {
       accounts: async () => ({ ok: true, value: [brokerAccount] }),
-      operations: async () => ({ ok: true, value: [] }),
+      operations: async () => ({ ok: true, value: history }),
     };
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
     await removal(db, service, owner.id);
     const instrument = await heldPreview(db, service, owner.id);
     await voidedTransferPreview(db, service, owner.id, instrument);
+    await rewardRoomPreview(db, service, owner.id, instrument, history);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });
