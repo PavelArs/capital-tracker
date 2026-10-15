@@ -67,6 +67,35 @@ describe('goals service', () => {
     ]);
   });
 
+  it('GOAL-CHART dates the forecast and the goals by the instant the portfolio was valued at', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-30T20:59:59.000Z') });
+    try {
+      const goals = service();
+      const seen: Date[] = [];
+      (goals as unknown as { snapshots: { current: unknown } }).snapshots.current = async (
+        _owner: string,
+        _currency: string,
+        at: Date = new Date(),
+      ) => {
+        seen.push(at);
+        // Moscow midnight passes while the portfolio is read.
+        jest.setSystemTime(new Date('2026-10-30T21:00:01.000Z'));
+        return { value: '5000.00', complete: true };
+      };
+      expect((await goals.forecast(owner, row.id)).asOf).toBe('2026-10-30');
+      jest.setSystemTime(new Date('2026-10-30T20:59:59.000Z'));
+      const list = await goals.list(owner);
+      expect(list.asOf).toBe('2026-10-30');
+      expect(list.items[0].asOf).toBe('2026-10-30');
+      expect(seen.map((at) => at.toISOString())).toEqual([
+        '2026-10-30T20:59:59.000Z',
+        '2026-10-30T20:59:59.000Z',
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('GOAL-PREVIEW refuses a date that is not ahead, as saving would', async () => {
     await expect(
       service().preview(owner, {

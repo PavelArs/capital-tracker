@@ -248,6 +248,28 @@ describe('GOAL-CHART goal chart', () => {
     expect(firstY('.goal-chart__forecast')).toBeGreaterThan(firstY('.goal-chart__line', true) ?? 0);
   });
 
+  it('puts today on the forecast day when the forecast was made after Moscow midnight', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({
+      ...forecast,
+      asOf: '2026-10-14',
+      points: [
+        {
+          on: '2026-10-14',
+          pessimistic: '5500000.00',
+          base: '5500000.00',
+          optimistic: '5500000.00',
+        },
+        ...forecast.points.slice(1),
+      ],
+    });
+    const chart = await show();
+    await within(chart).findByText('Today');
+    const today = chart.querySelector('.goal-chart__today')?.getAttribute('x1');
+    const origin = chart.querySelector('circle.goal-chart__dot')?.getAttribute('cx');
+    expect(Number(today)).toBeCloseTo(Number(origin), 1);
+  });
+
   it('leaves the forecast out while an asset has no price, and says why', async () => {
     vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
     vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
