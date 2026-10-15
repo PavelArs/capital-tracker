@@ -24,6 +24,7 @@ interface Past {
   value: number;
   text: string;
   invested: string | null;
+  complete: boolean;
 }
 
 interface Ahead {
@@ -90,7 +91,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     return () => observer.disconnect();
   }, [box]);
 
-  const known = goal.progress.complete;
+  // The server also leaves the forecast out when its own reading of the value is incomplete.
+  const known = goal.progress.complete && forecast?.complete !== false;
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
   const low = goal.scenarios.find((scenario) => scenario.key === 'pessimistic');
   const high = goal.scenarios.find((scenario) => scenario.key === 'optimistic');
@@ -110,6 +112,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
             value: Number(point.value),
             text: point.value,
             invested: point.invested,
+            complete: point.complete,
           },
         ],
   );
@@ -164,7 +167,11 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     ),
   ];
   let top = Math.max(...topOf.filter(Number.isFinite)) * 1.1 || 1;
-  let bottom = Math.min(0, ...past.map((entry) => entry.value));
+  let bottom = Math.min(
+    0,
+    ...past.map((entry) => entry.value),
+    ...past.map((entry) => Number(entry.invested ?? 0)),
+  );
   const step = niceStep((top - bottom) / 4);
   top = Math.ceil(top / step) * step;
   bottom = Math.floor(bottom / step) * step;
@@ -410,6 +417,17 @@ export default function GoalChart({ goal }: { goal: Goal }) {
               </text>
             </>
           )}
+          {past
+            .filter((entry) => !entry.complete)
+            .map((entry) => (
+              <circle
+                key={entry.time}
+                cx={x(entry.time)}
+                cy={y(entry.value)}
+                r={2.5}
+                className="goal-chart__incomplete"
+              />
+            ))}
           {origin && <circle cx={origin[0]} cy={origin[1]} r={4.5} className="goal-chart__dot" />}
           {current && (
             <g>
@@ -450,6 +468,9 @@ export default function GoalChart({ goal }: { goal: Goal }) {
                   <span>Of the sum</span>
                   <span>{share(current.value)}</span>
                 </div>
+                {!current.complete && (
+                  <div className="goal-tip__note">Incomplete: an asset had no price or rate</div>
+                )}
               </>
             ) : (
               <>
@@ -486,6 +507,14 @@ export default function GoalChart({ goal }: { goal: Goal }) {
               reloadForecast(true);
             }}
           >
+            Try again
+          </button>
+        </div>
+      )}
+      {historyError !== null && history === null && (
+        <div className="ui-banner ui-banner--warn goal-chart__note" role="alert">
+          <p>Could not load the portfolio history, so only the forecast is drawn.</p>
+          <button type="button" className="shell-button" onClick={() => reloadHistory()}>
             Try again
           </button>
         </div>

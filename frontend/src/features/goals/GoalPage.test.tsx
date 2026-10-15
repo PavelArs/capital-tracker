@@ -97,6 +97,7 @@ beforeEach(() => {
   vi.spyOn(goalsApi, 'forecast').mockResolvedValue({
     currency: 'RUB',
     asOf: '2026-10-13',
+    complete: true,
     points: [],
   });
   vi.spyOn(portfolioHistoryApi, 'get').mockRejectedValue(new Error('not read here'));

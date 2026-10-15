@@ -83,6 +83,7 @@ describe('goals service', () => {
     const goal = await goals.get(owner, row.id);
     const forecast = await goals.forecast(owner, row.id);
     expect(forecast.currency).toBe('USD');
+    expect(forecast.complete).toBe(true);
     expect(forecast.points[0].base).toBe('5000.00');
     expect(forecast.points.at(-1)?.base).toBe(goal.scenarios[1].projectedAtDeadline);
   });
