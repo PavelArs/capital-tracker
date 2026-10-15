@@ -111,6 +111,16 @@
   margin-top: 0;
 }
 
+/* A button kept focusable while it cannot act (aria-disabled, wallets-02) looks disabled. */
+.shell-button[aria-disabled="true"] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.shell-button[aria-disabled="true"]:hover {
+  border-color: var(--line-strong);
+}
+
 .shell-page__head .shell-button {
   margin-top: 0;
 }
