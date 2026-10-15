@@ -98,7 +98,7 @@ const sources = `
           ORDER BY v.revision) = 1 THEN 'created' ELSE 'changed' END,
       v."createdAt", v."observedAt", NULL, 'owner',
       jsonb_build_object('asset', ${symbol('i')}, 'price', v."priceUsd"::text,
-        'occurredAt', ${iso('v."observedAt"')})
+        'currency', v."quoteCurrency", 'occurredAt', ${iso('v."observedAt"')})
     FROM manual_usd_price_versions v
     JOIN accounting_instruments i ON i."ownerId" = v."ownerId" AND i.id = v."instrumentId"
     WHERE v."ownerId" = $1

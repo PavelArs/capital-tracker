@@ -23,8 +23,12 @@ export class ManualUsdPriceVersion {
   @Column({ type: 'timestamptz', precision: 3 })
   observedAt!: Date;
 
+  /** The price in `quoteCurrency`; the column name predates hand values in RUB and EUR. */
   @Column({ type: 'numeric', precision: 78, scale: 30, nullable: true })
   priceUsd!: string | null;
+
+  @Column({ type: 'text', default: 'USD' })
+  quoteCurrency!: 'USD' | 'EUR' | 'RUB';
 
   @Column({ type: 'timestamptz', precision: 3, default: () => 'clock_timestamp()' })
   createdAt!: Date;

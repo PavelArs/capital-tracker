@@ -8,7 +8,6 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { unitPrice } from '../portfolio/add-asset';
 import AddPropertyDialog from './AddPropertyDialog';
 
 // Synthetic names, ids and amounts only.
@@ -40,11 +39,31 @@ const refused = (status: number) =>
     headers: {},
     config: { headers: new AxiosHeaders() },
   });
-const receipt = (quantity: string, grossUsd: string, occurredAt: string) =>
+// The server's receipt keeps a ruble or euro purchase as paid next to its USD amount.
+const receipt = (
+  quantity: string,
+  grossUsd: string,
+  occurredAt: string,
+  paid?: { currency: 'RUB' | 'EUR'; gross: string; fee: string },
+) =>
   ({
     accountId: id(2),
     journalRevision: 1,
-    trade: { quantity, grossUsd, occurredAt },
+    trade: {
+      quantity,
+      grossUsd,
+      occurredAt,
+      ...(paid
+        ? {
+            paid: {
+              ...paid,
+              rateDate: occurredAt.slice(0, 10),
+              perUsd: '90.12',
+              rateSource: 'bank-of-russia',
+            },
+          }
+        : {}),
+    },
   }) as TradeReceipt;
 
 let createAccount: Mock<typeof accountingApi.createAccount>;
@@ -67,10 +86,19 @@ beforeEach(() => {
     createdAt: '2026-10-12T15:42:31Z',
   }));
   vi.spyOn(accountingApi, 'createAccount').mockImplementation(createAccount);
-  createAsset = vi.fn<typeof portfolioAssetsApi.create>(async () => asset);
+  // The server keeps the currency the asset is valued in, as asked.
+  createAsset = vi.fn<typeof portfolioAssetsApi.create>(async (input) => ({
+    ...asset,
+    valuationCurrency: input.valuationCurrency ?? 'USD',
+  }));
   vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(createAsset);
   createTrade = vi.fn<typeof tradesApi.create>(async (_account, command) =>
-    receipt(command.quantity, '47159.34', command.occurredAt),
+    receipt(
+      command.quantity,
+      '47159.34',
+      command.occurredAt,
+      'paid' in command ? command.paid : undefined,
+    ),
   );
   vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
   setPrice = vi.fn<typeof manualPricesApi.set>(async () => ({}) as PriceReceipt);
@@ -142,7 +170,8 @@ describe('PROPERTY-ADD Add property', () => {
       quantity: '0.5',
       paid: { currency: 'RUB', gross: '4250000', fee: '0' },
     });
-    // The whole property's price: what it cost on that day, then the estimate at today's rate.
+    // AST-MANUAL-VALUE: the whole property's price in rubles, as entered: what it cost on that
+    // day, then the estimate. No dollar rate turns it into a figure that drifts.
     expect(setPrice.mock.calls).toEqual([
       [
         id(1),
@@ -150,7 +179,8 @@ describe('PROPERTY-ADD Add property', () => {
           requestId: expect.any(String),
           expectedRevision: 0,
           observedAt: '2025-09-01T00:00:00.000Z',
-          priceUsd: unitPrice('47159.34', '0.5'),
+          price: '8500000',
+          currency: 'RUB',
           assertReviewed: true,
         },
       ],
@@ -160,7 +190,8 @@ describe('PROPERTY-ADD Add property', () => {
           requestId: expect.any(String),
           expectedRevision: 1,
           observedAt: '2026-10-12T15:42:31Z',
-          priceUsd: unitPrice('9200000', '90.12'),
+          price: '9200000',
+          currency: 'RUB',
           assertReviewed: true,
         },
       ],
@@ -188,7 +219,8 @@ describe('PROPERTY-ADD Add property', () => {
     expect(setPrice.mock.calls[0][1]).toMatchObject({
       expectedRevision: 0,
       observedAt: '2026-10-12T15:42:00.000Z',
-      priceUsd: '31000',
+      price: '31000',
+      currency: 'USD',
     });
     expect(onAdded).toHaveBeenCalled();
   });
@@ -205,41 +237,20 @@ describe('PROPERTY-ADD Add property', () => {
     expect(createAccount).not.toHaveBeenCalled();
   });
 
-  it('saves nothing when a ruble estimate has no Bank of Russia rate for today', async () => {
+  it('AST-MANUAL-VALUE keeps a ruble estimate in rubles, with no rate of the day needed', async () => {
     vi.mocked(fxRatesApi.get).mockResolvedValue(rates(null));
     const user = userEvent.setup();
-    const { dialog } = open();
+    const { dialog, onAdded } = open();
     await fill(user, dialog, {
       'Purchase price': '8500000',
       'What it is worth now (optional)': '9200000',
     });
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'No Bank of Russia rate is stored for today yet, so the RUB estimate cannot be converted. Nothing was saved',
-    );
-    expect(createAccount).not.toHaveBeenCalled();
-  });
-
-  it('locks every field while the rate for a ruble estimate is on its way', async () => {
-    // Codex P2: an edit made during the lookup would be shown but not saved.
-    let answer: (report: FxRatesReport) => void = () => {};
-    vi.mocked(fxRatesApi.get).mockImplementation(
-      () => new Promise((resolve) => (answer = resolve)),
-    );
-    const user = userEvent.setup();
-    const { dialog } = open();
-    await fill(user, dialog, {
-      'Purchase price': '8500000',
-      'What it is worth now (optional)': '9200000',
-    });
-    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
-    expect(within(dialog).getByLabelText('Purchase price')).toBeDisabled();
-    expect(within(dialog).getByLabelText('What it is worth now (optional)')).toBeDisabled();
-    answer(rates(null));
-    await within(dialog).findByRole('alert');
-    // Nothing was saved, so the fields can be changed again.
-    expect(within(dialog).getByLabelText('Purchase price')).toBeEnabled();
-    expect(createAccount).not.toHaveBeenCalled();
+    expect(setPrice.mock.calls.map(([, command]) => [command.price, command.currency])).toEqual([
+      ['9200000', 'RUB'],
+    ]);
+    expect(fxRatesApi.get).not.toHaveBeenCalled();
+    expect(onAdded).toHaveBeenCalledWith(asset);
   });
 
   it('retries only what is missing, under the same requests', async () => {

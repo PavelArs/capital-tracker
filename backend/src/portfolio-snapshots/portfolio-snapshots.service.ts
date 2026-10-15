@@ -158,7 +158,12 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
     for (const [key, points] of series) {
       const point = latestAtOrBefore(points, at);
       if (point)
-        prices.set(key, { priceUsd: point.price, observedAt: iso(point.at), source: point.source });
+        prices.set(key, {
+          priceUsd: point.price,
+          observedAt: iso(point.at),
+          source: point.source,
+          ...(point.currency ? { currency: point.currency } : {}),
+        });
     }
     return prices;
   };
@@ -184,9 +189,10 @@ function valuesAt(
       undefined,
       depositValuesAt(valuation.deposits, instant, fx),
     );
-    // Without a rate the value in that currency is unknown, not a smaller sum. Prices are in
-    // dollars, so only a held asset needs the dollar rate: deposits state their own, and one
-    // without it is counted as unrated.
+    // Without a rate the value in that currency is unknown, not a smaller sum. Market prices are
+    // in dollars, so a held asset needs the dollar rate; a hand value in RUB or EUR may not, but
+    // asking for it anyway only leaves the point missing, never worth more. Deposits state their
+    // own rate, and one without it is counted as unrated.
     const rated =
       report.assets.every((asset) => asset.value === '0') ||
       fx.available('USD', moscowDate(instant));
@@ -240,8 +246,9 @@ async function readSeriesInputs(
     revision: number;
     kind: 'set' | 'void';
     priceUsd: string | null;
+    quoteCurrency: AccountingCurrency;
   }[] = await manager.query(
-    `SELECT "instrumentId","observedAt",revision,kind,"priceUsd"::text AS "priceUsd"
+    `SELECT "instrumentId","observedAt",revision,kind,"priceUsd"::text AS "priceUsd","quoteCurrency"
       FROM manual_usd_price_versions WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
     [owner, priced.map((instrument) => instrument.id)],
   );
@@ -461,6 +468,23 @@ export class PortfolioSnapshotsService {
           : await this.realProfits(manager, owner, currency, current, flows, now),
         points,
       };
+    });
+  }
+
+  /**
+   * The portfolio's value now in one currency, read the way `history` closes its period but
+   * without refreshing the stored snapshots, so a frequent read stays cheap.
+   */
+  async current(ownerId: string, currency: AccountingCurrency, now = new Date()) {
+    const owner = parseUuid(ownerId);
+    if (!isAccountingCurrency(currency)) throw invalid();
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const valuation = await readValuationInputs(manager, owner);
+      const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
+      const fx = new FxConverter(await readFxRates(manager), currency);
+      const [value] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      return { value: value.value, complete: value.complete };
     });
   }
 

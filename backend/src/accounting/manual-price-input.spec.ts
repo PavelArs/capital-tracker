@@ -57,6 +57,27 @@ describe('PRICE-EXACT / BOUND strict manual price commands', () => {
   ])('rejects invalid or unreviewed input %p', (changes) => {
     expect(() => parsePriceSet({ ...base, ...changes })).toThrow(BadRequestException);
   });
+  it('AST-MANUAL-VALUE takes a hand value in USD, EUR or RUB with its currency', () => {
+    const { priceUsd: _price, ...rest } = base;
+    for (const currency of ['USD', 'EUR', 'RUB'])
+      expect(parsePriceSet({ ...rest, price: '500000.00', currency })).toEqual({
+        ...rest,
+        observedAt: '2025-01-01T00:00:00.000Z',
+        priceUsd: '500000',
+        currency,
+      });
+  });
+  it.each([{ price: '1', currency: 'RUB' }, { currency: 'RUB' }, { price: '1' }])(
+    'AST-MANUAL-VALUE refuses a USD price mixed with a currency, or half a pair %p',
+    (changes) => {
+      expect(() => parsePriceSet({ ...base, ...changes })).toThrow(BadRequestException);
+    },
+  );
+  it.each(['GBP', 'rub', null, 1])('AST-MANUAL-VALUE refuses the currency %p', (currency) => {
+    const { priceUsd: _price, ...rest } = base;
+    expect(() => parsePriceSet({ ...rest, price: '1', currency })).toThrow(BadRequestException);
+    expect(() => parsePriceSet({ ...rest, currency })).toThrow(BadRequestException);
+  });
   it('accepts cap revision so an original command can be checked for replay', () => {
     expect(parsePriceSet({ ...base, expectedRevision: 10000 }).expectedRevision).toBe(10000);
   });

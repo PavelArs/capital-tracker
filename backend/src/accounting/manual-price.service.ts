@@ -4,29 +4,38 @@ import type { ManualUsdPriceVersion } from '../entities/manual-usd-price-version
 import { parseDecimal, parseUuid } from './input';
 import {
   MAX_PRICE_VERSIONS,
+  type PriceCurrency,
   parsePriceHistoryQuery,
   parsePricePageQuery,
   parsePriceSet,
   parsePriceVoid,
 } from './manual-price-input';
 
-const provenance = { source: 'manual' as const, quoteCurrency: 'USD' as const };
 const conflict = () => new ConflictException('Manual price request conflicts with saved state');
 type Command = ReturnType<typeof parsePriceVoid> & {
   kind: 'set' | 'void';
+  /** The price in `currency` (USD when absent), as the stored column holds it. */
   priceUsd: string | null;
+  currency?: PriceCurrency;
 };
 
+/**
+ * AST-MANUAL-VALUE: each price carries the currency it was set in. `price` is in
+ * `quoteCurrency`; `priceUsd` repeats it for a USD price and is null otherwise.
+ */
 function receipt(row: ManualUsdPriceVersion) {
+  const price = row.priceUsd === null ? null : parseDecimal(row.priceUsd, false);
   return {
     instrumentId: row.instrumentId,
     revision: row.revision,
     requestId: row.requestId,
     kind: row.kind,
     observedAt: row.observedAt.toISOString(),
-    priceUsd: row.priceUsd === null ? null : parseDecimal(row.priceUsd, false),
+    priceUsd: row.quoteCurrency === 'USD' ? price : null,
+    price,
     createdAt: row.createdAt.toISOString(),
-    ...provenance,
+    source: 'manual' as const,
+    quoteCurrency: row.quoteCurrency,
   };
 }
 
@@ -50,11 +59,14 @@ export class ManualPriceService {
   }
 
   private write(owner: string, id: string, input: Command) {
+    const currency = input.currency ?? 'USD';
+    // A USD price reads as it did before prices had a currency, so a replay matches either form.
     const canonicalPayload = JSON.stringify({
       kind: input.kind,
       expectedRevision: input.expectedRevision,
       observedAt: input.observedAt,
       priceUsd: input.priceUsd,
+      ...(currency === 'USD' ? {} : { currency }),
     });
     return this.source.transaction('READ COMMITTED', async (manager) => {
       await this.instrument(manager, owner, id, true);
@@ -77,8 +89,8 @@ export class ManualPriceService {
       }
       const [row]: ManualUsdPriceVersion[] = await manager.query(
         `INSERT INTO manual_usd_price_versions
-          ("ownerId","instrumentId",revision,"requestId","canonicalPayload",kind,"observedAt","priceUsd")
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          ("ownerId","instrumentId",revision,"requestId","canonicalPayload",kind,"observedAt","priceUsd","quoteCurrency")
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
           owner,
           id,
@@ -88,6 +100,7 @@ export class ManualPriceService {
           input.kind,
           input.observedAt,
           input.priceUsd,
+          currency,
         ],
       );
       return { created: true, value: receipt(row) };
@@ -112,7 +125,7 @@ export class ManualPriceService {
       return {
         instrument,
         currentRevision,
-        ...provenance,
+        ...(await this.provenance(manager, owner, id)),
         items: rows.slice(0, input.limit).map(receipt),
         nextOffset: rows.length > input.limit ? input.offset + input.limit : null,
       };
@@ -141,7 +154,7 @@ export class ManualPriceService {
       return {
         instrumentId: id,
         observedAt: input.observedAt,
-        ...provenance,
+        ...(await this.provenance(manager, owner, id)),
         items,
         nextBeforeRevision: rows.length > input.limit ? items[items.length - 1].revision : null,
       };
@@ -156,6 +169,15 @@ export class ManualPriceService {
       );
     if (!instrument) throw new NotFoundException();
     return instrument;
+  }
+
+  /** The currency the owner values the asset in; each price states its own `quoteCurrency`. */
+  private async provenance(manager: EntityManager, owner: string, id: string) {
+    const [row]: { valuationCurrency: PriceCurrency }[] = await manager.query(
+      'SELECT "valuationCurrency" FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
+      [owner, id],
+    );
+    return { source: 'manual' as const, quoteCurrency: row.valuationCurrency };
   }
 
   private async revision(manager: EntityManager, owner: string, id: string): Promise<number> {

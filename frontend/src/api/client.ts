@@ -8,6 +8,8 @@ declare module 'axios' {
   interface AxiosRequestConfig {
     /** Set on the one repeat of a read that timed out or met a gateway error. */
     retried?: boolean;
+    /** A POST that only reads (its body keeps private terms out of URLs): kept answers stay. */
+    changesNothing?: boolean;
   }
 }
 
@@ -108,7 +110,7 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     // A change by the owner (or a sign-in or sign-out) makes every kept answer old.
-    if (isUnsafeRequest(response.config)) forgetReads();
+    if (isUnsafeRequest(response.config) && !response.config.changesNothing) forgetReads();
     return response;
   },
   async (error: AxiosError<ApiError>) => {

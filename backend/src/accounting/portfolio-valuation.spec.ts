@@ -7,6 +7,7 @@ import {
   type PortfolioPrices,
   portfolioAccount,
   projectPortfolio,
+  resolvePrice,
   type StoredPrice,
   withoutAssets,
 } from './portfolio-valuation';
@@ -674,5 +675,70 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
       bank(1, 'First Bank', worth(3_000)),
     ]);
     expect(result).toMatchObject({ totalValue: '3000', depositsValue: '3000' });
+  });
+});
+
+describe('AST-MANUAL-VALUE a hand value keeps the currency it was set in', () => {
+  const flat = instrument(20, 'Flat', null, {
+    assetType: 'manual',
+    valuationCurrency: 'RUB',
+    priceSource: 'manual',
+  });
+  const set = (priceUsd: string, currency?: StoredPrice['currency']): PortfolioPrices => ({
+    market: new Map(),
+    manual: new Map([
+      [flat.id, { priceUsd, observedAt: '2026-10-02T09:00:00.000Z', source: 'manual', currency }],
+    ]),
+  });
+  const rates = (report: 'RUB' | 'USD') =>
+    new FxConverter(
+      {
+        USD: [
+          { date: '2026-10-02', rubPerUnit: '80' },
+          { date: '2026-10-04', rubPerUnit: '100' },
+        ],
+        EUR: [],
+      },
+      report,
+    );
+
+  it('reads 500,000 RUB as 500,000 RUB whatever the dollar rate of the day', () => {
+    const day = (at: string) =>
+      resolvePrice(flat, set('500000', 'RUB'), new Date(at), rates('RUB')).price?.value;
+    expect(day('2026-10-02T12:00:00.000Z')).toBe('500000');
+    expect(day('2026-10-04T12:00:00.000Z')).toBe('500000');
+  });
+
+  it('states it in dollars at the rate of each day', () => {
+    const usdOn = (at: string) =>
+      resolvePrice(flat, set('500000', 'RUB'), new Date(at), rates('USD')).price?.value;
+    expect(usdOn('2026-10-02T12:00:00.000Z')).toBe('6250');
+    expect(usdOn('2026-10-04T12:00:00.000Z')).toBe('5000');
+  });
+
+  it('keeps reading a price stored before quote currencies as dollars', () => {
+    const legacy = resolvePrice(flat, set('6250'), now, rates('RUB')).price?.value;
+    expect(legacy).toBe('625000');
+  });
+
+  it('is missing, not zero, without the rate of the day', () => {
+    const noRate = new FxConverter({ USD: [], EUR: [] }, 'USD');
+    expect(resolvePrice(flat, set('500000', 'RUB'), now, noRate)).toEqual({
+      price: null,
+      missingPrice: 'no-rate',
+    });
+  });
+
+  it('shows no 24-hour change for an unchanged hand value in its own currency', () => {
+    const result = projectPortfolio(
+      now,
+      [flat],
+      [holding(20, 'Home', [position(flat, '1', '6250')])],
+      set('500000', 'RUB'),
+      rates('RUB'),
+      set('500000', 'RUB'),
+    );
+    expect(assetOf(result, flat).value).toBe('500000');
+    expect(assetOf(result, flat).priceChange24hPercent).toBe('0.00');
   });
 });

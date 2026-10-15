@@ -1,7 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
 import {
   type AccountingCurrency,
-  type AssetLots,
   type LotAfterInflation,
   type LotReading,
 } from '@api/portfolio-valuation.api';
@@ -16,10 +15,6 @@ import { useCachedRead } from '../shell/useCachedRead';
 import { Signed } from './asset-parts';
 import { DASH, money, percent, quantity, tone } from './format';
 import './portfolio.css';
-
-// The figures whose refresh failed, by asset and currency, for the whole session: a card shown again
-// (the page was left and came back) warns about the figures the cache still keeps for it.
-const failedRefreshes = new Map<string, AssetLots>();
 
 /** Two lots of one account can share an instant, so a repeat gets a number to keep keys unique. */
 function keyed(lots: readonly LotAfterInflation[]): [string, LotAfterInflation][] {
@@ -229,15 +224,10 @@ export default function AssetLotsCard({
   const phone = useNarrowScreen();
   const [basis] = useInflationBasis();
   const read = useCachedRead(cachedReads.assetLots, instrumentId, asked);
-  const { data: answer, error, reload } = read;
-  // The hook clears its error when a load starts, so the warning is kept here, for each asset and
-  // currency. It belongs to the figures that were on screen when its load failed: it stays until
-  // an answer replaces those figures, also when the card is shown again (the cache keeps them).
-  const scope = `${instrumentId}:${asked ?? ''}`;
-  useEffect(() => {
-    if (error !== null && answer !== null) failedRefreshes.set(scope, answer);
-  }, [error, answer, scope]);
-  const stale = error !== null || (answer !== null && failedRefreshes.get(scope) === answer);
+  // `stale`: a refresh failed and the figures on screen may be out of date. The cache keeps that
+  // with the figures, so it stays until an answer replaces them, also when the card is shown
+  // again or the page is reloaded.
+  const { data: answer, error, stale, reload } = read;
   // A saved price changes the values, so the lots are asked again. A refreshed portfolio that shows
   // the same values does not: the mount already asked, so only a change of `values` asks.
   const shownValues = useRef(values);
@@ -254,7 +244,7 @@ export default function AssetLotsCard({
         <h2 id="asset-lots">Purchases after inflation</h2>
         {line && <span className="portfolio-sub">{line}</span>}
       </div>
-      {stale && answer === null ? (
+      {error !== null && answer === null ? (
         <div className="portfolio-state" role="alert">
           <p>Could not load the purchases. Your data is safe; try again.</p>
           <button type="button" className="shell-button" onClick={() => reload(true)}>

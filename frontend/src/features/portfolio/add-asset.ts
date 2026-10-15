@@ -1,5 +1,5 @@
 import type { AssetType, NewPortfolioAsset, ValuationCurrency } from '@api/portfolio-assets.api';
-import type { TradeCommand } from '@api/trades.api';
+import type { TradeCommand, TradeVersion } from '@api/trades.api';
 import { MAX_COMMENT_LENGTH, positive, tradeFromEntry } from './add-transaction';
 
 // "Add asset" from the accepted prototype: the kind of asset, its amount and what it is worth,
@@ -141,4 +141,18 @@ export function unitPrice(total: string, quantity: string): string {
   const whole = digits.slice(0, -PRICE_PLACES);
   const fraction = digits.slice(-PRICE_PLACES).replace(/0+$/, '');
   return fraction ? `${whole}.${fraction}` : whole;
+}
+
+/**
+ * AST-MANUAL-VALUE: the price of one unit as bought, in the currency the asset is valued in
+ * when it was paid in that currency, so a hand value of 500,000 RUB stays 500,000 RUB as the
+ * dollar rate moves. Otherwise the USD price the server derived.
+ */
+export function purchasePrice(
+  trade: Pick<TradeVersion, 'grossUsd' | 'quantity' | 'paid'>,
+  valuationCurrency: ValuationCurrency,
+): { price: string; currency: ValuationCurrency } {
+  return trade.paid && trade.paid.currency === valuationCurrency
+    ? { price: unitPrice(trade.paid.gross, trade.quantity), currency: trade.paid.currency }
+    : { price: unitPrice(trade.grossUsd, trade.quantity), currency: 'USD' };
 }
