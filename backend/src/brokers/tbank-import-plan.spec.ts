@@ -930,6 +930,55 @@ describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
     ]);
   });
 
+  it('keeps a same-instant sale ahead of the dollars its rubles buy, even when a buy is hoisted over it', () => {
+    const at = '2024-03-08T10:00:00Z';
+    const share = '00000000-0000-4000-8000-0000000000a1';
+    const plan = planImport([
+      op({
+        id: '850000001',
+        occurredAt: '2024-03-07T10:00:00Z',
+        instrumentUid: share,
+        quantity: '1',
+        payment: '-100',
+        price: '100',
+      }),
+      op({
+        id: '850000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        instrumentUid: share,
+        quantity: '1',
+        payment: '100',
+        price: '100',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '850000003',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: at,
+      }),
+      op({
+        id: '850000004',
+        occurredAt: at,
+        instrumentUid: share,
+        paymentCurrency: 'usd',
+        payment: '-90',
+        quantity: '1',
+        price: '90',
+        priceCurrency: 'usd',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', '', '850000001'],
+      ['sell', '', '850000002'],
+      ['buy', 'usd', '850000003'],
+      ['buy', '', '850000004'],
+    ]);
+  });
+
   it('keeps gold and currencies the app does not keep as cash as assets priced in rubles', () => {
     const plan = planImport([
       fx('GLDRUB_TOM', gold, { id: '620000001', quantity: '10', payment: '-70000' }),

@@ -523,13 +523,26 @@ function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
           ((entry.action === 'buy' && entry.cash === buy.currency) ||
             (entry.action === 'sell' && entry.currency === buy.currency)),
       );
+    // The currency a producer spends, and the currency an unplaced entry of this instant still
+    // brings in. A producer is pulled ahead only when no such entry is still to come, since
+    // that entry (a sale, or the exchange purchase of the currency it spends) may pay for it.
+    const spent = (entry: PlanEntry) => (entry.action === 'buy' ? entry.currency : entry.cash);
+    const brought = (entry: PlanEntry) => (entry.action === 'sell' ? entry.currency : entry.cash);
+    const stillToCome = (currency: string | undefined, except: PlanEntry) =>
+      currency !== undefined &&
+      instant.some(
+        (entry) => entry !== except && !placed.has(entry) && brought(entry) === currency,
+      );
     for (const entry of instant) {
       if (placed.has(entry)) continue;
       if (isSecurity(entry, 'sell')) {
         for (const buy of buys.get(entry.instrumentUid) ?? []) {
-          for (const cash of producers(buy)) {
-            result.push(cash);
-            placed.add(cash);
+          const cash = producers(buy);
+          // Left in place: the buy is placed by its own turn in the instant, after what funds it.
+          if (cash.some((producer) => stillToCome(spent(producer), producer))) continue;
+          for (const producer of cash) {
+            result.push(producer);
+            placed.add(producer);
           }
           result.push(buy);
           placed.add(buy);
