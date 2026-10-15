@@ -315,4 +315,30 @@ describe('PROPERTY-ADD Add property', () => {
     expect(removeAccount).not.toHaveBeenCalled();
     expect(onAdded).toHaveBeenCalledWith(asset);
   });
+
+  it('classes-02 defaults Bought on to the Moscow day and saves a purchase made today', async () => {
+    // 22:30 UTC on Oct 15 is 01:30 on Oct 16 in Moscow.
+    vi.setSystemTime(new Date('2026-10-15T22:30:10Z'));
+    const user = userEvent.setup();
+    const { dialog, onAdded } = open();
+    const bought = within(dialog).getByLabelText('Bought on');
+    expect(bought).toHaveValue('2026-10-16');
+    expect(bought).toHaveAttribute('max', '2026-10-16');
+    await fill(user, dialog, { 'Bought on': '2026-10-17' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    expect(within(dialog).getByText('Enter a date that is not in the future')).toBeInTheDocument();
+    await fill(user, dialog, {
+      'Purchase price': '8500000',
+      'Bought on': '2026-10-16',
+      'What it is worth now (optional)': '9200000',
+    });
+    expect(within(dialog).queryByText('Enter a date that is not in the future')).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    expect(createTrade.mock.calls[0][1]).toMatchObject({ occurredAt: '2026-10-15T22:30:00.000Z' });
+    // Bought today, it starts at the estimate.
+    expect(setPrice.mock.calls.map(([, command]) => [command.observedAt, command.price])).toEqual([
+      ['2026-10-15T22:30:00.000Z', '9200000'],
+    ]);
+    expect(onAdded).toHaveBeenCalledWith(asset);
+  });
 });

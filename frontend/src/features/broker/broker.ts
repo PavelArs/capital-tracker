@@ -178,9 +178,8 @@ export function holdingTrade(
 /** The server converts at a Bank of Russia rate at most this many days old (MAX_RATE_AGE_DAYS). */
 export const MAX_RATE_AGE_DAYS = 15;
 
-/** The Moscow calendar date of an instant: the day the server takes the Bank of Russia rate of. */
-export const moscowDate = (instant: Date) =>
-  new Date(instant.getTime() + 3 * 3_600_000).toISOString().slice(0, 10);
+// The Moscow calendar date of an instant: the day the server takes the Bank of Russia rate of.
+export { moscowDate } from '@/utils/dates';
 
 /** Whether the rates a RUB or EUR amount needs today are stored and recent enough. */
 export function freshRates(currency: 'EUR' | 'RUB', report: FxRatesReport, today: string): boolean {
