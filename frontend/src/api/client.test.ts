@@ -427,6 +427,31 @@ describe('cookie session API client', () => {
     expect(cache.recall('page')).toBe(1);
   });
 
+  it('goals-02 drops every kept read when a write gets no answer, since it may have been saved', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.post('/goals', {})).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBeUndefined();
+  });
+
+  it('goals-02 keeps the kept reads when a read gets no answer', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.get('/goals')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBe(1);
+  });
+
   it('drops every kept read when the session ends with a protected 401', async () => {
     const cache = await import('./read-cache');
     setUnauthorizedHandler(() => undefined);

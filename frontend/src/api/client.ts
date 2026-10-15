@@ -114,6 +114,8 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiError>) => {
+    // A change that got no answer may have been saved: the kept answers may be old as well.
+    if (!error.response && isUnsafeRequest(error.config)) forgetReads();
     if (worthRepeating(error) && error.config) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
       return apiClient({ ...error.config, retried: true });
