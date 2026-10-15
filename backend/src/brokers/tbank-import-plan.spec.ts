@@ -464,7 +464,13 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
         paymentCurrency: 'cny',
       }),
       op({ id: '200000008', instrumentUid: '' }),
-      op({ id: '200000009', instrumentType: 'currency', ticker: 'SYNTHFX' }),
+      op({
+        id: '200000009',
+        instrumentType: 'currency',
+        ticker: 'USD000UTSTOM',
+        payment: '-200',
+        paymentCurrency: 'usd',
+      }),
     ]);
     expect(plan.entries).toEqual([]);
     expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
@@ -673,6 +679,106 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     expect([planImport(paid(1001)).rewards, planImport(paid(1001)).fitsRewardLimit]).toEqual([
       1001,
       false,
+    ]);
+  });
+});
+
+describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
+  const dollars = '00000000-0000-4000-8000-0000000000d1';
+  const euros = '00000000-0000-4000-8000-0000000000e1';
+  const gold = '00000000-0000-4000-8000-0000000000f1';
+  const fx = (ticker: string, instrumentUid: string, over: Partial<TBankOperation>) =>
+    op({
+      instrumentUid,
+      ticker,
+      instrumentType: 'currency',
+      price: '',
+      priceCurrency: '',
+      ...over,
+    });
+
+  it('buys and sells dollars and euros as cash paid in rubles, not as assets', () => {
+    const buy = fx('USD000UTSTOM', dollars, {
+      id: '600000001',
+      quantity: '1000',
+      payment: '-90000',
+    });
+    const fee = cash('OPERATION_TYPE_BROKER_FEE', '-45', { id: '600000002', parentId: buy.id });
+    const plan = planImport([
+      buy,
+      fee,
+      fx('EUR_RUB__TOM', euros, {
+        id: '600000003',
+        quantity: '100',
+        payment: '-10000',
+        occurredAt: '2024-03-02T10:00:00Z',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '600000004',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '400',
+        payment: '37000',
+        occurredAt: '2024-03-03T10:00:00Z',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [
+        entry.action,
+        entry.cash,
+        entry.quantity,
+        entry.amount,
+        entry.fee,
+        entry.currency,
+        entry.operationIds,
+      ]),
+    ).toEqual([
+      ['buy', 'usd', '1000', '90000', '45', 'rub', ['600000001', '600000002']],
+      ['buy', 'eur', '100', '10000', '0', 'rub', ['600000003']],
+      ['sell', 'usd', '400', '37000', '0', 'rub', ['600000004']],
+    ]);
+  });
+
+  it('sells dollars the history never shows bought: whether they came in unseen is left to the cash check', () => {
+    const plan = planImport([
+      fx('USD000UTSTOM', dollars, {
+        id: '610000001',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '5',
+        payment: '450',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(plan.entries.map((entry) => [entry.action, entry.cash])).toEqual([['sell', 'usd']]);
+  });
+
+  it('keeps gold and currencies the app does not keep as cash as assets priced in rubles', () => {
+    const plan = planImport([
+      fx('GLDRUB_TOM', gold, { id: '620000001', quantity: '10', payment: '-70000' }),
+      fx('GLDRUB_TOM', gold, {
+        id: '620000002',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '10',
+        payment: '72000',
+        occurredAt: '2024-03-02T10:00:00Z',
+      }),
+      fx('GLDRUB_TOM', gold, {
+        id: '620000003',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '1',
+        payment: '7000',
+        occurredAt: '2024-03-03T10:00:00Z',
+      }),
+    ]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash, entry.instrumentUid, entry.quantity]),
+    ).toEqual([
+      ['buy', undefined, gold, '10'],
+      ['sell', undefined, gold, '10'],
+    ]);
+    // Gold is held like a security, so a sale of more than was bought is listed.
+    expect(plan.skipped).toEqual([
+      { operationId: '620000003', type: 'OPERATION_TYPE_SELL', reason: 'not-held' },
     ]);
   });
 });

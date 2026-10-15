@@ -498,6 +498,81 @@ async function importing(db, service, imports, owner, other) {
     db.query(`UPDATE broker_imported_operations SET "tradeId" = NULL WHERE "accountId" = $1`, [broker]),
     { code: '23514' },
   );
+
+  stage = 'BROKER-SYNC-FX: dollars bought on the exchange are cash, gold an asset, a split order two entries';
+  const fifth = await account(db, owner, 'broker');
+  await service.connect(owner, fifth, { token, brokerAccountId: brokerAccount.id });
+  const dollarsUid = '10000000-0000-4000-8000-0000000000d1';
+  const goldUid = '10000000-0000-4000-8000-0000000000f1';
+  const fx = (ticker, uid, over) => ({ instrumentUid: uid, instrumentType: 'currency', ticker, ...over });
+  history = [
+    operation('500000001', 'INPUT', '100000'),
+    operation('500000002', 'BUY', '-90000', fx('USD000UTSTOM', dollarsUid, {
+      occurredAt: '2024-03-02T08:00:00Z',
+      quantity: '1000',
+    })),
+    operation('500000003', 'BROKER_FEE', '-45', { parentId: '500000002', occurredAt: '2024-03-02T08:00:00Z' }),
+    operation('500000004', 'BUY', '-600', share({
+      occurredAt: '2024-03-03T08:00:00Z',
+      quantity: '2',
+      paymentCurrency: 'usd',
+      fills: [
+        { filledAt: '2024-03-03T08:00:01Z', quantity: '1', price: '300', priceCurrency: 'usd' },
+        { filledAt: '2024-03-04T08:00:01Z', quantity: '1', price: '300', priceCurrency: 'usd' },
+      ],
+    })),
+    operation('500000005', 'SELL', '27000', fx('USD000UTSTOM', dollarsUid, {
+      occurredAt: '2024-03-05T08:00:00Z',
+      quantity: '300',
+    })),
+    operation('500000006', 'BUY', '-7000', fx('GLDRUB_TOM', goldUid, {
+      occurredAt: '2024-03-06T08:00:00Z',
+      quantity: '1',
+    })),
+  ];
+  const exchanged = await imports.preview(owner, fifth);
+  assert.deepEqual([exchanged.problems, exchanged.skipped], [[], []]);
+  assert.deepEqual(
+    exchanged.entries.map((entry) => [entry.action, entry.cash ?? '', entry.quantity, entry.operationIds]),
+    [
+      ['deposit', '', '100000', ['500000001']],
+      ['buy', 'usd', '1000', ['500000002', '500000003']],
+      ['buy', '', '1', ['500000004']],
+      ['buy', '', '1', ['500000004#2']],
+      ['sell', 'usd', '300', ['500000005']],
+      ['buy', '', '1', ['500000006']],
+    ],
+  );
+  await imports.import(owner, fifth, { requestId: randomUUID(), previewHash: exchanged.previewHash });
+  const [usd] = await db.query(
+    `SELECT id FROM accounting_instruments WHERE "ownerId" = $1 AND "assetType" = 'fiat' AND symbol = 'USD'`,
+    [owner],
+  );
+  // 100000 in, 90045 for the dollars, 27000 back for 300 of them, 7000 on gold.
+  assert.equal((await trades.available(owner, fifth, { instrumentId: rub.id, at })).quantity, '29955');
+  // 1000 bought, 600 spent on the share in two parts, 300 sold.
+  assert.equal((await trades.available(owner, fifth, { instrumentId: usd.id, at })).quantity, '100');
+  const [goldAsset] = await db.query(
+    `SELECT i.symbol, i."assetType", i."valuationCurrency" FROM broker_instrument_links l
+      JOIN accounting_instruments i ON i.id = l."instrumentId"
+      WHERE l."ownerId" = $1 AND l."providerInstrumentId" = $2`,
+    [owner, goldUid],
+  );
+  assert.deepEqual(
+    [goldAsset.symbol, goldAsset.assetType, goldAsset.valuationCurrency],
+    ['GLDRUB_TOM', 'manual', 'RUB'],
+  );
+  assert.equal(await count('broker_instrument_links', `WHERE "providerInstrumentId" = '${dollarsUid}'`), 0);
+  assert.deepEqual(
+    (
+      await db.query(
+        `SELECT "operationId" FROM broker_imported_operations WHERE "accountId" = $1 ORDER BY "operationId"`,
+        [fifth],
+      )
+    ).map((row) => row.operationId),
+    ['500000001', '500000002', '500000003', '500000004', '500000004#2', '500000005', '500000006'],
+  );
+  console.log('PASS BROKER-SYNC-FX');
 }
 
 async function main() {

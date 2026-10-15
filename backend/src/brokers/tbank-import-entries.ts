@@ -134,13 +134,21 @@ export function journalEntries(
         purpose: 'fee',
       };
     } else if (source.action === 'buy' || source.action === 'sell') {
-      const security = instruments.securities.get(source.instrumentUid);
+      // Dollars or euros bought on the exchange are that currency's cash, bought with this one.
+      const moved = source.cash ? cashCurrency[source.cash] : undefined;
+      const security = moved
+        ? instruments.cash[moved]
+        : instruments.securities.get(source.instrumentUid);
       if (!security) throw new Error('The plan holds an instrument without an owner instrument');
       const held = balance[currency] > 0n ? balance[currency] : 0n;
       const spent = held < amount + fee ? held : amount + fee;
       const kept = amount > fee ? amount - fee : 0n;
       const settled = source.action === 'buy' ? spent : kept;
       balance[currency] += source.action === 'buy' ? -spent : kept;
+      if (moved) {
+        const units = canonicalDecimalToAtoms(source.quantity);
+        balance[moved] += source.action === 'buy' ? units : -units;
+      }
       trade = {
         ...base,
         instrumentId: security.id,

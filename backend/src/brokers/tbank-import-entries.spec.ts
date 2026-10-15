@@ -180,3 +180,67 @@ describe('BROKER-SYNC: the journal entries a T-Bank import writes', () => {
     expect(lots.map((lot) => lot.remainingQuantity)).toEqual(['441', '495']);
   });
 });
+
+describe('BROKER-SYNC-FX: dollars and euros bought on the exchange', () => {
+  it('buys dollar cash with ruble cash, and a dollar buy then spends those dollars', () => {
+    const { entries, problems } = journalEntries(
+      [
+        entry({ amount: '100000', quantity: '100000' }),
+        buy({
+          instrumentUid: 'fx',
+          instrumentType: 'currency',
+          ticker: 'USD000UTSTOM',
+          cash: 'usd',
+          quantity: '1000',
+          amount: '90000',
+          fee: '45',
+        }),
+        buy({ quantity: '1', amount: '600', fee: '0', currency: 'usd' }),
+        buy({
+          action: 'sell',
+          instrumentUid: 'fx',
+          instrumentType: 'currency',
+          ticker: 'USD000UTSTOM',
+          cash: 'usd',
+          quantity: '300',
+          amount: '27000',
+          fee: '0',
+        }),
+      ],
+      instruments,
+      rates,
+    );
+    expect(problems).toEqual([]);
+    const [, bought, share, sold] = entries.map((item) => item.trade!);
+    expect(bought).toMatchObject({
+      instrumentId: id(2),
+      side: 'buy',
+      quantity: '1000',
+      paid: { currency: 'RUB', gross: '90000', fee: '45' },
+      settlement: { instrumentId: id(1), quantity: '90045' },
+    });
+    expect(share.settlement).toMatchObject({ instrumentId: id(2), quantity: '600' });
+    expect(sold).toMatchObject({
+      instrumentId: id(2),
+      side: 'sell',
+      quantity: '300',
+      settlement: { instrumentId: id(1), quantity: '27000' },
+    });
+    // The records hold what really was: 100 dollars and 36955 rubles left.
+    const { lots } = calculateOwnedTransfers(
+      [
+        {
+          accountId: id(9),
+          coverageFrom: '1970-01-01T00:00:00.000Z',
+          trades: entries.map((item) => item.trade!),
+          initialLots: [],
+        },
+      ],
+      [],
+    ).accounts.get(id(9))!;
+    const left = (instrument: string) =>
+      lots.filter((lot) => lot.instrumentId === instrument).map((lot) => lot.remainingQuantity);
+    expect(left(id(2))).toEqual(['100']);
+    expect(left(id(1))).toEqual(['9955', '27000']);
+  });
+});

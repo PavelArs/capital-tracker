@@ -416,14 +416,23 @@ export class BrokerImportService {
     const cash = {} as Record<CashCurrency, ImportInstrument>;
     for (const code of ['RUB', 'USD', 'EUR'] as const) {
       const asset = cashAsset[code];
-      const used = plan.some((entry) => cashCurrency[entry.currency] === code);
+      const used = plan.some(
+        (entry) =>
+          cashCurrency[entry.currency] === code ||
+          (entry.cash !== undefined && cashCurrency[entry.cash] === code),
+      );
       const found = used ? await findOrCreateInstrument(manager, owner, asset, write) : null;
       cash[code] = found ?? { id: `new-cash-${code}`, name: asset.name, symbol: asset.symbol };
     }
     const securities = new Map<string, ImportInstrument>();
     const wanted = new Map<string, PlanEntry>();
     for (const entry of plan)
-      if (entry.record === 'trade' && entry.instrumentUid && !wanted.has(entry.instrumentUid))
+      if (
+        entry.record === 'trade' &&
+        entry.instrumentUid &&
+        !entry.cash &&
+        !wanted.has(entry.instrumentUid)
+      )
         wanted.set(entry.instrumentUid, entry);
     if (wanted.size === 0) return { cash, securities };
     const linked: (ImportInstrument & { uid: string })[] = await manager.query(

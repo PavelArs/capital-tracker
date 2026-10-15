@@ -27,6 +27,11 @@ export interface PlanEntry {
   instrumentUid: string;
   ticker: string;
   instrumentType: string;
+  /**
+   * For dollars or euros bought or sold on the exchange: the currency the trade moves as cash,
+   * paid for in `currency`. Such a trade holds no security.
+   */
+  cash?: 'usd' | 'eur';
   /** For a reward, the T-Bank instrument that paid it; the reward itself is cash. */
   paidBy?: { instrumentUid: string; ticker: string; instrumentType: string };
   /** Units of the security, or the cash amount when the entry moves only cash. */
@@ -102,14 +107,28 @@ const cardSettled = new Set([
 ]);
 const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
 /**
+ * Dollars and euros as the Moscow Exchange trades them against rubles, settled the next day or
+ * the same day. The app keeps these as cash; any other currency or metal on the exchange (pounds,
+ * gold) stays an asset priced by hand. Matched by ticker, since T-Bank's operations name no ISO
+ * code and its instrument lookup no longer finds some delisted ones.
+ */
+const exchangeCash: Readonly<Record<string, 'usd' | 'eur'>> = {
+  USD000UTSTOM: 'usd',
+  USD000000TOD: 'usd',
+  EUR_RUB__TOM: 'eur',
+  EUR_RUB__TOD: 'eur',
+};
+/** The currency a dollar or euro trade on the exchange moves as cash, if it is one. */
+const cashOf = (item: TBankOperation) =>
+  item.instrumentType === 'currency' ? exchangeCash[item.ticker] : undefined;
+/**
  * Why a trade's security cannot be recorded: T-Bank names no instrument or does not say what
- * kind it is, or it is a currency bought or sold on the exchange, which is cash rather than a
- * security the app can hold yet.
+ * kind it is, or it buys dollars or euros with the very currency it buys.
  */
 const securityProblem = (item: TBankOperation): PlanSkip['reason'] | null =>
   item.instrumentUid === '' || item.instrumentType === ''
     ? 'no-instrument'
-    : item.instrumentType === 'currency'
+    : cashOf(item) === item.paymentCurrency
       ? 'currency-exchange'
       : null;
 
@@ -264,6 +283,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       const weights = parts.map((part) => part.weight);
       const amounts = split(absolute(item.payment), weights);
       const paidFees = split(absolute(sum(fees.map((fee) => fee.payment))), weights);
+      const moved = cashOf(item);
       return parts.map((part, index) => ({
         record: 'trade',
         action: kind,
@@ -271,6 +291,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
         instrumentUid: item.instrumentUid,
         ticker: item.ticker,
         instrumentType: item.instrumentType,
+        ...(moved ? { cash: moved } : {}),
         quantity: formatAtoms(part.quantity),
         amount: amounts[index],
         fee: paidFees[index],
@@ -381,7 +402,8 @@ function checkHeld(
   const listed = new Set<string>();
   const kept: PlanEntry[] = [];
   for (const entry of ordered(list)) {
-    if (entry.record !== 'trade' || entry.instrumentUid === '') {
+    // Dollars and euros are cash: the journal's own check finds a sale of more than is held.
+    if (entry.record !== 'trade' || entry.instrumentUid === '' || entry.cash) {
       kept.push(entry);
       continue;
     }
