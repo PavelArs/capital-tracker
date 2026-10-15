@@ -89,6 +89,74 @@ describe('goal view', () => {
     expect(view.scenarios[1].monthsToTarget).toBe(0);
   });
 
+  it('goals-26 rounds what the portfolio has down and what is still missing up, exactly', () => {
+    const goal = { ...row, targetAmount: '50000.00', deadline: null };
+    expect(goalView(goal, now('2623.5596707'), today).progress).toEqual({
+      current: '2623.55',
+      complete: true,
+      percent: '5.24',
+      remaining: '47376.45',
+    });
+    // A stored value with more places than a float keeps, as portfolio snapshots hold them.
+    const long = goalView(
+      { ...goal, targetAmount: '1000000.00' },
+      now('148394.947838370992353293413173652694'),
+      today,
+    );
+    expect(long.progress).toMatchObject({ current: '148394.94', remaining: '851605.06' });
+    // Past the precision of a number, a fraction of a cent short is still short.
+    const edge = goalView(
+      { ...goal, targetAmount: '999999999999.99' },
+      now('999999999999.985'),
+      today,
+    );
+    expect(edge.status).toBe('open');
+    expect(edge.progress).toMatchObject({
+      current: '999999999999.98',
+      percent: '99.99',
+      remaining: '0.01',
+    });
+    // Exact sums stay as they are.
+    expect(goalView({ ...goal, targetAmount: '10000' }, now('5000'), today).progress).toEqual({
+      current: '5000.00',
+      complete: true,
+      percent: '50.00',
+      remaining: '5000.00',
+    });
+    expect(goalView(goal, now('-12.345'), today).progress).toMatchObject({
+      current: '-12.35',
+      remaining: '50012.35',
+    });
+  });
+
+  it('goals-27 never shows one hundred percent before the goal is reached', () => {
+    const goal = { ...row, targetAmount: '100000.00', deadline: null };
+    const close = goalView(goal, now('99995'), today);
+    expect(close.status).toBe('open');
+    expect(close.progress).toMatchObject({
+      current: '99995.00',
+      percent: '99.99',
+      remaining: '5.00',
+    });
+    const closer = goalView(goal, now('99999.996'), today);
+    expect(closer.status).toBe('open');
+    expect(closer.progress).toMatchObject({
+      current: '99999.99',
+      percent: '99.99',
+      remaining: '0.01',
+    });
+    const dated = goalView({ ...goal, deadline: '2029-10-13' }, now('99999.996'), today);
+    expect(dated.status).not.toBe('reached');
+    expect(dated.progress.percent).toBe('99.99');
+    const done = goalView(goal, now('100000.00'), today);
+    expect(done.status).toBe('reached');
+    expect(done.progress).toMatchObject({
+      current: '100000.00',
+      percent: '100.00',
+      remaining: '0.00',
+    });
+  });
+
   it('marks a deadline that has passed', () => {
     const view = goalView({ ...row, deadline: '2026-10-01' }, now('5000.00'), today);
     expect(view.status).toBe('overdue');
