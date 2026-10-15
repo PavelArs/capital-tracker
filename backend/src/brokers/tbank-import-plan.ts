@@ -51,6 +51,7 @@ export interface PlanSkip {
     | 'no-instrument'
     | 'sign'
     | 'not-held'
+    | 'short-cover'
     | 'partial-repayment'
     | 'no-quantity'
     | 'fills'
@@ -362,7 +363,8 @@ function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry
 
 /**
  * Walks each security's units in time order. A sale of more than the history holds then (the
- * units came in some way it does not show) is listed as skipped rather than sold from nothing.
+ * units came in some way it does not show, or it opened a short) is listed as skipped rather
+ * than sold from nothing, and so are the buys that may cover it, up to the units it sold.
  * A bond paid back in full sells every unit held then: payouts for bond repayment carry no
  * instrument quantity (T-Bank investAPI docs, operations_problems); one the history never shows
  * held is listed as skipped. A sale with no quantity can only be such a repayment, as any other
@@ -374,26 +376,19 @@ function checkHeld(
   typeOf: ReadonlyMap<string, string>,
 ): PlanEntry[] {
   const held = new Map<string, bigint>();
+  // Units sold that the history never showed held: a buy may cover them, or may not.
+  const uncovered = new Map<string, bigint>();
+  const listed = new Set<string>();
   const kept: PlanEntry[] = [];
   for (const entry of ordered(list)) {
     if (entry.record !== 'trade' || entry.instrumentUid === '') {
       kept.push(entry);
       continue;
     }
-    const units = held.get(entry.instrumentUid) ?? 0n;
+    const uid = entry.instrumentUid;
+    const units = held.get(uid) ?? 0n;
     const operationId = entry.operationIds[0].split('#')[0];
-    const refuse = (reason: PlanSkip['reason']) =>
-      skipped.push({ operationId, type: typeOf.get(operationId) ?? 'unknown', reason });
-    let quantity = entry.quantity;
-    if (entry.action === 'sell' && isZero(quantity)) {
-      if (units <= 0n) {
-        refuse('no-quantity');
-        continue;
-      }
-      quantity = formatAtoms(units);
-    }
-    if (entry.action === 'sell' && atoms(quantity) > units) {
-      refuse('not-held');
+    const refuse = (reason: PlanSkip['reason']) => {
       // Its fee was still paid: it stays as money spent.
       if (!isZero(entry.fee))
         kept.push({
@@ -408,12 +403,31 @@ function checkHeld(
           operationIds:
             entry.operationIds.length > 1 ? entry.operationIds.slice(1) : entry.operationIds,
         });
+      if (listed.has(`${operationId} ${reason}`)) return;
+      listed.add(`${operationId} ${reason}`);
+      skipped.push({ operationId, type: typeOf.get(operationId) ?? 'unknown', reason });
+    };
+    let quantity = entry.quantity;
+    if (entry.action === 'sell' && isZero(quantity)) {
+      if (units <= 0n) {
+        refuse('no-quantity');
+        continue;
+      }
+      quantity = formatAtoms(units);
+    }
+    if (entry.action === 'sell' && atoms(quantity) > units) {
+      refuse('not-held');
+      uncovered.set(uid, (uncovered.get(uid) ?? 0n) + atoms(quantity));
       continue;
     }
-    held.set(
-      entry.instrumentUid,
-      units + (entry.action === 'buy' ? atoms(quantity) : -atoms(quantity)),
-    );
+    const open = uncovered.get(uid) ?? 0n;
+    if (entry.action === 'buy' && open > 0n) {
+      // Whether this buy closes a short or starts a holding is unknown, so it is not guessed.
+      refuse('short-cover');
+      uncovered.set(uid, open > atoms(quantity) ? open - atoms(quantity) : 0n);
+      continue;
+    }
+    held.set(uid, units + (entry.action === 'buy' ? atoms(quantity) : -atoms(quantity)));
     kept.push(quantity === entry.quantity ? entry : { ...entry, quantity });
   }
   return kept;

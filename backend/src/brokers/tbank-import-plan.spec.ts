@@ -361,6 +361,39 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('lists a buy that covers a sale of units never held instead of inventing a holding', () => {
+    const at = (day: string) => `2024-03-${day}T10:00:00Z`;
+    const plan = planImport([
+      op({
+        id: '510000001',
+        type: 'OPERATION_TYPE_SELL_MARGIN',
+        payment: '200',
+        occurredAt: at('01'),
+      }),
+      op({
+        id: '510000002',
+        type: 'OPERATION_TYPE_BUY_MARGIN',
+        quantity: '1',
+        payment: '-90',
+        occurredAt: at('02'),
+      }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.1', { id: '510000003', parentId: '510000002' }),
+      op({ id: '510000004', quantity: '1', payment: '-95', occurredAt: at('03') }),
+      op({ id: '510000005', quantity: '3', payment: '-300', occurredAt: at('04') }),
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['510000001', 'not-held'],
+      ['510000002', 'short-cover'],
+      ['510000004', 'short-cover'],
+    ]);
+    expect(plan.entries.map((entry) => [entry.action, entry.quantity, entry.operationIds])).toEqual(
+      [
+        ['fee', '0.1', ['510000003']],
+        ['buy', '3', ['510000005']],
+      ],
+    );
+  });
+
   it('keeps the fee of a sale it lists as not held as money spent', () => {
     const sale = op({
       id: '400000011',
@@ -382,7 +415,14 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
 
   it('lists a sale of more than the history holds instead of selling what was never bought', () => {
     const plan = planImport([
-      op({ id: '400000003', type: 'OPERATION_TYPE_SELL', quantity: '1', payment: '100' }),
+      // A share the history never shows bought.
+      op({
+        id: '400000003',
+        type: 'OPERATION_TYPE_SELL',
+        instrumentUid: '00000000-0000-4000-8000-000000000009',
+        quantity: '1',
+        payment: '100',
+      }),
       op({ id: '400000004', quantity: '2', occurredAt: '2024-03-02T10:00:00Z' }),
       op({
         id: '400000005',
