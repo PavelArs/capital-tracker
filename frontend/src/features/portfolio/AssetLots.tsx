@@ -30,7 +30,10 @@ function keyed(lots: readonly LotAfterInflation[]): [string, LotAfterInflation][
 const readingOf = (lot: LotAfterInflation, basis: InflationBasis): LotReading | null =>
   lot.real[basis];
 
-/** The basis line over the table: what the readings rest on, said once for the whole card. */
+/**
+ * The basis line over the table: the money the readings are in and what they rest on, said once
+ * for the whole card.
+ */
 function basisLine(
   lots: readonly LotAfterInflation[],
   basis: InflationBasis,
@@ -38,14 +41,14 @@ function basisLine(
 ): string | null {
   const readings = lots.flatMap((lot) => readingOf(lot, basis) ?? []);
   if (readings.length === 0) return null;
-  return basisText(
+  return `In today's ${currency}, ${basisText(
     basis,
     {
       estimated: readings.some((reading) => reading.estimated),
       ownRate: readings.every((reading) => reading.ownRate !== false),
     },
     currency,
-  );
+  )}`;
 }
 
 function RealProfit({
