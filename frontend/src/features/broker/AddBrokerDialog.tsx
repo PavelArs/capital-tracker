@@ -14,6 +14,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { ambiguousComma, numberProblem } from '../portfolio/add-transaction';
@@ -33,7 +34,6 @@ import {
   MAX_BROKER_NAME,
   MAX_POSITIONS,
   MAX_TICKER,
-  moscowDate,
   type PositionEntry,
   type PositionField,
   perUnit,

@@ -2,9 +2,6 @@ import type { AccountSummary } from '@api/accounting.api';
 import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { sumDecimals } from '@/utils/decimal';
 
-// Kept here for the callers that read it from the broker feature.
-export { sumDecimals };
-
 export interface BrokerPosition {
   asset: AssetValuation;
   /** What this account holds of the asset. */
