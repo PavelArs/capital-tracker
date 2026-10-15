@@ -6,7 +6,7 @@ import { type Operation, type OperationList, operationsApi } from '@api/operatio
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { forgetReads } from '@api/read-cache';
 import { type TradeReceipt, tradesApi } from '@api/trades.api';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -145,11 +145,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function open() {
+// The cases below price in dollars unless they pick another currency; the default is rubles.
+function open(currency: 'USD' | null = 'USD') {
   const onAdded = vi.fn();
   const onClose = vi.fn();
   render(<AddBrokerDialog onAdded={onAdded} onClose={onClose} />);
-  return { dialog: screen.getByRole('dialog', { name: 'Add broker account' }), onAdded, onClose };
+  const dialog = screen.getByRole('dialog', { name: 'Add broker account' });
+  if (currency) fireEvent.click(within(dialog).getByRole('radio', { name: currency }));
+  return { dialog, onAdded, onClose };
 }
 const fill = async (
   user: ReturnType<typeof userEvent.setup>,
@@ -164,6 +167,18 @@ const fill = async (
 };
 
 describe('BROKER-ADD Add broker account', () => {
+  it('classes-12 starts priced in rubles, offers RUB, USD and EUR, and has no subtitle', () => {
+    const { dialog } = open(null);
+    const currency = within(dialog).getByRole('radiogroup', { name: 'Currency of the prices' });
+    expect(
+      within(currency)
+        .getAllByRole('radio')
+        .map((radio) => (radio as HTMLInputElement).value),
+    ).toEqual(['RUB', 'USD', 'EUR']);
+    expect(within(currency).getByRole('radio', { name: 'RUB' })).toBeChecked();
+    expect(within(dialog).queryByText(/at prices you enter/)).toBeNull();
+  });
+
   it('saves the account, each position at its price and the cash, as money put in', async () => {
     const user = userEvent.setup();
     const { dialog, onAdded } = open();

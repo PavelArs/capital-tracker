@@ -42,7 +42,7 @@ import {
 } from './broker';
 import './broker.css';
 
-const currencies: ValuationCurrency[] = ['USD', 'EUR', 'RUB'];
+const currencies: ValuationCurrency[] = ['RUB', 'USD', 'EUR'];
 const accountTypes: Record<(typeof brokerAccountTypes)[number], string> = {
   Regular: 'Regular',
   IIS: 'Individual investment (IIS)',
@@ -117,7 +117,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
   const [entry, setEntry] = useState<BrokerEntry>(() => ({
     broker: '',
     account: 'Regular',
-    currency: 'USD',
+    currency: 'RUB',
     positions: [blankPosition()],
     cash: '',
   }));
@@ -407,7 +407,6 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>Add broker account</h2>
           <CloseButton onClick={finish} disabled={saving} />
-          <p className="shell-note">Stocks, bonds and funds at a broker, at prices you enter.</p>
         </div>
         <div className="ui-modal__body">
           <div className="ui-field">
