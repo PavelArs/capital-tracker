@@ -189,9 +189,10 @@ function valuesAt(
       undefined,
       depositValuesAt(valuation.deposits, instant, fx),
     );
-    // Without a rate the value in that currency is unknown, not a smaller sum. Prices are in
-    // dollars, so only a held asset needs the dollar rate: deposits state their own, and one
-    // without it is counted as unrated.
+    // Without a rate the value in that currency is unknown, not a smaller sum. Market prices are
+    // in dollars, so a held asset needs the dollar rate; a hand value in RUB or EUR may not, but
+    // asking for it anyway only leaves the point missing, never worth more. Deposits state their
+    // own rate, and one without it is counted as unrated.
     const rated =
       report.assets.every((asset) => asset.value === '0') ||
       fx.available('USD', moscowDate(instant));
