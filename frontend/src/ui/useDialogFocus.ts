@@ -32,9 +32,9 @@ export function useDialogFocus(root: RefObject<HTMLElement | null>, options: Opt
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const scope = root.current;
     if (scope) {
-      const start = latest.current.initialFocus
-        ? latest.current.initialFocus(scope)
-        : scope.querySelector<HTMLElement>(focusable);
+      // A chosen start that the dialog does not have falls back to its first control.
+      const start =
+        latest.current.initialFocus?.(scope) ?? scope.querySelector<HTMLElement>(focusable);
       start?.focus();
     }
     const onKey = (event: KeyboardEvent) => {
@@ -45,7 +45,11 @@ export function useDialogFocus(root: RefObject<HTMLElement | null>, options: Opt
       const items = [...inside.querySelectorAll<HTMLElement>(focusable)];
       const first = items[0];
       const last = items[items.length - 1];
-      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+      const active = document.activeElement;
+      // Focus outside the dialog (the body after a focused button turned disabled, or a control
+      // behind the scrim) comes back in at the edge Tab moves towards.
+      const outside = !active || !inside.contains(active);
+      if (outside || (event.shiftKey ? active === first : active === last)) {
         event.preventDefault();
         (event.shiftKey ? last : first)?.focus();
       }
