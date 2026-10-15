@@ -171,7 +171,7 @@
   font-size: var(--fs-sm);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .broker-account__head {
     padding: 16px;
   }

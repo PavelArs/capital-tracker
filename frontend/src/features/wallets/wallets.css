@@ -632,7 +632,7 @@ button.wallets-source__open:focus-visible {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .wallets-networks {
     grid-template-columns: minmax(0, 1fr);
   }
