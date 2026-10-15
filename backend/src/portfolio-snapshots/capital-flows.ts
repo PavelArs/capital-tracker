@@ -49,7 +49,8 @@ const signed = (value: string) =>
  * flow (PR-OPS-2). Holdings carried into a
  * journal enter at its start with their carried cost, stated at their acquisition date's
  * rate like their cost basis. Own transfers, swaps and rewards move no money in or out, so
- * their effect (a transfer fee, a reward) is market effect. The legacy owner-declared USD
+ * their effect (a transfer fee, a reward) is market effect; only a swap between a shown and a
+ * hidden asset does (ASSET-HIDE). The legacy owner-declared USD
  * flows never change holdings, so counting them would invent market effect: they are not
  * flows here.
  */
@@ -107,6 +108,21 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
                 },
               }
             : {}),
+        });
+      }
+      for (const swap of account.swaps ?? []) {
+        // ASSET-HIDE: a swap between a shown and a hidden asset moves its value, what the
+        // incoming asset cost, in or out of what is shown. A swap without that value is left
+        // out, like money without a rate (INVESTED-RATED).
+        const shownIn = !inputs.hidden.has(swap.incomingInstrumentId);
+        if (shownIn === !inputs.hidden.has(swap.outgoingInstrumentId)) continue;
+        if (swap.considerationUsd === null) continue;
+        const value = signed(swap.considerationUsd);
+        flows.push({
+          at: Date.parse(swap.occurredAt),
+          instrumentId: shownIn ? swap.incomingInstrumentId : swap.outgoingInstrumentId,
+          usd: shownIn ? value : -value,
+          rateDate: moscowDate(swap.occurredAt),
         });
       }
     }
