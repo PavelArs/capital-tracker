@@ -670,6 +670,35 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(create.mock.calls[0][1]).toMatchObject({ side: 'sell', quantity: '0.2' });
   });
 
+  it('err-form copy: a whole property without a ticker is counted as "1 unit", a coin keeps its ticker', async () => {
+    const user = userEvent.setup();
+    const studio = {
+      ...asset(6, 'Studio apartment', null, 'manual'),
+      priceSource: 'manual' as const,
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, studio]);
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '1',
+    }));
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Sell' }));
+    await user.clear(view.getByLabelText('Date'));
+    await user.type(view.getByLabelText('Date'), '2026-04-01');
+    await user.tab();
+    expect(await view.findByText(/Available in Hardware wallet: 1 BTC/)).toBeInTheDocument();
+    await user.click(view.getByRole('button', { name: /Studio apartment/ }));
+    expect(await view.findByText(/Available in Hardware wallet: 1 unit ·/)).toBeInTheDocument();
+    await user.type(view.getByLabelText('Amount'), '2');
+    await user.tab();
+    expect(view.getByRole('alert')).toHaveTextContent(
+      'Only 1 unit is available in Hardware wallet on Apr 1, 2026 · Use all',
+    );
+  });
+
   it('OPS-SAME-DAY a new sale dated today without a time stands for the current minute', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-07T15:59:30.000Z'));

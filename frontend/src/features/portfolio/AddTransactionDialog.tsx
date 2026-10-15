@@ -223,6 +223,15 @@ interface Props {
   editing?: Operation;
 }
 
+/** What an asset without a ticker (a property, a painting) is counted in. */
+const UNITS = 'units';
+
+/** "0.2 BTC", "2 units", and "1 unit" for exactly one of an asset without a ticker. */
+const counted = (value: string, symbol: string) => {
+  const shown = quantity(value);
+  return `${shown} ${symbol === UNITS && shown === '1' ? 'unit' : symbol}`;
+};
+
 /** The window's types: five in view and four under More (accepted prototype). */
 const mainKinds = [
   ['buy', 'Buy'],
@@ -530,7 +539,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const asset = other ? undefined : assets?.find((item) => item.id === entry.instrumentId);
   const otherTicker = other?.ticker.trim().toUpperCase() ?? '';
   const otherValid = tickerPattern.test(otherTicker);
-  const symbol = other ? otherTicker || 'units' : (asset?.symbol ?? 'units');
+  const symbol = other ? otherTicker || UNITS : (asset?.symbol ?? UNITS);
   const unitSymbol = other ? otherTicker || 'unit' : (asset?.symbol ?? asset?.name ?? 'unit');
   // A new asset's ticker stands in for its id until it is saved with the trade.
   const checked: TransactionEntry = other
@@ -1363,7 +1372,7 @@ function Availability({
 }: AvailabilityProps) {
   if (loading) return <span className="ui-field__hint">Checking what {account} holds…</span>;
   if (available === null) return null;
-  const held = `${quantity(available)} ${symbol}`;
+  const held = counted(available, symbol);
   if (Number(available) === 0)
     return (
       <span
