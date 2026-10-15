@@ -308,6 +308,28 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('auth-07 SEC-TOTP: the new app step says how long to wait from the server answer', async () => {
+    vi.spyOn(securityApi, 'prepareAuthenticator').mockResolvedValue({
+      uri: 'otpauth://totp/Capital%20Tracker:Owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      candidateId: '33333333-3333-4333-8333-333333333333',
+      expiresAt: '2026-10-09T12:10:00.000Z',
+    });
+    const limited = failure(429);
+    if (limited.response) limited.response.headers = { 'retry-after': '600' };
+    vi.spyOn(securityApi, 'confirmAuthenticator').mockRejectedValue(limited);
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    await userEvent.type(screen.getByLabelText('Code from your authenticator app'), '123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    const scan = await screen.findByRole('dialog', { name: 'Scan the new code' });
+    await userEvent.type(within(scan).getByLabelText('Code from the new app'), '234567');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(await within(scan).findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Wait 10 minutes and try again.',
+    );
+  });
+
   it('SEC-TOTP: an expired setup starts again and keeps the current authenticator', async () => {
     vi.spyOn(securityApi, 'prepareAuthenticator').mockResolvedValue({
       uri: 'otpauth://totp/Capital%20Tracker:Owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',

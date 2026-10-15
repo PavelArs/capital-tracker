@@ -64,7 +64,9 @@ export default function Login() {
   const { login, verifyFactor, restartPassword, mfaPending, user, loading } = useAuth();
   const navigate = useNavigate();
   const focusAfterAnswer = useFocusAfterAnswer();
-  const pendingSince = useRef(0);
+  // When the code step began: the password answer, or this form's first paint when it opens on a
+  // step already pending, never earlier than the server's own start of the step.
+  const pendingSince = useRef(performance.now());
   const refusedCodes = useRef(0);
 
   useEffect(() => {

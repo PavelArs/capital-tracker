@@ -34,8 +34,8 @@ function confirmFailure(error: unknown): { message: string; expired?: boolean } 
         'This setup expired or had too many wrong codes. Start again; your current authenticator still works.',
       expired: true,
     };
-  // Only the per-address request limit (a minute at most) answers 429 here.
-  if (status === 429) return { message: 'Too many attempts. Wait a minute and try again.' };
+  // The wait follows the server's Retry-After, as on the other code forms.
+  if (status === 429) return { message: tooManyAttempts(error) };
   return { message: 'Could not finish the setup. Your current authenticator still works.' };
 }
 

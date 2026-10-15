@@ -1,4 +1,5 @@
 import { BrandMark, Icon, type IconName } from '@features/shell/icons';
+import { appTitle } from '@features/shell/navigation';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
@@ -44,6 +45,10 @@ export default function AuthFrame({
   onSubmit,
   footer,
 }: AuthFrameProps) {
+  // The tab names the step, as the signed-in pages name theirs.
+  useEffect(() => {
+    document.title = `${title} · ${appTitle}`;
+  }, [title]);
   const body = (
     <>
       {icon && (

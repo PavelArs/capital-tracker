@@ -1,7 +1,7 @@
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Login from './Login';
 
@@ -332,6 +332,41 @@ describe('Owner second-factor login (prototype Sign-in)', () => {
     ).toBeVisible();
     expect(screen.queryByText(/That code didn't work/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toHaveFocus();
+  });
+
+  it('auth-title names the sign-in page in the browser tab', async () => {
+    await renderLogin();
+    expect(document.title).toBe('Sign in · Capital Tracker');
+  });
+
+  it('auth-04 counts the five minutes from no earlier than the code step came on screen', async () => {
+    api.verifyFactor.mockRejectedValueOnce({ isAxiosError: true, response: { status: 401 } });
+    // The page has been open for ten minutes before the owner signs in.
+    const realNow = performance.now.bind(performance);
+    vi.spyOn(performance, 'now').mockImplementation(() => realNow() + 10 * 60 * 1000);
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <AuthProvider>
+          <Link to="/elsewhere">Elsewhere</Link>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/elsewhere" element={<Link to="/login">Back to sign-in</Link>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByLabelText('Password');
+    const user = userEvent.setup();
+    await submitPassword(user);
+    await screen.findByLabelText('Code from your authenticator app');
+    // The code step is opened again: the sign-in form starts anew, the pending step goes on.
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }));
+    await user.click(screen.getByRole('link', { name: 'Back to sign-in' }));
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(await screen.findByText(/That code didn't work/)).toBeVisible();
+    expect(screen.queryByText(/took too long/)).not.toBeInTheDocument();
   });
 
   it('auth-04 keeps the code step for a refused code inside the five minutes', async () => {

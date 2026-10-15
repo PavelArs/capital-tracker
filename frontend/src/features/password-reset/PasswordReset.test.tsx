@@ -155,6 +155,15 @@ describe('RESET-USE new password screen', () => {
     expect(screen.getByText('Sign-in page')).toBeVisible();
   });
 
+  it('auth-title names the password reset pages in the browser tab', async () => {
+    renderAt(`/password-reset/new#token=${token}`);
+    await screen.findByLabelText('New password');
+    expect(document.title).toBe('Set a new password · Capital Tracker');
+    cleanup();
+    renderAt('/password-reset');
+    expect(document.title).toBe('Reset your password · Capital Tracker');
+  });
+
   it('auth-08 opens the new password step with the cursor in New password', async () => {
     renderAt(`/password-reset/new#token=${token}`);
 
