@@ -232,6 +232,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A row whose text takes the room left of its control and wraps, so the control stays at the right. */
+.shell-setting__text--grow {
+  flex: 1 1 16rem;
+}
+
+/* An inflation rate: its label, the field, % and Save; they wrap on a narrow phone. */
+.shell-dust--rate {
+  flex-wrap: wrap;
+}
+
+.shell-dust--rate input {
+  width: 5rem;
+}
+
+.shell-dust__label {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
 /* Loading: grey blocks in the layout of the page, instead of a sentence. */
 .shell-bone {
   display: block;

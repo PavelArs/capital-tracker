@@ -28,6 +28,6 @@ export const clockText = (when: When) => clock.format(new Date(when));
 /** Oct 2, 14:05 */
 export const dayClockText = (when: When) => dayClock.format(new Date(when));
 
-/** The Moscow calendar date of an instant, YYYY-MM-DD: the day the server counts by. */
+/** The Moscow calendar date of an instant, YYYY-MM-DD (UTC+3 all year): the day the server counts by. */
 export const moscowDate = (instant: When) =>
   new Date(new Date(instant).getTime() + 3 * 3_600_000).toISOString().slice(0, 10);

@@ -3,7 +3,7 @@ import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
-import { dayText } from '@/utils/dates';
+import { dayText, moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import CloseButton from './CloseButton';
 import { type InflationBasis, useInflationBasis } from './inflation-basis';
@@ -35,15 +35,19 @@ const nextMonth = (month: string) => {
   return `${Math.floor(number / 12)}-${String((number % 12) + 1).padStart(2, '0')}`;
 };
 
-/** The months after the last official one, up to the last full calendar month (UTC), newest 12. */
+/** The months after the last official one, up to the last full Moscow calendar month, newest 12. */
 export function pendingMonths(officialLastMonth: string | null, now = new Date()): string[] {
   if (officialLastMonth === null) return [];
-  const thisMonth = now.toISOString().slice(0, 7);
+  const thisMonth = moscowDate(now).slice(0, 7);
   const months: string[] = [];
   for (let month = nextMonth(officialLastMonth); month < thisMonth; month = nextMonth(month))
     months.push(month);
   return months.slice(-12);
 }
+
+/** "A", "A and B", "A, B and C" */
+const listText = (items: string[]) =>
+  items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
 // numeric text as the server writes it back: no trailing zeros.
 const exact = (value: string) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
@@ -71,9 +75,11 @@ const saveFailure = (what: string) => (error: unknown) =>
 /** One currency: the official rate for reference and the owner's own yearly rate beside it. */
 function CurrencyRow({
   row,
+  basis,
   onSaved,
 }: {
   row: CurrencyInflation;
+  basis: InflationBasis;
   onSaved: (rate: string | null) => void;
 }) {
   const id = useId();
@@ -108,13 +114,14 @@ function CurrencyRow({
     if (state === 'saved')
       return row.personalRatePercent === null
         ? 'Saved. Your rate now follows the official one.'
-        : `Saved. Your ${row.currency} rate is ${percentText(row.personalRatePercent)} a year.`;
+        : `Saved. Your ${row.currency} rate is ${percentText(row.personalRatePercent)} a year. ${
+            basis === 'personal' ? 'Real values use it now.' : 'Choose My rate above to use it.'
+          }`;
     if (row.officialSource === null) return 'No official index for this currency yet.';
+    if (row.officialLastMonth === null) return `No ${row.officialSource} figures loaded yet.`;
     if (row.officialTrailingYearPercent === null)
       return `${row.officialSource} has no twelve full months yet.`;
-    return `Official ${official} over 12 months · ${row.officialSource}${
-      row.officialLastMonth ? ` · published to ${monthText(row.officialLastMonth)}` : ''
-    }`;
+    return `Official ${official} over 12 months · published to ${monthText(row.officialLastMonth)}`;
   })();
   const alert = state === 'invalid' || state === 'failed';
   return (
@@ -123,10 +130,11 @@ function CurrencyRow({
       onSubmit={(event) => void save(event)}
       noValidate
     >
-      <div className="shell-setting__text">
-        <label htmlFor={`${id}-rate`} className="shell-setting__label">
-          {row.currency} · my rate a year
-        </label>
+      <div className="shell-setting__text shell-setting__text--grow">
+        <span id={`${id}-title`} className="shell-setting__label">
+          {row.currency}
+          {row.officialSource && ` · ${row.officialSource}`}
+        </span>
         <p
           id={`${id}-hint`}
           className={`shell-setting__hint${alert ? ' shell-setting__hint--error' : ''}`}
@@ -135,9 +143,13 @@ function CurrencyRow({
           {hint}
         </p>
       </div>
-      <div className="shell-dust">
+      <div className="shell-dust shell-dust--rate">
+        <label id={`${id}-label`} htmlFor={`${id}-rate`} className="shell-dust__label">
+          My rate a year
+        </label>
         <input
           id={`${id}-rate`}
+          aria-labelledby={`${id}-title ${id}-label`}
           className="ui-input"
           type="text"
           inputMode="decimal"
@@ -196,10 +208,15 @@ function MonthDialog({
     change === undefined ? 'Enter the change for one month, between -5% and 20%' : null;
   const chosen = months.includes(month) ? month : (months[months.length - 1] ?? '');
 
+  const field = useRef<HTMLInputElement>(null);
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (change === undefined || chosen === '') return;
+    if (change === undefined) {
+      field.current?.focus();
+      return;
+    }
+    if (chosen === '') return;
     setSaving(true);
     setError(null);
     try {
@@ -212,7 +229,12 @@ function MonthDialog({
   };
 
   return (
-    <Modal titleId={`${id}-title`} size="narrow" onEscape={saving ? undefined : onClose}>
+    <Modal
+      titleId={`${id}-title`}
+      size="narrow"
+      onEscape={saving ? undefined : onClose}
+      initialFocus={() => field.current}
+    >
       <form onSubmit={(event) => void save(event)} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>Enter a month</h2>
@@ -271,6 +293,7 @@ function MonthDialog({
               How much prices changed over the month, %
             </label>
             <input
+              ref={field}
               id={`${id}-change`}
               className="ui-input"
               inputMode="decimal"
@@ -283,7 +306,7 @@ function MonthDialog({
               onChange={(event) => setText(event.target.value)}
             />
             {tried && problem ? (
-              <span className="ui-field__error" id={`${id}-change-hint`}>
+              <span className="ui-field__error" id={`${id}-change-hint`} role="alert">
                 {problem}
               </span>
             ) : (
@@ -391,6 +414,13 @@ export default function InflationSettings() {
   const rows = overview?.currencies ?? [];
   const canEnter = rows.some((row) => pendingMonths(row.officialLastMonth).length > 0);
   const entered = rows.flatMap((row) => row.manualMonths.map((item) => ({ ...item, row })));
+  // The full months each currency estimates: not published yet and not entered by the owner.
+  const estimated = rows.flatMap((row) => {
+    const months = pendingMonths(row.officialLastMonth).filter(
+      (month) => !row.manualMonths.some((item) => item.month === month),
+    );
+    return months.length ? [`${row.currency} ${listText(months.map(monthText))}`] : [];
+  });
   const syncHint = overview?.sync
     ? overview.sync.errorMessage
       ? `Last update failed: ${overview.sync.errorMessage}.`
@@ -403,8 +433,7 @@ export default function InflationSettings() {
     <section className="shell-card" aria-labelledby="settings-inflation">
       <h2 id="settings-inflation">Inflation</h2>
       <p className="shell-setting__hint">
-        The rate behind values after inflation: the official index of each currency, or your own
-        yearly rate.
+        Used by the Nominal / Real switch next to the currency, and by every deposit.
       </p>
       <div className="shell-setting">
         <div className="shell-setting__text">
@@ -440,6 +469,7 @@ export default function InflationSettings() {
             <CurrencyRow
               key={row.currency}
               row={row}
+              basis={basis}
               onSaved={(rate) =>
                 changed(row.currency, (current) => ({ ...current, personalRatePercent: rate }))
               }
@@ -449,8 +479,8 @@ export default function InflationSettings() {
             <div className="shell-setting__text">
               <span className="shell-setting__label">Months not published yet</span>
               <p className="shell-setting__hint">
-                Until a figure comes out, a month uses the last 12-month rate and is marked as
-                estimated. {syncHint}
+                {estimated.length > 0 && `${estimated.join('; ')}. `}Until a figure comes out, a
+                month uses the last 12-month rate and is marked as estimated. {syncHint}
               </p>
             </div>
             <button

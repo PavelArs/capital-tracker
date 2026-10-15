@@ -119,6 +119,16 @@ describe('SHELL-006 theme setting', () => {
     ).toBeTruthy();
   });
 
+  it('settings-10 lists the main currency first under Display, then the theme', () => {
+    renderSettings();
+    const display = screen.getByRole('region', { name: 'Display' });
+    expect(
+      within(display)
+        .getAllByRole('radiogroup')
+        .map((group) => group.getAttribute('aria-labelledby')),
+    ).toEqual(['settings-currency', 'settings-theme']);
+  });
+
   it('HIST-LINK: Settings opens the change history', () => {
     renderSettings();
     expect(screen.getByRole('heading', { level: 2, name: 'History' })).toBeInTheDocument();
