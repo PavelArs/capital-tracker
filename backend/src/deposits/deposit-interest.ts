@@ -383,3 +383,20 @@ export function firstImpossibleMovement(
   }
   return -1;
 }
+
+/**
+ * DEP-PREVIEW: what a deposit would come to, from its terms alone, before it is added: the
+ * balance and interest at the end of the term (null without one) and the first interest date
+ * with its interest. The same replay as a saved deposit, with the opening top-up only.
+ */
+export function previewDeposit(terms: DepositTerms, amount: string) {
+  const opening: DepositMovement[] = [{ date: terms.startDate, kind: 'topup', amount }];
+  const end = terms.endDate === null ? null : projectDeposit(terms, opening, terms.endDate);
+  return {
+    atMaturity:
+      end === null
+        ? null
+        : { date: terms.endDate as string, balance: end.balance, interest: end.interestPosted },
+    firstPayout: nextPayout(terms, opening, terms.startDate),
+  };
+}
