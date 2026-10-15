@@ -1176,6 +1176,26 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(account(dialog)).toHaveValue(id(12));
   });
 
+  it('add-transaction-holder picks no account when one balance cannot be read', async () => {
+    available.mockImplementation(async (accountId, query) => {
+      if (accountId === id(13)) throw new Error('offline');
+      return {
+        accountId,
+        ...query,
+        journalRevision: 4,
+        quantity: accountId === id(12) ? '2' : '0.5',
+      };
+    });
+    const { dialog } = await open();
+    // The unread account may hold the most, so the form keeps its first account.
+    await waitFor(async () => {
+      await Promise.allSettled(available.mock.results.map((result) => result.value));
+      expect(available.mock.results.length).toBeGreaterThanOrEqual(3);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(account(dialog)).toHaveValue(id(11));
+  });
+
   it('ASSET-ORDER keeps the order given while the valuation cannot be read', async () => {
     vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, tether]);
     vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));

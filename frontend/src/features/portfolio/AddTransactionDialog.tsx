@@ -173,7 +173,7 @@ const derivedPrice = (total: string, amount: string) =>
 
 /**
  * The account that holds the most of an asset now, or null when none holds any, there is only
- * one account to choose, or the balances cannot be read.
+ * one account to choose, or any account's balance cannot be read.
  */
 async function holderOf(
   accounts: readonly Account[],
@@ -189,6 +189,8 @@ async function holderOf(
         .catch(() => null),
     ),
   );
+  // One unread balance may be the largest, so a partial answer suggests no account.
+  if (held.includes(null)) return null;
   let holder: string | null = null;
   let most = '0';
   for (const [index, quantity] of held.entries())
