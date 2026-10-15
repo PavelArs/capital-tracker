@@ -871,9 +871,18 @@ export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
 }
 
 /**
- * wallets-08: a wallet named after Bybit that no Bybit API key reads yet; it can be connected.
- * Bybit is the only exchange the app reads, so another exchange's wallet is not offered this.
+ * wallets-08: a wallet named after Bybit, held as an exchange account (or not said how), that no
+ * Bybit API key reads yet; it can be connected. Bybit is the only exchange the app reads, so
+ * another exchange's wallet, or a hardware wallet with Bybit in its name, is not offered this.
  */
-export function connectsBybit(name: string, addresses: WalletAddress[]): boolean {
-  return /\bbybit\b/i.test(name) && !addresses.some((address) => address.network === 'bybit');
+export function connectsBybit(
+  name: string,
+  addresses: WalletAddress[],
+  kind: WalletKind | null,
+): boolean {
+  return (
+    (kind === null || kind === 'exchange') &&
+    /\bbybit\b/i.test(name) &&
+    !addresses.some((address) => address.network === 'bybit')
+  );
 }

@@ -261,7 +261,7 @@ export default function WalletsPage() {
                         currency={currency}
                         narrow={narrow}
                         onConnect={
-                          connectsBybit(account.name, own)
+                          connectsBybit(account.name, own, kinds[account.accountId] ?? null)
                             ? () => setAdding(account.accountId)
                             : undefined
                         }
@@ -290,12 +290,7 @@ export default function WalletsPage() {
         <AddWalletDialog
           accounts={accounts}
           addresses={list}
-          {...(typeof adding === 'string'
-            ? {
-                network: 'bybit' as const,
-                wallet: accounts.find((item) => item.accountId === adding)?.name,
-              }
-            : {})}
+          {...(typeof adding === 'string' ? { network: 'bybit' as const, accountId: adding } : {})}
           onClose={() => setAdding(false)}
           onOpenExisting={(address) => {
             setAdding(false);

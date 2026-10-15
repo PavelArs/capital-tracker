@@ -111,8 +111,11 @@ interface Props {
   onAdded: (address: WalletAddress, created: boolean) => void;
   /** Opens a wallet the owner tried to add again (WAL-DUP). */
   onOpenExisting: (address: WalletAddress) => void;
-  /** The wallet the address joins unless the owner picks another (from a wallet's own page). */
-  wallet?: string;
+  /**
+   * The wallet the address joins unless the owner names another (from a wallet's own page or its
+   * Connect Bybit API), by its id: another wallet may have the same name.
+   */
+  accountId?: string;
   /** Opens on this network's form, as "Connect Bybit API" does (wallets-08). */
   network?: Network;
 }
@@ -124,9 +127,12 @@ export default function AddWalletDialog({
   onClose,
   onAdded,
   onOpenExisting,
-  wallet,
+  accountId,
   network: initialNetwork,
 }: Props) {
+  const opened = accountId
+    ? accounts.find((account) => account.accountId === accountId)
+    : undefined;
   const [step, setStep] = useState<1 | 2 | 3>(initialNetwork ? 2 : 1);
   const [network, setNetwork] = useState<Network | null>(initialNetwork ?? null);
   const [input, setInput] = useState('');
@@ -141,7 +147,7 @@ export default function AddWalletDialog({
   const [apiSecret, setApiSecret] = useState('');
   // wallets-14: the secret can be shown to check it was pasted in full; hidden again on each step.
   const [secretShown, setSecretShown] = useState(false);
-  const [walletName, setWalletName] = useState(wallet ?? '');
+  const [walletName, setWalletName] = useState(opened?.name ?? '');
   const [label, setLabel] = useState('');
   // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
   const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
@@ -183,7 +189,8 @@ export default function AddWalletDialog({
   // M21: an account public key (xpub, ypub, zpub) stands for every address of the account.
   const isKey = check.ok && /^[xyz]pub/.test(check.address);
   const chosenName = walletName.trim() || chosen.defaultWallet;
-  const match = accountNamed(accounts, chosenName);
+  // The wallet it was opened for while its name stands, else the one the owner names.
+  const match = opened && chosenName === opened.name ? opened : accountNamed(accounts, chosenName);
   const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
 
   // WAL-NO-SECRETS: a seed phrase or private key pasted as the key is dropped at once.

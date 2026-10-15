@@ -442,7 +442,7 @@ export default function WalletPage() {
           </div>
           {own.length === 0 && (
             <section className="shell-card">
-              {connectsBybit(account.name, own) ? (
+              {connectsBybit(account.name, own, kind) ? (
                 // wallets-08: a Bybit account kept by hand can read itself with a read-only key.
                 <p className="wallets-soft">
                   {account.name} is tracked by hand: balances come from the transactions you add.{' '}
@@ -472,7 +472,7 @@ export default function WalletPage() {
         <AddWalletDialog
           accounts={accounts}
           addresses={list}
-          wallet={account.name}
+          accountId={accountId}
           network={adding === 'bybit' ? 'bybit' : undefined}
           onClose={() => setAdding(false)}
           onOpenExisting={(address) => {

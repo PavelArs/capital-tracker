@@ -2617,6 +2617,47 @@ describe('UI audit: Wallets', () => {
     expect(within(dialog).getByLabelText(/^Wallet/)).toHaveValue('Bybit');
   });
 
+  it('wallets-08 connects the Bybit wallet it was opened from, not another of the same name', async () => {
+    const ledger = id(14);
+    const bybit = id(13);
+    const valuation = portfolio();
+    for (const accountId of [ledger, bybit]) {
+      valuation.accounts.push({
+        accountId,
+        name: 'Bybit',
+        coverage: 'covered',
+        pricedValue: '50',
+        missingPriceCount: 0,
+      });
+      valuation.assets[1].holdings.push({
+        accountId,
+        accountName: 'Bybit',
+        quantity: '25',
+        value: '25',
+      });
+    }
+    setup([wallet(1, {})], valuation, {}, [], '/wallets', [
+      account(ledger, 'Bybit', 'hardware'),
+      account(bybit, 'Bybit', null),
+    ]);
+    const add = vi.spyOn(walletAddressesApi, 'add').mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByRole('region', { name: 'Bybit' })).toHaveLength(2));
+    const [hardware, unset] = screen.getAllByRole('region', { name: 'Bybit' });
+    // A hardware wallet named Bybit is no Bybit account; one without a kind may be.
+    await waitFor(() =>
+      expect(within(unset).getByRole('button', { name: 'Connect Bybit API' })).toBeVisible(),
+    );
+    expect(within(hardware).queryByRole('button', { name: 'Connect Bybit API' })).toBeNull();
+    await user.click(within(unset).getByRole('button', { name: 'Connect Bybit API' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.type(within(dialog).getByLabelText('API key'), keyApi);
+    await user.type(within(dialog).getByLabelText('API secret'), keySecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ accountId: bybit }));
+  });
+
   it('wallets-09 describes each row with its balance, value and sync status', async () => {
     setup([wallet(1, {})]);
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
