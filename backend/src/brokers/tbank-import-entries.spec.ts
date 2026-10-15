@@ -45,7 +45,7 @@ const buy = (over: Partial<PlanEntry> = {}) =>
   });
 
 describe('BROKER-SYNC: the journal entries a T-Bank import writes', () => {
-  it('buys cash from outside for money paid in and spends it on a buy, the rest from outside', () => {
+  it('buys cash from outside for money paid in and settles a buy in full from that cash', () => {
     const { entries, problems } = journalEntries(
       [entry({}), buy({ amount: '1000', fee: '0' })],
       instruments,
@@ -62,15 +62,42 @@ describe('BROKER-SYNC: the journal entries a T-Bank import writes', () => {
       paid: { currency: 'RUB', gross: '900', fee: '0', rateSource: 'bank-of-russia' },
     });
     expect(deposit.settlement).toBeUndefined();
+    // The whole 1000 is spent from cash, never partly from outside: the history holds every
+    // ruble paid in, so 900 held is a shortfall the journal's own check refuses.
     expect(purchase).toMatchObject({
       instrumentId: id(4),
       side: 'buy',
       quantity: '2',
       paid: { currency: 'RUB', gross: '1000', fee: '0' },
-      settlement: { instrumentId: id(1), quantity: '900' },
+      settlement: { instrumentId: id(1), quantity: '1000' },
     });
+    expect(() =>
+      calculateOwnedTransfers(
+        [
+          {
+            accountId: id(9),
+            coverageFrom: '1970-01-01T00:00:00.000Z',
+            trades: entries.map((item) => item.trade!),
+            initialLots: [],
+          },
+        ],
+        [],
+      ),
+    ).toThrow();
     // Same millisecond: numbered in plan order.
     expect(entries.map((item) => item.trade!.orderWithinTimestamp)).toEqual([0, 1]);
+  });
+
+  it('refuses a sale whose fee is more than it brought, instead of dropping the rest of the fee', () => {
+    const { entries, problems } = journalEntries(
+      [buy({ action: 'sell', amount: '0.5', fee: '1', operationIds: ['5'] })],
+      instruments,
+      rates,
+    );
+    expect(entries).toEqual([]);
+    expect(problems).toEqual([
+      { reason: 'fee-above-proceeds', occurredAt: '2024-03-01T10:00:00.000Z', operationIds: ['5'] },
+    ]);
   });
 
   it('keeps a sale net of fee as cash and spends taxes and fees from cash as a fee', () => {
@@ -116,11 +143,26 @@ describe('BROKER-SYNC: the journal entries a T-Bank import writes', () => {
 
   it('lets a buy spend income received as cash', () => {
     const { entries } = journalEntries(
-      [entry({ record: 'reward', action: 'income', amount: '50', quantity: '50' }), buy()],
+      [entry({ record: 'reward', action: 'income', amount: '500', quantity: '500' }), buy()],
       instruments,
       rates,
     );
-    expect(entries[1].trade?.settlement).toMatchObject({ instrumentId: id(1), quantity: '50' });
+    const { lots } = calculateOwnedTransfers(
+      [
+        {
+          accountId: id(9),
+          coverageFrom: '1970-01-01T00:00:00.000Z',
+          trades: entries.flatMap((item) => (item.trade ? [item.trade] : [])),
+          rewards: entries.flatMap((item) => (item.reward ? [item.reward] : [])),
+          initialLots: [],
+        },
+      ],
+      [],
+    ).accounts.get(id(9))!;
+    // 500 received, 459 spent on the buy.
+    expect(
+      lots.filter((lot) => lot.instrumentId === id(1)).map((lot) => lot.remainingQuantity),
+    ).toEqual(['41']);
   });
 
   it('names an entry whose date has no Bank of Russia rate instead of writing it', () => {

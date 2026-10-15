@@ -573,6 +573,39 @@ async function importing(db, service, imports, owner, other) {
     ['500000001', '500000002', '500000003', '500000004', '500000004#2', '500000005', '500000006'],
   );
   console.log('PASS BROKER-SYNC-FX');
+
+  stage = 'BROKER-SYNC-HASH: a rate stored after the preview does not let its hash write the history';
+  const sixth = await account(db, owner, 'broker');
+  await service.connect(owner, sixth, { token, brokerAccountId: brokerAccount.id });
+  history = [operation('600000001', 'INPUT', '100', { occurredAt: '2019-12-20T10:00:00Z' })];
+  const unrated = await imports.preview(owner, sixth);
+  assert.deepEqual(unrated.problems.map((problem) => problem.reason), ['no-rate']);
+  await db.query(`INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit")
+    VALUES ('USD','cbr','2019-12-20',62),('EUR','cbr','2019-12-20',69)`);
+  await rejected(
+    () => imports.import(owner, sixth, { requestId: randomUUID(), previewHash: unrated.previewHash }),
+    409,
+  );
+  assert.equal(await count('broker_imports', `WHERE "accountId" = '${sixth}'`), 0);
+  const rated = await imports.preview(owner, sixth);
+  assert.equal(rated.canImport, true);
+  assert.notEqual(rated.previewHash, unrated.previewHash);
+  console.log('PASS BROKER-SYNC-HASH');
+
+  stage = 'BROKER-SYNC-REWARD-CAP: a history with more rewards than the journal keeps is previewed, not failed';
+  const seventh = await account(db, owner, 'broker');
+  await service.connect(owner, seventh, { token, brokerAccountId: brokerAccount.id });
+  history = Array.from({ length: 1001 }, (_, index) =>
+    operation(`7${String(index).padStart(8, '0')}`, 'DIVIDEND', '1', share({
+      occurredAt: `2024-03-${String(1 + (index % 28)).padStart(2, '0')}T09:00:00Z`,
+      quantity: '0',
+    })),
+  );
+  const crowded = await imports.preview(owner, seventh);
+  assert.equal(crowded.fitsRewardLimit, false);
+  assert.equal(crowded.canImport, false);
+  assert.deepEqual(crowded.problems.map((problem) => problem.reason), ['too-many-rewards']);
+  console.log('PASS BROKER-SYNC-REWARD-CAP');
 }
 
 async function main() {

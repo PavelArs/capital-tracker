@@ -61,6 +61,7 @@ export interface PlanSkip {
     | 'no-quantity'
     | 'fills'
     | 'card'
+    | 'no-payment'
     | 'no-amount';
 }
 
@@ -268,7 +269,15 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     if (kind === 'transfer') return skip(item, 'transfer');
     if (cardSettled.has(item.type)) return skip(item, 'card');
     if (joins(item)) return [];
-    if (isZero(item.payment)) return skip(item, 'no-amount');
+    if (isZero(item.payment))
+      // A trade or repayment that moved units for no money changed the holding, so it is listed;
+      // only money of nothing moved nothing.
+      return skip(
+        item,
+        kind === 'repayment' || ((kind === 'buy' || kind === 'sell') && !isZero(item.quantity))
+          ? 'no-payment'
+          : 'no-amount',
+      );
     if (!recordable(item.paymentCurrency)) return skip(item, 'currency');
     const incoming = signOf(item.payment) === 'in';
     const expected = expectedSign[kind];
@@ -345,7 +354,8 @@ function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry
   const runs = new Map<string, { action: PlanAction; run: number }>();
   const kept: PlanEntry[] = [];
   for (const entry of ordered(list)) {
-    if (entry.record !== 'trade') {
+    // Dollars and euros bought are cash a later trade may spend, so each keeps its own time.
+    if (entry.record !== 'trade' || entry.cash) {
       kept.push(entry);
       continue;
     }

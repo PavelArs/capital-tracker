@@ -455,6 +455,7 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       op({ id: '200000001', type: 'OPERATION_TYPE_SOMETHING_NEW' }),
       op({ id: '200000002', type: 'OPERATION_TYPE_INPUT_SECURITIES' }),
       op({ id: '200000003', quantity: '0' }),
+      // A buy that moved shares for no money is not nothing: it is listed, not ignored.
       op({ id: '200000004', payment: '0' }),
       op({ id: '200000005', state: 'canceled' }),
       op({ id: '200000006', paymentCurrency: 'cny' }),
@@ -477,7 +478,7 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       ['200000001', 'unsupported'],
       ['200000002', 'transfer'],
       ['200000003', 'no-quantity'],
-      ['200000004', 'no-amount'],
+      ['200000004', 'no-payment'],
       ['200000006', 'currency'],
       ['200000007', 'currency'],
       ['200000008', 'no-instrument'],
@@ -752,6 +753,42 @@ describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
     expect(plan.entries.map((entry) => [entry.action, entry.cash])).toEqual([['sell', 'usd']]);
   });
 
+  it('never combines dollar or euro trades, since a later trade may spend that cash', () => {
+    const busy = Array.from({ length: 950 }, (_, index) =>
+      op({
+        occurredAt: new Date(Date.UTC(2024, 0, 1 + Math.floor(index / 10), 9, 0, index % 10))
+          .toISOString()
+          .replace('.000', ''),
+        quantity: '1',
+        payment: '-10',
+      }),
+    );
+    const plan = planImport([
+      ...busy,
+      fx('USD000UTSTOM', dollars, {
+        id: '630000001',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: '2024-03-04T07:00:00Z',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '630000002',
+        quantity: '500',
+        payment: '-45000',
+        occurredAt: '2024-03-04T12:00:00Z',
+      }),
+    ]);
+    expect(plan.grouping).toBe('day');
+    expect(
+      plan.entries
+        .filter((entry) => entry.cash)
+        .map((entry) => [entry.occurredAt, entry.quantity, entry.operationIds]),
+    ).toEqual([
+      ['2024-03-04T07:00:00Z', '1000', ['630000001']],
+      ['2024-03-04T12:00:00Z', '500', ['630000002']],
+    ]);
+  });
+
   it('keeps gold and currencies the app does not keep as cash as assets priced in rubles', () => {
     const plan = planImport([
       fx('GLDRUB_TOM', gold, { id: '620000001', quantity: '10', payment: '-70000' }),
@@ -779,6 +816,27 @@ describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
     // Gold is held like a security, so a sale of more than was bought is listed.
     expect(plan.skipped).toEqual([
       { operationId: '620000003', type: 'OPERATION_TYPE_SELL', reason: 'not-held' },
+    ]);
+  });
+});
+
+describe('BROKER-SYNC: operations without money', () => {
+  it('ignores a fee of nothing but lists a trade or repayment that moved units for nothing', () => {
+    const plan = planImport([
+      cash('OPERATION_TYPE_BROKER_FEE', '0', { id: '700000001' }),
+      op({ id: '700000002', type: 'OPERATION_TYPE_SELL', payment: '0', quantity: '1' }),
+      op({
+        id: '700000003',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        payment: '0',
+        quantity: '0',
+      }),
+    ]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['700000001', 'no-amount'],
+      ['700000002', 'no-payment'],
+      ['700000003', 'no-payment'],
     ]);
   });
 });

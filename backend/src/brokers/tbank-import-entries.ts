@@ -36,7 +36,7 @@ export type JournalEntry =
  * amount in USD is out of the range the app stores.
  */
 export interface EntryProblem {
-  reason: 'no-rate' | 'amount';
+  reason: 'no-rate' | 'amount' | 'fee-above-proceeds';
   occurredAt: string;
   operationIds: string[];
 }
@@ -61,7 +61,6 @@ export function journalEntries(
 ): { entries: JournalEntry[]; problems: EntryProblem[] } {
   const entries: JournalEntry[] = [];
   const problems: EntryProblem[] = [];
-  const balance: Record<CashCurrency, bigint> = { RUB: 0n, USD: 0n, EUR: 0n };
   const orderAt = new Map<string, number>();
   for (const source of plan) {
     const currency = cashCurrency[source.currency];
@@ -92,7 +91,6 @@ export function journalEntries(
     const id = `import-${entries.length}`;
     const at = { occurredAt, orderWithinTimestamp };
     if (source.record === 'reward') {
-      balance[currency] += amount;
       entries.push({
         source,
         reward: {
@@ -121,11 +119,9 @@ export function journalEntries(
     let trade: FifoTrade;
     if (source.action === 'deposit' || source.action === 'withdrawal') {
       const side: 'buy' | 'sell' = source.action === 'deposit' ? 'buy' : 'sell';
-      balance[currency] += side === 'buy' ? amount : -amount;
       trade = { ...onCash, side, ...priced };
     } else if (source.action === 'fee' || source.action === 'tax') {
       // A fee is all fee, its value in USD given as both amounts (PR-OPS-6).
-      balance[currency] -= amount;
       trade = {
         ...onCash,
         side: 'sell',
@@ -140,15 +136,17 @@ export function journalEntries(
         ? instruments.cash[moved]
         : instruments.securities.get(source.instrumentUid);
       if (!security) throw new Error('The plan holds an instrument without an owner instrument');
-      const held = balance[currency] > 0n ? balance[currency] : 0n;
-      const spent = held < amount + fee ? held : amount + fee;
-      const kept = amount > fee ? amount - fee : 0n;
-      const settled = source.action === 'buy' ? spent : kept;
-      balance[currency] += source.action === 'buy' ? -spent : kept;
-      if (moved) {
-        const units = canonicalDecimalToAtoms(source.quantity);
-        balance[moved] += source.action === 'buy' ? units : -units;
+      // A buy spends all it cost from cash and a sale keeps its proceeds net of fee: the history
+      // holds every payment in, so cash short of a buy is a shortfall the journal check refuses.
+      if (source.action === 'sell' && fee > amount) {
+        problems.push({
+          reason: 'fee-above-proceeds',
+          occurredAt,
+          operationIds: source.operationIds,
+        });
+        continue;
       }
+      const settled = source.action === 'buy' ? amount + fee : amount - fee;
       trade = {
         ...base,
         instrumentId: security.id,
@@ -157,12 +155,16 @@ export function journalEntries(
         side: source.action,
         quantity: source.quantity,
         ...priced,
-        settlement: {
-          instrumentId: cash.id,
-          instrumentName: cash.name,
-          instrumentSymbol: cash.symbol,
-          quantity: formatAtoms(settled),
-        },
+        ...(settled > 0n
+          ? {
+              settlement: {
+                instrumentId: cash.id,
+                instrumentName: cash.name,
+                instrumentSymbol: cash.symbol,
+                quantity: formatAtoms(settled),
+              },
+            }
+          : {}),
       };
     } else throw new Error(`A trade cannot record the action ${source.action}`);
     entries.push({ source, trade });

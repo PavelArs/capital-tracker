@@ -47,6 +47,7 @@ export interface ImportProblem {
     | 'already-imported'
     | 'no-rate'
     | 'amount'
+    | 'fee-above-proceeds'
     | 'not-held'
     | 'before-records'
     | 'too-many-rewards'
@@ -331,7 +332,8 @@ export class BrokerImportService {
       problems.push({ reason: 'too-many-rewards', occurredAt: null, ticker: '', operationIds: [] });
     if ((journal?.currentRevision ?? 0) + entries.length > 10000)
       problems.push({ reason: 'too-many-entries', occurredAt: null, ticker: '', operationIds: [] });
-    if (plan.fitsTradeLimit && entries.length > 0) {
+    // Past a cap the replay cannot run; that cap is already listed as the problem.
+    if (plan.fitsTradeLimit && fitsRewardLimit && entries.length > 0) {
       const replayed = {
         accountId: account,
         coverageFrom: AUTOMATIC_COVERAGE_FROM,
@@ -359,8 +361,33 @@ export class BrokerImportService {
         );
       }
     }
+    // The hash pins what the owner reviewed: the plan, the amounts it becomes at the rates stored
+    // then (instrument ids aside, since the preview only names the ones it would create) and
+    // what stood in the way, so a rate that arrives later cannot slip an unreviewed entry in.
+    const derived = entries.map(({ trade, reward }) =>
+      trade
+        ? [
+            trade.side,
+            trade.quantity,
+            trade.grossUsd,
+            trade.feeUsd,
+            trade.paid ?? null,
+            trade.purpose ?? null,
+            trade.settlement?.quantity ?? null,
+          ]
+        : [reward.quantity, reward.acquisitionBasisUsd, reward.incomeValueUsd],
+    );
     const previewHash = createHash('sha256')
-      .update(JSON.stringify(['tbank-import-v1', account, plan.grouping, plan.entries]))
+      .update(
+        JSON.stringify([
+          'tbank-import-v2',
+          account,
+          plan.grouping,
+          plan.entries,
+          derived,
+          problems,
+        ]),
+      )
       .digest('hex');
     return {
       plan: { ...plan, fitsRewardLimit },
