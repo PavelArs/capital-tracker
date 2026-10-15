@@ -406,9 +406,6 @@ const ordered = (list: PlanEntry[]) =>
     ),
   );
 
-const isTrade = (entry: PlanEntry, action: PlanAction, uid: string) =>
-  entry.record === 'trade' && entry.action === action && entry.instrumentUid === uid;
-
 /**
  * Within one instant, money arrives before it is spent, except that a buy of a security goes
  * before a sale of the same security at that instant: the order of the two is unknown, and the
@@ -416,23 +413,36 @@ const isTrade = (entry: PlanEntry, action: PlanAction, uid: string) =>
  */
 function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
   const result: PlanEntry[] = [];
-  const placed = new Set<PlanEntry>();
-  sorted.forEach((entry, index) => {
-    if (placed.has(entry)) return;
-    if (entry.record === 'trade' && entry.action === 'sell' && entry.instrumentUid !== '') {
-      const time = timeKey(entry.occurredAt);
-      for (let at = index + 1; at < sorted.length; at += 1) {
-        const later = sorted[at];
-        if (timeKey(later.occurredAt) !== time) break;
-        if (isTrade(later, 'buy', entry.instrumentUid) && !placed.has(later)) {
-          result.push(later);
-          placed.add(later);
-        }
-      }
+  const isSecurity = (entry: PlanEntry, action: PlanAction) =>
+    entry.record === 'trade' && entry.action === action && entry.instrumentUid !== '';
+  for (let start = 0; start < sorted.length; ) {
+    const time = timeKey(sorted[start].occurredAt);
+    let end = start;
+    while (end < sorted.length && timeKey(sorted[end].occurredAt) === time) end += 1;
+    const instant = sorted.slice(start, end);
+    // Each security's buys at this instant, placed together before its first sale.
+    const buys = new Map<string, PlanEntry[]>();
+    for (const entry of instant) {
+      if (!isSecurity(entry, 'buy')) continue;
+      const list = buys.get(entry.instrumentUid);
+      if (list) list.push(entry);
+      else buys.set(entry.instrumentUid, [entry]);
     }
-    result.push(entry);
-    placed.add(entry);
-  });
+    const placed = new Set<PlanEntry>();
+    for (const entry of instant) {
+      if (placed.has(entry)) continue;
+      if (isSecurity(entry, 'sell')) {
+        for (const buy of buys.get(entry.instrumentUid) ?? []) {
+          result.push(buy);
+          placed.add(buy);
+        }
+        buys.delete(entry.instrumentUid);
+      }
+      result.push(entry);
+      placed.add(entry);
+    }
+    start = end;
+  }
   return result;
 }
 
