@@ -123,7 +123,7 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     expect([part.record, part.action, part.instrumentUid, part.quantity]).toEqual([
       'reward',
       'repayment',
-      '',
+      share,
       '250',
     ]);
   });
@@ -191,6 +191,13 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     expect(byDay.entries[0].operationIds).toHaveLength(10);
     // Moscow dates: the first buy (1 January 21:30 UTC) falls on 2 January.
     expect(byDay.entries[0].occurredAt).toBe('2024-01-01T21:30:09Z');
+    // 20:59 and 21:00 UTC on one UTC day are two Moscow days.
+    const edge = planImport([
+      ...busy,
+      op({ occurredAt: '2024-06-01T20:59:00Z', quantity: '1', payment: '-10' }),
+      op({ occurredAt: '2024-06-01T21:00:00Z', quantity: '1', payment: '-10' }),
+    ]).entries.filter((entry) => entry.occurredAt.startsWith('2024-06-01'));
+    expect(edge.map((entry) => entry.quantity)).toEqual(['1', '1']);
 
     const daily = Array.from({ length: 950 }, (_, index) =>
       op({
@@ -202,6 +209,117 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     const byMonth = planImport(daily);
     expect(byMonth.grouping).toBe('month');
     expect(byMonth.trades).toBe(32);
+  });
+
+  // 901 buys of another share, one a day, so the account is combined (by month in the end).
+  const filler = () =>
+    Array.from({ length: 901 }, (_, index) =>
+      op({
+        instrumentUid: '00000000-0000-4000-8000-0000000000ff',
+        occurredAt: new Date(Date.UTC(2022, 0, 1) + index * 86_400_000)
+          .toISOString()
+          .replace('.000', ''),
+      }),
+    );
+  const busyDay = (plan: ReturnType<typeof planImport>) =>
+    plan.entries.filter((entry) => entry.occurredAt.startsWith('2024-06-03'));
+
+  it('keeps a buy, a sale and a buy of one share apart when combining, in their order', () => {
+    const day = (time: string, over: Partial<TBankOperation>) =>
+      op({ occurredAt: `2024-06-03T${time}Z`, quantity: '1', ...over });
+    const plan = planImport([
+      ...filler(),
+      day('07:00:00', { id: '400000001' }),
+      day('08:00:00', { id: '400000002' }),
+      day('09:00:00', { id: '400000003', type: 'OPERATION_TYPE_SELL', payment: '110' }),
+      day('12:00:00', { id: '400000004' }),
+    ]);
+    expect(plan.grouping).toBe('month');
+    expect(busyDay(plan).map((entry) => [entry.action, entry.quantity, entry.occurredAt])).toEqual([
+      // A run of buys is dated by its last buy, before the sale that follows it.
+      ['buy', '2', '2024-06-03T08:00:00Z'],
+      ['sell', '1', '2024-06-03T09:00:00Z'],
+      ['buy', '1', '2024-06-03T12:00:00Z'],
+    ]);
+  });
+
+  it('dates combined money in by its first part and money out by its last', () => {
+    const at = (time: string) => `2024-06-03T${time}Z`;
+    const plan = planImport([
+      ...filler(),
+      cash('OPERATION_TYPE_INPUT', '100', { occurredAt: at('06:00:00') }),
+      cash('OPERATION_TYPE_INPUT', '100', { occurredAt: at('17:00:00') }),
+      op({ occurredAt: at('10:00:00'), payment: '-150', quantity: '1' }),
+      cash('OPERATION_TYPE_OUTPUT', '-10', { occurredAt: at('11:00:00') }),
+      cash('OPERATION_TYPE_OUTPUT', '-10', { occurredAt: at('18:00:00') }),
+    ]);
+    expect(busyDay(plan).map((entry) => [entry.action, entry.amount, entry.occurredAt])).toEqual([
+      ['deposit', '200', at('06:00:00')],
+      ['buy', '150', at('10:00:00')],
+      ['withdrawal', '20', at('18:00:00')],
+    ]);
+  });
+
+  it('keeps each dividend with the share that paid it, never combined', () => {
+    const other = '00000000-0000-4000-8000-0000000000aa';
+    const plan = planImport([
+      ...filler(),
+      cash('OPERATION_TYPE_DIVIDEND', '5', {
+        occurredAt: '2024-06-03T09:00:00Z',
+        ticker: 'SYNTH',
+        instrumentUid: share,
+      }),
+      cash('OPERATION_TYPE_DIVIDEND', '6', {
+        occurredAt: '2024-06-03T10:00:00Z',
+        ticker: 'OTHER',
+        instrumentUid: other,
+      }),
+      cash('OPERATION_TYPE_DIVIDEND', '7', {
+        occurredAt: '2024-06-03T11:00:00Z',
+        ticker: 'SYNTH',
+        instrumentUid: share,
+      }),
+    ]);
+    expect(busyDay(plan).map((entry) => [entry.ticker, entry.instrumentUid, entry.amount])).toEqual(
+      [
+        ['SYNTH', share, '5'],
+        ['OTHER', other, '6'],
+        ['SYNTH', share, '7'],
+      ],
+    );
+  });
+
+  it('lists an operation whose amount has the wrong sign instead of turning it around', () => {
+    const buy = op({ id: '500000001' });
+    const plan = planImport([
+      buy,
+      cash('OPERATION_TYPE_BROKER_FEE', '0.5', { id: '500000002', parentId: buy.id }),
+      cash('OPERATION_TYPE_DIVIDEND', '-4', { id: '500000003' }),
+      cash('OPERATION_TYPE_INPUT', '-100', { id: '500000004' }),
+      cash('OPERATION_TYPE_OUTPUT', '100', { id: '500000005' }),
+      op({ id: '500000006', payment: '200' }),
+      op({ id: '500000007', type: 'OPERATION_TYPE_SELL', payment: '-200' }),
+    ]);
+    // A fee given back for a trade is money received, not a cost of the trade.
+    expect(plan.entries.map((entry) => [entry.action, entry.fee, entry.operationIds])).toEqual([
+      ['income', '0', ['500000002']],
+      ['buy', '0', ['500000001']],
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['500000003', 'sign'],
+      ['500000004', 'sign'],
+      ['500000005', 'sign'],
+      ['500000006', 'sign'],
+      ['500000007', 'sign'],
+    ]);
+  });
+
+  it('orders operations of one instant by T-Bank number, not as text', () => {
+    const plan = planImport([
+      cash('OPERATION_TYPE_INPUT', '1', { id: '10' }),
+      cash('OPERATION_TYPE_INPUT', '2', { id: '9' }),
+    ]);
+    expect(plan.entries.map((entry) => entry.operationIds[0])).toEqual(['9', '10']);
   });
 
   it('says when an account does not fit even combined by month', () => {

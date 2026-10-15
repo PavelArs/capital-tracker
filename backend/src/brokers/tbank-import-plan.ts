@@ -30,7 +30,7 @@ export interface PlanEntry {
   action: PlanAction;
   /** When it happened: a trade's last fill, else the operation's own time; the latest of a group. */
   occurredAt: string;
-  /** The T-Bank instrument for a security; '' when the entry moves only cash. */
+  /** The T-Bank instrument traded, or that paid a reward; '' for money in, out or spent. */
   instrumentUid: string;
   ticker: string;
   instrumentType: string;
@@ -48,7 +48,7 @@ export interface PlanEntry {
 export interface PlanSkip {
   operationId: string;
   type: string;
-  reason: 'unsupported' | 'transfer' | 'currency' | 'no-quantity' | 'no-amount';
+  reason: 'unsupported' | 'transfer' | 'currency' | 'sign' | 'no-quantity' | 'no-amount';
 }
 
 export interface ImportPlan {
@@ -70,6 +70,16 @@ const sum = (values: string[]) =>
 const isZero = (value: string) => value === '' || atoms(value) === 0n;
 /** The currencies the app keeps money in (USD, EUR and RUB), as T-Bank names them. */
 const recordable = (currency: string) => ['rub', 'usd', 'eur'].includes(currency);
+/** Money each kind moves: a buy pays, a sale receives; a tax or fee can be given back. */
+const expectedSign: Partial<Record<ReturnType<typeof operationKind>, 'in' | 'out'>> = {
+  buy: 'out',
+  sell: 'in',
+  repayment: 'in',
+  income: 'in',
+  deposit: 'in',
+  withdrawal: 'out',
+};
+const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
 
 /** When a trade happened: its last fill, else the operation's own (order) time. */
 function tradeTime(operation: TBankOperation): string {
@@ -97,15 +107,18 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
         (item) =>
           ['buy', 'sell'].includes(operationKind(item.type)) &&
           recordable(item.paymentCurrency) &&
+          signOf(item.payment) === expectedSign[operationKind(item.type)] &&
           !isZero(item.payment) &&
           !isZero(item.quantity),
       )
       .map((item) => [item.id, item.paymentCurrency]),
   );
-  // A fee joins its listed trade when paid in the trade's currency; any other fee is spent
-  // from cash.
+  // A fee paid for a listed trade in the trade's currency joins it; any other fee is spent from
+  // cash, and one given back is money received.
   const joins = (item: TBankOperation) =>
-    operationKind(item.type) === 'fee' && tradeCurrency.get(item.parentId) === item.paymentCurrency;
+    operationKind(item.type) === 'fee' &&
+    signOf(item.payment) === 'out' &&
+    tradeCurrency.get(item.parentId) === item.paymentCurrency;
   const feesOf = new Map<string, TBankOperation[]>();
   for (const item of executed)
     if (joins(item)) feesOf.set(item.parentId, [...(feesOf.get(item.parentId) ?? []), item]);
@@ -126,6 +139,13 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     currency: item.paymentCurrency,
     operationIds: [item.id],
   });
+  // A reward keeps the instrument that paid it, so dividends of two shares stay apart.
+  const reward = (item: TBankOperation, action: PlanAction): PlanEntry => ({
+    ...cash(item, 'reward', action),
+    instrumentUid: item.instrumentUid,
+    ticker: item.ticker,
+    instrumentType: item.instrumentType,
+  });
   return executed.flatMap((item): PlanEntry[] => {
     const kind = operationKind(item.type);
     if (kind === 'unsupported') return skip(item, 'unsupported');
@@ -133,7 +153,9 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     if (joins(item)) return [];
     if (isZero(item.payment)) return skip(item, 'no-amount');
     if (!recordable(item.paymentCurrency)) return skip(item, 'currency');
-    const incoming = atoms(item.payment) > 0n;
+    const incoming = signOf(item.payment) === 'in';
+    const expected = expectedSign[kind];
+    if (expected && signOf(item.payment) !== expected) return skip(item, 'sign');
     if (kind === 'buy' || kind === 'sell') {
       if (isZero(item.quantity)) return skip(item, 'no-quantity');
       const fees = feesOf.get(item.id) ?? [];
@@ -168,11 +190,11 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
           },
         ];
       }
-      return [{ ...cash(item, 'reward', 'repayment'), ticker: item.ticker }];
+      return [reward(item, 'repayment')];
     }
     // A tax or fee given back is money received, like income.
     if (kind === 'income' || ((kind === 'tax' || kind === 'fee') && incoming))
-      return [{ ...cash(item, 'reward', 'income'), ticker: item.ticker }];
+      return [reward(item, 'income')];
     if (kind === 'tax' || kind === 'fee') return [cash(item, 'trade', kind)];
     if (kind === 'deposit') return [cash(item, 'trade', 'deposit')];
     return [cash(item, 'trade', 'withdrawal')];
@@ -191,40 +213,62 @@ const actionOrder: PlanAction[] = [
   'withdrawal',
 ];
 
+/**
+ * Trades of one action, instrument and currency in one period, as one entry. Rewards do not
+ * count toward the trade limit and stay apart. A buy and a sale of one share are never combined
+ * across each other: a sale between buys starts a new run. A combined entry that brings money in
+ * (a deposit, a sale) is dated by its first part and one that spends money by its last, so the
+ * account never holds less cash or fewer shares at any time than it really did.
+ */
 function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry[] {
   const groups = new Map<string, PlanEntry[]>();
-  for (const entry of list) {
+  const runs = new Map<string, { action: PlanAction; run: number }>();
+  const kept: PlanEntry[] = [];
+  for (const entry of ordered(list)) {
+    if (entry.record !== 'trade') {
+      kept.push(entry);
+      continue;
+    }
+    let run = 0;
+    if (entry.instrumentUid) {
+      const previous = runs.get(entry.instrumentUid);
+      run = previous?.action === entry.action ? previous.run : (previous?.run ?? 0) + 1;
+      runs.set(entry.instrumentUid, { action: entry.action, run });
+    }
     const key = [
-      entry.record,
       entry.action,
       entry.instrumentUid,
       entry.currency,
       period(entry.occurredAt),
+      run,
     ].join('|');
     groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
-  return [...groups.values()].map((group) =>
-    group.length === 1
-      ? group[0]
-      : {
-          ...group[0],
-          occurredAt: group
-            .map((entry) => entry.occurredAt)
-            .reduce((latest, time) => (timeKey(time) > timeKey(latest) ? time : latest)),
-          quantity: sum(group.map((entry) => entry.quantity)),
-          amount: sum(group.map((entry) => entry.amount)),
-          fee: sum(group.map((entry) => entry.fee)),
-          operationIds: group.flatMap((entry) => entry.operationIds),
-        },
-  );
+  const combined = [...groups.values()].map((group) => {
+    if (group.length === 1) return group[0];
+    const times = group.map((entry) => entry.occurredAt);
+    const first = group[0].action === 'deposit' || group[0].action === 'sell';
+    return {
+      ...group[0],
+      occurredAt: first ? times[0] : times[times.length - 1],
+      quantity: sum(group.map((entry) => entry.quantity)),
+      amount: sum(group.map((entry) => entry.amount)),
+      fee: sum(group.map((entry) => entry.fee)),
+      operationIds: group.flatMap((entry) => entry.operationIds),
+    };
+  });
+  return [...kept, ...combined];
 }
+
+/** T-Bank operation numbers in numeric order: 9 before 10. */
+const byNumber = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
 
 const ordered = (list: PlanEntry[]) =>
   [...list].sort(
     (a, b) =>
       timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) ||
       actionOrder.indexOf(a.action) - actionOrder.indexOf(b.action) ||
-      a.operationIds[0].localeCompare(b.operationIds[0]),
+      byNumber(a.operationIds[0], b.operationIds[0]),
   );
 
 /**
