@@ -1,6 +1,7 @@
 import { type AccountSummary, accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import {
+  type AssetLots,
   type AssetValuation,
   type PortfolioValuation,
   portfolioValuationApi,
@@ -97,9 +98,40 @@ const properties = [
   asset(3, 'Gold coins', wallet, { value: '900' }),
 ];
 
+// The held lots the server lists for an asset, newest first (GET .../lots).
+const lot = (accountId: string, acquiredAt: string, quantity = '1') => ({
+  accountId,
+  accountName: 'Synthetic',
+  acquiredAt,
+  quantity,
+  paid: null,
+  value: null,
+  nominalPnl: null,
+  real: { official: null, personal: null },
+});
+const lotsOf: Record<string, Omit<AssetLots, 'instrumentId' | 'currency'>> = {
+  // Half of the studio was bought, the rest later; the first purchase is the one shown.
+  [id(1)]: {
+    complete: true,
+    lots: [
+      lot(studio, '2026-02-10T00:00:00.000Z', '0.25'),
+      lot(studio, '2025-09-01T00:00:00.000Z', '0.25'),
+    ],
+  },
+  // An account whose history starts later may hold earlier lots: the purchase date is unknown.
+  [id(2)]: { complete: false, lots: [lot(plot, '2026-03-01T00:00:00.000Z')] },
+};
+
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-12T12:00:00Z'));
+  vi.spyOn(portfolioValuationApi, 'lots').mockImplementation(async (instrumentId) => ({
+    instrumentId,
+    currency: 'USD',
+    ...(lotsOf[instrumentId] ?? { complete: true, lots: [] }),
+  }));
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       account(studio, 'Studio', 'property'),
@@ -109,7 +141,10 @@ beforeEach(() => {
     nextCursor: null,
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const renderPage = () =>
   render(
@@ -132,11 +167,12 @@ describe('PROPERTY-LIST Real estate', () => {
       `/portfolio/${id(1)}`,
       `/portfolio/${id(2)}`,
     ]);
+    await vi.waitFor(() => expect(cards[0]).toHaveTextContent('Bought'));
     expect(cards[0]).toHaveTextContent(
-      'Studio50% yours$46,000.00Whole property$92,000.00Estimate of1 Aug 2026Paid$42,500.00Gain+$3,500.00 (+8.24%)',
+      'Studio50% yours$46,000.00Whole property$92,000.00Estimate ofAug 1, 2026Over two months oldBoughtSep 1, 2025Paid$42,500.00Gain+$3,500.00 (+8.24%)',
     );
     expect(cards[1]).toHaveTextContent(
-      'LandFully yours$15,000.00Estimate of12 Oct 2026Paid$16,000.00Gain-$1,000.00 (-6.25%)',
+      'LandFully yours$15,000.00Estimate ofOct 12, 2026Paid$16,000.00Gain-$1,000.00 (-6.25%)',
     );
     expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
       'In real estate$61,000.00',
@@ -229,5 +265,46 @@ describe('PROPERTY-LIST Real estate', () => {
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('list')).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('classes-17 marks an estimate more than 60 Moscow days old, from 21:00 UTC', async () => {
+    // Set at 00:30 on Aug 1 in Moscow, which is still Jul 31 in UTC.
+    const studioAt = (observedAt: string) =>
+      valuation([
+        asset(1, 'Studio', studio, {
+          price: { value: '92000', observedAt, source: 'manual', status: 'manual' },
+          value: '92000',
+        }),
+      ]);
+    const badge = async (now: string, observedAt: string) => {
+      cleanup();
+      forgetReads();
+      vi.setSystemTime(new Date(now));
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(studioAt(observedAt));
+      renderPage();
+      const [card] = within(await screen.findByRole('list')).getAllByRole('link');
+      return within(card).queryByText('Over two months old');
+    };
+    // Sep 30, 23:59 in Moscow: 60 days after Aug 1, not yet over two months.
+    expect(await badge('2026-09-30T20:59:00Z', '2026-07-31T21:30:00.000Z')).toBeNull();
+    // Oct 1, 00:00 in Moscow: 61 days.
+    const warned = await badge('2026-09-30T21:00:00Z', '2026-07-31T21:30:00.000Z');
+    expect(warned).toHaveClass('ui-badge', 'ui-badge--warn');
+    expect(screen.getByRole('link', { name: /Studio/ })).toHaveTextContent(
+      'Estimate ofAug 1, 2026Over two months old',
+    );
+    expect(await badge('2026-09-30T21:00:00Z', '2026-08-02T00:00:00.000Z')).toBeNull();
+  });
+
+  it('classes-23 dates the estimate and the first purchase as the rest of the app does', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    renderPage();
+    const [first, second] = within(await screen.findByRole('list')).getAllByRole('link');
+    expect(await within(first).findByText('Sep 1, 2025')).toBeInTheDocument();
+    expect(first).toHaveTextContent('Estimate ofAug 1, 2026');
+    expect(portfolioValuationApi.lots).toHaveBeenCalledWith(id(2), undefined);
+    // Land's history may start after its purchase, so no purchase date is claimed.
+    expect(second).not.toHaveTextContent('Bought');
+    expect(second).toHaveTextContent('Estimate ofOct 12, 2026');
   });
 });

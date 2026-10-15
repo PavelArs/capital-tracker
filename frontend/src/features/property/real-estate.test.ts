@@ -1,6 +1,6 @@
-import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import type { AssetLots, AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { describe, expect, it } from 'vitest';
-import { propertiesOf, propertyTotal } from './real-estate';
+import { estimateOverdue, firstBought, propertiesOf, propertyTotal } from './real-estate';
 
 // Synthetic names, ids and amounts only.
 const house = '00000000-0000-4000-8000-000000000011';
@@ -43,5 +43,34 @@ describe('PROPERTY-LIST real estate figures', () => {
     expect(propertyTotal(shares(['0.1', '0.2']))).toBe('0.3');
     expect(propertyTotal(shares(['9007199254740993', '1', null]))).toBe('9007199254740994');
     expect(propertyTotal(shares([]))).toBe('0');
+  });
+
+  it('classes-17 counts the age of an estimate in Moscow days, across a month end', () => {
+    // Aug 1, 00:30 in Moscow.
+    const set = '2026-07-31T21:30:00.000Z';
+    expect(estimateOverdue(set, new Date('2026-09-30T20:59:59Z'))).toBe(false);
+    expect(estimateOverdue(set, new Date('2026-09-30T21:00:00Z'))).toBe(true);
+    expect(estimateOverdue('2026-08-01T00:00:00.000Z', new Date('2026-09-30T23:59:59Z'))).toBe(
+      true,
+    );
+  });
+
+  it('classes-23 takes the first purchase held in property accounts, as a Moscow day', () => {
+    const lots = (complete: boolean, ...held: [string, string][]) =>
+      ({
+        instrumentId: 'synthetic',
+        currency: 'USD',
+        complete,
+        lots: held.map(([accountId, acquiredAt]) => ({ accountId, acquiredAt })),
+      }) as unknown as AssetLots;
+    expect(
+      firstBought(
+        lots(true, [house, '2026-10-15T22:30:00.000Z'], [safe, '2025-01-01T00:00:00.000Z']),
+        classes,
+      ),
+    ).toBe('2026-10-16');
+    expect(firstBought(lots(false, [house, '2025-09-01T00:00:00.000Z']), classes)).toBeNull();
+    expect(firstBought(lots(true, [safe, '2025-09-01T00:00:00.000Z']), classes)).toBeNull();
+    expect(firstBought(null, classes)).toBeNull();
   });
 });

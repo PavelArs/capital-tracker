@@ -1,5 +1,6 @@
 import type { AccountClass } from '@api/accounting.api';
-import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import type { AssetLots, AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import { moscowDate } from '@/utils/dates';
 import { sumDecimals } from '@/utils/decimal';
 
 export interface Property {
@@ -62,3 +63,30 @@ export function shareText(share: number): string {
 /** What the properties with a value come to, exactly; those without one are left out. */
 export const propertyTotal = (properties: readonly Pick<Property, 'value'>[]) =>
   sumDecimals(properties.flatMap(({ value }) => (value === null ? [] : [value])));
+
+/** The app reminds the owner of an estimate older than two months (v8 accepted defaults). */
+export const ESTIMATE_REMINDER_DAYS = 60;
+
+const DAY_MS = 86_400_000;
+
+/** Whether an estimate is more than two months old, counted in Moscow calendar days. */
+export function estimateOverdue(observedAt: string, now: Date): boolean {
+  const days = (Date.parse(moscowDate(now)) - Date.parse(moscowDate(observedAt))) / DAY_MS;
+  return days > ESTIMATE_REMINDER_DAYS;
+}
+
+/**
+ * The Moscow day of the first purchase still held in property accounts, or null when it is not
+ * known: no lot there, or an account whose history may start after the purchase.
+ */
+export function firstBought(
+  answer: AssetLots | null,
+  classes: Readonly<Record<string, AccountClass | null | undefined>>,
+): string | null {
+  if (!answer?.complete) return null;
+  const days = answer.lots
+    .filter((lot) => classes[lot.accountId] === 'property')
+    .map((lot) => moscowDate(lot.acquiredAt))
+    .sort();
+  return days[0] ?? null;
+}

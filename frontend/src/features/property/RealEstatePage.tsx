@@ -3,33 +3,51 @@ import { cachedReads } from '@api/cached-reads';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
 import PageIntro from '@/ui/PageIntro';
+import { dayText, moscowDate } from '@/utils/dates';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
+import { useCachedRead } from '../shell/useCachedRead';
 import AddPropertyDialog from './AddPropertyDialog';
-import { type Property, propertiesOf, propertyTotal, shareText } from './real-estate';
+import {
+  estimateOverdue,
+  firstBought,
+  type Property,
+  propertiesOf,
+  propertyTotal,
+  shareText,
+} from './real-estate';
 import '../shell/shell-page.css';
 import './property.css';
 
-const day = (at: string) =>
-  new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(at));
+/** The Moscow day of an instant, written as the rest of the app writes dates. */
+const day = (at: string) => dayText(moscowDate(at));
 
 const classesOf = (accounts: readonly { id: string; assetClass?: AccountClass | null }[]) =>
   Object.fromEntries(accounts.map((account) => [account.id, account.assetClass ?? null]));
 
-function Card({ property, portfolio }: { property: Property; portfolio: PortfolioValuation }) {
+function Card({
+  property,
+  portfolio,
+  classes,
+}: {
+  property: Property;
+  portfolio: PortfolioValuation;
+  classes: Readonly<Record<string, AccountClass | null>>;
+}) {
   const [asked] = useAskedCurrency();
   const { asset, share } = property;
   const currency = portfolio.currency;
+  const estimated = asset.price?.observedAt ?? null;
+  const bought = firstBought(
+    useCachedRead(cachedReads.assetLots, asset.instrumentId, asked).data,
+    classes,
+  );
   return (
     <li>
       <Link className="property-card" to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
@@ -47,8 +65,21 @@ function Card({ property, portfolio }: { property: Property; portfolio: Portfoli
           )}
           <div>
             <dt>Estimate of</dt>
-            <dd>{asset.price?.observedAt ? day(asset.price.observedAt) : '—'}</dd>
+            <dd>
+              {estimated ? day(estimated) : '—'}
+              {estimated && estimateOverdue(estimated, new Date()) && (
+                <Badge tone="warn" className="property-card__badge">
+                  Over two months old
+                </Badge>
+              )}
+            </dd>
           </div>
+          {bought && (
+            <div>
+              <dt>Bought</dt>
+              <dd>{dayText(bought)}</dd>
+            </div>
+          )}
           <div>
             <dt>Paid</dt>
             <dd>{money(property.costBasis, currency)}</dd>
@@ -166,7 +197,12 @@ export default function RealEstatePage() {
           </section>
           <ul className="property-list">
             {properties.map((property) => (
-              <Card key={property.asset.instrumentId} property={property} portfolio={portfolio} />
+              <Card
+                key={property.asset.instrumentId}
+                property={property}
+                portfolio={portfolio}
+                classes={classes ?? {}}
+              />
             ))}
           </ul>
         </>
