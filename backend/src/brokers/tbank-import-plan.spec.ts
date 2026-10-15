@@ -104,7 +104,8 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
   });
 
   it('sells a bond paid back in full and shows a part paid back as money received', () => {
-    const [full, part] = planImport([
+    const [, full, part] = planImport([
+      op({ quantity: '1', payment: '-990', occurredAt: '2024-02-01T10:00:00Z' }),
       op({ type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL', payment: '1000', quantity: '1' }),
       op({
         type: 'OPERATION_TYPE_BOND_REPAYMENT',
@@ -170,6 +171,71 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
         type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
         reason: 'no-quantity',
       },
+    ]);
+  });
+
+  it('splits an order filled on two Moscow days into a dated part per day', () => {
+    const fill = (filledAt: string, quantity: string) => ({
+      filledAt,
+      quantity,
+      price: '100',
+      priceCurrency: 'rub',
+    });
+    const buy = op({
+      id: '400000001',
+      quantity: '10',
+      payment: '-1000.01',
+      fills: [
+        fill('2024-03-01T10:00:00Z', '3'),
+        fill('2024-03-01T11:00:00Z', '1'),
+        fill('2024-03-04T10:00:00Z', '6'),
+      ],
+    });
+    const plan = planImport([
+      buy,
+      cash('OPERATION_TYPE_BROKER_FEE', '-1', { id: '400000002', parentId: buy.id }),
+    ]);
+    expect(
+      plan.entries.map((entry) => [
+        entry.occurredAt,
+        entry.quantity,
+        entry.amount,
+        entry.fee,
+        entry.operationIds,
+      ]),
+    ).toEqual([
+      ['2024-03-01T11:00:00Z', '4', '400', '0.4', ['400000001', '400000002']],
+      ['2024-03-04T10:00:00Z', '6', '600.01', '0.6', ['400000001#2']],
+    ]);
+  });
+
+  it('lists a sale of more than the history holds instead of selling what was never bought', () => {
+    const plan = planImport([
+      op({ id: '400000003', type: 'OPERATION_TYPE_SELL', quantity: '1', payment: '100' }),
+      op({ id: '400000004', quantity: '2', occurredAt: '2024-03-02T10:00:00Z' }),
+      op({
+        id: '400000005',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '3',
+        payment: '300',
+        occurredAt: '2024-03-03T10:00:00Z',
+      }),
+      op({
+        id: '400000006',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        quantity: '0',
+        payment: '200',
+        occurredAt: '2024-03-04T10:00:00Z',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([
+      { operationId: '400000003', type: 'OPERATION_TYPE_SELL', reason: 'not-held' },
+      { operationId: '400000005', type: 'OPERATION_TYPE_SELL', reason: 'not-held' },
+    ]);
+    // The repayment still sells the two units really held.
+    expect(plan.entries.map((entry) => [entry.action, entry.quantity])).toEqual([
+      ['buy', '2'],
+      ['sell', '2'],
     ]);
   });
 

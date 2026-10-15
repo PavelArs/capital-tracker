@@ -57,6 +57,7 @@ export interface PlanSkip {
     | 'currency-exchange'
     | 'no-instrument'
     | 'sign'
+    | 'not-held'
     | 'no-quantity'
     | 'no-amount';
 }
@@ -100,6 +101,47 @@ const securityProblem = (item: TBankOperation): PlanSkip['reason'] | null =>
     : item.instrumentType === 'currency'
       ? 'currency-exchange'
       : null;
+
+/**
+ * An order's fills as one part per Moscow day, each dated by its last fill, so a part bought
+ * before a sale is never moved after it. Without fills that account for the whole quantity on
+ * two or more days, the order is one part at its last fill.
+ */
+function tradeParts(operation: TBankOperation): { occurredAt: string; quantity: bigint }[] {
+  const days = new Map<string, { occurredAt: string; quantity: bigint }>();
+  let filled = 0n;
+  for (const fill of operation.fills) {
+    const quantity = atoms(fill.quantity);
+    filled += quantity;
+    const day = days.get(moscowDate(fill.filledAt));
+    if (!day) days.set(moscowDate(fill.filledAt), { occurredAt: fill.filledAt, quantity });
+    else {
+      day.quantity += quantity;
+      if (timeKey(fill.filledAt) > timeKey(day.occurredAt)) day.occurredAt = fill.filledAt;
+    }
+  }
+  if (days.size < 2 || filled !== atoms(operation.quantity))
+    return [{ occurredAt: tradeTime(operation), quantity: atoms(operation.quantity) }];
+  return [...days.values()].sort((a, b) =>
+    timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)),
+  );
+}
+
+/**
+ * A positive amount split by weight in its own smallest unit (a cent at least); the last part
+ * takes what rounding leaves, so the parts add up to it exactly.
+ */
+function split(value: string, weights: bigint[]): string[] {
+  const step = 10n ** BigInt(30 - Math.max(2, (value.split('.')[1] ?? '').length));
+  const units = atoms(value) / step;
+  const total = weights.reduce((all, weight) => all + weight, 0n);
+  let left = units;
+  return weights.map((weight, index) => {
+    const part = index === weights.length - 1 ? left : (units * weight) / total;
+    left -= part;
+    return formatAtoms(part * step);
+  });
+}
 
 /** When a trade happened: its last fill, else the operation's own (order) time. */
 function tradeTime(operation: TBankOperation): string {
@@ -189,26 +231,30 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       if (security) return skip(item, security);
       if (isZero(item.quantity)) return skip(item, 'no-quantity');
       const fees = feesOf.get(item.id) ?? [];
-      return [
-        {
-          record: 'trade',
-          action: kind,
-          occurredAt: tradeTime(item),
-          instrumentUid: item.instrumentUid,
-          ticker: item.ticker,
-          instrumentType: item.instrumentType,
-          quantity: item.quantity,
-          amount: absolute(item.payment),
-          fee: absolute(sum(fees.map((fee) => fee.payment))),
-          currency: item.paymentCurrency,
-          operationIds: [item.id, ...fees.map((fee) => fee.id)],
-        },
-      ];
+      const parts = tradeParts(item);
+      const weights = parts.map((part) => part.quantity);
+      const amounts = split(absolute(item.payment), weights);
+      const paidFees = split(absolute(sum(fees.map((fee) => fee.payment))), weights);
+      return parts.map((part, index) => ({
+        record: 'trade',
+        action: kind,
+        occurredAt: part.occurredAt,
+        instrumentUid: item.instrumentUid,
+        ticker: item.ticker,
+        instrumentType: item.instrumentType,
+        quantity: formatAtoms(part.quantity),
+        amount: amounts[index],
+        fee: paidFees[index],
+        currency: item.paymentCurrency,
+        // A later part of one order names it as `<id>#<n>`, so each entry is written once.
+        operationIds:
+          index === 0 ? [item.id, ...fees.map((fee) => fee.id)] : [`${item.id}#${index + 1}`],
+      }));
     }
     if (kind === 'repayment') {
       // A bond paid back in full leaves the account; one paid back in part keeps its units, and
       // the app has no way to lower its cost, so the money is shown as income.
-      // T-Bank gives no quantity for it; redeemHeld takes the units held then.
+      // T-Bank gives no quantity for it; checkHeld takes the units held then.
       if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
         if (security) return skip(item, security);
         return [
@@ -294,12 +340,18 @@ function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry
 }
 
 /**
- * A bond paid back in full sells every unit the history holds of it then: payouts for bond
- * repayment carry no instrument quantity (T-Bank investAPI docs, operations_problems). One the
- * history never shows held is listed as skipped. A sale with no quantity can only be such a
- * repayment, as any other trade without one is skipped before.
+ * Walks each security's units in time order. A sale of more than the history holds then (the
+ * units came in some way it does not show) is listed as skipped rather than sold from nothing.
+ * A bond paid back in full sells every unit held then: payouts for bond repayment carry no
+ * instrument quantity (T-Bank investAPI docs, operations_problems); one the history never shows
+ * held is listed as skipped. A sale with no quantity can only be such a repayment, as any other
+ * trade without one is skipped before.
  */
-function redeemHeld(list: PlanEntry[], skipped: PlanSkip[]): PlanEntry[] {
+function checkHeld(
+  list: PlanEntry[],
+  skipped: PlanSkip[],
+  typeOf: ReadonlyMap<string, string>,
+): PlanEntry[] {
   const held = new Map<string, bigint>();
   const kept: PlanEntry[] = [];
   for (const entry of ordered(list)) {
@@ -308,17 +360,20 @@ function redeemHeld(list: PlanEntry[], skipped: PlanSkip[]): PlanEntry[] {
       continue;
     }
     const units = held.get(entry.instrumentUid) ?? 0n;
+    const operationId = entry.operationIds[0].split('#')[0];
+    const refuse = (reason: PlanSkip['reason']) =>
+      skipped.push({ operationId, type: typeOf.get(operationId) ?? 'unknown', reason });
     let quantity = entry.quantity;
     if (entry.action === 'sell' && isZero(quantity)) {
       if (units <= 0n) {
-        skipped.push({
-          operationId: entry.operationIds[0],
-          type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
-          reason: 'no-quantity',
-        });
+        refuse('no-quantity');
         continue;
       }
       quantity = formatAtoms(units);
+    }
+    if (entry.action === 'sell' && atoms(quantity) > units) {
+      refuse('not-held');
+      continue;
     }
     held.set(
       entry.instrumentUid,
@@ -347,7 +402,8 @@ const ordered = (list: PlanEntry[]) =>
  */
 export function planImport(operations: readonly TBankOperation[]): ImportPlan {
   const skipped: PlanSkip[] = [];
-  const single = redeemHeld(entries(operations, skipped), skipped);
+  const typeOf = new Map(operations.map((item) => [item.id, item.type]));
+  const single = checkHeld(entries(operations, skipped), skipped, typeOf);
   const tradesIn = (list: PlanEntry[]) => list.filter((entry) => entry.record === 'trade').length;
   let grouping: ImportPlan['grouping'] = 'operation';
   let list = single;
