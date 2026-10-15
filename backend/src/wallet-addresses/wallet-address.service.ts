@@ -166,6 +166,10 @@ interface TransactionRow {
 // A Tron wallet adds its staked TRX by its history (TRON-STAKE-BALANCE), the vote rewards it
 // claimed (TRON-REWARD) and what the chain last reported (TRON-STAKE-STATE).
 // A Stellar wallet adds the XLM balance Horizon last reported (STELLAR-REPORTED).
+// Another request added the address after this one read it as untracked: the wallet made for
+// it is rolled back, and a retry finds the address (WAL-DUP).
+const addedMeanwhile = () =>
+  new ConflictException('This address was just added by another request; try again');
 const stakeHeld = (table: string, key: string) => `
         coalesce((SELECT sum(m.units) FROM ${stakeMoves} m
           WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
@@ -632,7 +636,13 @@ export class WalletAddressService {
     if (registration.network === 'bybit') return this.registerBybit(owner, registration);
     const { network, address, label } = registration;
     const result = await this.source.transaction('READ COMMITTED', async (manager) => {
-      const accountId = await this.walletFor(manager, owner, network, address, registration);
+      const { accountId, made } = await this.walletFor(
+        manager,
+        owner,
+        network,
+        address,
+        registration,
+      );
       // WALLET-REMOVE: an address stopped before comes back with its own history and the
       // account and name of this request; one still tracked is left as it is.
       const inserted: { id: string; fresh: boolean }[] = await manager.query(
@@ -644,6 +654,7 @@ export class WalletAddressService {
           RETURNING id, (xmax = 0) AS fresh`,
         [randomUUID(), owner, network, address, accountId, label],
       );
+      if (inserted.length === 0 && made) throw addedMeanwhile();
       const [back] = inserted;
       if (back && !back.fresh) {
         await resumeTracking(manager, back.id);
@@ -696,7 +707,7 @@ export class WalletAddressService {
       );
     const box = this.box;
     return this.source.transaction('READ COMMITTED', async (manager) => {
-      const accountId = await this.walletFor(manager, owner, 'bybit', key.userId, input);
+      const { accountId, made } = await this.walletFor(manager, owner, 'bybit', key.userId, input);
       const inserted: { id: string }[] = await manager.query(
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
           VALUES ($1, $2, 'bybit', $3, $4, $5)
@@ -706,6 +717,7 @@ export class WalletAddressService {
           RETURNING id`,
         [randomUUID(), owner, key.userId, accountId, input.label],
       );
+      if (inserted.length === 0 && made) throw addedMeanwhile();
       const [wallet]: { id: string }[] = await manager.query(
         `SELECT id FROM wallet_addresses WHERE "ownerId" = $1 AND network = 'bybit' AND address = $2
           FOR UPDATE`,
@@ -751,7 +763,7 @@ export class WalletAddressService {
       // WAL-INVALID: a wallet made with the move is undone with it when the address is gone.
       if (newAccount) {
         await lockAccountingOwner(manager, owner);
-        changes.accountId = (await insertAccount(manager, owner, newAccount)).value.id;
+        changes.accountId = (await this.newWallet(manager, owner, newAccount)).id;
       } else if (changes.accountId) await this.account(manager, owner, changes.accountId);
       // TypeORM returns [rows, affected] for UPDATE ... RETURNING on PostgreSQL.
       const [updated]: [unknown[], number] = await manager.query(
@@ -960,7 +972,8 @@ export class WalletAddressService {
    * The wallet an address joins: the one named, or (WAL-INVALID) one made now, in the address's
    * transaction and only after the address was read, so a refused address leaves no empty wallet.
    * The request id keeps a retry from making it twice. An address already tracked keeps its
-   * wallet (WAL-DUP), so no wallet is made for it.
+   * wallet (WAL-DUP), so no wallet is made for it. `made` says the wallet is new: if the address
+   * is then not added (another request added it in between), the caller rolls the wallet back.
    */
   private async walletFor(
     manager: EntityManager,
@@ -968,10 +981,10 @@ export class WalletAddressService {
     network: Network,
     address: string,
     wanted: { accountId: string | null; newAccount?: AccountInput },
-  ): Promise<string | null> {
+  ): Promise<{ accountId: string | null; made: boolean }> {
     if (!wanted.newAccount) {
       if (wanted.accountId) await this.account(manager, owner, wanted.accountId);
-      return wanted.accountId;
+      return { accountId: wanted.accountId, made: false };
     }
     await lockAccountingOwner(manager, owner);
     const [tracked]: { accountId: string | null }[] = await manager.query(
@@ -979,8 +992,28 @@ export class WalletAddressService {
         WHERE "ownerId" = $1 AND network = $2 AND address = $3 AND "removedAt" IS NULL`,
       [owner, network, address],
     );
-    if (tracked) return tracked.accountId;
-    return (await insertAccount(manager, owner, wanted.newAccount)).value.id;
+    if (tracked) return { accountId: tracked.accountId, made: false };
+    const wallet = await this.newWallet(manager, owner, wanted.newAccount);
+    return { accountId: wallet.id, made: wallet.created };
+  }
+
+  /**
+   * WAL-INVALID: the wallet a request makes. A retry gets the wallet the first try made, unless
+   * the owner removed it since: an address never joins a removed wallet. The caller holds the
+   * accounting lock.
+   */
+  private async newWallet(manager: EntityManager, owner: string, input: AccountInput) {
+    const { created, value } = await insertAccount(manager, owner, input);
+    if (!created) {
+      const kept: unknown[] = await manager.query(
+        `SELECT 1 FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL
+          FOR KEY SHARE`,
+        [owner, value.id],
+      );
+      if (kept.length === 0)
+        throw new ConflictException('The wallet this request made has been removed');
+    }
+    return { id: value.id, created };
   }
 
   // Another owner's account is as unknown as a missing one. Accounting writes lock the owner

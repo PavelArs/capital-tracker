@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
 import { WalletAddressService } from './wallet-address.service';
 import type { WalletSyncService } from './wallet-sync.service';
@@ -44,8 +44,17 @@ const addressRow = (accountId: string | null) => ({
   source: null,
 });
 
-/** One transaction whose queries answer by their SQL; every statement is kept in order. */
-function harness(tracked: { accountId: string | null } | null) {
+const madeBefore = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+/**
+ * One transaction whose queries answer by their SQL; every statement is kept in order. `replay`
+ * finds the wallet of an earlier request with the same id (removed since, when `removed`);
+ * `raced` has another request add the address after it was read as untracked.
+ */
+function harness(
+  tracked: { accountId: string | null } | null,
+  options: { replay?: boolean; removed?: boolean; raced?: boolean } = {},
+) {
   const statements: string[] = [];
   let walletId: string | null = null;
   const query = jest.fn(async (sql: string, parameters: unknown[] = []) => {
@@ -53,13 +62,21 @@ function harness(tracked: { accountId: string | null } | null) {
     if (sql.includes('pg_advisory_xact_lock')) return [];
     if (sql.startsWith('SELECT "accountId" FROM wallet_addresses')) return tracked ? [tracked] : [];
     if (sql.includes('INSERT INTO manual_accounts')) {
+      if (options.replay) return [];
       walletId = parameters[0] as string;
       return [{ ...accountRow(walletId), canonicalPayload: parameters[3] }];
     }
+    if (sql.startsWith('SELECT * FROM manual_accounts')) {
+      walletId = madeBefore;
+      return [
+        { ...accountRow(madeBefore), removedAt: options.removed ? new Date('2026-10-02') : null },
+      ];
+    }
+    if (sql.startsWith('SELECT 1 FROM manual_accounts')) return options.removed ? [] : [{}];
     if (sql.startsWith('UPDATE wallet_addresses SET'))
       return [tracked ? [{ id: addressRow(null).id }] : [], tracked ? 1 : 0];
     if (sql.includes('INSERT INTO wallet_addresses'))
-      return tracked ? [] : [{ id: addressRow(null).id, fresh: true }];
+      return tracked || options.raced ? [] : [{ id: addressRow(null).id, fresh: true }];
     if (sql.includes('FROM wallet_addresses a'))
       return [addressRow(tracked?.accountId ?? walletId)];
     // What follows a move (ensureChainCoins) reads and writes nothing these checks need.
@@ -142,5 +159,39 @@ describe('WAL-INVALID: an address moves into a new wallet in one command', () =>
       service.update(owner, addressId, { newAccount: { requestId, name: 'Cold storage' } }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WAL-INVALID: a retried or raced new wallet never takes a removed or empty wallet', () => {
+  const addressId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const newAccount = { requestId, name: 'Cold storage', kind: 'hardware' };
+
+  it('B-P3-2 refuses to add an address to the wallet a repeated request made and that was removed', async () => {
+    const { service, statements } = harness(null, { replay: true, removed: true });
+    await expect(
+      service.register(owner, { network: 'bitcoin', address, newAccount }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(statements.some((sql) => sql.includes('INSERT INTO wallet_addresses'))).toBe(false);
+  });
+
+  it('B-P3-2 refuses to move an address to the wallet a repeated request made and that was removed', async () => {
+    const { service, statements } = harness({ accountId: null }, { replay: true, removed: true });
+    await expect(service.update(owner, addressId, { newAccount })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(statements.some((sql) => sql.startsWith('UPDATE wallet_addresses SET'))).toBe(false);
+  });
+
+  it('B-P3-2 adds the address to the wallet a repeated request made while that wallet is kept', async () => {
+    const { service } = harness(null, { replay: true });
+    const result = await service.register(owner, { network: 'bitcoin', address, newAccount });
+    expect(result.value.accountId).toBe(madeBefore);
+  });
+
+  it('B-P3-3 rolls the new wallet back when another request added the address first', async () => {
+    const { service } = harness(null, { raced: true });
+    await expect(
+      service.register(owner, { network: 'bitcoin', address, newAccount }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });
