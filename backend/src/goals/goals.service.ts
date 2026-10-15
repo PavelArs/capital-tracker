@@ -179,16 +179,16 @@ export class GoalsService {
     );
   }
 
-  /** The portfolio's value once per currency the goals use, then each goal against it. */
+  /**
+   * The portfolio's value once per currency the goals use, then each goal against it. Only the
+   * value now matters, so the stored history is not refreshed: a preview runs on every pause in
+   * typing.
+   */
   private async views(owner: string, rows: GoalRow[]) {
     const today = moscowDate(new Date());
     const now = new Map<string, PortfolioNow>();
-    for (const currency of new Set(rows.map((row) => row.currency))) {
-      const history = await this.snapshots.history(owner, { period: '24H', currency });
-      // The last point is the portfolio now; an hour in the past that lacked a price is not.
-      const current = history.points.at(-1);
-      now.set(currency, { value: history.value, complete: current?.complete ?? history.complete });
-    }
+    for (const currency of new Set(rows.map((row) => row.currency)))
+      now.set(currency, await this.snapshots.current(owner, currency));
     return rows.map((row) => goalView(row, now.get(row.currency) as PortfolioNow, today));
   }
 }

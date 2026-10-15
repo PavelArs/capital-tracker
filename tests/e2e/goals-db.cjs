@@ -186,6 +186,11 @@ async function forecast(db, service, owner) {
   await rejected(() => service.preview(owner, { ...terms, deadline: '2020-01-01' }), 422);
   await rejected(() => service.preview(owner, { ...terms, name: 'Reserve A' }), 400);
   assert.equal((await service.list(owner)).items.length, 1, 'A preview stores nothing');
+  const [{ refreshed }] = await db.query(
+    'SELECT count(*)::int AS refreshed FROM portfolio_snapshot_state WHERE "ownerId"=$1',
+    [owner],
+  );
+  assert.equal(refreshed, 0, 'Goals read the portfolio now without rebuilding its history');
   console.log('PASS GOAL-PREVIEW');
 
   stage = 'synthetic goal in a currency where the dollar deposit has no rate';

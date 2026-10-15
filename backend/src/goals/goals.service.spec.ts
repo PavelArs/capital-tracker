@@ -16,19 +16,25 @@ const row = {
 };
 const today = new Date().toISOString().slice(0, 10);
 
-function service(points: { complete: boolean }[], complete = false) {
+function service(complete = true) {
   const source = {
     manager: { query: async () => [{ ...row, deadline: addMonths(today, 36) }] },
     transaction: async (work: (manager: unknown) => unknown) => work({ query: async () => [] }),
   };
-  const snapshots = { history: async () => ({ value: '5000.00', complete, points }) };
+  const snapshots = {
+    current: async () => ({ value: '5000.00', complete }),
+    // Refreshing the stored history on every goal read or preview would be wasted work.
+    history: async () => {
+      throw new Error('goals read the portfolio now, not its history');
+    },
+  };
   return new GoalsService(source as unknown as DataSource, snapshots as never);
 }
 
 describe('goals service', () => {
   it('GOAL-PREVIEW works out a goal from its terms without storing it', async () => {
     const stored: unknown[] = [];
-    const goals = service([{ complete: true }], true);
+    const goals = service();
     // Any query against the table would be a store; the preview needs none.
     (goals as unknown as { source: { manager: { query: unknown } } }).source.manager.query = async (
       ...args: unknown[]
@@ -63,7 +69,7 @@ describe('goals service', () => {
 
   it('GOAL-PREVIEW refuses a date that is not ahead, as saving would', async () => {
     await expect(
-      service([]).preview(owner, {
+      service().preview(owner, {
         currency: 'USD',
         targetAmount: '20000',
         deadline: today,
@@ -72,15 +78,14 @@ describe('goals service', () => {
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 
-  it('reads completeness from the portfolio now, not from an hour that lacked a price', async () => {
-    // An earlier hour was incomplete, so the period as a whole is; the current point is not.
-    const { items } = await service([{ complete: false }, { complete: true }]).list(owner);
+  it('reads progress from the portfolio now', async () => {
+    const { items } = await service().list(owner);
     expect(items[0].progress.complete).toBe(true);
     expect(items[0].status).not.toBe('unknown');
   });
 
   it('calls the goal unknown while the portfolio now leaves an asset out', async () => {
-    const { items } = await service([{ complete: true }, { complete: false }]).list(owner);
+    const { items } = await service(false).list(owner);
     expect(items[0].progress.complete).toBe(false);
     expect(items[0].status).toBe('unknown');
   });
@@ -95,12 +100,12 @@ describe('goals service', () => {
       expectedReturnPercent: '999',
       monthlyContribution: null,
     };
-    await expect(service([]).create(owner, goal)).rejects.toBeInstanceOf(
+    await expect(service().create(owner, goal)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
     const { requestId, ...fields } = goal;
     expect(requestId).toBeDefined();
-    await expect(service([]).update(owner, row.id, fields)).rejects.toBeInstanceOf(
+    await expect(service().update(owner, row.id, fields)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
   });
