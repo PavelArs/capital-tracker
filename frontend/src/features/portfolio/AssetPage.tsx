@@ -398,6 +398,7 @@ function AssetDetails({
         <UpdatePriceDialog
           instrumentId={asset.instrumentId}
           name={asset.name}
+          currency={asset.valuationCurrency}
           onClose={() => setPricing(false)}
           onSaved={() => {
             setPricing(false);

@@ -209,11 +209,32 @@ const httpError = (status: number) =>
 // One manual account without a journal yet: its first trade starts one (OPS-ADD-BUY).
 const createTrade = vi.fn();
 const setPrice = vi.fn();
-const receiptFor = (quantity: string, grossUsd: string): TradeReceipt =>
+// A buy paid in RUB or EUR comes back with what was paid, as the server keeps it.
+const receiptFor = (
+  quantity: string,
+  grossUsd: string,
+  paid?: { currency: 'RUB' | 'EUR'; gross: string },
+): TradeReceipt =>
   ({
     accountId: id(101),
     journalRevision: 1,
-    trade: { quantity, grossUsd, feeUsd: '0', occurredAt: '2026-10-05T10:15:00.000Z' },
+    trade: {
+      quantity,
+      grossUsd,
+      feeUsd: '0',
+      occurredAt: '2026-10-05T10:15:00.000Z',
+      ...(paid
+        ? {
+            paid: {
+              ...paid,
+              fee: '0',
+              rateDate: '2026-10-05',
+              perUsd: '100',
+              rateSource: 'bank-of-russia',
+            },
+          }
+        : {}),
+    },
   }) as TradeReceipt;
 const emptyHistory = (instrumentId: string): AssetHistory => ({
   instrumentId,
@@ -1706,7 +1727,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       assets = [...assets, { ...deposit, quantity: '150000' }];
       return depositAsset;
     });
-    createTrade.mockResolvedValue(receiptFor('150000', '1500'));
+    createTrade.mockResolvedValue(
+      receiptFor('150000', '1500', { currency: 'RUB', gross: '150000' }),
+    );
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
@@ -1751,12 +1774,14 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       comment: 'Savings account',
       paid: { currency: 'RUB', gross: '150000', fee: '0' },
     });
-    // A hand-valued asset starts at the USD price its value implies at that moment.
+    // AST-MANUAL-VALUE: a hand-valued asset starts at its value in rubles, as entered, so the
+    // dollar rate never moves it.
     expect(setPrice).toHaveBeenCalledWith(deposit.instrumentId, {
       requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       expectedRevision: 0,
       observedAt: '2026-10-05T10:15:00.000Z',
-      priceUsd: '0.01',
+      price: '1',
+      currency: 'RUB',
       assertReviewed: true,
     });
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
@@ -2702,7 +2727,8 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     renderAt(`/portfolio/${deposit.instrumentId}`);
     await user.click(await screen.findByRole('button', { name: 'Update price' }));
     const dialog = screen.getByRole('dialog', { name: 'Update price' });
-    const field = within(dialog).getByLabelText('Price of one unit, USD');
+    // AST-MANUAL-VALUE: a ruble asset takes its price in rubles.
+    const field = within(dialog).getByLabelText('Price of one unit, RUB');
     await user.click(field);
     await user.tab();
     expect(within(dialog).getByText('Enter a price greater than 0')).toBeInTheDocument();
@@ -2718,7 +2744,8 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       requestId: expect.any(String),
       expectedRevision: 3,
       observedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/),
-      priceUsd: '1250.5',
+      price: '1250.5',
+      currency: 'RUB',
       assertReviewed: true,
     });
     expect(get.mock.calls.length).toBeGreaterThan(1);
@@ -2735,7 +2762,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     renderAt(`/portfolio/${deposit.instrumentId}`);
     await user.click(await screen.findByRole('button', { name: 'Update price' }));
     const dialog = screen.getByRole('dialog', { name: 'Update price' });
-    await user.type(within(dialog).getByLabelText('Price of one unit, USD'), '10');
+    await user.type(within(dialog).getByLabelText('Price of one unit, RUB'), '10');
     await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'Could not reach the server',

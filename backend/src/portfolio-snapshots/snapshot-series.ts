@@ -1,4 +1,5 @@
 import { formatPercent, formatSignedProduct } from '../accounting/money';
+import type { AccountingCurrency } from '../fx-rates/fx-conversion';
 
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 24 * HOUR_MS;
@@ -22,6 +23,8 @@ export interface PricePoint {
   at: number;
   price: string;
   source: string;
+  /** AST-MANUAL-VALUE: the currency of a hand value's price; USD when absent. */
+  currency?: AccountingCurrency;
 }
 export interface SnapshotValue {
   at: number;
@@ -118,6 +121,7 @@ export function manualSeries(
     revision: number;
     kind: 'set' | 'void';
     priceUsd: string | null;
+    quoteCurrency?: AccountingCurrency;
   }[],
 ): Map<string, PricePoint[]> {
   const current = new Map<string, (typeof rows)[number]>();
@@ -132,7 +136,12 @@ export function manualSeries(
   )) {
     if (row.kind !== 'set' || row.priceUsd === null) continue;
     const points = series.get(row.instrumentId) ?? [];
-    points.push({ at: row.observedAt, price: row.priceUsd, source: 'manual' });
+    points.push({
+      at: row.observedAt,
+      price: row.priceUsd,
+      source: 'manual',
+      currency: row.quoteCurrency ?? 'USD',
+    });
     series.set(row.instrumentId, points);
   }
   return series;

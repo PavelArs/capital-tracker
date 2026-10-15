@@ -113,6 +113,17 @@ beforeEach(() => {
           quantity: command.quantity,
           grossUsd: 'grossUsd' in command ? command.grossUsd : '100',
           occurredAt: command.occurredAt,
+          // The server keeps a ruble or euro buy as paid next to its USD amount.
+          ...('paid' in command
+            ? {
+                paid: {
+                  ...command.paid,
+                  rateDate: command.occurredAt.slice(0, 10),
+                  perUsd: '90.12',
+                  rateSource: 'bank-of-russia',
+                },
+              }
+            : {}),
         },
       }) as TradeReceipt,
   );
@@ -198,9 +209,30 @@ describe('BROKER-ADD Add broker account', () => {
       ['250', '250', 2, '2026-10-13T08:15:00.000Z', undefined],
     ]);
     // Positions start at their entered price; cash has a fixed one.
-    expect(setPrice.mock.calls.map(([asset, body]) => [asset, body.priceUsd])).toEqual([
-      [id(10), '142.1'],
-      [id(11), '99.5'],
+    expect(setPrice.mock.calls.map(([asset, body]) => [asset, body.price, body.currency])).toEqual([
+      [id(10), '142.1', 'USD'],
+      [id(11), '99.5', 'USD'],
+    ]);
+  });
+
+  it('AST-MANUAL-VALUE keeps a position priced in rubles in rubles', async () => {
+    const user = userEvent.setup();
+    const { dialog, onAdded } = open();
+    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await fill(user, dialog, {
+      Broker: 'Sample Broker',
+      'Ticker or name 1': 'SBER',
+      'Quantity 1': '10',
+      'Price 1': '305.5',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(onAdded).toHaveBeenCalled();
+    expect(createTrade.mock.calls[0][1]).toMatchObject({
+      paid: { currency: 'RUB', gross: '3055', fee: '0' },
+    });
+    // 305.5 RUB a share stays 305.5 RUB whatever the dollar rate does later.
+    expect(setPrice.mock.calls.map(([, body]) => [body.price, body.currency])).toEqual([
+      ['305.5', 'RUB'],
     ]);
   });
 

@@ -6,6 +6,7 @@ import {
   assetProblems,
   balanceInstant,
   balanceTrade,
+  purchasePrice,
   unitPrice,
 } from './add-asset';
 
@@ -112,5 +113,33 @@ describe('ASSET-CHART purchases on the chart', () => {
       [0, ['2']],
       [1, ['3', '4']],
     ]);
+  });
+});
+
+describe('AST-MANUAL-VALUE purchasePrice', () => {
+  const paid = (currency: 'RUB' | 'EUR', gross: string) => ({
+    currency,
+    gross,
+    fee: '0',
+    rateDate: '2026-10-05',
+    perUsd: '83.5',
+    rateSource: 'bank-of-russia' as const,
+  });
+  it('keeps a value paid in the currency the asset is valued in, as entered', () => {
+    expect(
+      purchasePrice({ grossUsd: '5988.02', quantity: '1', paid: paid('RUB', '500000') }, 'RUB'),
+    ).toEqual({ price: '500000', currency: 'RUB' });
+    expect(
+      purchasePrice({ grossUsd: '2920', quantity: '2', paid: paid('EUR', '2500') }, 'EUR'),
+    ).toEqual({ price: '1250', currency: 'EUR' });
+  });
+  it('uses the USD price for a USD asset, or one paid in another currency', () => {
+    expect(purchasePrice({ grossUsd: '3000', quantity: '4' }, 'USD')).toEqual({
+      price: '750',
+      currency: 'USD',
+    });
+    expect(
+      purchasePrice({ grossUsd: '5988.02', quantity: '1', paid: paid('RUB', '500000') }, 'USD'),
+    ).toEqual({ price: '5988.02', currency: 'USD' });
   });
 });

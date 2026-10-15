@@ -105,6 +105,8 @@ export interface StoredPrice {
   priceUsd: string;
   observedAt: string;
   source: string;
+  /** AST-MANUAL-VALUE: the currency of `priceUsd` for a hand value; USD when absent. */
+  currency?: AccountingCurrency;
 }
 export interface PortfolioPrices {
   market: ReadonlyMap<string, StoredPrice>;
@@ -175,8 +177,13 @@ export function resolvePrice(
         : undefined
       : prices.manual.get(instrument.id);
   if (!stored) return { price: null, missingPrice: 'no-price' };
-  // Stored market and manual prices are in USD.
-  const value = fx.convert(canonicalDecimalToAtoms(stored.priceUsd), 'USD', today);
+  // Stored market prices are in USD; a hand value is in the currency it was set in
+  // (AST-MANUAL-VALUE), USD for one stored before hand values had a currency.
+  const value = fx.convert(
+    canonicalDecimalToAtoms(stored.priceUsd),
+    stored.currency ?? 'USD',
+    today,
+  );
   if (value === null) return { price: null, missingPrice: 'no-rate' };
   const status =
     instrument.priceSource === 'manual'

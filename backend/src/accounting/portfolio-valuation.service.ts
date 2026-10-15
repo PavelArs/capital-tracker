@@ -64,6 +64,7 @@ interface ManualPriceRow {
   instrumentId: string;
   observedAt: Date;
   priceUsd: string;
+  quoteCurrency: AccountingCurrency;
 }
 
 /** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
@@ -88,10 +89,10 @@ async function latestManualPrices(
   if (instrumentIds.length === 0) return new Map();
   const rows: ManualPriceRow[] = await manager.query(
     `SELECT DISTINCT ON (point."instrumentId") point."instrumentId", point."observedAt",
-        point."priceUsd"::text AS "priceUsd"
+        point."priceUsd"::text AS "priceUsd", point."quoteCurrency"
       FROM (
         SELECT DISTINCT ON (v."instrumentId", v."observedAt") v."instrumentId", v."observedAt",
-          v."priceUsd", v.kind
+          v."priceUsd", v."quoteCurrency", v.kind
         FROM manual_usd_price_versions v
         WHERE v."ownerId"=$1 AND v."instrumentId"=ANY($2::uuid[]) AND v."observedAt"<=$3
         ORDER BY v."instrumentId", v."observedAt", v.revision DESC
@@ -107,6 +108,7 @@ async function latestManualPrices(
         priceUsd: parseDecimal(row.priceUsd, false),
         observedAt: row.observedAt.toISOString(),
         source: 'manual',
+        currency: row.quoteCurrency,
       },
     ]),
   );

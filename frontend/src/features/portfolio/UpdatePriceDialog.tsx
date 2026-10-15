@@ -1,4 +1,5 @@
 import { manualPricesApi } from '@api/manual-prices.api';
+import type { ValuationCurrency } from '@api/portfolio-assets.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
@@ -25,13 +26,23 @@ const failure = (error: unknown) =>
 interface Props {
   instrumentId: string;
   name: string;
+  /** The currency the asset is valued in; the price is entered and kept in it. */
+  currency: ValuationCurrency;
   onClose: () => void;
   onSaved: () => void;
 }
 
 // G1: changing the price of a hand-valued asset after it exists. It replaces the manual prices
-// screen: one new price from now on, in USD, which the page shows in the chosen currency.
-export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved }: Props) {
+// screen: one new price from now on, in the currency the asset is valued in, so 500,000 RUB
+// stays 500,000 RUB as the dollar rate moves (AST-MANUAL-VALUE). The page shows it in the
+// chosen currency.
+export default function UpdatePriceDialog({
+  instrumentId,
+  name,
+  currency,
+  onClose,
+  onSaved,
+}: Props) {
   const [value, setValue] = useState('');
   const [left, setLeft] = useState(false);
   const [tried, setTried] = useState(false);
@@ -73,7 +84,8 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
         requestId: attempt.current.requestId,
         expectedRevision: attempt.current.expectedRevision,
         observedAt: attempt.current.observedAt,
-        priceUsd: price,
+        price,
+        currency,
         assertReviewed: true,
       });
       onSaved();
@@ -107,20 +119,25 @@ export default function UpdatePriceDialog({ instrumentId, name, onClose, onSaved
         <div className="ui-modal__body">
           <div className="ui-field">
             <label className="ui-field__label" htmlFor={`${id}-price`}>
-              Price of one unit, USD
+              Price of one unit, {currency}
             </label>
-            <input
-              ref={input}
-              id={`${id}-price`}
-              className="ui-input"
-              inputMode="decimal"
-              autoComplete="off"
-              value={value}
-              aria-invalid={shown ? true : undefined}
-              aria-describedby={shown ? `${id}-price-error` : undefined}
-              onChange={(event) => setValue(event.target.value)}
-              onBlur={() => setLeft(true)}
-            />
+            <span className="ui-affix">
+              <input
+                ref={input}
+                id={`${id}-price`}
+                className="ui-input"
+                inputMode="decimal"
+                autoComplete="off"
+                value={value}
+                aria-invalid={shown ? true : undefined}
+                aria-describedby={shown ? `${id}-price-error` : undefined}
+                onChange={(event) => setValue(event.target.value)}
+                onBlur={() => setLeft(true)}
+              />
+              <span className="ui-affix__suffix" aria-hidden="true">
+                {currency}
+              </span>
+            </span>
             {shown && (
               <span className="ui-field__error" id={`${id}-price-error`}>
                 {problem}
