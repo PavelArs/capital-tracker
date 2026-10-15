@@ -49,12 +49,13 @@ export interface GoalScenario {
   metByDeadline: boolean | null;
 }
 
-/** Cents rounded up, for an amount that has to reach a target; a float's noise is not a cent. */
-const centsUp = (value: number) => (Math.ceil(value * 100 - 1e-6) / 100).toFixed(2);
-/** Cents of a projected figure, or null when the maths left the range of a number. */
-const required = (value: number) => (Number.isFinite(value) ? centsUp(value) : null);
-const figure = (value: number) =>
-  Number.isFinite(value) ? (Math.round(value * 100) / 100).toFixed(2) : null;
+// A projection is an estimate in plain numbers, rounded never in the owner's favour: what is still
+// needed (a contribution, a gap) up to the cent, what the plan is expected to have down. A float's
+// noise is not a cent. Null when the maths left the range of a number.
+const required = (value: number) =>
+  Number.isFinite(value) ? (Math.ceil(value * 100 - 1e-6) / 100).toFixed(2) : null;
+const expected = (value: number) =>
+  Number.isFinite(value) ? (Math.floor(value * 100 + 1e-6) / 100).toFixed(2) : null;
 const percent = (value: number) => value.toFixed(4).replace(/\.?0+$/, '');
 
 /** Signed decimal text of any scale, exactly: `units` parts of `unit`. */
@@ -115,8 +116,7 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   const plan = row.monthlyContribution === null ? 0 : estimateOf(row.monthlyContribution);
   const months = row.deadline === null ? null : monthsBetween(today, row.deadline);
   const payments = row.deadline === null ? 0 : paymentsBetween(today, row.deadline);
-  // The status reads the raw base projection: the displayed gap is rounded to the cent and
-  // would call a goal on track that falls a fraction of a cent short.
+  // The status reads the raw base projection, not the gap shown to the cent.
   let baseShort = false;
   const scenarios: GoalScenario[] =
     current === null
@@ -143,8 +143,8 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
                 : null,
             monthsToTarget: left === null ? null : Math.ceil(left),
             reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),
-            projectedAtDeadline: projected === null ? null : figure(projected),
-            gap: projected === null ? null : figure(target - projected),
+            projectedAtDeadline: projected === null ? null : expected(projected),
+            gap: projected === null ? null : required(target - projected),
             metByDeadline:
               projected === null || !Number.isFinite(projected) ? null : projected >= target,
           };

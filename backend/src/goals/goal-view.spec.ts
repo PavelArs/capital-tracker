@@ -60,7 +60,8 @@ describe('goal view', () => {
       monthlyContribution: null,
     };
     const view = goalView(short, now('61.00'), today);
-    expect(view.scenarios[1].gap).toBe('0.00');
+    // About half a cent short: the gap rounds up to a cent, never to nothing.
+    expect(view.scenarios[1].gap).toBe('0.01');
     expect(view.scenarios[1].metByDeadline).toBe(false);
     expect(view.status).toBe('behind');
   });
@@ -226,6 +227,20 @@ describe('goal view', () => {
     expect(view.scenarios[1].projectedAtDeadline).toBe('0.00');
     expect(view.scenarios[1].gap).toBe('100.00');
     expect(view.scenarios[1].requiredMonthly).toBeNull();
+  });
+
+  it("goals-26 rounds a projection down and the gap it leaves up, never in the owner's favour", () => {
+    const flat = { ...row, expectedReturnPercent: '0', targetAmount: '20000.00' };
+    // Three payments of 300 by the deadline at no return: 10900.006 is projected.
+    const view = goalView({ ...flat, deadline: '2027-01-13' }, now('10000.006'), today);
+    expect(view.scenarios[1]).toMatchObject({ projectedAtDeadline: '10900.00', gap: '9100.00' });
+    // A surplus is what the plan has beyond the sum, so it rounds down too.
+    const rich = goalView(
+      { ...flat, targetAmount: '10000.00', deadline: '2027-01-13' },
+      now('10000.006'),
+      today,
+    );
+    expect(rich.scenarios[1]).toMatchObject({ projectedAtDeadline: '10900.00', gap: '-900.00' });
   });
 
   it('rounds the contribution a deadline needs up, so that it reaches the target', () => {
