@@ -170,7 +170,7 @@
   margin-bottom: var(--sp-3);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .deposit-list {
     grid-template-columns: minmax(0, 1fr);
   }
