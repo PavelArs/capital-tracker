@@ -1277,6 +1277,24 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(read).toHaveBeenCalledTimes(3);
   });
 
+  it('transactions-04 a failed read of a new period says it did not load and which list is shown', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) => {
+      if (range) throw new AxiosError('offline');
+      return all;
+    });
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    const shown = bodyRows().length;
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Last 30 days');
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(
+      'Could not load the transactions you asked for. The list still shows all time in USD.',
+    );
+    expect(banner).not.toHaveTextContent('may be out of date');
+    expect(bodyRows()).toHaveLength(shown);
+  });
+
   it('transactions-06 a blocked deletion of a sale names the coin the later transaction spends', async () => {
     const sale = operation({ ...later, settlement: { asset: usdt, quantity: '600' } });
     const spender = operation({

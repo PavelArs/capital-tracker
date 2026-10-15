@@ -20,6 +20,7 @@ import OperationDrawer from './OperationDrawer';
 import {
   amount,
   assetKey,
+  day,
   dayHeading,
   networkName,
   placeLabel,
@@ -423,6 +424,16 @@ const loadList = (currency?: AccountingCurrency, range?: OperationRange) =>
 
 // Every operation the app knows in one list (list-all-operations, OPS-4).
 const periodKey = (range: OperationRange | undefined) => `${range?.from ?? ''}|${range?.to ?? ''}`;
+// The question a list answers: the currency asked for (none is the main one) and the period.
+const askKey = (currency: AccountingCurrency | undefined, range: OperationRange | undefined) =>
+  `${currency ?? ''}|${periodKey(range)}`;
+const periodText = (range: OperationRange | undefined) => {
+  const at = (date: string) => day(`${date}T00:00:00Z`);
+  if (range?.from && range.to) return `${at(range.from)} – ${at(range.to)}`;
+  if (range?.from) return `from ${at(range.from)}`;
+  if (range?.to) return `up to ${at(range.to)}`;
+  return 'all time';
+};
 
 export default function TransactionsPage() {
   // No currency in the address means the owner's main currency (Settings).
@@ -436,11 +447,14 @@ export default function TransactionsPage() {
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
   const [list, setList] = useState<OperationList | null>(() => shownList(asked, period) ?? null);
-  // The period the list on screen was read for; a new period keeps the old rows until it arrives.
-  const [listPeriod, setListPeriod] = useState(() => periodKey(period));
+  // The period the list on screen was read for; a new period or currency keeps the old rows until
+  // it arrives.
+  const [readRange, setReadRange] = useState(period);
+  const listPeriod = periodKey(readRange);
   const [failed, setFailed] = useState(false);
-  // A refresh failed while a list was on screen: the list stays, marked as possibly out of date.
-  const [stale, setStale] = useState(false);
+  // A read failed while a list was on screen: the list stays. A refresh of the same list marks
+  // it as possibly out of date; a read of another period or currency says that one did not load.
+  const [stale, setStale] = useState<'refresh' | 'other' | null>(null);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   // ASSET-HIDE: so are the assets the owner hid from their own pages.
   const [hiddenTokens, setHiddenTokens] = useState<ReadonlySet<string>>(() =>
@@ -458,6 +472,8 @@ export default function TransactionsPage() {
   const latest = useRef(0);
   // A list is on screen: it was kept from before, or has arrived.
   const onScreen = useRef(list !== null);
+  // The question the list on screen answers, for a failed read to compare with.
+  const shownFor = useRef(askKey(asked, period));
 
   const narrow = useNarrowScreen();
   const listRef = useRef<HTMLElement>(null);
@@ -474,7 +490,8 @@ export default function TransactionsPage() {
       if (fresh) {
         const kept = shownList(currency, range);
         setList(kept ?? null);
-        setListPeriod(periodKey(range));
+        setReadRange(range);
+        shownFor.current = askKey(currency, range);
         onScreen.current = kept !== undefined;
       }
       try {
@@ -486,13 +503,14 @@ export default function TransactionsPage() {
         if (request !== latest.current) return null;
         onScreen.current = true;
         setList(next);
-        setListPeriod(periodKey(range));
-        setStale(false);
+        setReadRange(range);
+        shownFor.current = askKey(currency, range);
+        setStale(null);
         return next;
       } catch {
         if (request === latest.current) {
-          if (onScreen.current) setStale(true);
-          else setFailed(true);
+          if (!onScreen.current) setFailed(true);
+          else setStale(shownFor.current === askKey(currency, range) ? 'refresh' : 'other');
         }
         return null;
       }
@@ -775,7 +793,9 @@ export default function TransactionsPage() {
       )}
       {stale && !failed && list !== null && (
         <p className="ui-banner ui-banner--neg transactions-notice" role="alert">
-          Could not refresh the list, so it may be out of date.{' '}
+          {stale === 'refresh'
+            ? 'Could not refresh the list, so it may be out of date.'
+            : `Could not load the transactions you asked for. The list still shows ${periodText(readRange)} in ${list.quoteCurrency}.`}{' '}
           <button
             type="button"
             className="shell-link"
