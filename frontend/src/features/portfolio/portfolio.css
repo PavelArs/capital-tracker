@@ -754,7 +754,7 @@ a.portfolio-asset__name:hover {
 }
 
 /* On a phone the hint spans the section it sits in, so it never runs off the screen. */
-@media (max-width: 640px) {
+@media (max-width: 639.98px) {
   .dashboard-hero {
     position: relative;
   }
