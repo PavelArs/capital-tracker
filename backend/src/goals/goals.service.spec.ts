@@ -1,4 +1,4 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { addMonths } from './goal-forecast';
 import { GoalsService } from './goals.service';
@@ -76,6 +76,22 @@ describe('goals service', () => {
         expectedReturnPercent: '8',
       }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('GOAL-CHART charts the saved goal from the portfolio now, ending on its forecast', async () => {
+    const goals = service();
+    const goal = await goals.get(owner, row.id);
+    const forecast = await goals.forecast(owner, row.id);
+    expect(forecast.currency).toBe('USD');
+    expect(forecast.points[0].base).toBe('5000.00');
+    expect(forecast.points.at(-1)?.base).toBe(goal.scenarios[1].projectedAtDeadline);
+  });
+
+  it('GOAL-CHART answers 404 for a goal that is not there', async () => {
+    const goals = service();
+    (goals as unknown as { source: { manager: { query: unknown } } }).source.manager.query =
+      async () => [];
+    await expect(goals.forecast(owner, row.id)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('reads progress from the portfolio now', async () => {

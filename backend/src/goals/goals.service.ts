@@ -8,6 +8,7 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
+import { goalForecast } from './goal-chart';
 import { addMonths, MAX_MONTHS } from './goal-forecast';
 import {
   type GoalPreviewInput,
@@ -50,6 +51,16 @@ export class GoalsService {
     const [row] = await this.rows(this.source.manager, owner, goalId);
     if (!row) throw new NotFoundException('Goal not found');
     return (await this.views(owner, [row]))[0];
+  }
+
+  /** GOAL-CHART: the goal's three return cases month by month, for the chart on its page. */
+  async forecast(ownerId: string, id: string) {
+    const owner = parseUuid(ownerId);
+    const goalId = parseUuid(id);
+    const [row] = await this.rows(this.source.manager, owner, goalId);
+    if (!row) throw new NotFoundException('Goal not found');
+    const now = await this.snapshots.current(owner, row.currency);
+    return goalForecast(row, now, moscowDate(new Date()));
   }
 
   /**
