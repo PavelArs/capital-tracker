@@ -43,6 +43,8 @@ describe('PROPERTY-LIST real estate figures', () => {
     expect(propertyTotal(shares(['0.1', '0.2']))).toBe('0.3');
     expect(propertyTotal(shares(['9007199254740993', '1', null]))).toBe('9007199254740994');
     expect(propertyTotal(shares([]))).toBe('0');
+    // Properties with no estimate at all are not a total of zero: the total is missing (P1 on 1341f58).
+    expect(propertyTotal(shares([null, null]))).toBeNull();
   });
 
   it('classes-17 counts the age of an estimate in Moscow days, across a month end', () => {

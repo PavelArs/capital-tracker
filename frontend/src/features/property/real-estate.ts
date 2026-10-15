@@ -61,9 +61,14 @@ export function shareText(share: number): string {
     : `${new Intl.NumberFormat('en-US').format(shown)}% yours`;
 }
 
-/** What the properties with a value come to, exactly; those without one are left out. */
-export const propertyTotal = (properties: readonly Pick<Property, 'value'>[]) =>
-  sumDecimals(properties.flatMap(({ value }) => (value === null ? [] : [value])));
+/**
+ * What the properties with a value come to, exactly; those without one are left out. When
+ * properties are held and none has a value, the total is unknown (null), not zero.
+ */
+export const propertyTotal = (properties: readonly Pick<Property, 'value'>[]): string | null => {
+  const known = properties.flatMap(({ value }) => (value === null ? [] : [value]));
+  return properties.length > 0 && known.length === 0 ? null : sumDecimals(known);
+};
 
 /** The app reminds the owner of an estimate older than 60 days (v8 accepted defaults: two months). */
 export const ESTIMATE_REMINDER_DAYS = 60;
