@@ -43,34 +43,66 @@ export interface InflationSeries {
   last: string | null;
   /** Average monthly change over the latest months, as a fraction; the estimate beyond `last`. */
   trend: number;
+  /** Months not published yet and not typed in, estimated at the trend in the chain. */
+  estimatedMonths: ReadonlySet<string>;
 }
 
 /**
- * Chains monthly changes (percent from the previous month) into levels. A month missing from
- * the middle breaks the chain: only the stretch ending at the latest month is comparable.
+ * Monthly changes in percent by month. `publishedLast` is the latest month the statistics office
+ * has published, when known: a later month with no figure of its own is not published yet.
  */
-export function buildSeries(changes: ReadonlyMap<string, number>): InflationSeries {
-  const months = [...changes.keys()].sort();
-  if (months.length === 0) return { levels: new Map(), chainStart: null, last: null, trend: 0 };
-  let start = months.length - 1;
-  while (start > 0 && nextMonth(months[start - 1]) === months[start]) start--;
+export type MonthlyChanges = ReadonlyMap<string, number> & {
+  readonly publishedLast?: string | null;
+};
+
+/** Average monthly change over the latest `window` months up to `month`, as a fraction. */
+function trendTo(levels: ReadonlyMap<string, number>, month: string, window: number): number {
+  if (window === 0) return 0;
+  const from = levels.get(monthFromNumber(monthNumber(month) - window)) as number;
+  return ((levels.get(month) as number) / from) ** (1 / window) - 1;
+}
+
+/**
+ * Chains monthly changes (percent from the previous month) into levels. A month not published
+ * yet that has no figure typed in, between the latest published month and a later typed one, is
+ * estimated at the trend of the months before it, like the months after the latest one. Any
+ * other missing month breaks the chain: only the stretch ending at the latest month is
+ * comparable.
+ */
+export function buildSeries(changes: MonthlyChanges): InflationSeries {
+  const known = [...changes.keys()].sort();
+  const estimatedMonths = new Set<string>();
+  if (known.length === 0)
+    return { levels: new Map(), chainStart: null, last: null, trend: 0, estimatedMonths };
+  const last = known[known.length - 1];
+  const published = changes.publishedLast ?? null;
+  const unpublished = (month: string) =>
+    published !== null && changes.has(published) && month > published;
+  // The chain, oldest first: back from the latest month while each month is known or unpublished.
+  const months: string[] = [];
+  for (let month = last; changes.has(month) || unpublished(month); month = previousMonth(month))
+    months.push(month);
+  months.reverse();
   const levels = new Map<string, number>();
-  const base = previousMonth(months[start]);
+  const base = previousMonth(months[0]);
   levels.set(base, 1);
   let level = 1;
-  for (const month of months.slice(start)) {
-    level *= 1 + (changes.get(month) as number) / 100;
+  months.forEach((month, index) => {
+    let change = changes.get(month);
+    if (change === undefined) {
+      // The chain starts on a known month, so an unpublished one always has months before it.
+      change = trendTo(levels, previousMonth(month), Math.min(TREND_MONTHS, index)) * 100;
+      estimatedMonths.add(month);
+    }
+    level *= 1 + change / 100;
     levels.set(month, level);
-  }
-  const last = months[months.length - 1];
-  const window = Math.min(TREND_MONTHS, months.length - start);
-  const from = levels.get(monthFromNumber(monthNumber(last) - window)) as number;
-  const trend = (levels.get(last) as number) / from;
+  });
   return {
     levels,
     chainStart: base,
     last,
-    trend: window > 0 ? trend ** (1 / window) - 1 : 0,
+    trend: trendTo(levels, last, Math.min(TREND_MONTHS, months.length)),
+    estimatedMonths,
   };
 }
 
@@ -104,7 +136,10 @@ export function levelOn(series: InflationSeries, day: string): LevelAt | null {
 export interface InflationFactor {
   /** Units of the currency at `to` that buy what one unit bought at `from`. */
   factor: number;
-  /** The span reaches past the latest published month or rests on the owner's own rate. */
+  /**
+   * The span reaches past the latest month, over a month estimated in the chain, or rests on the
+   * owner's own rate.
+   */
   estimated: boolean;
 }
 
@@ -118,7 +153,16 @@ export function officialFactor(
   const start = levelOn(series, from);
   const end = levelOn(series, to);
   if (!start || !end) return null;
-  return { factor: end.level / start.level, estimated: start.estimated || end.estimated };
+  // A month's change shapes the levels between the anchor before it and its own anchor.
+  const fromTime = Date.parse(`${from}T00:00:00Z`);
+  const toTime = Date.parse(`${to}T00:00:00Z`);
+  const overEstimate = [...series.estimatedMonths].some(
+    (month) => anchorTime(previousMonth(month)) < toTime && fromTime < anchorTime(month),
+  );
+  return {
+    factor: end.level / start.level,
+    estimated: start.estimated || end.estimated || overEstimate,
+  };
 }
 
 /** The owner's own annual rate (percent), compounded daily over the span. */

@@ -69,7 +69,11 @@ export async function readEffectiveChanges(
   manager: EntityManager,
   owner: string,
   currency: AccountingCurrency,
-): Promise<{ changes: Map<string, number>; official: MonthRow[]; manual: MonthRow[] }> {
+): Promise<{
+  changes: Map<string, number> & { publishedLast: string | null };
+  official: MonthRow[];
+  manual: MonthRow[];
+}> {
   const official: MonthRow[] = await manager.query(
     `SELECT ${MONTH_ROWS} FROM inflation_months WHERE currency = $1 ORDER BY month`,
     [currency],
@@ -79,7 +83,9 @@ export async function readEffectiveChanges(
       WHERE "ownerId" = $1 AND currency = $2 ORDER BY month`,
     [owner, currency],
   );
-  const changes = new Map<string, number>();
+  const changes = Object.assign(new Map<string, number>(), {
+    publishedLast: official.length ? official[official.length - 1].month : null,
+  });
   for (const row of [...official, ...manual]) changes.set(row.month, Number(row.changePercent));
   return { changes, official, manual };
 }
