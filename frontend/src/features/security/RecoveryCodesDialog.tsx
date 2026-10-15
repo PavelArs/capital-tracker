@@ -2,6 +2,7 @@ import { securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { Icon } from '../shell/icons';
+import { tooManyAttempts } from './attempts';
 import SecurityDialog from './SecurityDialog';
 
 const invalid = 'That code is not valid. Enter the current code from your authenticator app.';
@@ -11,12 +12,7 @@ function failure(error: unknown): string {
   const status = error.response?.status;
   if (status === undefined) return 'Could not reach the server. Try again.';
   if (status === 400 || status === 422) return invalid;
-  if (status === 429) {
-    const wait = Number(error.response?.headers?.['retry-after']);
-    return Number.isFinite(wait) && wait > 0 && wait <= 60
-      ? 'Too many attempts. Wait a minute and try again.'
-      : 'Too many attempts. Wait 10 minutes and try again.';
-  }
+  if (status === 429) return tooManyAttempts(error);
   return 'Could not make new codes. Your current codes still work.';
 }
 
@@ -61,6 +57,7 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
         title="New recovery codes"
         titleId="security-codes-new"
         note="These replace your old codes and are shown only now. Each works once."
+        size="narrow"
         onDone={onClose}
       />
     );
@@ -71,7 +68,9 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
       key="totp"
       title="Generate new recovery codes"
       titleId="security-codes"
-      onEscape={busy ? undefined : onClose}
+      size="narrow"
+      onClose={onClose}
+      busy={busy}
     >
       <form onSubmit={generate} noValidate>
         <div className="ui-modal__body">
@@ -126,11 +125,12 @@ interface ShownCodesProps {
   note: string;
   /** A line above the note, such as the step of a longer flow. */
   lead?: ReactNode;
+  size?: 'narrow' | 'default';
   onDone: () => void;
 }
 
-// Shown once: no Escape, the owner confirms the codes are saved.
-export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownCodesProps) {
+// Shown once: no Escape and no ✕, the owner confirms the codes are saved.
+export function ShownCodes({ codes, title, titleId, note, lead, size, onDone }: ShownCodesProps) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +153,7 @@ export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownC
   };
 
   return (
-    <SecurityDialog title={title} titleId={titleId}>
+    <SecurityDialog title={title} titleId={titleId} size={size}>
       <div className="ui-modal__body">
         {lead}
         <p className="security-note security-note--warn">

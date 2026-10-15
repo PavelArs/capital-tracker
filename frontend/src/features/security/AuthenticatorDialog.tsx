@@ -2,6 +2,7 @@ import { type AuthenticatorSetup, securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useState } from 'react';
 import { Icon } from '../shell/icons';
+import { tooManyAttempts } from './attempts';
 import QrCode from './QrCode';
 import { ShownCodes } from './RecoveryCodesDialog';
 import SecurityDialog from './SecurityDialog';
@@ -9,7 +10,6 @@ import SecurityDialog from './SecurityDialog';
 type Kind = 'totp' | 'recovery';
 
 const recoveryPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{8}){3}$/i;
-const tooMany = 'Too many attempts. Wait 10 minutes and try again.';
 const unreachable = 'Could not reach the server. Try again.';
 
 function proofFailure(error: unknown, kind: Kind): string {
@@ -19,7 +19,7 @@ function proofFailure(error: unknown, kind: Kind): string {
     return kind === 'totp'
       ? 'That code is not valid. Enter the current code from your authenticator app.'
       : 'That recovery code is not valid or was already used.';
-  if (status === 429) return tooMany;
+  if (status === 429) return tooManyAttempts(error);
   return 'Could not start the setup. Nothing changed.';
 }
 
@@ -34,6 +34,7 @@ function confirmFailure(error: unknown): { message: string; expired?: boolean } 
         'This setup expired or had too many wrong codes. Start again; your current authenticator still works.',
       expired: true,
     };
+  // Only the per-address request limit (a minute at most) answers 429 here.
   if (status === 429) return { message: 'Too many attempts. Wait a minute and try again.' };
   return { message: 'Could not finish the setup. Your current authenticator still works.' };
 }
@@ -153,7 +154,8 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
         key="scan"
         title="Scan the new code"
         titleId="security-authenticator-scan"
-        onEscape={busy ? undefined : onClose}
+        onClose={onClose}
+        busy={busy}
       >
         <form onSubmit={confirm} noValidate>
           <div className="ui-modal__body">
@@ -231,7 +233,8 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       key={`prove-${kind}`}
       title="Set up authenticator again"
       titleId="security-authenticator"
-      onEscape={busy ? undefined : onClose}
+      onClose={onClose}
+      busy={busy}
     >
       <form onSubmit={prove} noValidate>
         <div className="ui-modal__body">

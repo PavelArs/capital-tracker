@@ -331,6 +331,65 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(screen.getByRole('dialog', { name: 'Set up authenticator again' })).toBeInTheDocument();
   });
 
+  it('auth-07 SEC-TOTP: asks for a minute when the server says the limit lifts within one', async () => {
+    const limited = failure(429);
+    if (limited.response) limited.response.headers = { 'retry-after': '30' };
+    vi.spyOn(securityApi, 'prepareAuthenticator').mockRejectedValue(limited);
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    await userEvent.type(
+      within(dialog).getByLabelText('Code from your authenticator app'),
+      '123456',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Wait a minute and try again.',
+    );
+  });
+
+  it('auth-14 security dialogs have a Close button and the small ones are narrow', async () => {
+    render(<SecuritySettings />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Generate new codes' }));
+    const codes = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    expect(codes).toHaveClass('ui-modal--narrow');
+    expect(within(codes).getByLabelText('Code from your authenticator app')).toHaveFocus();
+    await userEvent.click(within(codes).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(within(region()).getByRole('button', { name: 'Change password' }));
+    const password = screen.getByRole('dialog', { name: 'Change password' });
+    expect(password).toHaveClass('ui-modal--narrow');
+    expect(within(password).getByLabelText('Current password')).toHaveFocus();
+    await userEvent.click(within(password).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log out Safari on iPhone' }));
+    const confirm = screen.getByRole('dialog', { name: 'Log out this session?' });
+    expect(confirm).toHaveClass('ui-modal--narrow');
+    expect(within(confirm).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(within(region()).getByRole('button', { name: 'Set up again' }));
+    const setup = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    expect(setup).not.toHaveClass('ui-modal--narrow');
+    expect(within(setup).getByLabelText('Code from your authenticator app')).toHaveFocus();
+    await userEvent.click(within(setup).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // The codes are shown once: the step stays narrow but has no ✕ until they are saved.
+    vi.spyOn(securityApi, 'regenerateRecoveryCodes').mockResolvedValue(newCodes);
+    await userEvent.click(within(region()).getByRole('button', { name: 'Generate new codes' }));
+    const ask = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    await userEvent.type(within(ask).getByLabelText('Code from your authenticator app'), '123456');
+    await userEvent.click(within(ask).getByRole('button', { name: 'Generate new codes' }));
+    const shown = await screen.findByRole('dialog', { name: 'New recovery codes' });
+    expect(shown).toHaveClass('ui-modal--narrow');
+    expect(within(shown).queryByRole('button', { name: 'Close' })).toBeNull();
+  });
+
   describe('SEC-PASSWORD: change the password', () => {
     const open = async () => {
       const user = userEvent.setup();
