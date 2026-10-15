@@ -207,7 +207,15 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     .join('');
   const last = past[past.length - 1];
   // The forecast starts at the portfolio now, the same figure the history ends on.
-  const origin: [number, number] | null = now === null ? null : [x(today), y(now)];
+  // The drawn forecast starts from the value the server forecast from, which can differ from the
+  // goal's own reading if the portfolio was revalued between the two requests.
+  const first = ahead.length > 0 ? forecast?.points[0] : undefined;
+  const origin: [number, number] | null =
+    first?.base != null
+      ? [x(dayTime(first.on)), y(Number(first.base))]
+      : now === null
+        ? null
+        : [x(today), y(now)];
   const scenarioPath = (key: ScenarioKey) =>
     line([
       origin,

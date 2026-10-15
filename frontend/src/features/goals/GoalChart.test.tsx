@@ -220,6 +220,34 @@ describe('GOAL-CHART goal chart', () => {
     expect(chart.querySelector('.goal-chart__forecast')).toBeNull();
   });
 
+  it('starts the forecast from the value the server forecast from', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({
+      ...forecast,
+      points: [
+        {
+          on: '2026-10-13',
+          pessimistic: '5000000.00',
+          base: '5000000.00',
+          optimistic: '5000000.00',
+        },
+        ...forecast.points.slice(1),
+      ],
+    });
+    const chart = await show();
+    await within(chart).findByText('Today');
+    const firstY = (selector: string, last = false) => {
+      const ys = [
+        ...(chart.querySelector(selector)?.getAttribute('d') ?? '').matchAll(
+          /[ML][\d.]+ ([\d.-]+)/g,
+        ),
+      ].map((match) => Number(match[1]));
+      return last ? ys.at(-1) : ys[0];
+    };
+    // The goal says 5,500,000 now, the forecast was made from 5,000,000: the forecast starts lower.
+    expect(firstY('.goal-chart__forecast')).toBeGreaterThan(firstY('.goal-chart__line', true) ?? 0);
+  });
+
   it('leaves the forecast out while an asset has no price, and says why', async () => {
     vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
     vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
