@@ -209,9 +209,10 @@ export const cachedReads = {
   deposit: cachedRead('deposit', (id: string): Promise<DepositDetail> => depositsApi.get(id)),
   goals: cachedRead('goals', (): Promise<GoalList> => goalsApi.list()),
   goal: cachedRead('goal', (id: string): Promise<Goal> => goalsApi.get(id)),
+  // The goal's terms are part of the key, so an edit reads the forecast for the new terms.
   goalForecast: cachedRead(
     'goal-forecast',
-    (id: string): Promise<GoalForecast> => goalsApi.forecast(id),
+    (id: string, _terms: string): Promise<GoalForecast> => goalsApi.forecast(id),
   ),
   /** One page of the change history for a filter: the newest, or the one older than `before`. */
   audit: cachedRead(

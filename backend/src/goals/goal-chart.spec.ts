@@ -101,6 +101,15 @@ describe('GOAL-CHART goal forecast', () => {
     expect(points.at(-1)?.base).toBe(view.scenarios[1].projectedAtDeadline);
   });
 
+  it('writes every figure as a plain decimal, also past 1e21', () => {
+    const steep = { ...row, deadline: '2056-10-13', expectedReturnPercent: '999.9' };
+    const { points } = goalForecast(steep, now('10000.00'), today);
+    expect(Number(points.at(-1)?.optimistic)).toBeGreaterThan(1e21);
+    for (const point of points)
+      for (const key of ['pessimistic', 'base', 'optimistic'] as const)
+        expect(point[key]).toMatch(/^\d+\.\d{2}$/);
+  });
+
   it('has no points without a value in the currency or once the deadline has passed', () => {
     expect(goalForecast(row, now(null, false), today).points).toEqual([]);
     expect(goalForecast({ ...row, deadline: today }, now('5000.00'), today).points).toEqual([]);
