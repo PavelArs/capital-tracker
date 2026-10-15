@@ -137,6 +137,132 @@ async function removal(db, service, owner) {
   console.log('PASS BROKER-CONNECT-REMOVE');
 }
 
+async function heldPreview(db, service, owner) {
+  stage = 'the import preview counts an opening snapshot as held entries';
+  const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
+  const accounting = new AccountingService(db);
+  const broker = await account(db, owner, 'broker');
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  assert.equal((await service.importPreview(owner, broker)).accountHasEntries, false);
+  const instrument = (
+    await accounting.createInstrument(owner, { requestId: randomUUID(), name: 'Synthetic share' })
+  ).value.id;
+  const opening = await accounting.saveOpening(owner, broker, {
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    asOf: '2025-01-01T00:00:00.000Z',
+    positions: [{ instrumentId: instrument, quantity: '2', costStatus: 'known', totalCostUsd: '300' }],
+  });
+  assert.equal(opening.created, true);
+  assert.equal(
+    (await service.importPreview(owner, broker)).accountHasEntries,
+    true,
+    'An opening snapshot is history the import would add to',
+  );
+  console.log('PASS BROKER-SYNC-PREVIEW-HELD');
+  return instrument;
+}
+
+async function voidedTransferPreview(db, service, owner, instrument) {
+  stage = 'the import preview no longer counts a voided transfer';
+  const { TradeService } = require('/app/backend/dist/accounting/trade.service.js');
+  const { OwnedTransferService } = require('/app/backend/dist/accounting/owned-transfer.service.js');
+  const sender = await account(db, owner, null);
+  const broker = await account(db, owner, 'broker');
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await new TradeService(db).create(owner, sender, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 0,
+    instrumentId: instrument,
+    side: 'buy',
+    occurredAt: '2025-01-02T00:00:00.000Z',
+    orderWithinTimestamp: 0,
+    quantity: '1',
+    grossUsd: '100',
+    feeUsd: '0',
+  });
+  const transfers = new OwnedTransferService(db);
+  const moved = await transfers.create(owner, {
+    requestId: randomUUID(),
+    fromAccountId: sender,
+    toAccountId: broker,
+    expectedFromJournalRevision: 1,
+    expectedToJournalRevision: 0,
+    assertInternal: true,
+    instrumentId: instrument,
+    occurredAt: '2025-01-03T00:00:00.000Z',
+    orderWithinTimestamp: 0,
+    quantity: '0.5',
+    feeInstrumentId: null,
+    feeQuantity: '0',
+  });
+  assert.equal((await service.importPreview(owner, broker)).accountHasEntries, true);
+  await transfers.void(owner, moved.value.transfer.transferId, {
+    requestId: randomUUID(),
+    expectedVersion: 1,
+    expectedFromJournalRevision: 2,
+    expectedToJournalRevision: 1,
+  });
+  assert.equal(
+    (await service.importPreview(owner, broker)).accountHasEntries,
+    false,
+    'A voided transfer leaves nothing the import would add to',
+  );
+  console.log('PASS BROKER-SYNC-PREVIEW-VOIDED');
+}
+
+async function rewardRoomPreview(db, service, owner, instrument, history) {
+  stage = "the import preview counts the owner's rewards in other accounts";
+  const { AssetRewardService } = require('/app/backend/dist/accounting/asset-reward.service.js');
+  const broker = await account(db, owner, 'broker');
+  const elsewhere = await account(db, owner, null);
+  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  // 1000 synthetic dividends: exactly what one account's reward journal keeps.
+  for (let index = 0; index < 1000; index += 1)
+    history.push({
+      id: String(700000000 + index),
+      parentId: '',
+      type: 'OPERATION_TYPE_DIVIDEND',
+      state: 'executed',
+      occurredAt: '2025-02-01T10:00:00Z',
+      instrumentUid: '00000000-0000-4000-8000-000000000001',
+      instrumentType: 'share',
+      ticker: 'SYNTH',
+      quantity: '0',
+      payment: '1',
+      paymentCurrency: 'rub',
+      price: '',
+      priceCurrency: '',
+      commission: '',
+      commissionCurrency: '',
+      fills: [],
+    });
+  try {
+    const before = await service.importPreview(owner, broker);
+    assert.deepEqual([before.rewards, before.fitsRewardLimit], [1000, true]);
+    await new AssetRewardService(db).create(owner, elsewhere, {
+      requestId: randomUUID(),
+      expectedJournalRevision: 0,
+      assertReward: true,
+      instrumentId: instrument,
+      category: 'staking',
+      occurredAt: '2025-01-02T00:00:00.000Z',
+      orderWithinTimestamp: 0,
+      quantity: '2',
+      acquisitionBasisUsd: '0',
+      incomeValueUsd: '0',
+    });
+    assert.equal(
+      (await service.importPreview(owner, broker)).fitsRewardLimit,
+      false,
+      'One reward elsewhere leaves room for 999, not 1000',
+    );
+  } finally {
+    history.length = 0;
+  }
+  console.log('PASS BROKER-SYNC-PREVIEW-REWARD-ROOM');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -183,10 +309,17 @@ async function main() {
     const box = new TBankTokenBox(
       new ConfigService({ MFA_KEY_FILE: join(directory, 'key'), MFA_KEY_ID: 'probe-key' }),
     );
-    const tbank = { accounts: async () => ({ ok: true, value: [brokerAccount] }) };
+    const history = [];
+    const tbank = {
+      accounts: async () => ({ ok: true, value: [brokerAccount] }),
+      operations: async () => ({ ok: true, value: history }),
+    };
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
     await removal(db, service, owner.id);
+    const instrument = await heldPreview(db, service, owner.id);
+    await voidedTransferPreview(db, service, owner.id, instrument);
+    await rewardRoomPreview(db, service, owner.id, instrument, history);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });

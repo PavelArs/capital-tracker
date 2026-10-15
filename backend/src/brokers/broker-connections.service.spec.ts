@@ -28,9 +28,15 @@ function build(
   stored = false,
   positions: TBankResult<unknown[]> = { ok: true, value: [] },
   operations: TBankResult<TBankOperation[]> = { ok: true, value: [] },
+  held = false,
+  rewardsElsewhere = { active: 0, versions: 0 },
 ) {
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
+    if (sql.includes('FILTER(WHERE v.kind')) return [{ count: 0, active: rewardsElsewhere.active }];
+    if (sql.includes('count(*)::int AS count FROM account_reward_versions'))
+      return [{ count: rewardsElsewhere.versions }];
+    if (sql.includes('account_reward_versions')) return [{ held }];
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
     if (sql.includes('SELECT credentials'))
       return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
@@ -332,5 +338,67 @@ describe('BROKER-SYNC: previewing the operations of a connected account', () => 
       UnprocessableEntityException,
     );
     await expect(failing('unavailable')).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});
+
+describe('BROKER-SYNC: previewing the import of a connected account', () => {
+  const history = [
+    operation({ id: '900000001' }),
+    operation({
+      id: '900000002',
+      parentId: '900000001',
+      type: 'OPERATION_TYPE_BROKER_FEE',
+      payment: '-0.3',
+    }),
+    operation({ id: '900000003', type: 'OPERATION_TYPE_SOMETHING_NEW' }),
+  ];
+
+  it('shows what the history would become and that the account is empty, recording nothing', async () => {
+    const { service, histories, writes } = build(ok(mine), true, true, undefined, {
+      ok: true,
+      value: history,
+    });
+    const preview = await service.importPreview(owner, account);
+    expect(histories).toEqual([mine.id]);
+    expect(writes).toEqual([]);
+    expect(preview.entries.map((entry) => [entry.action, entry.fee, entry.operationIds])).toEqual([
+      ['buy', '0.3', ['900000001', '900000002']],
+    ]);
+    expect(preview.skipped.map((item) => item.operationId)).toEqual(['900000003']);
+    expect(preview.accountHasEntries).toBe(false);
+  });
+
+  it('says when the account already holds entries the import would add to', async () => {
+    const { service } = build(ok(mine), true, true, undefined, { ok: true, value: [] }, true);
+    expect((await service.importPreview(owner, account)).accountHasEntries).toBe(true);
+  });
+
+  it("says when the owner's rewards elsewhere leave no room for the history's rewards", async () => {
+    const dividend = operation({
+      id: '900000010',
+      type: 'OPERATION_TYPE_DIVIDEND',
+      quantity: '0',
+      payment: '5',
+    });
+    const preview = (active: number, versions: number) =>
+      build(ok(mine), true, true, undefined, { ok: true, value: [dividend] }, false, {
+        active,
+        versions,
+      }).service.importPreview(owner, account);
+    expect((await preview(999, 9999)).fitsRewardLimit).toBe(true);
+    expect((await preview(1000, 0)).fitsRewardLimit).toBe(false);
+    expect((await preview(0, 10000)).fitsRewardLimit).toBe(false);
+  });
+
+  it('refuses an unconnected account and names a failed read', async () => {
+    await expect(build(ok(mine)).service.importPreview(owner, account)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      build(ok(mine), true, true, undefined, {
+        ok: false,
+        reason: 'unavailable',
+      }).service.importPreview(owner, account),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
