@@ -501,10 +501,13 @@ function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
     let end = start;
     while (end < sorted.length && timeKey(sorted[end].occurredAt) === time) end += 1;
     const instant = sorted.slice(start, end);
-    // Each security's buys at this instant, placed together before its first sale.
+    // Each security's buys at this instant, placed together before its first sale. Not when the
+    // instant holds exchange cash: a buy may be paid with cash bought after the sale, and the
+    // order the ranks give is the one that keeps every cash balance as it really was.
+    const hoisting = !instant.some((entry) => entry.cash);
     const buys = new Map<string, PlanEntry[]>();
     for (const entry of instant) {
-      if (!isSecurity(entry, 'buy')) continue;
+      if (!hoisting || !isSecurity(entry, 'buy')) continue;
       const list = buys.get(entry.instrumentUid);
       if (list) list.push(entry);
       else buys.set(entry.instrumentUid, [entry]);
