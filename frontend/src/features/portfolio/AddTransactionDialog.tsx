@@ -20,6 +20,7 @@ import { unitPrice } from './add-asset';
 import {
   addDecimal,
   bankRate,
+  carriesComment,
   compareDecimal,
   decimal,
   type EntryKind,
@@ -547,6 +548,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     setSettled({ date: entry.date, time: entry.time });
   };
   const priced = kind === 'buy' || kind === 'sell';
+  const commented = carriesComment(kind);
   const usd = priced ? usdTotal(shown) : null;
   const accountName = accounts?.find((item) => item.id === accountId)?.name ?? 'This account';
   const sameAccount = transfer && toAccountId === accountId;
@@ -1226,16 +1228,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               <details
                 className="portfolio-more"
                 open={
-                  Boolean(entry.time || entry.fee || entry.comment) ||
+                  Boolean(entry.time || entry.fee || (commented && entry.comment)) ||
                   found.has('time') ||
                   found.has('fee') ||
                   found.has('comment')
                 }
               >
                 <summary>
-                  {priced || transfer
-                    ? 'More options: time, fee, comment'
-                    : 'More options: time, comment'}
+                  {`More options: ${['time', ...(priced || transfer ? ['fee'] : []), ...(commented ? ['comment'] : [])].join(', ')}`}
                 </summary>
                 <div className="ui-field-row">
                   <div className="ui-field">
@@ -1277,21 +1277,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     </div>
                   )}
                 </div>
-                <div className="ui-field">
-                  <label className="ui-field__label" htmlFor={`${id}-comment`}>
-                    Comment
-                  </label>
-                  <textarea
-                    id={`${id}-comment`}
-                    className="ui-input ui-textarea"
-                    placeholder="Optional"
-                    value={entry.comment}
-                    onChange={(event) => update({ comment: event.target.value })}
-                    onBlur={leave('comment')}
-                    {...invalid('comment')}
-                  />
-                  {fieldError('comment')}
-                </div>
+                {/* transactions-01: only where the command keeps the comment. */}
+                {commented && (
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-comment`}>
+                      Comment
+                    </label>
+                    <textarea
+                      id={`${id}-comment`}
+                      className="ui-input ui-textarea"
+                      placeholder="Optional"
+                      value={entry.comment}
+                      onChange={(event) => update({ comment: event.target.value })}
+                      onBlur={leave('comment')}
+                      {...invalid('comment')}
+                    />
+                    {fieldError('comment')}
+                  </div>
+                )}
               </details>
             </>
           )}

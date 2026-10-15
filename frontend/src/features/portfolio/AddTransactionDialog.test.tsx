@@ -525,7 +525,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.queryByLabelText('Wallet or account')).not.toBeInTheDocument();
     expect(view.getByLabelText('From')).toHaveValue(id(11));
     expect(view.getByLabelText('To')).toHaveValue(id(12));
-    await user.click(view.getByText('More options: time, fee, comment'));
+    await user.click(view.getByText('More options: time, fee'));
     await user.type(view.getByLabelText('Fee (optional)'), '0.0001');
     await user.click(await view.findByRole('button', { name: 'Use all' }));
     expect(view.getByLabelText('Amount')).toHaveValue('0.4999');
@@ -1199,6 +1199,45 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ settlementCurrency: 'USDT' });
   });
+
+  // transactions-01: the reward and transfer commands carry no comment and their server parsers
+  // refuse one, so the window offers a comment only where the command keeps it.
+  it.each([
+    ['Reward', true, 'More options: time'],
+    ['Airdrop', true, 'More options: time'],
+    ['Transfer', false, 'More options: time, fee'],
+  ])(
+    'transactions-01 %s offers no comment field, which its command would drop',
+    async (kind, more, summary) => {
+      const user = userEvent.setup();
+      const { dialog } = await open();
+      const view = within(dialog);
+      if (more) await user.click(view.getByRole('button', { name: 'More' }));
+      await user.click(view.getByRole('radio', { name: kind }));
+      const options = view.getByText(summary);
+      expect(options.tagName).toBe('SUMMARY');
+      expect(options).not.toHaveTextContent(/comment/i);
+      await user.click(options);
+      expect(view.queryByLabelText('Comment')).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ['Buy', false, 'More options: time, fee, comment'],
+    ['Income', false, 'More options: time, comment'],
+    ['Fee', true, 'More options: time, comment'],
+  ])(
+    'transactions-01 %s keeps the comment field, which its command sends',
+    async (kind, more, summary) => {
+      const user = userEvent.setup();
+      const { dialog } = await open();
+      const view = within(dialog);
+      if (more) await user.click(view.getByRole('button', { name: 'More' }));
+      await user.click(view.getByRole('radio', { name: kind }));
+      await user.click(view.getByText(summary));
+      expect(view.getByLabelText('Comment')).toBeVisible();
+    },
+  );
 });
 
 describe('ASSET-CHIPS which assets become chips', () => {

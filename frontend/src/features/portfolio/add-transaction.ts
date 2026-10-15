@@ -81,6 +81,13 @@ export const valued = (kind: EntryKind) =>
 /** A reward or airdrop may have no known value: it then counts in net worth, not in profit. */
 export const valueOptional = (kind: EntryKind) => kind === 'reward' || kind === 'airdrop';
 
+/**
+ * Kinds whose command carries a comment: trades, with or without a purpose. The reward and
+ * transfer commands have none, and their server parsers refuse one (transactions-01).
+ */
+export const carriesComment = (kind: EntryKind) =>
+  kind === 'buy' || kind === 'sell' || isPurposeKind(kind);
+
 export const MAX_COMMENT_LENGTH = 500;
 
 /**
@@ -164,7 +171,8 @@ export function problems(
     if (!valueOptional(kind) || entry.total.trim()) found.add('total');
   if (priced && needsRate(entry.currency) && positive(entry.rate) === null) found.add('rate');
   if ((priced || kind === 'transfer') && entry.fee && decimal(entry.fee) === null) found.add('fee');
-  if ([...entry.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
+  if (carriesComment(kind) && [...entry.comment.trim()].length > MAX_COMMENT_LENGTH)
+    found.add('comment');
   return found;
 }
 
