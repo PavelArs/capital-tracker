@@ -470,7 +470,7 @@ export function AddDepositDialog({
 
   return (
     <FormDialog
-      title="Add deposit"
+      title="Add bank deposit"
       note="Enter the terms once. The app counts the interest and what the deposit is worth; you only record top-ups and payouts."
       submit="Add deposit"
       problems={problems}

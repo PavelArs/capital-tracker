@@ -15,7 +15,7 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/portfolio', label: 'Portfolio', icon: 'portfolio' },
   { path: '/transactions', label: 'Transactions', icon: 'transactions' },
   { path: '/wallets', label: 'Wallets', icon: 'wallets' },
-  { path: '/deposits', label: 'Deposits', icon: 'archive' },
+  { path: '/deposits', label: 'Banks', icon: 'bank' },
   { path: '/brokers', label: 'Brokers', icon: 'briefcase', held: 'broker' },
   { path: '/real-estate', label: 'Real estate', icon: 'home', held: 'property' },
   { path: '/goals', label: 'Goals', icon: 'target' },

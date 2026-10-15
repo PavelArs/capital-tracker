@@ -1901,7 +1901,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       }),
     );
     expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
-    const deposit = screen.getByRole('dialog', { name: 'Add deposit' });
+    const deposit = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.keyboard('{Escape}');
     expect(deposit).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus();

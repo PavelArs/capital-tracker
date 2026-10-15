@@ -205,7 +205,7 @@ export default function DepositsPage() {
   return (
     <div className="shell-page">
       <PageHeader
-        title="Deposits"
+        title="Banks"
         actions={
           <button
             type="button"

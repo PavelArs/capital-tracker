@@ -72,7 +72,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       ['Portfolio', '/portfolio'],
       ['Transactions', '/transactions'],
       ['Wallets', '/wallets'],
-      ['Deposits', '/deposits'],
+      ['Banks', '/deposits'],
       ['Goals', '/goals'],
       ['Settings', '/preferences'],
     ]);
@@ -88,7 +88,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Portfolio',
       'Transactions',
       'Wallets',
-      'Deposits',
+      'Banks',
       'Real estate',
       'Goals',
       'Settings',
@@ -120,7 +120,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Portfolio',
       'Transactions',
       'Wallets',
-      'Deposits',
+      'Banks',
       'Brokers',
       'Goals',
       'Settings',
@@ -148,8 +148,8 @@ describe('SHELL-001 the sections, no Legacy group', () => {
     });
     await cachedReads.accounts.load();
     const held = await sections();
-    expect(held.slice(held.indexOf('Deposits'))).toEqual([
-      'Deposits',
+    expect(held.slice(held.indexOf('Banks'))).toEqual([
+      'Banks',
       'Brokers',
       'Real estate',
       'Goals',

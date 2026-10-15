@@ -104,7 +104,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     ['Portfolio', '/portfolio'],
     ['Transactions', '/transactions'],
     ['Wallets', '/wallets'],
-    ['Deposits', '/deposits'],
+    ['Banks', '/deposits'],
     ['Goals', '/goals'],
     ['Settings', '/preferences'],
   ] as const;

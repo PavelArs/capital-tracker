@@ -181,6 +181,12 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(card).toHaveAttribute('href', `/deposits/${savings.id}?currency=RUB`);
   });
 
+  it('classes-19 calls the section Banks, as the accepted v8 prototype does', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
+    open('/deposits');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Banks' })).toBeInTheDocument();
+  });
+
   it('invites the first deposit when there is none', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     open('/deposits');
@@ -201,7 +207,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     expect(within(dialog).getByLabelText('Bank')).toHaveFocus();
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
     expect(within(dialog).getByLabelText('Bank')).toHaveAccessibleDescription('Enter the bank');
@@ -240,7 +246,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars));
     open('/deposits');
     await user.click(await screen.findByRole('button', { name: 'Add deposit' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     const bank = within(dialog).getByLabelText('Bank');
     expect(bank).toHaveFocus();
     // The banks already used are one tap away, each once.
@@ -288,7 +294,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12.34567');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
@@ -328,7 +334,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
       open('/deposits');
       await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-      const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+      const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
       await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
       await user.type(within(dialog).getByLabelText('Amount put in'), '100000');
       await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
@@ -400,7 +406,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     const interest = within(dialog).getByLabelText('Interest comes');
     expect(
       within(interest)
@@ -416,7 +422,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
@@ -437,7 +443,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000000000000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');

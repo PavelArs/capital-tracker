@@ -341,7 +341,7 @@ export default function DepositPage() {
         }
       />
       <p className="deposit-back">
-        <Link to={back}>← Deposits</Link>
+        <Link to={back}>← Banks</Link>
       </p>
       {failed ? (
         <p className="shell-note" role="alert">
