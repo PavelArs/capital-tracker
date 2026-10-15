@@ -102,27 +102,39 @@ const securityProblem = (item: TBankOperation): PlanSkip['reason'] | null =>
       ? 'currency-exchange'
       : null;
 
+interface TradePart {
+  occurredAt: string;
+  quantity: bigint;
+  /** What the part's fills cost at their own prices; its share of the amount and fee. */
+  weight: bigint;
+}
+
 /**
- * An order's fills as one part per Moscow day, each dated by its last fill, so a part bought
- * before a sale is never moved after it. Without fills that account for the whole quantity on
- * two or more days, the order is one part at its last fill.
+ * An order's fills as one part per fill time, so nothing another operation did between two
+ * fills moves across them. Each part takes its share of the amount by its fills' own prices, or
+ * by quantity when a fill has no price or the prices differ in currency. Without fills that
+ * cover the whole quantity at two or more times, the order is one part at its last fill.
  */
-function tradeParts(operation: TBankOperation): { occurredAt: string; quantity: bigint }[] {
-  const days = new Map<string, { occurredAt: string; quantity: bigint }>();
+function tradeParts(operation: TBankOperation): TradePart[] {
+  const whole = atoms(operation.quantity);
+  const single = [{ occurredAt: tradeTime(operation), quantity: whole, weight: whole }];
+  const times = new Map<string, TradePart>();
+  const priced = operation.fills.every(
+    (fill) => !isZero(fill.price) && fill.priceCurrency === operation.fills[0].priceCurrency,
+  );
   let filled = 0n;
   for (const fill of operation.fills) {
     const quantity = atoms(fill.quantity);
+    const weight = priced ? atoms(fill.price) * quantity : quantity;
     filled += quantity;
-    const day = days.get(moscowDate(fill.filledAt));
-    if (!day) days.set(moscowDate(fill.filledAt), { occurredAt: fill.filledAt, quantity });
-    else {
-      day.quantity += quantity;
-      if (timeKey(fill.filledAt) > timeKey(day.occurredAt)) day.occurredAt = fill.filledAt;
-    }
+    const part = times.get(timeKey(fill.filledAt));
+    if (part) {
+      part.quantity += quantity;
+      part.weight += weight;
+    } else times.set(timeKey(fill.filledAt), { occurredAt: fill.filledAt, quantity, weight });
   }
-  if (days.size < 2 || filled !== atoms(operation.quantity))
-    return [{ occurredAt: tradeTime(operation), quantity: atoms(operation.quantity) }];
-  return [...days.values()].sort((a, b) =>
+  if (times.size < 2 || filled !== whole) return single;
+  return [...times.values()].sort((a, b) =>
     timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)),
   );
 }
@@ -232,7 +244,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       if (isZero(item.quantity)) return skip(item, 'no-quantity');
       const fees = feesOf.get(item.id) ?? [];
       const parts = tradeParts(item);
-      const weights = parts.map((part) => part.quantity);
+      const weights = parts.map((part) => part.weight);
       const amounts = split(absolute(item.payment), weights);
       const paidFees = split(absolute(sum(fees.map((fee) => fee.payment))), weights);
       return parts.map((part, index) => ({
@@ -373,6 +385,20 @@ function checkHeld(
     }
     if (entry.action === 'sell' && atoms(quantity) > units) {
       refuse('not-held');
+      // Its fee was still paid: it stays as money spent.
+      if (!isZero(entry.fee))
+        kept.push({
+          ...entry,
+          action: 'fee',
+          instrumentUid: '',
+          ticker: '',
+          instrumentType: '',
+          quantity: entry.fee,
+          amount: entry.fee,
+          fee: '0',
+          operationIds:
+            entry.operationIds.length > 1 ? entry.operationIds.slice(1) : entry.operationIds,
+        });
       continue;
     }
     held.set(

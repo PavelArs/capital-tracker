@@ -30,11 +30,11 @@ const cash = (type: string, payment: string, over: Partial<TBankOperation> = {})
   op({ type, payment, instrumentUid: '', ticker: '', instrumentType: '', quantity: '0', ...over });
 
 describe('BROKER-SYNC: what a T-Bank history would become in the records', () => {
-  it('joins a broker fee to its trade and dates the trade by its last fill', () => {
+  it('joins a broker fee to its trade and dates the trade by its fill, not its order', () => {
     const buy = op({
       id: '100000001',
       fills: [
-        { filledAt: '2024-03-01T10:00:01Z', quantity: '1', price: '100', priceCurrency: 'rub' },
+        { filledAt: '2024-03-01T10:00:02.5Z', quantity: '1', price: '100', priceCurrency: 'rub' },
         { filledAt: '2024-03-01T10:00:02.5Z', quantity: '1', price: '100', priceCurrency: 'rub' },
       ],
     });
@@ -174,29 +174,40 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
-  it('splits an order filled on two Moscow days into a dated part per day', () => {
-    const fill = (filledAt: string, quantity: string) => ({
+  it('splits an order filled at several times into a part per fill time, priced by its fills', () => {
+    const fill = (filledAt: string, quantity: string, price: string) => ({
       filledAt,
       quantity,
-      price: '100',
+      price,
       priceCurrency: 'rub',
     });
     const buy = op({
       id: '400000001',
       quantity: '10',
-      payment: '-1000.01',
+      payment: '-1100.01',
       fills: [
-        fill('2024-03-01T10:00:00Z', '3'),
-        fill('2024-03-01T11:00:00Z', '1'),
-        fill('2024-03-04T10:00:00Z', '6'),
+        fill('2024-03-01T10:00:00Z', '3', '100'),
+        fill('2024-03-01T10:00:00Z', '1', '100'),
+        fill('2024-03-01T12:00:00Z', '1', '200'),
+        fill('2024-03-04T10:00:00Z', '5', '100'),
       ],
     });
     const plan = planImport([
       buy,
       cash('OPERATION_TYPE_BROKER_FEE', '-1', { id: '400000002', parentId: buy.id }),
+      // A sale between two fills of one day sells what the earlier fill bought.
+      op({
+        id: '400000010',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '4',
+        payment: '400',
+        occurredAt: '2024-03-01T11:00:00Z',
+      }),
     ]);
+    expect(plan.skipped).toEqual([]);
     expect(
       plan.entries.map((entry) => [
+        entry.action,
         entry.occurredAt,
         entry.quantity,
         entry.amount,
@@ -204,9 +215,30 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
         entry.operationIds,
       ]),
     ).toEqual([
-      ['2024-03-01T11:00:00Z', '4', '400', '0.4', ['400000001', '400000002']],
-      ['2024-03-04T10:00:00Z', '6', '600.01', '0.6', ['400000001#2']],
+      ['buy', '2024-03-01T10:00:00Z', '4', '400', '0.36', ['400000001', '400000002']],
+      ['sell', '2024-03-01T11:00:00Z', '4', '400', '0', ['400000010']],
+      ['buy', '2024-03-01T12:00:00Z', '1', '200', '0.18', ['400000001#2']],
+      ['buy', '2024-03-04T10:00:00Z', '5', '500.01', '0.46', ['400000001#3']],
     ]);
+  });
+
+  it('keeps the fee of a sale it lists as not held as money spent', () => {
+    const sale = op({
+      id: '400000011',
+      type: 'OPERATION_TYPE_SELL',
+      quantity: '1',
+      payment: '100',
+    });
+    const plan = planImport([
+      sale,
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.5', { id: '400000012', parentId: sale.id }),
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['400000011', 'not-held'],
+    ]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.amount, entry.currency, entry.operationIds]),
+    ).toEqual([['fee', '0.5', 'rub', ['400000012']]]);
   });
 
   it('lists a sale of more than the history holds instead of selling what was never bought', () => {
