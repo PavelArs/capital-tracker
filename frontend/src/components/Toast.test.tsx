@@ -70,4 +70,32 @@ describe('TOAST pop-up errors', () => {
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('shell-16 sits under the pinned strip only below 960 px, not at 960 px', async () => {
+    const user = userEvent.setup();
+    const nav = document.createElement('nav');
+    nav.className = 'shell-nav';
+    nav.getBoundingClientRect = () => ({ bottom: 48 }) as DOMRect;
+    document.body.append(nav);
+    const at = (width: number) =>
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: width <= Number(/max-width:\s*([\d.]+)px/.exec(query)?.[1] ?? Number.NaN),
+      }));
+    try {
+      at(960);
+      const { container, unmount } = setup(['Unable to log out. Please try again.']);
+      await user.click(screen.getByRole('button', { name: 'Fail' }));
+      expect(container.querySelector<HTMLElement>('.toast-viewport')?.style.top).toBe('');
+      unmount();
+      at(959);
+      const narrow = setup(['Unable to log out. Please try again.']);
+      await user.click(screen.getByRole('button', { name: 'Fail' }));
+      expect(narrow.container.querySelector<HTMLElement>('.toast-viewport')?.style.top).toBe(
+        '56px',
+      );
+    } finally {
+      nav.remove();
+      vi.unstubAllGlobals();
+    }
+  });
 });

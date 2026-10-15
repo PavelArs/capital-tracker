@@ -300,7 +300,7 @@ a.shell-sync:hover {
 
 /* Phones and tablets (prototype): one slim bar with the brand, the owner and a swipeable
    strip of sections; no menu button, so every section is a single tap away. */
-@media (max-width: 960px) {
+@media (max-width: 959.98px) {
   .shell {
     display: block;
   }
@@ -366,7 +366,7 @@ a.shell-sync:hover {
 
 /* Phones: the page header draws the notifications bell here, left of the avatar. The room is
    held while a page loads, so the avatar does not step aside. */
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .shell-owner__bell {
     display: block;
     min-width: 36px;

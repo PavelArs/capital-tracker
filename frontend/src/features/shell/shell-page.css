@@ -186,7 +186,7 @@
 /* Phones: the title on a row of its own (the bell sits in the top bar next to the owner),
    then the currency and "Add transaction" on one row, then the page's own actions on a row
    of their own. */
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .shell-page__head h1 {
     order: -2;
     flex: 1 1 100%;
@@ -517,7 +517,7 @@
 }
 
 /* Phones: the panel is a sheet over the page, not a popover that runs off the screen. */
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .shell-bell {
     position: static;
   }
@@ -567,7 +567,7 @@
   max-width: 100%;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639.98px) {
   .shell-setting__hint--pending {
     min-height: 2lh;
   }

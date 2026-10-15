@@ -47,7 +47,7 @@ export default function ToastViewport() {
   useLayoutEffect(() => {
     if (toasts.length === 0) return;
     const place = () => {
-      const narrow = window.matchMedia?.('(max-width: 960px)').matches;
+      const narrow = window.matchMedia?.('(max-width: 959.98px)').matches;
       const bottom = document.querySelector('.shell-nav')?.getBoundingClientRect().bottom;
       setTop(narrow && bottom !== undefined ? Math.max(0, bottom) : null);
     };
