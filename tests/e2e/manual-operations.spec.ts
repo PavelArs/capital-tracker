@@ -127,6 +127,9 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   // transactions-23: refused at once, before the owner is asked to confirm.
   await drawer.getByRole('button', { name: 'Delete' }).click();
   const refusal = page.getByRole('alertdialog', { name: "This purchase can't be deleted" });
+  // The confirmation is checked only once the refusal is on screen, so its absence is not
+  // read before the check has answered.
+  await expect(refusal).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Delete this transaction?' })).toHaveCount(0);
   await expect(refusal).toHaveText(
     new RegExp(
