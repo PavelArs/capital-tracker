@@ -158,9 +158,7 @@ describe('Owner second-factor login (prototype Sign-in)', () => {
     await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456');
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
-    expect(
-      await screen.findByText('Too many attempts. Wait 10 minutes and try again.'),
-    ).toBeVisible();
+    expect(await screen.findByText(/^Too many wrong codes, so codes are paused\./)).toBeVisible();
     expect(api.verifyFactor).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent('anonymous');
   });
@@ -382,6 +380,36 @@ describe('Owner second-factor login (prototype Sign-in)', () => {
 
     expect(await screen.findByText(/That code didn't work/)).toBeVisible();
     expect(screen.getByLabelText('Code from your authenticator app')).toHaveFocus();
+  });
+
+  it('auth-07 the owner code lock, which sends no Retry-After, promises no wait and names the way out', async () => {
+    // The ten-minute cooldown and the hundred-failure lock answer alike (mfa.service.ts
+    // complete()): 429, this body, no Retry-After. The lock never lifts with time, and a
+    // recovery code is refused as well, so the copy promises neither.
+    api.verifyFactor.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 429,
+        headers: {},
+        data: {
+          statusCode: 429,
+          message: 'Too many attempts',
+          error: 'Too Many Requests',
+          timestamp: '2026-10-15T09:00:00.000Z',
+          path: '/api/auth/mfa',
+        },
+      },
+    });
+    const user = await renderLogin();
+    await submitPassword(user);
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
+    );
+    expect(alert).not.toHaveTextContent(/minute|recovery code/i);
   });
 
   it('auth-07 asks for a minute when the server says the limit lifts within one', async () => {

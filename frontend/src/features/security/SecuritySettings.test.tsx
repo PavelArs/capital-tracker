@@ -120,7 +120,7 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     await userEvent.type(field, '234567');
     await userEvent.click(submit);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Too many attempts. Wait 10 minutes and try again.',
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
     );
     await userEvent.type(field, '345678');
     await userEvent.click(submit);
@@ -302,7 +302,7 @@ describe('Settings → Security (PR-AUTH-4)', () => {
       code: 'AAAAAAAA-bbbbbbbb-cccccccc-dddddddd',
     });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Too many attempts. Wait 10 minutes and try again.',
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
     );
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -351,6 +351,35 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(within(scan).getByLabelText('Code from the new app')).toBeDisabled();
     await userEvent.click(within(scan).getByRole('button', { name: 'Start again' }));
     expect(screen.getByRole('dialog', { name: 'Set up authenticator again' })).toBeInTheDocument();
+  });
+
+  it('auth-07 SEC-CODES: the owner code lock, which sends no Retry-After, promises no wait', async () => {
+    // The cooldown and the hundred-failure lock send the same 429 (mfa.service.ts proveFactor).
+    vi.spyOn(securityApi, 'regenerateRecoveryCodes').mockRejectedValue(
+      failure(429, {
+        statusCode: 429,
+        message: 'Too many attempts',
+        error: 'Too Many Requests',
+        timestamp: '2026-10-15T09:00:00.000Z',
+        path: '/api/auth/security/recovery-codes',
+      }),
+    );
+    render(<SecuritySettings />);
+    await userEvent.click(
+      await within(region()).findByRole('button', { name: 'Generate new codes' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    await userEvent.type(
+      within(dialog).getByLabelText('Code from your authenticator app'),
+      '123456',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate new codes' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
+    );
+    expect(alert).not.toHaveTextContent(/minute/i);
   });
 
   it('auth-07 SEC-TOTP: asks for a minute when the server says the limit lifts within one', async () => {
