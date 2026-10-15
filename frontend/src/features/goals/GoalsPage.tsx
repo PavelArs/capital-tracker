@@ -1,7 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal } from '@api/goals.api';
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
 import { Icon } from '../shell/icons';
@@ -11,7 +11,15 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
 import { GoalBar, GoalFigures } from './GoalProgress';
-import { dateText, ordered, rateText, statusText, statusTone, verdict } from './goal-format';
+import {
+  dateText,
+  ordered,
+  rateText,
+  staleText,
+  statusText,
+  statusTone,
+  verdict,
+} from './goal-format';
 import '../shell/shell-page.css';
 import './goals.css';
 
@@ -64,6 +72,29 @@ export default function GoalsPage() {
   const [editing, setEditing] = useState<Goal | 'new' | null>(null);
   const [deleting, setDeleting] = useState<Goal | null>(null);
   const { main } = useMainCurrency();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // goals-08, goals-09: a line that says what was just done. A goal deleted on its own page
+  // arrives here with word of it, said once; going back to this entry does not say it again.
+  const [notice, setNotice] = useState<{ text: string; focus: boolean } | null>(() =>
+    (location.state as { notice?: string } | null)?.notice === 'deleted'
+      ? { text: 'Goal deleted.', focus: true }
+      : null,
+  );
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is cleared.
+  useEffect(() => {
+    if (notice) navigate({ pathname: location.pathname }, { replace: true });
+  }, []);
+  // After a delete the button that opened the dialog is gone: the keyboard goes to the line
+  // that says the goal was deleted, not to the page body.
+  useEffect(() => {
+    if (notice?.focus) noticeRef.current?.focus();
+  }, [notice]);
+  // goals-35: the most prices behind any goal's figures that are older than 2 hours.
+  const stale = staleText(
+    Math.max(0, ...(list?.items ?? []).map((goal) => goal.progress.stalePrices ?? 0)),
+  );
 
   const add = (
     <button
@@ -79,6 +110,17 @@ export default function GoalsPage() {
   return (
     <div className="shell-page">
       <PageHeader title="Goals" actions={add} />
+      {notice && (
+        <p
+          ref={noticeRef}
+          className="ui-banner ui-banner--pos"
+          role="status"
+          tabIndex={-1}
+          key={notice.text}
+        >
+          {notice.text}
+        </p>
+      )}
       {error && list === null ? (
         <p className="shell-note" role="alert">
           Could not load the goals. Try again later.
@@ -109,6 +151,11 @@ export default function GoalsPage() {
             A goal is a sum to reach, with a date if you have one. Every goal is measured against
             your whole portfolio, in the currency the goal was set in.
           </p>
+          {stale && (
+            <p className="ui-banner ui-banner--warn" role="note">
+              {stale}
+            </p>
+          )}
           <ul className="goal-list">
             {ordered(list.items).map((goal) => (
               <GoalCard key={goal.id} goal={goal} onEdit={setEditing} onDelete={setDeleting} />
@@ -125,9 +172,15 @@ export default function GoalsPage() {
           goal={editing === 'new' ? undefined : editing}
           defaultCurrency={main ?? 'USD'}
           onClose={() => setEditing(null)}
-          onSaved={() => {
+          onSaved={(saved) => {
+            // A new goal opens on its own page, which says it was added.
+            if (editing === 'new') {
+              navigate(`/goals/${saved.id}`, { state: { notice: 'added' } });
+              return;
+            }
             setEditing(null);
-            reload();
+            setNotice({ text: 'Goal saved.', focus: false });
+            reload(true);
           }}
         />
       )}
@@ -137,7 +190,9 @@ export default function GoalsPage() {
           onClose={() => setDeleting(null)}
           onDeleted={() => {
             setDeleting(null);
-            reload();
+            setNotice({ text: 'Goal deleted.', focus: true });
+            // The other goals stay on screen while the list is asked for again.
+            reload(true);
           }}
         />
       )}

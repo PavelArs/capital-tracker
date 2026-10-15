@@ -6,14 +6,31 @@ import {
   goalsApi,
 } from '@api/goals.api';
 import { isAxiosError, isCancel } from 'axios';
-import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import {
+  createContext,
+  type FormEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { Icon } from '../shell/icons';
-import { addMonths, bannerTone, flooredText, rateText, today, verdict } from './goal-format';
+import {
+  addMonths,
+  bannerTone,
+  enteredInput,
+  flooredText,
+  rateText,
+  today,
+  verdict,
+} from './goal-format';
 import '../transactions/transactions.css';
 import './goals.css';
 
@@ -44,10 +61,13 @@ function useAttempt() {
   };
 }
 
-/** The server's own words for a refusal it explained, else a general line. */
-const failure = (error: unknown) =>
+/**
+ * The server's own words for a refusal it explained, else a general line. Without an answer the
+ * change may have been made (goals-02), so `unreachable` never says that nothing was saved.
+ */
+const failure = (error: unknown, unreachable: string) =>
   requestFailure(error, {
-    unreachable: 'Could not reach the server. Nothing was saved; try again.',
+    unreachable,
     status: {
       400: 'Check the fields and try again.',
       404: 'This goal no longer exists. Reload the page.',
@@ -57,12 +77,28 @@ const failure = (error: unknown) =>
     fallback: 'Could not save. Try again.',
   });
 
+/** What is wrong with each field, by its key; a field that is fine has none. */
+type Problems = Partial<Record<string, string>>;
+
+const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean);
+
+/** The problems shown under the fields: none until the owner tried to save. */
+const ShownProblems = createContext<Problems>({});
+
+/** How a field's control points at its message: invalid with the problem, else its hint. */
+interface FieldAria {
+  'aria-invalid'?: true;
+  'aria-describedby'?: string;
+}
+
 /** One modal form: a title, fields, a refusal line and Cancel/Save. */
 function FormDialog({
   title,
   note,
   submit,
-  problem,
+  danger = false,
+  problems = () => ({}),
+  unreachable,
   onClose,
   onSubmit,
   children,
@@ -70,7 +106,12 @@ function FormDialog({
   title: string;
   note?: string;
   submit: string;
-  problem: () => string | null;
+  /** A destructive confirmation: the submit button is the danger one (goals-22). */
+  danger?: boolean;
+  /** Every field's problem; each is shown under its field once the owner tried to save. */
+  problems?: () => Problems;
+  /** What a lost answer means for this change. */
+  unreachable: string;
   onClose: () => void;
   onSubmit: () => Promise<void>;
   children: ReactNode;
@@ -79,18 +120,27 @@ function FormDialog({
   const [error, setError] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Each refused save puts the keyboard on the first field that needs a fix.
+  const [refused, setRefused] = useState(0);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (refused > 0) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [refused]);
 
-  const hint = tried ? problem() : null;
+  const shown = tried ? problems() : {};
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (problem() !== null) return;
+    if (hasProblems(problems())) {
+      setRefused((count) => count + 1);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       await onSubmit();
     } catch (caught) {
-      setError(failure(caught));
+      setError(failure(caught, unreachable));
       setSaving(false);
     }
   };
@@ -102,17 +152,17 @@ function FormDialog({
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
     >
-      <form onSubmit={save} noValidate>
+      <form ref={form} className="goal-dialog" onSubmit={save} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>{title}</h2>
           <CloseButton onClick={onClose} disabled={saving} />
           {note && <p className="shell-note">{note}</p>}
         </div>
         <div className="ui-modal__body">
-          {children}
-          {(hint || error) && (
+          <ShownProblems.Provider value={shown}>{children}</ShownProblems.Provider>
+          {error && (
             <p className="ui-banner ui-banner--neg" role="alert">
-              {hint ?? error}
+              {error}
             </p>
           )}
         </div>
@@ -125,7 +175,11 @@ function FormDialog({
           >
             Cancel
           </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          <button
+            type="submit"
+            className={`shell-button shell-button--${danger ? 'danger' : 'primary'}`}
+            disabled={saving}
+          >
             {saving ? 'Saving…' : submit}
           </button>
         </div>
@@ -134,26 +188,49 @@ function FormDialog({
   );
 }
 
+/**
+ * A labelled field. `name` is its key among the form's problems: once the owner tried to save,
+ * its problem is said under it, in place of the hint, and the control is marked invalid.
+ */
 function Field({
   label,
   optional,
   hint,
+  name,
   children,
 }: {
   label: string;
   optional?: boolean;
   hint?: string;
-  children: (id: string) => ReactNode;
+  name?: string;
+  children: (id: string, aria: FieldAria) => ReactNode;
 }) {
   const id = useId();
+  const problems = useContext(ShownProblems);
+  const problem = name ? problems[name] : undefined;
+  const aria: FieldAria = problem
+    ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` }
+    : hint
+      ? { 'aria-describedby': `${id}-hint` }
+      : {};
   return (
     <div className="ui-field">
       <label className="ui-field__label" htmlFor={id}>
         {label}
         {optional && <span className="goal-optional"> (optional)</span>}
       </label>
-      {children(id)}
-      {hint && <span className="ui-field__hint">{hint}</span>}
+      {children(id, aria)}
+      {problem ? (
+        <span className="ui-field__error" id={`${id}-error`} role="alert">
+          {problem}
+        </span>
+      ) : (
+        hint && (
+          <span className="ui-field__hint" id={`${id}-hint`}>
+            {hint}
+          </span>
+        )
+      )}
     </div>
   );
 }
@@ -165,34 +242,49 @@ function isCalendarDate(text: string): boolean {
   return !Number.isNaN(time) && new Date(time).toISOString().slice(0, 10) === text;
 }
 
-const problemOf = (terms: {
+/**
+ * Every field's problem at once (goals-05). A date the goal already has stays as it is, also on
+ * and after its day (goals-28); a new or moved date has to be ahead.
+ */
+function problemsOf(terms: {
   name: string;
   target: string;
   deadline: string;
   rate: string;
   monthly: string;
-}): string | null =>
-  (!terms.name.trim()
-    ? 'Name: give the goal a name'
-    : Array.from(terms.name.trim()).length > NAME_LENGTH
-      ? `Name: at most ${NAME_LENGTH} characters`
-      : null) ??
-  (!MONEY.test(terms.target.trim()) || Number(terms.target) === 0
-    ? 'Sum to reach: a number with up to two decimals, above 0'
-    : null) ??
-  (terms.deadline && !isCalendarDate(terms.deadline) ? 'By: pick a date' : null) ??
-  (terms.deadline && terms.deadline <= today()
-    ? 'By: pick a date after today, or clear it'
-    : null) ??
-  (terms.deadline && terms.deadline > addMonths(today(), MAX_MONTHS)
-    ? 'By: pick a date within 100 years, or clear it'
-    : null) ??
-  (RATE.test(terms.rate.trim())
-    ? null
-    : 'Expected return: percent a year, from 0 to 999.9999 with up to four decimals') ??
-  (terms.monthly.trim() && !MONEY.test(terms.monthly.trim())
-    ? 'Monthly contribution: a number with up to two decimals, or leave it empty'
-    : null);
+  kept: string | null;
+}): Problems {
+  const name = terms.name.trim();
+  const { deadline } = terms;
+  const moved = deadline !== '' && deadline !== terms.kept;
+  return {
+    name: !name
+      ? 'Enter a name'
+      : Array.from(name).length > NAME_LENGTH
+        ? `At most ${NAME_LENGTH} characters`
+        : undefined,
+    target:
+      !MONEY.test(terms.target.trim()) || Number(terms.target) === 0
+        ? 'Enter a sum above 0, with up to two decimals'
+        : undefined,
+    deadline: !moved
+      ? undefined
+      : !isCalendarDate(deadline)
+        ? 'Pick a date'
+        : deadline <= today()
+          ? 'Pick a date after today, or clear it'
+          : deadline > addMonths(today(), MAX_MONTHS)
+            ? 'Pick a date within 100 years, or clear it'
+            : undefined,
+    rate: RATE.test(terms.rate.trim())
+      ? undefined
+      : 'Enter a percent a year from 0 to 999.9999, with up to four decimals',
+    monthly:
+      terms.monthly.trim() && !MONEY.test(terms.monthly.trim())
+        ? 'Enter a sum with up to two decimals, or leave it empty'
+        : undefined,
+  };
+}
 
 /** How long the dialog waits after the last keystroke before it asks for the plan. */
 const PREVIEW_DELAY_MS = 350;
@@ -309,13 +401,17 @@ export function GoalDialog({
 }) {
   const [name, setName] = useState(goal?.name ?? '');
   const [currency, setCurrency] = useState<GoalCurrency>(goal?.currency ?? defaultCurrency);
-  const [target, setTarget] = useState(goal ? goal.targetAmount : '');
+  const [target, setTarget] = useState(goal ? enteredInput(goal.targetAmount) : '');
   const [deadline, setDeadline] = useState(goal?.deadline ?? '');
   const [rate, setRate] = useState(goal ? rateText(goal.expectedReturnPercent) : '8');
-  const [monthly, setMonthly] = useState(goal?.monthlyContribution ?? '');
+  const [monthly, setMonthly] = useState(
+    goal?.monthlyContribution == null ? '' : enteredInput(goal.monthlyContribution),
+  );
   const attempt = useAttempt();
+  const kept = goal?.deadline ?? null;
+  const problems = () => problemsOf({ name, target, deadline, rate, monthly, kept });
   // The plan is asked for as soon as the terms could be saved, whatever the name says.
-  const ready = problemOf({ name: 'x', target, deadline, rate, monthly }) === null;
+  const ready = !hasProblems({ ...problems(), name: undefined });
   const plan = usePreview(
     ready
       ? {
@@ -324,20 +420,25 @@ export function GoalDialog({
           deadline: deadline || null,
           expectedReturnPercent: rate.trim(),
           monthlyContribution: monthly.trim() || null,
+          // The goal being changed, so a date it keeps is judged as saving it would be.
+          ...(goal ? { goalId: goal.id } : {}),
         }
       : null,
   );
   const now = plan.preview?.progress.current ?? null;
-  const nameId = useId();
-  const targetId = useId();
-  const rateId = useId();
+  const currencyId = useId();
 
   return (
     <FormDialog
       title={goal ? 'Edit goal' : 'Add goal'}
       note="A goal counts your whole portfolio. The app works out what to put in each month, or when you get there."
       submit={goal ? 'Save goal' : 'Add goal'}
-      problem={() => problemOf({ name, target, deadline, rate, monthly })}
+      problems={problems}
+      unreachable={
+        goal
+          ? 'Could not reach the server. The change may have been saved; saving it again is safe.'
+          : 'Could not reach the server. The goal may have been added; adding it again does not add it twice.'
+      }
       onClose={onClose}
       onSubmit={async () => {
         const terms: GoalTerms = {
@@ -355,102 +456,113 @@ export function GoalDialog({
         );
       }}
     >
+      <Field label="Name" name="name">
+        {(id, aria) => (
+          <input
+            id={id}
+            className="ui-input"
+            value={name}
+            autoComplete="off"
+            maxLength={NAME_LENGTH}
+            placeholder="e.g. Apartment down payment"
+            onChange={(event) => setName(event.target.value)}
+            {...aria}
+          />
+        )}
+      </Field>
       <div className="ui-field">
-        <label className="ui-field__label" htmlFor={nameId}>
-          Name
-        </label>
-        <input
-          id={nameId}
-          className="ui-input"
-          value={name}
-          autoComplete="off"
-          maxLength={NAME_LENGTH}
-          placeholder="Apartment down payment"
-          onChange={(event) => setName(event.target.value)}
-        />
-      </div>
-      <div className="ui-field">
-        <span className="ui-field__label" id={`${nameId}-currency`}>
+        <span className="ui-field__label" id={currencyId}>
           Currency
         </span>
         <SegmentedControl
           name="goal-currency"
-          labelledBy={`${nameId}-currency`}
+          labelledBy={currencyId}
           options={['RUB', 'USD', 'EUR']}
           value={currency}
           onChange={setCurrency}
         />
       </div>
       <div className="ui-field-row">
-        <div className="ui-field">
-          <label className="ui-field__label" htmlFor={targetId}>
-            Sum to reach
-          </label>
-          <div className="ui-affix">
-            <input
-              id={targetId}
-              className="ui-input"
-              value={target}
-              autoComplete="off"
-              inputMode="decimal"
-              placeholder="0"
-              onChange={(event) => setTarget(event.target.value)}
-            />
-            <span className="ui-affix__suffix">{currency}</span>
-          </div>
-          {now !== null && plan.preview?.currency === currency && (
-            <span className="ui-field__hint">Your portfolio now: {flooredText(now, currency)}</span>
+        <Field
+          label="Sum to reach"
+          name="target"
+          hint={
+            now !== null && plan.preview?.currency === currency
+              ? `Your portfolio now: ${flooredText(now, currency)}`
+              : undefined
+          }
+        >
+          {(id, aria) => (
+            <div className="ui-affix">
+              <input
+                id={id}
+                className="ui-input"
+                value={target}
+                autoComplete="off"
+                inputMode="decimal"
+                placeholder="0"
+                onChange={(event) => setTarget(event.target.value)}
+                {...aria}
+              />
+              <span className="ui-affix__suffix">{currency}</span>
+            </div>
           )}
-        </div>
-        <Field label="By" optional hint="Without a date the app shows when you get there.">
-          {(id) => (
+        </Field>
+        <Field
+          label="By"
+          optional
+          name="deadline"
+          hint="Without a date the app shows when you get there."
+        >
+          {(id, aria) => (
             <input
               id={id}
               type="date"
               className="ui-input"
               value={deadline}
               onChange={(event) => setDeadline(event.target.value)}
+              {...aria}
             />
           )}
         </Field>
       </div>
-      <div className="ui-field">
-        <label className="ui-field__label" htmlFor={rateId}>
-          Expected return, % a year
-        </label>
-        <div className="goal-rate">
-          <div className="ui-chips">
-            {PRESETS.map(([value, text]) => (
-              <button
-                key={value}
-                type="button"
-                className="ui-chip"
-                aria-pressed={rate.trim() === value}
-                onClick={() => setRate(value)}
-              >
-                {value}% <span className="goal-optional">{text}</span>
-              </button>
-            ))}
+      <Field
+        label="Expected return, % a year"
+        name="rate"
+        hint="On the whole portfolio, before inflation. A projection, not a promise: the same return every year."
+      >
+        {(id, aria) => (
+          <div className="goal-rate">
+            <div className="ui-chips">
+              {PRESETS.map(([value, text]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="ui-chip"
+                  aria-pressed={rate.trim() === value}
+                  onClick={() => setRate(value)}
+                >
+                  {value}% <span className="goal-optional">{text}</span>
+                </button>
+              ))}
+            </div>
+            <div className="ui-affix goal-rate__input">
+              <input
+                id={id}
+                className="ui-input"
+                value={rate}
+                autoComplete="off"
+                inputMode="decimal"
+                onChange={(event) => setRate(event.target.value)}
+                {...aria}
+              />
+              <span className="ui-affix__suffix">%</span>
+            </div>
           </div>
-          <div className="ui-affix goal-rate__input">
-            <input
-              id={rateId}
-              className="ui-input"
-              value={rate}
-              autoComplete="off"
-              inputMode="decimal"
-              onChange={(event) => setRate(event.target.value)}
-            />
-            <span className="ui-affix__suffix">%</span>
-          </div>
-        </div>
-        <span className="ui-field__hint">
-          On the whole portfolio, before inflation. A projection, not a promise: the same return
-          every year.
-        </span>
-      </div>
-      <Field label="You put in a month" optional>
-        {(id) => (
+        )}
+      </Field>
+      <Field label="You put in a month" optional name="monthly">
+        {(id, aria) => (
           <div className="ui-affix">
             <input
               id={id}
@@ -460,6 +572,7 @@ export function GoalDialog({
               inputMode="decimal"
               placeholder="0"
               onChange={(event) => setMonthly(event.target.value)}
+              {...aria}
             />
             <span className="ui-affix__suffix">{currency}</span>
           </div>
@@ -481,17 +594,20 @@ export function DeleteGoalDialog({
 }) {
   return (
     <FormDialog
-      title="Delete goal"
-      note={`${goal.name} will be removed. This cannot be undone.`}
-      submit="Delete"
-      problem={() => null}
+      title="Delete this goal?"
+      submit="Delete goal"
+      danger
+      unreachable="Could not reach the server. The goal may have been deleted; try again."
       onClose={onClose}
       onSubmit={async () => {
         await goalsApi.remove(goal.id);
         onDeleted();
       }}
     >
-      <p className="shell-note">Your portfolio and its history are not affected.</p>
+      <p className="shell-note">
+        {goal.name} and its plan are removed; this cannot be undone. Your portfolio and transactions
+        stay as they are.
+      </p>
     </FormDialog>
   );
 }

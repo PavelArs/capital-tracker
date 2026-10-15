@@ -185,9 +185,10 @@
   color: var(--ink-3);
 }
 
+/* Six stats in one row on a desktop, two columns on a phone (goals-14). */
 .goal-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: var(--sp-4);
 }
 
@@ -205,6 +206,41 @@
 .goal-stat__value {
   font-size: var(--fs-lg);
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 559.98px) {
+  .goal-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 20px;
+  }
+
+  .goal-stat__value {
+    font-size: 18px;
+  }
+}
+
+/* The page header's Delete goal: an icon in a square button, named for screen readers. */
+.goal-icon-button {
+  width: 36px;
+  padding: 0;
+}
+
+/* The destructive button of the delete confirmation (goals-22). */
+.goal-dialog .shell-button--danger {
+  border-color: transparent;
+  background: var(--neg);
+  color: var(--neg-ink);
+}
+
+.goal-dialog .shell-button--danger:hover {
+  border-color: transparent;
+  filter: brightness(1.08);
+}
+
+.goal-dialog .shell-button--danger:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .goal-cases__base td {
@@ -322,4 +358,17 @@
 
 .goal-preview[aria-busy="true"] {
   opacity: 0.6;
+}
+
+/* The verdict's icon takes the colour of its tone (goals-17); warn is tinted by the banner. */
+.goal-verdict.ui-banner--pos .shell-icon {
+  color: var(--pos);
+}
+
+.goal-verdict.ui-banner--info .shell-icon {
+  color: var(--accent);
+}
+
+.goal-verdict.ui-banner--neg .shell-icon {
+  color: var(--neg);
 }

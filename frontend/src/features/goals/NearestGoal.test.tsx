@@ -14,7 +14,13 @@ const goal = (changes: Partial<Goal> & Pick<Goal, 'id' | 'name'>): Goal => ({
   monthlyContribution: null,
   createdAt: '2026-10-01T00:00:00.000Z',
   asOf: '2026-10-13',
-  progress: { current: '40000.00', complete: true, percent: '40.00', remaining: '60000.00' },
+  progress: {
+    current: '40000.00',
+    complete: true,
+    percent: '40.00',
+    remaining: '60000.00',
+    stalePrices: 0,
+  },
   status: 'open',
   scenarios: [],
   ...changes,
@@ -27,7 +33,13 @@ const reached = goal({
   name: 'Laptop',
   deadline: '2020-01-01',
   status: 'reached',
-  progress: { current: '120000.00', complete: true, percent: '100.00', remaining: '0.00' },
+  progress: {
+    current: '120000.00',
+    complete: true,
+    percent: '100.00',
+    remaining: '0.00',
+    stalePrices: 0,
+  },
 });
 
 const list = (...items: Goal[]) =>

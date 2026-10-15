@@ -83,6 +83,14 @@ export function flooredText(value: string | null, currency: GoalCurrency): strin
   return wholeMoney(`${cents / 100n}.00`, currency);
 }
 
+/**
+ * A stored sum as the owner would type it (goals-20): the server writes two decimals, so
+ * "22000000.00" goes back into the form as "22000000"; real cents stay.
+ */
+export function enteredInput(value: string): string {
+  return value.replace(/\.00$/, '');
+}
+
 /** A sum the owner entered, as entered: whole units stay whole, cents are not rounded away. */
 export function enteredText(value: string | null, currency: GoalCurrency): string {
   if (value === null || !PLAIN.test(value)) return DASH;
@@ -209,6 +217,9 @@ export function verdict(goal: GoalPreview): string {
       } without further contributions.`;
     }
     case 'behind': {
+      // The deadline day itself still counts (goals-28); no payment is left before it.
+      if (goal.deadline !== null && goal.deadline === goal.asOf)
+        return `Due today. ${needed(remaining)} to go.`;
       const needs = base?.requiredMonthly ?? null;
       if (needs === null || goal.deadline === null)
         return 'Behind. No monthly payment is left before the date.';
@@ -270,10 +281,12 @@ export function againstTarget(
 }
 
 /**
- * How long is left until a date: "2 years 3 months", or null once it has passed. Counted from the
- * day the forecast was made, so it agrees with the status next to it.
+ * How long is left until a date: "2 years 3 months", "Due today" on the day itself, or null once
+ * it has passed. Counted from the day the forecast was made, so it agrees with the status next to
+ * it.
  */
 export function timeLeft(deadline: string, asOf: string = today()): string | null {
+  if (deadline === asOf) return 'Due today';
   const months = monthsFrom(asOf, deadline);
   return months < 0 || (months === 0 && deadline <= asOf) ? null : span(months);
 }
@@ -293,3 +306,18 @@ const MOSCOW_OFFSET_MS = 3 * 3_600_000;
 
 /** Today's calendar date in Moscow, the day the server counts a goal's deadline by. */
 export const today = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+
+/** The Moscow calendar date of an instant, such as the moment a goal was set (goals-25). */
+export const moscowDay = (instant: string) =>
+  new Date(Date.parse(instant) + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+
+/**
+ * goals-35: the warning that some prices behind the value are older than 2 hours, worded as the
+ * Portfolio page words it; null when none is.
+ */
+export function staleText(count: number | undefined): string | null {
+  if (!count) return null;
+  return count === 1
+    ? '1 price is older than 2 hours; the last stored price is used.'
+    : `${count} prices are older than 2 hours; the last stored prices are used.`;
+}
