@@ -2,6 +2,7 @@ import { cachedReads } from '@api/cached-reads';
 import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { needAttention } from './attention';
 import { useAttention } from './attention-context';
 import { summarizeSync } from './sync-summary';
 
@@ -49,7 +50,7 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
   const items = attention?.loaded ? attention.attention.items : [];
   if (items.length > 0) {
     summary.tone = 'warn';
-    summary.title = items.length === 1 ? '1 needs attention' : `${items.length} need attention`;
+    summary.title = needAttention(items.length);
     summary.problems = items.map((item) => item.title);
   }
   return (

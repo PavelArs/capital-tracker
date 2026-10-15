@@ -72,15 +72,36 @@ describe('ATTN-BELL on a phone', () => {
     const { container } = renderShell();
     const bell = await screen.findByRole('button', { name: /^Notifications/ });
     await user.click(bell);
-    const sheet = screen.getByRole('region', { name: 'Notifications' });
+    const sheet = screen.getByRole('dialog', { name: 'Notifications' });
     await user.click(within(sheet).getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('region', { name: 'Notifications' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull();
     expect(bell).toHaveFocus();
     await user.click(bell);
     const scrim = container.querySelector('.shell-bell__scrim');
     expect(scrim).not.toBeNull();
     await user.click(scrim as Element);
-    expect(screen.queryByRole('region', { name: 'Notifications' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull();
+  });
+
+  it('shell-03 is a modal sheet: the keyboard goes in, stays in and comes back to the bell', async () => {
+    phone(true);
+    const user = userEvent.setup();
+    renderShell();
+    const bell = await screen.findByRole('button', { name: /^Notifications/ });
+    await user.click(bell);
+    const sheet = screen.getByRole('dialog', { name: 'Notifications' });
+    expect(sheet).toHaveAttribute('aria-modal', 'true');
+    const close = within(sheet).getByRole('button', { name: 'Close' });
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(sheet).toContainElement(document.activeElement as HTMLElement);
+    await user.tab({ shift: true });
+    await user.tab({ shift: true });
+    expect(sheet).toContainElement(document.activeElement as HTMLElement);
+    expect(screen.getByRole('button', { name: 'Log out' })).not.toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull();
+    expect(bell).toHaveFocus();
   });
 });
 
@@ -93,5 +114,13 @@ describe('ATTN-BELL on a wide screen', () => {
     expect(within(screen.getByRole('banner')).getByRole('button', { name: /^Notifications/ })).toBe(
       bell,
     );
+  });
+
+  it('shell-03 opens a popover beside the bell, not a modal sheet', async () => {
+    phone(false);
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(await screen.findByRole('button', { name: /^Notifications/ }));
+    expect(screen.getByRole('region', { name: 'Notifications' })).not.toHaveAttribute('aria-modal');
   });
 });
