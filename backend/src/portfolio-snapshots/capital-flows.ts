@@ -49,7 +49,8 @@ const signed = (value: string) =>
  * flow (PR-OPS-2). Holdings carried into a
  * journal enter at its start with their carried cost, stated at their acquisition date's
  * rate like their cost basis. Own transfers, swaps and rewards move no money in or out, so
- * their effect (a transfer fee, a reward) is market effect. The legacy owner-declared USD
+ * their effect (a transfer fee, a reward) is market effect; only a swap between a shown and a
+ * hidden asset does (ASSET-HIDE). The legacy owner-declared USD
  * flows never change holdings, so counting them would invent market effect: they are not
  * flows here.
  */
@@ -58,7 +59,9 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
   for (const ledger of new Set(inputs.ledgers.values()))
     for (const account of ledger.accounts.values()) {
       const start = Date.parse(account.coverageFrom);
-      for (const lot of account.initialLots)
+      for (const lot of account.initialLots) {
+        // ASSET-HIDE: a hidden asset's money is out of the figures, as its holdings are.
+        if (inputs.hidden.has(lot.instrumentId)) continue;
         flows.push({
           at: start,
           instrumentId: lot.instrumentId,
@@ -68,18 +71,29 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
           ),
           rateDate: moscowDate(lot.acquiredAt),
         });
+      }
       for (const trade of account.trades) {
-        // A sale kept as cash moves no money; a fee only lowers the return (PR-OPS-2).
-        if ((trade.settlement && trade.side === 'sell') || trade.purpose === 'fee') continue;
-        // The part of a buy's cost the account's cash paid, in USD and as paid.
+        // A fee only lowers the return (PR-OPS-2).
+        if (trade.purpose === 'fee') continue;
+        // The cash side: what a buy spent of the account's cash or a sale kept as cash, in USD
+        // and as paid. A sale kept as cash moves no money in or out.
         const cash = settlementLeg(trade);
-        const flow = (gross: bigint, fee: bigint, spent: bigint) =>
-          trade.side === 'buy' ? gross + fee - spent : fee - gross;
+        if (trade.settlement && trade.side === 'sell' && cash === null) continue;
+        // ASSET-HIDE: what is hidden is outside, so a trade between a shown and a hidden side
+        // moves money in or out of what is shown, like a trade settled from outside.
+        const shownAsset = !inputs.hidden.has(trade.instrumentId);
+        const shownCash = cash !== null && !inputs.hidden.has(trade.settlement!.instrumentId);
+        if (!shownAsset && !shownCash) continue;
+        // A buy brings in its gross plus fee and a sale takes out its proceeds net of fee; the
+        // cash side shown pays a buy's share or keeps a sale's proceeds.
+        const sign = trade.side === 'buy' ? 1n : -1n;
+        const flow = (gross: bigint, fee: bigint, settled: bigint) =>
+          sign * ((shownAsset ? gross + sign * fee : 0n) - (shownCash ? settled : 0n));
         const usd = flow(signed(trade.grossUsd), signed(trade.feeUsd), cash?.usd ?? 0n);
         if (trade.settlement && usd === 0n) continue;
         flows.push({
           at: Date.parse(trade.occurredAt),
-          instrumentId: trade.instrumentId,
+          instrumentId: shownAsset ? trade.instrumentId : trade.settlement!.instrumentId,
           usd,
           rateDate: moscowDate(trade.occurredAt),
           ...(trade.paid
@@ -94,6 +108,21 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
                 },
               }
             : {}),
+        });
+      }
+      for (const swap of account.swaps ?? []) {
+        // ASSET-HIDE: a swap between a shown and a hidden asset moves its value, what the
+        // incoming asset cost, in or out of what is shown. A swap without that value is left
+        // out, like money without a rate (INVESTED-RATED).
+        const shownIn = !inputs.hidden.has(swap.incomingInstrumentId);
+        if (shownIn === !inputs.hidden.has(swap.outgoingInstrumentId)) continue;
+        if (swap.considerationUsd === null) continue;
+        const value = signed(swap.considerationUsd);
+        flows.push({
+          at: Date.parse(swap.occurredAt),
+          instrumentId: shownIn ? swap.incomingInstrumentId : swap.outgoingInstrumentId,
+          usd: shownIn ? value : -value,
+          rateDate: moscowDate(swap.occurredAt),
         });
       }
     }
@@ -121,18 +150,28 @@ export function stateFlows(flows: readonly CapitalFlow[], fx: FxConverter): Stat
 }
 
 /**
- * Net invested at each ascending instant: deposits minus withdrawals up to and including it.
- * One flow without a rate leaves every later total unknown, never smaller.
+ * INVESTED-RATED: money counts as put in only when its date has a rate. The owner chose to
+ * leave a flow without one out rather than blank every later total, so the money put in can
+ * read lower and the profit to date higher than they are. Nominal and real money put in
+ * follow this one rule.
+ */
+export function isRated(flow: StatedFlow): flow is StatedFlow & { amount: bigint } {
+  return flow.amount !== null;
+}
+
+/**
+ * Net invested at each ascending instant: deposits minus withdrawals up to and including it,
+ * leaving out a flow without a rate (INVESTED-RATED).
  */
 export function investedAt(flows: readonly StatedFlow[], instants: readonly number[]) {
   let index = 0;
-  let total: bigint | null = 0n;
+  let total = 0n;
   return instants.map((at) => {
     for (; index < flows.length && flows[index].at <= at; index++) {
-      const amount = flows[index].amount;
-      total = total === null || amount === null ? null : total + amount;
+      const flow = flows[index];
+      if (isRated(flow)) total += flow.amount;
     }
-    return total === null ? null : formatSignedProduct(total);
+    return formatSignedProduct(total);
   });
 }
 

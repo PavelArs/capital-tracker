@@ -1,3 +1,4 @@
+import type { FifoSwap } from '../accounting/asset-swap-types';
 import type { ConnectedLedger } from '../accounting/connected-accounting.store';
 import type { FifoCarryInInput, FifoTrade } from '../accounting/fifo';
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
@@ -57,6 +58,7 @@ function inputs(
     coverageFrom: string;
     trades?: FifoTrade[];
     initialLots?: FifoCarryInInput[];
+    swaps?: FifoSwap[];
   }[],
 ): ValuationInputs {
   // Two accounts joined by an own transfer share one ledger; each is read once.
@@ -69,6 +71,7 @@ function inputs(
           coverageFrom: account.coverageFrom,
           trades: account.trades ?? [],
           initialLots: account.initialLots ?? [],
+          swaps: account.swaps ?? [],
         },
       ]),
     ),
@@ -305,7 +308,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(stated('EUR')).toEqual([usd(70), usd(-396)]);
   });
 
-  it('net invested steps with each flow and is unknown after a flow without a rate', () => {
+  it('net invested steps with each flow and leaves out a flow without a rate (INVESTED-RATED)', () => {
     const flows: StatedFlow[] = [
       { at: at('2025-06-13T10:00:00.000Z'), amount: usd(1000) },
       { at: at('2025-06-20T00:00:00.000Z'), amount: usd(-300) },
@@ -318,7 +321,115 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       '2025-06-30T00:00:00.000Z',
       '2025-07-01T00:00:00.000Z',
     ].map(at);
-    expect(investedAt(flows, instants)).toEqual(['0', '1000', '700', '700', null]);
+    // Money without a Bank of Russia rate is not counted, and later totals stay known.
+    expect(investedAt(flows, instants)).toEqual(['0', '1000', '700', '700', '700']);
+  });
+
+  it('ASSET-HIDE a hidden asset is no flow: its purchases and carried holdings leave invested', () => {
+    const hiddenInputs = inputs([
+      {
+        id: 'a',
+        coverageFrom: '2025-06-01T00:00:00.000Z',
+        trades: [trade('buy', '2025-06-10T00:00:00.000Z', '1000')],
+        initialLots: [carryIn('2025-06-02T00:00:00.000Z', '400', '2')],
+      },
+    ]);
+    const visible = { ...hiddenInputs, hidden: new Set(['btc']) };
+    expect(capitalFlows(visible)).toEqual([]);
+    expect(capitalFlows(hiddenInputs)).toHaveLength(2);
+  });
+
+  it('ASSET-HIDE-CASH a trade across the hidden boundary moves money in or out of what is shown', () => {
+    const usdt = { instrumentId: 'usdt', instrumentName: 'Tether', instrumentSymbol: 'USDT' };
+    const rub = { instrumentId: 'rub', instrumentName: 'Russian ruble', instrumentSymbol: 'RUB' };
+    const trades: FifoTrade[] = [
+      // USDT put in from outside, then spent on BTC and refilled by a BTC sale.
+      { ...trade('buy', '2025-06-10T00:00:00.000Z', '1000'), instrumentId: 'usdt' },
+      {
+        ...trade('buy', '2025-06-11T00:00:00.000Z', '1000'),
+        settlement: { ...usdt, quantity: '1000' },
+      },
+      {
+        ...trade('sell', '2025-06-12T00:00:00.000Z', '1200', '10'),
+        settlement: { ...usdt, quantity: '1190' },
+      },
+      // Paid in rubles, a quarter from the account's ruble cash.
+      {
+        ...trade('buy', '2025-06-13T00:00:00.000Z', '1000'),
+        paid: {
+          currency: 'RUB',
+          gross: '80000',
+          fee: '0',
+          rateDate: '2025-06-13',
+          perUsd: '80',
+          rateSource: 'owner',
+        },
+        settlement: { ...rub, quantity: '20000' },
+      },
+    ];
+    const account = { id: 'bybit', coverageFrom: '2025-06-01T00:00:00.000Z', trades };
+    // The cash hidden: BTC bought with it is all money put in, BTC sold into it all taken out.
+    const cashHidden = capitalFlows({ ...inputs([account]), hidden: new Set(['usdt', 'rub']) });
+    expect(shown(cashHidden)).toEqual([
+      ['2025-06-11T00:00:00.000Z', units(1000), '2025-06-11'],
+      ['2025-06-12T00:00:00.000Z', units(-1190), '2025-06-12'],
+      ['2025-06-13T00:00:00.000Z', units(1000), '2025-06-13'],
+    ]);
+    expect(cashHidden[2].native).toEqual({ currency: 'RUB', amount: BigInt(units(80000)) });
+    // BTC hidden: the cash spent on it leaves what is shown and its proceeds come back.
+    const coinHidden = capitalFlows({ ...inputs([account]), hidden: new Set(['btc']) });
+    expect(shown(coinHidden)).toEqual([
+      ['2025-06-10T00:00:00.000Z', units(1000), '2025-06-10'],
+      ['2025-06-11T00:00:00.000Z', units(-1000), '2025-06-11'],
+      ['2025-06-12T00:00:00.000Z', units(1190), '2025-06-12'],
+      ['2025-06-13T00:00:00.000Z', units(-250), '2025-06-13'],
+    ]);
+    expect(coinHidden.slice(1).map((flow) => flow.instrumentId)).toEqual(['usdt', 'usdt', 'rub']);
+    expect(coinHidden[3].native).toEqual({ currency: 'RUB', amount: BigInt(units(-20000)) });
+  });
+
+  it('ASSET-HIDE-SWAP a swap across the hidden boundary moves its value in or out', () => {
+    const swap = (occurredAt: string, out: string, into: string, considerationUsd: string | null) =>
+      ({
+        swapId: `swap-${occurredAt}`,
+        version: 1,
+        outgoingInstrumentId: out,
+        outgoingInstrumentName: out,
+        outgoingInstrumentSymbol: null,
+        incomingInstrumentId: into,
+        incomingInstrumentName: into,
+        incomingInstrumentSymbol: null,
+        occurredAt,
+        orderWithinTimestamp: 0,
+        outgoingQuantity: '1',
+        incomingQuantity: '10',
+        considerationUsd,
+        feeSource: null,
+        feeInstrumentId: null,
+        feeQuantity: '0',
+      }) satisfies FifoSwap;
+    const account = {
+      id: 'wallet',
+      coverageFrom: '2025-06-01T00:00:00.000Z',
+      trades: [trade('buy', '2025-06-10T00:00:00.000Z', '100')],
+      swaps: [
+        swap('2025-06-11T00:00:00.000Z', 'btc', 'eth', '150'),
+        swap('2025-06-12T00:00:00.000Z', 'eth', 'btc', '160'),
+        // No value: left out, like money without a rate (INVESTED-RATED).
+        swap('2025-06-13T00:00:00.000Z', 'btc', 'eth', null),
+      ],
+    };
+    // Shown on both sides, a swap moves no money.
+    expect(shown(capitalFlows(inputs([account])))).toEqual([
+      ['2025-06-10T00:00:00.000Z', units(100), '2025-06-10'],
+    ]);
+    // BTC hidden: the ETH it became is put in at the swap's value, and leaves as it goes back.
+    const flows = capitalFlows({ ...inputs([account]), hidden: new Set(['btc']) });
+    expect(shown(flows)).toEqual([
+      ['2025-06-11T00:00:00.000Z', units(150), '2025-06-11'],
+      ['2025-06-12T00:00:00.000Z', units(-160), '2025-06-12'],
+    ]);
+    expect(flows.map((flow) => flow.instrumentId)).toEqual(['eth', 'eth']);
   });
 
   it('FLOW-SPLIT-DEPOSIT V0 100000, a 10000 buy paid from outside, V1 110000', () => {
