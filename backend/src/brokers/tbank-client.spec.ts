@@ -296,6 +296,7 @@ describe('BROKER-SYNC: operations T-Bank lists', () => {
           priceCurrency: 'rub',
           commission: '0',
           commissionCurrency: 'rub',
+          fills: [],
         },
       ],
       nextCursor: '',
@@ -338,10 +339,58 @@ describe('BROKER-SYNC: operations T-Bank lists', () => {
     expect(odd.type).toBe('unknown');
   });
 
-  it('reads a whole-number quantity a lenient encoder may send', () => {
-    expect(parseOperationsPage({ items: [item({ quantity: 3 })] }).operations[0].quantity).toBe(
-      '3',
+  it('counts only the filled part of a trade executed in part', () => {
+    const quantities = parseOperationsPage({
+      items: [
+        item({ quantity: '10', quantityRest: '6', quantityDone: '4' }),
+        item({ quantity: '10', quantityRest: '6', quantityDone: undefined }),
+        item({ quantity: '5', quantityRest: undefined, quantityDone: undefined }),
+      ],
+    }).operations.map((operation) => operation.quantity);
+    expect(quantities).toEqual(['4', '4', '5']);
+  });
+
+  it('keeps when and at what price each part of a trade was filled', () => {
+    const [trade] = parseOperationsPage({
+      items: [
+        item({
+          tradesInfo: {
+            trades: [
+              {
+                num: '1',
+                date: '2024-03-01T10:00:01Z',
+                quantity: '1',
+                price: { currency: 'rub', units: '100' },
+              },
+              {
+                num: '2',
+                date: '2024-03-04T07:00:00.5Z',
+                quantity: '1',
+                price: { currency: 'rub', units: '100', nano: 500000000 },
+              },
+            ],
+          },
+        }),
+      ],
+    }).operations;
+    expect(trade.occurredAt).toBe('2024-03-01T10:00:00.123456Z');
+    expect(trade.fills).toEqual([
+      { filledAt: '2024-03-01T10:00:01Z', quantity: '1', price: '100', priceCurrency: 'rub' },
+      { filledAt: '2024-03-04T07:00:00.5Z', quantity: '1', price: '100.5', priceCurrency: 'rub' },
+    ]);
+    expect(parseOperationsPage({ items: [item({ tradesInfo: {} })] }).operations[0].fills).toEqual(
+      [],
     );
+    expect(() =>
+      parseOperationsPage({ items: [item({ tradesInfo: { trades: [{ quantity: '1' }] } })] }),
+    ).toThrow();
+  });
+
+  it('reads a whole-number quantity a lenient encoder may send', () => {
+    expect(
+      parseOperationsPage({ items: [item({ quantity: 3, quantityDone: 3 })] }).operations[0]
+        .quantity,
+    ).toBe('3');
   });
 
   it('refuses an executed operation without an id, a time or a whole quantity', () => {
@@ -375,10 +424,13 @@ describe('BROKER-SYNC: operations T-Bank lists', () => {
       nextCursor: '',
     });
     expect(() => parseOperationsPage({ items: [], hasNext: true })).toThrow();
+    // A flag that is not a boolean could hide later pages, so it is not read as false.
+    expect(() => parseOperationsPage({ items: [], hasNext: 'true', nextCursor: 'c' })).toThrow();
+    expect(() => parseOperationsPage({ items: [], hasNext: 1, nextCursor: 'c' })).toThrow();
     expect(() => parseOperationsPage({ items: [], hasNext: true, nextCursor: 'a b' })).toThrow();
     expect(() => parseOperationsPage({ items: 'x' })).toThrow();
     expect(() =>
-      parseOperationsPage({ items: Array.from({ length: 501 }, () => item()) }),
+      parseOperationsPage({ items: Array.from({ length: 251 }, () => item()) }),
     ).toThrow();
   });
 });
@@ -458,7 +510,7 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
     expect(await client.accounts(token)).toEqual({ ok: false, reason: 'invalid_response' });
   });
 
-  it('reads every page of operations by cursor, oldest first, with fees and without fills', async () => {
+  it('reads every page of operations by cursor, oldest first, with fees and fills', async () => {
     queue = [
       { status: 200, body: JSON.stringify({ items: [item()], hasNext: true, nextCursor: 'c1' }) },
       {
@@ -485,8 +537,8 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
     expect(sent[0]).toMatchObject({
       accountId: '2000000001',
       from: '2000-01-01T00:00:00Z',
-      limit: 500,
-      withoutTrades: true,
+      limit: 250,
+      withoutTrades: false,
       withoutCommissions: false,
       withoutOvernights: false,
     });
@@ -512,7 +564,7 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
       ok: false,
       reason: 'too_many_operations',
     });
-    expect(bodies).toHaveLength(100);
+    expect(bodies).toHaveLength(200);
   });
 
   it('reports an unreachable host as unavailable', async () => {

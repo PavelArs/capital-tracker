@@ -39,6 +39,15 @@ function savedTokenFailure(reason: TBankFailure) {
   );
 }
 
+/**
+ * A T-Bank time (UTC, 0 to 9 fraction digits) as text that sorts in time order to the
+ * nanosecond: `10:00:00Z` would sort after `10:00:00.5Z` as given, and a Date drops nanoseconds.
+ */
+const timeKey = (time: string) => {
+  const [seconds, fraction = ''] = time.replace('Z', '').split('.');
+  return `${seconds}.${fraction.padEnd(9, '0')}`;
+};
+
 const iso = (column: string) =>
   `to_char("${column}" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "${column}"`;
 
@@ -136,9 +145,9 @@ export class BrokerConnectionsService {
     const executed = result.value.filter((item) => item.state === 'executed');
     const operations = executed
       .map((item) => ({ ...item, kind: operationKind(item.type) }))
-      // T-Bank times carry 0 to 9 fraction digits, so they are compared as times, not as text.
       .sort(
-        (a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.id.localeCompare(b.id),
+        (a, b) =>
+          timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) || a.id.localeCompare(b.id),
       );
     const count = (keys: string[]) =>
       keys.reduce<Record<string, number>>((totals, key) => {

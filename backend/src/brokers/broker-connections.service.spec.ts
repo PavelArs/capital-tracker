@@ -91,6 +91,7 @@ const operation = (over: Partial<TBankOperation>): TBankOperation => ({
   priceCurrency: 'rub',
   commission: '',
   commissionCurrency: '',
+  fills: [],
   ...over,
 });
 
@@ -278,6 +279,18 @@ describe('BROKER-SYNC: previewing the operations of a connected account', () => 
     expect(preview.byKind).toEqual({ deposit: 1, buy: 1, fee: 1, unsupported: 1, income: 1 });
     expect(preview.unsupportedTypes).toEqual({ OPERATION_TYPE_SOMETHING_NEW: 1 });
     expect(preview.notExecuted).toBe(2);
+  });
+
+  it('orders operations apart by less than a millisecond by their nanoseconds', async () => {
+    const { service } = build(ok(mine), true, true, undefined, {
+      ok: true,
+      value: [
+        operation({ id: '900000001', occurredAt: '2024-03-01T10:00:00.000000002Z' }),
+        operation({ id: '900000002', occurredAt: '2024-03-01T10:00:00.000000001Z' }),
+      ],
+    });
+    const preview = await service.operations(owner, account);
+    expect(preview.operations.map((item) => item.id)).toEqual(['900000002', '900000001']);
   });
 
   it('reads the history of a closed account and of an Invest Box', async () => {

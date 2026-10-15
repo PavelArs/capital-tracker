@@ -62,11 +62,12 @@ export interface TBankOperation {
   /** T-Bank's own name, such as OPERATION_TYPE_BUY, or 'unknown'. */
   type: string;
   state: TBankOperationState;
+  /** When T-Bank recorded the operation; for a trade, when it was ordered (see `fills`). */
   occurredAt: string;
   instrumentUid: string;
   instrumentType: string;
   ticker: string;
-  /** Whole units of the instrument, as T-Bank counts them. */
+  /** Whole units the operation moved: for a trade, the filled part, not the ordered one. */
   quantity: string;
   /** What the operation moved in cash, signed as T-Bank gives it (a buy is negative). */
   payment: string;
@@ -75,6 +76,16 @@ export interface TBankOperation {
   priceCurrency: string;
   commission: string;
   commissionCurrency: string;
+  /** When and at what price a trade was filled, part by part; empty for any other operation. */
+  fills: TBankFill[];
+}
+
+/** One fill of a trade: an order may fill in parts and on later days. */
+export interface TBankFill {
+  filledAt: string;
+  quantity: string;
+  price: string;
+  priceCurrency: string;
 }
 
 /** One page of operations and the cursor of the next, '' after the last. */
@@ -204,10 +215,10 @@ export function parsePositions(body: unknown, accountId: string): TBankPosition[
   ];
 }
 
-// A page of 500 stays well under the body limit even with every field T-Bank fills in.
-const OPERATIONS_PER_PAGE = 500;
-/** 100 pages of 500: far more than a personal account holds, and a bound on one read. */
-const MAX_OPERATION_PAGES = 100;
+// A page of 250 stays well under the body limit even with every field and fill T-Bank gives.
+const OPERATIONS_PER_PAGE = 250;
+/** 200 pages of 250: far more than a personal account holds, and a bound on one read. */
+const MAX_OPERATION_PAGES = 200;
 /** An operation id; T-Bank gives digits, but the contract only promises a string. */
 const operationIdPattern = /^[0-9A-Za-z._:-]{1,128}$/;
 
@@ -243,7 +254,32 @@ const emptyOperation: TBankOperation = {
   priceCurrency: '',
   commission: '',
   commissionCurrency: '',
+  fills: [],
 };
+
+function fill(value: unknown): TBankFill {
+  const item = record(value);
+  const date = item.date;
+  if (typeof date !== 'string' || !timestampPattern.test(date)) return invalid();
+  const unit = price(item.price);
+  return {
+    filledAt: date,
+    quantity: count(item.quantity),
+    price: unit.amount,
+    priceCurrency: unit.currency,
+  };
+}
+
+/**
+ * The units an operation moved. An executed trade may be filled only in part, so the filled
+ * count wins over the ordered one; JSON leaves out a zero, so a missing filled count is what
+ * was ordered less what is left.
+ */
+function movedQuantity(item: Record<string, unknown>): string {
+  const ordered = count(item.quantity);
+  if (item.quantityDone !== undefined) return count(item.quantityDone);
+  return (BigInt(ordered) - BigInt(count(item.quantityRest))).toString();
+}
 
 function operation(value: unknown): TBankOperation {
   const item = record(value);
@@ -267,6 +303,8 @@ function executedShape(item: Record<string, unknown>, state: TBankOperationState
   const payment = price(item.payment);
   const unit = price(item.price);
   const commission = price(item.commission);
+  const fills = item.tradesInfo === undefined ? [] : (record(item.tradesInfo).trades ?? []);
+  if (!Array.isArray(fills) || fills.length > 1000) return invalid();
   return {
     id,
     parentId: text(item.parentOperationId, operationIdPattern),
@@ -276,13 +314,14 @@ function executedShape(item: Record<string, unknown>, state: TBankOperationState
     instrumentUid: text(item.instrumentUid, idPattern),
     instrumentType: text(item.instrumentType, /^[a-z_]{1,40}$/),
     ticker: text(item.ticker, /^[0-9A-Za-z._-]{1,32}$/),
-    quantity: count(item.quantity),
+    quantity: movedQuantity(item),
     payment: payment.amount,
     paymentCurrency: payment.currency,
     price: unit.amount,
     priceCurrency: unit.currency,
     commission: commission.amount,
     commissionCurrency: commission.currency,
+    fills: fills.map(fill),
   };
 }
 
@@ -294,6 +333,8 @@ export function parseOperationsPage(body: unknown): TBankOperationsPage {
   const answer = record(body);
   const items = answer.items ?? [];
   if (!Array.isArray(items) || items.length > OPERATIONS_PER_PAGE) return invalid();
+  // A flag that is neither true nor false (nor left out as false) could hide later pages.
+  if (answer.hasNext !== undefined && typeof answer.hasNext !== 'boolean') return invalid();
   const hasNext = answer.hasNext === true;
   const cursor = typeof answer.nextCursor === 'string' ? answer.nextCursor : '';
   if (hasNext && !/^[\x21-\x7e]{1,512}$/.test(cursor)) return invalid();
@@ -340,8 +381,8 @@ export class TBankClient {
         from: '2000-01-01T00:00:00Z',
         to: new Date().toISOString(),
         limit: OPERATIONS_PER_PAGE,
-        // Each operation carries its own quantity and price; its fills are not needed here.
-        withoutTrades: true,
+        // The fills say when a trade was filled; the operation's own date is when it was ordered.
+        withoutTrades: false,
         withoutCommissions: false,
         withoutOvernights: false,
         ...(cursor ? { cursor } : {}),
