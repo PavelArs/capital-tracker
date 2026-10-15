@@ -71,6 +71,16 @@ describe('GOAL-DASH: the nearest goal on the dashboard', () => {
     );
   });
 
+  it('dashboard-14 dashboard-15 styles its links as app links and gives the status badge a dot', async () => {
+    list(sooner);
+    show();
+    const card = await screen.findByRole('region', { name: 'Nearest goal' });
+    // The shared design-system link (accent colour, underline on hover), not the browser's default.
+    expect(within(card).getByRole('link', { name: 'Open goal' })).toHaveClass('shell-link');
+    expect(within(card).getByRole('link', { name: 'All goals · 1' })).toHaveClass('shell-link');
+    expect(within(card).getByText('Behind')).toHaveClass('ui-badge', 'ui-badge--dot');
+  });
+
   it('puts a goal without a date after the ones with a date and skips reached goals', async () => {
     list(reached, open);
     show();

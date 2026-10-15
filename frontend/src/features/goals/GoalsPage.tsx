@@ -39,7 +39,9 @@ function GoalCard({
             {rateText(goal.expectedReturnPercent)}% a year
           </small>
         </div>
-        <Badge tone={statusTone[goal.status]}>{statusText[goal.status]}</Badge>
+        <Badge tone={statusTone[goal.status]} dot>
+          {statusText[goal.status]}
+        </Badge>
       </div>
       <GoalFigures goal={goal} />
       <GoalBar goal={goal} />
