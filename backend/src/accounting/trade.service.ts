@@ -538,21 +538,29 @@ export class TradeService {
 
   /**
    * OPS-DELETE-GUARD: the operation a deletion of the trade would leave short, or null, asked
-   * before the owner confirms. Read-only and the same check the void runs, which still refuses
-   * a deletion that became unsafe in between.
+   * before the owner confirms. Read-only and the same checks the void runs, in its order, so a
+   * deletion refused for another reason is refused here the same way and never blamed on an
+   * operation; the void still refuses a deletion that became unsafe in between.
    */
   async voidCheck(ownerId: string, accountId: string, tradeId: string) {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const target = parseUuid(tradeId);
     return this.read(async (manager) => {
+      await refuseProducedEntry(manager, owner, 'tradeId', target);
       await readOwnedAccount(manager, owner, id);
-      if (!(await readJournal(manager, owner, id))) throw conflict();
+      const journal = await readJournal(manager, owner, id);
+      if (!journal) throw conflict();
+      const ledger = await readConnectedLedger(manager, owner, [id]);
       const heads = await readTradeHeads(manager, owner, id);
       const current = heads.find((head) => head.tradeId === target);
       if (!current) throw new NotFoundException();
-      if (current.kind === 'void') throw conflict();
-      const ledger = await readConnectedLedger(manager, owner, [id]);
+      if (current.kind === 'void' || journal.currentRevision >= 10000) throw conflict();
+      const { occurredAt } = execution(current);
+      if (occurredAt < journal.coverageFrom.toISOString())
+        throw notCovered(id, journal.coverageFrom.toISOString());
+      assertRevisionCapacity(ledger);
+      projectConnectedLedger(ledger);
       const trades = heads.filter((head) => head.tradeId !== target && head.kind !== 'void');
       return { tradeId: target, dependent: tradeShortfall(ledger, id, trades) };
     });
