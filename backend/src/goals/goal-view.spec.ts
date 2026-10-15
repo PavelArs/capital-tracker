@@ -202,6 +202,17 @@ describe('goal view', () => {
     expect(dated.scenarios.every((scenario) => scenario.projectedIn10Years === null)).toBe(true);
   });
 
+  it('goals-27 never says a goal not yet reached is reached this month, past float precision', () => {
+    const goal = { ...row, targetAmount: '100.00', deadline: null };
+    const view = goalView(goal, now('99.99999999999999999'), today);
+    expect(view.status).toBe('open');
+    expect(view.progress.remaining).toBe('0.01');
+    for (const scenario of view.scenarios) {
+      expect(scenario.monthsToTarget).toBeGreaterThanOrEqual(1);
+      expect(scenario.reachedOn).not.toBe(today);
+    }
+  });
+
   it('marks a deadline that has passed', () => {
     const view = goalView({ ...row, deadline: '2026-10-01' }, now('5000.00'), today);
     expect(view.status).toBe('overdue');

@@ -135,7 +135,10 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
           ][]
         ).map(([key, yearly]) => {
           const rate = monthlyRate(yearly);
-          const left = monthsToReach(current, target, plan, rate);
+          const raw = monthsToReach(current, target, plan, rate);
+          // A float can round a value just short of the sum up to it: until the exact progress
+          // says reached, the sum is at least a month away, never this month.
+          const left = raw === null || progress?.reached ? raw : Math.max(raw, 1);
           const projected =
             horizon === null ? null : futureValue(current, plan, rate, horizon, payments);
           const tenYears =
