@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Deposit } from '@api/deposits.api';
-import { useState } from 'react';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
@@ -20,6 +21,7 @@ import {
   realRateText,
   statusText,
   statusTone,
+  sumMoney,
   termText,
   toneClass,
 } from './deposit-format';
@@ -47,10 +49,7 @@ function Card({
     <li>
       <Link className="deposit-card" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
         <div className="deposit-card__head">
-          <div>
-            <span className="deposit-card__name">{deposit.name}</span>
-            <span className="deposit-card__bank">{deposit.bank}</span>
-          </div>
+          <span className="deposit-card__name">{deposit.name}</span>
           <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
         </div>
         <div className="deposit-card__value">
@@ -59,8 +58,8 @@ function Card({
         </div>
         <p className="deposit-card__terms">{termText(deposit)}</p>
         {rate && (
-          <p className={`deposit-card__terms ${toneClass(real?.ratePercent ?? null) ?? ''}`}>
-            {rate}
+          <p className="deposit-card__terms">
+            <span className={toneClass(real?.ratePercent ?? null)}>{rate}</span>
           </p>
         )}
         <dl className="deposit-card__facts">
@@ -116,7 +115,73 @@ function Card({
   );
 }
 
-// DEP-LIST: every deposit with what it is worth today and what needs a look.
+const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;
+
+/** The deposits that count in a total: a closed one only while interest it earned is unpaid. */
+const counted = (deposit: Deposit) => deposit.status !== 'closed' || /[1-9]/.test(deposit.balance);
+
+/** The banks in the order their first deposit is listed, each with its deposits. */
+function byBank(deposits: readonly Deposit[]): [string, Deposit[]][] {
+  const banks = new Map<string, Deposit[]>();
+  for (const deposit of deposits)
+    banks.set(deposit.bank, [...(banks.get(deposit.bank) ?? []), deposit]);
+  return [...banks];
+}
+
+/** One bank: its deposits, how many there are and what they hold together in the currency shown. */
+function Bank({
+  bank,
+  deposits,
+  asOf,
+  shown,
+}: {
+  bank: string;
+  deposits: Deposit[];
+  asOf: string;
+  shown: AccountingCurrency;
+}) {
+  const id = useId();
+  const values = deposits.filter(counted).map((deposit) => deposit.values[shown]);
+  const known = values.filter((value): value is string => value !== null);
+  // Missing is not zero: the total of the rest is shown and said to be incomplete.
+  const missing = values.length - known.length;
+  const total = known.length > 0 ? sumMoney(known) : null;
+  return (
+    <li>
+      <section className="shell-card deposit-bank" aria-labelledby={`${id}-bank`}>
+        <div className="deposit-bank__head">
+          <div>
+            <h2 id={`${id}-bank`} className="deposit-bank__name">
+              {bank}
+            </h2>
+            <span className="deposit-bank__count">{plural(deposits.length, 'deposit')}</span>
+          </div>
+          <div className="deposit-bank__total">
+            <strong>{money(total, shown)}</strong>
+            {missing > 0 && (
+              <span>
+                Incomplete: {plural(missing, 'deposit')} {missing === 1 ? 'has' : 'have'} no current
+                exchange rate to {shown}
+              </span>
+            )}
+          </div>
+        </div>
+        <ul className="deposit-list">
+          {deposits.map((deposit) => (
+            <Card key={deposit.id} deposit={deposit} asOf={asOf} shown={shown} />
+          ))}
+        </ul>
+      </section>
+    </li>
+  );
+}
+
+const shareFormat = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+// DEP-LIST: every deposit with what it is worth today and what needs a look, bank by bank.
 export default function DepositsPage() {
   const { data: list, error } = useCachedRead(cachedReads.deposits);
   const [adding, setAdding] = useState(false);
@@ -124,6 +189,14 @@ export default function DepositsPage() {
   const { main } = useMainCurrency();
   const navigate = useNavigate();
   const shown = asked ?? main ?? 'USD';
+  const { data: portfolio } = useCachedRead(cachedReads.portfolio, asked ?? undefined);
+  const total = list?.totals[shown] ?? null;
+  // Display only: the share is a ratio of two exact totals in the same currency, both known.
+  const worth =
+    portfolio?.currency === shown && portfolio.totalValue !== null
+      ? Number(portfolio.totalValue)
+      : Number.NaN;
+  const share = total !== null && worth > 0 ? (Number(total) / worth) * 100 : null;
 
   return (
     <div className="shell-page">
@@ -167,16 +240,26 @@ export default function DepositsPage() {
       ) : (
         <>
           <section className="shell-card deposit-total" aria-label="Total in deposits">
-            <span className="deposit-total__label">In deposits</span>
-            <strong className="deposit-total__value">{money(list.totals[shown], shown)}</strong>
+            <div className="deposit-total__figures">
+              <div>
+                <span className="deposit-total__label">In deposits</span>
+                <strong className="deposit-total__value">{money(total, shown)}</strong>
+              </div>
+              {share !== null && (
+                <div>
+                  <span className="deposit-total__label">Share of net worth</span>
+                  <strong className="deposit-total__value">{shareFormat.format(share)}%</strong>
+                </div>
+              )}
+            </div>
             <span className="deposit-total__note">
               At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only
               while interest it earned is unpaid.
             </span>
           </section>
-          <ul className="deposit-list">
-            {list.items.map((deposit) => (
-              <Card key={deposit.id} deposit={deposit} asOf={list.asOf} shown={shown} />
+          <ul className="deposit-banks">
+            {byBank(list.items).map(([bank, deposits]) => (
+              <Bank key={bank} bank={bank} deposits={deposits} asOf={list.asOf} shown={shown} />
             ))}
           </ul>
         </>

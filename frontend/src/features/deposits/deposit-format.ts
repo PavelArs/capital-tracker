@@ -124,6 +124,40 @@ export function capitalizedInterest(
   return `${text.slice(0, -2)}.${text.slice(-2)}`;
 }
 
+/**
+ * The exact sum of amounts with up to two decimals, as integer cents: a total of deposits never
+ * goes through a floating-point number. Null when one of them is not such an amount.
+ */
+export function sumMoney(values: readonly string[]): string | null {
+  let cents = 0n;
+  for (const value of values) {
+    const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value);
+    if (!match) return null;
+    const amount = BigInt(match[2] + (match[3] ?? '').padEnd(2, '0'));
+    cents += match[1] ? -amount : amount;
+  }
+  const negative = cents < 0n;
+  const text = (negative ? -cents : cents).toString().padStart(3, '0');
+  return `${negative ? '-' : ''}${text.slice(0, -2)}.${text.slice(-2)}`;
+}
+
+const payoutTerms: Record<Deposit['payout'], string> = {
+  daily: 'Every day',
+  monthly: 'Every month',
+  quarterly: 'Every quarter',
+  'at-end': 'At the end of the term',
+};
+
+/** "Every month, paid out": when the interest comes and where it goes. */
+export const interestText = (deposit: Pick<Deposit, 'payout' | 'capitalized'>): string =>
+  `${payoutTerms[deposit.payout]}, ${deposit.capitalized ? 'added to the deposit' : 'paid out'}`;
+
+/** "Jul 1, 2026 to Dec 1, 2026", or "From Jul 1, 2026, no end date". */
+export const periodText = (deposit: Pick<Deposit, 'startDate' | 'endDate'>): string =>
+  deposit.endDate
+    ? `${dateText(deposit.startDate)} to ${dateText(deposit.endDate)}`
+    : `From ${dateText(deposit.startDate)}, no end date`;
+
 /** The deposit after inflation by the basis the owner chose; null while the server has none. */
 export function realOf(deposit: Pick<Deposit, 'real'>, basis: InflationBasis): DepositReal | null {
   return deposit.real?.[basis] ?? null;

@@ -5,6 +5,7 @@ import {
   type DepositList,
   depositsApi,
 } from '@api/deposits.api';
+import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -91,8 +92,52 @@ const detail = (deposit: Deposit, change: Partial<DepositDetail> = {}): DepositD
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  // The list asks for net worth for the share of it; unanswered unless a test answers it.
+  vi.spyOn(portfolioValuationApi, 'get').mockReturnValue(new Promise(() => undefined));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+/** Net worth as GET /accounting/portfolio states it, in RUB. */
+const netWorth = (totalValue: string | null): PortfolioValuation => ({
+  at: '2026-10-11T12:00:00.000Z',
+  currency: 'RUB',
+  mainCurrency: 'RUB',
+  rates: [],
+  completeness: totalValue === null ? 'incomplete' : 'complete',
+  totalValue,
+  pricedSubtotal: '5550150.70',
+  missingPriceCount: totalValue === null ? 1 : 0,
+  stalePriceCount: 0,
+  unavailableAccountCount: 0,
+  depositsValue: '555015.07',
+  unratedDepositCount: 0,
+  costBasis: null,
+  knownCostSubtotal: '0',
+  unknownCostCount: 0,
+  missingRateCount: 0,
+  unrealizedPnl: null,
+  unrealizedReturnPercent: null,
+  knownUnrealizedPnl: null,
+  knownUnrealizedReturnPercent: null,
+  realizedPnl: null,
+  knownRealizedSubtotal: '0',
+  unknownRealizedCount: 0,
+  assets: [],
+  allocation: { complete: totalValue !== null, byAsset: [], byType: [], byAccount: [] },
+  accounts: [],
+});
+
+/** Below 640 px, as a phone is. */
+const phone = () =>
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === '(max-width: 639.98px)',
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
 
 function open(path: string) {
   render(
@@ -131,7 +176,8 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(within(usd).getByText('₽454,686.30')).toBeInTheDocument();
     expect(within(usd).getByText('$5,052.07')).toBeInTheDocument();
     expect(within(usd).getByText(/differs by \$0\.03/)).toBeInTheDocument();
-    expect(screen.getByText('₽555,015.07')).toBeInTheDocument();
+    const total = screen.getByRole('region', { name: 'Total in deposits' });
+    expect(within(total).getByText('₽555,015.07')).toBeInTheDocument();
     expect(card).toHaveAttribute('href', `/deposits/${savings.id}?currency=RUB`);
   });
 
@@ -892,5 +938,182 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     expect(
       await screen.findByText(/≈ ₽99,000\.00 in today's money \(estimated\)/),
     ).toBeInTheDocument();
+  });
+});
+
+describe('classes-19: deposits grouped by bank', () => {
+  const other: Deposit = {
+    ...savings,
+    id: '00000000-0000-4000-8000-000000000003',
+    name: 'Other C',
+    bank: 'Other Synthetic Bank',
+    values: { USD: '10.00', EUR: '9.00', RUB: '900.00' },
+  };
+
+  it('classes-19 shows one card per bank with how many deposits it holds and their exact total', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars, other]));
+    open('/deposits?currency=RUB');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    expect(within(bank).getByText('2 deposits')).toBeInTheDocument();
+    // 100,328.77 + 454,686.30, summed as decimals.
+    expect(within(bank).getByText('₽555,015.07')).toBeInTheDocument();
+    expect(
+      within(bank)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual([expect.stringContaining('Savings A'), expect.stringContaining('Dollar B')]);
+    const second = screen.getByRole('region', { name: 'Other Synthetic Bank' });
+    expect(within(second).getByText('1 deposit')).toBeInTheDocument();
+    expect(within(second).getAllByText('₽900.00').length).toBeGreaterThan(0);
+  });
+
+  it('classes-19 marks a bank total incomplete when a deposit has no value in the currency shown', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(
+      list([
+        savings,
+        { ...dollars, bank: 'Synthetic Bank', values: { ...dollars.values, RUB: null } },
+      ]),
+    );
+    open('/deposits?currency=RUB');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    const total = bank.querySelector('.deposit-bank__total') as HTMLElement;
+    expect(within(total).getByText('₽100,328.77')).toBeInTheDocument();
+    expect(total).toHaveTextContent('Incomplete: 1 deposit has no current exchange rate to RUB');
+  });
+
+  it('classes-19 gives the share of net worth only while net worth is known', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    const worth = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(netWorth('5550150.70'));
+    open('/deposits?currency=RUB');
+    const summary = await screen.findByRole('region', { name: 'Total in deposits' });
+    // 555,015.07 of 5,550,150.70.
+    expect(await within(summary).findByText('10.0%')).toBeInTheDocument();
+    expect(within(summary).getByText('Share of net worth')).toBeInTheDocument();
+    cleanup();
+    forgetReads();
+    worth.mockResolvedValue(netWorth(null));
+    open('/deposits?currency=RUB');
+    await screen.findByRole('region', { name: 'Total in deposits' });
+    await waitFor(() => expect(worth).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Share of net worth')).toBeNull();
+  });
+});
+
+describe('classes-20: the real rate on a deposit card', () => {
+  const reading = (ratePercent: string) => ({
+    inflationPercent: '8.90',
+    ratePercent,
+    gain: null,
+    estimated: false,
+  });
+
+  it('classes-20 tints a positive real rate green and a negative one red, over the grey of the terms', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(
+      list([
+        { ...savings, real: { official: reading('2.84'), personal: null } },
+        { ...dollars, real: { official: reading('-4.62'), personal: null } },
+      ]),
+    );
+    open('/deposits');
+    const up = await screen.findByText('Real +2.84% a year after 8.90% inflation');
+    const down = screen.getByText('Real -4.62% a year after 8.90% inflation');
+    // The terms paragraph sets its own grey; the tint must sit on an element of its own.
+    expect(up).toHaveClass('portfolio-pos');
+    expect(up).not.toHaveClass('deposit-card__terms');
+    expect(down).toHaveClass('portfolio-neg');
+    expect(down).not.toHaveClass('deposit-card__terms');
+  });
+});
+
+describe('the deposit page', () => {
+  afterEach(() => setValueView('nominal'));
+
+  it('classes-16 carries the Nominal/Real switch its chart follows', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(savings, {
+        chart: [
+          {
+            date: '2026-07-01',
+            balance: '100000.00',
+            invested: '100000.00',
+            real: {
+              official: { balance: '100000.00', invested: '100000.00', estimated: false },
+              personal: null,
+            },
+          },
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    const header = heading.closest('header') as HTMLElement;
+    const values = within(header).getByRole('radiogroup', { name: 'Values' });
+    await user.click(within(values).getByRole('radio', { name: 'Real' }));
+    expect(
+      within(screen.getByLabelText('Chart legend')).getByText("Value in today's money"),
+    ).toBeInTheDocument();
+  });
+
+  it('classes-21 shows the terms with the rate and its change and what closing early does', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}`);
+    const terms = await screen.findByRole('region', { name: 'Terms' });
+    const value = (term: string) =>
+      within(terms).getByText(term, { selector: 'dt' }).nextElementSibling as HTMLElement;
+    expect(value('Bank')).toHaveTextContent('Synthetic Bank');
+    expect(value('Currency')).toHaveTextContent('RUB');
+    expect(value('Rate')).toHaveTextContent('12% a year from Jul 1, 2026');
+    expect(value('Interest')).toHaveTextContent('Every month, paid out');
+    expect(value('Term')).toHaveTextContent('Jul 1, 2026 to Dec 1, 2026');
+    expect(value('Closing early')).toHaveTextContent('Loses the interest not yet posted');
+    await user.click(within(value('Rate')).getByRole('button', { name: 'Change the rate' }));
+    expect(screen.getByRole('dialog', { name: 'Change the rate' })).toBeInTheDocument();
+  });
+
+  it('classes-15 lists the periods, movements and checks as rows on a phone, without a table', async () => {
+    phone();
+    const check = {
+      id: 'c1',
+      checkedOn: '2026-10-11',
+      bankBalance: '100330.00',
+      calculated: '100328.77',
+      difference: '1.23',
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(savings, {
+        checks: [check],
+        lastCheck: check,
+        periods: [
+          {
+            from: '2026-07-01',
+            to: '2026-08-01',
+            interest: '1019.18',
+            treatment: 'payable',
+            afterInflation: { official: '52.01', personal: null },
+          },
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    expect(screen.queryAllByRole('table')).toHaveLength(0);
+    const periods = screen.getByRole('list', { name: 'Interest by period' });
+    expect(periods).toHaveTextContent('Jul 1, 2026 – Aug 1, 2026');
+    expect(periods).toHaveTextContent('Payable');
+    expect(periods).toHaveTextContent('₽1,019.18');
+    expect(within(periods).getByText('+₽52.01 after inflation')).toHaveClass('portfolio-pos');
+    const movements = screen.getByRole('list', { name: 'Movements' });
+    expect(within(movements).getAllByRole('listitem')).toHaveLength(2);
+    expect(movements).toHaveTextContent('To card');
+    expect(
+      within(movements).getByRole('button', {
+        name: 'Remove the interest paid out of Aug 1, 2026',
+      }),
+    ).toBeInTheDocument();
+    const checks = screen.getByRole('list', { name: 'Checks against the bank' });
+    expect(checks).toHaveTextContent('Bank ₽100,330.00 · App ₽100,328.77');
+    expect(checks).toHaveTextContent('+₽1.23');
   });
 });
