@@ -6,9 +6,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
+import { DASH } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
 import { useMainCurrency } from '../shell/main-currency';
+import { netWorthUnknown } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
@@ -145,7 +147,8 @@ function Bank({
   const known = values.filter((value): value is string => value !== null);
   // Missing is not zero: the total of the rest is shown and said to be incomplete.
   const missing = values.length - known.length;
-  const total = known.length > 0 ? sumMoney(known) : null;
+  // A bank whose deposits are all closed and paid out holds nothing: zero, not unknown.
+  const total = values.length === 0 ? '0' : known.length > 0 ? sumMoney(known) : null;
   return (
     <li>
       <section className="shell-card deposit-bank" aria-labelledby={`${id}-bank`}>
@@ -191,12 +194,13 @@ export default function DepositsPage() {
   const shown = asked ?? main ?? 'USD';
   const { data: portfolio } = useCachedRead(cachedReads.portfolio, asked ?? undefined);
   const total = list?.totals[shown] ?? null;
+  // The net worth in the currency shown, once it has arrived.
+  const net = portfolio?.currency === shown ? portfolio : null;
+  // Why there is no share of it: unknown, zero or below zero. Missing is not zero.
+  const unknown = net && netWorthUnknown(net);
   // Display only: the share is a ratio of two exact totals in the same currency, both known.
-  const worth =
-    portfolio?.currency === shown && portfolio.totalValue !== null
-      ? Number(portfolio.totalValue)
-      : Number.NaN;
-  const share = total !== null && worth > 0 ? (Number(total) / worth) * 100 : null;
+  const share =
+    total !== null && net && !unknown ? (Number(total) / Number(net.totalValue)) * 100 : null;
 
   return (
     <div className="shell-page">
@@ -245,10 +249,15 @@ export default function DepositsPage() {
                 <span className="deposit-total__label">In deposits</span>
                 <strong className="deposit-total__value">{money(total, shown)}</strong>
               </div>
-              {share !== null && (
+              {(share !== null || (total !== null && unknown)) && (
                 <div>
                   <span className="deposit-total__label">Share of net worth</span>
-                  <strong className="deposit-total__value">{shareFormat.format(share)}%</strong>
+                  <strong className="deposit-total__value">
+                    {share === null ? DASH : `${shareFormat.format(share)}%`}
+                  </strong>
+                  {share === null && unknown && (
+                    <span className="deposit-total__reason">{unknown}</span>
+                  )}
                 </div>
               )}
             </div>

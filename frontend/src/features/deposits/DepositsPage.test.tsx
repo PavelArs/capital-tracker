@@ -995,7 +995,48 @@ describe('classes-19: deposits grouped by bank', () => {
     open('/deposits?currency=RUB');
     await screen.findByRole('region', { name: 'Total in deposits' });
     await waitFor(() => expect(worth).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText('Share of net worth')).toBeNull();
+    expect(screen.queryByText('10.0%')).toBeNull();
+  });
+
+  it('deposits-share says why the share of net worth is missing', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    const worth = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(netWorth(null));
+    open('/deposits?currency=RUB');
+    const summary = await screen.findByRole('region', { name: 'Total in deposits' });
+    const share = (await within(summary).findByText('Share of net worth'))
+      .parentElement as HTMLElement;
+    expect(share).toHaveTextContent(
+      'Share of net worth—Net worth unknown: 1 asset without a price or exchange rate.',
+    );
+    cleanup();
+    forgetReads();
+    worth.mockResolvedValue(netWorth('-1250.00'));
+    open('/deposits?currency=RUB');
+    const below = await screen.findByRole('region', { name: 'Total in deposits' });
+    expect((await within(below).findByText('Share of net worth')).parentElement).toHaveTextContent(
+      'Share of net worth—Net worth is below zero.',
+    );
+  });
+
+  it('deposits-bank-total a bank whose deposits are all closed and settled holds 0.00, not a dash', async () => {
+    const closed = (deposit: Deposit): Deposit => ({
+      ...deposit,
+      status: 'closed',
+      closedOn: '2026-10-05',
+      due: '0.00',
+      accrued: '0.00',
+      balance: '0.00',
+      values: { USD: '0.00', EUR: '0.00', RUB: '0.00' },
+      nextPayout: null,
+    });
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      ...list([closed(savings), closed(dollars)]),
+      totals: { USD: '0.00', EUR: '0.00', RUB: '0.00' },
+    });
+    open('/deposits?currency=RUB');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    const total = bank.querySelector('.deposit-bank__total') as HTMLElement;
+    expect(total).toHaveTextContent(/^₽0\.00$/);
   });
 });
 

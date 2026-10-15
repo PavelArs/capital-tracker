@@ -79,18 +79,3 @@ export function leftOut(unpriced: number, unrated: number): string | null {
   ].filter(Boolean);
   return parts.length ? parts.join(' ') : null;
 }
-
-/** Why the net worth, and so the share held at brokers, is unknown; null when it is known. */
-export function netWorthUnknown(portfolio: PortfolioValuation): string | null {
-  if (portfolio.totalValue !== null)
-    return Number(portfolio.totalValue) > 0 ? null : 'Net worth is zero.';
-  const reasons = [
-    portfolio.missingPriceCount > 0 &&
-      `${plural(portfolio.missingPriceCount, 'asset')} without a price or exchange rate`,
-    portfolio.unratedDepositCount > 0 &&
-      `${plural(portfolio.unratedDepositCount, 'deposit')} without an exchange rate`,
-    portfolio.unavailableAccountCount > 0 &&
-      `${plural(portfolio.unavailableAccountCount, 'account')} that could not be read`,
-  ].filter(Boolean);
-  return reasons.length ? `Net worth unknown: ${reasons.join(', ')}.` : 'Net worth unknown.';
-}

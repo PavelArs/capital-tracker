@@ -12,6 +12,7 @@ import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, price, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
+import { netWorthUnknown } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import AddBrokerDialog from './AddBrokerDialog';
@@ -21,7 +22,6 @@ import {
   brokerAccountsOf,
   brokerShare,
   leftOut,
-  netWorthUnknown,
   plural,
 } from './brokers';
 import '../shell/shell-page.css';
