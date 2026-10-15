@@ -735,7 +735,7 @@ describe('show-dashboard-top-assets', () => {
     toClassify.mockResolvedValue(3);
     renderPage();
     await screen.findByRole('region', { name: 'Net worth' });
-    await screen.findByRole('button', { name: 'Notifications, 1 need attention' });
+    await screen.findByRole('button', { name: 'Notifications, 1 needs attention' });
     expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
     expect(document.body.textContent).not.toMatch(/blockchain transactions need classification/);
   });
