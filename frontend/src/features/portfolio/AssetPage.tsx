@@ -446,7 +446,7 @@ function AssetDetails({
                       ) : (
                         Number(asset.knownCostQuantity) > 0 && (
                           <span className="portfolio-sub">
-                            {amount(asset.knownCostSubtotal)} known
+                            {amount(asset.knownCostSubtotal)} paid for the known part
                           </span>
                         )
                       )}

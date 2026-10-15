@@ -285,7 +285,7 @@ function Summary({
                   ) : (
                     portfolio.assets.some((asset) => Number(asset.knownCostQuantity) > 0) && (
                       <span className="portfolio-sub">
-                        {amount(portfolio.knownCostSubtotal)} known
+                        {amount(portfolio.knownCostSubtotal)} paid for the known part
                       </span>
                     )
                   )}

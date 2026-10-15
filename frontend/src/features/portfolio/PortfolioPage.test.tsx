@@ -989,7 +989,7 @@ describe('Portfolio after inflation', () => {
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—nominal +$30,000.00');
   });
 
-  it('PF-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+  it("settings-04 PF-REAL-UNKNOWN-PARTIAL names the known nominal cost as paid, not as a figure in today's money", async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio(
@@ -1007,9 +1007,11 @@ describe('Portfolio after inflation', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(summary()).toHaveTextContent("Cost in today's money—");
-    expect(summary()).toHaveTextContent('$40,000.00 known');
+    // Under "Cost in today's money" the nominal subtotal says what it is: paid, for part.
+    expect(summary()).toHaveTextContent('$40,000.00 paid for the known part');
+    expect(summary()).not.toHaveTextContent('$40,000.00 known');
+    expect(summary().textContent?.match(/paid/g)).toHaveLength(1);
     expect(summary()).toHaveTextContent('Nominal +$12,000.00 known');
-    expect(summary()).not.toHaveTextContent('paid');
   });
 
   it('PF-REAL-UNAVAILABLE names the account history that starts later, not a missing lot figure', async () => {
@@ -1087,7 +1089,7 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent('Nominal +$30,000.00');
   });
 
-  it('ASSET-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+  it("settings-04 ASSET-REAL-UNKNOWN-PARTIAL names the known nominal cost as paid, not as a figure in today's money", async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([
@@ -1106,12 +1108,13 @@ describe('Portfolio after inflation', () => {
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent("Cost in today's money—");
-    expect(position()).toHaveTextContent('$40,000.00 known');
+    expect(position()).toHaveTextContent('$40,000.00 paid for the known part');
+    expect(position()).not.toHaveTextContent('$40,000.00 known');
+    expect(position().textContent?.match(/paid/g)).toHaveLength(1);
     expect(position()).toHaveTextContent('Nominal +$12,000.00 known');
-    expect(position()).not.toHaveTextContent('paid');
   });
 
-  it('ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one', async () => {
+  it('settings-04 ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one, as paid', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([
@@ -1128,7 +1131,7 @@ describe('Portfolio after inflation', () => {
     );
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
-    expect(position()).toHaveTextContent('$0.00 known');
+    expect(position()).toHaveTextContent('$0.00 paid for the known part');
   });
 
   it('ASSET-REAL-INCOMPLETE says the figures leave out an account whose history starts later, in every view', async () => {
