@@ -1,6 +1,6 @@
 import { securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { Icon } from '../shell/icons';
 import { tooManyAttempts } from './attempts';
 import SecurityDialog from './SecurityDialog';
@@ -28,12 +28,16 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [codes, setCodes] = useState<string[] | null>(null);
+  // auth-02: after a refused code the keyboard goes back to the field.
+  const field = useRef<HTMLInputElement>(null);
 
   const generate = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     const digits = code.replace(/\s/g, '');
     if (!/^[0-9]{6}$/.test(digits)) {
       setError('Enter the 6-digit code from your authenticator app.');
+      field.current?.focus();
       return;
     }
     setBusy(true);
@@ -45,6 +49,7 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
     } catch (caught) {
       setError(failure(caught));
       setCode('');
+      field.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -83,6 +88,7 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
               Code from your authenticator app
             </label>
             <input
+              ref={field}
               id="security-totp"
               className="ui-input security-otp"
               inputMode="numeric"
@@ -109,7 +115,8 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
           >
             Cancel
           </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={busy}>
+          {/* auth-02: aria-disabled, not disabled, so focus is not dropped while it checks. */}
+          <button type="submit" className="shell-button shell-button--primary" aria-disabled={busy}>
             {busy ? 'Generating…' : 'Generate new codes'}
           </button>
         </div>

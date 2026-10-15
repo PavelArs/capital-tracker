@@ -400,6 +400,76 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     );
   });
 
+  const refused = (path: string) =>
+    failure(422, {
+      statusCode: 422,
+      message: 'Invalid code',
+      error: 'Unprocessable Entity',
+      timestamp: '2026-10-15T09:00:00.000Z',
+      path,
+    });
+
+  it('auth-02 SEC-CODES: a refused code puts focus back in the code field; the button stays focusable while it checks', async () => {
+    let refuse: (error: unknown) => void = () => undefined;
+    const regenerate = vi.spyOn(securityApi, 'regenerateRecoveryCodes').mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    render(<SecuritySettings />);
+    await userEvent.click(
+      await within(region()).findByRole('button', { name: 'Generate new codes' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    const field = within(dialog).getByLabelText('Code from your authenticator app');
+    await userEvent.type(field, '123456');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate new codes' }));
+    const checking = within(dialog).getByRole('button', { name: 'Generating…' });
+    expect(checking).not.toBeDisabled();
+    expect(checking).toHaveAttribute('aria-disabled', 'true');
+    expect(checking).toHaveFocus();
+    await userEvent.click(checking);
+    expect(regenerate).toHaveBeenCalledTimes(1);
+
+    refuse(refused('/api/auth/security/recovery-codes'));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That code is not valid.');
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('auth-02 SEC-TOTP: a refused code puts focus back in the code field, on both steps', async () => {
+    vi.spyOn(securityApi, 'prepareAuthenticator')
+      .mockRejectedValueOnce(refused('/api/auth/security/authenticator'))
+      .mockResolvedValue({
+        uri: 'otpauth://totp/Capital%20Tracker:Owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        candidateId: '33333333-3333-4333-8333-333333333333',
+        expiresAt: '2026-10-09T12:10:00.000Z',
+      });
+    vi.spyOn(securityApi, 'confirmAuthenticator').mockRejectedValue(
+      refused('/api/auth/security/authenticator/confirm'),
+    );
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    const field = within(dialog).getByLabelText('Code from your authenticator app');
+    await userEvent.type(field, '123456');
+    const submit = within(dialog).getByRole('button', { name: 'Continue' });
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That code is not valid.');
+    expect(submit).not.toBeDisabled();
+    expect(document.activeElement).toBe(field);
+
+    await userEvent.type(field, '234567');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const scan = await screen.findByRole('dialog', { name: 'Scan the new code' });
+    const fresh = within(scan).getByLabelText('Code from the new app');
+    await userEvent.type(fresh, '345678');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(await within(scan).findByRole('alert')).toHaveTextContent('That code is not valid.');
+    expect(document.activeElement).toBe(fresh);
+  });
+
   it('auth-14 security dialogs have a Close button and the small ones are narrow', async () => {
     render(<SecuritySettings />);
     await userEvent.click(await screen.findByRole('button', { name: 'Generate new codes' }));
