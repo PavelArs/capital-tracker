@@ -154,9 +154,9 @@ export const depositsApi = {
   create: async (deposit: NewDeposit): Promise<DepositDetail> =>
     (await apiClient.post<DepositDetail>(path, deposit)).data,
 
-  /** Computes the figures from the terms; the server keeps nothing. */
+  /** Computes the figures from the terms; the server keeps nothing, so kept reads stay. */
   preview: async (terms: DepositTerms): Promise<DepositPreview> =>
-    (await apiClient.post<DepositPreview>(`${path}/preview`, terms)).data,
+    (await apiClient.post<DepositPreview>(`${path}/preview`, terms, { changesNothing: true })).data,
 
   remove: async (id: string): Promise<void> => {
     await apiClient.delete(one(id));

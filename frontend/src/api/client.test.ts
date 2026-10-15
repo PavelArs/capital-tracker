@@ -413,6 +413,25 @@ describe('cookie session API client', () => {
     expect(sent.at(-1)?.headers.get('X-CSRF-Token')).toBe('csrf');
   });
 
+  it('keeps the reads after a deposit preview, which saves nothing', async () => {
+    const cache = await import('./read-cache');
+    const { depositsApi } = await import('./deposits.api');
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      return config.url === '/auth/csrf'
+        ? response(config, { csrfToken: 'csrf' })
+        : response(config, {});
+    };
+    cache.remember('page', { total: 1 }, cache.generationNow());
+
+    await depositsApi.preview({} as Parameters<typeof depositsApi.preview>[0]);
+
+    expect(sent.at(-1)?.url).toBe('/deposits/preview');
+    expect(sent.at(-1)?.changesNothing).toBe(true);
+    expect(cache.recall('page')).toEqual({ total: 1 });
+  });
+
   it('keeps the reads after a write the server refused', async () => {
     const cache = await import('./read-cache');
     apiClient.defaults.adapter = async (config) => {
@@ -438,6 +457,25 @@ describe('cookie session API client', () => {
     await expect(apiClient.post('/goals', {})).rejects.toBeInstanceOf(AxiosError);
 
     expect(cache.recall('page')).toBeUndefined();
+  });
+
+  it('keeps the kept reads when a POST that only reads gets no answer or is cancelled', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      if (config.url === '/goals/preview') throw new AxiosError('canceled', 'ERR_CANCELED', config);
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(
+      apiClient.post('/deposits/preview', {}, { changesNothing: true }),
+    ).rejects.toBeInstanceOf(AxiosError);
+    await expect(
+      apiClient.post('/goals/preview', {}, { changesNothing: true }),
+    ).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBe(1);
   });
 
   it('goals-02 keeps the kept reads when a read gets no answer', async () => {
