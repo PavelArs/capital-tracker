@@ -28,6 +28,7 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './dashboard.css';
 import EmptyState from '@/ui/EmptyState';
+import { useTabs } from '@/ui/tabs';
 
 const periodLabels: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
@@ -281,6 +282,7 @@ export default function DashboardPage() {
   );
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
+  const tabs = useTabs(historyPeriods, period, setPeriod);
   const [adding, setAdding] = useState(false);
   const latest = useRef(0);
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
@@ -402,27 +404,23 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
-              <div className="dashboard-periods" role="tablist" aria-label="Chart period">
+              <div className="dashboard-periods" aria-label="Chart period" {...tabs.list}>
                 {historyPeriods.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={period === value}
-                    onClick={() => setPeriod(value)}
-                  >
+                  <button key={value} type="button" {...tabs.tab(value)}>
                     {value}
                   </button>
                 ))}
               </div>
             </div>
-            <HistoryChart
-              key={`${shown.period}:${shown.currency}:${shown.at}`}
-              points={shown.points}
-              period={shown.period}
-              currency={shown.currency}
-              label={chartLabel}
-            />
+            <div {...tabs.panel}>
+              <HistoryChart
+                key={`${shown.period}:${shown.currency}:${shown.at}`}
+                points={shown.points}
+                period={shown.period}
+                currency={shown.currency}
+                label={chartLabel}
+              />
+            </div>
           </section>
           <div className="dashboard-bottom">
             <TopAssets

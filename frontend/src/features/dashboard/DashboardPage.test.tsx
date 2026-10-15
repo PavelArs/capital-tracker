@@ -323,6 +323,33 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(hero).not.toHaveTextContent('bank deposits');
   });
 
+  it('dashboard-tabs the chart periods follow the tabs pattern: one tab stop, arrow keys and a panel', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Portfolio value over time' });
+    const tab = (name: string) => within(chart).getByRole('tab', { name });
+    expect(
+      within(chart)
+        .getAllByRole('tab')
+        .map((item) => item.tabIndex),
+    ).toEqual([-1, -1, 0, -1, -1, -1]);
+    tab('1M').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(tab('3M')).toHaveFocus();
+    await waitFor(() => expect(tab('3M')).toHaveAttribute('aria-selected', 'true'));
+    expect(get).toHaveBeenLastCalledWith('3M', undefined);
+    await user.keyboard('{End}');
+    expect(tab('ALL')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(tab('24H')).toHaveFocus();
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('24H', undefined));
+    await user.keyboard('{Home}{ArrowLeft}');
+    expect(tab('ALL')).toHaveFocus();
+    const panel = within(chart).getByRole('tabpanel', { name: 'ALL' });
+    expect(tab('ALL')).toHaveAttribute('aria-controls', panel.id);
+    await waitFor(() => expect(within(panel).getByRole('img')).toBeInTheDocument());
+  });
+
   it('CHART-PERIODS switches the period and reads each point with its date, value and change', async () => {
     const user = userEvent.setup();
     renderPage();
