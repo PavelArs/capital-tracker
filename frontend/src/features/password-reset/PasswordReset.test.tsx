@@ -94,6 +94,32 @@ describe('RESET-REQUEST reset request screen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many requests');
     expect(screen.queryByRole('heading', { name: 'Check your email' })).not.toBeInTheDocument();
   });
+
+  it('auth-05 RESET-REQUEST moves the cursor to a wrong email and announces it', async () => {
+    const user = renderAt('/password-reset');
+    await user.type(screen.getByLabelText('Email'), 'not-an-email');
+    await user.click(screen.getByRole('button', { name: 'Send reset link' }));
+
+    expect(screen.getByLabelText('Email')).toHaveFocus();
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter the email you sign in with');
+  });
+
+  it('auth-01 RESET-LIMIT keeps the cursor on the form after a refused request', async () => {
+    api.request
+      .mockRejectedValueOnce(refusal(429))
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(refusal(429));
+    const user = renderAt('/password-reset');
+    await user.type(screen.getByLabelText('Email'), 'owner@example.invalid');
+    await user.click(screen.getByRole('button', { name: 'Send reset link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many requests');
+    expect(screen.getByLabelText('Email')).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'Send reset link' }));
+    await user.click(await screen.findByRole('button', { name: 'Send again' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many requests');
+    expect(screen.getByRole('button', { name: 'Send again' })).toHaveFocus();
+  });
 });
 
 describe('RESET-USE new password screen', () => {
@@ -127,6 +153,39 @@ describe('RESET-USE new password screen', () => {
     expect(window.location.hash).toBe('');
     await user.click(screen.getByRole('link', { name: 'Sign in' }));
     expect(screen.getByText('Sign-in page')).toBeVisible();
+  });
+
+  it('auth-08 opens the new password step with the cursor in New password', async () => {
+    renderAt(`/password-reset/new#token=${token}`);
+
+    expect(await screen.findByLabelText('New password')).toHaveFocus();
+  });
+
+  it('auth-05 moves the cursor to the field with the problem and announces it', async () => {
+    const user = renderAt(`/password-reset/new#token=${token}`);
+    await user.type(await screen.findByLabelText('New password'), newPassword);
+    await user.type(screen.getByLabelText('Confirm password'), 'different');
+    await user.click(screen.getByRole('button', { name: 'Reset password' }));
+
+    expect(screen.getByLabelText('Confirm password')).toHaveFocus();
+    expect(screen.getByRole('alert')).toHaveTextContent("Passwords don't match");
+    expect(api.confirm).not.toHaveBeenCalled();
+  });
+
+  it('auth-01 returns the cursor to New password after a refused or failed attempt', async () => {
+    api.confirm.mockRejectedValueOnce(refusal(400)).mockRejectedValueOnce(refusal(429));
+    const user = renderAt(`/password-reset/new#token=${token}`);
+    await user.type(await screen.findByLabelText('New password'), newPassword);
+    await user.type(screen.getByLabelText('Confirm password'), newPassword);
+    await user.click(screen.getByRole('button', { name: 'Reset password' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Use 15 to 128 characters without line breaks',
+    );
+    expect(screen.getByLabelText('New password')).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'Reset password' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts');
+    expect(screen.getByLabelText('New password')).toHaveFocus();
   });
 
   it('RESET-EXPIRED offers a new link for an expired one', async () => {

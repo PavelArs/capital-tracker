@@ -1,5 +1,5 @@
 import { BrandMark, Icon, type IconName } from '@features/shell/icons';
-import type { FormEvent, ReactNode } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
@@ -11,6 +11,19 @@ type Tone = 'accent' | 'pos' | 'warn';
 export const focusOnMount = (input: HTMLInputElement | null) => {
   input?.focus();
 };
+
+/**
+ * Puts the cursor back on a control once the form shows its answer: the first field with a
+ * problem, or the one to try again. Controls are disabled while a request runs, so the focus
+ * waits for the render that enables them again (prototype: focus the first invalid field).
+ */
+export function useFocusAfterAnswer() {
+  const [target, setTarget] = useState<{ id: string } | null>(null);
+  useEffect(() => {
+    if (target) document.getElementById(target.id)?.focus();
+  }, [target]);
+  return useCallback((id: string) => setTarget({ id }), []);
+}
 
 interface AuthFrameProps {
   icon?: IconName;
@@ -66,7 +79,7 @@ export default function AuthFrame({
 
 export function FieldError({ id, message }: { id: string; message: string }) {
   return (
-    <span className="auth-err" id={id}>
+    <span className="auth-err" id={id} role="alert">
       <Icon name="alert" />
       {message}
     </span>

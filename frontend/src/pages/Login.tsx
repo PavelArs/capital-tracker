@@ -1,14 +1,28 @@
 import { useAuth } from '@contexts/AuthContext';
-import AuthFrame, { FieldError, focusOnMount, Notice } from '@features/password-reset/AuthFrame';
+import AuthFrame, {
+  FieldError,
+  focusOnMount,
+  Notice,
+  useFocusAfterAnswer,
+} from '@features/password-reset/AuthFrame';
 import PasswordField from '@features/password-reset/PasswordField';
+import { tooManyAttempts } from '@features/security/attempts';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 type FactorKind = 'totp' | 'recovery';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const recoveryPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{8}){3}$/i;
+
+// The server ends a pending sign-in step five minutes after the password
+// (backend/src/auth/session.service.ts) or at its fifth wrong code (mfa.service.ts complete()),
+// and then answers every code with the same 401 as a wrong one. These limits tell the two apart
+// only when the step has surely ended: the clock starts when the password answer arrives, after
+// the server started its own, and a 401 is either a counted wrong code or an ended step.
+const PENDING_STEP_MS = 5 * 60 * 1000;
+const PENDING_STEP_TRIES = 5;
 
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
 
@@ -29,7 +43,7 @@ function factorFailure(error: unknown, kind: FactorKind): { field?: string; noti
           ? "That code didn't work. Enter the current one; if it keeps failing, sign in again."
           : "That recovery code didn't work. Each code works once; check it and try again.",
     };
-  if (code === 429) return { notice: 'Too many attempts. Wait 10 minutes and try again.' };
+  if (code === 429) return { notice: tooManyAttempts(error) };
   if (code === 403) return { notice: 'The sign-in took too long. Go back and sign in again.' };
   return { notice: "Couldn't check the code. Check your connection and try again." };
 }
@@ -49,6 +63,9 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const { login, verifyFactor, restartPassword, mfaPending, user, loading } = useAuth();
   const navigate = useNavigate();
+  const focusAfterAnswer = useFocusAfterAnswer();
+  const pendingSince = useRef(0);
+  const refusedCodes = useRef(0);
 
   useEffect(() => {
     if (!loading && user) navigate('/');
@@ -61,6 +78,12 @@ export default function Login() {
     setKind(nextKind);
   };
 
+  const startOver = () => {
+    setPassword('');
+    reset();
+    restartPassword();
+  };
+
   const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
@@ -71,17 +94,33 @@ export default function Login() {
     };
     setFieldErrors(errors);
     setFailure('');
-    if (errors.email || errors.password) return;
+    if (errors.email || errors.password) {
+      focusAfterAnswer(errors.email ? 'login-email' : 'login-password');
+      return;
+    }
     setBusy(true);
     try {
       await login(address, password);
+      pendingSince.current = performance.now();
+      refusedCodes.current = 0;
       setPassword('');
       reset();
     } catch (error) {
       setFailure(passwordFailure(error));
+      focusAfterAnswer('login-password');
     } finally {
       setBusy(false);
     }
+  };
+
+  // After a 401: why the pending step surely ended, or null while the code may simply be wrong.
+  const endedStep = (sentAt: number) => {
+    refusedCodes.current += 1;
+    if (sentAt - pendingSince.current >= PENDING_STEP_MS)
+      return 'The sign-in took too long. Enter your password again.';
+    if (refusedCodes.current >= PENDING_STEP_TRIES)
+      return 'Too many wrong codes, so this sign-in ended. Enter your password again.';
+    return null;
   };
 
   const submitFactor = async (event: FormEvent<HTMLFormElement>) => {
@@ -96,26 +135,33 @@ export default function Login() {
         : recoveryPattern.test(value)
           ? undefined
           : 'Recovery codes look like 1a2b3c4d-5e6f7a8b-9c0d1e2f-3a4b5c6d';
+    const field = kind === 'totp' ? 'login-totp' : 'login-recovery';
     setFieldErrors({ code: problem });
     setFailure('');
-    if (problem) return;
+    if (problem) {
+      focusAfterAnswer(field);
+      return;
+    }
     setBusy(true);
+    const sentAt = performance.now();
     try {
       await verifyFactor(kind, value);
     } catch (error) {
+      const ended = status(error) === 401 ? endedStep(sentAt) : null;
+      if (ended) {
+        startOver();
+        setFailure(ended);
+        focusAfterAnswer('login-password');
+        return;
+      }
       const refused = factorFailure(error, kind);
       setFieldErrors({ code: refused.field });
       setFailure(refused.notice ?? '');
       setCode('');
+      focusAfterAnswer(field);
     } finally {
       setBusy(false);
     }
-  };
-
-  const startOver = () => {
-    setPassword('');
-    reset();
-    restartPassword();
   };
 
   // The answer to the sign-in check is not known yet: show the empty page, not a sentence.
