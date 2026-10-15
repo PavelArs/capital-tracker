@@ -417,6 +417,13 @@ button.wallets-source__open:focus-visible {
   line-height: 1.4;
 }
 
+/* The Bybit key steps: the list numbers sit inside the note, not past its left edge. */
+.wallets-howto {
+  display: grid;
+  gap: 4px;
+  padding-left: 32px;
+}
+
 .wallets-ok {
   color: var(--pos);
   font-size: var(--fs-xs);
