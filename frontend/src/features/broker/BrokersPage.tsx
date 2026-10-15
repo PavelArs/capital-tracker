@@ -7,6 +7,7 @@ import EmptyState from '@/ui/EmptyState';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import PageIntro from '@/ui/PageIntro';
 import { dayText } from '@/utils/dates';
+import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, price, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
@@ -14,13 +15,7 @@ import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import AddBrokerDialog from './AddBrokerDialog';
-import {
-  type BrokerAccount,
-  type BrokerPosition,
-  brokerAccountsOf,
-  brokerShare,
-  sumDecimals,
-} from './brokers';
+import { type BrokerAccount, type BrokerPosition, brokerAccountsOf, brokerShare } from './brokers';
 import '../shell/shell-page.css';
 import './broker.css';
 

@@ -1,5 +1,6 @@
 import type { AccountClass } from '@api/accounting.api';
 import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import { sumDecimals } from '@/utils/decimal';
 
 export interface Property {
   asset: AssetValuation;
@@ -13,10 +14,9 @@ export interface Property {
   unrealizedReturnPercent: string | null;
 }
 
+// Exact, so a part never shows a cent more than it is worth; any part without a value leaves it unknown.
 const sumOf = (values: readonly (string | null)[]): string | null =>
-  values.some((value) => value === null)
-    ? null
-    : values.reduce((sum, value) => sum + Number(value), 0).toFixed(2);
+  values.every((value) => value !== null) ? sumDecimals(values as string[]) : null;
 
 /** The assets held in property accounts (v8), most valuable first. */
 export function propertiesOf(
@@ -58,3 +58,7 @@ export function shareText(share: number): string {
     ? 'Less than 0.01% yours'
     : `${new Intl.NumberFormat('en-US').format(shown)}% yours`;
 }
+
+/** What the properties with a value come to, exactly; those without one are left out. */
+export const propertyTotal = (properties: readonly Pick<Property, 'value'>[]) =>
+  sumDecimals(properties.flatMap(({ value }) => (value === null ? [] : [value])));

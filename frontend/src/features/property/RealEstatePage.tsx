@@ -11,7 +11,7 @@ import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import AddPropertyDialog from './AddPropertyDialog';
-import { type Property, propertiesOf, shareText } from './real-estate';
+import { type Property, propertiesOf, propertyTotal, shareText } from './real-estate';
 import '../shell/shell-page.css';
 import './property.css';
 
@@ -107,7 +107,7 @@ export default function RealEstatePage() {
   }, [load]);
 
   const properties = portfolio && classes ? propertiesOf(portfolio, classes) : null;
-  const total = properties?.reduce((sum, { value }) => sum + Number(value ?? 0), 0) ?? 0;
+  const total = propertyTotal(properties ?? []);
   const unpriced = properties?.filter(({ value }) => value === null).length ?? 0;
   const addButton = (primary: boolean) => (
     <button
@@ -157,9 +157,7 @@ export default function RealEstatePage() {
           </PageIntro>
           <section className="shell-card property-total" aria-label="Total in real estate">
             <span className="property-total__label">In real estate</span>
-            <strong className="property-total__value">
-              {money(String(total), portfolio.currency)}
-            </strong>
+            <strong className="property-total__value">{money(total, portfolio.currency)}</strong>
             <span className="property-total__note">
               {unpriced > 0
                 ? `Your share of each property at its latest estimate; ${unpriced} without an estimate left out.`
