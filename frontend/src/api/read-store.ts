@@ -8,6 +8,8 @@ export interface StoredRead {
   owner: string;
   at: number;
   value: unknown;
+  /** The last refresh of this answer failed; absent in a row saved before this. */
+  failed?: boolean;
 }
 
 export interface ReadStore {
