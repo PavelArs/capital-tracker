@@ -71,8 +71,18 @@ const problemText: Record<EntryProblem, string> = {
   comment: `Keep the comment within ${MAX_COMMENT_LENGTH} characters`,
 };
 
-/** The message of a 409 that names the transfer itself as the first operation left short. */
-const OWN_SHORTFALL = 'An account does not hold enough for this transfer';
+/**
+ * The messages of a 409 that names the change itself as the first operation left short, with
+ * what the change is called: a transfer, or a trade (a sale, an expense, a gift sent, a fee).
+ */
+const OWN_SHORTFALL: Record<string, 'transfer' | 'transaction'> = {
+  'An account does not hold enough for this transfer': 'transfer',
+  'An account does not hold enough for this trade': 'transaction',
+};
+const ownShortfall = (message: unknown) =>
+  typeof message === 'string' && Object.hasOwn(OWN_SHORTFALL, message)
+    ? OWN_SHORTFALL[message]
+    : null;
 
 /** The operation a 409 names as depending on the change, if the server named one. */
 export function dependentOf(error: unknown): DependentOperation | null {
@@ -80,19 +90,19 @@ export function dependentOf(error: unknown): DependentOperation | null {
   return isAxiosError(error) &&
     error.response?.status === 409 &&
     data?.dependent &&
-    data.message !== OWN_SHORTFALL
+    ownShortfall(data.message) === null
     ? (data.dependent as DependentOperation)
     : null;
 }
 
-/** The account a new transfer would leave short, when the server named it. */
-export function shortOf(error: unknown): DependentOperation | null {
+/** The account a new transfer or trade would leave short, when the server named it. */
+export function shortOf(
+  error: unknown,
+): (DependentOperation & { of: 'transfer' | 'transaction' }) | null {
   const data = isAxiosError(error) ? error.response?.data : undefined;
-  return isAxiosError(error) &&
-    error.response?.status === 409 &&
-    data?.dependent &&
-    data.message === OWN_SHORTFALL
-    ? (data.dependent as DependentOperation)
+  const of = ownShortfall(data?.message);
+  return isAxiosError(error) && error.response?.status === 409 && data?.dependent && of
+    ? { ...(data.dependent as DependentOperation), of }
     : null;
 }
 
@@ -106,9 +116,13 @@ export function coverageOf(
     : null;
 }
 
-/** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
-export const shortText = (account: string, coin: string, date: string) =>
-  `${account} does not hold enough ${coin} on ${dayText(date)} for this transfer.`;
+/** "Wallet A does not hold enough ETH on Mar 1, 2026 for this transfer." */
+export const shortText = (
+  account: string,
+  coin: string,
+  date: string,
+  of: 'transfer' | 'transaction' = 'transfer',
+) => `${account} does not hold enough ${coin} on ${dayText(date)} for this ${of}.`;
 /**
  * The account's records start later than the transaction, so nothing can move in or out; with no
  * start date its records have not started: it was opened with balances.
@@ -135,7 +149,7 @@ function failure(
   if (status === 409 && message.includes('Bank of Russia rate'))
     return 'No Bank of Russia rate is stored for this date. Enter the rate you paid.';
   if (short)
-    return `${shortText(name(short.accountId), coin, short.occurredAt)} Add the receipts that bring it there first.`;
+    return `${shortText(name(short.accountId), coin, short.occurredAt, short.of)} Add the receipts that bring it there first.`;
   if (coverage)
     return coverage.coverageFrom === null
       ? coverageText(name(coverage.accountId), null, date)
@@ -154,6 +168,34 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** The price per unit a total and an amount imply, exact before it is shown. */
 const derivedPrice = (total: string, amount: string) =>
   priceFigure(Number(unitPrice(total, amount)));
+
+/**
+ * The account that holds the most of an asset now, or null when none holds any, there is only
+ * one account to choose, or the balances cannot be read.
+ */
+async function holderOf(
+  accounts: readonly Account[],
+  instrumentId: string | undefined,
+): Promise<string | null> {
+  if (!instrumentId || accounts.length < 2) return null;
+  const at = new Date().toISOString();
+  const held = await Promise.all(
+    accounts.map((account) =>
+      tradesApi
+        .available(account.id, { instrumentId, at })
+        .then((result) => result.quantity)
+        .catch(() => null),
+    ),
+  );
+  let holder: string | null = null;
+  let most = '0';
+  for (const [index, quantity] of held.entries())
+    if (quantity !== null && compareDecimal(quantity, most) > 0) {
+      holder = accounts[index].id;
+      most = quantity;
+    }
+  return holder;
+}
 
 export async function journalAccounts(): Promise<Account[]> {
   const accounts = [];
@@ -307,6 +349,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [saving, setSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
+  const form = useRef<HTMLFormElement>(null);
+  const [refusals, setRefusals] = useState(0);
+  useEffect(() => {
+    if (refusals > 0) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [refusals]);
 
   useEffect(() => {
     let live = true;
@@ -330,7 +377,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       hiddenAssets,
       valuation,
     ])
-      .then(([allAssets, withJournal, hidden, hiddenIds, report]) => {
+      .then(async ([allAssets, withJournal, hidden, hiddenIds, report]) => {
         if (!live) return;
         const prices = new Map<string, string>();
         const shares = new Map<string, number>();
@@ -340,8 +387,6 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           const share = Number(item.allocationPercent);
           if (share > 0) shares.set(item.instrumentId, share);
         }
-        setMarket(prices);
-        setAllocation(shares);
         const tradable = byAllocation(
           allAssets.filter(
             (asset) =>
@@ -352,12 +397,19 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           ),
           shares,
         );
+        // A new entry starts with the first asset in an account that holds it, so a sale or a
+        // transfer of it does not start from an account that has none.
+        const holder = editing ? null : await holderOf(withJournal, tradable[0]?.id);
+        if (!live) return;
+        setMarket(prices);
+        setAllocation(shares);
         setAssets(tradable);
         setAllAssets(allAssets);
         setAccounts(withJournal);
         if (!editing) {
-          setAccountId(withJournal[0]?.id ?? '');
-          setToAccountId(withJournal[1]?.id ?? '');
+          const from = holder ?? withJournal[0]?.id ?? '';
+          setAccountId(from);
+          setToAccountId(withJournal.find((account) => account.id !== from)?.id ?? '');
           setEntry((current) => ({ ...current, instrumentId: tradable[0]?.id ?? '' }));
         }
       })
@@ -586,8 +638,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     setTried(true);
     const account = accounts?.find((item) => item.id === accountId);
     const receiver = accounts?.find((item) => item.id === toAccountId);
-    if (problems(checked, today(), kind).size || !account || overspent) return;
-    if (transfer && (!receiver || sameAccount)) return;
+    if (
+      problems(checked, today(), kind).size ||
+      !account ||
+      overspent ||
+      (transfer && (!receiver || sameAccount))
+    ) {
+      // The keyboard goes to the first field to fix, which reads out its error.
+      setRefusals((count) => count + 1);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -691,7 +751,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input[type="radio"]:checked')}
     >
-      <form onSubmit={submit} noValidate>
+      <form ref={form} onSubmit={submit} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
           <CloseButton onClick={onClose} disabled={saving} />
@@ -717,7 +777,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                 aria-controls={`${id}-more-types`}
                 onClick={() => setMoreShown(!moreShown)}
               >
-                More {moreShown ? '▴' : '▾'}
+                More <span aria-hidden="true">{moreShown ? '▴' : '▾'}</span>
               </button>
             </div>
             {moreShown && (
@@ -815,7 +875,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       aria-pressed={other !== null}
                       onClick={() => setOther(other ?? { ticker: '', name: '' })}
                     >
-                      + Other asset
+                      <span aria-hidden="true">+</span> Other asset
                     </button>
                   )}
                 </div>

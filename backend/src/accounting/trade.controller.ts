@@ -113,6 +113,15 @@ export class TradeController {
     return this.trades.listMatches(owner.userId, id, tradeId, query);
   }
 
+  @Get('trades/:tradeId/void-check')
+  voidCheck(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('id') id: string,
+    @Param('tradeId') tradeId: string,
+  ) {
+    return this.trades.voidCheck(owner.userId, id, tradeId);
+  }
+
   @Get('trades/:tradeId/versions')
   listVersions(
     @CurrentUser() owner: OwnerIdentity,

@@ -28,9 +28,29 @@
   font-size: var(--fs-xs);
 }
 
+/* An error starts with the alert mark of the accepted prototype, drawn here once so every
+   field error has it; the text keeps flowing inline, links and buttons in it included. */
 .ui-field__error {
+  position: relative;
+  padding-left: 20px;
   color: var(--neg);
   font-size: var(--fs-xs);
+}
+
+.ui-field__error::before {
+  position: absolute;
+  top: 0.15em;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  content: "";
+  -webkit-mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E")
+    center / contain no-repeat;
 }
 
 .ui-input {

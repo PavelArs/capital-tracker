@@ -3,7 +3,7 @@ import { cachedReads } from '@api/cached-reads';
 import { announceClassificationChange, type Operation, operationsApi } from '@api/operations.api';
 import { ownedTransfersApi } from '@api/owned-transfers.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
-import { type TradeVersion, tradesApi } from '@api/trades.api';
+import { type DependentOperation, type TradeVersion, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -29,6 +29,7 @@ import {
   isCountedGap,
   moment,
   networkName,
+  operationMoment,
   placeLabel,
   signedAmount,
   sourceLabel,
@@ -39,6 +40,7 @@ import {
   typeLabel,
 } from './operation-format';
 import RemoveCounted from './RemoveCounted';
+import { tradeVoidCheck } from './trade-void-check';
 
 const sourceDetails: Record<Operation['source'], string> = {
   manual: 'Added by you',
@@ -259,7 +261,7 @@ function facts(
   currency: AccountingCurrency,
   record?: Operation,
 ): [string, ReactNode][] {
-  const rows: [string, ReactNode][] = [['Date', moment(operation.occurredAt)]];
+  const rows: [string, ReactNode][] = [['Date', operationMoment(operation)]];
   const { wallet, chain } = operation;
   const walletLink = (place: NonNullable<Operation['account']>) => (
     <Link key={place.id} className="shell-link" to={`/wallets/${place.id}`}>
@@ -467,7 +469,18 @@ export function describe(operation: Operation): string {
 type Confirm =
   | { step: 'ask'; error: string | null }
   | { step: 'deleting' }
-  | { step: 'blocked'; dependent: string; account: string };
+  | { step: 'blocked'; dependent: string; account: string; coin: string };
+
+/**
+ * The ticker of an instrument the list names: this operation's coin, its cash or fee, or a coin of
+ * another operation; "coins" when none names it.
+ */
+function coinOf(instrumentId: string, operation: Operation, operations: Operation[]): string {
+  for (const item of [operation, ...operations])
+    for (const asset of [item.asset, item.counterAsset, item.settlement?.asset, item.fee?.asset])
+      if (asset?.instrumentId === instrumentId) return ticker(asset);
+  return 'coins';
+}
 
 interface Props {
   operation: Operation;
@@ -549,6 +562,37 @@ export default function OperationDrawer({
     };
   }, [tradeAccountId, tradeId]);
 
+  /** OPS-DELETE-GUARD: the refusal that names the operation a deletion would leave short. */
+  const blocked = (dependent: DependentOperation): Confirm => {
+    const found = operations.find((item) => item.id === dependent.operationId);
+    return {
+      step: 'blocked',
+      dependent: found ? describe(found) : `A later transaction on ${day(dependent.occurredAt)}`,
+      // A transfer's coins may be spent in the account they went to.
+      account:
+        operation.counterAccount?.id === dependent.accountId
+          ? operation.counterAccount.name
+          : (operation.account?.name ?? 'the account'),
+      coin: coinOf(dependent.instrumentId, operation, operations),
+    };
+  };
+  // A trade that cannot be deleted says so at once, before the owner confirms; the void still
+  // refuses if that changes in between. Without an answer the confirmation asks as before.
+  const checking = useRef(false);
+  const askToDelete = async () => {
+    if (checking.current) return;
+    if (trade) {
+      checking.current = true;
+      const check = await tradeVoidCheck.get(trade.id, tradeId).catch(() => null);
+      checking.current = false;
+      if (check?.dependent) {
+        setConfirm(blocked(check.dependent));
+        return;
+      }
+    }
+    setConfirm({ step: 'ask', error: null });
+  };
+
   // Deleting voids the operation: its history keeps every version, the void included
   // (OPS-DELETE).
   const remove = async () => {
@@ -585,18 +629,7 @@ export default function OperationDrawer({
     } catch (error) {
       const dependent = dependentOf(error);
       if (dependent) {
-        const found = operations.find((item) => item.id === dependent.operationId);
-        setConfirm({
-          step: 'blocked',
-          dependent: found
-            ? describe(found)
-            : `A later transaction on ${day(dependent.occurredAt)}`,
-          // A transfer's coins may be spent in the account they went to.
-          account:
-            operation.counterAccount?.id === dependent.accountId
-              ? operation.counterAccount.name
-              : (operation.account?.name ?? 'the account'),
-        });
+        setConfirm(blocked(dependent));
         return;
       }
       const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -818,7 +851,7 @@ export default function OperationDrawer({
             operation={chain}
             operations={operations}
             dustThresholdUsd={dustThresholdUsd}
-            left={Math.max(left - (needs ? 1 : 0), 0)}
+            left={left}
             onSaved={(label) => onClassified?.(label)}
             onDeleted={() => {
               announceClassificationChange();
@@ -905,7 +938,7 @@ export default function OperationDrawer({
                   ref={deleteButton}
                   type="button"
                   className="shell-button shell-button--ghost transactions-delete"
-                  onClick={() => setConfirm({ step: 'ask', error: null })}
+                  onClick={() => void askToDelete()}
                 >
                   <Icon name="trash" className="shell-icon shell-icon--sm" />
                   Delete
@@ -944,7 +977,7 @@ export default function OperationDrawer({
           <div className="ui-modal__body">
             <p id="operation-confirm-text" className="transactions-confirm__text">
               {confirm.step === 'blocked'
-                ? `${confirm.dependent} spends these ${ticker(operation.asset)}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
+                ? `${confirm.dependent} spends these ${confirm.coin}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
                 : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
             </p>
             {confirm.step === 'ask' && confirm.error && (

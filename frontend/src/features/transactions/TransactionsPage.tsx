@@ -23,6 +23,7 @@ import {
   dayHeading,
   networkName,
   placeLabel,
+  placeParts,
   rowTime,
   shortAddress,
   signedQuantity,
@@ -346,6 +347,7 @@ function OperationItem({
 }) {
   const needs = operation.status === 'needs-classification';
   const at = rowTime(operation);
+  const place = placeParts(operation);
   const title = [
     typeLabel(operation),
     ticker(operation.asset) +
@@ -367,14 +369,14 @@ function OperationItem({
                 To classify
               </Badge>
             ) : (
-              [
-                (operation.status === 'hidden' || operation.status === 'dust') &&
-                  statusLabels[operation.status],
-                placeLabel(operation),
-                at !== 'No time' && at,
-              ]
-                .filter(Boolean)
-                .join(' · ')
+              // The address stays whole; the line wraps at " · " (list-row.css).
+              <span className="ui-row__detail">
+                {(operation.status === 'hidden' || operation.status === 'dust') &&
+                  `${statusLabels[operation.status]} · `}
+                {place.lead}
+                {place.address && <span className="transactions-nowrap">{place.address}</span>}
+                {at !== 'No time' && ` · ${at}`}
+              </span>
             )
           }
           amount={signedQuantity(operation)}
@@ -437,6 +439,8 @@ export default function TransactionsPage() {
   // The period the list on screen was read for; a new period keeps the old rows until it arrives.
   const [listPeriod, setListPeriod] = useState(() => periodKey(period));
   const [failed, setFailed] = useState(false);
+  // A refresh failed while a list was on screen: the list stays, marked as possibly out of date.
+  const [stale, setStale] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   // ASSET-HIDE: so are the assets the owner hid from their own pages.
   const [hiddenTokens, setHiddenTokens] = useState<ReadonlySet<string>>(() =>
@@ -483,9 +487,13 @@ export default function TransactionsPage() {
         onScreen.current = true;
         setList(next);
         setListPeriod(periodKey(range));
+        setStale(false);
         return next;
       } catch {
-        if (request === latest.current) setFailed(true);
+        if (request === latest.current) {
+          if (onScreen.current) setStale(true);
+          else setFailed(true);
+        }
         return null;
       }
     },
@@ -628,13 +636,24 @@ export default function TransactionsPage() {
     if (last?.heading === heading) last.operations.push(operation);
     else days.push({ heading, operations: [operation] });
   }
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   // OPS-DELETE: an added, changed or deleted transaction keeps the rows on screen until the
-  // new list replaces them, so nothing jumps.
-  const changed = () => {
+  // new list replaces them, so nothing jumps; a line says what was saved.
+  const changed = async (message: string, deleted?: Operation) => {
+    // A deleted row leaves the list: the keyboard goes to the row above it, else the one below,
+    // else to the line that says it was deleted.
+    const at = deleted ? visible.findIndex((item) => item.id === deleted.id) : -1;
+    const near = at < 0 ? [] : [visible[at - 1], visible[at + 1]].filter(Boolean);
     setDialog(null);
     setOpenId(null);
+    setNotice(message);
     attention?.refresh();
-    void load(asked, period, false);
+    await load(asked, period, false);
+    if (!deleted) return;
+    window.requestAnimationFrame(() => {
+      const row = near.map((item) => rowOf(item.id)).find(Boolean);
+      (row?.querySelector('button') ?? noticeRef.current)?.focus();
+    });
   };
   const empty = operations.length === 0 && !period;
   const addButton = (
@@ -745,8 +764,25 @@ export default function TransactionsPage() {
         </PageIntro>
       )}
       {notice && !opened && (
-        <p className="ui-banner ui-banner--pos transactions-notice" role="status">
+        <p
+          ref={noticeRef}
+          className="ui-banner ui-banner--pos transactions-notice"
+          role="status"
+          tabIndex={-1}
+        >
           {notice}
+        </p>
+      )}
+      {stale && !failed && list !== null && (
+        <p className="ui-banner ui-banner--neg transactions-notice" role="alert">
+          Could not refresh the list, so it may be out of date.{' '}
+          <button
+            type="button"
+            className="shell-link"
+            onClick={() => void load(asked, period, false)}
+          >
+            Try again
+          </button>
         </p>
       )}
       {list !== null && !failed && (
@@ -912,13 +948,26 @@ export default function TransactionsPage() {
               <Link to="/preferences">Change the threshold in Settings</Link>
             </p>
           )}
-          {visible.length === 0 ? (
-            <div className="portfolio-none transactions-none">
-              <p>
-                {view === 'needs-classification' && !asset && !place && !kind && !query && !period
-                  ? 'All caught up'
-                  : 'No transactions match'}
+          {visible.length === 0 &&
+          view === 'needs-classification' &&
+          !asset &&
+          !place &&
+          !kind &&
+          !query &&
+          !period ? (
+            <div className="ui-empty transactions-caught-up">
+              <span className="ui-empty__ill" aria-hidden="true">
+                <Icon name="check" className="shell-icon" />
+              </span>
+              <h2 className="ui-empty__title">All caught up</h2>
+              <p className="ui-empty__text">
+                Every transaction from your wallets is classified. New ones appear here after the
+                next sync.
               </p>
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="portfolio-none transactions-none">
+              <p>No transactions match</p>
               <button type="button" className="shell-button" onClick={clear}>
                 Clear filters
               </button>
@@ -1019,14 +1068,16 @@ export default function TransactionsPage() {
             setOpenId(null);
             setDialog({ editing: operation });
           }}
-          onDeleted={changed}
+          onDeleted={() => void changed('Transaction deleted.', opened)}
         />
       )}
       {dialog && (
         <AddTransactionDialog
           editing={dialog.editing}
           onClose={() => setDialog(null)}
-          onSaved={changed}
+          onSaved={() =>
+            void changed(dialog.editing ? 'Transaction updated.' : 'Transaction added.')
+          }
         />
       )}
     </div>

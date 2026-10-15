@@ -14,9 +14,7 @@ import type { RewardSummary } from './asset-reward-types';
 import type { SwapSummary } from './asset-swap-types';
 import {
   availableQuantity,
-  firstShortfall,
   type LedgerView,
-  type Shortfall,
   withoutOperation,
   withoutTrade,
 } from './available-quantity';
@@ -33,7 +31,7 @@ import {
   readTradeVersionCount,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
-import { type Execution, FifoHistoryError } from './fifo';
+import type { Execution } from './fifo';
 import { parseUuid } from './input';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { AccountFifoResult, TransferSummary } from './owned-transfer-fifo';
@@ -72,6 +70,7 @@ import {
   settlementTotal,
   type TradeSettlement,
 } from './trade-settlement';
+import { tradeRefusal, tradeShortfall } from './trade-shortfall';
 
 export type { TradeVersion } from './trade-journal.store';
 
@@ -111,14 +110,6 @@ interface CurrentSnapshot {
   fifo: AccountFifoResult;
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
-/** A change that would leave a later operation spending more than its account holds. */
-const dependent = (shortfall: Shortfall) =>
-  new ConflictException({
-    statusCode: 409,
-    error: 'Conflict',
-    message: 'A later operation depends on this trade',
-    dependent: shortfall,
-  });
 
 export { AUTOMATIC_COVERAGE_FROM } from './trade-journal.store';
 
@@ -455,24 +446,9 @@ export class TradeService {
     const trades = [...heads.filter((head) => head.tradeId !== tradeId), next].filter(
       (head) => head.kind !== 'void',
     );
-    try {
-      projectConnectedLedger(ledger, { accountId: id, trades });
-    } catch (error) {
-      // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
-      const shortfall =
-        error instanceof FifoHistoryError &&
-        firstShortfall({
-          accounts: new Map(
-            [...ledger.accounts].map(([key, item]) => [
-              key,
-              key === id ? { ...item, trades } : item,
-            ]),
-          ),
-          transfers: ledger.transfers,
-        });
-      if (shortfall) throw dependent(shortfall);
-      throw error;
-    }
+    // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
+    const shortfall = tradeShortfall(ledger, id, trades);
+    if (shortfall) throw tradeRefusal(shortfall, tradeId);
     const saved = await appendTradeVersion(manager, owner, id, {
       ...next,
       canonicalPayload: payload,
@@ -557,6 +533,28 @@ export class TradeService {
         journalRevision: journal?.currentRevision ?? null,
         quantity,
       };
+    });
+  }
+
+  /**
+   * OPS-DELETE-GUARD: the operation a deletion of the trade would leave short, or null, asked
+   * before the owner confirms. Read-only and the same check the void runs, which still refuses
+   * a deletion that became unsafe in between.
+   */
+  async voidCheck(ownerId: string, accountId: string, tradeId: string) {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const target = parseUuid(tradeId);
+    return this.read(async (manager) => {
+      await readOwnedAccount(manager, owner, id);
+      if (!(await readJournal(manager, owner, id))) throw conflict();
+      const heads = await readTradeHeads(manager, owner, id);
+      const current = heads.find((head) => head.tradeId === target);
+      if (!current) throw new NotFoundException();
+      if (current.kind === 'void') throw conflict();
+      const ledger = await readConnectedLedger(manager, owner, [id]);
+      const trades = heads.filter((head) => head.tradeId !== target && head.kind !== 'void');
+      return { tradeId: target, dependent: tradeShortfall(ledger, id, trades) };
     });
   }
 
