@@ -1,3 +1,4 @@
+import { type AccountSummary, accountingApi } from '@api/accounting.api';
 import { type Deposit, depositsApi } from '@api/deposits.api';
 import { type Goal, goalsApi } from '@api/goals.api';
 import { operationsApi } from '@api/operations.api';
@@ -259,6 +260,19 @@ const valued = vi.spyOn(portfolioValuationApi, 'get');
 const sources = vi.spyOn(syncStatusApi, 'get');
 const wallets = vi.spyOn(walletAddressesApi, 'list');
 const goals = vi.spyOn(goalsApi, 'list');
+const accounts = vi.spyOn(accountingApi, 'listAccounts');
+const account = (
+  accountId: string,
+  name: string,
+  assetClass: AccountSummary['assetClass'] = null,
+): AccountSummary => ({
+  id: accountId,
+  name,
+  kind: null,
+  assetClass,
+  currentRevision: 0,
+  createdAt: '2025-01-01T00:00:00Z',
+});
 
 beforeEach(() => {
   toClassify.mockReset();
@@ -273,6 +287,12 @@ beforeEach(() => {
   wallets.mockResolvedValue([]);
   goals.mockReset();
   goals.mockResolvedValue({ asOf: '2026-10-04', items: [] });
+  // The asset colours read the class of each account; unanswered, that read signs out.
+  accounts.mockReset();
+  accounts.mockResolvedValue({
+    items: [account(trust, 'Trust Wallet'), account(cold, 'Cold storage')],
+    nextCursor: null,
+  });
   get.mockReset();
   get.mockImplementation(async (period: HistoryPeriod, currency?: AccountingCurrency) =>
     history({ period, currency: currency ?? 'USD' }),
@@ -1205,5 +1225,68 @@ describe('Dashboard UI audit', () => {
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     const note = within(hero).getByRole('img', { name: /Incomplete/ });
     expect(note.closest('.dashboard-hero__period')).toHaveTextContent('on $90,000.00 net invested');
+  });
+
+  it('dashboard-13 colours a broker fund and a property by their class in the allocation and top assets, not the Other grey', async () => {
+    const broker = id(20);
+    const home = id(21);
+    accounts.mockResolvedValue({
+      items: [
+        account(trust, 'Trust Wallet'),
+        account(broker, 'Synthetic Broker', 'broker'),
+        account(home, 'Studio account', 'property'),
+      ],
+      nextCursor: null,
+    });
+    const manual = (n: number, name: string, symbol: string | null, value: string, at: string) =>
+      asset(n, name, symbol ?? '', value, {
+        symbol,
+        assetType: 'manual',
+        priceSource: 'manual',
+        quantity: '1',
+        price: { value, observedAt: ago(60), source: 'manual', status: 'manual' },
+        priceChange24hPercent: null,
+        holdings: [{ accountId: at, accountName: 'Account', quantity: '1', value }],
+      });
+    const held = [
+      manual(30, 'Sample index fund', 'SIF', '5000', broker),
+      manual(31, 'Studio apartment', null, '4000', home),
+      assets[0],
+    ];
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({
+        currency: currency ?? 'USD',
+        assets: held,
+        allocation: {
+          complete: true,
+          byAsset: held.map((item) => slice(item.instrumentId, item.name, item.value ?? '0')),
+          byType: [slice('manual', 'Other', '9000'), slice('crypto', 'Crypto', '4200')],
+          byAccount: [
+            slice(broker, 'Synthetic Broker', '5000'),
+            slice(home, 'Studio account', '4000'),
+            slice(trust, 'Trust Wallet', '4200'),
+          ],
+        },
+      }),
+    );
+    renderPage();
+    const allocation = await screen.findByRole('region', { name: 'Allocation' });
+    const swatch = (label: string) =>
+      within(allocation)
+        .getByText(label)
+        .closest('li')
+        ?.querySelector<HTMLElement>('.portfolio-swatch')?.style.background;
+    await waitFor(() => expect(swatch('Sample index fund')).toBe('var(--c-broker)'));
+    expect(swatch('Studio apartment')).toBe('var(--c-prop)');
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    const icon = (name: string) =>
+      within(top)
+        .getByRole('link', { name })
+        .closest('tr')
+        ?.querySelector<HTMLElement>('.asset-icon')?.style.background;
+    expect(icon('Sample index fund')).toBe('var(--c-broker)');
+    expect(icon('Studio apartment')).toBe('var(--c-prop)');
+    // An asset held in a wallet keeps its own colour.
+    expect(icon('Bitcoin')).toBe('var(--c-btc)');
   });
 });

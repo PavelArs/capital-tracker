@@ -23,7 +23,9 @@ import {
   tone,
 } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { heldClass } from '../shell/asset-identity';
 import { onlyChain, type TokenChains, withChains } from '../shell/token-chains';
+import { useAccountClasses } from '../shell/useAccountClasses';
 import { useCachedRead } from '../shell/useCachedRead';
 import { AssetRowsLoading } from './DashboardLoading';
 
@@ -165,6 +167,7 @@ function Table({
   chains: TokenChains;
 }) {
   const navigate = useNavigate();
+  const classes = useAccountClasses();
   const now = new Date();
   // DASH-ROW: a click anywhere on the row opens it; the name link stays the keyboard stop.
   const open = (to: string) => (event: MouseEvent) => {
@@ -208,6 +211,7 @@ function Table({
                       symbol={holding.asset.symbol}
                       name={holding.asset.name}
                       assetType={holding.asset.assetType}
+                      assetClass={heldClass(holding.asset.holdings, classes)}
                       network={onlyChain(holding.asset.symbol, chains)}
                     />,
                     holding.asset.name,
@@ -275,6 +279,7 @@ function List({
   asked: AccountingCurrency | undefined;
   chains: TokenChains;
 }) {
+  const classes = useAccountClasses();
   const now = new Date();
   return (
     <ul className="ui-rows">
@@ -301,6 +306,7 @@ function List({
                   symbol={holding.asset.symbol}
                   name={holding.asset.name}
                   assetType={holding.asset.assetType}
+                  assetClass={heldClass(holding.asset.holdings, classes)}
                   network={onlyChain(holding.asset.symbol, chains)}
                 />
                 <ListRowText

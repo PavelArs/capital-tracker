@@ -13,6 +13,7 @@ import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
+import { heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -20,6 +21,7 @@ import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
+import { useAccountClasses } from '../shell/useAccountClasses';
 import { useValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
@@ -425,6 +427,7 @@ function AssetsTable({
   /** The basis of the profit after inflation when the Real view is on; null for nominal. */
   real: InflationBasis | null;
 }) {
+  const classes = useAccountClasses();
   return (
     <div className="ui-table-wrap">
       <table className="ui-table portfolio-table" aria-labelledby="portfolio-assets">
@@ -464,6 +467,7 @@ function AssetsTable({
                     symbol={asset.symbol}
                     name={asset.name}
                     assetType={asset.assetType}
+                    assetClass={heldClass(asset.holdings, classes)}
                     network={onlyChain(asset.symbol, chains)}
                   />
                   <span className="portfolio-asset__text">
@@ -587,6 +591,7 @@ function AssetsList({
   chains: TokenChains;
   real: InflationBasis | null;
 }) {
+  const classes = useAccountClasses();
   return (
     <ul className="ui-rows">
       {assets.map((asset) => (
@@ -596,6 +601,7 @@ function AssetsList({
               symbol={asset.symbol}
               name={asset.name}
               assetType={asset.assetType}
+              assetClass={heldClass(asset.holdings, classes)}
               network={onlyChain(asset.symbol, chains)}
             />
             <ListRowText

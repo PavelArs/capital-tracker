@@ -46,6 +46,22 @@ export const assetClassColors: Record<AccountClass, string> = {
   property: 'var(--c-prop)',
 };
 
+/** Every account's class (v8), by account id: null for a wallet. */
+export type AccountClasses = Readonly<Record<string, AccountClass | null | undefined>>;
+
+/**
+ * The class of the accounts that hold an asset, when they all share one; an asset held in a
+ * wallet as well, or in accounts of two classes, has none.
+ */
+export function heldClass(
+  holdings: readonly { accountId: string }[],
+  classes: AccountClasses,
+): AccountClass | null {
+  const found = new Set(holdings.map((holding) => classes[holding.accountId] ?? null));
+  const [only] = found;
+  return found.size === 1 ? only : null;
+}
+
 export function assetIdentity(asset: {
   symbol: string | null;
   name: string;

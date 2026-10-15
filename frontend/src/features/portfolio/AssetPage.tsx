@@ -14,12 +14,14 @@ import { useTabs } from '@/ui/tabs';
 import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
+import { heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
+import { useAccountClasses } from '../shell/useAccountClasses';
 import { useValueView } from '../shell/value-view';
 import {
   assetKey,
@@ -339,6 +341,7 @@ function AssetDetails({
   const unit = asset.symbol ?? '';
   const currency = portfolio.currency;
   const chains = useTokenChains();
+  const classes = useAccountClasses();
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
   const unknown = Number(asset.unknownCostQuantity) > 0;
   const missingRate = Number(asset.missingRateQuantity) > 0;
@@ -363,6 +366,7 @@ function AssetDetails({
           symbol={asset.symbol}
           name={asset.name}
           assetType={asset.assetType}
+          assetClass={heldClass(asset.holdings, classes)}
           network={onlyChain(asset.symbol, chains)}
           size="lg"
         />

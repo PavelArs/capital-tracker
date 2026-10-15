@@ -11,10 +11,12 @@ import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, price, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { heldClass } from '../shell/asset-identity';
 import { Icon } from '../shell/icons';
 import { netWorthUnknown } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
+import { useAccountClasses } from '../shell/useAccountClasses';
 import AddBrokerDialog from './AddBrokerDialog';
 import {
   type BrokerAccount,
@@ -35,6 +37,7 @@ function Position({
   portfolio: PortfolioValuation;
 }) {
   const [asked] = useAskedCurrency();
+  const classes = useAccountClasses();
   const { asset } = position;
   const currency = portfolio.currency;
   const cash = asset.assetType === 'fiat';
@@ -42,7 +45,13 @@ function Position({
   return (
     <li>
       <Link className={rowClass()} to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
-        <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} size="sm" />
+        <AssetIcon
+          symbol={asset.symbol}
+          name={asset.name}
+          assetType={asset.assetType}
+          assetClass={heldClass(asset.holdings, classes)}
+          size="sm"
+        />
         <ListRowText
           title={cash ? `Cash, ${asset.symbol ?? asset.name}` : asset.name}
           detail={
