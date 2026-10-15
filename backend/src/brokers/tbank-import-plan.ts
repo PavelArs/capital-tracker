@@ -89,7 +89,7 @@ export const timeKey = (time: string) => {
 function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): PlanEntry[] {
   const executed = operations.filter((item) => item.state === 'executed');
   // Only a trade that becomes an entry can take its fee; a skipped one leaves the fee to cash.
-  const trades = new Set(
+  const tradeCurrency = new Map(
     executed
       .filter(
         (item) =>
@@ -97,13 +97,15 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
           !isZero(item.payment) &&
           !isZero(item.quantity),
       )
-      .map((item) => item.id),
+      .map((item) => [item.id, item.paymentCurrency]),
   );
-  // A fee whose trade is listed joins that trade; any other fee is spent from cash.
+  // A fee joins its listed trade when paid in the trade's currency; any other fee is spent
+  // from cash.
+  const joins = (item: TBankOperation) =>
+    operationKind(item.type) === 'fee' && tradeCurrency.get(item.parentId) === item.paymentCurrency;
   const feesOf = new Map<string, TBankOperation[]>();
   for (const item of executed)
-    if (operationKind(item.type) === 'fee' && trades.has(item.parentId))
-      feesOf.set(item.parentId, [...(feesOf.get(item.parentId) ?? []), item]);
+    if (joins(item)) feesOf.set(item.parentId, [...(feesOf.get(item.parentId) ?? []), item]);
   const skip = (item: TBankOperation, reason: PlanSkip['reason']) => {
     skipped.push({ operationId: item.id, type: item.type, reason });
     return [];
@@ -125,7 +127,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     const kind = operationKind(item.type);
     if (kind === 'unsupported') return skip(item, 'unsupported');
     if (kind === 'transfer') return skip(item, 'transfer');
-    if (kind === 'fee' && trades.has(item.parentId)) return [];
+    if (joins(item)) return [];
     if (isZero(item.payment)) return skip(item, 'no-amount');
     const incoming = atoms(item.payment) > 0n;
     if (kind === 'buy' || kind === 'sell') {

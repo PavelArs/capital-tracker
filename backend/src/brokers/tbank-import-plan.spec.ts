@@ -56,6 +56,22 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('spends a fee in another currency than its trade from cash, not as the trade fee', () => {
+    const buy = op({ id: '110000001', payment: '-20', paymentCurrency: 'usd' });
+    const fee = cash('OPERATION_TYPE_BROKER_FEE', '-15', { id: '110000002', parentId: buy.id });
+    expect(
+      planImport([buy, fee]).entries.map((entry) => [
+        entry.action,
+        entry.amount,
+        entry.fee,
+        entry.currency,
+      ]),
+    ).toEqual([
+      ['buy', '20', '0', 'usd'],
+      ['fee', '15', '0', 'rub'],
+    ]);
+  });
+
   it('records money in and out, income, taxes and fees from cash', () => {
     const plan = planImport([
       cash('OPERATION_TYPE_INPUT', '1000', { occurredAt: '2024-01-01T09:00:00Z' }),
