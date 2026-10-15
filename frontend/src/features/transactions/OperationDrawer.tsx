@@ -40,7 +40,6 @@ import {
   typeLabel,
 } from './operation-format';
 import RemoveCounted from './RemoveCounted';
-import { tradeVoidCheck } from './trade-void-check';
 
 const sourceDetails: Record<Operation['source'], string> = {
   manual: 'Added by you',
@@ -583,7 +582,7 @@ export default function OperationDrawer({
     if (checking.current) return;
     if (trade) {
       checking.current = true;
-      const check = await tradeVoidCheck.get(trade.id, tradeId).catch(() => null);
+      const check = await tradesApi.voidCheck(trade.id, tradeId).catch(() => null);
       checking.current = false;
       if (check?.dependent) {
         setConfirm(blocked(check.dependent));

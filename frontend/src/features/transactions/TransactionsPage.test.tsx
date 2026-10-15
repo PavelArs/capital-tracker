@@ -34,7 +34,6 @@ import { poolCandidates } from './ClassifyForm';
 import { handOver } from './proposals-handover';
 import TransactionsPage from './TransactionsPage';
 import TransferProposals from './TransferProposals';
-import { tradeVoidCheck } from './trade-void-check';
 
 // Synthetic ids, names and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -1093,7 +1092,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     voidTrade.mockReset();
     vi.spyOn(tradesApi, 'void').mockImplementation(voidTrade);
     // The check before a deletion finds nothing; the void itself may still refuse.
-    vi.spyOn(tradeVoidCheck, 'get').mockImplementation(async (_account, tradeId) => ({
+    vi.spyOn(tradesApi, 'voidCheck').mockImplementation(async (_account, tradeId) => ({
       tradeId,
       dependent: null,
     }));
@@ -1364,7 +1363,7 @@ describe('TransactionsPage manual operations (M9)', () => {
 
   it('transactions-23 OPS-DELETE-GUARD refuses at once, before asking, when the check names a later sale', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
-    const check = vi.spyOn(tradeVoidCheck, 'get').mockResolvedValue({
+    const check = vi.spyOn(tradesApi, 'voidCheck').mockResolvedValue({
       tradeId: id(30),
       dependent: {
         operationId: later.id,
@@ -1390,7 +1389,7 @@ describe('TransactionsPage manual operations (M9)', () => {
 
   it('transactions-23 asks as before when the check cannot be made', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
-    vi.spyOn(tradeVoidCheck, 'get').mockRejectedValue(new AxiosError('offline'));
+    vi.spyOn(tradesApi, 'voidCheck').mockRejectedValue(new AxiosError('offline'));
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     expect(
@@ -3428,7 +3427,7 @@ describe('transactions-page-polish', () => {
     } as JournalState);
     vi.spyOn(tradesApi, 'void').mockResolvedValue({} as TradeReceipt);
     // The check before the deletion finds nothing that depends on the purchase.
-    vi.spyOn(tradeVoidCheck, 'get').mockResolvedValue({ tradeId: id(30), dependent: null });
+    vi.spyOn(tradesApi, 'voidCheck').mockResolvedValue({ tradeId: id(30), dependent: null });
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
     await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Buy' }));
