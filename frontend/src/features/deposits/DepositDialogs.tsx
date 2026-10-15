@@ -24,10 +24,12 @@ import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
+import { useFocusFirstProblem } from '../portfolio/focus-problem';
 import CloseButton from '../shell/CloseButton';
 import { dateText, earlyCloseText, money, movementText, today } from './deposit-format';
 import '@/ui/filters.css';
 import '../transactions/transactions.css';
+import './deposits.css';
 
 const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/;
 /** The longest term the server accepts, in years. */
@@ -94,10 +96,13 @@ function FormDialog({
   onSubmit,
   children,
   wide,
+  danger = false,
 }: {
   title: string;
   note?: string;
   submit: string;
+  /** A destructive confirmation: the submit button is the danger one. */
+  danger?: boolean;
   /** Every field's problem; each is shown under its field once the owner tried to save. */
   problems: () => Problems;
   onClose: () => void;
@@ -110,18 +115,14 @@ function FormDialog({
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   // Each refused save puts the keyboard on the first field that needs a fix.
-  const [refused, setRefused] = useState(0);
-  const form = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (refused > 0) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [refused]);
+  const { form, refused } = useFocusFirstProblem();
 
   const shown = tried ? problems() : {};
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
     if (hasProblems(problems())) {
-      setRefused((count) => count + 1);
+      refused();
       return;
     }
     setSaving(true);
@@ -141,7 +142,7 @@ function FormDialog({
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
     >
-      <form ref={form} onSubmit={save} noValidate>
+      <form ref={form} className="deposit-dialog" onSubmit={save} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>{title}</h2>
           <CloseButton onClick={onClose} disabled={saving} />
@@ -164,7 +165,11 @@ function FormDialog({
           >
             Cancel
           </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          <button
+            type="submit"
+            className={`shell-button shell-button--${danger ? 'danger' : 'primary'}`}
+            disabled={saving}
+          >
             {saving ? 'Saving…' : submit}
           </button>
         </div>
@@ -209,7 +214,8 @@ function Field({
       </label>
       {children(id, aria)}
       {problem ? (
-        <span className="ui-field__error" id={`${id}-error`} role="alert">
+        // Not an alert: a refused save moves the focus to the field, which reads it out once.
+        <span className="ui-field__error" id={`${id}-error`}>
           {problem}
         </span>
       ) : (
@@ -371,29 +377,30 @@ function usePreview(terms: DepositTerms | null): DepositPreview | null {
   const [answer, setAnswer] = useState<{ key: string; figures: DepositPreview } | null>(null);
   useEffect(() => {
     if (key === null) return;
-    let current = true;
+    // A newer entry or a closed dialog stops the request still on its way.
+    const asked = new AbortController();
     const timer = setTimeout(() => {
-      depositsApi.preview(JSON.parse(key) as DepositTerms).then(
+      depositsApi.preview(JSON.parse(key) as DepositTerms, asked.signal).then(
         (figures) => {
-          if (current) setAnswer({ key, figures });
+          if (!asked.signal.aborted) setAnswer({ key, figures });
         },
         () => undefined,
       );
     }, PREVIEW_DELAY_MS);
     return () => {
-      current = false;
+      asked.abort();
       clearTimeout(timer);
     };
   }, [key]);
   return answer !== null && answer.key === key ? answer.figures : null;
 }
 
-/** "At the end of the term, on Dec 1, 2026: ₽105,030.14, of which ₽5,030.14 interest. …" */
+/** "At this rate, at the end of the term, on Dec 1, 2026: ₽105,030.14, of which … interest. …" */
 function previewText(preview: DepositPreview, currency: DepositCurrency): string | null {
   const { atMaturity: end, firstPayout: first } = preview;
   const parts = [
     end &&
-      `At the end of the term, on ${dateText(end.date)}: ${money(end.balance, currency)}, of which ${money(end.interest, currency)} interest.`,
+      `At this rate, at the end of the term, on ${dateText(end.date)}: ${money(end.balance, currency)}, of which ${money(end.interest, currency)} interest.`,
     first &&
       `The first interest, ${money(first.interest, currency)}, ${
         first.treatment === 'capitalized' ? 'is added on' : 'comes on'
@@ -754,9 +761,10 @@ export function DeleteDepositDialog({
 }) {
   return (
     <FormDialog
-      title="Delete deposit"
-      note={`${name} and the movements, rates and checks entered for it will be removed. This cannot be undone.`}
-      submit="Delete"
+      title="Delete this deposit?"
+      note={`${name} and the movements, rates and checks entered for it are removed; this cannot be undone.`}
+      submit="Delete deposit"
+      danger
       problems={() => ({})}
       onClose={onClose}
       onSubmit={async () => {

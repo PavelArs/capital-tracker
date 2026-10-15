@@ -299,12 +299,14 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(rate).toHaveAttribute('aria-invalid', 'true');
     expect(rate).toHaveAccessibleDescription('Percent a year, up to four decimals');
     expect(within(dialog).getByLabelText('Bank')).not.toHaveAttribute('aria-invalid');
-    expect(within(dialog).getAllByRole('alert')).toHaveLength(2);
+    // Said once: the focus takes each problem with its field, so the messages are no alerts.
+    expect(within(dialog).queryAllByRole('alert')).toHaveLength(0);
+    expect(within(dialog).getByText('Enter the amount put in')).toBeVisible();
     await waitFor(() => expect(amount).toHaveFocus());
     // Fixing a field clears its message at once.
     await user.type(amount, '1000');
     expect(amount).not.toHaveAttribute('aria-invalid');
-    expect(within(dialog).getAllByRole('alert')).toHaveLength(1);
+    expect(within(dialog).queryByText('Enter the amount put in')).toBeNull();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -347,7 +349,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       expect(
         await within(dialog).findByText('The first interest, ₽1,019.18, comes on Aug 1, 2026.'),
       ).toBeInTheDocument();
-      expect(preview).toHaveBeenLastCalledWith(terms);
+      expect(preview).toHaveBeenLastCalledWith(terms, expect.any(AbortSignal));
       preview.mockReturnValue(new Promise(() => undefined));
       await user.type(within(dialog).getByLabelText('Amount put in'), '0');
       expect(within(dialog).queryByText(/The first interest/)).toBeNull();
@@ -362,8 +364,25 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       const dialog = await enter(user, '2026-12-01');
       const note = await within(dialog).findByRole('note');
       expect(note).toHaveTextContent(
-        'At the end of the term, on Dec 1, 2026: ₽105,030.14, of which ₽5,030.14 interest. The first interest, ₽1,019.18, comes on Aug 1, 2026.',
+        'At this rate, at the end of the term, on Dec 1, 2026: ₽105,030.14, of which ₽5,030.14 interest. The first interest, ₽1,019.18, comes on Aug 1, 2026.',
       );
+    });
+
+    it('deposits-preview stops the earlier preview when the terms change and when the dialog closes', async () => {
+      const user = userEvent.setup();
+      const preview = vi
+        .spyOn(depositsApi, 'preview')
+        .mockReturnValue(new Promise(() => undefined));
+      const dialog = await enter(user);
+      await waitFor(() => expect(preview).toHaveBeenCalledTimes(1));
+      const signal = (call: number) => preview.mock.calls[call][1] as AbortSignal;
+      expect(signal(0).aborted).toBe(false);
+      await user.type(within(dialog).getByLabelText('Amount put in'), '0');
+      expect(signal(0).aborted).toBe(true);
+      await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
+      expect(signal(1).aborted).toBe(false);
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(signal(1).aborted).toBe(true);
     });
 
     it('classes-05 shows no figure, and no zero, when the preview cannot be computed', async () => {
@@ -405,7 +424,10 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
     await user.type(within(dialog).getByLabelText('Ends on (optional)'), '2999-01-01');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('at most 30 years');
+    await waitFor(() => expect(within(dialog).getByLabelText('Ends on (optional)')).toHaveFocus());
+    expect(within(dialog).getByLabelText('Ends on (optional)')).toHaveAccessibleDescription(
+      /at most 30 years/,
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -420,7 +442,10 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000000000000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('up to 12 digits');
+    await waitFor(() => expect(within(dialog).getByLabelText('Amount put in')).toHaveFocus());
+    expect(within(dialog).getByLabelText('Amount put in')).toHaveAccessibleDescription(
+      /up to 12 digits/,
+    );
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -685,9 +710,13 @@ describe('DEP-DETAIL: one deposit', () => {
     const remove = vi.spyOn(depositsApi, 'remove').mockResolvedValue();
     open(`/deposits/${savings.id}`);
     await user.click(await screen.findByRole('button', { name: 'Delete deposit' }));
-    const dialog = screen.getByRole('dialog', { name: 'Delete deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Delete this deposit?' });
+    expect(dialog).toHaveTextContent('this cannot be undone');
+    const confirm = within(dialog).getByRole('button', { name: 'Delete deposit' });
+    // deposits-delete: the destructive confirmation is the danger button, as for goals.
+    expect(confirm).toHaveClass('shell-button--danger');
     expect(remove).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await user.click(confirm);
     await waitFor(() => expect(remove).toHaveBeenCalledWith(savings.id));
     expect(await screen.findByRole('heading', { name: 'No deposits yet' })).toBeInTheDocument();
   });
