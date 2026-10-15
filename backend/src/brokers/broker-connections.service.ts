@@ -5,6 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { rewardHeadJoin } from '../accounting/asset-reward.store';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
   type TBankAccount,
@@ -14,6 +15,7 @@ import {
   type TBankPosition,
   type TBankResult,
 } from './tbank-client';
+import { planImport, timeKey } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
 import { TBankTokenBox } from './tbank-token-box';
 
@@ -38,15 +40,6 @@ function savedTokenFailure(reason: TBankFailure) {
     'T-Bank could not be reached. Try again in a few minutes.',
   );
 }
-
-/**
- * A T-Bank time (UTC, 0 to 9 fraction digits) as text that sorts in time order to the
- * nanosecond: `10:00:00Z` would sort after `10:00:00.5Z` as given, and a Date drops nanoseconds.
- */
-const timeKey = (time: string) => {
-  const [seconds, fraction = ''] = time.replace('Z', '').split('.');
-  return `${seconds}.${fraction.padEnd(9, '0')}`;
-};
 
 const iso = (column: string) =>
   `to_char("${column}" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "${column}"`;
@@ -162,6 +155,27 @@ export class BrokerConnectionsService {
       ),
       notExecuted: result.value.length - executed.length,
     };
+  }
+
+  /**
+   * BROKER-SYNC: the journal entries the account's T-Bank history would become, and whether the
+   * app account already holds entries the import would add to. Nothing is recorded.
+   */
+  async importPreview(ownerId: string, accountId: string) {
+    const { token, target } = await this.savedConnection(ownerId, accountId);
+    const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
+    if (!result.ok) throw savedTokenFailure(result.reason);
+    // A voided entry no longer counts; the trades and rewards still standing do.
+    const [held]: { entries: number }[] = await this.source.query(
+      `SELECT ((SELECT count(*) FROM account_trade_versions v JOIN account_trades t
+            ON t."ownerId" = v."ownerId" AND t."accountId" = v."accountId" AND t.id = v."tradeId"
+            AND t."currentVersion" = v.version
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        + (SELECT count(*) FROM account_reward_versions v ${rewardHeadJoin}
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void'))::int AS entries`,
+      [parseUuid(ownerId), parseUuid(accountId)],
+    );
+    return { ...planImport(result.value), accountHasEntries: held.entries > 0 };
   }
 
   async disconnect(ownerId: string, accountId: string) {

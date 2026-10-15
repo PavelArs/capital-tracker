@@ -28,10 +28,12 @@ function build(
   stored = false,
   positions: TBankResult<unknown[]> = { ok: true, value: [] },
   operations: TBankResult<TBankOperation[]> = { ok: true, value: [] },
+  held = 0,
 ) {
   const writes: unknown[][] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
+    if (sql.includes('account_reward_versions')) return [{ entries: held }];
     if (sql.includes('SELECT credentials'))
       return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
     if (sql.includes('INSERT INTO broker_connections')) writes.push(parameters);
@@ -332,5 +334,50 @@ describe('BROKER-SYNC: previewing the operations of a connected account', () => 
       UnprocessableEntityException,
     );
     await expect(failing('unavailable')).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});
+
+describe('BROKER-SYNC: previewing the import of a connected account', () => {
+  const history = [
+    operation({ id: '900000001' }),
+    operation({
+      id: '900000002',
+      parentId: '900000001',
+      type: 'OPERATION_TYPE_BROKER_FEE',
+      payment: '-0.3',
+    }),
+    operation({ id: '900000003', type: 'OPERATION_TYPE_SOMETHING_NEW' }),
+  ];
+
+  it('shows what the history would become and that the account is empty, recording nothing', async () => {
+    const { service, histories, writes } = build(ok(mine), true, true, undefined, {
+      ok: true,
+      value: history,
+    });
+    const preview = await service.importPreview(owner, account);
+    expect(histories).toEqual([mine.id]);
+    expect(writes).toEqual([]);
+    expect(preview.entries.map((entry) => [entry.action, entry.fee, entry.operationIds])).toEqual([
+      ['buy', '0.3', ['900000001', '900000002']],
+    ]);
+    expect(preview.skipped.map((item) => item.operationId)).toEqual(['900000003']);
+    expect(preview.accountHasEntries).toBe(false);
+  });
+
+  it('says when the account already holds entries the import would add to', async () => {
+    const { service } = build(ok(mine), true, true, undefined, { ok: true, value: [] }, 3);
+    expect((await service.importPreview(owner, account)).accountHasEntries).toBe(true);
+  });
+
+  it('refuses an unconnected account and names a failed read', async () => {
+    await expect(build(ok(mine)).service.importPreview(owner, account)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      build(ok(mine), true, true, undefined, {
+        ok: false,
+        reason: 'unavailable',
+      }).service.importPreview(owner, account),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
