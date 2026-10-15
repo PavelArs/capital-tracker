@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseGoal, parseGoalUpdate } from './goal-input';
+import { parseGoal, parseGoalPreview, parseGoalUpdate } from './goal-input';
 
 const goal = {
   requestId: '5b1d9a6e-6d0b-4b6e-9b66-0f1d3c7a1a01',
@@ -68,5 +68,50 @@ describe('goal input', () => {
     expect(parseGoalUpdate(fields).name).toBe('Reserve');
     expect(() => parseGoalUpdate(goal)).toThrow(BadRequestException);
     expect(() => parseGoalUpdate({ ...fields, name: undefined })).toThrow(BadRequestException);
+  });
+});
+
+describe('GOAL-PREVIEW input', () => {
+  const query = {
+    currency: 'RUB',
+    targetAmount: '2500000',
+    deadline: '2030-06-01',
+    expectedReturnPercent: '12.50',
+    monthlyContribution: '40000',
+  };
+
+  it('reads the terms of a goal from a query string, without a name', () => {
+    expect(parseGoalPreview(query)).toEqual({
+      currency: 'RUB',
+      targetAmount: '2500000.00',
+      deadline: '2030-06-01',
+      expectedReturnPercent: '12.5',
+      monthlyContribution: '40000.00',
+    });
+  });
+
+  it('takes an empty or missing date and contribution as none', () => {
+    const { deadline, monthlyContribution, ...required } = query;
+    expect([deadline, monthlyContribution]).toHaveLength(2);
+    expect(parseGoalPreview({ ...required, deadline: '', monthlyContribution: '' })).toMatchObject({
+      deadline: null,
+      monthlyContribution: null,
+    });
+    expect(parseGoalPreview(required)).toMatchObject({ deadline: null, monthlyContribution: null });
+    expect(
+      parseGoalPreview({ ...required, deadline: null, monthlyContribution: null }),
+    ).toMatchObject({ deadline: null, monthlyContribution: null });
+  });
+
+  it.each([
+    ['a name', { ...query, name: 'Reserve' }],
+    ['no sum', { ...query, targetAmount: undefined }],
+    ['a zero sum', { ...query, targetAmount: '0' }],
+    ['no return', { ...query, expectedReturnPercent: undefined }],
+    ['an unknown currency', { ...query, currency: 'KZT' }],
+    ['a repeated field', { ...query, targetAmount: ['1', '2'] }],
+    ['an impossible date', { ...query, deadline: '2030-02-30' }],
+  ])('refuses %s', (_, input) => {
+    expect(() => parseGoalPreview(input)).toThrow(BadRequestException);
   });
 });

@@ -1,11 +1,19 @@
-import { type Goal, type GoalCurrency, type GoalTerms, goalsApi } from '@api/goals.api';
-import { type FormEvent, type ReactNode, useId, useRef, useState } from 'react';
+import {
+  type Goal,
+  type GoalCurrency,
+  type GoalPreview,
+  type GoalTerms,
+  goalsApi,
+} from '@api/goals.api';
+import { isAxiosError, isCancel } from 'axios';
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
-import { rateText, today } from './goal-format';
+import { Icon } from '../shell/icons';
+import { addMonths, bannerTone, flooredText, rateText, today, verdict } from './goal-format';
 import '../transactions/transactions.css';
 import './goals.css';
 
@@ -15,6 +23,8 @@ const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/;
 const RATE = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NAME_LENGTH = 120;
+/** The furthest date the server's forecast reaches: 100 years of monthly payments. */
+const MAX_MONTHS = 1200;
 const PRESETS: readonly (readonly [string, string])[] = [
   ['4', 'Careful'],
   ['8', 'Base'],
@@ -148,6 +158,13 @@ function Field({
   );
 }
 
+/** A real day as the server reads one: "2030-02-30" is not one. */
+function isCalendarDate(text: string): boolean {
+  if (!DATE.test(text)) return false;
+  const time = Date.parse(`${text}T00:00:00Z`);
+  return !Number.isNaN(time) && new Date(time).toISOString().slice(0, 10) === text;
+}
+
 const problemOf = (terms: {
   name: string;
   target: string;
@@ -163,12 +180,12 @@ const problemOf = (terms: {
   (!MONEY.test(terms.target.trim()) || Number(terms.target) === 0
     ? 'Sum to reach: a number with up to two decimals, above 0'
     : null) ??
-  (terms.deadline &&
-  (!DATE.test(terms.deadline) || Number.isNaN(Date.parse(`${terms.deadline}T00:00:00Z`)))
-    ? 'By: pick a date'
-    : null) ??
+  (terms.deadline && !isCalendarDate(terms.deadline) ? 'By: pick a date' : null) ??
   (terms.deadline && terms.deadline <= today()
     ? 'By: pick a date after today, or clear it'
+    : null) ??
+  (terms.deadline && terms.deadline > addMonths(today(), MAX_MONTHS)
+    ? 'By: pick a date within 100 years, or clear it'
     : null) ??
   (RATE.test(terms.rate.trim())
     ? null
@@ -176,6 +193,106 @@ const problemOf = (terms: {
   (terms.monthly.trim() && !MONEY.test(terms.monthly.trim())
     ? 'Monthly contribution: a number with up to two decimals, or leave it empty'
     : null);
+
+/** How long the dialog waits after the last keystroke before it asks for the plan. */
+const PREVIEW_DELAY_MS = 350;
+
+type PreviewTerms = Omit<GoalTerms, 'name'>;
+
+/**
+ * GOAL-PREVIEW: the plan the goal would have, asked for a moment after the owner stops typing.
+ * Only the newest answer counts; terms that cannot be sent yet show none.
+ */
+function usePreview(terms: PreviewTerms | null) {
+  const key = terms === null ? null : JSON.stringify(terms);
+  const [state, setState] = useState<{
+    key: string;
+    preview: GoalPreview | null;
+    failed: unknown;
+  } | null>(null);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the terms.
+  useEffect(() => {
+    if (terms === null || key === null) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      goalsApi.preview(terms, controller.signal).then(
+        (preview) => setState({ key, preview, failed: null }),
+        (error) => {
+          if (!isCancel(error)) setState({ key, preview: null, failed: error ?? 'failed' });
+        },
+      );
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [key]);
+
+  if (key === null) return { preview: null, failed: null, pending: false };
+  // Until the answer for these terms arrives, the last one stays in view, marked as busy.
+  return state === null
+    ? { preview: null, failed: null, pending: true }
+    : { preview: state.preview, failed: state.failed, pending: state.key !== key };
+}
+
+/** The verdict the goal page would show for these terms, under the fields. */
+function PlanPreview({
+  ready,
+  preview,
+  failed,
+  pending,
+}: {
+  ready: boolean;
+  preview: GoalPreview | null;
+  /** Why the newest plan could not be worked out; null when it was. */
+  failed: unknown;
+  pending: boolean;
+}) {
+  // The server refused these terms: saving them would be refused the same way.
+  const refusal =
+    isAxiosError<{ message?: unknown }>(failed) &&
+    (failed.response?.status === 400 || failed.response?.status === 422)
+      ? typeof failed.response.data?.message === 'string' && failed.response.status === 422
+        ? `These terms cannot be saved: ${failed.response.data.message}.`
+        : 'These terms cannot be saved. Check the fields.'
+      : null;
+  if (refusal !== null)
+    return (
+      <p className="ui-banner ui-banner--warn goal-preview" aria-busy={pending}>
+        <Icon name="alert" className="shell-icon shell-icon--sm" />
+        <span>{refusal}</span>
+      </p>
+    );
+  if (!ready || failed !== null || preview === null)
+    return (
+      <p className="ui-banner ui-banner--info goal-preview" aria-busy={ready && pending}>
+        <Icon name="info" className="shell-icon shell-icon--sm" />
+        <span>
+          {!ready
+            ? 'Enter the sum and the return to see a plan.'
+            : failed !== null
+              ? 'Could not work out the plan right now. The goal can still be saved.'
+              : 'Working out the plan…'}
+        </span>
+      </p>
+    );
+  const tone = bannerTone[preview.status];
+  return (
+    <p
+      className={`ui-banner ui-banner--${tone} goal-preview`}
+      role="status"
+      aria-label="Plan"
+      aria-busy={pending}
+    >
+      <Icon
+        name={tone === 'warn' || tone === 'neg' ? 'alert' : 'info'}
+        className="shell-icon shell-icon--sm"
+      />
+      <span>{verdict(preview)} A projection, not a promise.</span>
+    </p>
+  );
+}
 
 /** GOAL-TERMS: a goal is a sum in one currency with an optional date, for the whole portfolio. */
 export function GoalDialog({
@@ -197,6 +314,20 @@ export function GoalDialog({
   const [rate, setRate] = useState(goal ? rateText(goal.expectedReturnPercent) : '8');
   const [monthly, setMonthly] = useState(goal?.monthlyContribution ?? '');
   const attempt = useAttempt();
+  // The plan is asked for as soon as the terms could be saved, whatever the name says.
+  const ready = problemOf({ name: 'x', target, deadline, rate, monthly }) === null;
+  const plan = usePreview(
+    ready
+      ? {
+          currency,
+          targetAmount: target.trim(),
+          deadline: deadline || null,
+          expectedReturnPercent: rate.trim(),
+          monthlyContribution: monthly.trim() || null,
+        }
+      : null,
+  );
+  const now = plan.preview?.progress.current ?? null;
   const nameId = useId();
   const targetId = useId();
   const rateId = useId();
@@ -267,6 +398,9 @@ export function GoalDialog({
             />
             <span className="ui-affix__suffix">{currency}</span>
           </div>
+          {now !== null && plan.preview?.currency === currency && (
+            <span className="ui-field__hint">Your portfolio now: {flooredText(now, currency)}</span>
+          )}
         </div>
         <Field label="By" optional hint="Without a date the app shows when you get there.">
           {(id) => (
@@ -331,6 +465,7 @@ export function GoalDialog({
           </div>
         )}
       </Field>
+      <PlanPreview ready={ready} {...plan} />
     </FormDialog>
   );
 }

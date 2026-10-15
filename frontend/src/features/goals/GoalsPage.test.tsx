@@ -2,6 +2,7 @@ import { type Goal, type GoalList, goalsApi } from '@api/goals.api';
 import { forgetReads } from '@api/read-cache';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { AxiosError } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GoalsPage from './GoalsPage';
@@ -51,9 +52,13 @@ const reserve: Goal = {
 };
 const list = (items: Goal[]): GoalList => ({ asOf: '2026-10-13', items });
 
+// What the server would show for the dialog's terms (GOAL-PREVIEW): the first goal, unsaved.
+const { id: _id, name: _name, createdAt: _createdAt, ...planned } = flat;
+
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  vi.spyOn(goalsApi, 'preview').mockResolvedValue(planned);
 });
 afterEach(cleanup);
 
@@ -131,7 +136,7 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     await user.type(within(dialog).getByLabelText('Name'), '  Down payment A ');
     await user.click(within(dialog).getByLabelText('RUB'));
     await user.type(within(dialog).getByLabelText('Sum to reach'), '22000000');
-    await user.type(within(dialog).getByLabelText(/^By/), '2999-12-01');
+    await user.type(within(dialog).getByLabelText(/^By/), '2099-12-01');
     await user.click(within(dialog).getByRole('button', { name: /^12%/ }));
     await user.type(within(dialog).getByLabelText(/^You put in a month/), '150000.50');
     listed.mockResolvedValue(list([flat]));
@@ -142,7 +147,7 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
       name: 'Down payment A',
       currency: 'RUB',
       targetAmount: '22000000',
-      deadline: '2999-12-01',
+      deadline: '2099-12-01',
       expectedReturnPercent: '12',
       monthlyContribution: '150000.50',
     });
@@ -281,5 +286,103 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     expect(remove).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(flat.id));
+  });
+});
+
+describe('GOAL-PREVIEW: the plan in the dialog before the goal is saved', () => {
+  async function adding() {
+    const user = userEvent.setup();
+    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([]));
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Add goal' }));
+    return { user, dialog: await screen.findByRole('dialog') };
+  }
+
+  it('shows what the goal page would say once the sum and the return can be sent', async () => {
+    const preview = vi.mocked(goalsApi.preview);
+    const { user, dialog } = await adding();
+    expect(within(dialog).getByText('Enter the sum and the return to see a plan.')).toBeVisible();
+    await user.click(within(dialog).getByLabelText('RUB'));
+    await user.type(within(dialog).getByLabelText('Sum to reach'), '22000000');
+    await user.type(within(dialog).getByLabelText(/^By/), '2099-12-01');
+    await user.type(within(dialog).getByLabelText(/^You put in a month/), '150000');
+    const plan = await within(dialog).findByRole('status', { name: 'Plan' });
+    expect(plan).toHaveTextContent(
+      'Behind by ₽270,000 a month. Reaching it by Dec 2028 needs ₽420,000 a month; at ₽150,000 it takes until Aug 2032. A projection, not a promise.',
+    );
+    expect(plan).toHaveClass('ui-banner--warn');
+    expect(within(dialog).getByText('Your portfolio now: ₽5,500,000')).toBeVisible();
+    // Asked once the typing stopped, for the last terms, and never with the name.
+    await waitFor(() =>
+      expect(preview).toHaveBeenLastCalledWith(
+        {
+          currency: 'RUB',
+          targetAmount: '22000000',
+          deadline: '2099-12-01',
+          expectedReturnPercent: '8',
+          monthlyContribution: '150000',
+        },
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(preview.mock.calls.length).toBeLessThan(4);
+  });
+
+  it('goes back to the prompt when the sum is cleared', async () => {
+    const { user, dialog } = await adding();
+    await user.type(within(dialog).getByLabelText('Sum to reach'), '1000');
+    await within(dialog).findByRole('status', { name: 'Plan' });
+    await user.clear(within(dialog).getByLabelText('Sum to reach'));
+    expect(within(dialog).getByText('Enter the sum and the return to see a plan.')).toBeVisible();
+    expect(within(dialog).queryByRole('status', { name: 'Plan' })).toBeNull();
+    expect(within(dialog).queryByText(/Your portfolio now/)).toBeNull();
+  });
+
+  it('passes on why the server would refuse the terms instead of offering to save them', async () => {
+    vi.mocked(goalsApi.preview).mockRejectedValue(
+      new AxiosError('Unprocessable', undefined, undefined, undefined, {
+        status: 422,
+        data: { message: 'The deadline must be after today' },
+        statusText: 'Unprocessable Entity',
+        headers: {},
+        config: {} as never,
+      }),
+    );
+    const { user, dialog } = await adding();
+    await user.type(within(dialog).getByLabelText('Sum to reach'), '1000');
+    expect(
+      await within(dialog).findByText(
+        'These terms cannot be saved: The deadline must be after today.',
+      ),
+    ).toBeVisible();
+    expect(within(dialog).queryByText(/can still be saved/)).toBeNull();
+  });
+
+  it('asks for a date within the forecast before asking for a plan', async () => {
+    const preview = vi.mocked(goalsApi.preview);
+    const { user, dialog } = await adding();
+    await user.type(within(dialog).getByLabelText('Name'), 'Far');
+    await user.type(within(dialog).getByLabelText('Sum to reach'), '1000');
+    await within(dialog).findByRole('status', { name: 'Plan' });
+    preview.mockClear();
+    await user.type(within(dialog).getByLabelText(/^By/), '2999-06-01');
+    expect(within(dialog).getByText('Enter the sum and the return to see a plan.')).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Add goal' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'By: pick a date within 100 years, or clear it',
+    );
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it('says the plan is not available when the server cannot work it out', async () => {
+    vi.mocked(goalsApi.preview).mockRejectedValue(new Error('down'));
+    const { user, dialog } = await adding();
+    await user.type(within(dialog).getByLabelText('Sum to reach'), '1000');
+    expect(
+      await within(dialog).findByText(
+        'Could not work out the plan right now. The goal can still be saved.',
+      ),
+    ).toBeVisible();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
   });
 });

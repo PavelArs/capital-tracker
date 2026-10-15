@@ -62,6 +62,9 @@ export interface GoalTerms {
   monthlyContribution: string | null;
 }
 
+/** What a goal with these terms would show now (GOAL-PREVIEW); nothing is saved. */
+export type GoalPreview = Omit<Goal, 'id' | 'name' | 'createdAt'>;
+
 export interface NewGoal extends GoalTerms {
   /** One per attempt; a retry of the same attempt returns the goal it made. */
   requestId: string;
@@ -74,6 +77,11 @@ export const goalsApi = {
   list: async (): Promise<GoalList> => (await apiClient.get<GoalList>(path)).data,
 
   get: async (id: string): Promise<Goal> => (await apiClient.get<Goal>(one(id))).data,
+
+  /** A read sent as a POST so the sums stay out of the address; it saves nothing. */
+  preview: async (terms: Omit<GoalTerms, 'name'>, signal?: AbortSignal): Promise<GoalPreview> =>
+    (await apiClient.post<GoalPreview>(`${path}/preview`, terms, { signal, changesNothing: true }))
+      .data,
 
   create: async (goal: NewGoal): Promise<Goal> => (await apiClient.post<Goal>(path, goal)).data,
 
