@@ -65,7 +65,7 @@ const priced = (value: string, observedAt: string) => ({
   source: 'manual',
   status: 'manual' as const,
 });
-const valuation = (assets: AssetValuation[], totalValue = '40000') =>
+const valuation = (assets: AssetValuation[], totalValue: string | null = '40000') =>
   ({
     at: '2026-10-13T12:00:00.000Z',
     currency: 'USD',
@@ -217,5 +217,35 @@ describe('BROKERS the Brokers page', () => {
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('region', { name: 'Sample Broker' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('classes-22 says why the share of net worth is unknown, with no number made up', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...valuation(held, null),
+      completeness: 'incomplete',
+      missingPriceCount: 2,
+      unratedDepositCount: 1,
+      unavailableAccountCount: 0,
+    });
+    renderPage();
+    const summary = await screen.findByRole('region', { name: 'Total at brokers' });
+    expect(summary).toHaveTextContent(
+      'Share of net worth—Net worth unknown: 2 assets without a price or exchange rate, 1 deposit without an exchange rate.',
+    );
+    expect(summary).not.toHaveTextContent('%');
+  });
+
+  it('classes-22 notes under an account total the positions it leaves out', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    renderPage();
+    const sample = await screen.findByRole('region', { name: 'Sample Broker' });
+    expect(within(sample).getByText('$4,513.00').parentElement).toHaveTextContent(
+      '$4,513.001 position without a price left out.',
+    );
+    const other = screen.getByRole('region', { name: 'Sample Broker · IIS' });
+    // The account's total comes before its one position, worth the same.
+    expect(within(other).getAllByText('$1,421.00')[0].parentElement).toHaveTextContent(
+      '$1,421.001 position without an exchange rate left out.',
+    );
   });
 });

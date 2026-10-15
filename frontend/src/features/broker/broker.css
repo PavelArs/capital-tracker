@@ -69,7 +69,8 @@
 
 .broker-summary__label,
 .broker-account__head small,
-.broker-summary__note {
+.broker-summary__note,
+.broker-summary__reason {
   color: var(--ink-3);
   font-size: var(--fs-sm);
 }
@@ -83,6 +84,11 @@
 
 .broker-summary__note {
   flex-basis: 100%;
+  font-size: var(--fs-xs);
+}
+
+.broker-summary__reason {
+  max-width: 32ch;
   font-size: var(--fs-xs);
 }
 

@@ -15,11 +15,17 @@ import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import AddBrokerDialog from './AddBrokerDialog';
-import { type BrokerAccount, type BrokerPosition, brokerAccountsOf, brokerShare } from './brokers';
+import {
+  type BrokerAccount,
+  type BrokerPosition,
+  brokerAccountsOf,
+  brokerShare,
+  leftOut,
+  netWorthUnknown,
+  plural,
+} from './brokers';
 import '../shell/shell-page.css';
 import './broker.css';
-
-const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;
 
 function Position({
   position,
@@ -66,6 +72,7 @@ function Account({
   portfolio: PortfolioValuation;
 }) {
   const securities = account.positions.filter(({ asset }) => asset.assetType !== 'fiat').length;
+  const missing = leftOut(account.unpriced, account.unrated);
   return (
     <li className="shell-card broker-account">
       <section aria-label={account.name}>
@@ -79,6 +86,7 @@ function Account({
           </div>
           <div className="broker-account__total">
             <b>{money(account.value, portfolio.currency)}</b>
+            {missing && <small>{missing}</small>}
           </div>
         </div>
         {account.positions.length ? (
@@ -141,6 +149,8 @@ export default function BrokersPage() {
   const unpriced = brokers?.reduce((sum, account) => sum + account.unpriced, 0) ?? 0;
   const unrated = brokers?.reduce((sum, account) => sum + account.unrated, 0) ?? 0;
   const share = portfolio && brokerShare(total, portfolio);
+  const unknown = portfolio && netWorthUnknown(portfolio);
+  const missing = leftOut(unpriced, unrated);
   const addButton = (primary: boolean) => (
     <button
       type="button"
@@ -200,18 +210,11 @@ export default function BrokersPage() {
                   ? '—'
                   : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`}
               </strong>
+              {share === null && unknown && (
+                <span className="broker-summary__reason">{unknown}</span>
+              )}
             </div>
-            {unpriced + unrated > 0 && (
-              <span className="broker-summary__note">
-                {[
-                  unpriced > 0 && `${plural(unpriced, 'position')} without a price left out.`,
-                  unrated > 0 &&
-                    `${plural(unrated, 'position')} without an exchange rate left out.`,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              </span>
-            )}
+            {missing && <span className="broker-summary__note">{missing}</span>}
           </section>
           <ul className="broker-accounts">
             {brokers.map((account) => (
