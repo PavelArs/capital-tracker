@@ -15,7 +15,15 @@ import {
 import { type OwnerSettings, ownerSettingsApi } from './owner-settings.api';
 import { type PortfolioHistory, portfolioHistoryApi } from './portfolio-history.api';
 import { portfolioValuationApi } from './portfolio-valuation.api';
-import { forgetReads, generationNow, recall, recallRestored, remember } from './read-cache';
+import {
+  forgetReads,
+  generationNow,
+  recall,
+  recallRestored,
+  refreshFailed,
+  remember,
+  rememberFailure,
+} from './read-cache';
 import { SYNC_CHANGED, type SyncSource, syncStatusApi } from './sync-status.api';
 import { type WalletAddress, walletAddressesApi } from './wallet-addresses.api';
 
@@ -73,9 +81,14 @@ function cachedRead<A extends unknown[], T>(
     // An answer to a question asked before a change is not shared with one asked after it.
     if (shared && shared.generation === startedIn) return shared.promise as Promise<T>;
     const promise = (async () => {
-      const value = await read(...args);
-      remember(id, value, startedIn);
-      return value;
+      try {
+        const value = await read(...args);
+        remember(id, value, startedIn);
+        return value;
+      } catch (failure) {
+        rememberFailure(id, startedIn);
+        throw failure;
+      }
     })();
     const entry = { generation: startedIn, promise };
     inFlight.set(id, entry);
@@ -87,6 +100,8 @@ function cachedRead<A extends unknown[], T>(
   };
   return {
     last: (...args: A): T | undefined => recall<T>(key(args)),
+    /** The last answer is still shown because asking again failed (also before a reload). */
+    failed: (...args: A): boolean => refreshFailed(key(args)),
     load: (...args: A): Promise<T> => ask(args, true),
     /**
      * `load` for a page that may open next: if it does within a few seconds it takes this

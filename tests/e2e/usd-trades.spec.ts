@@ -337,6 +337,10 @@ test('TRADE-006-B: anonymous, pending, Origin/CSRF and foreign trade boundaries 
     expect(fingerprint([])).toBe(before);
   }
   const { csrfToken } = await completeFactor(page);
+  // The signed-in app polls the server every minute, and each read moves the session's
+  // lastSeenAt, so a tick between two fingerprints would change auth_sessions. Only API calls
+  // follow, so the page leaves the app before the whole database is compared.
+  await page.goto('about:blank');
   const api = new TradeApi(page.context().request, csrfToken);
   const account = await api.account();
   const instrument = await api.instrument();

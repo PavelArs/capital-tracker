@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { GoalsService } from './goals.service';
 
@@ -9,6 +9,14 @@ export class GoalsController {
   @Get()
   list(@CurrentUser() owner: OwnerIdentity) {
     return this.goals.list(owner.userId);
+  }
+
+  // The terms travel in the body, not the address: sums and dates stay out of URLs and proxy
+  // logs. It stores nothing, so it answers 200, not 201.
+  @Post('preview')
+  @HttpCode(200)
+  preview(@CurrentUser() owner: OwnerIdentity, @Body() body: unknown) {
+    return this.goals.preview(owner.userId, body);
   }
 
   @Post()

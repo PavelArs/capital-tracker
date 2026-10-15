@@ -12,10 +12,10 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
-import { forgetReads } from '@api/read-cache';
+import { forgetReads, hydrateReads, releaseReads, setReadStore } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -1529,6 +1529,41 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     const again = await card();
     expect(bodyRows(again)).toHaveLength(1);
     expect(within(again).getByRole('alert')).toHaveTextContent('Could not refresh the purchases');
+  });
+
+  it('LOTS-STALE-RELOAD keeps the stale warning after a reload until the purchases are asked again', async () => {
+    const kept = {
+      key: `asset-lots:${JSON.stringify([bitcoin.instrumentId])}`,
+      owner: 'owner-1',
+      at: Date.now() - 60_000,
+      value: answer([lot()]),
+      failed: true,
+    };
+    setReadStore({
+      load: async () => [kept],
+      save: async () => undefined,
+      clear: async () => undefined,
+    });
+    try {
+      await hydrateReads('owner-1');
+      let respond: (lots: AssetLots) => void = () => undefined;
+      vi.spyOn(portfolioValuationApi, 'lots').mockReturnValueOnce(
+        new Promise((resolve) => {
+          respond = resolve;
+        }),
+      );
+      render(<AssetLotsCard instrumentId={bitcoin.instrumentId} asked={undefined} values="a" />);
+      const region = await card();
+      expect(bodyRows(region)).toHaveLength(1);
+      expect(within(region).getByRole('alert')).toHaveTextContent(
+        'Could not refresh the purchases',
+      );
+      await act(async () => respond(answer([lot()])));
+      expect(within(region).queryByRole('alert')).toBeNull();
+    } finally {
+      setReadStore(null);
+      releaseReads();
+    }
   });
 
   it('LOTS-EMPTY-INCOMPLETE lists the purchases of an asset with none held while an account history starts later', async () => {

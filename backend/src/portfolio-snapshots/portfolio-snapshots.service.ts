@@ -471,6 +471,23 @@ export class PortfolioSnapshotsService {
     });
   }
 
+  /**
+   * The portfolio's value now in one currency, read the way `history` closes its period but
+   * without refreshing the stored snapshots, so a frequent read stays cheap.
+   */
+  async current(ownerId: string, currency: AccountingCurrency, now = new Date()) {
+    const owner = parseUuid(ownerId);
+    if (!isAccountingCurrency(currency)) throw invalid();
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const valuation = await readValuationInputs(manager, owner);
+      const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
+      const fx = new FxConverter(await readFxRates(manager), currency);
+      const [value] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      return { value: value.value, complete: value.complete };
+    });
+  }
+
   /** INFL-REAL: profit to date after official inflation and after the owner's own rate. */
   private async realProfits(
     manager: EntityManager,

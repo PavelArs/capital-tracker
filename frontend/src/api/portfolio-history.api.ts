@@ -7,7 +7,7 @@ export const historyPeriods: readonly HistoryPeriod[] = ['24H', '7D', '1M', '3M'
 // Exact decimal strings from GET /accounting/portfolio/history (record-portfolio-snapshots):
 // stored snapshots of the period, then the current value. A null value had no rate.
 // `invested` is net invested up to the point: deposits minus withdrawals at each one's
-// date's rate (split-market-and-flows); null when a flow had no rate.
+// date's rate (split-market-and-flows), leaving out a flow without a rate (INVESTED-RATED).
 export interface HistoryPoint {
   at: string;
   value: string | null;
@@ -17,9 +17,9 @@ export interface HistoryPoint {
 
 // Profit to date after inflation (INFL-REAL): every deposit and withdrawal is carried to today
 // by the inflation since its day, in the currency of the history. `invested` is that money in
-// today's currency, `profit` the value less it. Null when a deposit lies before the inflation
-// history, a deposit had no rate, or a price or rate is missing. With no own rate set, the
-// own-rate reading is the official one.
+// today's currency, `profit` the value less it; a deposit without a rate is left out, as in
+// the nominal figure. Null when a deposit lies before the inflation history or a price or rate
+// of the value is missing. With no own rate set, the own-rate reading is the official one.
 export interface RealProfit {
   invested: string;
   profit: string | null;
