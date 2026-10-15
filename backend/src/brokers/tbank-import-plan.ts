@@ -85,11 +85,12 @@ const expectedSign: Partial<Record<ReturnType<typeof operationKind>, 'in' | 'out
 };
 const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
 /**
- * Why a trade's security cannot be recorded: T-Bank names no instrument, or it is a currency
- * bought or sold on the exchange, which is cash rather than a security the app can hold yet.
+ * Why a trade's security cannot be recorded: T-Bank names no instrument or does not say what
+ * kind it is, or it is a currency bought or sold on the exchange, which is cash rather than a
+ * security the app can hold yet.
  */
 const securityProblem = (item: TBankOperation): PlanSkip['reason'] | null =>
-  item.instrumentUid === ''
+  item.instrumentUid === '' || item.instrumentType === ''
     ? 'no-instrument'
     : item.instrumentType === 'currency'
       ? 'currency-exchange'
@@ -399,12 +400,43 @@ function checkHeld(
 const byNumber = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
 
 const ordered = (list: PlanEntry[]) =>
-  [...list].sort(
-    (a, b) =>
-      timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) ||
-      actionOrder.indexOf(a.action) - actionOrder.indexOf(b.action) ||
-      byNumber(a.operationIds[0], b.operationIds[0]),
+  buysFirst(
+    [...list].sort(
+      (a, b) =>
+        timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) ||
+        actionOrder.indexOf(a.action) - actionOrder.indexOf(b.action) ||
+        byNumber(a.operationIds[0], b.operationIds[0]),
+    ),
   );
+
+const isTrade = (entry: PlanEntry, action: PlanAction, uid: string) =>
+  entry.record === 'trade' && entry.action === action && entry.instrumentUid === uid;
+
+/**
+ * Within one instant, money arrives before it is spent, except that a buy of a security goes
+ * before a sale of the same security at that instant: the order of the two is unknown, and the
+ * sale may sell what the buy brought.
+ */
+function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
+  const result: PlanEntry[] = [];
+  const placed = new Set<PlanEntry>();
+  sorted.forEach((entry, index) => {
+    if (placed.has(entry)) return;
+    if (entry.record === 'trade' && entry.action === 'sell' && entry.instrumentUid !== '') {
+      const time = timeKey(entry.occurredAt);
+      for (const later of sorted.slice(index + 1)) {
+        if (timeKey(later.occurredAt) !== time) break;
+        if (isTrade(later, 'buy', entry.instrumentUid) && !placed.has(later)) {
+          result.push(later);
+          placed.add(later);
+        }
+      }
+    }
+    result.push(entry);
+    placed.add(entry);
+  });
+  return result;
+}
 
 /**
  * The entries one account's operations would become. Each operation stays its own entry while

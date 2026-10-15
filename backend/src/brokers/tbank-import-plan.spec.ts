@@ -222,6 +222,28 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('sells units bought at the very same instant, and lists a trade T-Bank does not classify', () => {
+    const at = '2024-03-05T10:00:00.123456789Z';
+    const plan = planImport([
+      op({
+        id: '500000011',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '1',
+        payment: '101',
+        occurredAt: at,
+      }),
+      op({ id: '500000010', quantity: '1', payment: '-100', occurredAt: at }),
+      op({ id: '500000012', instrumentType: '', occurredAt: '2024-03-06T10:00:00Z' }),
+    ]);
+    expect(plan.entries.map((entry) => [entry.action, entry.operationIds[0]])).toEqual([
+      ['buy', '500000010'],
+      ['sell', '500000011'],
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['500000012', 'no-instrument'],
+    ]);
+  });
+
   it('keeps the fee of a sale it lists as not held as money spent', () => {
     const sale = op({
       id: '400000011',
