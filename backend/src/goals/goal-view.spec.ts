@@ -267,6 +267,24 @@ describe('goal view', () => {
     }
   });
 
+  it('writes a projection past 1e21 as a plain decimal, not in exponent form', () => {
+    const view = goalView(
+      {
+        ...row,
+        targetAmount: '999999999999.00',
+        deadline: '2056-10-13',
+        expectedReturnPercent: '999.9',
+        monthlyContribution: '0.00',
+      },
+      now('10000.00'),
+      today,
+    );
+    for (const scenario of view.scenarios) {
+      expect(scenario.projectedAtDeadline).toMatch(/^\d{22,}\.\d{2}$/);
+      expect(scenario.gap).toMatch(/^-\d{22,}\.\d{2}$/);
+    }
+  });
+
   it('does not count a contribution that cannot be paid before the deadline', () => {
     const view = goalView(
       {

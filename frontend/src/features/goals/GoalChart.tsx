@@ -14,6 +14,7 @@ import { dateText, enteredText, flooredText, monthYear, rateText } from './goal-
 
 const HEIGHT = 290;
 const PAD = { left: 4, right: 64, top: 24, bottom: 28 };
+const CASES: readonly ScenarioKey[] = ['pessimistic', 'base', 'optimistic'];
 const dayTime = (date: string) => Date.parse(`${date}T00:00:00Z`);
 
 interface Past {
@@ -55,12 +56,26 @@ function line(points: readonly ([number, number] | null)[]): string {
  * asset has no price, as on the rest of the page.
  */
 export default function GoalChart({ goal }: { goal: Goal }) {
-  const { data: history, error: historyError } = useCachedRead(
-    cachedReads.history,
-    'ALL',
+  const {
+    data: history,
+    error: historyError,
+    stale: historyStale,
+    reload: reloadHistory,
+  } = useCachedRead(cachedReads.history, 'ALL', goal.currency);
+  const terms = JSON.stringify([
     goal.currency,
-  );
-  const { data: forecast } = useCachedRead(cachedReads.goalForecast, goal.id);
+    goal.targetAmount,
+    goal.deadline,
+    goal.expectedReturnPercent,
+    goal.monthlyContribution,
+    goal.asOf,
+  ]);
+  const {
+    data: forecast,
+    error: forecastError,
+    stale: forecastStale,
+    reload: reloadForecast,
+  } = useCachedRead(cachedReads.goalForecast, goal.id, terms);
   // The chart box appears once there are figures, so it is watched from the render that adds it.
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(800);
@@ -143,7 +158,10 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     target,
     ...past.map((entry) => entry.value),
     ...past.map((entry) => Number(entry.invested ?? 0)),
-    ...band.map((entry) => entry.value),
+    // Every case, so the optimistic one is not cut off above the box.
+    ...band.flatMap((entry) =>
+      CASES.flatMap((key) => (entry.figures[key] === null ? [] : [Number(entry.figures[key])])),
+    ),
   ];
   let top = Math.max(...topOf.filter(Number.isFinite)) * 1.1 || 1;
   let bottom = Math.min(0, ...past.map((entry) => entry.value));
@@ -457,6 +475,29 @@ export default function GoalChart({ goal }: { goal: Goal }) {
           </div>
         )}
       </div>
+      {(historyStale || forecastStale) && (
+        <div className="ui-banner ui-banner--warn goal-chart__note" role="alert">
+          <p>Could not refresh the chart. The figures below may be out of date.</p>
+          <button
+            type="button"
+            className="shell-button"
+            onClick={() => {
+              reloadHistory(true);
+              reloadForecast(true);
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {known && forecastError !== null && forecast === null && (
+        <div className="ui-banner ui-banner--warn goal-chart__note" role="alert">
+          <p>Could not load the forecast, so only the portfolio so far is drawn.</p>
+          <button type="button" className="shell-button" onClick={() => reloadForecast()}>
+            Try again
+          </button>
+        </div>
+      )}
       {!known && (
         <p className="shell-note" role="note">
           The forecast needs every asset priced, so only the portfolio so far is drawn.

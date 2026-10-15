@@ -1,7 +1,7 @@
 import { type Goal, type GoalForecast, goalsApi } from '@api/goals.api';
 import { type PortfolioHistory, portfolioHistoryApi } from '@api/portfolio-history.api';
 import { forgetReads } from '@api/read-cache';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GoalChart from './GoalChart';
@@ -138,6 +138,85 @@ describe('GOAL-CHART goal chart', () => {
 
     await user.keyboard('{Escape}');
     expect(within(chart).queryByRole('status')).toBeNull();
+  });
+
+  it('reads the forecast again when the goal terms change, and draws the new one', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    const later: GoalForecast = {
+      ...forecast,
+      points: [
+        ...forecast.points.slice(0, 4),
+        {
+          on: '2027-02-13',
+          pessimistic: '6300000.10',
+          base: '6350000.20',
+          optimistic: '6400000.30',
+        },
+      ],
+    };
+    const ask = vi
+      .spyOn(goalsApi, 'forecast')
+      .mockResolvedValueOnce(forecast)
+      .mockResolvedValueOnce(later);
+    const user = userEvent.setup();
+    const { rerender } = render(<GoalChart goal={goal} />);
+    await screen.findByText('Forecast at 14%');
+    rerender(<GoalChart goal={{ ...goal, deadline: '2027-02-13' }} />);
+    const chart = screen.getByRole('group', { name: /Use the arrow keys/ });
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+    chart.focus();
+    await user.keyboard('{End}');
+    expect(await within(chart).findByRole('status')).toHaveTextContent('₽6,350,000');
+  });
+
+  it('keeps the whole fan inside the chart when the optimistic case runs far above the sum', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({
+      ...forecast,
+      points: [
+        ...forecast.points.slice(0, 4),
+        {
+          on: '2027-01-28',
+          pessimistic: '6100000.40',
+          base: '6150000.60',
+          optimistic: '90000000.00',
+        },
+      ],
+    });
+    const chart = await show();
+    await within(chart).findByText('Today');
+    const optimistic = chart.querySelectorAll('.goal-chart__case')[1].getAttribute('d') ?? '';
+    const ys = [...optimistic.matchAll(/[ML][\d.]+ ([\d.-]+)/g)].map((match) => Number(match[1]));
+    expect(ys.length).toBeGreaterThan(1);
+    // The plot box starts 24 px from the top; nothing of the case is clipped above it.
+    for (const y of ys) expect(y).toBeGreaterThanOrEqual(24);
+  });
+
+  it('warns that the chart may be out of date when a refresh of the history fails', async () => {
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    const read = vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    const { unmount } = render(<GoalChart goal={goal} />);
+    await screen.findByText('Forecast at 14%');
+    unmount();
+    read.mockRejectedValue(new Error('offline'));
+    render(<GoalChart goal={goal} />);
+    expect(
+      await screen.findByText('Could not refresh the chart. The figures below may be out of date.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Use the arrow keys/ })).toBeInTheDocument();
+  });
+
+  it('says so when the forecast cannot be loaded, and still draws the portfolio', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockRejectedValue(new Error('offline'));
+    const chart = await show();
+    expect(
+      await screen.findByText(
+        'Could not load the forecast, so only the portfolio so far is drawn.',
+      ),
+    ).toBeInTheDocument();
+    expect(chart.querySelector('.goal-chart__line')).not.toBeNull();
+    expect(chart.querySelector('.goal-chart__forecast')).toBeNull();
   });
 
   it('leaves the forecast out while an asset has no price, and says why', async () => {

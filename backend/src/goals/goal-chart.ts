@@ -8,7 +8,7 @@ import {
   type ScenarioKey,
   scenarioReturns,
 } from './goal-forecast';
-import type { GoalRow, PortfolioNow } from './goal-view';
+import { centsText, type GoalRow, type PortfolioNow } from './goal-view';
 
 /** Without a deadline the chart runs a year past the month the base case gets there. */
 const AFTER_REACHED = 12;
@@ -20,9 +20,6 @@ const NEVER_HORIZON = 600;
 const MAX_POINTS = 240;
 
 export type GoalForecastPoint = { on: string } & Record<ScenarioKey, string | null>;
-
-const cents = (value: number) =>
-  Number.isFinite(value) ? (Math.round(value * 100) / 100).toFixed(2) : null;
 
 /**
  * GOAL-CHART: the three return cases month by month from today, with the same formulas, rates
@@ -66,7 +63,7 @@ export function goalForecast(row: GoalRow, now: PortfolioNow, today: string) {
       ['on', on],
       ...rates.map(([key, rate]) => [
         key,
-        cents(futureValue(current, plan, rate, elapsed, payments)),
+        centsText(Math.round(futureValue(current, plan, rate, elapsed, payments) * 100)),
       ]),
     ]) as GoalForecastPoint;
   const points = months.map((month) => point(addMonths(today, month), month, month));

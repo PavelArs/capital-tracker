@@ -427,6 +427,10 @@
   text-align: center;
 }
 
+.goal-chart__note {
+  margin-top: 12px;
+}
+
 .goal-tip {
   position: absolute;
   z-index: 5;
