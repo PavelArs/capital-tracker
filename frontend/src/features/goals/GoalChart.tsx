@@ -133,7 +133,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
         )
       : [];
   const plotted: (Past | Ahead)[] = [...past, ...ahead];
-  const today = dayTime(goal.asOf);
+  // The drawn forecast is dated by its own day, which is later if it was read after midnight.
+  const today = dayTime(ahead.length > 0 && forecast ? forecast.asOf : goal.asOf);
   const now = goal.progress.current === null ? null : Number(goal.progress.current);
 
   if (plotted.length === 0)

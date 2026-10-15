@@ -42,7 +42,8 @@ export class GoalsService {
   async list(ownerId: string) {
     const owner = parseUuid(ownerId);
     const rows = await this.rows(this.source.manager, owner);
-    return { asOf: moscowDate(new Date()), items: await this.views(owner, rows) };
+    const at = new Date();
+    return { asOf: moscowDate(at), items: await this.views(owner, rows, at) };
   }
 
   async get(ownerId: string, id: string) {
@@ -59,8 +60,10 @@ export class GoalsService {
     const goalId = parseUuid(id);
     const [row] = await this.rows(this.source.manager, owner, goalId);
     if (!row) throw new NotFoundException('Goal not found');
-    const now = await this.snapshots.current(owner, row.currency);
-    return goalForecast(row, now, moscowDate(new Date()));
+    // One instant for the value and its day, so a read across Moscow midnight keeps them together.
+    const at = new Date();
+    const now = await this.snapshots.current(owner, row.currency, at);
+    return goalForecast(row, now, moscowDate(at));
   }
 
   /**
@@ -207,13 +210,13 @@ export class GoalsService {
   /**
    * The portfolio's value once per currency the goals use, then each goal against it. Only the
    * value now matters, so the stored history is not refreshed: a preview runs on every pause in
-   * typing.
+   * typing. Every value is read for the same instant as the day the goals are dated by.
    */
-  private async views(owner: string, rows: GoalRow[]) {
-    const today = moscowDate(new Date());
+  private async views(owner: string, rows: GoalRow[], at = new Date()) {
+    const today = moscowDate(at);
     const now = new Map<string, PortfolioNow>();
     for (const currency of new Set(rows.map((row) => row.currency)))
-      now.set(currency, await this.snapshots.current(owner, currency));
+      now.set(currency, await this.snapshots.current(owner, currency, at));
     return rows.map((row) => goalView(row, now.get(row.currency) as PortfolioNow, today));
   }
 }
