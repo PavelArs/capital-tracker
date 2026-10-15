@@ -124,11 +124,10 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   // OPS-DELETE-GUARD: the purchase the sales spend cannot be deleted, and nothing changes.
   await rows.nth(2).getByRole('button', { name: 'Buy' }).click();
   const drawer = page.getByRole('dialog', { name: `Buy · ${symbol}` });
+  // transactions-23: refused at once, before the owner is asked to confirm.
   await drawer.getByRole('button', { name: 'Delete' }).click();
-  const confirm = page.getByRole('dialog', { name: 'Delete this transaction?' });
-  await expect(confirm).toContainText(`Buy of 1 ${symbol} on Mar 1, 2025 in ${accountName}`);
-  await confirm.getByRole('button', { name: 'Delete transaction' }).click();
   const refusal = page.getByRole('alertdialog', { name: "This purchase can't be deleted" });
+  await expect(page.getByRole('dialog', { name: 'Delete this transaction?' })).toHaveCount(0);
   await expect(refusal).toHaveText(
     new RegExp(
       `Sell of 0\\.2 ${symbol} on Apr 1, 2025 in ${accountName} spends these ${symbol}\\. ` +
