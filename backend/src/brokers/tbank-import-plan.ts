@@ -13,15 +13,7 @@ export const ACCOUNT_TRADE_LIMIT = 1000;
 // Room left for the operations still to come before operations are combined.
 const COMBINE_ABOVE = 900;
 
-export type PlanAction =
-  | 'buy'
-  | 'sell'
-  | 'deposit'
-  | 'withdrawal'
-  | 'income'
-  | 'repayment'
-  | 'fee'
-  | 'tax';
+export type PlanAction = 'buy' | 'sell' | 'deposit' | 'withdrawal' | 'income' | 'fee' | 'tax';
 
 /** One journal entry the import would write. */
 export interface PlanEntry {
@@ -58,6 +50,7 @@ export interface PlanSkip {
     | 'no-instrument'
     | 'sign'
     | 'not-held'
+    | 'partial-repayment'
     | 'no-quantity'
     | 'no-amount';
 }
@@ -264,9 +257,10 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       }));
     }
     if (kind === 'repayment') {
-      // A bond paid back in full leaves the account; one paid back in part keeps its units, and
-      // the app has no way to lower its cost, so the money is shown as income.
-      // T-Bank gives no quantity for it; checkHeld takes the units held then.
+      // A bond paid back in full leaves the account; T-Bank gives no quantity for it, so
+      // checkHeld takes the units held then. One paid back in part returns principal and keeps
+      // its units; the app cannot lower a lot's cost, and the money is not income, so it is
+      // listed rather than shown as a gain.
       if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
         if (security) return skip(item, security);
         return [
@@ -279,7 +273,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
           },
         ];
       }
-      return [reward(item, 'repayment')];
+      return skip(item, 'partial-repayment');
     }
     // A tax or fee given back is money received, like income.
     if (kind === 'income' || ((kind === 'tax' || kind === 'fee') && incoming))
@@ -291,16 +285,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
 }
 
 // Within one instant, money arrives before it is spent.
-const actionOrder: PlanAction[] = [
-  'deposit',
-  'income',
-  'repayment',
-  'sell',
-  'buy',
-  'fee',
-  'tax',
-  'withdrawal',
-];
+const actionOrder: PlanAction[] = ['deposit', 'income', 'sell', 'buy', 'fee', 'tax', 'withdrawal'];
 
 /**
  * Trades of one action, instrument and currency in one period, as one entry. Rewards do not

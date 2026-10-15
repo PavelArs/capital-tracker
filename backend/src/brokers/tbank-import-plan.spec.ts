@@ -103,31 +103,31 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
-  it('sells a bond paid back in full and shows a part paid back as money received', () => {
-    const [, full, part] = planImport([
-      op({ quantity: '1', payment: '-990', occurredAt: '2024-02-01T10:00:00Z' }),
-      op({ type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL', payment: '1000', quantity: '1' }),
-      op({
-        type: 'OPERATION_TYPE_BOND_REPAYMENT',
-        payment: '250',
-        quantity: '0',
-        occurredAt: '2024-03-02T10:00:00Z',
-      }),
-    ]).entries;
+  it('sells a bond paid back in full and lists a part paid back as not recordable yet', () => {
+    // A part paid back is principal, not income, and T-Bank gives no quantity to lower the
+    // bond's cost by, so it is listed rather than shown as a gain.
+    const part = op({
+      type: 'OPERATION_TYPE_BOND_REPAYMENT',
+      payment: '250',
+      quantity: '0',
+      occurredAt: '2024-01-15T10:00:00Z',
+    });
+    const plan = planImport([
+      op({ quantity: '1', payment: '-990', occurredAt: '2024-01-01T10:00:00Z' }),
+      part,
+      op({ type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL', payment: '750', quantity: '1' }),
+    ]);
+    const full = plan.entries[1];
     expect([full.record, full.action, full.instrumentUid, full.quantity, full.amount]).toEqual([
       'trade',
       'sell',
       share,
       '1',
-      '1000',
+      '750',
     ]);
-    // The money received is cash; the bond only names who paid it.
-    expect([part.record, part.action, part.instrumentUid, part.quantity, part.paidBy]).toEqual([
-      'reward',
-      'repayment',
-      '',
-      '250',
-      { instrumentUid: share, ticker: 'SYNTH', instrumentType: 'share' },
+    expect(plan.entries).toHaveLength(2);
+    expect(plan.skipped).toEqual([
+      { operationId: part.id, type: 'OPERATION_TYPE_BOND_REPAYMENT', reason: 'partial-repayment' },
     ]);
   });
 
