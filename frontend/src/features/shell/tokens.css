@@ -43,6 +43,8 @@
   --c-usdc: #2f74d6;
   --c-cash: #9085e9;
   --c-deposit: #d09a5b;
+  --c-broker: #8fbf4a;
+  --c-prop: #d6a03a;
   --c-other: #4a5161;
   /* Tokens the app has no colour for take one of these, by ticker, so they tell apart. */
   --c-p1: #b36bd9;
@@ -110,6 +112,8 @@
   --c-usdc: #1f5fb8;
   --c-cash: #4a3aa7;
   --c-deposit: #a8691f;
+  --c-broker: #5a8a1c;
+  --c-prop: #a8740f;
   --c-other: #c4c8d2;
   --c-p1: #8f3fb8;
   --c-p2: #14899a;
