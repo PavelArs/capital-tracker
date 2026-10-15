@@ -16,6 +16,11 @@ export class BrokerConnectionsController {
     return this.connections.positions(owner.userId, accountId);
   }
 
+  @Get('operations')
+  operations(@CurrentUser() owner: OwnerIdentity, @Param('accountId') accountId: string) {
+    return this.connections.operations(owner.userId, accountId);
+  }
+
   @Post('check')
   @HttpCode(200)
   check(
