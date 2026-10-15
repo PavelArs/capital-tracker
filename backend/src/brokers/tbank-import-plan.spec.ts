@@ -135,6 +135,12 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       op({ id: '200000003', quantity: '0' }),
       op({ id: '200000004', payment: '0' }),
       op({ id: '200000005', state: 'canceled' }),
+      op({ id: '200000006', paymentCurrency: 'cny' }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-1', {
+        id: '200000007',
+        parentId: '200000006',
+        paymentCurrency: 'cny',
+      }),
     ]);
     expect(plan.entries).toEqual([]);
     expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
@@ -142,6 +148,8 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       ['200000002', 'transfer'],
       ['200000003', 'no-quantity'],
       ['200000004', 'no-amount'],
+      ['200000006', 'currency'],
+      ['200000007', 'currency'],
     ]);
   });
 

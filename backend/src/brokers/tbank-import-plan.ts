@@ -48,7 +48,7 @@ export interface PlanEntry {
 export interface PlanSkip {
   operationId: string;
   type: string;
-  reason: 'unsupported' | 'transfer' | 'no-quantity' | 'no-amount';
+  reason: 'unsupported' | 'transfer' | 'currency' | 'no-quantity' | 'no-amount';
 }
 
 export interface ImportPlan {
@@ -68,6 +68,8 @@ const absolute = (value: string) => (value.startsWith('-') ? value.slice(1) : va
 const sum = (values: string[]) =>
   formatAtoms(values.reduce((total, value) => total + atoms(value), 0n));
 const isZero = (value: string) => value === '' || atoms(value) === 0n;
+/** The currencies the app keeps money in (USD, EUR and RUB), as T-Bank names them. */
+const recordable = (currency: string) => ['rub', 'usd', 'eur'].includes(currency);
 
 /** When a trade happened: its last fill, else the operation's own (order) time. */
 function tradeTime(operation: TBankOperation): string {
@@ -94,6 +96,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       .filter(
         (item) =>
           ['buy', 'sell'].includes(operationKind(item.type)) &&
+          recordable(item.paymentCurrency) &&
           !isZero(item.payment) &&
           !isZero(item.quantity),
       )
@@ -129,6 +132,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     if (kind === 'transfer') return skip(item, 'transfer');
     if (joins(item)) return [];
     if (isZero(item.payment)) return skip(item, 'no-amount');
+    if (!recordable(item.paymentCurrency)) return skip(item, 'currency');
     const incoming = atoms(item.payment) > 0n;
     if (kind === 'buy' || kind === 'sell') {
       if (isZero(item.quantity)) return skip(item, 'no-quantity');
