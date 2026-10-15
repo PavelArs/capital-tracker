@@ -1,3 +1,4 @@
+import { REWARD_LIMITS } from '../accounting/asset-reward.store';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import type { TBankOperation } from './tbank-client';
@@ -66,6 +67,8 @@ export interface ImportPlan {
   rewards: number;
   /** False when the account's trades exceed the limit even combined by month. */
   fitsTradeLimit: boolean;
+  /** False when the account's rewards exceed what the reward journal keeps; never combined. */
+  fitsRewardLimit: boolean;
 }
 
 const atoms = (value: string) =>
@@ -121,8 +124,8 @@ interface TradePart {
  * fills moves across them. Each part takes its share of the amount by its fills' own prices.
  * Without fills the order is one part at its own time. Null when the fills do not account for
  * the order: a fill moves no units or fewer, they miss part of its quantity, fills at two or
- * more times lack a price or differ in price currency, so their dates or shares would be
- * guessed, or a part's share of the amount is less than its smallest unit.
+ * more times lack a price above zero or differ in price currency, so their dates or shares
+ * would be guessed, or a part's share of the amount is less than its smallest unit.
  */
 function tradeParts(operation: TBankOperation): TradePart[] | null {
   const whole = atoms(operation.quantity);
@@ -130,7 +133,7 @@ function tradeParts(operation: TBankOperation): TradePart[] | null {
     return [{ occurredAt: operation.occurredAt, quantity: whole, weight: whole }];
   const times = new Map<string, TradePart>();
   const priced = operation.fills.every(
-    (fill) => !isZero(fill.price) && fill.priceCurrency === operation.fills[0].priceCurrency,
+    (fill) => !notPositive(fill.price) && fill.priceCurrency === operation.fills[0].priceCurrency,
   );
   let filled = 0n;
   for (const fill of operation.fills) {
@@ -497,5 +500,6 @@ export function planImport(operations: readonly TBankOperation[]): ImportPlan {
     trades,
     rewards: list.length - trades,
     fitsTradeLimit: trades <= ACCOUNT_TRADE_LIMIT,
+    fitsRewardLimit: list.length - trades <= REWARD_LIMITS.activeRewards,
   };
 }

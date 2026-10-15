@@ -276,6 +276,22 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('lists an order whose fills at several times carry a price below zero', () => {
+    const plan = planImport([
+      op({
+        id: '490000001',
+        fills: [
+          { filledAt: '2024-03-01T10:00:00Z', quantity: '1', price: '100', priceCurrency: 'rub' },
+          { filledAt: '2024-03-01T12:00:00Z', quantity: '1', price: '-100', priceCurrency: 'rub' },
+        ],
+      }),
+    ]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['490000001', 'fills'],
+    ]);
+  });
+
   it('lists a trade, fill or repayment with a negative quantity instead of recording it', () => {
     const at = '2024-03-01T10:00:00Z';
     const plan = planImport([
@@ -603,5 +619,20 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     );
     const plan = planImport(many);
     expect([plan.grouping, plan.trades, plan.fitsTradeLimit]).toEqual(['month', 1001, false]);
+  });
+
+  it('says when an account has more rewards than the reward journal keeps', () => {
+    const paid = (count: number) =>
+      Array.from({ length: count }, () =>
+        cash('OPERATION_TYPE_DIVIDEND', '1', { instrumentUid: share }),
+      );
+    expect([planImport(paid(1000)).rewards, planImport(paid(1000)).fitsRewardLimit]).toEqual([
+      1000,
+      true,
+    ]);
+    expect([planImport(paid(1001)).rewards, planImport(paid(1001)).fitsRewardLimit]).toEqual([
+      1001,
+      false,
+    ]);
   });
 });
