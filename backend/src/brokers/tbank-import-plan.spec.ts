@@ -856,9 +856,77 @@ describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
     expect(
       plan.entries.slice(1).map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
     ).toEqual([
-      ['sell', '', '820000002'],
       ['buy', 'usd', '820000003'],
       ['buy', '', '820000001'],
+      ['sell', '', '820000002'],
+    ]);
+  });
+
+  it('hoists a same-instant security buy over its sale even when unrelated exchange cash is bought', () => {
+    const at = '2024-03-06T10:00:00Z';
+    const plan = planImport([
+      op({ id: '830000001', occurredAt: at, quantity: '1', payment: '-100', price: '100' }),
+      op({
+        id: '830000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        quantity: '1',
+        payment: '100',
+        price: '100',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '830000003',
+        quantity: '100',
+        payment: '-9000',
+        occurredAt: at,
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', '', '830000001'],
+      ['sell', '', '830000002'],
+      ['buy', 'usd', '830000003'],
+    ]);
+  });
+
+  it('buys dollars, then the security bought with them and sold at the same instant, with no holding before', () => {
+    const at = '2024-03-07T10:00:00Z';
+    const plan = planImport([
+      op({
+        id: '840000001',
+        occurredAt: at,
+        paymentCurrency: 'usd',
+        payment: '-150',
+        quantity: '1',
+        price: '150',
+        priceCurrency: 'usd',
+      }),
+      op({
+        id: '840000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        paymentCurrency: 'usd',
+        payment: '150',
+        quantity: '1',
+        price: '150',
+        priceCurrency: 'usd',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '840000003',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: at,
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', 'usd', '840000003'],
+      ['buy', '', '840000001'],
+      ['sell', '', '840000002'],
     ]);
   });
 

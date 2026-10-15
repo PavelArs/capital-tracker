@@ -495,28 +495,42 @@ const ordered = (list: PlanEntry[]) =>
 function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
   const result: PlanEntry[] = [];
   const isSecurity = (entry: PlanEntry, action: PlanAction) =>
-    entry.record === 'trade' && entry.action === action && entry.instrumentUid !== '';
+    entry.record === 'trade' &&
+    entry.action === action &&
+    entry.instrumentUid !== '' &&
+    !entry.cash;
   for (let start = 0; start < sorted.length; ) {
     const time = timeKey(sorted[start].occurredAt);
     let end = start;
     while (end < sorted.length && timeKey(sorted[end].occurredAt) === time) end += 1;
     const instant = sorted.slice(start, end);
-    // Each security's buys at this instant, placed together before its first sale. Not when the
-    // instant holds exchange cash: a buy may be paid with cash bought after the sale, and the
-    // order the ranks give is the one that keeps every cash balance as it really was.
-    const hoisting = !instant.some((entry) => entry.cash);
+    // Each security's buys at this instant, placed together before its first sale.
     const buys = new Map<string, PlanEntry[]>();
     for (const entry of instant) {
-      if (!hoisting || !isSecurity(entry, 'buy')) continue;
+      if (!isSecurity(entry, 'buy')) continue;
       const list = buys.get(entry.instrumentUid);
       if (list) list.push(entry);
       else buys.set(entry.instrumentUid, [entry]);
     }
     const placed = new Set<PlanEntry>();
+    // Dollars or euros bought, or dollars or euros sold for rubles, that pay for a buy at this
+    // instant come before it, so the buy never spends cash not yet there.
+    const producers = (buy: PlanEntry) =>
+      instant.filter(
+        (entry) =>
+          entry.cash !== undefined &&
+          !placed.has(entry) &&
+          ((entry.action === 'buy' && entry.cash === buy.currency) ||
+            (entry.action === 'sell' && entry.currency === buy.currency)),
+      );
     for (const entry of instant) {
       if (placed.has(entry)) continue;
       if (isSecurity(entry, 'sell')) {
         for (const buy of buys.get(entry.instrumentUid) ?? []) {
+          for (const cash of producers(buy)) {
+            result.push(cash);
+            placed.add(cash);
+          }
           result.push(buy);
           placed.add(buy);
         }
