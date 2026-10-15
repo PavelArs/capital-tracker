@@ -1,4 +1,5 @@
 import { type Goal, goalsApi } from '@api/goals.api';
+import { portfolioHistoryApi } from '@api/portfolio-history.api';
 import { forgetReads } from '@api/read-cache';
 import { ToastProvider } from '@contexts/ToastContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
@@ -92,6 +93,13 @@ beforeEach(() => {
   forgetReads();
   // The edit dialog asks for its plan; the page tests do not look at it.
   vi.spyOn(goalsApi, 'preview').mockResolvedValue(dated);
+  // The chart has its own tests; here it only has to be on the page.
+  vi.spyOn(goalsApi, 'forecast').mockResolvedValue({
+    currency: 'RUB',
+    asOf: '2026-10-13',
+    points: [],
+  });
+  vi.spyOn(portfolioHistoryApi, 'get').mockRejectedValue(new Error('not read here'));
 });
 afterEach(cleanup);
 
@@ -143,6 +151,19 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(within(rows[3]).getByText('May 2031')).toBeInTheDocument();
     expect(screen.getByText(/at 4 points less and more a year/i)).toBeInTheDocument();
     expect(screen.getByText(/the first a month from Oct 13, 2026/)).toBeInTheDocument();
+  });
+
+  it('GOAL-CHART puts the progress and forecast chart on the goal page', async () => {
+    answers(dated);
+    show(dated);
+    expect(
+      await screen.findByRole('heading', { name: 'Progress and forecast' }),
+    ).toBeInTheDocument();
+    expect(goalsApi.forecast).toHaveBeenCalledWith(dated.id);
+    expect(portfolioHistoryApi.get).toHaveBeenCalledWith('ALL', 'RUB');
+    expect(
+      await screen.findByText('Could not load the portfolio history. Try again later.'),
+    ).toBeInTheDocument();
   });
 
   it('shows when a goal without a date is reached, in each case', async () => {

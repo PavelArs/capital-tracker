@@ -16,6 +16,7 @@ import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
+import GoalChart from './GoalChart';
 import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
 import { GoalBar, GoalFigures } from './GoalProgress';
 import {
@@ -155,7 +156,8 @@ const verdictIcon = (status: Goal['status']) =>
       ? 'check'
       : 'info';
 
-// GOAL-PAGE: one goal with its figures, the verdict and the three return cases.
+// GOAL-PAGE: one goal with its figures, the verdict, its chart (GOAL-CHART) and the three
+// return cases.
 export default function GoalPage() {
   const { goalId = '' } = useParams();
   const { data: goal, error, replace, reload } = useCachedRead(cachedReads.goal, goalId);
@@ -310,6 +312,7 @@ export default function GoalPage() {
               )}
             </Stats>
           </Card>
+          <GoalChart goal={goal} />
           {goal.scenarios.length > 0 && !known && (
             <Banner tone="info">
               The three cases need every asset priced. Some have no price or rate yet, so no sum or

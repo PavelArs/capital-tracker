@@ -1,5 +1,5 @@
 'use strict';
-// savings-goals (GOAL-TERMS, GOAL-FORECAST, GOAL-PREVIEW) against fresh synthetic PostgreSQL: a goal entered
+// savings-goals (GOAL-TERMS, GOAL-FORECAST, GOAL-PREVIEW, GOAL-CHART) against fresh synthetic PostgreSQL: a goal entered
 // once is kept per owner, a retried request makes it once, and its progress and return cases
 // are computed from the whole portfolio on every read. All data is synthetic.
 const assert = require('node:assert/strict');
@@ -193,6 +193,24 @@ async function forecast(db, service, owner) {
   );
   assert.equal(refreshed, 0, 'Goals read the portfolio now without rebuilding its history');
   console.log('PASS GOAL-PREVIEW');
+
+  stage = 'synthetic goal charted month by month';
+  const chart = await service.forecast(owner, goal.id);
+  assert.equal(chart.currency, 'USD');
+  assert.deepEqual(
+    chart.points[0],
+    { on: chart.asOf, pessimistic: '5000.00', base: '5000.00', optimistic: '5000.00' },
+    'The chart starts at the portfolio now',
+  );
+  assert.deepEqual(
+    goal.scenarios.map((scenario) => chart.points.at(-1)[scenario.key]),
+    goal.scenarios.map((scenario) => scenario.projectedAtDeadline),
+    'The chart ends on the forecast the goal shows for its deadline',
+  );
+  assert.equal(chart.points.at(-1).on, goal.deadline);
+  await rejected(() => service.forecast(owner, randomUUID()), 404);
+  await rejected(() => service.forecast(randomUUID(), goal.id), 404); // another owner
+  console.log('PASS GOAL-CHART');
 
   stage = 'synthetic goal in a currency where the dollar deposit has no rate';
   const euro = await service.create(owner, { ...reserve(), currency: 'EUR' });

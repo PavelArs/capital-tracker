@@ -73,6 +73,18 @@ export interface GoalTerms {
 /** What a goal with these terms would show now (GOAL-PREVIEW); nothing is saved. */
 export type GoalPreview = Omit<Goal, 'id' | 'name' | 'createdAt'>;
 
+/**
+ * GOAL-CHART: the three return cases month by month from today, to the deadline (its own last
+ * point, equal to the goal's projection there) or, without one, a year past the month the base
+ * case gets there. Projections in the goal's currency; empty while the portfolio has no value in
+ * it or once the deadline has passed.
+ */
+export interface GoalForecast {
+  currency: GoalCurrency;
+  asOf: string;
+  points: ({ on: string } & Record<ScenarioKey, string | null>)[];
+}
+
 export interface NewGoal extends GoalTerms {
   /** One per attempt; a retry of the same attempt returns the goal it made. */
   requestId: string;
@@ -85,6 +97,9 @@ export const goalsApi = {
   list: async (): Promise<GoalList> => (await apiClient.get<GoalList>(path)).data,
 
   get: async (id: string): Promise<Goal> => (await apiClient.get<Goal>(one(id))).data,
+
+  forecast: async (id: string): Promise<GoalForecast> =>
+    (await apiClient.get<GoalForecast>(`${one(id)}/forecast`)).data,
 
   /**
    * A read sent as a POST so the sums stay out of the address; it saves nothing. The edit dialog
