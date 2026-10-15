@@ -1107,6 +1107,46 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     );
   });
 
+  // The balances that pick the account a new entry starts from, answered when the test says.
+  const heldLater = () => {
+    let answer: (most: string) => void = () => undefined;
+    const answered = new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: accountId === (await answered) ? '2' : '0.5',
+    }));
+    return answer;
+  };
+  const account = (dialog: HTMLElement) =>
+    within(dialog).getByLabelText('Wallet or account') as HTMLSelectElement;
+
+  it('add-transaction-holder shows the form at once and then starts from the largest holder', async () => {
+    const answer = heldLater();
+    const { dialog } = await open();
+    expect(account(dialog)).toHaveValue(id(11));
+    answer(id(13));
+    await waitFor(() => expect(account(dialog)).toHaveValue(id(13)));
+  });
+
+  it('add-transaction-holder keeps the account the owner chose before the balances arrive', async () => {
+    const user = userEvent.setup();
+    const answer = heldLater();
+    const { dialog } = await open();
+    await user.selectOptions(account(dialog), 'No journal');
+    answer(id(13));
+    // Every balance read has answered; the owner's choice still stands.
+    await waitFor(async () => {
+      await Promise.all(available.mock.results.map((result) => result.value));
+      expect(available.mock.results.length).toBeGreaterThanOrEqual(3);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(account(dialog)).toHaveValue(id(12));
+  });
+
   it('ASSET-ORDER keeps the order given while the valuation cannot be read', async () => {
     vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, tether]);
     vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));

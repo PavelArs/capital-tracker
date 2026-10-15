@@ -51,6 +51,7 @@ import {
   valueOptional,
   withDefaultTime,
 } from './add-transaction';
+import { useFocusFirstProblem } from './focus-problem';
 import { money, price, quantity } from './format';
 
 export interface Account {
@@ -349,11 +350,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [saving, setSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
-  const form = useRef<HTMLFormElement>(null);
-  const [refusals, setRefusals] = useState(0);
-  useEffect(() => {
-    if (refusals > 0) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [refusals]);
+  const { form, refused } = useFocusFirstProblem();
+  // The owner picked an account or an asset; a default that arrives later leaves them as they are.
+  const accountTouched = useRef(false);
+  const assetTouched = useRef(false);
+  const chooseAccount = (set: (value: string) => void) => (value: string) => {
+    accountTouched.current = true;
+    set(value);
+  };
 
   useEffect(() => {
     let live = true;
@@ -397,21 +401,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           ),
           shares,
         );
-        // A new entry starts with the first asset in an account that holds it, so a sale or a
-        // transfer of it does not start from an account that has none.
-        const holder = editing ? null : await holderOf(withJournal, tradable[0]?.id);
-        if (!live) return;
         setMarket(prices);
         setAllocation(shares);
         setAssets(tradable);
         setAllAssets(allAssets);
         setAccounts(withJournal);
-        if (!editing) {
-          const from = holder ?? withJournal[0]?.id ?? '';
+        if (editing) return;
+        const first = tradable[0]?.id ?? '';
+        const startFrom = (from: string) => {
           setAccountId(from);
           setToAccountId(withJournal.find((account) => account.id !== from)?.id ?? '');
-          setEntry((current) => ({ ...current, instrumentId: tradable[0]?.id ?? '' }));
-        }
+        };
+        startFrom(withJournal[0]?.id ?? '');
+        setEntry((current) => ({ ...current, instrumentId: first }));
+        // The form shows at once. The first asset's largest holder then becomes the account it
+        // starts from, so a sale or a transfer of it does not start from an account that has
+        // none; never once the owner chose an account or another asset.
+        const holder = await holderOf(withJournal, first);
+        if (live && holder && !accountTouched.current && !assetTouched.current) startFrom(holder);
       })
       .catch(() => live && setLoadFailed(true));
     return () => {
@@ -515,8 +522,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const spent = typedAmount && typedFee ? addDecimal(typedAmount, typedFee) : typedAmount;
   const overspent = available !== null && spent !== null && compareDecimal(spent, available) > 0;
 
-  const update = (value: Partial<TransactionEntry>) =>
+  const update = (value: Partial<TransactionEntry>) => {
+    if ('instrumentId' in value) assetTouched.current = true;
     setEntry((current) => ({ ...current, ...value }));
+  };
   const asset = other ? undefined : assets?.find((item) => item.id === entry.instrumentId);
   const otherTicker = other?.ticker.trim().toUpperCase() ?? '';
   const otherValid = tickerPattern.test(otherTicker);
@@ -645,7 +654,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       (transfer && (!receiver || sameAccount))
     ) {
       // The keyboard goes to the first field to fix, which reads out its error.
-      setRefusals((count) => count + 1);
+      refused();
       return;
     }
     setSaving(true);
@@ -1152,7 +1161,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         className="ui-input"
                         value={accountId}
                         disabled={Boolean(editing)}
-                        onChange={(event) => setAccountId(event.target.value)}
+                        onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
                       >
                         {accounts.map((account) => (
                           <option key={account.id} value={account.id}>
@@ -1170,7 +1179,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         className="ui-input"
                         value={toAccountId}
                         disabled={Boolean(editing)}
-                        onChange={(event) => setToAccountId(event.target.value)}
+                        onChange={(event) => chooseAccount(setToAccountId)(event.target.value)}
                         {...(tried && sameAccount
                           ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
                           : {})}
@@ -1204,7 +1213,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     className="ui-input"
                     value={accountId}
                     disabled={Boolean(editing)}
-                    onChange={(event) => setAccountId(event.target.value)}
+                    onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
                   >
                     {accounts.map((account) => (
                       <option key={account.id} value={account.id}>
