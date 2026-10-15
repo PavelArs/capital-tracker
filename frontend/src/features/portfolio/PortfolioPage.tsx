@@ -124,6 +124,16 @@ export function realProfit(
 }
 
 /**
+ * The nominal profit beside or instead of a real one, "known" when it covers only the coins with a
+ * purchase price (portfolio-08); null when there is none.
+ */
+function nominalLine(asset: AssetValuation, currency: AccountingCurrency): string | null {
+  const { pnl } = shownProfit(asset);
+  if (pnl === null) return null;
+  return `nominal ${money(pnl, currency, true)}${asset.unrealizedPnl === null ? ' known' : ''}`;
+}
+
+/**
  * Assets in the chosen order. Assets no longer held go last, as the server ranks them, so a
  * holding without a price stays above them; then unknown figures (no price, no purchase price)
  * go last in either direction; ties keep the names A to Z. A name order is only names.
@@ -153,7 +163,8 @@ export function sortAssets(
       case 'pnl':
         return real === null ? shownProfit(asset).pnl : realProfit(asset, real).pnl;
       default:
-        return asset.priceChange24hPercent;
+        // A hand price shows "Manual", not a change, so it ranks with the unknown ones.
+        return asset.priceSource === 'manual' ? null : asset.priceChange24hPercent;
     }
   };
   const held = (asset: AssetValuation) => Number(asset.quantity) !== 0;
@@ -186,6 +197,8 @@ const hasDeposits = (portfolio: PortfolioValuation) =>
   Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0;
 
 const NO_REAL_ACCOUNT = 'an account history starts later';
+// Bank deposits count in the current value only: cost basis and P&L are the assets' (DEP-VALUE).
+const NO_DEPOSITS = 'excluding bank deposits';
 const NO_REAL_COST = 'a purchase price, exchange rate or inflation figure is missing for some lots';
 
 function Summary({
@@ -217,6 +230,7 @@ function Summary({
   const partialRealized =
     portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
   const partial = partialValue || partialCost || partialProfit || partialRealized;
+  const withDeposits = Number(portfolio.depositsValue) > 0;
   const missing = [
     unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
     portfolio.unavailableAccountCount > 0 &&
@@ -244,10 +258,12 @@ function Summary({
           <dd>
             {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
             {partialValue && missing !== '' && <span className="portfolio-sub">{missing}</span>}
-            {Number(portfolio.depositsValue) > 0 && (
+            {withDeposits && (
               <span className="portfolio-sub">
                 {amount(portfolio.depositsValue)} in{' '}
-                <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
+                <Link className="shell-link" to={withCurrency('/deposits', asked)}>
+                  bank deposits
+                </Link>
               </span>
             )}
           </dd>
@@ -303,6 +319,7 @@ function Summary({
                     : NO_REAL_ACCOUNT}
               </span>
             )}
+            {withDeposits && <span className="portfolio-sub">{NO_DEPOSITS}</span>}
           </dd>
         </div>
         <div>
@@ -347,6 +364,7 @@ function Summary({
                 )}
               </>
             )}
+            {withDeposits && <span className="portfolio-sub">{NO_DEPOSITS}</span>}
           </dd>
         </div>
         <div>
@@ -409,7 +427,7 @@ function AssetsTable({
 }) {
   return (
     <div className="ui-table-wrap">
-      <table className="ui-table">
+      <table className="ui-table portfolio-table" aria-labelledby="portfolio-assets">
         <thead>
           <tr>
             {sortColumns(real !== null).map(([key, label]) => {
@@ -498,16 +516,18 @@ function AssetsTable({
                       ratio={realProfit(asset, real).ratio}
                       inline
                     />
-                    {realProfit(asset, real).pnl !== null && shownProfit(asset).pnl !== null && (
-                      <span className="portfolio-sub">
-                        nominal {money(shownProfit(asset).pnl, currency, true)}
-                      </span>
+                    {nominalLine(asset, currency) !== null && (
+                      <span className="portfolio-sub">{nominalLine(asset, currency)}</span>
                     )}
                   </>
                 )}
               </td>
               <td className="ui-num">
-                <Change value={asset.priceChange24hPercent} />
+                {asset.priceSource === 'manual' ? (
+                  <span className="portfolio-muted">Manual</span>
+                ) : (
+                  <Change value={asset.priceChange24hPercent} />
+                )}
               </td>
             </tr>
           ))}
@@ -517,7 +537,10 @@ function AssetsTable({
   );
 }
 
-/** A phone row's unrealized P&L: money and percent, coloured by sign. */
+/**
+ * A phone row's unrealized P&L: money and percent, coloured by sign; under Real it says so, and an
+ * asset without a real reading keeps its nominal profit.
+ */
 function Profit({
   asset,
   currency,
@@ -528,11 +551,22 @@ function Profit({
   real: InflationBasis | null;
 }) {
   const { pnl, ratio } = real === null ? shownProfit(asset) : realProfit(asset, real);
-  if (pnl === null) return DASH;
+  if (pnl === null) {
+    const nominal = real === null ? null : nominalLine(asset, currency);
+    return nominal === null ? (
+      DASH
+    ) : (
+      <>
+        {DASH}
+        <span className="portfolio-sub">{nominal}</span>
+      </>
+    );
+  }
   const sign = tone(pnl);
   return (
     <span className={sign ? `portfolio-${sign}` : undefined}>
       {money(pnl, currency, true)}
+      {real !== null && ' real'}
       {ratio !== null && ` · ${percent(ratio)}`}
     </span>
   );
@@ -630,8 +664,12 @@ export default function PortfolioPage() {
   }, [load]);
 
   const assets = portfolio?.assets ?? [];
+  const count = (value: Filter) =>
+    value === 'all' ? assets.length : assets.filter((asset) => asset.assetType === value).length;
+  // A type with no assets gets no chip; a chosen type that no longer has any shows them all.
+  const active: Filter = filter !== 'all' && count(filter) === 0 ? 'all' : filter;
   const visible = assets.filter(
-    (asset) => (filter === 'all' || asset.assetType === filter) && matchesSearch(asset, search),
+    (asset) => (active === 'all' || asset.assetType === active) && matchesSearch(asset, search),
   );
   // PAGES: twenty assets a page; the list is sorted first, so its pages follow the order.
   // The table and the phone list share one order, Value largest first until another is chosen;
@@ -639,15 +677,11 @@ export default function PortfolioPage() {
   const shown = phone ? phoneSort(sort) : sort;
   const ordered = sortAssets(visible, shown, real);
   const paged = useInfinite(ordered, {
-    resetKey: `${filter}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
+    resetKey: `${active}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
   });
-  const added = (asset: PortfolioAsset) => {
-    // The new row must be visible, so a filter or search that would hide it is cleared.
-    setFilter((current) => (current === 'all' || current === asset.assetType ? current : 'all'));
-    setSearch('');
-    setAdding(null);
-    void load(true);
-  };
+  // A new asset opens on its own page, which says it was added (portfolio-06).
+  const added = (asset: PortfolioAsset) =>
+    navigate(withCurrency(`/portfolio/${asset.id}`, asked), { state: { added: true } });
   const addButton = (primary: boolean) => (
     <button
       type="button"
@@ -696,23 +730,20 @@ export default function PortfolioPage() {
               <div className="ui-toolbar">
                 <h2 id="portfolio-assets">Assets</h2>
                 <div className="ui-chips" role="group" aria-label="Filter assets">
-                  {filters.map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className="ui-chip"
-                      aria-pressed={filter === value}
-                      onClick={() => setFilter(value)}
-                    >
-                      {label}
-                      <span className="ui-chip__count">
-                        {' '}
-                        {value === 'all'
-                          ? assets.length
-                          : assets.filter((asset) => asset.assetType === value).length}
-                      </span>
-                    </button>
-                  ))}
+                  {filters
+                    .filter(([value]) => value === 'all' || count(value) > 0)
+                    .map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className="ui-chip"
+                        aria-pressed={active === value}
+                        onClick={() => setFilter(value)}
+                      >
+                        {label}
+                        <span className="ui-chip__count"> {count(value)}</span>
+                      </button>
+                    ))}
                 </div>
                 <div className="portfolio-tools">
                   <input

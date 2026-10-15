@@ -253,6 +253,47 @@
   font-size: var(--fs-sm);
 }
 
+/* A muted word in place of a figure, such as "Manual" for a hand price's 24h change. */
+.portfolio-muted {
+  color: var(--ink-3);
+}
+
+/* The assets table fits its eight columns in the page without sideways scrolling (portfolio-04):
+   tighter cells and the P&L percentage under the amount; below 1360 px the allocation keeps its
+   percentage without the bar, and the asset column is narrower (its caption is cut, in full on the
+   asset page). Nothing else is dropped. */
+.portfolio-table th,
+.portfolio-table td {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.portfolio-table .portfolio-sub--inline {
+  display: block;
+  margin-left: 0;
+}
+
+@media (max-width: 1359.98px) {
+  .portfolio-table th,
+  .portfolio-table td {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .portfolio-table .portfolio-share__bar {
+    display: none;
+  }
+
+  .portfolio-table .portfolio-asset__text {
+    width: 10rem;
+  }
+
+  /* A long note under a figure ("nominal -$3,916.90 known") wraps instead of widening it. */
+  .portfolio-table .portfolio-sub {
+    white-space: normal;
+  }
+}
+
 .portfolio-pos {
   color: var(--pos);
 }

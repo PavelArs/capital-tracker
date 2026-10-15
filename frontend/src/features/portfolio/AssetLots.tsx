@@ -87,7 +87,7 @@ function LotsTable({
 }) {
   return (
     <div className="ui-table-wrap">
-      <table className="ui-table">
+      <table className="ui-table" aria-labelledby="asset-lots">
         <thead>
           <tr>
             <th scope="col">Date</th>
