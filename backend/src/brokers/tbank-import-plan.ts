@@ -52,6 +52,7 @@ export interface PlanSkip {
     | 'not-held'
     | 'partial-repayment'
     | 'no-quantity'
+    | 'fills'
     | 'no-amount';
 }
 
@@ -105,13 +106,15 @@ interface TradePart {
 
 /**
  * An order's fills as one part per fill time, so nothing another operation did between two
- * fills moves across them. Each part takes its share of the amount by its fills' own prices, or
- * by quantity when a fill has no price or the prices differ in currency. Without fills that
- * cover the whole quantity at two or more times, the order is one part at its last fill.
+ * fills moves across them. Each part takes its share of the amount by its fills' own prices.
+ * Without fills the order is one part at its own time. Null when the fills do not account for
+ * the order: they miss part of its quantity, or fills at two or more times lack a price or
+ * differ in price currency, so their dates or shares would be guessed.
  */
-function tradeParts(operation: TBankOperation): TradePart[] {
+function tradeParts(operation: TBankOperation): TradePart[] | null {
   const whole = atoms(operation.quantity);
-  const single = [{ occurredAt: tradeTime(operation), quantity: whole, weight: whole }];
+  if (operation.fills.length === 0)
+    return [{ occurredAt: operation.occurredAt, quantity: whole, weight: whole }];
   const times = new Map<string, TradePart>();
   const priced = operation.fills.every(
     (fill) => !isZero(fill.price) && fill.priceCurrency === operation.fills[0].priceCurrency,
@@ -127,7 +130,7 @@ function tradeParts(operation: TBankOperation): TradePart[] {
       part.weight += weight;
     } else times.set(timeKey(fill.filledAt), { occurredAt: fill.filledAt, quantity, weight });
   }
-  if (times.size < 2 || filled !== whole) return single;
+  if (filled !== whole || (times.size > 1 && !priced)) return null;
   return [...times.values()].sort((a, b) =>
     timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)),
   );
@@ -147,14 +150,6 @@ function split(value: string, weights: bigint[]): string[] {
     left -= part;
     return formatAtoms(part * step);
   });
-}
-
-/** When a trade happened: its last fill, else the operation's own (order) time. */
-function tradeTime(operation: TBankOperation): string {
-  return operation.fills.reduce(
-    (latest, fill) => (timeKey(fill.filledAt) > timeKey(latest) ? fill.filledAt : latest),
-    operation.occurredAt,
-  );
 }
 
 /**
@@ -178,7 +173,8 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
           signOf(item.payment) === expectedSign[operationKind(item.type)] &&
           securityProblem(item) === null &&
           !isZero(item.payment) &&
-          !isZero(item.quantity),
+          !isZero(item.quantity) &&
+          tradeParts(item) !== null,
       )
       .map((item) => [item.id, item.paymentCurrency]),
   );
@@ -238,6 +234,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       if (isZero(item.quantity)) return skip(item, 'no-quantity');
       const fees = feesOf.get(item.id) ?? [];
       const parts = tradeParts(item);
+      if (!parts) return skip(item, 'fills');
       const weights = parts.map((part) => part.weight);
       const amounts = split(absolute(item.payment), weights);
       const paidFees = split(absolute(sum(fees.map((fee) => fee.payment))), weights);
@@ -424,7 +421,8 @@ function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
     if (placed.has(entry)) return;
     if (entry.record === 'trade' && entry.action === 'sell' && entry.instrumentUid !== '') {
       const time = timeKey(entry.occurredAt);
-      for (const later of sorted.slice(index + 1)) {
+      for (let at = index + 1; at < sorted.length; at += 1) {
+        const later = sorted[at];
         if (timeKey(later.occurredAt) !== time) break;
         if (isTrade(later, 'buy', entry.instrumentUid) && !placed.has(later)) {
           result.push(later);

@@ -222,6 +222,42 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('lists an order whose fills do not account for it instead of guessing their dates or prices', () => {
+    const fill = (filledAt: string, quantity: string, price = '100', priceCurrency = 'rub') => ({
+      filledAt,
+      quantity,
+      price,
+      priceCurrency,
+    });
+    const early = '2024-03-01T10:00:00Z';
+    const late = '2024-03-01T12:00:00Z';
+    const unpriced = op({ id: '450000001', fills: [fill(early, '1', '0'), fill(late, '1')] });
+    const plan = planImport([
+      unpriced,
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.5', { id: '450000002', parentId: unpriced.id }),
+      op({ id: '450000003', fills: [fill(early, '1'), fill(late, '1', '1', 'usd')] }),
+      op({
+        id: '450000004',
+        quantity: '3',
+        payment: '-300',
+        fills: [fill(early, '1'), fill(late, '1')],
+      }),
+      op({ id: '450000005', quantity: '3', payment: '-300', fills: [fill(early, '2')] }),
+      // One fill time that covers the order needs no price to date or split it.
+      op({ id: '450000006', fills: [fill(late, '2', '0')] }),
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['450000001', 'fills'],
+      ['450000003', 'fills'],
+      ['450000004', 'fills'],
+      ['450000005', 'fills'],
+    ]);
+    expect(plan.entries.map((entry) => [entry.action, entry.amount, entry.operationIds])).toEqual([
+      ['fee', '0.5', ['450000002']],
+      ['buy', '200', ['450000006']],
+    ]);
+  });
+
   it('sells units bought at the very same instant, and lists a trade T-Bank does not classify', () => {
     const at = '2024-03-05T10:00:00.123456789Z';
     const plan = planImport([
