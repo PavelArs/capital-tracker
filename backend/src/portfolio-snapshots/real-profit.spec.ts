@@ -49,12 +49,18 @@ describe('real profit (INFL-REAL)', () => {
     expect(Number(result?.profit)).toBeCloseTo(0, 6);
   });
 
-  it('INFL-REAL-UNKNOWN is unknown when one deposit has no factor or no rate', () => {
+  it('INFL-REAL-UNKNOWN is unknown when one deposit has no inflation factor', () => {
     const before = [flow('2008-01-15T00:00:00.000Z', 100), flow('2025-03-15T00:00:00.000Z', 100)];
     expect(realProfit('300', false, before, official)).toBeNull();
-    const unrated = [flow('2025-03-15T00:00:00.000Z', null)];
-    expect(realProfit('300', false, unrated, official)).toBeNull();
     expect(realProfit(null, false, [flow('2025-03-15T00:00:00.000Z', 100)], official)).toBeNull();
+  });
+
+  it('INVESTED-RATED leaves money without a Bank of Russia rate out of the money put in', () => {
+    const flows = [flow('2025-03-15T00:00:00.000Z', 100), flow('2025-04-15T00:00:00.000Z', null)];
+    const result = realProfit('300', false, flows, official);
+    const invested = 100 * Number(official('2025-03-15')?.factor);
+    expect(Number(result?.invested)).toBeCloseTo(invested, 6);
+    expect(Number(result?.profit)).toBeCloseTo(300 - invested, 6);
   });
 
   it('INFL-REAL-MOSCOW-DAY dates each flow by its Moscow calendar day, like its rate', () => {

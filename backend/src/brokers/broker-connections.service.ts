@@ -6,7 +6,15 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
-import { type TBankAccount, TBankClient, type TBankResult } from './tbank-client';
+import {
+  type TBankAccount,
+  TBankClient,
+  type TBankFailure,
+  type TBankOperation,
+  type TBankPosition,
+  type TBankResult,
+} from './tbank-client';
+import { operationKind } from './tbank-operation-kinds';
 import { TBankTokenBox } from './tbank-token-box';
 
 interface ConnectionRow {
@@ -15,6 +23,30 @@ interface ConnectionRow {
   savedAt: string;
   checkedAt: string;
 }
+
+/** Why a request made with the saved token gave nothing, as the owner should hear it. */
+function savedTokenFailure(reason: TBankFailure) {
+  if (reason === 'token_rejected')
+    return new UnprocessableEntityException(
+      'T-Bank no longer accepts the saved token. Create a new read-only token and connect again.',
+    );
+  if (reason === 'too_many_operations')
+    return new UnprocessableEntityException(
+      'This T-Bank account has more operations than one read takes (50,000).',
+    );
+  return new ServiceUnavailableException(
+    'T-Bank could not be reached. Try again in a few minutes.',
+  );
+}
+
+/**
+ * A T-Bank time (UTC, 0 to 9 fraction digits) as text that sorts in time order to the
+ * nanosecond: `10:00:00Z` would sort after `10:00:00.5Z` as given, and a Date drops nanoseconds.
+ */
+const timeKey = (time: string) => {
+  const [seconds, fraction = ''] = time.replace('Z', '').split('.');
+  return `${seconds}.${fraction.padEnd(9, '0')}`;
+};
 
 const iso = (column: string) =>
   `to_char("${column}" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "${column}"`;
@@ -85,6 +117,53 @@ export class BrokerConnectionsService {
     return { connected: true as const, provider: 'tbank' as const, ...rows[0] };
   }
 
+  /** What the saved token reads in the broker account now. Nothing is recorded. */
+  async positions(ownerId: string, accountId: string) {
+    const { token, target } = await this.savedConnection(ownerId, accountId);
+    if (target.closed)
+      throw new UnprocessableEntityException(
+        'The saved token no longer reaches that T-Bank account. Connect it again.',
+      );
+    if (target.investBox)
+      throw new UnprocessableEntityException(
+        'T-Bank does not give positions for an Invest Box account.',
+      );
+    const result: TBankResult<TBankPosition[]> = await this.tbank.portfolio(token, target.id);
+    if (!result.ok) throw savedTokenFailure(result.reason);
+    return { positions: result.value };
+  }
+
+  /**
+   * BROKER-SYNC: every operation T-Bank lists for the account and what each would become in the
+   * records. Nothing is recorded. Only executed operations happened; the rest are counted. A
+   * closed account still has its history, so it is read too.
+   */
+  async operations(ownerId: string, accountId: string) {
+    const { token, target } = await this.savedConnection(ownerId, accountId);
+    const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
+    if (!result.ok) throw savedTokenFailure(result.reason);
+    const executed = result.value.filter((item) => item.state === 'executed');
+    const operations = executed
+      .map((item) => ({ ...item, kind: operationKind(item.type) }))
+      .sort(
+        (a, b) =>
+          timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) || a.id.localeCompare(b.id),
+      );
+    const count = (keys: string[]) =>
+      keys.reduce<Record<string, number>>((totals, key) => {
+        totals[key] = (totals[key] ?? 0) + 1;
+        return totals;
+      }, {});
+    return {
+      operations,
+      byKind: count(operations.map((item) => item.kind)),
+      unsupportedTypes: count(
+        operations.filter((item) => item.kind === 'unsupported').map((item) => item.type),
+      ),
+      notExecuted: result.value.length - executed.length,
+    };
+  }
+
   async disconnect(ownerId: string, accountId: string) {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
@@ -93,6 +172,33 @@ export class BrokerConnectionsService {
       'DELETE FROM broker_connections WHERE "ownerId" = $1 AND "accountId" = $2',
       [owner, account],
     );
+  }
+
+  /**
+   * The saved token, opened, and the T-Bank account it was saved for as T-Bank lists it now. The
+   * account's type and status are not stored, so they are asked for each time.
+   */
+  private async savedConnection(ownerId: string, accountId: string) {
+    const owner = parseUuid(ownerId);
+    const account = parseUuid(accountId);
+    await this.brokerAccount(this.source.manager, owner, account);
+    const rows: { credentials: unknown; brokerAccountId: string }[] = await this.source.query(
+      `SELECT credentials, "brokerAccountId" FROM broker_connections
+        WHERE "ownerId" = $1 AND "accountId" = $2`,
+      [owner, account],
+    );
+    if (rows.length === 0) throw new NotFoundException('No T-Bank connection for this account');
+    const token = this.box.open(rows[0].credentials, owner, account);
+    if (token === null)
+      throw new ServiceUnavailableException('The saved token cannot be opened on this server.');
+    const listed: TBankResult<TBankAccount[]> = await this.tbank.accounts(token);
+    if (!listed.ok) throw savedTokenFailure(listed.reason);
+    const target = listed.value.find((item) => item.id === rows[0].brokerAccountId);
+    if (!target || target.access === 'no_access')
+      throw new UnprocessableEntityException(
+        'The saved token no longer reaches that T-Bank account. Connect it again.',
+      );
+    return { token, target };
   }
 
   /** The owner's live broker account, or 404 (also for another owner's and for a wallet). */

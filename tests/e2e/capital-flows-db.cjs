@@ -391,7 +391,7 @@ async function legacy(db, s, f) {
 }
 
 async function rates(db, s, f) {
-  stage = 'a flow without a Bank of Russia rate leaves net invested unknown, never zero';
+  stage = 'INVESTED-RATED a flow without a Bank of Russia rate is left out of net invested';
   const { early, other } = f;
   const btc = (
     await s.accounting.createInstrument(early, {
@@ -410,15 +410,18 @@ async function rates(db, s, f) {
   // leaves it out and the market effect is unknown, not the whole value.
   assert.deepEqual([usd.netFlow, usd.marketEffect, usd.change], ['0', null, null]);
   const rub = await s.snapshots.history(early, { period: 'ALL', currency: 'RUB' }, now);
+  // The owner's choice: money without a rate is left out of the money put in, and the profit
+  // to date stays value minus what is left, so it reads higher than it is.
   assert.ok(
-    rub.points.every((entry) => entry.invested === null),
-    'No rate: net invested is unknown',
+    rub.points.every((entry) => entry.invested === '0'),
+    'No rate: the flow is left out of net invested',
   );
-  assert.equal(rub.invested, null);
+  assert.equal(rub.invested, '0');
+  assert.notEqual(rub.value, null, 'The BTC held has a price and a rate today');
   assert.deepEqual(
     [rub.profit, rub.profitPercent],
-    [null, null],
-    'No rate: profit is unknown, never zero',
+    [minus(rub.value, rub.invested), null],
+    'No rate: profit is the value less the money with a rate, no percentage of nothing',
   );
   assert.equal(rub.netFlow, '0', 'The flow before the period does not enter its split');
   const recent = await s.snapshots.history(early, { period: '1M', currency: 'RUB' }, now);
@@ -452,7 +455,7 @@ async function rates(db, s, f) {
     'Reading the split writes no operation, price or rate',
   );
   console.log(
-    'PASS FLOW-RATE missing rate keeps net invested unknown; owners stay private; reads write nothing',
+    'PASS FLOW-RATE/INVESTED-RATED missing rate leaves the flow out of net invested; owners stay private; reads write nothing',
   );
 }
 

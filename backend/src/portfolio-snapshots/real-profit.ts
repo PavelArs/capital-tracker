@@ -1,7 +1,7 @@
 import { formatSignedProduct } from '../accounting/money';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import type { InflationFactor } from '../inflation/inflation-math';
-import { profitToDate, type StatedFlow } from './capital-flows';
+import { isRated, profitToDate, type StatedFlow } from './capital-flows';
 
 // INFL-REAL: profit after inflation. Money put in is carried to today by the inflation since
 // the day it came in, so a deposit of a year ago has to earn that year's inflation just to
@@ -23,8 +23,9 @@ export interface RealProfit {
 }
 
 /**
- * Real profit to date for the flows up to now, or null when the value, a flow's amount or a
- * flow's factor is unknown: a partial sum would read as a smaller cost and a larger profit.
+ * Real profit to date for the flows up to now, or null when the value or a flow's factor is
+ * unknown. A flow without a rate is left out of the money put in, as in the nominal figure
+ * (INVESTED-RATED).
  */
 export function realProfit(
   value: string | null,
@@ -36,7 +37,7 @@ export function realProfit(
   let invested = 0n;
   let estimated = false;
   for (const flow of flows) {
-    if (flow.amount === null) return null;
+    if (!isRated(flow)) continue;
     const factor = factorOf(flow.rateDate ?? moscowDate(new Date(flow.at)));
     if (factor === null) return null;
     estimated ||= factor.estimated;

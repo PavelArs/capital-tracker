@@ -1,48 +1,10 @@
-# Capital Tracker contributor pointers
+@AGENTS.md
 
-Read [AGENTS.md](AGENTS.md), the full
-[refactor brief](capital-tracker-openspec-prompt.md), the active OpenSpec change and
-Git diff before continuing. The full refactor is incomplete; the current slice's
-verification record is the authority for checks actually run.
+<!-- Shared rules for every coding agent belong in AGENTS.md. Codex and the Codex reviewer
+read AGENTS.md but not this file. Keep only Claude Code-specific notes below, and run
+/doctor prompt-audit after editing either file. -->
 
-Use Node 26.10.0 and pinned pnpm 12.9.1. From the repository root:
+## Claude Code
 
-```sh
-pnpm install --frozen-lockfile
-pnpm verify:baseline
-pnpm test:e2e
-OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive
-```
-
-The `openspec/` folder and `CONTINUITY.md` are local-only and ignored by Git;
-never commit them. Run
-the validate command only where the folder exists; CI no longer runs it.
-
-Focused checks: `pnpm --dir backend test --runInBand`, `pnpm --dir frontend test`,
-and each package's `lint` and `build` scripts. Coverage limitations and existing
-warnings are recorded in verification records; do not assume a configured threshold passed.
-Use the OpenSpec propose/apply/review/verify/archive sequence with actual acceptance
-RED before behavior changes. Repository mocks do not establish database/browser safety.
-
-The existing application uses NestJS/TypeORM/PostgreSQL, React/Vite and pnpm.
-Owner provisioning is CLI-only with Argon2id. Browser auth now uses opaque protected
-cookies and memory-only CSRF; a password grants only pending state until mandatory
-TOTP or a single-use recovery code succeeds. See [owner authentication](docs/owner-authentication.md)
-for exact HTTPS origin, expiry, logout/recovery and session-cap requirements.
-
-Startup never performs migrations or schema synchronization. Use the explicit
-migration CLI with reviewed DB_* settings; no implicit environment-file loading.
-See [testing and migrations](docs/testing-and-migrations.md) for commands, isolated
-HTTPS acceptance and refusal of unsafe historical schemas. Never use production
-Compose or real owner data for tests; never delete volumes to resolve a test failure.
-Production rollout remains disabled pending the full release and recovery work.
-
-Preserve private configuration and unrelated edits, especially the owner's
-`frontend/nginx.conf`. English Conventional Commits, feature branches and no direct
-commits to main remain required. Use Biome, two-space indentation, single quotes
-and the existing package configurations. Keep file ownership bounded across agents.
-
-The user authorized final consolidation only after the full verified refactor.
-Follow [the consolidation inventory](docs/consolidation-plan.md); retain original
-Git history, stashes, private configuration/data and unrelated projects. Do not
-replace the original repository wholesale or discard nested repositories/worktrees.
+- Cloud sessions start with Node 22 (`/opt/node22/bin`) first on `PATH`, where backend Jest fails with "Must use import to load ES Module". nvm is installed (`/opt/nvm`, loaded lazily from `~/.bashrc`) but has no Node 26, so run `nvm install 26.10.0` once. Environment variables don't persist between Bash calls: begin every command that runs Node or pnpm with `export PATH=/opt/nvm/versions/node/v26.10.0/bin:$PATH &&`. The preinstalled pnpm 12.9.1 then runs on Node 26; check with `node --version && pnpm --version`.
+- The built-in Explore and Plan subagents start without these instructions. When you delegate to them, include the rules the task depends on, for example that owner decisions override the brief.
