@@ -5,6 +5,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { REWARD_LIMITS, readRewardCounts, rewardHeadJoin } from '../accounting/asset-reward.store';
+import { swapHeadJoin } from '../accounting/asset-swap.store';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
   type TBankAccount,
@@ -14,6 +16,7 @@ import {
   type TBankPosition,
   type TBankResult,
 } from './tbank-client';
+import { planImport, timeKey } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
 import { TBankTokenBox } from './tbank-token-box';
 
@@ -38,15 +41,6 @@ function savedTokenFailure(reason: TBankFailure) {
     'T-Bank could not be reached. Try again in a few minutes.',
   );
 }
-
-/**
- * A T-Bank time (UTC, 0 to 9 fraction digits) as text that sorts in time order to the
- * nanosecond: `10:00:00Z` would sort after `10:00:00.5Z` as given, and a Date drops nanoseconds.
- */
-const timeKey = (time: string) => {
-  const [seconds, fraction = ''] = time.replace('Z', '').split('.');
-  return `${seconds}.${fraction.padEnd(9, '0')}`;
-};
 
 const iso = (column: string) =>
   `to_char("${column}" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "${column}"`;
@@ -162,6 +156,55 @@ export class BrokerConnectionsService {
       ),
       notExecuted: result.value.length - executed.length,
     };
+  }
+
+  /**
+   * BROKER-SYNC: the journal entries the account's T-Bank history would become, and whether the
+   * app account already holds entries the import would add to. Nothing is recorded.
+   */
+  async importPreview(ownerId: string, accountId: string) {
+    const { token, target } = await this.savedConnection(ownerId, accountId);
+    const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
+    if (!result.ok) throw savedTokenFailure(result.reason);
+    const owner = parseUuid(ownerId);
+    const held = await this.holdsEntries(owner, parseUuid(accountId));
+    const plan = planImport(result.value);
+    // The reward journal's caps hold across all the owner's accounts, not only this one.
+    const elsewhere = await readRewardCounts(this.source.manager, owner);
+    const fitsRewardLimit =
+      plan.fitsRewardLimit &&
+      elsewhere.activeCount + plan.rewards <= REWARD_LIMITS.activeRewards &&
+      elsewhere.versionCount + plan.rewards <= REWARD_LIMITS.versions;
+    return { ...plan, fitsRewardLimit, accountHasEntries: held };
+  }
+
+  /**
+   * Whether the account holds any history an import would add to: a standing trade, reward or
+   * swap, a transfer in or out, an opening snapshot, a carried-in journal or any revision. A
+   * voided entry no longer counts.
+   */
+  private async holdsEntries(owner: string, account: string) {
+    const [row]: { held: boolean }[] = await this.source.query(
+      `SELECT EXISTS (SELECT 1 FROM account_trade_versions v JOIN account_trades t
+            ON t."ownerId" = v."ownerId" AND t."accountId" = v."accountId" AND t.id = v."tradeId"
+            AND t."currentVersion" = v.version
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM account_reward_versions v ${rewardHeadJoin}
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM account_swap_versions v ${swapHeadJoin}
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM owned_transfers t JOIN owned_transfer_versions v
+            ON v."ownerId" = t."ownerId" AND v."transferId" = t.id AND v.version = t."currentVersion"
+          WHERE t."ownerId" = $1 AND $2 IN (t."fromAccountId", t."toAccountId")
+            AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM account_opening_snapshots WHERE "ownerId" = $1 AND "accountId" = $2)
+        OR EXISTS (SELECT 1 FROM account_trade_journals
+          WHERE "ownerId" = $1 AND "accountId" = $2 AND "originKind" <> 'declared-empty')
+        OR EXISTS (SELECT 1 FROM manual_accounts
+          WHERE "ownerId" = $1 AND id = $2 AND "currentRevision" IS NOT NULL) AS held`,
+      [owner, account],
+    );
+    return row.held;
   }
 
   async disconnect(ownerId: string, accountId: string) {

@@ -21,6 +21,11 @@ export class BrokerConnectionsController {
     return this.connections.operations(owner.userId, accountId);
   }
 
+  @Get('import-preview')
+  importPreview(@CurrentUser() owner: OwnerIdentity, @Param('accountId') accountId: string) {
+    return this.connections.importPreview(owner.userId, accountId);
+  }
+
   @Post('check')
   @HttpCode(200)
   check(
