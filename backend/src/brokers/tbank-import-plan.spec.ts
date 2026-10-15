@@ -276,6 +276,36 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('lists a trade, fill or repayment with a negative quantity instead of recording it', () => {
+    const at = '2024-03-01T10:00:00Z';
+    const plan = planImport([
+      op({ id: '480000001', quantity: '-2' }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.1', { id: '480000002', parentId: '480000001' }),
+      op({
+        id: '480000003',
+        quantity: '2',
+        fills: [
+          { filledAt: at, quantity: '3', price: '100', priceCurrency: 'rub' },
+          { filledAt: at, quantity: '-1', price: '100', priceCurrency: 'rub' },
+        ],
+      }),
+      op({
+        id: '480000004',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        quantity: '-1',
+        payment: '100',
+      }),
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['480000001', 'no-quantity'],
+      ['480000003', 'fills'],
+      ['480000004', 'no-quantity'],
+    ]);
+    expect(plan.entries.map((entry) => [entry.action, entry.amount, entry.operationIds])).toEqual([
+      ['fee', '0.1', ['480000002']],
+    ]);
+  });
+
   it('lists trades and dividends settled through a card, which never touch the broker cash', () => {
     const plan = planImport([
       op({ id: '470000001', type: 'OPERATION_TYPE_BUY_CARD' }),

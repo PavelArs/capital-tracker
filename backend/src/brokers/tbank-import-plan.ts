@@ -74,6 +74,8 @@ const absolute = (value: string) => (value.startsWith('-') ? value.slice(1) : va
 const sum = (values: string[]) =>
   formatAtoms(values.reduce((total, value) => total + atoms(value), 0n));
 const isZero = (value: string) => value === '' || atoms(value) === 0n;
+/** A count T-Bank gives as zero or less moved nothing the app can record. */
+const notPositive = (value: string) => isZero(value) || value.startsWith('-');
 /** The currencies the app keeps money in (USD, EUR and RUB), as T-Bank names them. */
 const recordable = (currency: string) => ['rub', 'usd', 'eur'].includes(currency);
 /** Money each kind moves: a buy pays, a sale receives; a tax or fee can be given back. */
@@ -118,9 +120,9 @@ interface TradePart {
  * An order's fills as one part per fill time, so nothing another operation did between two
  * fills moves across them. Each part takes its share of the amount by its fills' own prices.
  * Without fills the order is one part at its own time. Null when the fills do not account for
- * the order: they miss part of its quantity, fills at two or more times lack a price or
- * differ in price currency, so their dates or shares would be guessed, or a part's share of the
- * amount is less than its smallest unit.
+ * the order: a fill moves no units or fewer, they miss part of its quantity, fills at two or
+ * more times lack a price or differ in price currency, so their dates or shares would be
+ * guessed, or a part's share of the amount is less than its smallest unit.
  */
 function tradeParts(operation: TBankOperation): TradePart[] | null {
   const whole = atoms(operation.quantity);
@@ -141,7 +143,8 @@ function tradeParts(operation: TBankOperation): TradePart[] | null {
       part.weight += weight;
     } else times.set(timeKey(fill.filledAt), { occurredAt: fill.filledAt, quantity, weight });
   }
-  if (filled !== whole || (times.size > 1 && !priced)) return null;
+  const counted = operation.fills.every((fill) => !notPositive(fill.quantity));
+  if (!counted || filled !== whole || (times.size > 1 && !priced)) return null;
   const parts = [...times.values()].sort((a, b) =>
     timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)),
   );
@@ -191,7 +194,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
           signOf(item.payment) === expectedSign[operationKind(item.type)] &&
           securityProblem(item) === null &&
           !isZero(item.payment) &&
-          !isZero(item.quantity) &&
+          !notPositive(item.quantity) &&
           tradeParts(item) !== null,
       )
       .map((item) => [item.id, item.paymentCurrency]),
@@ -250,7 +253,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     const security = securityProblem(item);
     if (kind === 'buy' || kind === 'sell') {
       if (security) return skip(item, security);
-      if (isZero(item.quantity)) return skip(item, 'no-quantity');
+      if (notPositive(item.quantity)) return skip(item, 'no-quantity');
       const fees = feesOf.get(item.id) ?? [];
       const parts = tradeParts(item);
       if (!parts) return skip(item, 'fills');
@@ -280,6 +283,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       // listed rather than shown as a gain.
       if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
         if (security) return skip(item, security);
+        if (item.quantity.startsWith('-')) return skip(item, 'no-quantity');
         return [
           {
             ...cash(item, 'trade', 'sell'),
