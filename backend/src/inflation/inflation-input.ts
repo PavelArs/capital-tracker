@@ -3,6 +3,7 @@ import {
   type AccountingCurrency,
   accountingCurrencies,
   isAccountingCurrency,
+  moscowDate,
 } from '../fx-rates/fx-conversion';
 import { type InflationBasis, isDay, isMonth } from './inflation-math';
 
@@ -14,6 +15,17 @@ export const parseCurrency = (value: unknown): AccountingCurrency =>
   isAccountingCurrency(value) ? value : bad('currency');
 
 export const parseMonth = (value: unknown): string => (isMonth(value) ? value : bad('month'));
+
+/**
+ * A month the owner types in: one that has begun on the Moscow calendar. A later one (a typo in
+ * the year) would have every month before it estimated and is refused.
+ */
+export function parseTypedMonth(value: unknown, now: Date): string {
+  const month = parseMonth(value);
+  if (month > moscowDate(now).slice(0, 7))
+    throw new BadRequestException('An inflation month cannot be after the current month');
+  return month;
+}
 
 /** A decimal percent with at most eight places, inside the range the tables accept. */
 export function parsePercent(value: unknown, min: number, max: number): string {

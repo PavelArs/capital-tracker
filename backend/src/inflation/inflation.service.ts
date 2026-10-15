@@ -11,6 +11,7 @@ import {
   parseMonth,
   parseMonthlyChange,
   parsePersonalRate,
+  parseTypedMonth,
 } from './inflation-input';
 import {
   buildSeries,
@@ -19,6 +20,7 @@ import {
   type InflationSeries,
   officialFactor,
   personalFactor,
+  trailingYearEstimated,
   trailingYearPercent,
 } from './inflation-math';
 import {
@@ -263,6 +265,8 @@ export class InflationService {
           // A gap in the middle of the series leaves only the stretch after it comparable.
           comparableFrom: series.chainStart,
           trailingYearPercent: yearly === null ? null : yearly.toFixed(4),
+          // True when one of those twelve months is an estimate, not a published or typed figure.
+          trailingYearEstimated: trailingYearEstimated(series),
           officialTrailingYearPercent: publishedYearly === null ? null : publishedYearly.toFixed(4),
           estimatedMonthlyPercent: series.last === null ? null : (series.trend * 100).toFixed(6),
           personalRatePercent: await readPersonalRate(manager, owner, currency),
@@ -356,10 +360,16 @@ export class InflationService {
     return { currency, annualPercent: rate === null ? null : exact(rate) };
   }
 
-  async setMonth(ownerId: string, currencyInput: string, monthInput: string, input: unknown) {
+  async setMonth(
+    ownerId: string,
+    currencyInput: string,
+    monthInput: string,
+    input: unknown,
+    now = new Date(),
+  ) {
     const owner = parseUuid(ownerId);
     const currency = parseCurrency(currencyInput);
-    const month = parseMonth(monthInput);
+    const month = parseTypedMonth(monthInput, now);
     const changePercent = parseMonthlyChange(input);
     await this.source.query(
       `INSERT INTO inflation_manual_months ("ownerId", currency, month, "changePercent")

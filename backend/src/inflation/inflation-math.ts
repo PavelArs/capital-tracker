@@ -184,5 +184,17 @@ export function trailingYearPercent(series: InflationSeries): number | null {
   return from === undefined || to === undefined ? null : (to / from - 1) * 100;
 }
 
+/**
+ * Whether the twelve-month inflation takes in an estimated month (one of the twelve months up to
+ * the latest; the month before them is only its base), or null when there is no such figure.
+ */
+export function trailingYearEstimated(series: InflationSeries): boolean | null {
+  if (trailingYearPercent(series) === null) return null;
+  const last = monthNumber(series.last as string);
+  for (let month = last - 11; month <= last; month++)
+    if (series.estimatedMonths.has(monthFromNumber(month))) return true;
+  return false;
+}
+
 /** A factor as a plain decimal string, never in exponent notation. */
 export const formatFactor = (factor: number) => factor.toFixed(10);
