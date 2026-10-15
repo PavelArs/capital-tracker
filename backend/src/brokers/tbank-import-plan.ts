@@ -48,7 +48,15 @@ export interface PlanEntry {
 export interface PlanSkip {
   operationId: string;
   type: string;
-  reason: 'unsupported' | 'transfer' | 'currency' | 'sign' | 'no-quantity' | 'no-amount';
+  reason:
+    | 'unsupported'
+    | 'transfer'
+    | 'currency'
+    | 'currency-exchange'
+    | 'no-instrument'
+    | 'sign'
+    | 'no-quantity'
+    | 'no-amount';
 }
 
 export interface ImportPlan {
@@ -80,6 +88,16 @@ const expectedSign: Partial<Record<ReturnType<typeof operationKind>, 'in' | 'out
   withdrawal: 'out',
 };
 const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
+/**
+ * Why a trade's security cannot be recorded: T-Bank names no instrument, or it is a currency
+ * bought or sold on the exchange, which is cash rather than a security the app can hold yet.
+ */
+const securityProblem = (item: TBankOperation): PlanSkip['reason'] | null =>
+  item.instrumentUid === ''
+    ? 'no-instrument'
+    : item.instrumentType === 'currency'
+      ? 'currency-exchange'
+      : null;
 
 /** When a trade happened: its last fill, else the operation's own (order) time. */
 function tradeTime(operation: TBankOperation): string {
@@ -108,6 +126,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
           ['buy', 'sell'].includes(operationKind(item.type)) &&
           recordable(item.paymentCurrency) &&
           signOf(item.payment) === expectedSign[operationKind(item.type)] &&
+          securityProblem(item) === null &&
           !isZero(item.payment) &&
           !isZero(item.quantity),
       )
@@ -156,7 +175,9 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     const incoming = signOf(item.payment) === 'in';
     const expected = expectedSign[kind];
     if (expected && signOf(item.payment) !== expected) return skip(item, 'sign');
+    const security = securityProblem(item);
     if (kind === 'buy' || kind === 'sell') {
+      if (security) return skip(item, security);
       if (isZero(item.quantity)) return skip(item, 'no-quantity');
       const fees = feesOf.get(item.id) ?? [];
       return [
@@ -179,6 +200,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       // A bond paid back in full leaves the account; one paid back in part keeps its units, and
       // the app has no way to lower its cost, so the money is shown as income.
       if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
+        if (security) return skip(item, security);
         if (isZero(item.quantity)) return skip(item, 'no-quantity');
         return [
           {

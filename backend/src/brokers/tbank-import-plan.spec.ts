@@ -141,6 +141,8 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
         parentId: '200000006',
         paymentCurrency: 'cny',
       }),
+      op({ id: '200000008', instrumentUid: '' }),
+      op({ id: '200000009', instrumentType: 'currency', ticker: 'SYNTHFX' }),
     ]);
     expect(plan.entries).toEqual([]);
     expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
@@ -150,6 +152,8 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       ['200000004', 'no-amount'],
       ['200000006', 'currency'],
       ['200000007', 'currency'],
+      ['200000008', 'no-instrument'],
+      ['200000009', 'currency-exchange'],
     ]);
   });
 
