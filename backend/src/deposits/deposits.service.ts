@@ -520,6 +520,7 @@ export class DepositsService {
               terms,
               movements: known,
               asOf,
+              interestMissing,
             },
             reading,
           )
@@ -555,7 +556,10 @@ export class DepositsService {
         personal: afterInflation(readings?.personal),
       },
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
-      nextPayout: status === 'active' && !noRate ? nextPayout(knownTerms, known, asOf) : null,
+      nextPayout:
+        status === 'active' && !noRate
+          ? nextPayout(knownTerms, known, asOf, interestMissing ? firstRateDay(stored) : undefined)
+          : null,
       atMaturity: maturity
         ? {
             date: terms.endDate as string,
@@ -608,7 +612,7 @@ export class DepositsService {
     const projection = projectDeposit(terms, movementsOf(stored), asOf);
     // Missing is not zero (DEP-ACCOUNT): a period with a day before the account's first rate has
     // unknown interest, so it is not listed; with no rate at all there are no periods to list.
-    const firstRate = stored.rates.map((rate) => rate.effectiveFrom).sort()[0];
+    const firstRate = firstRateDay(stored);
     const periods = accountInterestMissing(stored)
       ? projection.periods.filter((period) => firstRate !== undefined && period.from >= firstRate)
       : projection.periods;
@@ -669,6 +673,10 @@ export class DepositsService {
     };
   }
 }
+
+/** The day the first rate of a deposit takes effect, or undefined when it has none. */
+const firstRateDay = (stored: Stored): string | undefined =>
+  stored.rates.map((rate) => rate.effectiveFrom).sort()[0];
 
 /** A snapshot may look one year ahead; the figures are replayed day by day up to it. */
 const latestSnapshot = (today: string) => `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`;

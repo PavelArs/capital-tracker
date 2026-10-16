@@ -72,6 +72,14 @@ describe('deposits after inflation (INFL-DEPOSIT)', () => {
     expect(result.ratePercent).toBe('1.82');
   });
 
+  it('DEP-ACCOUNT states no real gain while the interest of some days is missing', () => {
+    const { personal } = inflationReadings(noSeries, '10');
+    const result = depositReal(savings({ interestMissing: true }), personal);
+    expect(result.gain).toBeNull();
+    // The yearly real rate is a statement about the rate, not about the days that have none.
+    expect(result.ratePercent).toBe('1.82');
+  });
+
   it('INFL-DEPOSIT-OFFICIAL reads the published months, and says so when the latest are estimated', () => {
     const { official } = inflationReadings(series, null);
     expect(depositReal(savings(), official).estimated).toBe(false);

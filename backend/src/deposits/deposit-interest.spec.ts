@@ -372,6 +372,14 @@ describe('nextPayout', () => {
     expect(next?.date).toBe('2026-07-31');
   });
 
+  it('DEP-ACCOUNT is null while its period starts before the first known rate', () => {
+    const held = [topup('2026-01-01', '100000')];
+    // The next payout, March 1, closes the period that starts February 1: a first rate from
+    // February 15 covers only part of it, one from February 1 all of it.
+    expect(nextPayout(terms(), held, '2026-02-10', '2026-02-15')?.date).toBeUndefined();
+    expect(nextPayout(terms(), held, '2026-02-10', '2026-02-01')?.date).toBe('2026-03-01');
+  });
+
   it('is null once the term is over', () => {
     expect(nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-04-01')).toBeNull();
   });

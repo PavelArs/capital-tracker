@@ -336,11 +336,15 @@ export function bankBalanceOf(terms: DepositTerms, projection: DepositProjection
   return terms.capitalized ? projection.posted : projection.balance;
 }
 
-/** The next payout date after `asOf`, or null when none is left (or the deposit is closed). */
+/**
+ * The next payout date after `asOf`, or null when none is left (or the deposit is closed). With
+ * `knownFrom`, a payout whose period starts before that day is null: part of its days have no rate.
+ */
 export function nextPayout(
   terms: DepositTerms,
   movements: readonly DepositMovement[],
   asOf: string,
+  knownFrom?: string,
 ): { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null {
   // Clamped dates can leave a quarter a day longer than three months.
   const horizon = terms.endDate ?? addMonths(asOf, 4);
@@ -349,6 +353,7 @@ export function nextPayout(
   const then = projectDeposit(terms, movements, coming);
   const period = then.periods[then.periods.length - 1];
   if (!period || period.to !== coming) return null;
+  if (knownFrom !== undefined && period.from < knownFrom) return null;
   return { date: coming, interest: period.interest, treatment: period.treatment };
 }
 

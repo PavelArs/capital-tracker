@@ -319,6 +319,16 @@ async function account(db, service, owner) {
     [null, null, null],
     'A check against an account with missing interest is not compared',
   );
+  // A payout whose period starts before the first rate is not forecast, and no real gain is stated.
+  const partial = await service.create(owner, { ...terms, name: 'Current P' });
+  await service.addRate(owner, partial.id, { effectiveFrom: '2026-07-15', ratePercent: '6' });
+  const midway = await service.get(owner, partial.id, '2026-07-20');
+  assert.equal(midway.interestMissing, true);
+  assert.equal(midway.nextPayout, null, 'The next payout would count the days without a rate as 0%');
+  assert.ok(
+    [midway.real.official, midway.real.personal].every((real) => real === null || real.gain === null),
+    'No real gain while interest is missing',
+  );
   // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
   const unrated = await service.get(owner, made.id, '2026-07-15');
   assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');
@@ -353,6 +363,7 @@ async function account(db, service, owner) {
   assert.equal((await service.get(owner, opened.id, '2026-07-02')).ratePercent, '6');
   const covered = await service.get(owner, opened.id, '2026-07-02');
   assert.equal(covered.interestMissing, false, 'A rate from the opening day covers the whole time');
+  assert.notEqual(covered.nextPayout, null, 'A fully covered period is forecast');
   assert.notEqual(covered.interestEarned, null);
   await rejected(
     () => service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '7' }),

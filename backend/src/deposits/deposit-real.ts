@@ -110,6 +110,8 @@ export interface RealDepositInput {
   /** Everything recorded up to the day. */
   movements: readonly DepositMovement[];
   asOf: string;
+  /** True where the interest of some days is missing (DEP-ACCOUNT): no gain is stated then. */
+  interestMissing?: boolean;
 }
 
 /** The deposit after inflation by one reading, or all nulls where the series does not reach. */
@@ -134,7 +136,7 @@ export function depositReal(input: RealDepositInput, reading: InflationReading):
   return {
     inflationPercent: inflation === null ? null : inflation.toFixed(2),
     ratePercent: rate === null ? null : rate.toFixed(2),
-    gain: profit?.profit == null ? null : centsOfProduct(profit.profit),
+    gain: input.interestMissing || profit?.profit == null ? null : centsOfProduct(profit.profit),
     estimated: profit?.estimated ?? false,
     ...(reading.ownRate === undefined ? {} : { ownRate: reading.ownRate }),
   };
