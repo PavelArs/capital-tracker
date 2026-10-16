@@ -40,7 +40,7 @@ function Page({ confirm = false }: { confirm?: boolean }) {
           </Modal>
         )}
       </main>
-      <section className="ui-toasts" aria-label="Notifications">
+      <section className="ui-toasts" aria-label="Messages">
         <button type="button">Dismiss</button>
       </section>
     </>
@@ -77,7 +77,7 @@ describe('useDialogFocus: the page behind an open dialog', () => {
     const user = userEvent.setup();
     const { container } = render(<Page />);
     await user.click(screen.getByRole('button', { name: 'Open' }));
-    expect(inert(screen.getByRole('region', { name: 'Notifications' }))).toBe(false);
+    expect(inert(screen.getByRole('region', { name: 'Messages' }))).toBe(false);
     const scrim = container.querySelector('.ui-drawer-scrim');
     expect(inert(scrim)).toBe(false);
     await user.click(scrim as Element);

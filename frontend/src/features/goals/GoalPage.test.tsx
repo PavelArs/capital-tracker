@@ -11,6 +11,13 @@ import ToastViewport from '@/components/Toast';
 import { Icon } from '../shell/icons';
 import GoalPage from './GoalPage';
 
+/** The page's own status line: the toasts' status region (Messages) is not part of the page. */
+function pageStatus(): HTMLElement {
+  const found = screen.getAllByRole('status').filter((node) => !node.closest('.ui-toasts'));
+  expect(found).toHaveLength(1);
+  return found[0] as HTMLElement;
+}
+
 // Synthetic goals and sums only.
 const scenarios = (rates: [string, string, string]): Goal['scenarios'] =>
   (['pessimistic', 'base', 'optimistic'] as const).map((key, index) => ({
@@ -114,7 +121,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     show(dated);
     expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
     expect(screen.getByText('Behind')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(pageStatus()).toHaveTextContent(
       'Behind by ₽270,000 a month. Reaching it by Dec 2099 needs ₽420,000 a month; at ₽150,000 it takes until Aug 2032.',
     );
     expect(screen.getByText('Portfolio now').nextSibling).toHaveTextContent('₽5,500,000');

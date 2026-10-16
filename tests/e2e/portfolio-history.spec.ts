@@ -188,10 +188,7 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
     await expect(shares.last()).toContainText(`Other ${slices.length - 5} assets`);
   await expect(main.getByRole('region', { name: 'Needs attention' })).toHaveCount(0);
   await page.getByRole('button', { name: /^Notifications/ }).click();
-  // The bell's panel, told apart from the toast stack (also a Notifications region) by its heading.
-  const attention = page
-    .getByRole('region', { name: 'Notifications' })
-    .filter({ has: page.getByRole('heading', { name: 'Notifications' }) });
+  const attention = page.getByRole('region', { name: 'Notifications' });
   await expect(attention).toBeVisible();
   await expect(attention).not.toContainText('Checking prices and wallets');
   await page.keyboard.press('Escape');

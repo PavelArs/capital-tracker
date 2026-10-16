@@ -46,6 +46,13 @@ import { handOver } from './proposals-handover';
 import TransactionsPage from './TransactionsPage';
 import TransferProposals from './TransferProposals';
 
+/** The page's own status line: the toasts' status region (Messages) is not part of the page. */
+function pageStatus(): HTMLElement {
+  const found = screen.getAllByRole('status').filter((node) => !node.closest('.ui-toasts'));
+  expect(found).toHaveLength(1);
+  return found[0] as HTMLElement;
+}
+
 // The app's toasts, as App.tsx mounts them: completed commands are said there.
 function WithToasts({ children }: { children: ReactNode }) {
   return (
@@ -4290,7 +4297,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
     expect(shownIds()).toEqual(idsOf(0, 20));
-    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 45 transactions');
+    expect(pageStatus()).toHaveTextContent('Showing 20 of 45 transactions');
     await reachEnd();
     expect(shownIds()).toEqual(idsOf(0, 40));
     // The day headings continue under the rows that were already there.
@@ -4340,7 +4347,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     expect(bodyRows()).toHaveLength(40);
     await user.click(screen.getByRole('button', { name: /^Manual/ }));
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
-    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 40');
+    expect(pageStatus()).toHaveTextContent('Showing 20 of 40');
     await user.click(more());
     await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'buy');
     await waitFor(() => expect(bodyRows()).toHaveLength(20));

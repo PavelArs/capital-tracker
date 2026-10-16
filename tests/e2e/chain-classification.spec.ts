@@ -86,10 +86,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByLabel(`${before} to classify`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^Notifications/ }).click();
-  // The bell's panel, told apart from the toast stack (also a Notifications region) by its heading.
-  const attention = page
-    .getByRole('region', { name: 'Notifications' })
-    .filter({ has: page.getByRole('heading', { name: 'Notifications' }) });
+  const attention = page.getByRole('region', { name: 'Notifications' });
   await expect(attention).toContainText(`${before} blockchain transactions need classification`);
   await attention.getByRole('link', { name: 'Review' }).click();
   await expect(page).toHaveURL(/\/transactions\?status=needs-classification/);
@@ -154,9 +151,9 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   await next.getByRole('button', { name: 'Save' }).click();
   await expect(next).toHaveCount(0);
   // The wallet is done; other cases' transactions may still wait elsewhere.
-  // The result is a toast in the Notifications region, outside main.
+  // The result is a toast in the Messages region, outside main.
   await expect(
-    page.getByRole('region', { name: 'Notifications' }).getByText(
+    page.getByRole('region', { name: 'Messages' }).getByText(
       /^(Hidden from calculations\. Nothing else to classify here\.|All transactions classified\. The last one was hidden\.)$/,
     ),
   ).toBeVisible();

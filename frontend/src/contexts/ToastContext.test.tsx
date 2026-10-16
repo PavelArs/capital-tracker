@@ -21,6 +21,14 @@ const setup = (toasts: ToastInput[]) =>
     </ToastProvider>,
   );
 
+/** The texts of the toasts in the polite status region (success, info), oldest first. */
+const polite = () =>
+  Array.from(screen.getByRole('status').querySelectorAll('.ui-toast')).map(
+    (toast) => toast.textContent,
+  );
+const toastCount = () =>
+  screen.getByRole('region', { name: 'Messages' }).querySelectorAll('.ui-toast').length;
+
 const fire = () => act(() => screen.getByRole('button', { name: 'Act' }).click());
 const wait = (ms: number) =>
   act(() => {
@@ -33,6 +41,19 @@ afterEach(() => {
 });
 
 describe('TOAST-SYSTEM: the app-wide toasts', () => {
+  it('TOAST-LIVE keeps an empty polite status region in the page before the first toast', async () => {
+    const user = userEvent.setup();
+    setup([{ tone: 'success', title: 'Goal deleted.' }]);
+    const region = screen.getByRole('region', { name: 'Messages' });
+    const live = within(region).getByRole('status');
+    expect(live).toBeEmptyDOMElement();
+    await user.click(screen.getByRole('button', { name: 'Act' }));
+    // The toast is added to the same node, which a screen reader was already watching.
+    expect(within(region).getByRole('status')).toBe(live);
+    expect(live).toHaveTextContent('Goal deleted.');
+    expect(live.querySelector('[role]')).toBeNull();
+  });
+
   it('TOAST-ROLE announces success and info politely, warnings and errors at once', async () => {
     const user = userEvent.setup();
     setup([
@@ -41,12 +62,12 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
       { tone: 'warning', title: 'Rate not saved' },
     ]);
     await user.click(screen.getByRole('button', { name: 'Act' }));
-    const region = screen.getByRole('region', { name: 'Notifications' });
-    expect(
-      within(region)
-        .getAllByRole('status')
-        .map((toast) => toast.textContent),
-    ).toEqual(['Goal saved.On track for June 2027.', 'Wallet addedSyncing transactions…']);
+    const region = screen.getByRole('region', { name: 'Messages' });
+    expect(within(region).getByRole('status')).toBe(screen.getByRole('status'));
+    expect(polite()).toEqual([
+      'Goal saved.On track for June 2027.',
+      'Wallet addedSyncing transactions…',
+    ]);
     expect(within(region).getByRole('alert')).toHaveTextContent('Rate not saved');
     expect(region.querySelector('.ui-toast--success')).toHaveTextContent('Goal saved.');
   });
@@ -56,7 +77,7 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
     setup([{ tone: 'error', title: 'Unable to log out. Please try again.' }]);
     await user.click(screen.getByRole('button', { name: 'Act' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Unable to log out. Please try again.');
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('TOAST-LIFETIME hides success after 5 s and an error after 7 s', () => {
@@ -69,32 +90,32 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
     wait(4900);
     expect(screen.getByRole('status')).toHaveTextContent('Saved.');
     wait(200);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(polite()).toEqual([]);
     expect(screen.getByRole('alert')).toHaveTextContent('Could not save.');
     wait(1800);
     expect(screen.getByRole('alert')).toBeInTheDocument();
     wait(200);
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.queryByRole('region', { name: 'Notifications' })).toBeNull();
+    expect(toastCount()).toBe(0);
   });
 
   it('TOAST-HOLD stays while hovered or focused and restarts its time after', () => {
     vi.useFakeTimers();
     setup([{ tone: 'success', title: 'Wallet renamed.' }]);
     fire();
-    const toast = screen.getByRole('status');
+    const toast = screen.getByText('Wallet renamed.').closest('.ui-toast') as HTMLElement;
     fireEvent.mouseEnter(toast);
     wait(60_000);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(polite()).toEqual(['Wallet renamed.']);
     fireEvent.mouseLeave(toast);
     fireEvent.focus(toast);
     wait(60_000);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(polite()).toEqual(['Wallet renamed.']);
     fireEvent.blur(toast);
     wait(4900);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(polite()).toEqual(['Wallet renamed.']);
     wait(200);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(polite()).toEqual([]);
   });
 
   it('TOAST-STACK keeps the three newest and shows the same title once', async () => {
@@ -107,11 +128,7 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
       { tone: 'success', title: 'Four' },
     ]);
     await user.click(screen.getByRole('button', { name: 'Act' }));
-    expect(screen.getAllByRole('status').map((toast) => toast.textContent)).toEqual([
-      'Twoagain',
-      'Three',
-      'Four',
-    ]);
+    expect(polite()).toEqual(['Twoagain', 'Three', 'Four']);
   });
 
   it('TOAST-ACTION runs its one action and closes; Dismiss closes it too', async () => {
@@ -124,9 +141,9 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
     await user.click(screen.getByRole('button', { name: 'Act' }));
     await user.click(screen.getByRole('button', { name: 'Review' }));
     expect(review).toHaveBeenCalledOnce();
-    expect(screen.getAllByRole('status').map((toast) => toast.textContent)).toEqual(['Copied']);
+    expect(polite()).toEqual(['Copied']);
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(polite()).toEqual([]);
   });
 
   it('TOAST-NO-PROVIDER does nothing, and does not fail, without a provider', async () => {

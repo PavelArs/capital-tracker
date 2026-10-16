@@ -6,9 +6,18 @@
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   z-index: var(--z-toast);
   display: grid;
-  gap: 8px;
   width: min(380px, calc(100vw - 32px));
   pointer-events: none;
+}
+
+/* The polite status region (success, info) and the alerts (warning, error); see Toast.tsx. */
+.ui-toasts__live {
+  display: grid;
+  gap: 8px;
+}
+
+.ui-toasts__live:not(:empty) + .ui-toasts__live:not(:empty) {
+  margin-top: 8px;
 }
 
 .ui-toast {

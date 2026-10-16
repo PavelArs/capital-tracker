@@ -299,11 +299,11 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     listed.mockResolvedValue(list([reserve]));
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
     const said = await screen.findByText('Goal deleted.');
-    // The notice is a status in the Notifications region, announced without taking the keyboard,
+    // The notice is in the polite status region of the Messages region, announced without taking the keyboard,
     // which goes to the page heading instead.
     expect(said.closest('[role="status"]')).not.toBeNull();
     expect(
-      within(screen.getByRole('region', { name: 'Notifications' })).getByText('Goal deleted.'),
+      within(screen.getByRole('region', { name: 'Messages' })).getByText('Goal deleted.'),
     ).toBeInTheDocument();
     const heading = await screen.findByRole('heading', { level: 1, name: 'Goals' });
     await waitFor(() => expect(heading).toHaveFocus());

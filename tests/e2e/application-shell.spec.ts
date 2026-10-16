@@ -189,13 +189,30 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await expect(
     portfolio.getByRole('heading', { level: 1, name: depositName, exact: true }),
   ).toBeVisible();
-  // The notice is a toast in the Notifications region, outside main.
+  // The notice is a toast in the Messages region, outside main.
   await expect(
     page
-      .getByRole('region', { name: 'Notifications' })
+      .getByRole('region', { name: 'Messages' })
       .getByRole('status')
       .filter({ hasText: 'Asset added.' }),
   ).toBeVisible();
+  // shell-16: the toast stands at the bottom right of a wide window, and above the tab bar on a
+  // phone. The pointer rests on it, so it stays while the window changes.
+  const added = page.locator('.ui-toast').filter({ hasText: 'Asset added.' });
+  await added.hover();
+  const wide = await added.boundingBox();
+  if (!wide) throw new Error('The toast has no box.');
+  expect(wide.x + wide.width).toBeGreaterThan(1440 - 40);
+  expect(wide.y + wide.height).toBeGreaterThan(1000 - 60);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tabBar = await nav.locator('#application-menu').boundingBox();
+  await expect
+    .poll(async () => {
+      const narrow = await added.boundingBox();
+      return !!narrow && !!tabBar && narrow.y + narrow.height <= tabBar.y && narrow.x >= 0;
+    })
+    .toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await portfolio.getByRole('link', { name: 'Back to Portfolio', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
   // The asset cell carries the type and value currency; a coin outside the market catalog

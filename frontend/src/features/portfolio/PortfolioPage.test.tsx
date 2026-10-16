@@ -1848,7 +1848,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
     // The word comes as a toast, announced politely (role=status).
     expect(
-      within(screen.getByRole('region', { name: 'Notifications' })).getByRole('status'),
+      within(screen.getByRole('region', { name: 'Messages' })).getByRole('status'),
     ).toHaveTextContent('Asset added.');
   });
 

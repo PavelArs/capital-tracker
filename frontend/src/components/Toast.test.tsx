@@ -71,7 +71,7 @@ describe('TOAST pop-up errors', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('shell-16 sits at the bottom right, clear of the pinned strip, at every width', async () => {
+  it('shell-16 leaves the placement to the stylesheet: no inline top at any width, and the alert is inside the Messages region', async () => {
     const user = userEvent.setup();
     const nav = document.createElement('nav');
     nav.className = 'shell-nav';
@@ -84,8 +84,9 @@ describe('TOAST pop-up errors', () => {
         }));
         const { unmount } = setup(['Unable to log out. Please try again.']);
         await user.click(screen.getByRole('button', { name: 'Fail' }));
-        const region = screen.getByRole('region', { name: 'Notifications' });
-        // Placed by its stylesheet at the bottom edge, never moved under the strip.
+        const region = screen.getByRole('region', { name: 'Messages' });
+        // Placed by its stylesheet (Toast.css), never by an inline position; the browser check is
+        // in tests/e2e/application-shell.spec.ts.
         expect(region).toHaveClass('ui-toasts');
         expect(region.style.top).toBe('');
         expect(within(region).getByRole('alert')).toHaveTextContent(

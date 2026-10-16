@@ -214,10 +214,10 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   const depositId = ((await assetSaved.json()) as { id: string }).id;
   await expect(page).toHaveURL(`${origin}/portfolio/${depositId}`);
   await expect(main.getByRole('heading', { level: 1, name: depositName })).toBeVisible();
-  // The notice is a toast in the Notifications region, outside main.
+  // The notice is a toast in the Messages region, outside main.
   await expect(
     page
-      .getByRole('region', { name: 'Notifications' })
+      .getByRole('region', { name: 'Messages' })
       .getByRole('status')
       .filter({ hasText: 'Asset added.' }),
   ).toBeVisible();
