@@ -22,9 +22,12 @@ const problemText: Record<ImportProblemReason, string> = {
   'fee-above-proceeds': 'A sale has a fee larger than the money it brought.',
   'not-held': 'A sale or purchase spends more than the account held at that time.',
   'before-records': 'An operation is older than the date the records can start from.',
-  'too-many-rewards': 'There are more dividends and coupons than the records keep.',
+  'too-many-rewards': 'There are more income payments than the records keep.',
   'too-many-entries': 'There are more entries than the records keep.',
 };
+
+/** An import that got no answer may still have been written, so leaving must reload the page. */
+const unanswered = (error: unknown) => !isAxiosError(error) || error.response === undefined;
 
 const failure = (error: unknown, step: 'preview' | 'import') =>
   requestFailure(error, {
@@ -34,14 +37,18 @@ const failure = (error: unknown, step: 'preview' | 'import') =>
         : 'Could not reach the server. Try again.',
     status: {
       401: 'Your session has ended. Sign in again.',
-      409: 'The account or its T-Bank history changed since the check. Check it again.',
+      404: 'This account no longer reads T-Bank. Close this window and connect it again.',
+      409:
+        step === 'import'
+          ? 'The account or its T-Bank history changed since the check. Check it again.'
+          : 'The records of this account do not allow loading this history as it stands.',
       422: (said) => said ?? 'T-Bank did not give the history. Connect the account again.',
       503: 'T-Bank could not be reached. Try again in a few minutes.',
     },
     fallback: 'Try again.',
   });
 
-const times = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+const entries = (count: number) => (count === 1 ? '1 entry' : `${count} entries`);
 
 interface Props {
   accountId: string;
@@ -67,6 +74,8 @@ export default function ImportHistoryDialog({
   // One request id per checked history, so a retry of a lost answer finds the first receipt.
   const request = useRef<{ hash: string; requestId: string } | null>(null);
   const latest = useRef(0);
+  const unsure = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   const check = async () => {
     const mine = ++latest.current;
@@ -108,6 +117,7 @@ export default function ImportHistoryDialog({
     } catch (caught) {
       // A changed history is checked again; a failure that left it unknown can be retried as is.
       if (isAxiosError(caught) && caught.response?.status === 409) setPreview(null);
+      if (unanswered(caught)) unsure.current = true;
       setError(failure(caught, 'import'));
     }
     setBusy(false);
@@ -126,31 +136,43 @@ export default function ImportHistoryDialog({
       );
     if (!preview.fitsTradeLimit)
       reasons.push('There are more trades than the records keep, even combined by month.');
-    for (const problem of preview.problems)
+    // One sentence per reason, naming the shares it concerns, however many entries it touches.
+    const tickers = new Map<ImportProblemReason, Set<string>>();
+    for (const problem of preview.problems) {
+      const named = tickers.get(problem.reason) ?? new Set<string>();
+      if (problem.ticker) named.add(problem.ticker);
+      tickers.set(problem.reason, named);
+    }
+    for (const [reason, named] of tickers)
       reasons.push(
-        problem.ticker && problem.reason === 'not-held'
-          ? `${problemText[problem.reason]} (${problem.ticker})`
-          : problemText[problem.reason],
+        named.size > 0
+          ? `${problemText[reason]} (${[...named].slice(0, 5).join(', ')})`
+          : problemText[reason],
       );
     if (reasons.length === 0) reasons.push('T-Bank has no operations to load for this account.');
   }
 
   const done = receipt !== null;
+  // A failed import that may have been written still reloads the page on leaving.
+  const leave = done || unsure.current ? onImported : onClose;
   return (
     <Modal
       titleId={`${id}-title`}
       size="wide"
-      onEscape={busy ? undefined : done ? onImported : onClose}
+      onEscape={busy ? undefined : leave}
+      initialFocus={() => heading.current}
     >
       <div className="ui-modal__head">
-        <h2 id={`${id}-title`}>Load T-Bank history</h2>
-        <CloseButton onClick={done ? onImported : onClose} disabled={busy} />
+        <h2 id={`${id}-title`} ref={heading} tabIndex={-1}>
+          Load T-Bank history
+        </h2>
+        <CloseButton onClick={leave} disabled={busy} />
       </div>
-      <div className="ui-modal__body">
+      <div className="ui-modal__body" aria-live="polite">
         {done ? (
           <p className="ui-banner ui-banner--pos" role="status">
-            Loaded {times(receipt.trades, 'trade')} and {times(receipt.rewards, 'reward')} into{' '}
-            {accountName}.
+            Loaded {entries(receipt.trades + receipt.rewards)} ({receipt.trades} for trades, money
+            in and out, fees and taxes, {receipt.rewards} for income payments) into {accountName}.
           </p>
         ) : busy && preview === null ? (
           <p className="broker-note" role="status">
@@ -160,12 +182,12 @@ export default function ImportHistoryDialog({
           <>
             <p className="broker-note">
               {preview.canImport
-                ? `The history of ${accountName} becomes ${times(preview.trades, 'trade')} and ${preview.rewards === 1 ? '1 dividend or coupon' : `${preview.rewards} dividends and coupons`}, from ${moscowDate(first as string)} to ${moscowDate(last as string)}. Securities become assets priced by hand, so their values stay empty until you enter a price.`
+                ? `The history of ${accountName} becomes ${entries(preview.trades + preview.rewards)} (${preview.trades} for trades, money in and out, fees and taxes, ${preview.rewards} for income payments), from ${moscowDate(first as string)} to ${moscowDate(last as string)}. A security you have not loaded before becomes an asset priced by hand, so it has no price until you enter one.`
                 : `The history of ${accountName} cannot be loaded as it stands.`}
             </p>
             {preview.canImport && preview.grouping !== 'operation' && (
               <p className="broker-note">
-                There are many trades, so those on one{' '}
+                There are many trades, so trades of one share in one{' '}
                 {preview.grouping === 'day' ? 'day' : 'month'} are combined into one entry.
               </p>
             )}
@@ -186,7 +208,7 @@ export default function ImportHistoryDialog({
       </div>
       <div className="ui-modal__foot">
         {done ? (
-          <button type="button" className="shell-button shell-button--primary" onClick={onImported}>
+          <button type="button" className="shell-button shell-button--primary" onClick={leave}>
             Done
           </button>
         ) : (
@@ -194,7 +216,7 @@ export default function ImportHistoryDialog({
             <button
               type="button"
               className="shell-button shell-button--ghost"
-              onClick={onClose}
+              onClick={leave}
               disabled={busy}
             >
               Cancel

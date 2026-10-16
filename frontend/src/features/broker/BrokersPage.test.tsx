@@ -193,9 +193,8 @@ describe('BROKERS the Brokers page', () => {
   });
 
   it('BROKER-HISTORY offers to load the history into an empty account that reads T-Bank', async () => {
-    vi.mocked(brokersApi.connection).mockImplementation(async (accountId) =>
-      accountId === iis ? { connected: true, tokenHint: '0001' } : { connected: false },
-    );
+    // Both accounts read T-Bank; only the one holding nothing is offered the history.
+    vi.mocked(brokersApi.connection).mockResolvedValue({ connected: true, tokenHint: '0001' });
     // The IIS account holds no position here, the plain broker account does.
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       valuation([
