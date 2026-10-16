@@ -269,7 +269,7 @@ async function populatedUpgrade() {
       [owner],
     );
     const old = await fingerprint(prior, ['migrations'], true);
-    assert.match(migrate(previousDatabase), /Migrations applied: 49/);
+    assert.match(migrate(previousDatabase), /Migrations applied: 50/);
     assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 69);
     assert.equal(
       await fingerprint(
