@@ -10,7 +10,7 @@ import {
   tickLabel,
 } from '../dashboard/HistoryChart';
 import { useCachedRead } from '../shell/useCachedRead';
-import { dateText, enteredText, flooredText, monthYear, rateText } from './goal-format';
+import { dateText, enteredText, flooredText, monthYear, rateText, staleText } from './goal-format';
 
 const HEIGHT = 290;
 const PAD = { left: 4, right: 64, top: 24, bottom: 28 };
@@ -93,6 +93,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
 
   // The server also leaves the forecast out when its own reading of the value is incomplete.
   const known = goal.progress.complete && forecast?.complete !== false;
+  // The forecast's own valuation, not the goal read's: the two requests can see other prices.
+  const staleNote = staleText(forecast?.stalePrices);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
   const low = goal.scenarios.find((scenario) => scenario.key === 'pessimistic');
   const high = goal.scenarios.find((scenario) => scenario.key === 'optimistic');
@@ -206,7 +208,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
         `${line(run)}L${run.at(-1)?.[0].toFixed(1)} ${floor}L${run[0][0].toFixed(1)} ${floor}Z`,
     )
     .join('');
-  const last = past[past.length - 1];
+  // 'Now' names the final history point only; a missing value there leaves no point called Now.
+  const latestAt = history?.points.at(-1)?.at;
   // The forecast starts at the portfolio now, the same figure the history ends on.
   // The drawn forecast starts from the value the server forecast from, which can differ from the
   // goal's own reading if the portfolio was revalued between the two requests.
@@ -467,7 +470,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
           >
             {current.kind === 'history' ? (
               <>
-                <div>{pointLabel(current, 'ALL', current === last)}</div>
+                <div>{pointLabel(current, 'ALL', current.at === latestAt)}</div>
                 <div className="goal-tip__value">{money(current.text)}</div>
                 <div className="goal-tip__row">
                   <span>Money put in</span>
@@ -535,6 +538,11 @@ export default function GoalChart({ goal }: { goal: Goal }) {
             Try again
           </button>
         </div>
+      )}
+      {staleNote && (
+        <p className="shell-note" role="note">
+          {staleNote}
+        </p>
       )}
       {!known && (
         <p className="shell-note" role="note">

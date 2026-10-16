@@ -25,13 +25,15 @@ export type GoalForecastPoint = { on: string } & Record<ScenarioKey, string | nu
  * GOAL-CHART: the three return cases month by month from today, with the same formulas, rates
  * and payment days as the goal's forecast, so the last point of a goal with a deadline is its
  * projection at the deadline. Empty while the portfolio has no complete value in the goal's
- * currency or once the deadline has passed.
+ * currency or once the deadline has passed. Says how many held prices are stale, as the value did.
  */
 export function goalForecast(row: GoalRow, now: PortfolioNow, today: string) {
   const empty = {
     currency: row.currency,
     asOf: today,
     complete: now.complete,
+    // The forecast's own valuation: the page's goal read may have seen other prices.
+    stalePrices: now.stalePrices,
     points: [] as GoalForecastPoint[],
   };
   // A value that leaves out an asset without a price or rate would understate every point.

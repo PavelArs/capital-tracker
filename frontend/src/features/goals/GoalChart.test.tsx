@@ -366,4 +366,33 @@ describe('GOAL-CHART goal chart', () => {
       await screen.findByText('Could not load the portfolio history. Try again later.'),
     ).toBeInTheDocument();
   });
+  it('says which held prices the forecast valued as stale, from its own response', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({ ...forecast, stalePrices: 2 });
+    const chart = await show();
+    expect(
+      await screen.findByText('2 prices are older than 2 hours; the last stored prices are used.'),
+    ).toBeInTheDocument();
+    expect(chart).toBeInTheDocument();
+  });
+
+  it('does not call an older value Now when the newest history point has no value', async () => {
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue({
+      ...history,
+      value: null,
+      points: [
+        ...history.points.slice(0, 3),
+        { at: '2026-10-13T09:00:00.000Z', value: null, complete: false, invested: '4800000.00' },
+      ],
+    });
+    const user = userEvent.setup();
+    const chart = await show();
+    await within(chart).findByText('Today');
+    chart.focus();
+    await user.keyboard('{Home}{ArrowRight}');
+    const tip = within(chart).getByRole('status');
+    expect(tip).toHaveTextContent('Oct 1, 2026');
+    expect(tip).not.toHaveTextContent('Now');
+  });
 });
