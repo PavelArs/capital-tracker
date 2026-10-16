@@ -344,7 +344,7 @@ describe('GOAL-CHART goal chart', () => {
     const chart = await show();
     await within(chart).findByText('Today');
     const invested = chart.querySelector('.goal-chart__invested')?.getAttribute('d') ?? '';
-    const ys = [...invested.matchAll(/[ML][\d.]+ ([\d.-]+)/g)].map((match) => Number(match[1]));
+    const ys = [...invested.matchAll(/(?:M[\d.]+ |V)([\d.-]+)/g)].map((match) => Number(match[1]));
     expect(ys.length).toBeGreaterThan(1);
     // The plot box ends 28 px above the 290 px bottom edge.
     for (const y of ys) expect(y).toBeLessThanOrEqual(262);
@@ -397,5 +397,16 @@ describe('GOAL-CHART goal chart', () => {
     const tip = within(chart).getByRole('status');
     expect(tip).toHaveTextContent('Oct 1, 2026');
     expect(tip).not.toHaveTextContent('Now');
+  });
+  it('draws the money put in as a step: it holds, then changes where the flow is recorded', async () => {
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    const chart = await show();
+    await within(chart).findByText('Today');
+    const invested = chart.querySelector('.goal-chart__invested')?.getAttribute('d') ?? '';
+    // Four points, three levels of money put in: one move, then a horizontal run and a vertical
+    // jump to each later level, with no slanted segment between snapshots.
+    expect(invested).toMatch(/^M[\d.]+ [\d.-]+(H[\d.]+V[\d.-]+){3}$/);
+    expect(invested).not.toContain('L');
   });
 });
