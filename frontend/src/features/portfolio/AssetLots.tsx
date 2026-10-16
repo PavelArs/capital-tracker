@@ -5,6 +5,9 @@ import {
   type LotReading,
 } from '@api/portfolio-valuation.api';
 import { useEffect, useRef } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { dayText } from '@/utils/dates';
@@ -12,8 +15,8 @@ import { basisText } from '../shell/basis-text';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import { InlineSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
-import { Signed } from './asset-parts';
-import { DASH, money, percent, quantity, tone } from './format';
+import { Signed, toneClass } from './asset-parts';
+import { DASH, money, percent, quantity } from './format';
 import './portfolio.css';
 
 /** Two lots of one account can share an instant, so a repeat gets a number to keep keys unique. */
@@ -73,7 +76,7 @@ function RealProfit({
         />
       )}
       {lot.nominalPnl !== null && (
-        <span className="portfolio-sub">nominal {money(lot.nominalPnl, currency, true)}</span>
+        <span className="ui-sub">nominal {money(lot.nominalPnl, currency, true)}</span>
       )}
     </>
   );
@@ -121,7 +124,7 @@ function LotsTable({
               <tr key={key}>
                 <td>
                   {dayText(lot.acquiredAt)}
-                  <span className="portfolio-sub">{lot.accountName}</span>
+                  <span className="ui-sub">{lot.accountName}</span>
                 </td>
                 <td className="ui-num">{quantity(lot.quantity)}</td>
                 <td className="ui-num">{money(lot.paid, currency)}</td>
@@ -131,7 +134,7 @@ function LotsTable({
                 <td className="ui-num">
                   {reading === null ? DASH : money(reading.costBasis, currency)}
                 </td>
-                <td className="ui-num portfolio-strong">{money(lot.value, currency)}</td>
+                <td className="ui-num ui-strong">{money(lot.value, currency)}</td>
                 <td className="ui-num">
                   <RealProfit lot={lot} reading={reading} currency={currency} />
                 </td>
@@ -175,26 +178,20 @@ function LotsList({
                   <>
                     {DASH}
                     {lot.nominalPnl !== null && (
-                      <span className="portfolio-sub">
+                      <span className="ui-sub">
                         nominal {money(lot.nominalPnl, currency, true)}
                       </span>
                     )}
                   </>
                 ) : (
                   <>
-                    <span
-                      className={
-                        tone(reading.unrealizedPnl)
-                          ? `portfolio-${tone(reading.unrealizedPnl)}`
-                          : undefined
-                      }
-                    >
+                    <span className={toneClass(reading.unrealizedPnl)}>
                       {money(reading.unrealizedPnl, currency, true)}
                       {reading.unrealizedReturnPercent !== null &&
                         ` · ${percent(reading.unrealizedReturnPercent)}`}
                     </span>
                     {lot.nominalPnl !== null && (
-                      <span className="portfolio-sub">
+                      <span className="ui-sub">
                         nominal {money(lot.nominalPnl, currency, true)}
                       </span>
                     )}
@@ -242,44 +239,50 @@ export default function AssetLotsCard({
 
   const line = answer ? basisLine(answer.lots, basis, answer.currency) : null;
   return (
-    <section className="shell-card" aria-labelledby="asset-lots">
-      <div className="ui-toolbar">
-        <h2 id="asset-lots">Purchases after inflation</h2>
-        {line && <span className="portfolio-sub">{line}</span>}
-      </div>
+    <Card labelledBy="asset-lots">
+      <CardHeader id="asset-lots" title="Purchases after inflation" sub={line ?? undefined} />
       {error !== null && answer === null ? (
-        <div className="portfolio-state" role="alert">
-          <p>Could not load the purchases. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => reload(true)}>
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => reload(true)}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load the purchases. Your data is safe; try again.
+        </Banner>
       ) : answer === null ? (
         <InlineSkeleton label="Loading purchases" />
       ) : (
         <>
           {stale && (
-            <div className="ui-banner ui-banner--warn portfolio-warn" role="alert">
-              <p>Could not refresh the purchases. The figures below may be out of date.</p>
-              <button type="button" className="shell-button" onClick={() => reload(true)}>
-                Try again
-              </button>
-            </div>
+            <Banner
+              tone="warn"
+              role="alert"
+              action={
+                <Button size="sm" icon="refresh" onClick={() => reload(true)}>
+                  Try again
+                </Button>
+              }
+            >
+              Could not refresh the purchases. The figures below may be out of date.
+            </Banner>
           )}
           {answer.lots.length === 0 ? (
-            <p className="portfolio-none">No purchases to show.</p>
+            <p className="ui-none">No purchases to show.</p>
           ) : phone ? (
             <LotsList lots={answer.lots} basis={basis} currency={answer.currency} />
           ) : (
             <LotsTable lots={answer.lots} basis={basis} currency={answer.currency} />
           )}
           {!answer.complete && (
-            <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+            <Banner tone="warn">
               An account whose history starts later may hold more purchases than are listed.
-            </p>
+            </Banner>
           )}
           {answer.lots.length > 0 && (
-            <p className="shell-note portfolio-note">
+            <p className="ui-sub portfolio-card-note">
               A purchase is ahead in real terms when it is worth more than what you paid grown by{' '}
               {answer.currency} inflation since that day.
               {answer.lots.some((lot) => readingOf(lot, basis) === null) &&
@@ -288,6 +291,6 @@ export default function AssetLotsCard({
           )}
         </>
       )}
-    </section>
+    </Card>
   );
 }

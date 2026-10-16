@@ -15,11 +15,13 @@ import {
 import { forgetReads, hydrateReads, releaseReads, setReadStore } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { ToastProvider } from '@contexts/ToastContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '../../components/Toast';
 import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
 import AssetLotsCard from './AssetLots';
@@ -191,6 +193,7 @@ async function openAddAsset(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'Add' }));
   const picker = screen.getByRole('dialog', { name: 'Add to portfolio' });
   await user.click(within(picker).getByRole('button', { name: /^Something else/ }));
+  await user.click(within(picker).getByRole('button', { name: 'Continue' }));
 }
 const rowOf = (name: string) => screen.getByRole('row', { name: new RegExp(`^${name}`) });
 const cells = (row: HTMLElement) =>
@@ -583,7 +586,7 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
-    expect(within(summary).getByRole('link', { name: 'bank deposits' })).toHaveClass('shell-link');
+    expect(within(summary).getByRole('link', { name: 'bank deposits' })).toHaveClass('ui-link');
   });
 
   it('portfolio-11 shows Manual instead of a 24h change for a hand-priced asset', async () => {
@@ -744,7 +747,7 @@ describe('PV-UI Portfolio values every asset', () => {
       'href',
       `/wallets/${id(101)}`,
     );
-    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
+    await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
   });
 
@@ -1823,13 +1826,16 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const Probe = () => <p data-testid="where">{useLocation().pathname}</p>;
     const user = userEvent.setup();
     render(
-      <MemoryRouter initialEntries={['/portfolio']}>
-        <Routes>
-          <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/portfolio/:assetId" element={<AssetPage />} />
-        </Routes>
-        <Probe />
-      </MemoryRouter>,
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/portfolio']}>
+          <Routes>
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/portfolio/:assetId" element={<AssetPage />} />
+          </Routes>
+          <Probe />
+        </MemoryRouter>
+        <ToastViewport />
+      </ToastProvider>,
     );
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const dialog = await openDialog(user);
@@ -1840,7 +1846,10 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByTestId('where')).toHaveTextContent(`/portfolio/${deposit.instrumentId}`);
     expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
-    expect(screen.getByText('Asset added.')).toHaveAttribute('role', 'status');
+    // The word comes as a toast, announced politely (role=status).
+    expect(
+      within(screen.getByRole('region', { name: 'Notifications' })).getByRole('status'),
+    ).toHaveTextContent('Asset added.');
   });
 
   it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
@@ -1871,35 +1880,47 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
         </Routes>
       </MemoryRouter>,
     );
+    // A tile is chosen first (aria-pressed), then Continue opens its form (step 1 of 2).
+    const pick = async (name: RegExp) => {
+      const dialog = screen.getByRole('dialog', { name: 'Add to portfolio' });
+      await user.click(within(dialog).getByRole('button', { name }));
+      expect(within(dialog).getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    };
     await user.click(await screen.findByRole('button', { name: 'Add' }));
     const picker = screen.getByRole('dialog', { name: 'Add to portfolio' });
     expect(
       within(picker)
         .getAllByRole('button')
         .map(
-          (button) => button.querySelector('b')?.textContent ?? button.getAttribute('aria-label'),
+          (button) =>
+            button.querySelector('b')?.textContent ??
+            button.getAttribute('aria-label') ??
+            button.textContent,
         ),
-    ).toEqual(['Close', 'Crypto', 'Bank', 'Broker', 'Real estate', 'Something else']);
+    ).toEqual([
+      'Close',
+      'Crypto',
+      'Bank',
+      'Broker',
+      'Real estate',
+      'Something else',
+      'Cancel',
+      'Continue',
+    ]);
+    expect(within(picker).getByRole('button', { name: 'Continue' })).toBeDisabled();
 
-    await user.click(within(picker).getByRole('button', { name: /^Real estate/ }));
+    await pick(/^Real estate/);
     expect(screen.getByRole('dialog', { name: 'Add property' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
-    await user.click(
-      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
-        name: /^Broker/,
-      }),
-    );
+    await pick(/^Broker/);
     expect(screen.getByRole('dialog', { name: 'Add broker account' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
-    await user.click(
-      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
-        name: /^Bank/,
-      }),
-    );
+    await pick(/^Bank/);
     expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
     const deposit = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.keyboard('{Escape}');
@@ -1907,11 +1928,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus();
 
     await user.click(screen.getByRole('button', { name: 'Add' }));
-    await user.click(
-      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
-        name: /^Crypto/,
-      }),
-    );
+    await pick(/^Crypto/);
     expect(await screen.findByText('Wallets page, add wallet: true')).toBeInTheDocument();
   });
 
@@ -1983,7 +2000,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     });
     // portfolio-06: the new asset opens on its own page; the list shows it on the way back.
     expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
+    await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(3);
     expect(cells(rowOf('Deposit')).slice(0, 2)).toEqual(['DepositManual · RUB', '150,000']);
@@ -2040,7 +2057,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     });
 
     // portfolio-06: the new asset's page opened; the next one is added from the list again.
-    await user.click(await screen.findByRole('link', { name: '← Portfolio' }));
+    await user.click(await screen.findByRole('link', { name: 'Back to Portfolio' }));
     dialog = await openDialog(user);
     await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
     expect(within(dialog).getByLabelText('Amount (optional)')).toBeInTheDocument();
@@ -2165,7 +2182,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     );
     // portfolio-06: the saved asset opens on its own page, and is in the list on the way back.
     expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
+    await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
@@ -2637,7 +2654,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
     expect(hide).not.toHaveBeenCalled();
     expect(hideAsset).not.toHaveBeenCalled();
-    const ask = screen.getByRole('region', { name: 'Hide this asset' });
+    const ask = screen.getByRole('alertdialog', { name: 'Hide this asset' });
     expect(ask).toHaveTextContent('It also leaves the wallet balances.');
     expect(ask).toHaveTextContent('Bring it back in Settings under Hidden assets.');
     await user.click(screen.getByRole('button', { name: 'Hide TON' }));
@@ -2662,7 +2679,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     const user = userEvent.setup();
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
-    expect(screen.getByRole('region', { name: 'Hide this asset' })).not.toHaveTextContent(
+    expect(screen.getByRole('alertdialog', { name: 'Hide this asset' })).not.toHaveTextContent(
       'wallet balances',
     );
     await user.click(screen.getByRole('button', { name: 'Hide BTC' }));
@@ -3264,7 +3281,7 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
     expect(operationsApi.list).toHaveBeenCalledWith('EUR');
     expect(position).toHaveTextContent('Current value€920.00');
     expect(position).toHaveTextContent('Cost basis€828.00');
-    expect(screen.getByRole('link', { name: '← Portfolio' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Back to Portfolio' })).toHaveAttribute(
       'href',
       '/portfolio?currency=EUR',
     );

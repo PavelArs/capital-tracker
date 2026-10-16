@@ -9,11 +9,14 @@ import {
 import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Affix, Input, Select, Textarea } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
-import CloseButton from '../shell/CloseButton';
 import { type Account, journalAccounts } from './AddTransactionDialog';
 import {
   type AssetEntry,
@@ -161,6 +164,8 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
     setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
   const all = assetProblems(entry, accounts?.length ?? 0);
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
+  // The text a Field shows under its control once the problem is found (ids `${id}-<problem>`).
+  const problem = (name: AssetProblem, text = problemText[name]) => (found.has(name) ? text : null);
   const fieldError = (problem: AssetProblem, text = problemText[problem]) =>
     found.has(problem) && (
       <span className="ui-field__error" id={`${id}-${problem}-error`}>
@@ -325,15 +330,14 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
       initialFocus={() => nameField.current}
     >
       <form ref={form} onSubmit={submit} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>Add asset</h2>
-          <CloseButton onClick={finish} disabled={saving} />
-          <p className="shell-note">
-            For things the app can't track by itself: cash, a bank deposit, an unsupported coin or
-            anything else.
-          </p>
-        </div>
-        <div className="ui-modal__body">
+        <ModalHeader
+          titleId={`${id}-title`}
+          title="Add asset"
+          onClose={finish}
+          closeDisabled={saving}
+          intro="For things the app can't track by itself: cash, a bank deposit, an unsupported coin or anything else."
+        />
+        <ModalBody>
           <div className="ui-field">
             <span id={`${id}-type`} className="ui-field__label">
               Type
@@ -349,83 +353,78 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             <span className="ui-field__hint">{kindHints[kind]}</span>
           </div>
           <div className="ui-field-row">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-name`}>
-                Name
-              </label>
-              <input
-                id={`${id}-name`}
-                ref={nameField}
-                className="ui-input"
-                maxLength={120}
-                placeholder={namePlaceholders[kind]}
-                value={entry.name}
-                disabled={locked}
-                onChange={(event) => update({ name: event.target.value })}
-                onBlur={leave('name')}
-                {...invalid('name')}
-              />
-              {fieldError('name')}
-            </div>
-            {kind !== 'cash' && (
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor={`${id}-ticker`}>
-                  {crypto ? 'Ticker' : 'Ticker (optional)'}
-                </label>
-                <input
-                  id={`${id}-ticker`}
-                  className="ui-input"
-                  maxLength={32}
-                  placeholder={crypto ? 'e.g. BTC' : ''}
-                  value={entry.ticker}
+            <Field id={`${id}-name`} label="Name" error={problem('name')}>
+              {(control) => (
+                <Input
+                  {...control}
+                  ref={nameField}
+                  maxLength={120}
+                  placeholder={namePlaceholders[kind]}
+                  value={entry.name}
                   disabled={locked}
-                  onChange={(event) => update({ ticker: event.target.value })}
-                  onBlur={leave('ticker')}
-                  {...invalid('ticker')}
+                  onChange={(event) => update({ name: event.target.value })}
+                  onBlur={leave('name')}
                 />
-                {fieldError('ticker')}
-              </div>
+              )}
+            </Field>
+            {kind !== 'cash' && (
+              <Field
+                id={`${id}-ticker`}
+                label={crypto ? 'Ticker' : 'Ticker (optional)'}
+                error={problem('ticker')}
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    maxLength={32}
+                    placeholder={crypto ? 'e.g. BTC' : ''}
+                    value={entry.ticker}
+                    disabled={locked}
+                    onChange={(event) => update({ ticker: event.target.value })}
+                    onBlur={leave('ticker')}
+                  />
+                )}
+              </Field>
             )}
           </div>
           <div className="ui-field-row">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-amount`}>
-                {amountRequired(kind) ? 'Amount' : 'Amount (optional)'}
-              </label>
-              <input
-                id={`${id}-amount`}
-                className="ui-input"
-                inputMode="decimal"
-                placeholder="e.g. 150000"
-                value={entry.amount}
-                disabled={balanceUnsure}
-                onChange={(event) => update({ amount: event.target.value })}
-                onBlur={leave('amount')}
-                {...invalid('amount')}
-              />
-              {fieldError('amount')}
-            </div>
+            <Field
+              id={`${id}-amount`}
+              label={amountRequired(kind) ? 'Amount' : 'Amount (optional)'}
+              error={problem('amount')}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  numeric
+                  placeholder="e.g. 150000"
+                  value={entry.amount}
+                  disabled={balanceUnsure}
+                  onChange={(event) => update({ amount: event.target.value })}
+                  onBlur={leave('amount')}
+                />
+              )}
+            </Field>
             {kind !== 'cash' && (
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor={`${id}-value`}>
-                  {crypto ? 'Total cost' : 'Current value'}
-                </label>
-                <span className="ui-affix">
-                  <input
-                    id={`${id}-value`}
-                    className="ui-input"
-                    inputMode="decimal"
-                    placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
-                    value={entry.value}
-                    disabled={balanceUnsure}
-                    onChange={(event) => update({ value: event.target.value })}
-                    onBlur={leave('value')}
-                    {...invalid('value')}
-                  />
-                  <span className="ui-affix__suffix">{entry.currency}</span>
-                </span>
-                {fieldError('value', crypto ? 'Enter what it cost' : problemText.value)}
-              </div>
+              <Field
+                id={`${id}-value`}
+                label={crypto ? 'Total cost' : 'Current value'}
+                error={problem('value', crypto ? 'Enter what it cost' : problemText.value)}
+              >
+                {(control) => (
+                  <Affix suffix={entry.currency}>
+                    <Input
+                      {...control}
+                      numeric
+                      placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
+                      value={entry.value}
+                      disabled={balanceUnsure}
+                      onChange={(event) => update({ value: event.target.value })}
+                      onBlur={leave('value')}
+                    />
+                  </Affix>
+                )}
+              </Field>
             )}
           </div>
           <div className="ui-field">
@@ -465,9 +464,8 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                 try again.
               </p>
             ) : noAccounts ? null : (
-              <select
+              <Select
                 id={`${id}-account`}
-                className="ui-input"
                 value={entry.accountId}
                 disabled={balanceUnsure}
                 onChange={(event) => update({ accountId: event.target.value })}
@@ -480,13 +478,12 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   </option>
                 ))}
                 <option value={NEW_ACCOUNT}>New account…</option>
-              </select>
+              </Select>
             )}
             {entry.accountId === NEW_ACCOUNT && !loadFailed && accounts !== null && (
               <>
-                <input
+                <Input
                   id={`${id}-account-name`}
-                  className="ui-input"
                   aria-label={noAccounts ? undefined : 'Name of the new account'}
                   placeholder="e.g. Home safe, Bank"
                   maxLength={MAX_ACCOUNT_NAME}
@@ -507,49 +504,32 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             )}
             {fieldError('account')}
           </div>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor={`${id}-notes`}>
-              Notes (optional)
-            </label>
-            <textarea
-              id={`${id}-notes`}
-              className="ui-input ui-textarea"
-              value={entry.notes}
-              disabled={balanceUnsure}
-              onChange={(event) => update({ notes: event.target.value })}
-              onBlur={leave('notes')}
-              {...invalid('notes')}
-            />
-            {fieldError('notes')}
-          </div>
-          <p className="ui-modal__info" role="note">
+          <Field id={`${id}-notes`} label="Notes (optional)" error={problem('notes')}>
+            {(control) => (
+              <Textarea
+                {...control}
+                value={entry.notes}
+                disabled={balanceUnsure}
+                onChange={(event) => update({ notes: event.target.value })}
+                onBlur={leave('notes')}
+              />
+            )}
+          </Field>
+          <Banner tone="info">
             {crypto
               ? 'An amount entered here is recorded as a buy today and counts as a deposit. For past purchases, leave it empty and use Add transaction.'
               : 'Adding it counts as a deposit. Later price changes count as market movement.'}
-          </p>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={finish}
-            disabled={saving}
-          >
+          </Banner>
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" onClick={finish} disabled={saving}>
             {created ? 'Close' : 'Cancel'}
-          </button>
-          <button
-            type="submit"
-            className="shell-button shell-button--primary"
-            disabled={saving || accounts === null}
-          >
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving || accounts === null}>
             Add asset
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );

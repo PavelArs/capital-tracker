@@ -1,6 +1,8 @@
 import type { AssetType } from '@api/portfolio-assets.api';
 import type { AllocationSlice, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useId, useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Card, CardHeader } from '@/ui/Card';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import {
   type AccountClasses,
@@ -13,6 +15,7 @@ import {
 import { useAccountClasses } from '../shell/useAccountClasses';
 import { sum } from '../wallets/wallets';
 import { money, percent } from './format';
+import './allocation.css';
 
 type Grouping = 'byAsset' | 'byType' | 'byAccount';
 const groupings: [Grouping, string][] = [
@@ -100,19 +103,23 @@ export default function Allocation({
     return { ...slice, ticker, color, tone: color ? undefined : index % 6 };
   });
   return (
-    <section className="shell-card" aria-labelledby={heading}>
-      <div className="ui-toolbar">
-        <h2 id={heading}>Allocation</h2>
-        <SegmentedControl
-          name={`${heading}-grouping`}
-          label="Group allocation by"
-          options={groupings}
-          value={grouping}
-          onChange={setGrouping}
-        />
-      </div>
+    <Card labelledBy={heading}>
+      <CardHeader
+        id={heading}
+        title="Allocation"
+        actions={
+          <SegmentedControl
+            name={`${heading}-grouping`}
+            label="Group allocation by"
+            options={groupings}
+            value={grouping}
+            onChange={setGrouping}
+            size="sm"
+          />
+        }
+      />
       {slices.length === 0 ? (
-        <p className="portfolio-none">Nothing with a price yet.</p>
+        <p className="ui-none">Nothing with a price yet.</p>
       ) : (
         <>
           <div className="portfolio-bar" aria-hidden="true">
@@ -152,15 +159,15 @@ export default function Allocation({
         </>
       )}
       {!portfolio.allocation.complete && (
-        <p className="shell-note portfolio-note">
+        <Banner tone="info" role="none" className="portfolio-allocation__note">
           {portfolio.missingPriceCount > 0 && 'Assets without a price are not included.'}
           {portfolio.missingPriceCount > 0 && portfolio.unavailableAccountCount > 0 && ' '}
           {portfolio.unavailableAccountCount > 0 &&
             'Accounts whose history starts later are not included.'}
           {portfolio.unratedDepositCount > 0 &&
             `${portfolio.missingPriceCount + portfolio.unavailableAccountCount > 0 ? ' ' : ''}Deposits without a current exchange rate are not included.`}
-        </p>
+        </Banner>
       )}
-    </section>
+    </Card>
   );
 }
