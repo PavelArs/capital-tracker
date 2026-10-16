@@ -10,3 +10,7 @@
 .section-grid--cards {
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 }
+
+.section-grid--wide {
+  grid-template-columns: minmax(0, 1fr);
+}

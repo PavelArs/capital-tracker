@@ -189,6 +189,34 @@ describe('BROKERS the Brokers page', () => {
     expect(screen.getByRole('button', { name: 'Add broker account' })).toBeInTheDocument();
   });
 
+  it('SECTION-LAYOUT-ACTION keeps Add broker account in the intro line as the primary button, also with nothing to list', async () => {
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    const { unmount } = renderPage();
+    await screen.findByRole('region', { name: 'Sample Broker' });
+    const add = screen.getByRole('button', { name: 'Add broker account' });
+    expect(add.closest('.ui-intro')).toHaveTextContent('Positions are entered by hand for now');
+    expect(add).toHaveClass('shell-button--primary');
+    unmount();
+    forgetReads();
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(wallet, 'Home safe', null)],
+      nextCursor: null,
+    });
+    get.mockResolvedValue(valuation([held[3]]));
+    renderPage();
+    await screen.findByText('No broker account yet');
+    expect(
+      screen.getByRole('button', { name: 'Add broker account' }).closest('.ui-intro'),
+    ).not.toBeNull();
+  });
+
+  it('SECTION-LAYOUT-GRID lists the accounts as wide cards, one on each line', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    renderPage();
+    const sample = await screen.findByRole('region', { name: 'Sample Broker' });
+    expect(sample.closest('ul')).toHaveClass('section-grid', 'section-grid--wide');
+  });
+
   it('says so when a refresh fails and keeps the last loaded figures', async () => {
     const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
     await cachedReads.portfolio.load(undefined);

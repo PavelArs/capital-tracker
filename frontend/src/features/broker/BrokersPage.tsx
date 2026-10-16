@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import EmptyState from '@/ui/EmptyState';
 import { ListRowText, rowClass } from '@/ui/ListRow';
-import PageIntro from '@/ui/PageIntro';
+import SummaryCard from '@/ui/SummaryCard';
 import { dayText } from '@/utils/dates';
 import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
@@ -13,8 +13,8 @@ import { money, price, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { Icon } from '../shell/icons';
-import { netWorthUnknown } from '../shell/net-worth';
-import PageHeader from '../shell/PageHeader';
+import { shareFigure } from '../shell/net-worth';
+import SectionPage, { SectionAction, SectionGrid } from '../shell/SectionPage';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useAccountClasses } from '../shell/useAccountClasses';
 import AddBrokerDialog from './AddBrokerDialog';
@@ -22,11 +22,9 @@ import {
   type BrokerAccount,
   type BrokerPosition,
   brokerAccountsOf,
-  brokerShare,
   leftOut,
   plural,
 } from './brokers';
-import '../shell/shell-page.css';
 import './broker.css';
 
 function Position({
@@ -157,23 +155,36 @@ export default function BrokersPage() {
   const total = sumDecimals(brokers?.map((account) => account.value) ?? []);
   const unpriced = brokers?.reduce((sum, account) => sum + account.unpriced, 0) ?? 0;
   const unrated = brokers?.reduce((sum, account) => sum + account.unrated, 0) ?? 0;
-  const share = portfolio && brokerShare(total, portfolio);
-  const unknown = portfolio && netWorthUnknown(portfolio);
   const missing = leftOut(unpriced, unrated);
-  const addButton = (primary: boolean) => (
-    <button
-      type="button"
-      className={`shell-button ${primary ? 'shell-button--primary' : 'shell-button--secondary'}`}
-      onClick={() => setAdding(true)}
-    >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
-      Add broker account
-    </button>
-  );
-
   return (
-    <div className="shell-page">
-      <PageHeader title="Brokers" currency={portfolio?.currency} />
+    <SectionPage
+      title="Brokers"
+      currency={portfolio?.currency}
+      intro="Positions are entered by hand for now, with the price you see at your broker. Update a price on the position's page."
+      action={<SectionAction onClick={() => setAdding(true)}>Add broker account</SectionAction>}
+      notice={
+        failed && brokers ? (
+          <p className="ui-banner ui-banner--warn" role="alert">
+            Could not refresh your broker accounts; showing the last loaded figures.{' '}
+            <button type="button" className="shell-button" onClick={() => load(true)}>
+              Refresh
+            </button>
+          </p>
+        ) : undefined
+      }
+      summary={
+        brokers && portfolio && brokers.length > 0 ? (
+          <SummaryCard
+            label="Total at brokers"
+            figures={[
+              { label: 'At brokers', value: money(total, portfolio.currency) },
+              shareFigure(total, portfolio),
+            ]}
+            note={missing}
+          />
+        ) : undefined
+      }
+    >
       {failed && !brokers ? (
         <section className="shell-card broker-state" role="alert">
           <p>Could not load your broker accounts. Your data is safe; try again.</p>
@@ -188,49 +199,16 @@ export default function BrokersPage() {
           id="brokers-empty"
           title="No broker account yet"
           icon={<Icon name="briefcase" />}
-          actions={addButton(true)}
         >
           Add a broker account with the stocks, bonds and funds it holds and its cash. Prices are
           entered by hand for now, with the price you see at your broker.
         </EmptyState>
       ) : (
-        <>
-          {failed && (
-            <p className="ui-banner ui-banner--warn" role="alert">
-              Could not refresh your broker accounts; showing the last loaded figures.{' '}
-              <button type="button" className="shell-button" onClick={() => load(true)}>
-                Refresh
-              </button>
-            </p>
-          )}
-          <PageIntro action={addButton(false)}>
-            Positions are entered by hand for now, with the price you see at your broker. Update a
-            price on the position's page.
-          </PageIntro>
-          <section className="shell-card broker-summary" aria-label="Total at brokers">
-            <div className="broker-summary__item">
-              <span className="broker-summary__label">At brokers</span>
-              <strong className="broker-summary__value">{money(total, portfolio.currency)}</strong>
-            </div>
-            <div className="broker-summary__item">
-              <span className="broker-summary__label">Share of net worth</span>
-              <strong className="broker-summary__value">
-                {share === null
-                  ? '—'
-                  : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`}
-              </strong>
-              {share === null && unknown && (
-                <span className="broker-summary__reason">{unknown}</span>
-              )}
-            </div>
-            {missing && <span className="broker-summary__note">{missing}</span>}
-          </section>
-          <ul className="broker-accounts">
-            {brokers.map((account) => (
-              <Account key={account.id} account={account} portfolio={portfolio} />
-            ))}
-          </ul>
-        </>
+        <SectionGrid variant="wide">
+          {brokers.map((account) => (
+            <Account key={account.id} account={account} portfolio={portfolio} />
+          ))}
+        </SectionGrid>
       )}
       {adding && (
         <AddBrokerDialog
@@ -241,6 +219,6 @@ export default function BrokersPage() {
           }}
         />
       )}
-    </div>
+    </SectionPage>
   );
 }
