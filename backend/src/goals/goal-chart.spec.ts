@@ -124,4 +124,13 @@ describe('GOAL-CHART goal forecast', () => {
       [],
     );
   });
+  it('carries the stale-price count of its own valuation, with or without points', async () => {
+    const stale = { value: '5000.00', complete: true, stalePrices: 2 };
+    const { points, stalePrices } = goalForecast(row, stale, today);
+    expect(points.length).toBeGreaterThan(0);
+    expect(stalePrices).toBe(2);
+    const none = goalForecast(row, { value: null, complete: false, stalePrices: 1 }, today);
+    expect(none.points).toEqual([]);
+    expect(none.stalePrices).toBe(1);
+  });
 });

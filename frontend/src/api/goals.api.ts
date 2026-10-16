@@ -84,6 +84,8 @@ export interface GoalForecast {
   asOf: string;
   /** False while an asset has no price or rate; the points are then left out. */
   complete: boolean;
+  /** Held assets valued at a stored market price older than 2 hours, as the forecast valued them. */
+  stalePrices?: number;
   points: ({ on: string } & Record<ScenarioKey, string | null>)[];
 }
 
