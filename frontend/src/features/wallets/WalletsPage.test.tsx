@@ -724,7 +724,9 @@ describe('M11: wallets sync in the background', () => {
     );
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
     expect(within(drawer).getByText('Delayed')).toBeInTheDocument();
-    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+    // A problem the background job stored is read in place, not announced as an interruption.
+    expect(within(drawer).queryByRole('alert')).toBeNull();
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
       'The Bitcoin data source is busy. The app tries again in a few minutes. Balances shown are from 1 h ago.',
     );
     expect(drawer).toHaveTextContent('Every hour in the background');
@@ -1455,7 +1457,9 @@ describe('M21: Bitcoin wallets by account public key', () => {
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
     expect(drawer).toHaveTextContent(`Public key${shortValue(zpub)}`);
     expect(drawer).toHaveTextContent('5 used · new ones are found automatically');
-    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+    // A standing warning, not an interruption: read in place as a note.
+    expect(within(drawer).queryByRole('alert')).toBeNull();
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
       'One address of this key is also tracked as its own wallet (Old Trezor address), so their coins count twice.',
     );
   });

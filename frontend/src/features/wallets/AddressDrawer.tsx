@@ -379,7 +379,7 @@ export default function AddressDrawer({
           </div>
         </dl>
         {key && key.alsoTracked.length > 0 && (
-          <p className="ui-banner ui-banner--warn wallets-message" role="alert">
+          <p className="ui-banner ui-banner--warn wallets-message" role="note">
             {key.alsoTracked.length === 1
               ? 'One address of this key is also tracked as its own wallet'
               : `${key.alsoTracked.length} addresses of this key are also tracked as their own wallets`}{' '}
@@ -408,8 +408,12 @@ export default function AddressDrawer({
         {exchange && <EarnSection exchange={exchange} />}
         {exchange && <ConvertNote exchange={exchange} />}
         {syncProblem(address, run) && (
-          // wallets-13: an amber note with an alert icon, as on the Wallets row.
-          <p className="ui-banner ui-banner--warn wallets-message" role="alert">
+          // wallets-13: an amber note with an alert icon, as on the Wallets row. A sync the owner
+          // just ran is said aloud (wallets-02); a failure the background job stored is a note.
+          <p
+            className="ui-banner ui-banner--warn wallets-message"
+            role={run?.state === 'failed' ? 'alert' : 'note'}
+          >
             <Icon name="alert" className="shell-icon wallets-message__icon" />
             <span>{syncProblem(address, run)}</span>
           </p>
