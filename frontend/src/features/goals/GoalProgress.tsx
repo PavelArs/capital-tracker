@@ -1,4 +1,5 @@
 import type { Goal } from '@api/goals.api';
+import { Progress } from '@/ui/Progress';
 import { enteredText, flooredText } from './goal-format';
 import './goals.css';
 
@@ -9,16 +10,11 @@ import './goals.css';
 export function GoalBar({ goal }: { goal: Goal }) {
   const share = goal.progress.percent === null ? 0 : Math.min(Number(goal.progress.percent), 100);
   return (
-    <span
-      className={`goal-bar${goal.status === 'reached' ? ' goal-bar--done' : ''}`}
-      role="progressbar"
-      aria-label={`Progress toward ${goal.name}`}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(share)}
-    >
-      <i style={{ width: `${share}%` }} />
-    </span>
+    <Progress
+      value={share}
+      label={`Progress toward ${goal.name}`}
+      tone={goal.status === 'reached' ? 'pos' : 'accent'}
+    />
   );
 }
 

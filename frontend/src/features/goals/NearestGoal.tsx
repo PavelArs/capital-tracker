@@ -16,9 +16,10 @@ export default function NearestGoal() {
   const goal = ordered(data.items).find((item) => item.status !== 'reached');
   if (!goal) return null;
   return (
-    <section className="shell-card goal-dash" aria-label="Nearest goal">
+    // The shared card's class on a section of its own: Card has no name to give a region.
+    <section className="ui-card goal-dash" aria-label="Nearest goal">
       <div className="goal-dash__head">
-        <span className="goal-card__icon" aria-hidden="true">
+        <span className="goal-icon" aria-hidden="true">
           <Icon name="target" className="shell-icon shell-icon--sm" />
         </span>
         <div className="goal-card__title">
@@ -38,10 +39,10 @@ export default function NearestGoal() {
         </Badge>
         <span>{verdict(goal)}</span>
         <span className="goal-dash__links">
-          <Link to={`/goals/${goal.id}`} className="shell-link">
+          <Link to={`/goals/${goal.id}`} className="ui-link">
             Open goal
           </Link>
-          <Link to="/goals" className="shell-link">
+          <Link to="/goals" className="ui-link">
             All goals · {data.items.length}
           </Link>
         </span>

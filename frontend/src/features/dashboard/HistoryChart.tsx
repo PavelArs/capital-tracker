@@ -424,7 +424,7 @@ export default function HistoryChart({
           <div className="dashboard-tip__value">{money(current.point.value, currency)}</div>
           <div className="dashboard-tip__row">
             <span>Change in period</span>
-            <span className={tone(difference) ? `portfolio-${tone(difference)}` : undefined}>
+            <span className={tone(difference) ? `ui-${tone(difference)}` : undefined}>
               {money(difference, currency, true)}
             </span>
           </div>

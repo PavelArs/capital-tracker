@@ -1,9 +1,15 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal } from '@api/goals.api';
+import { useToast } from '@contexts/ToastContext';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
+import PageIntro from '@/ui/PageIntro';
 import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
@@ -33,9 +39,9 @@ function GoalCard({
   onDelete: (goal: Goal) => void;
 }) {
   return (
-    <li className="goal-card">
+    <Card as="li" className="goal-card">
       <div className="goal-card__head">
-        <span className="goal-card__icon" aria-hidden="true">
+        <span className="goal-icon" aria-hidden="true">
           <Icon name="target" className="shell-icon shell-icon--sm" />
         </span>
         <div className="goal-card__title">
@@ -54,15 +60,16 @@ function GoalCard({
       <GoalFigures goal={goal} />
       <GoalBar goal={goal} />
       <p className="goal-card__verdict">{verdict(goal)}</p>
+      {/* The name's link covers the card; these two stay above it. */}
       <div className="goal-card__actions">
-        <button type="button" className="goal-link" onClick={() => onEdit(goal)}>
+        <Button variant="link" onClick={() => onEdit(goal)}>
           Edit
-        </button>
-        <button type="button" className="goal-link" onClick={() => onDelete(goal)}>
+        </Button>
+        <Button variant="link" onClick={() => onDelete(goal)}>
           Delete
-        </button>
+        </Button>
       </div>
-    </li>
+    </Card>
   );
 }
 
@@ -74,57 +81,42 @@ export default function GoalsPage() {
   const { main } = useMainCurrency();
   const navigate = useNavigate();
   const location = useLocation();
-  // goals-08, goals-09: a line that says what was just done. A goal deleted on its own page
+  // goals-08, goals-09: a toast says what was just done. A goal deleted on its own page
   // arrives here with word of it, said once; going back to this entry does not say it again.
-  const [notice, setNotice] = useState<{ text: string; focus: boolean } | null>(() =>
-    (location.state as { notice?: string } | null)?.notice === 'deleted'
-      ? { text: 'Goal deleted.', focus: true }
-      : null,
+  const toast = useToast();
+  const page = useRef<HTMLDivElement>(null);
+  const arrivedDeleted = useRef(
+    (location.state as { notice?: string } | null)?.notice === 'deleted',
   );
-  const noticeRef = useRef<HTMLParagraphElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is cleared.
+  // After a delete the button that opened the dialog is gone: the keyboard goes to the page's
+  // heading, not to the page body.
+  const [refocus, setRefocus] = useState(0);
   useEffect(() => {
-    if (notice) navigate({ pathname: location.pathname }, { replace: true });
+    if (refocus > 0) page.current?.querySelector<HTMLElement>('h1')?.focus();
+  }, [refocus]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is said and cleared.
+  useEffect(() => {
+    if (!arrivedDeleted.current) return;
+    toast.show({ tone: 'success', title: 'Goal deleted.' });
+    setRefocus((count) => count + 1);
+    navigate({ pathname: location.pathname }, { replace: true });
   }, []);
-  // After a delete the button that opened the dialog is gone: the keyboard goes to the line
-  // that says the goal was deleted, not to the page body.
-  useEffect(() => {
-    if (notice?.focus) noticeRef.current?.focus();
-  }, [notice]);
   // goals-35: the most prices behind any goal's figures that are older than 2 hours.
   const stale = staleText(
     Math.max(0, ...(list?.items ?? []).map((goal) => goal.progress.stalePrices ?? 0)),
   );
 
   const add = (
-    <button
-      type="button"
-      className="shell-button shell-button--secondary"
-      onClick={() => setEditing('new')}
-    >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
+    <Button icon="plus" onClick={() => setEditing('new')}>
       Add goal
-    </button>
+    </Button>
   );
 
   return (
-    <div className="shell-page">
+    <div className="shell-page" ref={page}>
       <PageHeader title="Goals" actions={add} />
-      {notice && (
-        <p
-          ref={noticeRef}
-          className="ui-banner ui-banner--pos"
-          role="status"
-          tabIndex={-1}
-          key={notice.text}
-        >
-          {notice.text}
-        </p>
-      )}
       {error && list === null ? (
-        <p className="shell-note" role="alert">
-          Could not load the goals. Try again later.
-        </p>
+        <ErrorState onRetry={() => reload()}>Could not load the goals. Try again later.</ErrorState>
       ) : list === null ? (
         <PageSkeleton label="Loading goals" show={['cards']} />
       ) : list.items.length === 0 ? (
@@ -133,13 +125,9 @@ export default function GoalsPage() {
           title="No goals yet"
           icon={<Icon name="target" />}
           actions={
-            <button
-              type="button"
-              className="shell-button shell-button--primary"
-              onClick={() => setEditing('new')}
-            >
+            <Button variant="primary" onClick={() => setEditing('new')}>
               Add goal
-            </button>
+            </Button>
           }
         >
           Set a sum you want to reach, with a date if you have one. The app works out how much to
@@ -147,24 +135,19 @@ export default function GoalsPage() {
         </EmptyState>
       ) : (
         <>
-          <p className="goal-intro">
+          <PageIntro>
             A goal is a sum to reach, with a date if you have one. Every goal is measured against
             your whole portfolio, in the currency the goal was set in.
-          </p>
-          {stale && (
-            <p className="ui-banner ui-banner--warn" role="note">
-              {stale}
-            </p>
-          )}
+          </PageIntro>
+          {stale && <Banner tone="warn">{stale}</Banner>}
           <ul className="goal-list">
             {ordered(list.items).map((goal) => (
               <GoalCard key={goal.id} goal={goal} onEdit={setEditing} onDelete={setDeleting} />
             ))}
           </ul>
-          <p className="shell-note">
-            <Icon name="info" className="shell-icon shell-icon--sm" /> Projections, not promises:
-            they assume the same return every year.
-          </p>
+          <Banner tone="neutral" icon="info">
+            Projections, not promises: they assume the same return every year.
+          </Banner>
         </>
       )}
       {editing !== null && (
@@ -179,7 +162,7 @@ export default function GoalsPage() {
               return;
             }
             setEditing(null);
-            setNotice({ text: 'Goal saved.', focus: false });
+            toast.show({ tone: 'success', title: 'Goal saved.', detail: verdict(saved) });
             reload(true);
           }}
         />
@@ -190,7 +173,8 @@ export default function GoalsPage() {
           onClose={() => setDeleting(null)}
           onDeleted={() => {
             setDeleting(null);
-            setNotice({ text: 'Goal deleted.', focus: true });
+            toast.show({ tone: 'success', title: 'Goal deleted.' });
+            setRefocus((count) => count + 1);
             // The other goals stay on screen while the list is asked for again.
             reload(true);
           }}

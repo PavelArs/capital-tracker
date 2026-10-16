@@ -1,10 +1,12 @@
 import { type Goal, type GoalList, goalsApi } from '@api/goals.api';
 import { forgetReads } from '@api/read-cache';
+import { ToastProvider } from '@contexts/ToastContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError } from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '@/components/Toast';
 import GoalsPage from './GoalsPage';
 
 // Synthetic goals and sums only.
@@ -81,12 +83,15 @@ function GoalOpened() {
 
 function open(state?: unknown) {
   render(
-    <MemoryRouter initialEntries={[{ pathname: '/goals', state }]}>
-      <Routes>
-        <Route path="/goals" element={<GoalsPage />} />
-        <Route path="/goals/:goalId" element={<GoalOpened />} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[{ pathname: '/goals', state }]}>
+        <Routes>
+          <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/goals/:goalId" element={<GoalOpened />} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 
@@ -361,7 +366,7 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     await user.click(within(card).getByRole('button', { name: 'Edit' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
     await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    expect(await screen.findByText('Goal saved.')).toHaveAttribute('role', 'status');
+    expect((await screen.findByText('Goal saved.')).closest('[role="status"]')).not.toBeNull();
   });
 
   it('deletes a goal after asking', async () => {
@@ -378,7 +383,7 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith(flat.id));
   });
 
-  it('goals-09 says a goal from the list was deleted and puts the keyboard on that line', async () => {
+  it('goals-09 says a goal from the list was deleted and puts the keyboard on the page heading', async () => {
     const user = userEvent.setup();
     const listed = vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat, reserve]));
     vi.spyOn(goalsApi, 'remove').mockResolvedValue();
@@ -389,18 +394,19 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     listed.mockResolvedValue(list([reserve]));
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
     const said = await screen.findByText('Goal deleted.');
-    expect(said).toHaveAttribute('role', 'status');
-    await waitFor(() => expect(said).toHaveFocus());
+    expect(said.closest('[role="status"]')).not.toBeNull();
+    const heading = screen.getByRole('heading', { level: 1, name: 'Goals' });
+    await waitFor(() => expect(heading).toHaveFocus());
     await waitFor(() => expect(screen.queryByText('Down payment A')).toBeNull());
-    expect(said).toHaveFocus();
+    expect(heading).toHaveFocus();
   });
 
-  it('goals-09 says a goal deleted on its page was deleted, once, with the keyboard on it', async () => {
+  it('goals-09 says a goal deleted on its page was deleted, once, with the keyboard on the page heading', async () => {
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([reserve]));
     open({ notice: 'deleted' });
     const said = await screen.findByText('Goal deleted.');
-    expect(said).toHaveAttribute('role', 'status');
-    expect(said).toHaveFocus();
+    expect(said.closest('[role="status"]')).not.toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Goals' })).toHaveFocus();
   });
 
   it('goals-35 says when prices behind the figures are older than 2 hours', async () => {
@@ -435,7 +441,7 @@ describe('GOAL-PREVIEW: the plan in the dialog before the goal is saved', () => 
     expect(plan).toHaveTextContent(
       'Behind by ₽270,000 a month. Reaching it by Dec 2028 needs ₽420,000 a month; at ₽150,000 it takes until Aug 2032. A projection, not a promise.',
     );
-    expect(plan).toHaveClass('ui-banner--warn');
+    expect(plan.querySelector('.ui-banner--warn')).not.toBeNull();
     expect(within(dialog).getByText('Your portfolio now: ₽5,500,000')).toBeVisible();
     // Asked once the typing stopped, for the last terms, and never with the name.
     await waitFor(() =>

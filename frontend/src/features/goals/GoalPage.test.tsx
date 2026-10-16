@@ -1,11 +1,13 @@
 import { type Goal, goalsApi } from '@api/goals.api';
 import { forgetReads } from '@api/read-cache';
+import { ToastProvider } from '@contexts/ToastContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError } from 'axios';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '@/components/Toast';
 import { Icon } from '../shell/icons';
 import GoalPage from './GoalPage';
 
@@ -94,12 +96,15 @@ function GoalList() {
 
 function show(goal: Goal, state?: unknown) {
   render(
-    <MemoryRouter initialEntries={[{ pathname: `/goals/${goal.id}`, state }]}>
-      <Routes>
-        <Route path="/goals" element={<GoalList />} />
-        <Route path="/goals/:goalId" element={<GoalPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[{ pathname: `/goals/${goal.id}`, state }]}>
+        <Routes>
+          <Route path="/goals" element={<GoalList />} />
+          <Route path="/goals/:goalId" element={<GoalPage />} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 
@@ -137,10 +142,10 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     answers(dated, open);
     show(open);
     expect(await screen.findByRole('heading', { name: 'Reserve B' })).toBeInTheDocument();
-    expect(screen.getByText('No date', { selector: '.goal-stat__value' })).toBeInTheDocument();
+    expect(screen.getByText('No date', { selector: '.ui-stat__value' })).toBeInTheDocument();
     expect(screen.getByText('Nothing')).toBeInTheDocument();
     expect(
-      screen.getByText('Reached', { selector: '.goal-stat__label' }).nextSibling,
+      screen.getByText('Reached', { selector: '.ui-stat__label' }).nextSibling,
     ).toHaveTextContent('Aug 2032');
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(within(rows[0]).queryByText('Needed a month')).toBeNull();
@@ -347,12 +352,12 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
       renderToStaticMarkup(<Icon name={name} />).replace(/^<svg[^>]*>|<\/svg>$/g, '');
     answers({ ...dated, status: 'on-track' }, { ...open, status: 'reached' });
     show(dated);
-    const verdict = (await screen.findByText(/^On track\./)).closest('p') as HTMLElement;
-    expect(verdict).toHaveClass('ui-banner--action', 'goal-verdict');
+    const verdict = (await screen.findByText(/^On track\./)).closest('.ui-banner') as HTMLElement;
+    expect(verdict).toHaveClass('ui-banner--pos');
     expect(verdict.querySelector('svg')?.innerHTML).toBe(markup('check'));
     cleanup();
     show(open);
-    const reached = (await screen.findByText(/^Reached\./)).closest('p') as HTMLElement;
+    const reached = (await screen.findByText(/^Reached\./)).closest('.ui-banner') as HTMLElement;
     expect(reached.querySelector('svg')?.innerHTML).toBe(markup('check'));
   });
 
@@ -360,7 +365,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     answers(dated);
     show(dated);
     await screen.findByRole('heading', { name: 'Down payment A' });
-    expect(screen.getByRole('link', { name: '← Goals' })).toHaveClass('shell-link');
+    expect(screen.getByRole('link', { name: 'Back to Goals' })).toHaveAttribute('href', '/goals');
     expect(screen.getByText('Behind', { selector: '.ui-badge' })).toHaveClass('ui-badge--dot');
   });
 
@@ -369,7 +374,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     show(dated);
     await screen.findByRole('heading', { name: 'Down payment A' });
     expect(
-      screen.getByText('Target', { selector: '.goal-stat__label' }).nextSibling,
+      screen.getByText('Target', { selector: '.ui-stat__label' }).nextSibling,
     ).toHaveTextContent('₽22,000,000');
     expect(screen.getByRole('columnheader', { name: 'Against the target' })).toBeInTheDocument();
     const remove = screen.getByRole('button', { name: 'Delete goal' });
@@ -404,11 +409,11 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     answers(dated);
     vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...dated, name: 'Flat' });
     show(dated, { notice: 'added' });
-    expect(await screen.findByText('Goal added.')).toHaveAttribute('role', 'status');
+    expect((await screen.findByText('Goal added.')).closest('[role="status"]')).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'Edit goal' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
     await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    expect(await screen.findByText('Goal saved.')).toHaveAttribute('role', 'status');
+    expect((await screen.findByText('Goal saved.')).closest('[role="status"]')).not.toBeNull();
     expect(screen.queryByText('Goal added.')).toBeNull();
   });
 
@@ -423,7 +428,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
       'Down payment A and its plan are removed; this cannot be undone. Your portfolio and transactions stay as they are.',
     );
     expect(within(dialog).getByRole('button', { name: 'Delete goal' })).toHaveClass(
-      'shell-button--danger',
+      'ui-btn--danger',
     );
   });
 

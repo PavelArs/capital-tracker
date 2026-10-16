@@ -1,9 +1,17 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal, GoalScenario } from '@api/goals.api';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { ErrorState } from '@/ui/ErrorState';
+import { IconButton } from '@/ui/IconButton';
+import { Crumb, PageHead } from '@/ui/PageHead';
+import { Stat, Stats } from '@/ui/Stats';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
@@ -31,16 +39,6 @@ import {
 } from './goal-format';
 import '../shell/shell-page.css';
 import './goals.css';
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="shell-card goal-stat">
-      <span className="goal-stat__label">{label}</span>
-      <strong className="goal-stat__value">{value}</strong>
-      {hint && <span className="goal-stat__hint">{hint}</span>}
-    </div>
-  );
-}
 
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
 function Cases({ goal }: { goal: Goal }) {
@@ -160,19 +158,25 @@ const verdictIcon = (status: Goal['status']) =>
 // GOAL-PAGE: one goal with its figures, the verdict and the three return cases.
 export default function GoalPage() {
   const { goalId = '' } = useParams();
-  const { data: goal, error, replace } = useCachedRead(cachedReads.goal, goalId);
+  const { data: goal, error, replace, reload } = useCachedRead(cachedReads.goal, goalId);
   const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   // goals-08: a new goal opens here, once, with word that it was added; an edit says it saved.
-  const [notice, setNotice] = useState<string | null>(() =>
-    (location.state as { notice?: string } | null)?.notice === 'added' ? 'Goal added.' : null,
-  );
+  const toast = useToast();
+  const arrivedAdded = useRef((location.state as { notice?: string } | null)?.notice === 'added');
+  const said = useRef<number | null>(null);
   // The word is said once: going back to this entry, or reloading it, does not say it again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is cleared.
   useEffect(() => {
-    if (notice) navigate({ pathname: location.pathname }, { replace: true });
+    if (arrivedAdded.current) navigate({ pathname: location.pathname }, { replace: true });
   }, []);
+  useEffect(() => {
+    if (!arrivedAdded.current || !goal) return;
+    arrivedAdded.current = false;
+    said.current = toast.show({ tone: 'success', title: 'Goal added.', detail: verdict(goal) });
+  }, [goal, toast]);
+  const cases = useId();
   // A malformed id in the address names no goal either (goals-23).
   const status = isAxiosError(error) ? error.response?.status : undefined;
   const missing = status === 404 || status === 400;
@@ -180,10 +184,10 @@ export default function GoalPage() {
   if (missing)
     return (
       <div className="shell-page">
-        <PageHeader title="Goal" />
-        <p className="shell-note" role="alert">
+        <PageHeader title="Goals" />
+        <ErrorState>
           This goal does not exist. <Link to="/goals">Back to goals</Link>
-        </p>
+        </ErrorState>
       </div>
     );
 
@@ -203,46 +207,31 @@ export default function GoalPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title={goal ? goal.name : 'Goal'}
-        actions={
-          goal && (
-            <>
-              <button
-                type="button"
-                className="shell-button shell-button--secondary"
-                onClick={() => setDialog('edit')}
-              >
-                <Icon name="edit" className="shell-icon shell-icon--sm" />
-                Edit goal
-              </button>
-              <button
-                type="button"
-                className="shell-button shell-button--ghost goal-icon-button"
-                aria-label="Delete goal"
-                title="Delete goal"
-                onClick={() => setDialog('delete')}
-              >
-                <Icon name="trash" className="shell-icon shell-icon--sm" />
-              </button>
-            </>
-          )
-        }
-      />
-      <p className="goal-back">
-        <Link to="/goals" className="shell-link">
-          ← Goals
-        </Link>
-      </p>
+      <PageHeader title="Goals" />
+      <Crumb to="/goals">Goals</Crumb>
       {error && goal === null ? (
-        <p className="shell-note" role="alert">
-          Could not load the goal. Try again later.
-        </p>
+        <ErrorState onRetry={() => reload()}>Could not load the goal. Try again later.</ErrorState>
       ) : goal === null ? (
         <PageSkeleton label="Loading goal" show={['cards']} />
       ) : (
         <>
-          <section className="shell-card goal-head">
+          <PageHead
+            icon={
+              <span className="goal-icon goal-icon--lg">
+                <Icon name="target" className="shell-icon" />
+              </span>
+            }
+            title={goal.name}
+            actions={
+              <>
+                <Button icon="edit" onClick={() => setDialog('edit')}>
+                  Edit goal
+                </Button>
+                <IconButton label="Delete goal" icon="trash" onClick={() => setDialog('delete')} />
+              </>
+            }
+          />
+          <Card className="goal-head">
             <div className="goal-head__top">
               <Badge tone={statusTone[goal.status]} dot>
                 {statusText[goal.status]}
@@ -254,94 +243,83 @@ export default function GoalPage() {
             </div>
             <GoalFigures goal={goal} />
             <GoalBar goal={goal} />
-          </section>
-          {notice && (
-            <p className="ui-banner ui-banner--pos" role="status">
-              {notice}
-            </p>
-          )}
-          <p
-            className={`ui-banner ui-banner--${bannerTone[goal.status]} ui-banner--action goal-verdict`}
-            role="status"
-          >
-            <Icon name={verdictIcon(goal.status)} className="shell-icon shell-icon--sm" />
-            <span>{verdict(goal)}</span>
-          </p>
-          {stale && (
-            <p className="ui-banner ui-banner--warn" role="note">
-              {stale}
-            </p>
-          )}
-          <div className="goal-stats">
-            <Stat
-              label="Portfolio now"
-              value={money(goal.progress.current)}
-              hint={
-                percent === null
-                  ? undefined
-                  : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price'}`
-              }
-            />
-            <Stat label="Target" value={entered(goal.targetAmount)} />
-            <Stat
-              label="Time left"
-              value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
-              hint={
-                goal.deadline
-                  ? `Until ${dateText(goal.deadline)}`
-                  : 'Add a date to get a monthly sum'
-              }
-            />
-            <Stat
-              label="You put in a month"
-              value={planned ? entered(goal.monthlyContribution) : 'Nothing'}
-              hint={
-                known && base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
-                  ? `Needed for the date: ${needed(base.requiredMonthly)}`
-                  : undefined
-              }
-            />
-            <Stat
-              label="Expected return"
-              value={`${rateText(goal.expectedReturnPercent)}% a year`}
-              hint="The base case"
-            />
-            {goal.deadline ? (
+          </Card>
+          <Banner tone={bannerTone[goal.status]} icon={verdictIcon(goal.status)} role="status">
+            {verdict(goal)}
+          </Banner>
+          {stale && <Banner tone="warn">{stale}</Banner>}
+          <Card>
+            <Stats label="Goal figures">
               <Stat
-                label={`Forecast for ${monthYear(goal.deadline)}`}
-                value={known ? money(base?.projectedAtDeadline ?? null) : '—'}
-                hint={against?.hint}
-              />
-            ) : (
-              <Stat
-                label="Reached"
-                value={
-                  goal.status === 'reached'
-                    ? 'Already'
-                    : !known
-                      ? 'Not known'
-                      : base?.reachedOn
-                        ? monthYear(base.reachedOn)
-                        : 'Over 100 years'
-                }
+                label="Portfolio now"
+                value={money(goal.progress.current)}
                 hint={
-                  known && base?.monthsToTarget != null && goal.status !== 'reached'
-                    ? `In ${span(base.monthsToTarget)}`
+                  percent === null
+                    ? undefined
+                    : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price'}`
+                }
+              />
+              <Stat label="Target" value={entered(goal.targetAmount)} />
+              <Stat
+                label="Time left"
+                value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
+                hint={
+                  goal.deadline
+                    ? `Until ${dateText(goal.deadline)}`
+                    : 'Add a date to get a monthly sum'
+                }
+              />
+              <Stat
+                label="You put in a month"
+                value={planned ? entered(goal.monthlyContribution) : 'Nothing'}
+                hint={
+                  known && base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
+                    ? `Needed for the date: ${needed(base.requiredMonthly)}`
                     : undefined
                 }
               />
-            )}
-          </div>
+              <Stat
+                label="Expected return"
+                value={`${rateText(goal.expectedReturnPercent)}% a year`}
+                hint="The base case"
+              />
+              {goal.deadline ? (
+                <Stat
+                  label={`Forecast for ${monthYear(goal.deadline)}`}
+                  value={known ? money(base?.projectedAtDeadline ?? null) : '—'}
+                  hint={against?.hint}
+                />
+              ) : (
+                <Stat
+                  label="Reached"
+                  value={
+                    goal.status === 'reached'
+                      ? 'Already'
+                      : !known
+                        ? 'Not known'
+                        : base?.reachedOn
+                          ? monthYear(base.reachedOn)
+                          : 'Over 100 years'
+                  }
+                  hint={
+                    known && base?.monthsToTarget != null && goal.status !== 'reached'
+                      ? `In ${span(base.monthsToTarget)}`
+                      : undefined
+                  }
+                />
+              )}
+            </Stats>
+          </Card>
           {goal.scenarios.length > 0 && !known && (
-            <p className="shell-note" role="note">
-              <Icon name="info" className="shell-icon shell-icon--sm" /> The three cases need every
-              asset priced. Some have no price or rate yet, so no sum or date is worked out.
-            </p>
+            <Banner tone="info">
+              The three cases need every asset priced. Some have no price or rate yet, so no sum or
+              date is worked out.
+            </Banner>
           )}
           {goal.scenarios.length > 0 && known && (
-            <section className="shell-card" aria-labelledby="goal-cases">
-              <h2 id="goal-cases">Three cases</h2>
-              <p className="shell-note">
+            <Card labelledBy={cases}>
+              <CardHeader id={cases} title="Three cases" />
+              <p className="goal-note">
                 The same plan at{' '}
                 {gap
                   ? gap.less === gap.more
@@ -351,15 +329,14 @@ export default function GoalPage() {
                 a year than the {rateText(goal.expectedReturnPercent)}% you expect.
               </p>
               <Cases goal={goal} />
-              <p className="shell-note">
-                <Icon name="info" className="shell-icon shell-icon--sm" /> A projection, not a
-                promise: the same return every year on the whole portfolio, with{' '}
+              <Banner tone="neutral" icon="info">
+                A projection, not a promise: the same return every year on the whole portfolio, with{' '}
                 {planned ? `${entered(goal.monthlyContribution)} put in` : 'nothing put in'} once a
                 month, the first a month from {dateText(goal.asOf)}, and interest compounded
                 monthly. Bank deposits count at the same rate for now. Markets do not move in a
                 straight line.
-              </p>
-            </section>
+              </Banner>
+            </Card>
           )}
           {dialog === 'edit' && (
             <GoalDialog
@@ -369,7 +346,12 @@ export default function GoalPage() {
               onSaved={(saved) => {
                 setDialog(null);
                 replace(saved);
-                setNotice('Goal saved.');
+                if (said.current !== null) toast.dismiss(said.current);
+                said.current = toast.show({
+                  tone: 'success',
+                  title: 'Goal saved.',
+                  detail: verdict(saved),
+                });
               }}
             />
           )}

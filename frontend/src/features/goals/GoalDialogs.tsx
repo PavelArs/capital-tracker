@@ -16,12 +16,15 @@ import {
   useRef,
   useState,
 } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Chip, ChipGroup } from '@/ui/Chip';
+import { type FieldControl, Field as FormField } from '@/ui/Field';
+import { Affix, Input } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
-import CloseButton from '../shell/CloseButton';
-import { Icon } from '../shell/icons';
 import {
   addMonths,
   bannerTone,
@@ -31,7 +34,6 @@ import {
   today,
   verdict,
 } from './goal-format';
-import '../transactions/transactions.css';
 import './goals.css';
 
 // What the server accepts (goal-input.ts): a sum with up to two decimals, a yearly return below
@@ -84,12 +86,6 @@ const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean
 
 /** The problems shown under the fields: none until the owner tried to save. */
 const ShownProblems = createContext<Problems>({});
-
-/** How a field's control points at its message: invalid with the problem, else its hint. */
-interface FieldAria {
-  'aria-invalid'?: true;
-  'aria-describedby'?: string;
-}
 
 /** One modal form: a title, fields, a refusal line and Cancel/Save. */
 function FormDialog({
@@ -152,37 +148,26 @@ function FormDialog({
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
     >
-      <form ref={form} className="goal-dialog" onSubmit={save} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>{title}</h2>
-          <CloseButton onClick={onClose} disabled={saving} />
-          {note && <p className="shell-note">{note}</p>}
-        </div>
-        <div className="ui-modal__body">
+      <form ref={form} onSubmit={save} noValidate>
+        <ModalHeader
+          titleId={`${id}-title`}
+          title={title}
+          onClose={onClose}
+          closeDisabled={saving}
+          intro={note}
+        />
+        <ModalBody>
           <ShownProblems.Provider value={shown}>{children}</ShownProblems.Provider>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={saving}
-            onClick={onClose}
-          >
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            className={`shell-button shell-button--${danger ? 'danger' : 'primary'}`}
-            disabled={saving}
-          >
+          </Button>
+          <Button type="submit" variant={danger ? 'danger' : 'primary'} disabled={saving}>
             {saving ? 'Saving…' : submit}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -203,35 +188,25 @@ function Field({
   optional?: boolean;
   hint?: string;
   name?: string;
-  children: (id: string, aria: FieldAria) => ReactNode;
+  children: (control: FieldControl) => ReactNode;
 }) {
-  const id = useId();
   const problems = useContext(ShownProblems);
-  const problem = name ? problems[name] : undefined;
-  const aria: FieldAria = problem
-    ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` }
-    : hint
-      ? { 'aria-describedby': `${id}-hint` }
-      : {};
   return (
-    <div className="ui-field">
-      <label className="ui-field__label" htmlFor={id}>
-        {label}
-        {optional && <span className="goal-optional"> (optional)</span>}
-      </label>
-      {children(id, aria)}
-      {problem ? (
-        <span className="ui-field__error" id={`${id}-error`} role="alert">
-          {problem}
-        </span>
-      ) : (
-        hint && (
-          <span className="ui-field__hint" id={`${id}-hint`}>
-            {hint}
-          </span>
+    <FormField
+      label={
+        optional ? (
+          <>
+            {label} <span className="ui-muted">(optional)</span>
+          </>
+        ) : (
+          label
         )
-      )}
-    </div>
+      }
+      hint={hint}
+      error={name ? (problems[name] ?? null) : null}
+    >
+      {children}
+    </FormField>
   );
 }
 
@@ -351,38 +326,29 @@ function PlanPreview({
       : null;
   if (refusal !== null)
     return (
-      <p className="ui-banner ui-banner--warn goal-preview" aria-busy={pending}>
-        <Icon name="alert" className="shell-icon shell-icon--sm" />
-        <span>{refusal}</span>
-      </p>
+      <div className="goal-preview" aria-busy={pending}>
+        <Banner tone="warn">{refusal}</Banner>
+      </div>
     );
   if (!ready || failed !== null || preview === null)
     return (
-      <p className="ui-banner ui-banner--info goal-preview" aria-busy={ready && pending}>
-        <Icon name="info" className="shell-icon shell-icon--sm" />
-        <span>
+      <div className="goal-preview" aria-busy={ready && pending}>
+        <Banner tone="info">
           {!ready
             ? 'Enter the sum and the return to see a plan.'
             : failed !== null
               ? 'Could not work out the plan right now. The goal can still be saved.'
               : 'Working out the plan…'}
-        </span>
-      </p>
+        </Banner>
+      </div>
     );
   const tone = bannerTone[preview.status];
   return (
-    <p
-      className={`ui-banner ui-banner--${tone} goal-preview`}
-      role="status"
-      aria-label="Plan"
-      aria-busy={pending}
-    >
-      <Icon
-        name={tone === 'warn' || tone === 'neg' ? 'alert' : 'info'}
-        className="shell-icon shell-icon--sm"
-      />
-      <span>{verdict(preview)} A projection, not a promise.</span>
-    </p>
+    <div className="goal-preview" role="status" aria-label="Plan" aria-busy={pending}>
+      <Banner tone={tone} icon={tone === 'warn' || tone === 'neg' ? 'alert' : 'info'} role="none">
+        {verdict(preview)} A projection, not a promise.
+      </Banner>
+    </div>
   );
 }
 
@@ -457,16 +423,14 @@ export function GoalDialog({
       }}
     >
       <Field label="Name" name="name">
-        {(id, aria) => (
-          <input
-            id={id}
-            className="ui-input"
+        {(control) => (
+          <Input
+            {...control}
             value={name}
             autoComplete="off"
             maxLength={NAME_LENGTH}
             placeholder="e.g. Apartment down payment"
             onChange={(event) => setName(event.target.value)}
-            {...aria}
           />
         )}
       </Field>
@@ -482,7 +446,7 @@ export function GoalDialog({
           onChange={setCurrency}
         />
       </div>
-      <div className="ui-field-row">
+      <div className="ui-row2">
         <Field
           label="Sum to reach"
           name="target"
@@ -492,20 +456,17 @@ export function GoalDialog({
               : undefined
           }
         >
-          {(id, aria) => (
-            <div className="ui-affix">
-              <input
-                id={id}
-                className="ui-input"
+          {(control) => (
+            <Affix suffix={currency}>
+              <Input
+                {...control}
+                numeric
                 value={target}
                 autoComplete="off"
-                inputMode="decimal"
                 placeholder="0"
                 onChange={(event) => setTarget(event.target.value)}
-                {...aria}
               />
-              <span className="ui-affix__suffix">{currency}</span>
-            </div>
+            </Affix>
           )}
         </Field>
         <Field
@@ -514,14 +475,12 @@ export function GoalDialog({
           name="deadline"
           hint="Without a date the app shows when you get there."
         >
-          {(id, aria) => (
-            <input
-              id={id}
+          {(control) => (
+            <Input
+              {...control}
               type="date"
-              className="ui-input"
               value={deadline}
               onChange={(event) => setDeadline(event.target.value)}
-              {...aria}
             />
           )}
         </Field>
@@ -531,51 +490,41 @@ export function GoalDialog({
         name="rate"
         hint="On the whole portfolio, before inflation. A projection, not a promise: the same return every year."
       >
-        {(id, aria) => (
+        {(control) => (
           <div className="goal-rate">
-            <div className="ui-chips">
+            <ChipGroup label="Return presets">
               {PRESETS.map(([value, text]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="ui-chip"
-                  aria-pressed={rate.trim() === value}
-                  onClick={() => setRate(value)}
-                >
-                  {value}% <span className="goal-optional">{text}</span>
-                </button>
+                <Chip key={value} pressed={rate.trim() === value} onClick={() => setRate(value)}>
+                  {value}% <span className="ui-muted">{text}</span>
+                </Chip>
               ))}
-            </div>
-            <div className="ui-affix goal-rate__input">
-              <input
-                id={id}
-                className="ui-input"
-                value={rate}
-                autoComplete="off"
-                inputMode="decimal"
-                onChange={(event) => setRate(event.target.value)}
-                {...aria}
-              />
-              <span className="ui-affix__suffix">%</span>
+            </ChipGroup>
+            <div className="goal-rate__input">
+              <Affix suffix="%">
+                <Input
+                  {...control}
+                  numeric
+                  value={rate}
+                  autoComplete="off"
+                  onChange={(event) => setRate(event.target.value)}
+                />
+              </Affix>
             </div>
           </div>
         )}
       </Field>
       <Field label="You put in a month" optional name="monthly">
-        {(id, aria) => (
-          <div className="ui-affix">
-            <input
-              id={id}
-              className="ui-input"
+        {(control) => (
+          <Affix suffix={currency}>
+            <Input
+              {...control}
+              numeric
               value={monthly}
               autoComplete="off"
-              inputMode="decimal"
               placeholder="0"
               onChange={(event) => setMonthly(event.target.value)}
-              {...aria}
             />
-            <span className="ui-affix__suffix">{currency}</span>
-          </div>
+          </Affix>
         )}
       </Field>
       <PlanPreview ready={ready} {...plan} />
@@ -604,7 +553,7 @@ export function DeleteGoalDialog({
         onDeleted();
       }}
     >
-      <p className="shell-note">
+      <p className="goal-delete-note">
         {goal.name} and its plan are removed; this cannot be undone. Your portfolio and transactions
         stay as they are.
       </p>

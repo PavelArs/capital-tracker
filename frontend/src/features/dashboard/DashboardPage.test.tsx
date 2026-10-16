@@ -309,7 +309,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
     const profit = within(hero).getByLabelText('Profit or loss to date');
     expect(profit).toHaveTextContent('▲ +$25,000.00+27.78%on $90,000.00 net invested');
-    expect(profit).toHaveClass('portfolio-pos');
+    expect(profit).toHaveClass('ui-pos');
     expect(within(hero).getByLabelText('What changed')).toHaveTextContent(/^Past month/);
     expect(within(hero).queryByText('+$15,000.00')).toBeNull();
     const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
@@ -388,7 +388,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('What changed')).toHaveTextContent(/^Past 7 days/),
     );
-    const plot = within(chart).getByRole('group');
+    const plot = within(chart).getByRole('group', { name: /Use the arrow keys/ });
     plot.focus();
     await user.keyboard('{Home}');
     let tip = within(chart).getByRole('status');
@@ -439,7 +439,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     const loss = within(hero).getByLabelText('Profit or loss to date');
     expect(loss).toHaveTextContent('▼ -$500.00-0.50%on $100,000.00 net invested');
-    expect(loss).toHaveClass('portfolio-neg');
+    expect(loss).toHaveClass('ui-neg');
     expect(within(hero).getByRole('img', { name: /Incomplete/ })).toHaveAttribute(
       'data-tip',
       expect.stringContaining('Add the missing prices on the Portfolio page.'),
@@ -524,8 +524,8 @@ describe('record-portfolio-snapshots dashboard', () => {
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     const split = within(hero).getByLabelText('What changed');
     expect(split).toHaveTextContent('Past monthMarket+$5,000.00+4.55%Net deposits+$10,000.00');
-    expect(within(split).getByText('+$5,000.00')).toHaveClass('portfolio-pos');
-    expect(within(split).getByText('+$10,000.00')).not.toHaveClass('portfolio-pos');
+    expect(within(split).getByText('+$5,000.00')).toHaveClass('ui-pos');
+    expect(within(split).getByText('+$10,000.00')).not.toHaveClass('ui-pos');
     cleanup();
     get.mockResolvedValue(
       history({
@@ -562,7 +562,7 @@ describe('record-portfolio-snapshots dashboard', () => {
         name: 'Portfolio value, past month, from $100,000.00 to $115,000.00',
       }),
     ).toBeInTheDocument();
-    const plot = within(chart).getByRole('group');
+    const plot = within(chart).getByRole('group', { name: /Use the arrow keys/ });
     plot.focus();
     await user.keyboard('{Home}');
     let tip = within(chart).getByRole('status');
@@ -627,7 +627,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage();
     const loading = screen.getByRole('status', { name: 'Loading your capital' });
     expect(loading).toHaveAttribute('aria-busy', 'true');
-    expect(loading.querySelectorAll('.dashboard-loading__block').length).toBeGreaterThan(3);
+    expect(loading.querySelectorAll('.shell-bone').length).toBeGreaterThan(3);
     expect(loading.querySelector('.dashboard-loading__chart')).not.toBeNull();
     expect(loading.textContent).toBe('');
     expect(screen.queryByRole('region', { name: 'Net worth' })).toBeNull();
@@ -1129,8 +1129,10 @@ describe('Dashboard UI audit', () => {
     const top = await screen.findByRole('region', { name: 'Top assets' });
     await within(top).findByRole('link', { name: 'Bitcoin' });
     expect(
-      screen.getByText('1 price is older than 2 hours; the last stored price is used.'),
-    ).toHaveClass('ui-banner');
+      screen
+        .getByText('1 price is older than 2 hours; the last stored price is used.')
+        .closest('.ui-banner--warn'),
+    ).not.toBeNull();
     const bitcoin = within(top).getAllByRole('row')[1];
     expect(within(bitcoin).getAllByRole('cell')[1]).toHaveTextContent('$2,100.00stale, 3 h ago');
   });
@@ -1288,5 +1290,69 @@ describe('Dashboard UI audit', () => {
     expect(icon('Studio apartment')).toBe('var(--c-prop)');
     // An asset held in a wallet keeps its own colour.
     expect(icon('Bitcoin')).toBe('var(--c-btc)');
+  });
+});
+
+describe('Dashboard design alignment: the number and what it carries', () => {
+  const rub = (changes: Partial<PortfolioHistory> = {}) =>
+    get.mockImplementation(async (period: HistoryPeriod) =>
+      history({ period, currency: 'RUB', mainCurrency: 'RUB', ...changes }),
+    );
+
+  it('DASH-RUB-WHOLE shows roubles as whole numbers, cut and not rounded up, with no dimmed cents', async () => {
+    rub({ value: '115000.99' });
+    renderPage('/dashboard?currency=RUB');
+    const value = heroValue(await screen.findByRole('region', { name: 'Net worth' }));
+    expect(value).toHaveTextContent(/^₽115,000$/);
+    expect(value?.querySelector('.dashboard-hero__cents')).toBeNull();
+  });
+
+  it('DASH-RUB-WHOLE keeps the cents of a negative rouble figure, which a cut would flatter', async () => {
+    rub({ value: '-1250.40' });
+    renderPage('/dashboard?currency=RUB');
+    const value = heroValue(await screen.findByRole('region', { name: 'Net worth' }));
+    expect(value).toHaveTextContent(/^-₽1,250\.40$/);
+  });
+
+  it('DASH-LIVE announces the net worth politely when it changes', async () => {
+    renderPage();
+    const value = heroValue(await screen.findByRole('region', { name: 'Net worth' }));
+    expect(value).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('DASH-STATE-BADGE flags the number itself when a refresh failed or prices are old', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('link', { name: 'Bitcoin' });
+    expect(within(hero).queryByText(/^Stale prices$/)).toBeNull();
+    expect(within(hero).queryByText(/^As of/)).toBeNull();
+    get.mockRejectedValueOnce(new Error('offline'));
+    await user.click(screen.getByRole('tab', { name: '7D' }));
+    await screen.findByRole('alert');
+    expect(within(hero).getByText('As of 12:30 UTC')).toBeInTheDocument();
+    cleanup();
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({ currency: currency ?? 'USD', stalePriceCount: 2 }),
+    );
+    renderPage();
+    const stale = await screen.findByRole('region', { name: 'Net worth' });
+    expect(await within(stale).findByText('Stale prices')).toBeInTheDocument();
+  });
+
+  it('DASH-UNKNOWN-COST says in words, beside the split, which coins have no purchase price', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({
+        currency: currency ?? 'USD',
+        assets: [
+          asset(1, 'Bitcoin', 'BTC', '4200', { unknownCostQuantity: '0.0087' }),
+          asset(2, 'Ethereum', 'ETH', '2000'),
+        ],
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const split = within(hero).getByLabelText('What changed');
+    await waitFor(() => expect(split).toHaveTextContent('0.0087 BTC without purchase price'));
   });
 });

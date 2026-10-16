@@ -6,6 +6,9 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { type MouseEvent, type ReactNode, useId } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { dateText } from '../deposits/deposit-format';
@@ -134,7 +137,7 @@ function AssetCells({
         ) : asset.price ? (
           <>
             {price(asset.price.value, currency)}
-            {stale && <span className="portfolio-warn-text">{stale}</span>}
+            {stale && <span className="dashboard-assets__stale">{stale}</span>}
           </>
         ) : (
           missingLabel(asset)
@@ -144,12 +147,10 @@ function AssetCells({
         {asset.priceSource === 'market' ? (
           <Change value={asset.priceChange24hPercent} />
         ) : (
-          <span className="portfolio-sub portfolio-sub--inline">
-            {sourceLabels[asset.priceSource]}
-          </span>
+          <span className="ui-muted">{sourceLabels[asset.priceSource]}</span>
         )}
       </td>
-      <td className="ui-num portfolio-strong">{money(asset.value, currency)}</td>
+      <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
       <td className="ui-num">{percent(asset.allocationPercent, false)}</td>
     </>
   );
@@ -220,13 +221,13 @@ function Table({
             return (
               <tr key={holding.key} onClick={open(to)}>
                 <td>
-                  <span className="portfolio-asset">
+                  <span className="dashboard-asset">
                     {icon}
                     <span>
-                      <Link className="portfolio-asset__name" to={to}>
+                      <Link className="dashboard-asset__name" to={to}>
                         {name}
                       </Link>
-                      <span className="portfolio-asset__ticker">{detail}</span>
+                      <span className="dashboard-asset__detail">{detail}</span>
                     </span>
                   </span>
                 </td>
@@ -236,9 +237,7 @@ function Table({
                     <td className="ui-num">
                       <span title="Interest accrues daily">{DASH}</span>
                     </td>
-                    <td className="ui-num portfolio-strong">
-                      {money(holding.deposit.value, currency)}
-                    </td>
+                    <td className="ui-num ui-strong">{money(holding.deposit.value, currency)}</td>
                     <td className="ui-num">{percent(holding.deposit.share, false)}</td>
                   </>
                 ) : (
@@ -257,12 +256,10 @@ function Table({
 function phoneValue(asset: AssetValuation, now: Date): ReactNode {
   if (asset.priceSource !== 'market') return sourceLabels[asset.priceSource];
   const stale = staleNote(asset, now);
-  if (stale) return <span className="portfolio-warn-text">{stale}</span>;
+  if (stale) return <span className="dashboard-assets__stale">{stale}</span>;
   const change = asset.priceChange24hPercent;
   return (
-    <span className={tone(change) ? `portfolio-${tone(change)}` : undefined}>
-      {percent(change)} today
-    </span>
+    <span className={tone(change) ? `ui-${tone(change)}` : undefined}>{percent(change)} today</span>
   );
 }
 
@@ -343,38 +340,39 @@ export default function TopAssets({
   const phone = useNarrowScreen();
   const holdings = portfolio ? topAssets(portfolio) : [];
   return (
-    <section
-      className="shell-card dashboard-assets"
-      aria-labelledby={heading}
-      aria-busy={portfolio === null && !failed}
-    >
-      <div className="ui-toolbar">
-        <h2 id={heading}>Top assets</h2>
-        <Link className="dashboard-link" to={withCurrency('/portfolio', asked)}>
-          All assets
-        </Link>
-      </div>
+    <Card className="dashboard-assets" labelledBy={heading}>
+      <CardHeader
+        id={heading}
+        title="Top assets"
+        actions={
+          <Link className="ui-link" to={withCurrency('/portfolio', asked)}>
+            All assets
+          </Link>
+        }
+      />
       {failed && (
-        <div role="alert" className="dashboard-assets__state">
-          <p>
-            {portfolio === null
-              ? 'Could not load your assets.'
-              : 'Could not update your assets. Showing the last loaded figures.'}
-          </p>
-          <button type="button" className="shell-button" onClick={onRetry}>
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetry}>
+              Try again
+            </Button>
+          }
+        >
+          {portfolio === null
+            ? 'Could not load your assets.'
+            : 'Could not update your assets. Showing the last loaded figures.'}
+        </Banner>
       )}
       {portfolio === null ? (
         !failed && <AssetRowsLoading />
       ) : holdings.length === 0 ? (
-        <p className="portfolio-none">No assets held right now.</p>
+        <p className="ui-none">No assets held right now.</p>
       ) : phone ? (
         <List holdings={holdings} currency={portfolio.currency} asked={asked} chains={chains} />
       ) : (
         <Table holdings={holdings} currency={portfolio.currency} asked={asked} chains={chains} />
       )}
-    </section>
+    </Card>
   );
 }

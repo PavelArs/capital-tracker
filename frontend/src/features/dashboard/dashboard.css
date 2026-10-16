@@ -2,17 +2,23 @@
 
 /* Dashboard net worth and capital chart (prototype "hero", "chart-card" and "tip" patterns). */
 .dashboard-hero {
+  position: relative;
   display: grid;
-  gap: 6px;
+  gap: var(--sp-1);
 }
 
 .dashboard-hero__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
   color: var(--ink-3);
   font-size: var(--fs-sm);
 }
 
 .dashboard-hero__value {
-  font-size: 52px;
+  margin: var(--sp-1) 0 var(--sp-2);
+  font-size: var(--fs-hero);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.025em;
@@ -23,7 +29,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
+  gap: var(--sp-1) 10px;
   font-size: var(--fs-lg);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -33,12 +39,6 @@
   color: var(--ink-3);
   font-size: var(--fs-md);
   font-weight: 400;
-}
-
-.dashboard-hero__period .portfolio-info--inline {
-  display: inline-flex;
-  margin-left: 6px;
-  vertical-align: middle;
 }
 
 .dashboard-hero__real {
@@ -56,7 +56,8 @@
 }
 
 .dashboard-hero__period a,
-.dashboard-hero__real a {
+.dashboard-hero__real a,
+.dashboard-hero__note a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -67,10 +68,44 @@
   font-size: var(--fs-md);
 }
 
-.dashboard-hero__note a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.dashboard-hero__cents {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* The note beside the profit: what is left out of the figures, on hover and on focus. */
+.dashboard-hero__info {
+  position: relative;
+  display: inline-flex;
+  align-self: center;
+  margin-left: var(--sp-2);
+  vertical-align: middle;
+  color: var(--ink-3);
+  cursor: help;
+}
+
+.dashboard-hero__info::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--z-sticky);
+  display: none;
+  width: min(320px, 70vw);
+  margin-top: 6px;
+  padding: var(--sp-2) 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.dashboard-hero__info:hover::after,
+.dashboard-hero__info:focus::after {
+  display: block;
 }
 
 .dashboard-split {
@@ -93,11 +128,16 @@
   gap: 6px;
 }
 
+.dashboard-split__unknown {
+  color: var(--ink-3);
+}
+
 .dashboard-split__key {
   display: inline-block;
+  flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--accent);
 }
 
@@ -105,16 +145,7 @@
   background: var(--ink-3);
 }
 
-.dashboard-hero .portfolio-warn {
-  max-width: 70ch;
-  margin-top: var(--sp-2);
-}
-
-.dashboard-hero__cents {
-  color: var(--ink-3);
-}
-
-/* Loading: grey blocks in the place of the net worth and the chart. */
+/* Loading: grey blocks (Bone) in the place of the net worth and the chart. */
 .dashboard-loading {
   display: grid;
   gap: var(--sp-5);
@@ -122,35 +153,12 @@
 
 .dashboard-loading__hero {
   display: grid;
-  gap: 12px;
-}
-
-.dashboard-loading__block {
-  display: block;
-  border-radius: var(--r-sm);
-  background: var(--line);
-  animation: dashboard-pulse 1.4s ease-in-out infinite;
-}
-
-.dashboard-loading__label {
-  width: 140px;
-  height: 14px;
-}
-
-.dashboard-loading__value {
-  width: min(340px, 80%);
-  height: 52px;
-}
-
-.dashboard-loading__delta {
-  width: min(240px, 60%);
-  height: 18px;
+  gap: var(--sp-3);
 }
 
 .dashboard-loading__card {
   display: grid;
   gap: var(--sp-4);
-  padding: 18px 22px;
 }
 
 .dashboard-loading__toolbar {
@@ -159,63 +167,38 @@
   gap: var(--sp-4);
 }
 
-.dashboard-loading__legend {
-  width: 220px;
-  height: 16px;
-}
-
-.dashboard-loading__periods {
-  width: min(260px, 45%);
-  height: 30px;
-}
-
-.dashboard-loading__chart {
-  height: 290px;
-  border-radius: var(--r-md);
-}
-
-.dashboard-loading__goal {
-  height: 76px;
-  border-radius: var(--r-lg);
-}
-
-.dashboard-loading__rows {
-  display: grid;
-  gap: 14px;
-}
-
-.dashboard-loading__row {
-  height: 32px;
-}
-
+.dashboard-loading__rows,
 .dashboard-loading__allocation {
   display: grid;
   gap: 14px;
 }
 
-.dashboard-loading__bar {
-  height: 10px;
-}
-
-.dashboard-loading__slice {
-  height: 22px;
-}
-
-@keyframes dashboard-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dashboard-loading__block {
-    animation: none;
-  }
-}
-
 @media (max-width: 559.98px) {
   .dashboard-hero__value {
     font-size: 38px;
+  }
+
+  /* The period and the coins without a price take a row each. */
+  .dashboard-split {
+    gap: var(--sp-1) 14px;
+  }
+
+  .dashboard-split__period,
+  .dashboard-split__unknown {
+    flex-basis: 100%;
+  }
+
+  /* The note spans the section it sits in, so it never runs off the screen. */
+  .dashboard-hero__info {
+    position: static;
+  }
+
+  .dashboard-hero__info::after {
+    top: auto;
+    right: 0;
+    left: 0;
+    width: auto;
+    margin-top: 28px;
   }
 }
 
@@ -235,22 +218,6 @@
   }
 }
 
-.dashboard-link {
-  color: var(--accent);
-  font-weight: 500;
-  font-size: var(--fs-sm);
-  text-decoration: none;
-}
-
-.dashboard-link:hover {
-  text-decoration: underline;
-}
-
-/* A page banner sits in the page grid, which spaces it. */
-.dashboard-banner {
-  margin: 0;
-}
-
 /* A long name or chain list wraps under the icon instead of widening the table. */
 .dashboard-assets .ui-table td:first-child {
   white-space: normal;
@@ -265,29 +232,28 @@
   background: var(--c-deposit);
 }
 
-.dashboard-assets__state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  color: var(--ink-2);
-}
-
-.dashboard-assets__state p {
-  margin: 0;
-}
-
-.dashboard-assets__state .shell-button {
-  margin-top: 0;
-}
-
-/* D1: the coins that have no purchase price. */
-.dashboard-unknown {
+/* A top asset: its icon, the name that opens it and a muted line under it. */
+.dashboard-asset {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: var(--sp-2) 0 0;
+  gap: 10px;
+}
+
+.dashboard-asset__name {
+  display: block;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.dashboard-asset__detail {
+  display: block;
   color: var(--ink-3);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
+}
+
+/* A market price older than two hours says so under the figure. */
+.dashboard-assets__stale {
+  display: block;
+  color: var(--warn);
+  font-size: var(--fs-xs);
 }
