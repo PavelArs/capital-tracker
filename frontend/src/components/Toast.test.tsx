@@ -84,7 +84,7 @@ describe('TOAST pop-up errors', () => {
         }));
         const { unmount } = setup(['Unable to log out. Please try again.']);
         await user.click(screen.getByRole('button', { name: 'Fail' }));
-        const region = screen.getByRole('region', { name: 'Messages' });
+        const region = screen.getByRole('region', { name: 'Notifications' });
         // Placed by its stylesheet at the bottom edge, never moved under the strip.
         expect(region).toHaveClass('ui-toasts');
         expect(region.style.top).toBe('');

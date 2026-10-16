@@ -29,6 +29,13 @@
   animation-duration: 0s;
 }
 
+/* Phones: 16 px between the page's blocks. */
+@media (max-width: 640px) {
+  .shell-page {
+    gap: var(--sp-4);
+  }
+}
+
 .shell-page h1 {
   margin: 0;
   font-size: var(--fs-xl);
@@ -95,7 +102,7 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 40;
+  z-index: var(--z-pop);
   width: min(360px, calc(100vw - 32px));
   max-height: min(560px, 80vh);
   overflow-y: auto;
@@ -104,7 +111,7 @@
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--shadow);
-  animation: ui-pop-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ui-pop-in var(--dur-2) var(--ease-out);
 }
 
 .shell-bell__head {
@@ -225,10 +232,10 @@
   .shell-bell__scrim {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    z-index: var(--z-pop);
     display: block;
     background: var(--scrim);
-    animation: ui-fade-in 0.15s ease-out;
+    animation: ui-fade-in var(--dur-1) ease-out;
   }
 
   .shell-bell__close {
@@ -241,12 +248,12 @@
     right: 0;
     bottom: 0;
     left: 0;
-    z-index: 91;
+    z-index: calc(var(--z-pop) + 1);
     width: auto;
     max-height: 80vh;
     padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     border-width: 1px 0 0;
-    border-radius: 16px 16px 0 0;
-    animation: ui-sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    animation: ui-sheet-in var(--dur-3) var(--ease-out);
   }
 }

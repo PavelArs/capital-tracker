@@ -76,7 +76,12 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
       {open && (
         <>
           {/* The dimmed page behind the phone sheet: a tap on it closes the sheet. */}
-          <div className="shell-bell__scrim" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div
+            className="shell-bell__scrim"
+            aria-hidden="true"
+            data-inert-keep=""
+            onClick={() => setOpen(false)}
+          />
           <Panel id={panelId} titleId={titleId} sheet={compact}>
             <header className="shell-bell__head">
               <h2 id={titleId}>Notifications</h2>

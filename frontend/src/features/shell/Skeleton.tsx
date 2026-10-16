@@ -86,7 +86,7 @@ function Cards({ count = 3 }: { count?: number }) {
       {Array.from({ length: count }, (_, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
         <div className="ui-card shell-skeleton__card" key={index}>
-          <div className="shell-skeleton__row">
+          <div className="shell-skeleton__row shell-skeleton__row--card">
             <Bone width={40} height={40} round />
             <div className="shell-skeleton__lines">
               <Bone width="50%" height={16} />

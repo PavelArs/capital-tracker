@@ -41,25 +41,37 @@
   gap: var(--sp-4);
 }
 
-.shell-skeleton__toolbar,
-.shell-skeleton__row {
+.shell-skeleton__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
 }
 
+/* A list row: the icon, two lines of text and the figure at the right, like the rows it stands
+   in for (prototype .sk-row). */
 .shell-skeleton__row {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
-.shell-skeleton__row > :last-child:not(.shell-skeleton__lines) {
-  margin-left: auto;
+/* The head of an account card: a larger icon and no figure. */
+.shell-skeleton__row--card {
+  grid-template-columns: 40px minmax(0, 1fr);
 }
 
 .shell-skeleton__rows {
   display: grid;
-  gap: var(--sp-4);
+}
+
+.shell-skeleton__rows > .shell-skeleton__row {
+  padding: 12px 0;
+}
+
+.shell-skeleton__rows > .shell-skeleton__row + .shell-skeleton__row {
+  border-top: 1px solid var(--line);
 }
 
 .shell-skeleton__lines {

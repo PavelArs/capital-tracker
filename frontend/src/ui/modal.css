@@ -1,14 +1,14 @@
 .ui-scrim {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--z-scrim);
   display: grid;
   place-items: center;
   padding: 24px 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--scrim);
-  animation: ui-fade-in 0.15s ease-out;
+  animation: ui-fade-in var(--dur-1) ease-out;
 }
 
 /* The page behind an open dialog stays put; the reserved scrollbar gutter (index.css) keeps it
@@ -17,21 +17,21 @@
   overflow: hidden;
 }
 
-/* A confirmation opened from a drawer covers the drawer (z-index 81). */
+/* A confirmation opened from a drawer covers the drawer (--z-dialog). */
 .ui-scrim--over-drawer {
-  z-index: 90;
+  z-index: calc(var(--z-dialog) + 1);
 }
 
 .ui-modal {
   width: min(520px, 100%);
   border: 1px solid var(--line-strong);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
-  animation: ui-pop-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ui-pop-in var(--dur-2) var(--ease-out);
 }
 
 .ui-modal--narrow {
@@ -139,40 +139,113 @@
   overscroll-behavior: contain;
 }
 
-/* Phones: a dialog is a full-screen sheet, so the form's footer with Save stays in reach
-   and only the fields scroll. */
-@media (max-width: 639.98px) {
-  /* The sheet rises from the bottom edge instead of popping in the middle. */
-  .ui-modal--wide {
-    animation: ui-sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .ui-scrim:has(> .ui-modal--wide) {
-    place-items: stretch;
+/* Phones: a dialog is a full-screen sheet. Its head stays at the top, the footer with Save stays
+   above the home indicator (it is outside the scrolling body) and only the fields scroll. A
+   narrow dialog (a confirmation) is a sheet from the bottom instead, as tall as it needs. */
+@media (max-width: 640px) {
+  .ui-scrim:has(> .ui-modal) {
+    place-items: end stretch;
     padding: 0;
     overflow: hidden;
   }
 
-  .ui-modal--wide {
-    min-height: 0;
+  .ui-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    animation: ui-sheet-in var(--dur-3) var(--ease-out);
+  }
+
+  .ui-modal:not(.ui-modal--narrow) {
+    height: 100vh;
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
+    height: 100dvh;
     max-height: none;
+    padding-top: env(safe-area-inset-top, 0px);
     border: 0;
     border-radius: 0;
   }
 
-  .ui-modal--wide .ui-modal__head {
-    padding: 16px;
+  /* A dialog whose content is not split into head, body and foot still scrolls as a whole. */
+  .ui-modal:not(:has(.ui-modal__body)) {
+    overflow-y: auto;
+  }
+
+  .ui-modal > form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .ui-modal .ui-modal__head,
+  .ui-modal .ui-modal__steps,
+  .ui-modal .ui-modal__foot {
+    flex: none;
+  }
+
+  .ui-modal:not(.ui-modal--narrow) .ui-modal__head {
+    min-height: 56px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--line);
   }
 
-  .ui-modal--wide .ui-modal__body {
-    flex: 1;
-    align-content: start;
-    padding: 16px;
+  .ui-modal:not(.ui-modal--narrow) .ui-modal__head h2 {
+    font-size: 18px;
   }
 
-  .ui-modal--wide .ui-modal__foot {
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  .ui-modal .ui-modal__body {
+    flex: 1;
+    align-content: start;
+    min-height: 0;
+    padding: 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .ui-modal .ui-modal__foot {
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* What Save will do reads above the buttons, across the sheet. */
+  .ui-modal .ui-modal__summary {
+    flex: 1 1 100%;
+    margin: 0;
+  }
+
+  .ui-modal .ui-modal__foot .ui-grow {
+    display: none;
+  }
+
+  /* The main action takes the room that is left. */
+  .ui-modal .ui-modal__foot > .ui-btn--primary,
+  .ui-modal .ui-modal__foot > .ui-btn--danger,
+  .ui-modal .ui-modal__foot > .shell-button--primary,
+  .ui-modal .ui-modal__foot > .shell-button--danger {
+    flex: 1 1 auto;
+  }
+
+  /* A confirmation: a sheet from the bottom with rounded top corners, no hairlines, Cancel and
+     the confirming button side by side at equal width. */
+  .ui-modal--narrow {
+    max-height: 85vh;
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
+    max-height: 85dvh;
+    border-width: 1px 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+  }
+
+  .ui-modal.ui-modal--narrow .ui-modal__head {
+    padding: 20px 16px 0;
+  }
+
+  .ui-modal--narrow .ui-modal__foot {
+    border-top: 0;
+  }
+
+  .ui-modal--narrow .ui-modal__foot > .ui-btn,
+  .ui-modal--narrow .ui-modal__foot > .shell-button {
+    flex: 1 1 0;
   }
 }
 

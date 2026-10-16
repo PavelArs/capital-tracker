@@ -3,13 +3,17 @@
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--sunken);
 }
 
 .ui-seg label,
 .ui-seg button {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
   padding: 5px 11px;
   border: 0;
   border-radius: 6px;
@@ -20,6 +24,7 @@
   font-size: var(--fs-sm);
   white-space: nowrap;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .ui-seg label:hover,
@@ -66,8 +71,22 @@
 
 .ui-seg--sm label,
 .ui-seg--sm button {
+  min-height: 24px;
   padding: 3px 9px;
   font-size: var(--fs-xs);
+}
+
+/* Touch screens: 40 px choices (32 px in the small control). */
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-seg label,
+  .ui-seg button {
+    min-height: 40px;
+  }
+
+  .ui-seg--sm label,
+  .ui-seg--sm button {
+    min-height: 32px;
+  }
 }
 
 /* Many choices (kinds of property) wrap onto a second line instead of overflowing. */

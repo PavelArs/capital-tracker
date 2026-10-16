@@ -17,18 +17,23 @@ import { useCompactScreen } from '@/ui/useMediaQuery';
  * means the main currency. `currency` is what the page's data came back in, used until
  * the shell knows the main currency. Pages that show values after inflation add the
  * Nominal / Real switch, one choice for all of them, remembered in this browser.
+ * A page that shows no money (Settings, History) passes `currencySwitch={false}` and has neither
+ * switch.
  */
 export default function PageHeader({
   title,
   currency,
   actions,
   valueSwitch = false,
+  currencySwitch = true,
 }: {
   title: ReactNode;
   currency?: AccountingCurrency;
   actions?: ReactNode;
   /** The page shows values after inflation: Nominal / Real sits beside the currency. */
   valueSwitch?: boolean;
+  /** False on a page without amounts: no currency switch, and no Nominal / Real either. */
+  currencySwitch?: boolean;
 }) {
   const [asked, setAsked] = useAskedCurrency();
   const { main } = useMainCurrency();
@@ -39,15 +44,17 @@ export default function PageHeader({
   const shown = asked ?? currency ?? main;
   return (
     <header className="shell-page__head">
-      <h1>{title}</h1>
+      {/* The menu puts the keyboard here after a section is chosen (Layout). */}
+      <h1 tabIndex={-1}>{title}</h1>
       {actions ? <div className="shell-page__actions">{actions}</div> : null}
-      {shown ? (
-        <CurrencySwitch value={shown} onChange={setAsked} />
-      ) : (
-        // The switch's room is held until the main currency is known, so the buttons do not step aside.
-        <SegmentedPlaceholder labels={accountingCurrencies} />
-      )}
-      {valueSwitch && <ValueViewSwitch />}
+      {currencySwitch &&
+        (shown ? (
+          <CurrencySwitch value={shown} onChange={setAsked} />
+        ) : (
+          // The switch's room is held until the main currency is known, so the buttons do not step aside.
+          <SegmentedPlaceholder labels={accountingCurrencies} />
+        ))}
+      {currencySwitch && valueSwitch && <ValueViewSwitch />}
       {!compact && bell}
       {compact && slot && createPortal(bell, slot)}
     </header>

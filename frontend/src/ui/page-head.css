@@ -3,6 +3,8 @@
   align-items: center;
   gap: 6px;
   justify-self: start;
+  /* A target a thumb can hit: 32 px, 40 px on touch screens. */
+  min-height: 32px;
   color: var(--ink-2);
   font-weight: 500;
   font-size: var(--fs-sm);
@@ -67,6 +69,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-crumb {
+    min-height: 40px;
+  }
 }
 
 @media (max-width: 559.98px) {

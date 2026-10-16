@@ -64,14 +64,16 @@ function Toast({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }
 
 /**
  * The app's toasts (ToastContext.tsx has the rules): bottom right on a computer, full width
- * above the bottom safe area on a phone, over open sheets and drawers.
+ * above the tab bar on a phone (at the top while a dialog is open), over open sheets and drawers.
+ * The region is "Notifications"; the bell's own panel is a different landmark that opens only on
+ * a click.
  */
 export default function ToastViewport() {
   const toasts = useToastList();
   const controls = useToastControls();
   if (toasts.length === 0 || !controls) return null;
   return (
-    <section className="ui-toasts" aria-label="Messages">
+    <section className="ui-toasts" aria-label="Notifications">
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onDismiss={() => controls.dismiss(toast.id)} />
       ))}

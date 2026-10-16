@@ -18,6 +18,8 @@
 .ui-search {
   width: 240px;
   max-width: 100%;
+  /* The page search is a button's height, taller than the filters beside it. */
+  height: var(--h-md);
   padding-left: 36px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
   background-position: 11px 50%;
@@ -78,12 +80,24 @@
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--ink-2);
   font-weight: 500;
   font-size: var(--fs-sm);
   cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    border-color var(--dur-1),
+    background var(--dur-1),
+    color var(--dur-1);
+}
+
+/* Touch screens: a 40 px chip. */
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-chip {
+    height: 40px;
+  }
 }
 
 .ui-chip:hover {

@@ -21,10 +21,15 @@
   --pos-soft: rgba(61, 214, 140, 0.12);
   --neg: #ff6b6b;
   --neg-soft: rgba(255, 107, 107, 0.12);
-  /* Text on a --neg fill (the danger button). */
-  --neg-ink: #0d1016;
+  /* Text on a --neg fill (the danger button): 6.87:1 on #ff6b6b. */
+  --neg-ink: #1d0a0c;
   --warn: #f2b544;
   --warn-soft: rgba(242, 181, 68, 0.12);
+  /* Text on a solid --warn fill (the bell's and the tab bar's counts). */
+  --warn-ink: #1a1205;
+  /* Borders of the controls people type in or switch (input, select, checkbox, toggle off):
+     3:1 or better against the surface, unlike the hairline --line-strong. */
+  --line-control: #626a80;
   /* Neutral notices (Banner info, toast info, Syncing). */
   --info: #7cb7ff;
   --info-soft: rgba(124, 183, 255, 0.12);
@@ -90,7 +95,46 @@
   --r-sm: 6px;
   --r-md: 10px;
   --r-lg: 14px;
+  --r-xs: 4px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+  /* Control heights; the touch block below raises them on phones and touch screens. */
+  --h-sm: 32px;
+  --h-md: 36px;
+  --h-lg: 44px;
+  --h-icon: 36px;
+  --h-input: 40px;
+  --fs-input: 14px;
+  --fs-input-mono: 13px;
+  /* Motion: hover, pop-in, sheets rising; one easing for everything that enters. */
+  --dur-1: 0.12s;
+  --dur-2: 0.18s;
+  --dur-3: 0.24s;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Stacking, lowest first. */
+  --z-sticky: 20;
+  --z-nav: 40;
+  --z-scrim: 80;
+  --z-dialog: 81;
+  --z-pop: 85;
+  --z-toast: 90;
+  /* The phone shell: the top bar and the bottom tab bar. */
+  --appbar-h: 56px;
+  --tabbar-h: 60px;
   color-scheme: dark;
+}
+
+/* Phones and touch screens: 44 px targets, and 16 px text in fields so iOS Safari does not zoom
+   in on focus. Components read these tokens and need no phone sizes of their own. */
+@media (max-width: 640px), (pointer: coarse) {
+  :root {
+    --h-md: 44px;
+    --h-sm: 36px;
+    --h-icon: 44px;
+    --h-input: 44px;
+    --fs-input: 16px;
+    --fs-input-mono: 16px;
+  }
 }
 
 /* The canvas, and with it the scrollbar gutter kept on wide screens, takes the shell background
@@ -117,15 +161,17 @@ html {
     --accent-hover: #3c46c4;
     --accent-ink: #ffffff;
     --accent-soft: rgba(75, 85, 214, 0.1);
-    --pos: #0a7f44;
-    --pos-soft: rgba(11, 138, 74, 0.1);
-    --neg: #cc3340;
-    --neg-soft: rgba(204, 51, 64, 0.09);
+    --pos: #08733d;
+    --pos-soft: rgba(8, 115, 61, 0.1);
+    --neg: #b52d3a;
+    --neg-soft: rgba(181, 45, 58, 0.09);
     --neg-ink: #ffffff;
-    --warn: #9a6200;
+    --warn: #835300;
     --warn-soft: rgba(214, 150, 20, 0.14);
-    --info: #2a6fc9;
-    --info-soft: rgba(42, 111, 201, 0.1);
+    --warn-ink: #ffffff;
+    --line-control: #80879a;
+    --info: #2360b0;
+    --info-soft: rgba(35, 96, 176, 0.1);
     --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
     --scrim: rgba(18, 23, 38, 0.35);
     --skeleton: #eceef3;
@@ -179,15 +225,17 @@ html {
   --accent-hover: #3c46c4;
   --accent-ink: #ffffff;
   --accent-soft: rgba(75, 85, 214, 0.1);
-  --pos: #0a7f44;
-  --pos-soft: rgba(11, 138, 74, 0.1);
-  --neg: #cc3340;
-  --neg-soft: rgba(204, 51, 64, 0.09);
+  --pos: #08733d;
+  --pos-soft: rgba(8, 115, 61, 0.1);
+  --neg: #b52d3a;
+  --neg-soft: rgba(181, 45, 58, 0.09);
   --neg-ink: #ffffff;
-  --warn: #9a6200;
+  --warn: #835300;
   --warn-soft: rgba(214, 150, 20, 0.14);
-  --info: #2a6fc9;
-  --info-soft: rgba(42, 111, 201, 0.1);
+  --warn-ink: #ffffff;
+  --line-control: #80879a;
+  --info: #2360b0;
+  --info-soft: rgba(35, 96, 176, 0.1);
   --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
   --scrim: rgba(18, 23, 38, 0.35);
   --skeleton: #eceef3;

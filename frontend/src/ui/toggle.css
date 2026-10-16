@@ -13,11 +13,12 @@
   height: 20px;
   margin: 0;
   border: 0;
-  border-radius: 999px;
-  background: var(--line-strong);
+  border-radius: var(--r-pill);
+  /* The off track is a control border colour: 3:1 against the surface. */
+  background: var(--line-control);
   cursor: pointer;
   appearance: none;
-  transition: background 0.15s;
+  transition: background var(--dur-2);
 }
 
 /* The knob takes theme colours, not a raw white: readable on the track in both themes. */
@@ -29,8 +30,9 @@
   height: 16px;
   border-radius: 50%;
   background: var(--ink-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   content: "";
-  transition: transform 0.15s;
+  transition: transform var(--dur-2);
 }
 
 .ui-toggle__input:checked {

@@ -17,12 +17,24 @@
   display: inline-grid;
   flex: none;
   place-items: center;
+  /* 28 px to hit, 36 px on touch screens; the icon stays small. */
+  min-width: 28px;
+  min-height: 28px;
+  margin: -6px -4px;
   padding: 2px;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--ink-3);
   cursor: pointer;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .copy-value__button {
+    min-width: 36px;
+    min-height: 36px;
+    margin: -10px -8px;
+  }
 }
 
 .copy-value__button:hover {

@@ -63,3 +63,24 @@ li.ui-card {
   gap: var(--sp-2);
   margin-left: auto;
 }
+
+/* Phones: 16 px around a card's content; an account card's header runs 16 px from its edges
+   (its rows follow the same edge in their own CSS). */
+@media (max-width: 639.98px) {
+  .ui-card,
+  .shell-card {
+    padding: var(--sp-4);
+  }
+
+  .ui-card--flush {
+    padding: 0;
+  }
+
+  .ui-card--chart {
+    padding: var(--sp-4) var(--sp-4) 12px;
+  }
+
+  .ui-card--flush > .ui-card-h {
+    padding: 16px 16px 4px;
+  }
+}

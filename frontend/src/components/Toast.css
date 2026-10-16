@@ -1,10 +1,10 @@
 /* Toasts (prototype .toasts / .toast): raised, hairline, the shadow of overlays; the icon's
-   colour and shape say the tone, never the colour alone. Above sheets and drawers (z 80-91). */
+   colour and shape say the tone, never the colour alone. Above sheets and drawers. */
 .ui-toasts {
   position: fixed;
   right: 20px;
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  z-index: 1200;
+  z-index: var(--z-toast);
   display: grid;
   gap: 8px;
   width: min(380px, calc(100vw - 32px));
@@ -25,7 +25,7 @@
   font-size: var(--fs-sm);
   line-height: 1.4;
   pointer-events: auto;
-  animation: ui-toast-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ui-toast-in var(--dur-2) var(--ease-out);
 }
 
 .ui-toast__icon {
@@ -71,8 +71,20 @@
   align-self: center;
 }
 
+/* Dismiss: 28 px to hit (40 px on touch screens) in a compact toast; a quiet ✕, not the tone. */
 .ui-toast .ui-ibtn {
-  margin: -3px -6px 0 0;
+  width: 28px;
+  height: 28px;
+  margin: -5px -8px -5px 0;
+  color: var(--ink-3);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-toast .ui-ibtn {
+    width: 40px;
+    height: 40px;
+    margin: -11px -12px -11px -4px;
+  }
 }
 
 @keyframes ui-toast-in {
@@ -82,12 +94,19 @@
   }
 }
 
-/* Phones: full width, above the home indicator. */
-@media (max-width: 639.98px) {
+/* Phones and tablets: full width, above the bottom tab bar (Layout.css) and the home
+   indicator. While a dialog is open (useDialogFocus marks the body) the toasts move to the top,
+   so they never cover a sheet's buttons. */
+@media (max-width: 860px) {
   .ui-toasts {
-    right: var(--sp-3);
-    left: var(--sp-3);
-    bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+    right: var(--sp-4);
+    left: var(--sp-4);
+    bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px));
     width: auto;
+  }
+
+  body.has-dialog .ui-toasts {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    bottom: auto;
   }
 }

@@ -41,7 +41,7 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
       { tone: 'warning', title: 'Rate not saved' },
     ]);
     await user.click(screen.getByRole('button', { name: 'Act' }));
-    const region = screen.getByRole('region', { name: 'Messages' });
+    const region = screen.getByRole('region', { name: 'Notifications' });
     expect(
       within(region)
         .getAllByRole('status')
@@ -75,7 +75,7 @@ describe('TOAST-SYSTEM: the app-wide toasts', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
     wait(200);
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.queryByRole('region', { name: 'Messages' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Notifications' })).toBeNull();
   });
 
   it('TOAST-HOLD stays while hovered or focused and restarts its time after', () => {

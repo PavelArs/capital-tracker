@@ -31,7 +31,8 @@ export default function Drawer({
   useDialogFocus(panel, { onEscape: onClose, initialFocus });
   return (
     <>
-      <div className="ui-drawer-scrim" aria-hidden="true" onClick={onClose} />
+      {/* The scrim stays live while the page behind is inert: a tap on it closes the drawer. */}
+      <div className="ui-drawer-scrim" aria-hidden="true" data-inert-keep="" onClick={onClose} />
       <div
         ref={panel}
         className="ui-drawer"

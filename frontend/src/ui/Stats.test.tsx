@@ -26,6 +26,20 @@ describe('Stats and Stat', () => {
     expect(profit.tagName).toBe('DD');
     expect(profit).toHaveClass('ui-stat__value', 'ui-stat__value--neg');
   });
+
+  it('marks only the lead figure as the lead, keeping it a term and its value', () => {
+    render(
+      <Stats label="Summary" size="lg">
+        <Stat lead label="Current value" value="Unknown" hint="Estimated" />
+        <Stat label="Invested" value="$1,000.00" />
+      </Stats>,
+    );
+    const lead = screen.getByText('Current value').parentElement;
+    expect(lead).toHaveClass('ui-stat', 'ui-stat--lead');
+    expect(screen.getByText('Current value').nextElementSibling).toHaveTextContent('Unknown');
+    expect(screen.getByText('Estimated')).toBeInTheDocument();
+    expect(screen.getByText('Invested').parentElement).not.toHaveClass('ui-stat--lead');
+  });
 });
 
 describe('AmountHero', () => {
