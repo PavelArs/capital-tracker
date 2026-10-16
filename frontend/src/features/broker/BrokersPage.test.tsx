@@ -1,4 +1,5 @@
 import { type AccountSummary, accountingApi } from '@api/accounting.api';
+import { brokersApi } from '@api/brokers.api';
 import { cachedReads } from '@api/cached-reads';
 import {
   type AssetValuation,
@@ -111,6 +112,7 @@ const held = [
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  vi.spyOn(brokersApi, 'connection').mockResolvedValue({ connected: false });
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       account(broker, 'Sample Broker', 'broker'),
@@ -188,6 +190,27 @@ describe('BROKERS the Brokers page', () => {
     expect(await screen.findByText('No broker account yet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add broker account' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect T-Bank' })).toBeInTheDocument();
+  });
+
+  it('BROKER-HISTORY offers to load the history into an empty account that reads T-Bank', async () => {
+    vi.mocked(brokersApi.connection).mockImplementation(async (accountId) =>
+      accountId === iis ? { connected: true, tokenHint: '0001' } : { connected: false },
+    );
+    // The IIS account holds no position here, the plain broker account does.
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      valuation([
+        asset(1, 'VWRA', [
+          { accountId: broker, accountName: 'Sample Broker', quantity: '30', value: '4263' },
+        ]),
+      ]),
+    );
+    renderPage();
+    const empty = await screen.findByRole('region', { name: 'Sample Broker · IIS' });
+    expect(
+      await within(empty).findByRole('button', { name: 'Load T-Bank history' }),
+    ).toBeInTheDocument();
+    const full = screen.getByRole('region', { name: 'Sample Broker' });
+    expect(within(full).queryByRole('button', { name: 'Load T-Bank history' })).toBeNull();
   });
 
   it('BROKER-SETUP opens Connect T-Bank from the page and from the add dialog', async () => {

@@ -28,6 +28,48 @@ export interface TBankConnection {
   created: boolean;
 }
 
+/** Whether a broker account reads T-Bank, without the token. */
+export type TBankConnectionState = { connected: false } | { connected: true; tokenHint: string };
+
+export type ImportProblemReason =
+  | 'not-recordable'
+  | 'already-imported'
+  | 'no-rate'
+  | 'amount'
+  | 'fee-above-proceeds'
+  | 'not-held'
+  | 'before-records'
+  | 'too-many-rewards'
+  | 'too-many-entries';
+
+/** What the T-Bank history would become in an empty broker account. Nothing is recorded. */
+export interface TBankImportPreview {
+  /** How far operations were combined to fit the trade limit. */
+  grouping: 'operation' | 'day' | 'month';
+  entries: { record: 'trade' | 'reward'; occurredAt: string }[];
+  skipped: { operationId: string; type: string; reason: string }[];
+  trades: number;
+  rewards: number;
+  fitsTradeLimit: boolean;
+  fitsRewardLimit: boolean;
+  /** The account already holds records, so nothing can be written into it. */
+  accountHasEntries: boolean;
+  problems: {
+    reason: ImportProblemReason;
+    occurredAt: string | null;
+    ticker: string;
+    operationIds: string[];
+  }[];
+  canImport: boolean;
+  previewHash: string;
+}
+
+export interface TBankImportReceipt {
+  importId: string;
+  trades: number;
+  rewards: number;
+}
+
 export const brokersApi = {
   /** The open T-Bank accounts a read-only token reaches. Nothing is stored. */
   tbankAccounts: async (token: string): Promise<TBankAccountOption[]> => {
@@ -45,5 +87,30 @@ export const brokersApi = {
       { token, accounts },
     );
     return response.data.connections;
+  },
+
+  /** Whether the broker account is connected to T-Bank. */
+  connection: async (accountId: string): Promise<TBankConnectionState> => {
+    const response = await apiClient.get<TBankConnectionState>(`/brokers/${accountId}/connection`);
+    return response.data;
+  },
+
+  importPreview: async (accountId: string): Promise<TBankImportPreview> => {
+    const response = await apiClient.get<TBankImportPreview>(
+      `/brokers/${accountId}/connection/import-preview`,
+    );
+    return response.data;
+  },
+
+  /** Writes the previewed history in one command; `requestId` makes a retry return the receipt. */
+  importHistory: async (
+    accountId: string,
+    input: { requestId: string; previewHash: string },
+  ): Promise<TBankImportReceipt> => {
+    const response = await apiClient.post<TBankImportReceipt>(
+      `/brokers/${accountId}/connection/import`,
+      input,
+    );
+    return response.data;
   },
 };

@@ -272,3 +272,26 @@
   color: var(--ink-2);
   font-size: var(--fs-sm);
 }
+
+/* "Load T-Bank history": why a history cannot be loaded as it stands. */
+.broker-reasons {
+  margin: 0;
+  padding-left: var(--sp-5);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.broker-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 22px 16px;
+}
+
+@media (max-width: 559.98px) {
+  .broker-history {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}

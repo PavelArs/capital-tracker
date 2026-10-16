@@ -27,6 +27,7 @@ import {
   plural,
 } from './brokers';
 import ConnectTBankDialog from './ConnectTBankDialog';
+import LoadHistory from './LoadHistory';
 import '../shell/shell-page.css';
 import './broker.css';
 
@@ -77,9 +78,11 @@ function Position({
 function Account({
   account,
   portfolio,
+  onChanged,
 }: {
   account: BrokerAccount;
   portfolio: PortfolioValuation;
+  onChanged: () => void;
 }) {
   const securities = account.positions.filter(({ asset }) => asset.assetType !== 'fiat').length;
   const missing = leftOut(account.unpriced, account.unrated);
@@ -110,7 +113,10 @@ function Account({
             ))}
           </ul>
         ) : (
-          <p className="broker-account__empty">Holds nothing yet.</p>
+          <>
+            <p className="broker-account__empty">Holds nothing yet.</p>
+            <LoadHistory accountId={account.id} accountName={account.name} onImported={onChanged} />
+          </>
         )}
       </section>
     </li>
@@ -251,7 +257,12 @@ export default function BrokersPage() {
           </section>
           <ul className="broker-accounts">
             {brokers.map((account) => (
-              <Account key={account.id} account={account} portfolio={portfolio} />
+              <Account
+                key={account.id}
+                account={account}
+                portfolio={portfolio}
+                onChanged={() => load(true)}
+              />
             ))}
           </ul>
         </>
