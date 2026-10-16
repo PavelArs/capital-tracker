@@ -7,7 +7,7 @@
   padding: 24px 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(4, 6, 10, 0.62);
+  background: var(--scrim);
   animation: ui-fade-in 0.15s ease-out;
 }
 
@@ -15,10 +15,6 @@
    from shifting sideways. */
 :root.ui-scroll-locked {
   overflow: hidden;
-}
-
-:root[data-theme="light"] .ui-scrim {
-  background: rgba(18, 23, 38, 0.35);
 }
 
 /* A confirmation opened from a drawer covers the drawer (z-index 81). */
@@ -64,9 +60,15 @@
   font-weight: 600;
 }
 
-.ui-modal__head .shell-note {
+.ui-modal__head .shell-note,
+.ui-modal__intro {
   flex-basis: 100%;
   margin-top: 8px;
+}
+
+.ui-modal__intro {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
 }
 
 .ui-modal__info {
@@ -86,6 +88,8 @@
 
 .ui-modal__foot {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 22px 18px;
@@ -93,11 +97,18 @@
 }
 
 .ui-modal__summary {
-  margin-right: auto;
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0 auto 0 0;
   align-self: center;
   color: var(--ink-3);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Pushes the buttons after it to the right (Back … Continue). */
+.ui-grow {
+  flex: 1;
 }
 
 /* A wide dialog never grows past the window: the head and the footer with its main action stay
@@ -165,17 +176,13 @@
   }
 }
 
-/* Entrances only; closing is immediate. Reduced motion switches every animation off (index.css). */
-@keyframes ui-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
+/* The consequence in a confirmation: the secondary ink, paragraphs spaced. */
+.ui-confirm__text {
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--ink-2);
 }
 
-@keyframes ui-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateY(24px);
-  }
+.ui-confirm__text p {
+  margin: 0;
 }

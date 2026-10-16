@@ -1,0 +1,131 @@
+/* Compact options (prototype .opt-grid / .opt). */
+.ui-opt-grid,
+.ui-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ui-tile-grid {
+  gap: 10px;
+}
+
+.ui-opt,
+.ui-tile {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 11px 12px;
+  font-weight: 500;
+}
+
+.ui-opt:hover,
+.ui-tile:hover {
+  border-color: var(--ink-3);
+  background: var(--raised);
+}
+
+.ui-opt[aria-pressed="true"],
+.ui-tile[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ui-opt:disabled,
+.ui-tile:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.ui-opt--wide,
+.ui-tile--wide {
+  grid-column: 1 / -1;
+}
+
+.ui-opt__icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+
+.ui-opt[aria-pressed="true"] .ui-opt__icon {
+  color: var(--accent);
+}
+
+.ui-opt__text {
+  min-width: 0;
+}
+
+.ui-opt__title {
+  font-weight: 500;
+}
+
+.ui-opt__desc {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.ui-opt__sugg {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Tiles (prototype .net): an icon, a bold name and a line of description. */
+.ui-tile {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+}
+
+.ui-tile__icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.ui-tile__text {
+  display: grid;
+  gap: 2px;
+}
+
+.ui-tile__title {
+  font-weight: 600;
+  font-size: var(--fs-md);
+}
+
+.ui-tile__desc {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+.ui-tile .ui-opt__sugg {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+@media (max-width: 559.98px) {
+  .ui-opt-grid,
+  .ui-tile-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

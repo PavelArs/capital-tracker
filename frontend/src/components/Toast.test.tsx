@@ -1,5 +1,5 @@
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ToastViewport from './Toast';
@@ -71,28 +71,29 @@ describe('TOAST pop-up errors', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('shell-16 sits under the pinned strip only below 960 px, not at 960 px', async () => {
+  it('shell-16 sits at the bottom right, clear of the pinned strip, at every width', async () => {
     const user = userEvent.setup();
     const nav = document.createElement('nav');
     nav.className = 'shell-nav';
     nav.getBoundingClientRect = () => ({ bottom: 48 }) as DOMRect;
     document.body.append(nav);
-    const at = (width: number) =>
-      vi.stubGlobal('matchMedia', (query: string) => ({
-        matches: width <= Number(/max-width:\s*([\d.]+)px/.exec(query)?.[1] ?? Number.NaN),
-      }));
     try {
-      at(960);
-      const { container, unmount } = setup(['Unable to log out. Please try again.']);
-      await user.click(screen.getByRole('button', { name: 'Fail' }));
-      expect(container.querySelector<HTMLElement>('.toast-viewport')?.style.top).toBe('');
-      unmount();
-      at(959);
-      const narrow = setup(['Unable to log out. Please try again.']);
-      await user.click(screen.getByRole('button', { name: 'Fail' }));
-      expect(narrow.container.querySelector<HTMLElement>('.toast-viewport')?.style.top).toBe(
-        '56px',
-      );
+      for (const width of [960, 959]) {
+        vi.stubGlobal('matchMedia', (query: string) => ({
+          matches: width <= Number(/max-width:\s*([\d.]+)px/.exec(query)?.[1] ?? Number.NaN),
+        }));
+        const { unmount } = setup(['Unable to log out. Please try again.']);
+        await user.click(screen.getByRole('button', { name: 'Fail' }));
+        const region = screen.getByRole('region', { name: 'Messages' });
+        // Placed by its stylesheet at the bottom edge, never moved under the strip.
+        expect(region).toHaveClass('ui-toasts');
+        expect(region.style.top).toBe('');
+        expect(within(region).getByRole('alert')).toHaveTextContent(
+          'Unable to log out. Please try again.',
+        );
+        unmount();
+        vi.unstubAllGlobals();
+      }
     } finally {
       nav.remove();
       vi.unstubAllGlobals();

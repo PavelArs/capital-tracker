@@ -11,7 +11,7 @@ import {
   tickLabel,
 } from '../dashboard/HistoryChart';
 import { money, quantity } from './format';
-import '../dashboard/dashboard.css';
+import '@/ui/chart.css';
 
 const HEIGHT = 290;
 const PAD = { left: 4, right: 64, top: 12, bottom: 28 };

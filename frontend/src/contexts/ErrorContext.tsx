@@ -1,52 +1,38 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { ToastProvider, useToastControls } from './ToastContext';
 
-export interface ToastMessage {
-  id: number;
-  message: string;
-}
+/**
+ * The older error-only API, kept as a thin alias of the toast system (ToastContext.tsx):
+ * `showError(message)` is `show({ tone: 'error', title: message })`. The axios handler and the
+ * shell's logout use it.
+ */
+export const ErrorProvider = ToastProvider;
 
 interface ErrorContextType {
   showError: (message: string) => void;
   dismissToast: (id: number) => void;
   clearError: () => void;
-  toasts: readonly ToastMessage[];
 }
 
-const ErrorContext = createContext<ErrorContextType | undefined>(undefined);
+const missing = () => {
+  throw new Error('useError must be used within an ErrorProvider');
+};
 
-/** More than this many at once and the oldest goes: a burst of failures stays readable. */
-const MAX_TOASTS = 3;
-let nextId = 1;
-
-export function ErrorProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<readonly ToastMessage[]>([]);
-
-  const showError = useCallback((message: string) => {
-    // The same message again replaces the one on screen, so it is not stacked twice.
-    setToasts((current) =>
-      [...current.filter((toast) => toast.message !== message), { id: nextId++, message }].slice(
-        -MAX_TOASTS,
-      ),
-    );
-  }, []);
-
-  const dismissToast = useCallback((id: number) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
-  }, []);
-
-  const clearError = useCallback(() => setToasts([]), []);
-
-  const value = useMemo(
-    () => ({ showError, dismissToast, clearError, toasts }),
-    [showError, dismissToast, clearError, toasts],
+export function useError(): ErrorContextType {
+  const controls = useToastControls();
+  const show = controls?.show;
+  const showError = useCallback(
+    (message: string) => void show?.({ tone: 'error', title: message }),
+    [show],
   );
-  return <ErrorContext.Provider value={value}>{children}</ErrorContext.Provider>;
-}
-
-export function useError() {
-  const context = useContext(ErrorContext);
-  if (context === undefined) {
-    throw new Error('useError must be used within an ErrorProvider');
-  }
-  return context;
+  const value = useMemo(
+    () => ({
+      showError,
+      dismissToast: controls?.dismiss ?? missing,
+      clearError: controls?.clear ?? missing,
+    }),
+    [showError, controls],
+  );
+  if (!controls) missing();
+  return value;
 }

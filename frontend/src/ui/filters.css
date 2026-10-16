@@ -102,3 +102,28 @@
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
+
+/* A count that needs the owner: the amber pill of the prototype (.chip .cnt). */
+.ui-chip__count--warn {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.ui-chip__icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+/* A chip that holds an asset icon starts closer to its edge. */
+.ui-chip:has(> .ui-chip__icon) {
+  padding-left: 4px;
+}
+
+.ui-chip:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}

@@ -1,4 +1,5 @@
-import { type ReactNode, type RefObject, useRef } from 'react';
+import CloseButton from '@features/shell/CloseButton';
+import { type ReactNode, type Ref, type RefObject, useRef } from 'react';
 import { useDialogFocus } from './useDialogFocus';
 import './drawer.css';
 
@@ -43,4 +44,30 @@ export default function Drawer({
       </div>
     </>
   );
+}
+
+/** A drawer's head: the 16 px title (h2, id `titleId`) and the ✕. */
+export function DrawerHeader({
+  titleId,
+  title,
+  onClose,
+  closeRef,
+}: {
+  titleId: string;
+  title: ReactNode;
+  onClose: () => void;
+  /** The ✕, for a drawer that starts the keyboard on it or moves it back there. */
+  closeRef?: Ref<HTMLButtonElement>;
+}) {
+  return (
+    <div className="ui-drawer__head">
+      <h2 id={titleId}>{title}</h2>
+      <CloseButton buttonRef={closeRef} onClick={onClose} />
+    </div>
+  );
+}
+
+/** The drawer's buttons, above the home indicator. */
+export function DrawerFooter({ children }: { children: ReactNode }) {
+  return <div className="ui-drawer__foot">{children}</div>;
 }

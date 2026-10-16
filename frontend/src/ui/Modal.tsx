@@ -1,4 +1,6 @@
+import CloseButton from '@features/shell/CloseButton';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { Steps } from './Steps';
 import { useDialogFocus } from './useDialogFocus';
 import './modal.css';
 
@@ -69,6 +71,65 @@ export default function Modal({
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A dialog's head: the 20 px title (h2, id `titleId`), the ✕ when the dialog can be closed,
+ * the steps of a multi-step dialog under it and an optional intro line.
+ */
+export function ModalHeader({
+  titleId,
+  title,
+  onClose,
+  closeDisabled = false,
+  steps,
+  intro,
+}: {
+  titleId: string;
+  title: ReactNode;
+  /** The ✕; left out, the dialog has none (a required step). */
+  onClose?: () => void;
+  /** The ✕ waits while a save is in flight. */
+  closeDisabled?: boolean;
+  steps?: { current: number; total: number };
+  /** A line under the title: what the dialog does. */
+  intro?: ReactNode;
+}) {
+  return (
+    <>
+      <div className="ui-modal__head">
+        <h2 id={titleId}>{title}</h2>
+        {onClose && <CloseButton onClick={onClose} disabled={closeDisabled} />}
+        {intro && <div className="ui-modal__intro">{intro}</div>}
+      </div>
+      {steps && (
+        <div className="ui-modal__steps">
+          <Steps current={steps.current} total={steps.total} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The dialog's fields: a grid with 16 px between them; the part that scrolls in a tall dialog. */
+export function ModalBody({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div className={className ? `ui-modal__body ${className}` : 'ui-modal__body'}>{children}</div>
+  );
+}
+
+/**
+ * The dialog's buttons, at the right. `summary` is the muted line at the left that sums up what
+ * Save will do ("Cost $1,200 · counted as a new deposit"). Put `<span className="ui-grow" />`
+ * between a Back button and the main one to push them apart.
+ */
+export function ModalFooter({ summary, children }: { summary?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="ui-modal__foot">
+      {summary !== undefined && summary !== null && <p className="ui-modal__summary">{summary}</p>}
+      {children}
     </div>
   );
 }

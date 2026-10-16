@@ -10,7 +10,7 @@ import {
 } from '../dashboard/HistoryChart';
 import type { InflationBasis } from '../shell/inflation-basis';
 import { dateText, money } from './deposit-format';
-import '../dashboard/dashboard.css';
+import '@/ui/chart.css';
 
 const HEIGHT = 260;
 const PAD = { left: 4, right: 64, top: 12, bottom: 28 };

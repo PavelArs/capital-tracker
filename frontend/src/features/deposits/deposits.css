@@ -308,20 +308,3 @@
 .deposit-rows .ui-row > .ui-row__main {
   flex: 1;
 }
-
-/* The destructive button of the delete confirmation, as the goal dialog has it. */
-.deposit-dialog .shell-button--danger {
-  border-color: transparent;
-  background: var(--neg);
-  color: var(--neg-ink);
-}
-
-.deposit-dialog .shell-button--danger:hover {
-  border-color: transparent;
-  filter: brightness(1.08);
-}
-
-.deposit-dialog .shell-button--danger:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}

@@ -1,6 +1,7 @@
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { ButtonLink } from '@/ui/Button';
+import { IconButton } from '@/ui/IconButton';
 import { useDialogFocus } from '@/ui/useDialogFocus';
 import { useCompactScreen } from '@/ui/useMediaQuery';
 import { age } from '../portfolio/format';
@@ -57,27 +58,21 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
     : checked
       ? `Everything is up to date.${updated ? ` ${updated}` : ''}`
       : 'Could not check the sync status. Try again later.';
-  const label = count === 0 ? 'Notifications' : `Notifications, ${needAttention(count)}`;
 
   return (
     <div className="shell-bell" ref={root}>
-      <button
-        ref={button}
-        type="button"
+      <IconButton
+        buttonRef={button}
+        label="Notifications"
+        icon="bell"
+        count={count}
+        countLabel={needAttention(count)}
         className="shell-bell__button"
-        aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen(!open)}
-      >
-        <Icon name="bell" />
-        {count > 0 && (
-          <span className="shell-bell__count" aria-hidden="true">
-            {count}
-          </span>
-        )}
-      </button>
+      />
       {open && (
         <>
           {/* The dimmed page behind the phone sheet: a tap on it closes the sheet. */}
@@ -115,13 +110,15 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
                       <small>{item.detail}</small>
                     </span>
                     {item.action && (
-                      <Link
-                        className={`shell-button shell-button--small${item.key === 'classify' ? '' : ' shell-button--ghost'}`}
+                      // Prototype attention rows: Review is the one to do, Open only looks.
+                      <ButtonLink
+                        variant={item.key === 'classify' ? 'secondary' : 'ghost'}
+                        size="sm"
                         to={withAsked(item.action.to, asked)}
                         onClick={() => setOpen(false)}
                       >
                         {item.action.label}
-                      </Link>
+                      </ButtonLink>
                     )}
                   </li>
                 ))}

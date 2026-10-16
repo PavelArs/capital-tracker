@@ -1,15 +1,21 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-// Shared form, table and filter styles load before the pages' own, which refine them.
+// The tokens and the design system's shared styles load before the pages' own, which refine them.
+import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/onest';
+import './features/shell/tokens.css';
+import './index.css';
+import './ui/motion.css';
+import './ui/base.css';
+import './ui/button.css';
+import './ui/card.css';
+import './ui/banner.css';
 import './ui/form.css';
 import './ui/table.css';
 import './ui/filters.css';
-import './ui/motion.css';
 import App from './App';
 import './utils/axiosConfig'; // Initialize axios interceptors
 import './i18n/config'; // Initialize i18n
-import './index.css';
-import './ui/banner.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import reportWebVitals from './utils/reportWebVitals';
 

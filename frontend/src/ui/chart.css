@@ -1,0 +1,315 @@
+/* Charts shared by the dashboard, an asset, a deposit and the goal pages: the card, the legend,
+   the period tabs, the drawn SVG, its tooltip and the "about this chart" note. The class names
+   keep their dashboard- prefix: tests and e2e select .dashboard-chart__deposit and its kin. */
+.dashboard-chart-card {
+  padding: 18px 22px 14px;
+}
+
+.dashboard-chart-card .ui-toolbar {
+  margin-bottom: var(--sp-4);
+}
+
+.dashboard-chart-card__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 24px;
+}
+
+.dashboard-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+
+.dashboard-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-legend__line {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.dashboard-legend__line--invested {
+  background: var(--ink-3);
+}
+
+.dashboard-legend__deposit {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-2);
+}
+
+.dashboard-periods {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--sunken);
+}
+
+.dashboard-periods button {
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.dashboard-periods button:hover {
+  color: var(--ink);
+}
+
+.dashboard-periods button[aria-selected="true"] {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px var(--line);
+}
+
+.dashboard-periods button:focus-visible,
+.dashboard-chart:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dashboard-chart {
+  position: relative;
+  height: 290px;
+  border-radius: var(--r-sm);
+  touch-action: pan-y;
+}
+
+.dashboard-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.dashboard-chart__grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.dashboard-chart__axis {
+  stroke: var(--line-strong);
+}
+
+.dashboard-chart__tick {
+  fill: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-chart__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.dashboard-chart__invested {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.dashboard-chart__deposit {
+  fill: var(--ink-2);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.dashboard-chart__dot {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.dashboard-chart__incomplete {
+  fill: var(--warn);
+}
+
+.dashboard-chart__cursor {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.dashboard-chart__empty {
+  margin: 0;
+  padding: 48px 0;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.dashboard-tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 190px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.dashboard-tip__value {
+  margin: 2px 0;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-tip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-tip__flow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-tip__note {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--warn);
+}
+
+.dashboard-chart-card__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-about {
+  position: relative;
+  display: inline-flex;
+}
+
+.dashboard-about__button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.dashboard-about__button:hover,
+.dashboard-about__button[aria-expanded="true"] {
+  color: var(--ink);
+}
+
+.dashboard-about__button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dashboard-about__button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.dashboard-about__note {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -8px;
+  z-index: 6;
+  width: min(340px, calc(100vw - 48px));
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+/* Legend (prototype .legend): the Legend component. */
+.ui-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  list-style: none;
+}
+
+.ui-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-legend__key {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.ui-legend__key--area {
+  height: 8px;
+  opacity: 0.6;
+}
+
+.ui-legend__key--dash {
+  height: 0;
+  border-top: 2px dashed currentColor;
+  border-radius: 0;
+  background: none;
+}
+
+.ui-legend__key--marker {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

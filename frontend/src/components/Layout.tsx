@@ -13,6 +13,7 @@ import { useNeedsClassification } from '@features/transactions/useNeedsClassific
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { IconButton } from '@/ui/IconButton';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
@@ -143,16 +144,13 @@ export default function Layout() {
               </span>
               <small>2FA on</small>
             </span>
-            <button
-              type="button"
+            <IconButton
+              label="Log out"
+              icon="logout"
               className="shell-owner__logout"
               onClick={handleLogout}
               disabled={isLoggingOut}
-              aria-label="Log out"
-              title="Log out"
-            >
-              <Icon name="logout" />
-            </button>
+            />
           </div>
         </nav>
         <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>

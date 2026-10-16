@@ -10,14 +10,23 @@ export type BadgeTone = 'neutral' | 'muted' | 'pos' | 'neg' | 'warn' | 'info';
 export default function Badge({
   tone = 'neutral',
   dot = false,
+  pulse = false,
   className,
   children,
 }: {
   tone?: BadgeTone;
   dot?: boolean;
+  /** Something runs right now (Syncing): the dot pulses. Implies the dot. */
+  pulse?: boolean;
   className?: string;
   children: ReactNode;
 }) {
-  const classes = ['ui-badge', `ui-badge--${tone}`, dot && 'ui-badge--dot', className];
+  const classes = [
+    'ui-badge',
+    `ui-badge--${tone}`,
+    (dot || pulse) && 'ui-badge--dot',
+    pulse && 'ui-badge--pulse',
+    className,
+  ];
   return <span className={classes.filter(Boolean).join(' ')}>{children}</span>;
 }

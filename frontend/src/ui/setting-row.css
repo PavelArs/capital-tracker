@@ -1,0 +1,158 @@
+/* Settings rows (prototype Settings row): the SettingRow component. */
+.ui-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.ui-setting:first-child,
+.ui-card-h + .ui-setting {
+  border-top: 0;
+}
+
+.ui-setting__text {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.ui-setting__title {
+  display: block;
+  font-weight: 600;
+}
+
+.ui-setting__desc,
+.ui-setting__status {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.ui-setting__status:empty {
+  display: none;
+}
+
+.ui-setting__control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Deprecated: the shell-setting* and shell-dust* classes of the pages that do not use SettingRow
+   yet (plan 2.9 deletes them).
+   --------------------------------------------------------------------------------------------- */
+.shell-settings {
+  display: grid;
+  gap: var(--sp-5);
+  max-width: 780px;
+}
+
+.shell-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+
+.shell-setting__label {
+  display: block;
+  font-weight: 600;
+}
+
+.shell-setting__text {
+  min-width: 0;
+}
+
+/* A rate row: a long hint wraps beside the rate field instead of pushing it onto a new line. */
+.shell-setting--rate .shell-setting__text {
+  flex: 1 1 16rem;
+}
+
+.shell-setting__hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+/* A read-only value at the right of a setting, such as the owner's email. */
+.shell-setting__value {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.shell-setting__hint--error {
+  color: var(--neg);
+}
+
+/* Settings: the dust threshold, a USD amount and its Save button on one line. */
+.shell-dust {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.shell-dust__unit {
+  color: var(--ink-3);
+}
+
+.shell-dust input {
+  width: 8rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row whose text takes the room left of its control and wraps, so the control stays at the right. */
+.shell-setting__text--grow {
+  flex: 1 1 16rem;
+}
+
+/* An inflation rate: its label, the field, % and Save; they wrap on a narrow phone. */
+.shell-dust--rate {
+  flex-wrap: wrap;
+}
+
+.shell-dust--rate input {
+  width: 5rem;
+}
+
+.shell-dust__label {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+/* A hint that has not arrived holds the line it will take (two on a phone), so the cards below stay put. */
+.shell-setting__hint--pending {
+  min-height: 1lh;
+}
+
+/* The dust hint is long enough to push its field onto a line of its own. */
+.shell-setting__hint--long {
+  width: 44rem;
+  max-width: 100%;
+}
+
+@media (max-width: 639.98px) {
+  .shell-setting__hint--pending {
+    min-height: 2lh;
+  }
+
+  .shell-setting__hint--long {
+    min-height: 3lh;
+  }
+}
+
+.shell-setting__hint--pending .shell-bone {
+  margin-top: 0.4em;
+}

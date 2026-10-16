@@ -226,23 +226,6 @@
   padding: 0;
 }
 
-/* The destructive button of the delete confirmation (goals-22). */
-.goal-dialog .shell-button--danger {
-  border-color: transparent;
-  background: var(--neg);
-  color: var(--neg-ink);
-}
-
-.goal-dialog .shell-button--danger:hover {
-  border-color: transparent;
-  filter: brightness(1.08);
-}
-
-.goal-dialog .shell-button--danger:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
 .goal-cases__base td {
   background: var(--sunken);
 }

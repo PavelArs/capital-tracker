@@ -33,30 +33,6 @@
   gap: var(--sp-2);
 }
 
-.shell-button--danger {
-  margin-top: 0;
-  border-color: transparent;
-  background: var(--neg);
-  color: var(--neg-ink);
-}
-
-.shell-button--danger:hover {
-  border-color: transparent;
-  filter: brightness(1.08);
-}
-
-.shell-button--danger:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.shell-button--ghost {
-  margin-top: 0;
-  border-color: transparent;
-  background: transparent;
-  color: var(--ink-2);
-}
-
 .portfolio-state {
   display: flex;
   flex-wrap: wrap;

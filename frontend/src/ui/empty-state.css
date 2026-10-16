@@ -17,6 +17,11 @@
   color: var(--accent);
 }
 
+.ui-empty--pos .ui-empty__ill {
+  background: var(--pos-soft);
+  color: var(--pos);
+}
+
 .ui-empty__ill .shell-icon {
   width: 28px;
   height: 28px;
@@ -24,12 +29,12 @@
 
 .ui-empty .ui-empty__title {
   margin: 0;
-  font-size: var(--fs-xl);
   font-weight: 600;
+  font-size: var(--fs-xl);
 }
 
 .ui-empty__text {
-  max-width: 46ch;
+  max-width: 42ch;
   margin: 0;
   color: var(--ink-2);
 }
@@ -44,4 +49,33 @@
 
 .ui-empty__actions .shell-button {
   margin-top: 0;
+}
+
+/* Inside a card: no card of its own, a smaller title and less room. */
+.ui-empty--compact {
+  gap: 6px;
+  padding: 28px 12px;
+}
+
+.ui-empty--compact .ui-empty__title {
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-md);
+}
+
+.ui-empty--compact .ui-empty__text {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.ui-empty--compact .ui-empty__ill {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 2px;
+  border-radius: 12px;
+}
+
+.ui-empty--compact .ui-empty__ill .shell-icon {
+  width: 20px;
+  height: 20px;
 }

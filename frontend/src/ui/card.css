@@ -1,0 +1,65 @@
+/* Cards (prototype .card and .card-h). Loaded once from main.tsx. */
+.ui-card,
+.shell-card {
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+/* Account cards: the header and the rows run to the card's edges. */
+.ui-card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ui-card--chart {
+  padding: 18px 22px 14px;
+}
+
+/* A list item card keeps no bullet. */
+li.ui-card {
+  list-style: none;
+}
+
+/* Deprecated alias (plan 2.9 deletes it): a card's own h2 without the header row. */
+.shell-card h2 {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--fs-lg);
+}
+
+.ui-card-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.ui-card--flush > .ui-card-h {
+  margin: 0;
+  padding: 18px 22px 4px;
+}
+
+/* Two classes, so a page's own heading style never wins. */
+.ui-card-h .ui-card-h__title {
+  min-width: 0;
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--fs-lg);
+}
+
+.ui-card-h__sub {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.ui-card-h__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}

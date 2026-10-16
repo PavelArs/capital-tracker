@@ -25,7 +25,19 @@
   --neg-ink: #0d1016;
   --warn: #f2b544;
   --warn-soft: rgba(242, 181, 68, 0.12);
+  /* Neutral notices (Banner info, toast info, Syncing). */
+  --info: #7cb7ff;
+  --info-soft: rgba(124, 183, 255, 0.12);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --shadow: var(--shadow-lg);
+  /* The dimmed page behind a dialog, a drawer or a sheet. */
+  --scrim: rgba(4, 6, 10, 0.62);
+  /* Loading blocks sweep from --skeleton to --skeleton-hi. */
+  --skeleton: #1e2330;
+  --skeleton-hi: #262c3b;
+  /* Chart gridlines and the x axis. */
+  --grid: #1f2431;
+  --axis: #2c3342;
   /* One colour per asset everywhere (asset-identity.ts); unknown tickers are "other". */
   --c-btc: #d95926;
   --c-eth: #3987e5;
@@ -46,6 +58,11 @@
   --c-broker: #8fbf4a;
   --c-prop: #d6a03a;
   --c-other: #4a5161;
+  /* Asset classes and wallets (prototype): crypto wallets, banks. */
+  --c-w1: #3987e5;
+  --c-w2: #199e70;
+  --c-w3: #d95926;
+  --c-bank: #36b3c2;
   /* Tokens the app has no colour for take one of these, by ticker, so they tell apart. */
   --c-p1: #b36bd9;
   --c-p2: #3fb5c4;
@@ -62,6 +79,7 @@
   --fs-lg: 16px;
   --fs-xl: 20px;
   --fs-2xl: 28px;
+  --fs-hero: 52px;
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -72,6 +90,7 @@
   --r-sm: 6px;
   --r-md: 10px;
   --r-lg: 14px;
+  color-scheme: dark;
 }
 
 /* The canvas, and with it the scrollbar gutter kept on wide screens, takes the shell background
@@ -80,7 +99,73 @@ html {
   background-color: var(--bg);
 }
 
+/* Before ThemeContext sets data-theme (the boot shell's first paint), the device's preference
+   decides; afterwards data-theme does. Both blocks hold the same light values. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f4f7;
+    --surface: #ffffff;
+    --raised: #f7f8fb;
+    --sunken: #eceef3;
+    --line: rgba(20, 28, 52, 0.08);
+    --line-strong: rgba(20, 28, 52, 0.15);
+    --ink: #121726;
+    --ink-2: #4f586b;
+    --ink-3: #5f677b;
+    --accent: #4b55d6;
+    --accent-hover: #3c46c4;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(75, 85, 214, 0.1);
+    --pos: #0a7f44;
+    --pos-soft: rgba(11, 138, 74, 0.1);
+    --neg: #cc3340;
+    --neg-soft: rgba(204, 51, 64, 0.09);
+    --neg-ink: #ffffff;
+    --warn: #9a6200;
+    --warn-soft: rgba(214, 150, 20, 0.14);
+    --info: #2a6fc9;
+    --info-soft: rgba(42, 111, 201, 0.1);
+    --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
+    --scrim: rgba(18, 23, 38, 0.35);
+    --skeleton: #eceef3;
+    --skeleton-hi: #f6f7fa;
+    --grid: #eef0f4;
+    --axis: #d7dbe3;
+    --c-btc: #eb6834;
+    --c-eth: #2a78d6;
+    --c-base: #1f4fe0;
+    --c-arb: #1b86c4;
+    --c-op: #d62839;
+    --c-pol: #6f3fd6;
+    --c-bnb: #b8860b;
+    --c-avax: #cc2a2b;
+    --c-sol: #e87ba4;
+    --c-zec: #1baf7a;
+    --c-trx: #e5404d;
+    --c-xlm: #5c6f8f;
+    --c-usdt: #168f80;
+    --c-usdc: #1f5fb8;
+    --c-cash: #4a3aa7;
+    --c-deposit: #a8691f;
+    --c-broker: #5a8a1c;
+    --c-prop: #a8740f;
+    --c-other: #c4c8d2;
+    --c-w1: #2a78d6;
+    --c-w2: #1baf7a;
+    --c-w3: #eb6834;
+    --c-bank: #17808f;
+    --c-p1: #8f3fb8;
+    --c-p2: #14899a;
+    --c-p3: #9c7b0e;
+    --c-p4: #4f8a35;
+    --c-p5: #c25a3c;
+    --c-p6: #4a62b8;
+  }
+}
+
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f3f4f7;
   --surface: #ffffff;
   --raised: #f7f8fb;
@@ -101,7 +186,14 @@ html {
   --neg-ink: #ffffff;
   --warn: #9a6200;
   --warn-soft: rgba(214, 150, 20, 0.14);
+  --info: #2a6fc9;
+  --info-soft: rgba(42, 111, 201, 0.1);
   --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
+  --scrim: rgba(18, 23, 38, 0.35);
+  --skeleton: #eceef3;
+  --skeleton-hi: #f6f7fa;
+  --grid: #eef0f4;
+  --axis: #d7dbe3;
   --c-btc: #eb6834;
   --c-eth: #2a78d6;
   --c-base: #1f4fe0;
@@ -121,6 +213,10 @@ html {
   --c-broker: #5a8a1c;
   --c-prop: #a8740f;
   --c-other: #c4c8d2;
+  --c-w1: #2a78d6;
+  --c-w2: #1baf7a;
+  --c-w3: #eb6834;
+  --c-bank: #17808f;
   --c-p1: #8f3fb8;
   --c-p2: #14899a;
   --c-p3: #9c7b0e;

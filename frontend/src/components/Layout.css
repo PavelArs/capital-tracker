@@ -59,6 +59,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
+  /* Prototype .side 20px 14px + .brand 0 8px. */
   padding: 20px 22px 12px;
 }
 
@@ -74,17 +75,6 @@
 .shell-brand__mark {
   width: 26px;
   height: 26px;
-}
-
-.shell-icon {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .shell-nav__menu {
@@ -131,18 +121,15 @@
   color: var(--accent);
 }
 
+/* Prototype .nav .cnt: how many transactions wait to be classified, amber ("needs you"). */
 .shell-nav__count {
-  min-width: 20px;
-  height: 20px;
   margin-left: auto;
-  padding: 0 6px;
+  padding: 1px 7px;
   border-radius: 999px;
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 20px;
-  text-align: center;
+  font-weight: 700;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -188,6 +175,7 @@ a.shell-sync:hover {
 
 .shell-sync--info .shell-sync__dot {
   background: var(--accent);
+  animation: ui-pulse 1.2s ease-in-out infinite;
 }
 
 .shell-sync--warn .shell-sync__dot {
@@ -231,43 +219,13 @@ a.shell-sync:hover {
   font-size: var(--fs-xs);
 }
 
-.shell-nav button {
-  min-height: 36px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  cursor: pointer;
-  transition: none;
-}
-
-.shell-nav button:hover {
-  background: var(--raised);
-  color: var(--ink);
-  opacity: 1;
-}
-
-.shell-nav button:disabled {
-  opacity: 0.6;
+.shell-owner__logout:disabled {
   cursor: wait;
 }
 
 /* Phones: the notifications bell stands left of the avatar, the prototype's flat 34 px icon button. */
 .shell-owner__bell {
   display: none;
-}
-
-.shell-owner .shell-bell__button {
-  min-height: 34px;
-}
-
-.shell-owner__logout {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex: none;
 }
 
 .shell-main {
@@ -280,21 +238,6 @@ a.shell-sync:hover {
 
 .shell-main:focus {
   outline: none;
-}
-
-.legacy-scope-note {
-  margin-bottom: 1.25rem;
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-left: 3px solid var(--primary-color-dark);
-  border-radius: 4px;
-  background: var(--bg-color);
-  color: var(--text-color);
-  line-height: 1.5;
-}
-
-.legacy-scope-note a {
-  color: var(--primary-color-dark);
 }
 
 /* Phones and tablets (prototype): one slim bar with the brand, the owner and a swipeable

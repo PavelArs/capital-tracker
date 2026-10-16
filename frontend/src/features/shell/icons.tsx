@@ -172,6 +172,14 @@ const paths = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  // Points right; a back link (Crumb) turns it round.
+  chevron: <path d="m9 18 6-6-6-6" />,
+  wifi: (
+    <>
+      <path d="M5 12.6a10 10 0 0 1 14 0M2 9a15 15 0 0 1 20 0M8.5 16.1a5 5 0 0 1 7 0" />
+      <path d="M12 20h.01" />
+    </>
+  ),
   eyeOff: (
     <path d="M10.7 5.1A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13 13 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20M9.9 9.9a3 3 0 0 0 4.2 4.2" />
   ),

@@ -1,0 +1,45 @@
+.ui-progress {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--sunken);
+}
+
+.ui-progress--bar {
+  height: 8px;
+  border-radius: 999px;
+}
+
+.ui-progress--thin {
+  width: 120px;
+  max-width: 100%;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.ui-progress > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.ui-progress--pos > i {
+  background: var(--pos);
+}
+
+.ui-progress--indeterminate > i {
+  width: 40%;
+  animation: ui-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes ui-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}

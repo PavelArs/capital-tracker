@@ -7,17 +7,23 @@
   background: var(--sunken);
 }
 
-.ui-seg label {
+.ui-seg label,
+.ui-seg button {
   position: relative;
-  padding: 6px 12px;
+  padding: 5px 11px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
   color: var(--ink-2);
+  font: inherit;
   font-weight: 500;
   font-size: var(--fs-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.ui-seg label:hover {
+.ui-seg label:hover,
+.ui-seg button:hover {
   color: var(--ink);
 }
 
@@ -34,7 +40,9 @@
   cursor: pointer;
 }
 
-.ui-seg label:has(input:checked) {
+.ui-seg label:has(input:checked),
+.ui-seg button[aria-selected="true"],
+.ui-seg button[aria-pressed="true"] {
   background: var(--raised);
   color: var(--ink);
   box-shadow:
@@ -45,6 +53,27 @@
 .ui-seg label:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.ui-seg label:has(input:disabled) {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.ui-seg--sm {
+  padding: 2px;
+}
+
+.ui-seg--sm label,
+.ui-seg--sm button {
+  padding: 3px 9px;
+  font-size: var(--fs-xs);
+}
+
+/* Many choices (kinds of property) wrap onto a second line instead of overflowing. */
+.ui-seg--wrap {
+  flex-wrap: wrap;
+  justify-self: start;
 }
 
 .ui-seg--hold {

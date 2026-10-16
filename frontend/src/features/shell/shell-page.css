@@ -1,3 +1,5 @@
+@import "../../ui/setting-row.css";
+
 /* New-section pages inside the shell (prototype "page" and "card" patterns). */
 .shell-page {
   display: grid;
@@ -49,153 +51,6 @@
   overflow-wrap: anywhere;
 }
 
-.shell-icon--sm {
-  width: 15px;
-  height: 15px;
-}
-
-.shell-card {
-  min-width: 0;
-  padding: 20px 22px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-}
-
-.shell-card h2 {
-  margin: 0;
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
-
-.shell-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 36px;
-  margin-top: 10px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: var(--raised);
-  color: var(--ink);
-  font-weight: 600;
-  font-size: var(--fs-sm);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.shell-button:hover {
-  border-color: var(--ink-3);
-}
-
-.shell-button--primary {
-  margin-top: 0;
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-.shell-button--primary:hover {
-  border-color: transparent;
-  background: var(--accent-hover);
-}
-
-.shell-button--primary:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.shell-button--secondary {
-  margin-top: 0;
-}
-
-/* A button kept focusable while it cannot act (aria-disabled, wallets-02) looks disabled. */
-.shell-button[aria-disabled="true"] {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.shell-button[aria-disabled="true"]:hover {
-  border-color: var(--line-strong);
-}
-
-.shell-page__head .shell-button {
-  margin-top: 0;
-}
-
-.shell-settings {
-  display: grid;
-  gap: var(--sp-5);
-  max-width: 780px;
-}
-
-.shell-setting {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--line);
-}
-
-.shell-setting__label {
-  display: block;
-  font-weight: 600;
-}
-
-.shell-setting__text {
-  min-width: 0;
-}
-
-/* A rate row: a long hint wraps beside the rate field instead of pushing it onto a new line. */
-.shell-setting--rate .shell-setting__text {
-  flex: 1 1 16rem;
-}
-
-.shell-setting__hint {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
-
-/* A read-only value at the right of a setting, such as the owner's email. */
-.shell-setting__value {
-  min-width: 0;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-  overflow-wrap: anywhere;
-  text-align: right;
-}
-
-.shell-setting__hint--error {
-  color: var(--neg);
-}
-
-.shell-note {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-}
-
-.shell-note a {
-  color: var(--accent);
-}
-
-/* A link inside text: the accent colour without the browser's underline (design system "link"). */
-.shell-link {
-  color: var(--accent);
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.shell-link:hover {
-  text-decoration: underline;
-}
-
 /* Page-specific actions: inline with the title row on wide screens. */
 .shell-page__actions {
   display: contents;
@@ -225,193 +80,11 @@
   }
 }
 
-/* Settings: the dust threshold, a USD amount and its Save button on one line. */
-.shell-dust {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.shell-dust__unit {
-  color: var(--ink-3);
-}
-
-.shell-dust input {
-  width: 8rem;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* A row whose text takes the room left of its control and wraps, so the control stays at the right. */
-.shell-setting__text--grow {
-  flex: 1 1 16rem;
-}
-
-/* An inflation rate: its label, the field, % and Save; they wrap on a narrow phone. */
-.shell-dust--rate {
-  flex-wrap: wrap;
-}
-
-.shell-dust--rate input {
-  width: 5rem;
-}
-
-.shell-dust__label {
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-}
-
-/* Loading: grey blocks in the layout of the page, instead of a sentence. */
-.shell-bone {
-  display: block;
-  max-width: 100%;
-  border-radius: var(--r-sm);
-  background: var(--line);
-  animation: shell-pulse 1.4s ease-in-out infinite;
-}
-
-.shell-bone--round {
-  flex: none;
-  border-radius: 50%;
-}
-
-.shell-skeleton {
-  display: grid;
-  gap: var(--sp-5);
-}
-
-.shell-skeleton__stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--sp-4);
-}
-
-.shell-skeleton__stat,
-.shell-skeleton__card {
-  display: grid;
-  gap: var(--sp-4);
-}
-
-.shell-skeleton__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--sp-4);
-}
-
-.shell-skeleton__toolbar,
-.shell-skeleton__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-}
-
-.shell-skeleton__row {
-  justify-content: flex-start;
-}
-
-.shell-skeleton__row > :last-child:not(.shell-skeleton__lines) {
-  margin-left: auto;
-}
-
-.shell-skeleton__rows {
-  display: grid;
-  gap: var(--sp-4);
-}
-
-.shell-skeleton__lines {
-  display: grid;
-  flex: 1;
-  gap: 8px;
-}
-
-@keyframes shell-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shell-bone {
-    animation: none;
-  }
-}
-
-/* The ✕ that closes a drawer. */
-.shell-close {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-
-.shell-close:hover {
-  background: var(--raised);
-  color: var(--ink);
-}
-
-.shell-close:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.shell-close:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* ATTN-BELL: the header bell and its panel of things that need the owner. */
+/* ATTN-BELL: the header bell and its panel, the prototype's attention list (.attn): one row per
+   thing that needs the owner with one way out, or the all-clear line. A 360 px popover beside
+   the bell; a sheet from the bottom on a phone. The bell itself is an IconButton. */
 .shell-bell {
   position: relative;
-}
-
-.shell-bell__button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-
-.shell-bell__button:hover,
-.shell-bell__button[aria-expanded="true"] {
-  background: var(--raised);
-  color: var(--ink);
-}
-
-.shell-bell__button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.shell-bell__count {
-  position: absolute;
-  top: 3px;
-  right: 2px;
-  display: grid;
-  place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--warn);
-  color: #1a1205;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
 }
 
 .shell-bell__scrim {
@@ -423,28 +96,31 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: 40;
-  width: min(420px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 32px));
   max-height: min(560px, 80vh);
   overflow-y: auto;
   padding: 6px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
-  background: var(--raised);
-  box-shadow: var(--shadow-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: ui-pop-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .shell-bell__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  padding: 10px 12px 6px;
+  padding: 8px 12px 6px;
 }
 
-.shell-bell__head h2 {
+/* Prototype .attn-h: a quiet heading, the count beside it. */
+.shell-bell .shell-bell__head h2 {
   margin: 0 auto 0 0;
-  font-size: var(--fs-md);
+  color: var(--ink-3);
   font-weight: 600;
+  font-size: var(--fs-sm);
 }
 
 .shell-bell__head > span:not(.shell-bell__close) {
@@ -473,7 +149,7 @@
 }
 
 .shell-bell__row:hover {
-  background: var(--surface);
+  background: var(--raised);
 }
 
 .shell-bell__icon {
@@ -510,25 +186,11 @@
   font-size: var(--fs-xs);
 }
 
-.shell-bell .shell-button {
+.shell-bell__row .ui-btn {
   flex: none;
-  height: 30px;
-  margin-top: 0;
-  padding: 0 10px;
-  font-size: var(--fs-xs);
 }
 
-.shell-bell .shell-button--ghost {
-  border-color: transparent;
-  background: transparent;
-  color: var(--ink-2);
-}
-
-.shell-bell .shell-button--ghost:hover {
-  background: var(--surface);
-  color: var(--ink);
-}
-
+/* Prototype .ok-line: the all-clear line, and the footer under the rows. */
 .shell-bell__quiet,
 .shell-bell__foot {
   display: flex;
@@ -539,12 +201,13 @@
 }
 
 .shell-bell__quiet {
-  padding: 12px;
+  padding: 12px 14px 13px;
   font-size: var(--fs-sm);
 }
 
 .shell-bell__foot {
-  padding: 8px 12px 6px;
+  margin-top: 4px;
+  padding: 10px 12px 6px;
   border-top: 1px solid var(--line);
   font-size: var(--fs-xs);
 }
@@ -560,19 +223,12 @@
   }
 
   .shell-bell__scrim {
-    display: block;
     position: fixed;
     inset: 0;
     z-index: 90;
-    background: rgba(4, 6, 10, 0.6);
-  }
-
-  :root[data-theme="light"] .shell-bell__scrim {
-    background: rgba(18, 23, 38, 0.35);
-  }
-
-  .shell-bell__head {
-    align-items: center;
+    display: block;
+    background: var(--scrim);
+    animation: ui-fade-in 0.15s ease-out;
   }
 
   .shell-bell__close {
@@ -589,31 +245,8 @@
     width: auto;
     max-height: 80vh;
     padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-width: 1px 0 0;
+    border-radius: 16px 16px 0 0;
+    animation: ui-sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-}
-
-/* A hint that has not arrived holds the line it will take (two on a phone), so the cards below stay put. */
-.shell-setting__hint--pending {
-  min-height: 1lh;
-}
-
-/* The dust hint is long enough to push its field onto a line of its own. */
-.shell-setting__hint--long {
-  width: 44rem;
-  max-width: 100%;
-}
-
-@media (max-width: 639.98px) {
-  .shell-setting__hint--pending {
-    min-height: 2lh;
-  }
-
-  .shell-setting__hint--long {
-    min-height: 3lh;
-  }
-}
-
-.shell-setting__hint--pending .shell-bone {
-  margin-top: 0.4em;
 }

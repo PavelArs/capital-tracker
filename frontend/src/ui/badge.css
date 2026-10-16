@@ -46,11 +46,12 @@
 }
 
 .ui-badge--info {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--info-soft);
+  color: var(--info);
 }
 
 /* Something is running right now (a sync): the dot pulses. */
+.ui-badge--pulse::before,
 .ui-badge--info.ui-badge--dot::before {
   animation: ui-badge-pulse 1.2s ease-in-out infinite;
 }
@@ -62,6 +63,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ui-badge--pulse::before,
   .ui-badge--info.ui-badge--dot::before {
     animation: none;
   }

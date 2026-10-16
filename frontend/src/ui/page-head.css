@@ -1,0 +1,76 @@
+.ui-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.ui-crumb:hover {
+  color: var(--ink);
+}
+
+.ui-crumb__chevron {
+  width: 15px;
+  height: 15px;
+  transform: rotate(180deg);
+}
+
+.ui-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.ui-page-head__icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+
+.ui-page-head__title {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Two classes, so a page's own heading style never wins. */
+.ui-page-head .ui-page-head__title h2 {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--fs-2xl);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ui-page-head__sub {
+  margin: 2px 0 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.ui-page-head__aside {
+  text-align: right;
+}
+
+.ui-page-head__aside b {
+  display: block;
+  font-size: var(--fs-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-page-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 559.98px) {
+  .ui-page-head__aside {
+    text-align: left;
+  }
+}
