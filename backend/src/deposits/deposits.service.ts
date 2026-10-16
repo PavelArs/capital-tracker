@@ -123,14 +123,16 @@ export class DepositsService {
     const owner = parseUuid(ownerId);
     // A stored quarterly schedule is read as a retry of an earlier request only (below).
     const { requestId, ...input } = parseDeposit(raw, payoutSchedules);
-    const payload = JSON.stringify(input);
+    // A term deposit's payload is what it was before kinds, so a retry of an earlier request matches.
+    const { kind: _kind, ...terms } = input;
+    const payload = JSON.stringify(input.kind === 'account' ? input : terms);
     if (input.startDate > moscowDate(new Date()))
       throw new UnprocessableEntityException('Start date is in the future');
     const id = await this.source.transaction(async (manager) => {
       const created: { id: string }[] = await manager.query(
         `INSERT INTO bank_deposits (id, "ownerId", "requestId", "canonicalPayload", name, bank, currency,
-           "startDate", "endDate", payout, capitalized, "dayBasis", "earlyClose")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           "startDate", "endDate", payout, capitalized, "dayBasis", "earlyClose", kind)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT ("ownerId", "requestId") DO NOTHING
          RETURNING id`,
         [
@@ -147,6 +149,7 @@ export class DepositsService {
           input.capitalized,
           input.dayBasis,
           input.earlyClose,
+          input.kind,
         ],
       );
       if (created.length === 0) {
@@ -162,10 +165,12 @@ export class DepositsService {
       // Quarterly is no longer offered: it is accepted only as the retry of a deposit made before.
       if (input.payout === 'quarterly') throw new BadRequestException('Invalid deposit input');
       const depositId = created[0].id;
-      await manager.query(
-        'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',
-        [owner, depositId, input.startDate, input.ratePercent],
-      );
+      // An account entered without a rate has no rate: it earns nothing, and its figures show 0.
+      if (input.ratePercent !== null)
+        await manager.query(
+          'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',
+          [owner, depositId, input.startDate, input.ratePercent],
+        );
       await manager.query(
         `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "requestId", "canonicalPayload",
            "occurredOn", kind, amount, "position")
@@ -199,7 +204,10 @@ export class DepositsService {
       capitalized: input.capitalized,
       dayBasis: input.dayBasis,
       earlyClose: input.earlyClose,
-      rates: [{ effectiveFrom: input.startDate, ratePercent: input.ratePercent }],
+      rates:
+        input.ratePercent === null
+          ? []
+          : [{ effectiveFrom: input.startDate, ratePercent: input.ratePercent }],
     };
     return previewDeposit(terms, input.amount);
   }
@@ -506,6 +514,7 @@ export class DepositsService {
         : null;
     return {
       id: stored.deposit.id,
+      kind: stored.deposit.kind,
       name: stored.deposit.name,
       bank: stored.deposit.bank,
       currency: stored.deposit.currency,
@@ -515,7 +524,8 @@ export class DepositsService {
       capitalized: terms.capitalized,
       dayBasis: terms.dayBasis,
       earlyClose: terms.earlyClose,
-      ratePercent,
+      // An account with no rate entered has none to show: 0 would read as a rate the bank pays.
+      ratePercent: terms.rates.length === 0 ? null : ratePercent,
       status,
       closedOn: now.closedOn,
       principal: now.principal,

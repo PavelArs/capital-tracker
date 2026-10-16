@@ -2,6 +2,7 @@ import {
   type DayBasis,
   type DepositCurrency,
   type DepositDetail,
+  type DepositKind,
   type DepositPreview,
   type DepositTerms,
   depositsApi,
@@ -50,6 +51,8 @@ const rateProblem = (value: string) =>
     : RATE.test(value.trim())
       ? null
       : 'Percent a year, up to four decimals';
+/** An account's rate is optional; a term deposit needs one. */
+const accountRateProblem = (value: string) => (value.trim() ? rateProblem(value) : null);
 const dateProblem = (value: string) =>
   DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? null : 'Pick a date';
 
@@ -358,12 +361,20 @@ const payoutOptions: readonly (readonly [PayoutSchedule, string])[] = [
   ['at-end', 'At the end of the term'],
 ];
 
+/** An account has no term, so it pays out as it earns: no end-of-term schedule. */
+const accountPayoutOptions = payoutOptions.filter(([schedule]) => schedule !== 'at-end');
+
 const currencies: readonly DepositCurrency[] = ['RUB', 'USD', 'EUR'];
 const earlyCloseOptions = (['forfeits-interest', 'keeps-interest'] as const).map(
   (rule) => [rule, earlyCloseText[rule]] as const,
 );
 /** What a deposit is called when the owner leaves the name empty. */
 const DEFAULT_NAME = 'Deposit';
+const DEFAULT_ACCOUNT_NAME = 'Account';
+const kindOptions: readonly (readonly [DepositKind, string])[] = [
+  ['term-deposit', 'Term deposit'],
+  ['account', 'Savings or current account'],
+];
 /** How long the entries stay still before the figures are asked for: typing asks once. */
 const PREVIEW_DELAY_MS = 400;
 
@@ -421,6 +432,7 @@ export function AddDepositDialog({
   onSaved: (deposit: DepositDetail) => void;
 }) {
   const id = useId();
+  const [kind, setKind] = useState<DepositKind>('term-deposit');
   const [name, setName] = useState('');
   const [bank, setBank] = useState('');
   const [currency, setCurrency] = useState<DepositCurrency>('RUB');
@@ -435,43 +447,55 @@ export function AddDepositDialog({
   const [earlyClose, setEarlyClose] = useState<EarlyClose>('forfeits-interest');
   const attempt = useAttempt();
   const knownBanks = [...new Set(banks)];
+  const isAccount = kind === 'account';
+  // An account has no term, so the terms that only a term has are not sent for it.
   const entries: DepositTerms = {
-    name: name.trim() || DEFAULT_NAME,
+    kind,
+    name: name.trim() || (isAccount ? DEFAULT_ACCOUNT_NAME : DEFAULT_NAME),
     bank: bank.trim(),
     currency,
     startDate,
-    endDate: endDate || null,
-    payout,
+    endDate: isAccount ? null : endDate || null,
+    payout: isAccount && payout === 'at-end' ? 'monthly' : payout,
     capitalized,
     dayBasis,
-    earlyClose,
-    ratePercent: rate.trim(),
+    earlyClose: isAccount ? 'keeps-interest' : earlyClose,
+    ratePercent: isAccount && !rate.trim() ? null : rate.trim(),
     amount: amount.trim(),
   };
 
   const problems = (): Problems => ({
     bank: bank.trim() ? null : 'Enter the bank',
     amount: amountProblem(amount, 'the amount put in'),
-    rate: rateProblem(rate),
+    rate: isAccount ? accountRateProblem(rate) : rateProblem(rate),
     startDate: dateProblem(startDate),
-    endDate: endDate
-      ? (dateProblem(endDate) ??
-        (endDate <= startDate
-          ? 'Must be after the opening date'
-          : endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
-            ? `A term is at most ${MAX_TERM_YEARS} years`
-            : null))
-      : payout === 'at-end'
-        ? 'Interest at the end of the term needs an end date'
-        : null,
+    endDate: isAccount
+      ? null
+      : endDate
+        ? (dateProblem(endDate) ??
+          (endDate <= startDate
+            ? 'Must be after the opening date'
+            : endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
+              ? `A term is at most ${MAX_TERM_YEARS} years`
+              : null))
+        : payout === 'at-end'
+          ? 'Interest at the end of the term needs an end date'
+          : null,
   });
-  const preview = usePreview(hasProblems(problems()) ? null : entries);
+  // An account with no rate has no interest to preview: nothing is shown for it rather than zero.
+  const preview = usePreview(
+    hasProblems(problems()) || entries.ratePercent === null ? null : entries,
+  );
   const figures = preview && previewText(preview, currency);
 
   return (
     <FormDialog
-      title="Add bank deposit"
-      note="Enter the terms once. The app counts the interest and what the deposit is worth; you only record top-ups and payouts."
+      title={isAccount ? 'Add savings or current account' : 'Add bank deposit'}
+      note={
+        isAccount
+          ? 'Enter the account once. The app counts the interest on its balance; you only record top-ups and withdrawals.'
+          : 'Enter the terms once. The app counts the interest and what the deposit is worth; you only record top-ups and payouts.'
+      }
       submit="Add deposit"
       problems={problems}
       onClose={onClose}
@@ -511,7 +535,23 @@ export function AddDepositDialog({
           value={name}
           onChange={setName}
           maxLength={120}
-          placeholder={DEFAULT_NAME}
+          placeholder={isAccount ? DEFAULT_ACCOUNT_NAME : DEFAULT_NAME}
+        />
+      </div>
+      <div className="ui-field">
+        <span id={`${id}-kind`} className="ui-field__label">
+          Kind
+        </span>
+        <SegmentedControl
+          name={`${id}-kind`}
+          labelledBy={`${id}-kind`}
+          options={kindOptions}
+          value={kind}
+          onChange={(next) => {
+            setKind(next);
+            if (next === 'account')
+              setPayout((current) => (current === 'at-end' ? 'monthly' : current));
+          }}
         />
       </div>
       <div className="ui-field">
@@ -537,31 +577,37 @@ export function AddDepositDialog({
           suffix={currency}
         />
         <Text
-          label="Rate, % a year"
+          label={isAccount ? 'Rate, % a year (optional)' : 'Rate, % a year'}
           name="rate"
           value={rate}
           onChange={setRate}
           numeric
-          placeholder="16"
+          placeholder={isAccount ? '' : '16'}
           suffix="%"
-          hint="The rate the bank pays now. A change can be added later."
+          hint={
+            isAccount
+              ? 'The rate the bank pays now, if it pays one. A change can be added later.'
+              : 'The rate the bank pays now. A change can be added later.'
+          }
         />
       </div>
       <div className="ui-field-row">
         <DateField label="Opened on" name="startDate" value={startDate} onChange={setStartDate} />
-        <DateField
-          label="Ends on (optional)"
-          name="endDate"
-          value={endDate}
-          onChange={setEndDate}
-          hint="Leave empty for a deposit with no term."
-        />
+        {!isAccount && (
+          <DateField
+            label="Ends on (optional)"
+            name="endDate"
+            value={endDate}
+            onChange={setEndDate}
+            hint="Leave empty for a deposit with no term."
+          />
+        )}
       </div>
       <div className="ui-field-row">
         <Select
           label="Interest comes"
           value={payout}
-          options={payoutOptions}
+          options={isAccount ? accountPayoutOptions : payoutOptions}
           onChange={setPayout}
         />
         <label className="transactions-toggle deposit-toggle">
@@ -570,7 +616,7 @@ export function AddDepositDialog({
             checked={capitalized}
             onChange={(event) => setCapitalized(event.target.checked)}
           />
-          Interest is added to the deposit
+          {isAccount ? 'Interest is added to the balance' : 'Interest is added to the deposit'}
         </label>
       </div>
       {figures && (
@@ -581,12 +627,14 @@ export function AddDepositDialog({
       <details className="deposit-more">
         <summary>More options</summary>
         <div className="ui-field-row">
-          <Select
-            label="If closed early"
-            value={earlyClose}
-            options={earlyCloseOptions}
-            onChange={setEarlyClose}
-          />
+          {!isAccount && (
+            <Select
+              label="If closed early"
+              value={earlyClose}
+              options={earlyCloseOptions}
+              onChange={setEarlyClose}
+            />
+          )}
           <Select
             label="Days in a year"
             value={dayBasis}

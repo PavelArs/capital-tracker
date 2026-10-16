@@ -19,7 +19,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 68;
+const MIGRATIONS = 69;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -260,6 +260,59 @@ async function daily(db, service, owner) {
   console.log('PASS DEP-DAILY');
 }
 
+async function account(db, service, owner) {
+  stage = 'DEP-ACCOUNT a savings or current account: no term, and no rate entered is not a rate';
+  const terms = {
+    name: 'Current A',
+    bank: 'Synthetic Bank',
+    currency: 'RUB',
+    startDate: '2026-07-01',
+    endDate: null,
+    payout: 'monthly',
+    capitalized: true,
+    dayBasis: 'actual-365',
+    earlyClose: 'keeps-interest',
+    kind: 'account',
+    ratePercent: null,
+    amount: '100000.00',
+  };
+  const made = await service.create(owner, terms);
+  assert.equal(made.kind, 'account');
+  assert.equal(made.ratePercent, null, 'An account entered without a rate shows none, not 0%');
+  assert.equal(made.status, 'active', 'An account has no term to end');
+  assert.equal(made.atMaturity, null);
+  const read = (await service.list(owner, '2026-07-04')).items.find((item) => item.id === made.id);
+  assert.equal(read.kind, 'account');
+  assert.equal(read.principal, '100000.00');
+  assert.equal(read.balance, '100000.00', 'Nothing is earned while no rate is entered');
+  assert.equal(read.interestEarned, '0.00');
+  // The rate the bank pays from a date is added later, and interest is earned from that date.
+  await service.addRate(owner, made.id, { effectiveFrom: '2026-08-01', ratePercent: '6' });
+  const rated = await service.get(owner, made.id, '2026-09-01');
+  assert.equal(rated.ratePercent, '6');
+  assert.notEqual(rated.balance, '100000.00', 'Interest from the rate date is added');
+  assert.equal(rated.status, 'active');
+  const withdrawn = await service.addMovement(owner, made.id, {
+    date: '2026-09-02',
+    kind: 'withdrawal',
+    amount: '10000.00',
+  });
+  assert.equal(withdrawn.status, 'active', 'Taking money out does not close an account');
+  // An account has no term: no end date, and no payout that waits for one.
+  await rejected(() => service.create(owner, { ...terms, endDate: '2027-07-01' }), 400);
+  await rejected(() => service.create(owner, { ...terms, payout: 'at-end' }), 400);
+  await rejected(() => service.create(owner, { ...terms, payout: 'quarterly' }), 400);
+  // A term deposit still needs its rate.
+  await rejected(() => service.create(owner, { ...savings, name: 'No rate', ratePercent: null }), 400);
+  // The database refuses an account that still has a term, whatever the application sends.
+  const term = await service.create(owner, { ...savings, name: 'Term C' });
+  await assert.rejects(
+    () => db.query(`UPDATE bank_deposits SET kind='account' WHERE id=$1`, [term.id]),
+    /bank_deposits_account_has_no_term/,
+  );
+  console.log('PASS DEP-ACCOUNT');
+}
+
 async function movements(db, service, owner, other, ids) {
   stage = 'synthetic movements: payouts, withdrawals and what a deposit could not have had';
   await rejected(
@@ -396,7 +449,7 @@ async function backfill() {
       timeout: 60000,
     });
     assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
-    assert.match(migrated.stdout, /Migrations applied: 5/);
+    assert.match(migrated.stdout, /Migrations applied: 6/);
     const events = await prior.query(
       `SELECT version, kind, name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
           to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,
@@ -826,6 +879,7 @@ async function main() {
     });
     const ids = await accrual(db, service, owner.id);
     await daily(db, service, fourth.id);
+    await account(db, service, fourth.id);
     await movements(db, service, owner.id, other.id, ids);
     await checks(db, service, owner.id, ids);
     await owners(db, service, owner.id, other.id, ids);

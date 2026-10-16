@@ -469,6 +469,7 @@ export default function DepositPage() {
                 <div>
                   <dt>Rate</dt>
                   <dd>
+                    {deposit.rates.length === 0 && <span>No rate entered</span>}
                     {deposit.rates.map((rate) => (
                       <span key={rate.effectiveFrom} className="deposit-terms__rate">
                         {rate.ratePercent}% a year from {dateText(rate.effectiveFrom)}
@@ -492,10 +493,12 @@ export default function DepositPage() {
                   <dt>Term</dt>
                   <dd>{periodText(deposit)}</dd>
                 </div>
-                <div>
-                  <dt>Closing early</dt>
-                  <dd>{earlyCloseText[deposit.earlyClose]}</dd>
-                </div>
+                {deposit.kind !== 'account' && (
+                  <div>
+                    <dt>Closing early</dt>
+                    <dd>{earlyCloseText[deposit.earlyClose]}</dd>
+                  </div>
+                )}
               </dl>
             </section>
 

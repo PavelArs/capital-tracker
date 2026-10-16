@@ -70,7 +70,10 @@ const list = (items: Deposit[]): DepositList => ({
 const detail = (deposit: Deposit, change: Partial<DepositDetail> = {}): DepositDetail => ({
   ...deposit,
   asOf: '2026-10-11',
-  rates: [{ effectiveFrom: '2026-07-01', ratePercent: deposit.ratePercent }],
+  rates:
+    deposit.ratePercent === null
+      ? []
+      : [{ effectiveFrom: '2026-07-01', ratePercent: deposit.ratePercent }],
   movements: [
     { id: 'm1', date: '2026-07-01', kind: 'topup', amount: '100000.00', comment: null },
     {
@@ -223,6 +226,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create).toHaveBeenCalledWith({
       requestId: expect.any(String),
+      kind: 'term-deposit',
       name: 'Savings A',
       bank: 'Synthetic Bank',
       currency: 'RUB',
@@ -236,6 +240,81 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       amount: '100000',
     });
     expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
+  });
+
+  it('DEP-ACCOUNT adds a savings or current account with no end date and no rate, sent as the owner entered it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    const preview = vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const kind = within(screen.getByRole('dialog', { name: 'Add bank deposit' })).getByRole(
+      'radiogroup',
+      { name: 'Kind' },
+    );
+    await user.click(within(kind).getByRole('radio', { name: 'Savings or current account' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add savings or current account' });
+    expect(within(dialog).queryByLabelText('Ends on (optional)')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByText('More options'));
+    expect(within(dialog).queryByLabelText('If closed early')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Days in a year')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Rate, % a year (optional)')).not.toBeRequired();
+    expect(
+      within(within(dialog).getByLabelText('Interest comes'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Every day', 'Every month']);
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Amount put in'), '50000');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith({
+      requestId: expect.any(String),
+      kind: 'account',
+      name: 'Account',
+      bank: 'Synthetic Bank',
+      currency: 'RUB',
+      startDate: expect.any(String),
+      endDate: null,
+      payout: 'monthly',
+      capitalized: true,
+      dayBasis: 'actual-365',
+      earlyClose: 'keeps-interest',
+      ratePercent: null,
+      amount: '50000',
+    });
+    // Without a rate there is nothing to preview: no figures are invented for it.
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it('DEP-ACCOUNT sends a rate the owner gives for an account, and moves an at-the-end payout to every month', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const term = screen.getByRole('dialog', { name: 'Add bank deposit' });
+    await user.selectOptions(within(term).getByLabelText('Interest comes'), 'at-end');
+    await user.click(within(term).getByRole('radio', { name: 'Savings or current account' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add savings or current account' });
+    expect(within(dialog).getByLabelText('Interest comes')).toHaveValue('monthly');
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Amount put in'), '50000');
+    await user.type(within(dialog).getByLabelText('Rate, % a year (optional)'), '5.25');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'account',
+        ratePercent: '5.25',
+        endDate: null,
+        payout: 'monthly',
+      }),
+    );
   });
 
   it('classes-07 asks for the bank first, an optional name, the currency as a choice and the terms as the prototype words them', async () => {
@@ -318,6 +397,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
 
   describe('classes-05: the figures of the deposit being entered', () => {
     const terms = {
+      kind: 'term-deposit',
       name: 'Deposit',
       bank: 'Synthetic Bank',
       currency: 'RUB',

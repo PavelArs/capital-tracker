@@ -1,8 +1,10 @@
 import type { EntityManager } from 'typeorm';
+import type { DepositKind } from './deposit-input';
 import type { DepositCurrency, DepositMovement, DepositTerms } from './deposit-interest';
 
 export interface DepositRow {
   id: string;
+  kind: DepositKind;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -39,7 +41,7 @@ export interface Stored {
   checks: CheckRow[];
 }
 
-const columns = `id, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+const columns = `id, kind, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
   to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis", "earlyClose"`;
 
 export const termsOf = (stored: Stored): DepositTerms => ({

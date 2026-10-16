@@ -4,6 +4,8 @@ import type { AccountingCurrency } from './portfolio-valuation.api';
 // DEP-ACCRUAL, DEP-CHECK: bank deposits the owner entered once; interest and value are computed.
 
 export type DepositCurrency = AccountingCurrency;
+/** A term deposit runs to an end date at a rate; an account has a balance and no term (DEP-ACCOUNT). */
+export type DepositKind = 'term-deposit' | 'account';
 /** Quarterly is only on deposits made before it was removed from the form. */
 export type PayoutSchedule = 'daily' | 'monthly' | 'quarterly' | 'at-end';
 export type DayBasis = 'actual-365' | 'actual-actual';
@@ -49,6 +51,8 @@ export interface DepositChartPoint {
 
 export interface Deposit {
   id: string;
+  /** Absent in an answer the browser saved before accounts existed: a term deposit. */
+  kind?: DepositKind;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -58,7 +62,8 @@ export interface Deposit {
   capitalized: boolean;
   dayBasis: DayBasis;
   earlyClose: EarlyClose;
-  ratePercent: string;
+  /** Null for an account with no rate entered: no interest is counted for it, and none is shown as a rate. */
+  ratePercent: string | null;
   status: DepositStatus;
   closedOn: string | null;
   principal: string;
@@ -118,6 +123,7 @@ export interface DepositList {
 export interface NewDeposit {
   /** One per attempt; a retry of the same attempt returns the deposit it made. */
   requestId: string;
+  kind: DepositKind;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -127,7 +133,7 @@ export interface NewDeposit {
   capitalized: boolean;
   dayBasis: DayBasis;
   earlyClose: EarlyClose;
-  ratePercent: string;
+  ratePercent: string | null;
   amount: string;
 }
 

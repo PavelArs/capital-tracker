@@ -30,6 +30,7 @@ const deposit = (
 ): Stored => ({
   deposit: {
     id: 'd1',
+    kind: 'term-deposit',
     name: 'Synthetic EUR',
     bank: 'Synthetic Bank',
     currency: 'EUR',

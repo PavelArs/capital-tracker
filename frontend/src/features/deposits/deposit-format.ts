@@ -59,12 +59,13 @@ const payoutNames = {
   'at-end': 'at the end of the term',
 };
 
-/** "12% · interest paid monthly · until 1 Oct 2026". */
+/** "12% · interest paid monthly · until 1 Oct 2026"; an account has no term to end (DEP-ACCOUNT). */
 export function termText(deposit: Deposit): string {
-  const rate = `${deposit.ratePercent}%`;
+  const rate = deposit.ratePercent === null ? 'No rate entered' : `${deposit.ratePercent}%`;
   const interest = deposit.capitalized
     ? `interest added ${payoutNames[deposit.payout]}`
     : `interest paid ${payoutNames[deposit.payout]}`;
+  if (deposit.kind === 'account') return `${rate} · ${interest}`;
   const until = deposit.endDate ? `until ${dateText(deposit.endDate)}` : 'no end date';
   return `${rate} · ${interest} · ${until}`;
 }
