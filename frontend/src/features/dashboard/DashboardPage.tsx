@@ -24,11 +24,6 @@ import { useValueView } from '../shell/value-view';
 import DashboardLoading, { AllocationLoading } from './DashboardLoading';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
-// The dashboard's allocation card (portfolio/Allocation) and the 24h change in Top assets
-// (portfolio/asset-parts Change) take their classes from portfolio.css, which neither imports.
-// Until the portfolio lane makes them import it themselves, the dashboard loads it, so those
-// two are never unstyled when this page opens before the Portfolio chunk.
-import '../portfolio/portfolio.css';
 import '../shell/shell-page.css';
 import './dashboard.css';
 import Badge from '@/ui/Badge';

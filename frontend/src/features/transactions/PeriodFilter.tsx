@@ -1,5 +1,6 @@
 import type { OperationRange } from '@api/operations.api';
 import { useState } from 'react';
+import { Input, Select } from '@/ui/inputs';
 import { presetOf, presets } from './period';
 
 const ALL = 'all';
@@ -42,11 +43,7 @@ export default function PeriodFilter({
     <>
       <label className="ui-filter">
         <span>Period</span>
-        <select
-          className="ui-input ui-input--sm"
-          value={choice}
-          onChange={(event) => choose(event.target.value)}
-        >
+        <Select size="sm" value={choice} onChange={(event) => choose(event.target.value)}>
           <option value={ALL}>All time</option>
           {presets.map(({ key, label }) => (
             <option key={key} value={key}>
@@ -54,14 +51,14 @@ export default function PeriodFilter({
             </option>
           ))}
           <option value={CUSTOM}>Custom range</option>
-        </select>
+        </Select>
       </label>
       {choice === CUSTOM && (
         <>
           <label className="ui-filter">
             <span>From</span>
-            <input
-              className="ui-input ui-input--sm"
+            <Input
+              size="sm"
               type="date"
               value={period?.from ?? ''}
               max={period?.to}
@@ -70,8 +67,8 @@ export default function PeriodFilter({
           </label>
           <label className="ui-filter">
             <span>To</span>
-            <input
-              className="ui-input ui-input--sm"
+            <Input
+              size="sm"
               type="date"
               value={period?.to ?? ''}
               min={period?.from}

@@ -24,13 +24,10 @@ export function assetCaption(asset: AssetValuation, chains: TokenChains = new Ma
     .join(' · ');
 }
 
-/**
- * The gain or loss colour of a figure (ui/base.css). `portfolio-pos`/`portfolio-neg` stay as
- * hooks only (no CSS) until the Dashboard tests that look for them move to `ui-pos`/`ui-neg`.
- */
+/** The gain or loss colour of a figure (ui/base.css). */
 export function toneClass(value: string | null): string | undefined {
   const sign = tone(value);
-  return sign ? `ui-${sign} portfolio-${sign}` : undefined;
+  return sign ? `ui-${sign}` : undefined;
 }
 
 export function Signed({

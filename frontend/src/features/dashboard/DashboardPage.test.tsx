@@ -720,7 +720,7 @@ describe('show-dashboard-top-assets', () => {
       'Solana2 SOL$450.00+1.25%$900.009.00%',
       'Zcash2 ZEC$300.00+1.25%$600.006.00%',
     ]);
-    expect(within(rows[0]).getByText('-0.80%')).toHaveClass('portfolio-neg');
+    expect(within(rows[0]).getByText('-0.80%')).toHaveClass('ui-neg');
     expect(within(rows[0]).getByRole('link', { name: 'Bitcoin' })).toHaveAttribute(
       'href',
       `/portfolio/${id(1)}`,
