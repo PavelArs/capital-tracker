@@ -64,10 +64,9 @@ function InterestPeriods({
   basis: InflationBasis;
   showReal: boolean;
 }) {
-  // Absent in an answer saved before the figure existed: the real reading is left out, not
-  // filled with dashes. One reading at a time: Real shows the interest after inflation instead of
-  // the bank's figure.
-  const inflated = showReal && periods.some((period) => period.afterInflation !== undefined);
+  // One reading at a time: Real shows the interest after inflation instead of the bank's figure,
+  // a dash where a period has none (an answer saved before the figure existed).
+  const inflated = showReal;
   const paged = usePages([...periods].reverse(), (period) => period.to);
   const narrow = useNarrowScreen();
   const treatment = (period: DepositDetail['periods'][number]) =>
@@ -90,6 +89,7 @@ function InterestPeriods({
                       money(period.interest, currency)
                     )
                   }
+                  value={inflated ? 'after inflation' : undefined}
                 />
               </li>
             );
@@ -446,7 +446,7 @@ export default function DepositPage() {
                       ? `By ${dateText(deposit.atMaturity.date)}${
                           deposit.atMaturity.inTodaysMoney[basis].estimated ? ', estimated' : ''
                         }`
-                      : 'No inflation figures to carry it to today yet'
+                      : "No figure in today's money yet"
                   }
                 />
               ) : (
@@ -468,12 +468,7 @@ export default function DepositPage() {
           </div>
 
           {deposit.chart && deposit.chart.length > 0 && (
-            <DepositChart
-              points={deposit.chart}
-              currency={own}
-              real={view === 'real'}
-              basis={basis}
-            />
+            <DepositChart points={deposit.chart} currency={own} real={showReal} basis={basis} />
           )}
 
           <div className="deposit-columns">

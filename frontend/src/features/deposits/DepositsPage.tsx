@@ -92,12 +92,22 @@ function Card({
               </dd>
             </div>
           )}
-          {deposit.atMaturity && (
-            <div>
-              <dt>At the end of the term</dt>
-              <dd>{money(deposit.atMaturity.balance, deposit.currency)}</dd>
-            </div>
-          )}
+          {deposit.atMaturity &&
+            (showReal ? (
+              <div>
+                <dt>At the end, in today&apos;s money</dt>
+                <dd>
+                  {deposit.atMaturity.inTodaysMoney?.[basis]
+                    ? money(deposit.atMaturity.inTodaysMoney[basis].amount, deposit.currency)
+                    : DASH}
+                </dd>
+              </div>
+            ) : (
+              <div>
+                <dt>At the end of the term</dt>
+                <dd>{money(deposit.atMaturity.balance, deposit.currency)}</dd>
+              </div>
+            ))}
           {check && (
             <div>
               <dt>Last check</dt>

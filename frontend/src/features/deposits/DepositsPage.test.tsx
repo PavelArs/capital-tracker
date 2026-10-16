@@ -782,6 +782,40 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     expect(card).not.toHaveTextContent(/3,328\.77|nominal/i);
   });
 
+  it('DEP-ONE-REAL-LIST-END gives the end balance in today money, not the bank balance, under Real', async () => {
+    setValueView('real');
+    const ending: Deposit = {
+      ...inflated,
+      atMaturity: {
+        date: '2026-12-01',
+        balance: '104000.00',
+        interest: '4000.00',
+        inTodaysMoney: {
+          official: { amount: '98000.00', estimated: false },
+          personal: null,
+        },
+      },
+    };
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ending]));
+    open('/deposits');
+    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    expect(card).toHaveTextContent("At the end, in today's money");
+    expect(card).toHaveTextContent('₽98,000.00');
+    expect(card).not.toHaveTextContent('104,000.00');
+  });
+
+  it('DEP-ONE-REAL-LIST-END-UNKNOWN shows a dash for an end balance with no figure in today money', async () => {
+    setValueView('real');
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
+    open('/deposits');
+    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const end = within(card)
+      .getByText("At the end, in today's money")
+      .closest('div') as HTMLElement;
+    expect(end).toHaveTextContent('—');
+    expect(card).not.toHaveTextContent('104,000.00');
+  });
+
   it('DEP-ONE-SWITCH-LIST changes the list from one reading to the other', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
@@ -811,7 +845,7 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     );
     open('/deposits');
     const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
-    expect(within(card).getByText('—')).toBeInTheDocument();
+    expect(within(card).getAllByText('—').length).toBeGreaterThan(0);
     expect(card).not.toHaveTextContent('3,328.77');
     expect(card).not.toHaveTextContent(/Real [+-]/);
   });
@@ -854,6 +888,17 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     expect(within(table as HTMLElement).getByText('+₽52.01')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Interest' })).toBeNull();
     expect(within(table as HTMLElement).queryByText('₽1,019.18')).toBeNull();
+  });
+
+  it('DEP-ONE-REAL-DETAIL-OLD-PERIODS shows dashes, not the bank interest, for periods saved without the figure', async () => {
+    setValueView('real');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(inflated));
+    open(`/deposits/${savings.id}`);
+    const table = (await screen.findByRole('columnheader', { name: 'After inflation' })).closest(
+      'table',
+    ) as HTMLElement;
+    expect(within(table).queryByText('₽1,019.18')).toBeNull();
+    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
   });
 
   it('DEP-ONE-REAL-DETAIL-UNKNOWN shows a dash and the reason for the interest it cannot read', async () => {
@@ -920,7 +965,8 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
       real: { official: null, personal: null },
     },
   ];
-  const withChart = (change: Partial<DepositDetail> = {}) => detail(savings, { chart, ...change });
+  const withChart = (change: Partial<DepositDetail> = {}) =>
+    detail({ ...savings, real: { official: null, personal: null } }, { chart, ...change });
   /** Focuses the chart and returns it; the arrow keys then read each month. */
   const focusChart = async () => {
     const group = await screen.findByRole('group', { name: /Use the arrow keys/ });
@@ -1186,19 +1232,22 @@ describe('the deposit page', () => {
   it('classes-16 carries the Nominal/Real switch its chart follows', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(
-      detail(savings, {
-        chart: [
-          {
-            date: '2026-07-01',
-            balance: '100000.00',
-            invested: '100000.00',
-            real: {
-              official: { balance: '100000.00', invested: '100000.00', estimated: false },
-              personal: null,
+      detail(
+        { ...savings, real: { official: null, personal: null } },
+        {
+          chart: [
+            {
+              date: '2026-07-01',
+              balance: '100000.00',
+              invested: '100000.00',
+              real: {
+                official: { balance: '100000.00', invested: '100000.00', estimated: false },
+                personal: null,
+              },
             },
-          },
-        ],
-      }),
+          ],
+        },
+      ),
     );
     open(`/deposits/${savings.id}`);
     const heading = await screen.findByRole('heading', { level: 1, name: 'Savings A' });
