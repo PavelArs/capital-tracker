@@ -1,0 +1,12 @@
+/* The cards of a section page (SectionGrid). */
+.section-grid {
+  display: grid;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section-grid--cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+}

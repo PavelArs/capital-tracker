@@ -233,6 +233,48 @@ describe('PROPERTY-LIST Real estate', () => {
     expect(screen.getByRole('button', { name: 'Add property' })).toBeInTheDocument();
   });
 
+  it('SECTION-LAYOUT-ACTION keeps Add property in the intro line as the primary button, also with nothing to list', async () => {
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    const { unmount } = renderPage();
+    await screen.findByRole('list');
+    const add = screen.getByRole('button', { name: 'Add property' });
+    expect(add.closest('.ui-intro')).toHaveTextContent('Valued at your own estimate.');
+    expect(add).toHaveClass('shell-button--primary');
+    unmount();
+    forgetReads();
+    get.mockResolvedValue(valuation([properties[2]]));
+    renderPage();
+    await screen.findByText('No property yet');
+    expect(
+      screen.getByRole('button', { name: 'Add property' }).closest('.ui-intro'),
+    ).not.toBeNull();
+  });
+
+  it('SECTION-LAYOUT-SHARE shows the share of net worth beside the total, and why when it is unknown', async () => {
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValue({ ...valuation(properties), totalValue: '122000' } as PortfolioValuation);
+    const { unmount } = renderPage();
+    await screen.findByRole('list');
+    expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
+      'In real estate$61,000.00Share of net worth50%',
+    );
+    unmount();
+    forgetReads();
+    get.mockResolvedValue({
+      ...valuation(properties),
+      totalValue: null,
+      missingPriceCount: 1,
+      unratedDepositCount: 0,
+      unavailableAccountCount: 0,
+    } as unknown as PortfolioValuation);
+    renderPage();
+    await screen.findByRole('list');
+    expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
+      'Share of net worth—Net worth unknown: 1 asset without a price or exchange rate.',
+    );
+  });
+
   it('says so when a refresh fails and keeps the last loaded figures', async () => {
     // Codex P2: kept cards must not pass for current ones when the fresh read fails.
     const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));

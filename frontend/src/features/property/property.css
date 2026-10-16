@@ -17,37 +17,11 @@
   margin: 0;
 }
 
-/* Real estate (v8): the total, then one card per property, like the Deposits list. */
-.property-total {
-  display: grid;
-  gap: 4px;
-}
-
-.property-total__label,
+/* Real estate (v8): one card per property. */
 .property-card__share,
 .property-card__facts dt {
   color: var(--ink-3);
   font-size: var(--fs-sm);
-}
-
-.property-total__value {
-  font-size: var(--fs-2xl, 28px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.property-total__note {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-}
-
-.property-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-  gap: var(--sp-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
 .property-card {

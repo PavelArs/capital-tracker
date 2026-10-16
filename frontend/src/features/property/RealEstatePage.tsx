@@ -5,12 +5,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import EmptyState from '@/ui/EmptyState';
-import PageIntro from '@/ui/PageIntro';
+import SummaryCard from '@/ui/SummaryCard';
 import { dayText, moscowDate } from '@/utils/dates';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
 import { Icon } from '../shell/icons';
-import PageHeader from '../shell/PageHeader';
+import { shareFigure } from '../shell/net-worth';
+import SectionPage, { SectionAction, SectionGrid } from '../shell/SectionPage';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import AddPropertyDialog from './AddPropertyDialog';
@@ -22,7 +23,6 @@ import {
   propertyTotal,
   shareText,
 } from './real-estate';
-import '../shell/shell-page.css';
 import './property.css';
 
 /** The Moscow day of an instant, written as the rest of the app writes dates. */
@@ -140,20 +140,39 @@ export default function RealEstatePage() {
   const properties = portfolio && classes ? propertiesOf(portfolio, classes) : null;
   const total = propertyTotal(properties ?? []);
   const unpriced = properties?.filter(({ value }) => value === null).length ?? 0;
-  const addButton = (primary: boolean) => (
-    <button
-      type="button"
-      className={`shell-button ${primary ? 'shell-button--primary' : 'shell-button--secondary'}`}
-      onClick={() => setAdding(true)}
-    >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
-      Add property
-    </button>
-  );
-
   return (
-    <div className="shell-page">
-      <PageHeader title="Real estate" currency={portfolio?.currency} />
+    <SectionPage
+      title="Real estate"
+      currency={portfolio?.currency}
+      intro="Valued at your own estimate. Update it on the property's page whenever you like."
+      action={<SectionAction onClick={() => setAdding(true)}>Add property</SectionAction>}
+      notice={
+        failed && properties ? (
+          <p className="ui-banner ui-banner--warn" role="alert">
+            Could not refresh your real estate; showing the last loaded figures.{' '}
+            <button type="button" className="shell-button" onClick={() => load(true)}>
+              Refresh
+            </button>
+          </p>
+        ) : undefined
+      }
+      summary={
+        properties && portfolio && properties.length > 0 ? (
+          <SummaryCard
+            label="Total in real estate"
+            figures={[
+              { label: 'In real estate', value: money(total, portfolio.currency) },
+              shareFigure(total, portfolio),
+            ]}
+            note={
+              unpriced > 0
+                ? `Your share of each property at its latest estimate; ${unpriced} without an estimate left out.`
+                : 'Your share of each property at its latest estimate.'
+            }
+          />
+        ) : undefined
+      }
+    >
       {failed && !properties ? (
         <section className="shell-card property-state" role="alert">
           <p>Could not load your real estate. Your data is safe; try again.</p>
@@ -164,48 +183,21 @@ export default function RealEstatePage() {
       ) : properties === null || portfolio === null ? (
         <PageSkeleton label="Loading real estate" show={['cards']} />
       ) : properties.length === 0 ? (
-        <EmptyState
-          id="real-estate-empty"
-          title="No property yet"
-          icon={<Icon name="home" />}
-          actions={addButton(true)}
-        >
+        <EmptyState id="real-estate-empty" title="No property yet" icon={<Icon name="home" />}>
           Add an apartment, a house, land or parking with what you paid and your share. Its value is
           your own estimate, counted in your net worth in USD, EUR or RUB.
         </EmptyState>
       ) : (
-        <>
-          {failed && (
-            <p className="ui-banner ui-banner--warn" role="alert">
-              Could not refresh your real estate; showing the last loaded figures.{' '}
-              <button type="button" className="shell-button" onClick={() => load(true)}>
-                Refresh
-              </button>
-            </p>
-          )}
-          <PageIntro action={addButton(false)}>
-            Valued at your own estimate. Update it on the property's page whenever you like.
-          </PageIntro>
-          <section className="shell-card property-total" aria-label="Total in real estate">
-            <span className="property-total__label">In real estate</span>
-            <strong className="property-total__value">{money(total, portfolio.currency)}</strong>
-            <span className="property-total__note">
-              {unpriced > 0
-                ? `Your share of each property at its latest estimate; ${unpriced} without an estimate left out.`
-                : 'Your share of each property at its latest estimate.'}
-            </span>
-          </section>
-          <ul className="property-list">
-            {properties.map((property) => (
-              <Card
-                key={property.asset.instrumentId}
-                property={property}
-                portfolio={portfolio}
-                classes={classes ?? {}}
-              />
-            ))}
-          </ul>
-        </>
+        <SectionGrid>
+          {properties.map((property) => (
+            <Card
+              key={property.asset.instrumentId}
+              property={property}
+              portfolio={portfolio}
+              classes={classes ?? {}}
+            />
+          ))}
+        </SectionGrid>
       )}
       {adding && (
         <AddPropertyDialog
@@ -213,6 +205,6 @@ export default function RealEstatePage() {
           onAdded={(asset) => navigate(withCurrency(`/portfolio/${asset.id}`, asked))}
         />
       )}
-    </div>
+    </SectionPage>
   );
 }

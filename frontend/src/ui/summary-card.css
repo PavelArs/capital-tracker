@@ -1,0 +1,54 @@
+/* The totals card of a section page: figures side by side, a note under them. */
+.ui-summary__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-7, 48px);
+  margin: 0;
+}
+
+.ui-summary__figure {
+  display: grid;
+  gap: 4px;
+}
+
+.ui-summary__figure dd {
+  margin: 0;
+}
+
+.ui-summary__label {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.ui-summary__value {
+  font-size: var(--fs-2xl, 28px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-summary__reason,
+.ui-summary__note {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.ui-summary__reason {
+  max-width: 32ch;
+}
+
+.ui-summary__note {
+  margin: var(--sp-3) 0 0;
+}
+
+@media (max-width: 639.98px) {
+  .ui-summary__figures {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 20px;
+  }
+
+  .ui-summary__value {
+    font-size: 19px;
+  }
+}
