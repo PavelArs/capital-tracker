@@ -29,6 +29,11 @@ export class GoalsController {
     return this.goals.get(owner.userId, id);
   }
 
+  @Get(':id/forecast')
+  forecast(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
+    return this.goals.forecast(owner.userId, id);
+  }
+
   @Put(':id')
   update(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() body: unknown) {
     return this.goals.update(owner.userId, id, body);
