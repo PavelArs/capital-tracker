@@ -217,7 +217,11 @@ function Checks({
   const paged = usePages(checks, (check) => check.id);
   const narrow = useNarrowScreen();
   const difference = (row: DepositDetail['checks'][number]) =>
-    Number(row.difference) === 0 ? '—' : money(row.difference, currency, true);
+    row.difference === null
+      ? 'Not compared'
+      : Number(row.difference) === 0
+        ? '—'
+        : money(row.difference, currency, true);
   if (narrow)
     return (
       <>
@@ -448,9 +452,17 @@ export default function DepositPage() {
               <Stat
                 label="Last check"
                 value={
-                  Number(check.difference) === 0 ? 'Matches' : money(check.difference, own, true)
+                  check.difference === null
+                    ? 'Not compared'
+                    : Number(check.difference) === 0
+                      ? 'Matches'
+                      : money(check.difference, own, true)
                 }
-                hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`}
+                hint={
+                  check.calculated === null
+                    ? `${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}. The app cannot say what the bank should show while the interest is missing.`
+                    : `${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`
+                }
               />
             )}
           </div>

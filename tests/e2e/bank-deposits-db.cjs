@@ -305,6 +305,20 @@ async function account(db, service, owner) {
   assert.notEqual(rated.interestEarned, null, 'The interest from the rate date is stated');
   assert.notEqual(rated.accrued, null);
   assert.equal((await service.list(owner, '2026-09-01')).interestMissingCount, 1);
+  // The periods that contain a day before the first rate are not listed, and a check against the
+  // bank states no calculated balance and no difference: both would be a guess.
+  assert.deepEqual(
+    rated.periods.filter((period) => period.from < '2026-08-01'),
+    [],
+    'No period lists interest for days that had no rate',
+  );
+  await service.addCheck(owner, made.id, { checkedOn: '2026-08-15', bankBalance: '100400.00' });
+  const checked = await service.get(owner, made.id, '2026-09-01');
+  assert.deepEqual(
+    [checked.lastCheck.calculated, checked.lastCheck.difference, checked.checks[0].calculated],
+    [null, null, null],
+    'A check against an account with missing interest is not compared',
+  );
   // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
   const unrated = await service.get(owner, made.id, '2026-07-15');
   assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');

@@ -82,7 +82,7 @@ export function unknownCostNote(portfolio: PortfolioValuation | null): string | 
 }
 
 const INCOMPLETE_NOTE =
-  'Incomplete: some assets had no price or rate in this period, so their value is not included. Add the missing prices on the Portfolio page.';
+  'Incomplete: some assets had no price or rate, or an account had no interest rate, in this period, so their value is not fully included. Add the missing prices on the Portfolio page.';
 
 // The prototype dims the cents of the big number: $42,738.84 with .84 muted.
 function Amount({ text }: { text: string }) {

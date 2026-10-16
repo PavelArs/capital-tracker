@@ -718,7 +718,12 @@ export function projectPortfolio(
     at: at.toISOString(),
     currency: fx.currency as AccountingCurrency,
     rates: fx.ratesOn(today),
-    completeness: complete ? ('complete' as const) : ('incomplete' as const),
+    // The total of an account whose interest is missing is a floor: it stays a figure, marked
+    // incomplete so history and goals do not take it for exact.
+    completeness:
+      complete && interestMissingDepositCount === 0
+        ? ('complete' as const)
+        : ('incomplete' as const),
     totalValue: complete ? formatProduct(subtotal) : null,
     pricedSubtotal: formatProduct(subtotal),
     missingPriceCount,

@@ -279,7 +279,7 @@ export default function GoalPage() {
               hint={
                 percent === null
                   ? undefined
-                  : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price'}`
+                  : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price or rate'}`
               }
             />
             <Stat label="Target" value={entered(goal.targetAmount)} />

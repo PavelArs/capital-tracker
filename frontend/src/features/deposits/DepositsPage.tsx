@@ -110,9 +110,11 @@ function Card({
               <dt>Last check</dt>
               <dd>
                 {dateText(check.checkedOn)},{' '}
-                {Number(check.difference) === 0
-                  ? 'matches the bank'
-                  : `differs by ${money(check.difference, deposit.currency)}`}
+                {check.difference === null
+                  ? 'not compared, the interest is missing'
+                  : Number(check.difference) === 0
+                    ? 'matches the bank'
+                    : `differs by ${money(check.difference, deposit.currency)}`}
               </dd>
             </div>
           )}

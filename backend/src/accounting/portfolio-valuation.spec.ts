@@ -668,9 +668,10 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
       { ...bank(2, 'First Bank', worth(5_000)), interestMissing: true },
       { ...bank(3, 'First Bank', 0n), interestMissing: true },
     ]);
-    // Their balance is what the owner put in: the total stands, and says what it leaves out.
+    // Their balance is what the owner put in: the total stays a floor figure, marked incomplete
+    // so the history and goals do not take it for exact, and it says what it leaves out.
     expect(result).toMatchObject({
-      completeness: 'complete',
+      completeness: 'incomplete',
       totalValue: '100000',
       depositsValue: '20000',
       interestMissingDepositCount: 1,

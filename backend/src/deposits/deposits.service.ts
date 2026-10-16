@@ -499,19 +499,7 @@ export class DepositsService {
         : null;
     // Only checks made by the asked day: a later one says nothing about this day.
     const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
-    const lastCheck = last
-      ? (() => {
-          const calculated = bankBalanceOf(terms, projectDeposit(terms, movements, last.checkedOn));
-          return {
-            checkedOn: last.checkedOn,
-            bankBalance: last.bankBalance,
-            calculated,
-            difference: centsText(
-              canonicalDecimalToAtoms(last.bankBalance) - canonicalDecimalToAtoms(calculated),
-            ),
-          };
-        })()
-      : null;
+    const lastCheck = last ? this.checkOf(stored, terms, last) : null;
     const inForce = [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf);
     // A term deposit read before its first rate still shows that rate; an account has none until
     // a rate takes effect, and a missing rate is not stated as 0%.
@@ -583,6 +571,33 @@ export class DepositsService {
     };
   }
 
+  /**
+   * A bank-balance check against the replay. With the interest of the account's days missing
+   * (DEP-ACCOUNT) the replay is a floor, not what the bank should show, so no calculated figure
+   * and no difference are stated: missing is not zero.
+   */
+  private checkOf(stored: Stored, terms: DepositTerms, check: Stored['checks'][number]) {
+    if (accountInterestMissing(stored))
+      return {
+        checkedOn: check.checkedOn,
+        bankBalance: check.bankBalance,
+        calculated: null,
+        difference: null,
+      };
+    const calculated = bankBalanceOf(
+      terms,
+      projectDeposit(terms, movementsOf(stored), check.checkedOn),
+    );
+    return {
+      checkedOn: check.checkedOn,
+      bankBalance: check.bankBalance,
+      calculated,
+      difference: centsText(
+        canonicalDecimalToAtoms(check.bankBalance) - canonicalDecimalToAtoms(calculated),
+      ),
+    };
+  }
+
   private detail(
     stored: Stored,
     asOf: string,
@@ -591,8 +606,12 @@ export class DepositsService {
   ) {
     const terms = termsOf(stored);
     const projection = projectDeposit(terms, movementsOf(stored), asOf);
-    // Without a rate there is no interest to list: the periods would all read 0.00 (DEP-ACCOUNT).
-    const periods = noRateInForceOn(stored, asOf) ? [] : projection.periods;
+    // Missing is not zero (DEP-ACCOUNT): a period with a day before the account's first rate has
+    // unknown interest, so it is not listed; with no rate at all there are no periods to list.
+    const firstRate = stored.rates.map((rate) => rate.effectiveFrom).sort()[0];
+    const periods = accountInterestMissing(stored)
+      ? projection.periods.filter((period) => firstRate !== undefined && period.from >= firstRate)
+      : projection.periods;
     // One replay gives the money held at the start of every period.
     const held = depositBalances(
       terms,
@@ -645,21 +664,7 @@ export class DepositsService {
       interestForfeited: projection.interestForfeited,
       checks: stored.checks
         .filter((check) => check.checkedOn <= asOf)
-        .map((check) => {
-          const calculated = bankBalanceOf(
-            terms,
-            projectDeposit(terms, movementsOf(stored), check.checkedOn),
-          );
-          return {
-            id: check.id,
-            checkedOn: check.checkedOn,
-            bankBalance: check.bankBalance,
-            calculated,
-            difference: centsText(
-              canonicalDecimalToAtoms(check.bankBalance) - canonicalDecimalToAtoms(calculated),
-            ),
-          };
-        })
+        .map((check) => ({ id: check.id, ...this.checkOf(stored, terms, check) }))
         .reverse(),
     };
   }

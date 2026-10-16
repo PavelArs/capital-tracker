@@ -616,6 +616,25 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
   });
 
+  it('does not compare a bank check with a balance that leaves the interest out', async () => {
+    const check = {
+      id: 'c1',
+      checkedOn: '2026-10-05',
+      bankBalance: '50123.00',
+      calculated: null,
+      difference: null,
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(unrated, { periods: [], checks: [check], lastCheck: check }),
+    );
+    open(`/deposits/${unrated.id}?currency=RUB`);
+    await screen.findByRole('heading', { level: 1, name: 'Current C' });
+    const checks = await screen.findByRole('region', { name: 'Checks against the bank' });
+    expect(within(checks).getByText('Not compared')).toBeInTheDocument();
+    expect(checks).not.toHaveTextContent(/₽0\.00/);
+    expect(screen.queryByText('Matches')).toBeNull();
+  });
+
   it('keeps the interest figures of an account once a rate is in force', async () => {
     const rated: Deposit = {
       ...unrated,
