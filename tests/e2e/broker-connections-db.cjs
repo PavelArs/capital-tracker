@@ -193,6 +193,14 @@ async function setup(db, service, setupService, tbank, owner, other) {
       made.connections.map(({ accountId }) => [accountId, false]),
       'The same request finds the accounts it made',
     );
+    // A finished command is answered from what is saved, even while T-Bank cannot be reached.
+    tbank.down = true;
+    try {
+      const offline = await setupService.connect(owner, { token, accounts: picks });
+      assert.deepEqual(offline, again);
+    } finally {
+      tbank.down = false;
+    }
     assert.equal(await count('manual_accounts'), accountsBefore + 2);
     assert.equal(
       (await service.read(owner, made.connections[0].accountId)).tokenHint,
@@ -803,7 +811,9 @@ async function main() {
     );
     const tbank = {
       listed: [brokerAccount],
-      accounts: async () => ({ ok: true, value: tbank.listed }),
+      down: false,
+      accounts: async () =>
+        tbank.down ? { ok: false, reason: 'unavailable' } : { ok: true, value: tbank.listed },
       operations: async () => ({ ok: true, value: history }),
     };
     const service = new BrokerConnectionsService(db, tbank, box);
