@@ -133,6 +133,9 @@ describe('GOAL-CHART goal chart', () => {
     expect(tip).toHaveTextContent('₽4,000,000');
     expect(tip).toHaveTextContent('Money put in₽4,000,000');
     expect(tip).toHaveTextContent('Of the sum18%');
+    expect(tip).toHaveTextContent(
+      'Money put in leaves out a deposit or withdrawal with no rate on its day.',
+    );
 
     await user.keyboard('{ArrowRight}{ArrowRight}');
     expect(within(chart).getByRole('status')).toHaveTextContent('Now');
