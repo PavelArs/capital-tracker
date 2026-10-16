@@ -1,12 +1,18 @@
 import { type SecurityOverview, type SecuritySession, securityApi } from '@api/security.api';
 import { useAuth } from '@contexts/AuthContext';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import Badge from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { ErrorState } from '@/ui/ErrorState';
+import { ListRowText } from '@/ui/ListRow';
+import { SettingRow } from '@/ui/SettingRow';
 import { Bone } from '../shell/Skeleton';
 import AuthenticatorDialog from './AuthenticatorDialog';
 import ChangePasswordDialog from './ChangePasswordDialog';
-import ConfirmDialog from './ConfirmDialog';
 import RecoveryCodesDialog from './RecoveryCodesDialog';
 import './security.css';
 
@@ -40,7 +46,7 @@ export default function SecuritySettings() {
   const [overview, setOverview] = useState<SecurityOverview | null>(null);
   const [failed, setFailed] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
-  const [changed, setChanged] = useState(false);
+  const toast = useToast();
 
   const load = useCallback(() => {
     let active = true;
@@ -74,145 +80,114 @@ export default function SecuritySettings() {
 
   const others = overview ? overview.sessions.filter((session) => !session.current).length : 0;
   return (
-    <section className="shell-card" aria-labelledby="settings-security">
-      <h2 id="settings-security">Security</h2>
+    <Card labelledBy="settings-security">
+      <CardHeader id="settings-security" title="Security" />
       {failed ? (
-        <div className="shell-setting">
-          <p className="shell-setting__hint" role="alert">
-            Could not load your security settings.
-          </p>
-          <button type="button" className="shell-button shell-button--secondary" onClick={load}>
-            Try again
-          </button>
-        </div>
+        <ErrorState onRetry={load}>Could not load your security settings.</ErrorState>
       ) : (
         <>
-          <div className="shell-setting">
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">Password</span>
-              <p className="shell-setting__hint" role={changed ? 'status' : undefined}>
-                {changed
-                  ? 'Password changed. Every other browser was signed out.'
-                  : 'Asks for your current password and a code from your authenticator app.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={!overview}
-              onClick={() => setDialog({ kind: 'password' })}
-            >
-              Change password
-            </button>
-          </div>
-          <div className="shell-setting">
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">Two-factor authentication</span>
-              <p className="shell-setting__hint">
-                Authenticator app. Always on; set it up again for a new phone.
-              </p>
-            </div>
-            <div className="security-actions">
-              <Badge tone="pos" dot>
-                On
-              </Badge>
-              <button
-                type="button"
-                className="shell-button shell-button--secondary"
-                disabled={!overview}
-                onClick={() => setDialog({ kind: 'authenticator' })}
-              >
-                Set up again
-              </button>
-            </div>
-          </div>
-          <div className="shell-setting">
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">Recovery codes</span>
-              <p className="shell-setting__hint">
-                {overview
-                  ? `${overview.recoveryCodes.unused} of ${overview.recoveryCodes.total} unused. Each code signs you in once without your phone.`
-                  : 'Loading…'}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={!overview}
-              onClick={() => setDialog({ kind: 'codes' })}
-            >
-              Generate new codes
-            </button>
-          </div>
-          <div className="shell-setting security-sessions">
-            <div className="shell-setting__text">
-              <span id="security-sessions" className="shell-setting__label">
-                Active sessions
-              </span>
-              <p className="shell-setting__hint">
-                {!overview
-                  ? 'Loading…'
-                  : others === 0
-                    ? 'Only this browser is signed in.'
-                    : 'Browsers and devices signed in to this account.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={!overview}
-              onClick={() => setDialog({ kind: 'everywhere' })}
-            >
-              Log out everywhere
-            </button>
-            {!overview && (
-              // At least this browser is listed, and most owners have one more.
-              <div className="security-list" aria-hidden="true">
-                {[0, 1].map((row) => (
-                  <div key={row} className="security-row">
-                    <span className="security-row__text">
-                      <Bone width={140} height={14} />
-                      <Bone width={200} height={11} />
-                    </span>
-                    <Bone width={90} height={22} />
-                  </div>
-                ))}
-              </div>
-            )}
-            {overview && (
-              <ul className="security-list" aria-labelledby="security-sessions">
-                {overview.sessions.map((session) => (
-                  <li key={session.id} className="security-row">
-                    <span className="security-row__text">
-                      <span className="security-row__name">{deviceName(session)}</span>
-                      <span className="security-row__meta">
-                        Signed in {signedIn.format(new Date(session.signedInAt))} ·{' '}
-                        {activity(session.lastActiveAt)}
-                      </span>
-                    </span>
-                    {session.current ? (
-                      <Badge tone="pos">This browser</Badge>
-                    ) : (
-                      <button
-                        type="button"
-                        className="shell-button shell-button--ghost"
-                        aria-label={`Log out ${deviceName(session)}`}
-                        onClick={() => setDialog({ kind: 'session', session })}
-                      >
-                        Log out
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <SettingRow
+            title="Password"
+            description="Asks for your current password and a code from your authenticator app."
+            control={
+              <Button disabled={!overview} onClick={() => setDialog({ kind: 'password' })}>
+                Change password
+              </Button>
+            }
+          />
+          <SettingRow
+            title="Two-factor authentication"
+            description="Authenticator app. Always on; set it up again for a new phone."
+            control={
+              <>
+                <Badge tone="pos" dot>
+                  On
+                </Badge>
+                <Button disabled={!overview} onClick={() => setDialog({ kind: 'authenticator' })}>
+                  Set up again
+                </Button>
+              </>
+            }
+          />
+          <SettingRow
+            title="Recovery codes"
+            description={
+              overview
+                ? `${overview.recoveryCodes.unused} of ${overview.recoveryCodes.total} unused. Each code signs you in once without your phone.`
+                : 'Loading…'
+            }
+            control={
+              <Button disabled={!overview} onClick={() => setDialog({ kind: 'codes' })}>
+                Generate new codes
+              </Button>
+            }
+          />
+          <SettingRow
+            title="Active sessions"
+            titleId="security-sessions"
+            description={
+              !overview
+                ? 'Loading…'
+                : others === 0
+                  ? 'Only this browser is signed in.'
+                  : 'Browsers and devices signed in to this account.'
+            }
+            control={
+              <Button disabled={!overview} onClick={() => setDialog({ kind: 'everywhere' })}>
+                Log out everywhere
+              </Button>
+            }
+          />
+          {!overview && (
+            // At least this browser is listed, and most owners have one more.
+            <ul className="ui-rows security-sessions" aria-hidden="true">
+              {[0, 1].map((row) => (
+                <li key={row} className="ui-row">
+                  <span className="ui-row__main security-skeleton">
+                    <Bone width={140} height={14} />
+                    <Bone width={200} height={11} />
+                  </span>
+                  <Bone width={90} height={22} />
+                </li>
+              ))}
+            </ul>
+          )}
+          {overview && (
+            <ul className="ui-rows security-sessions" aria-labelledby="security-sessions">
+              {overview.sessions.map((session) => (
+                <li key={session.id} className="ui-row">
+                  <ListRowText
+                    title={deviceName(session)}
+                    detail={`Signed in ${signedIn.format(new Date(session.signedInAt))} · ${activity(session.lastActiveAt)}`}
+                    amount={
+                      session.current ? (
+                        <Badge tone="pos">This browser</Badge>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Log out ${deviceName(session)}`}
+                          onClick={() => setDialog({ kind: 'session', session })}
+                        >
+                          Log out
+                        </Button>
+                      )
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
       {dialog?.kind === 'password' && (
         <ChangePasswordDialog
           onChanged={() => {
-            setChanged(true);
+            toast.show({
+              tone: 'success',
+              title: 'Password changed',
+              detail: 'Other sessions were signed out.',
+            });
             load();
           }}
           onClose={() => setDialog(null)}
@@ -236,23 +211,29 @@ export default function SecuritySettings() {
       {dialog?.kind === 'session' && (
         <ConfirmDialog
           title="Log out this session?"
-          text={`${deviceName(dialog.session)} is signed out and has to sign in again with your password and a 2FA code.`}
           confirmLabel="Log out session"
+          busyLabel="Logging out…"
           failure="Could not log out this session. Try again."
           onConfirm={() => endSession(dialog.session)}
           onClose={() => setDialog(null)}
-        />
+        >
+          {deviceName(dialog.session)} is signed out and has to sign in again with your password and
+          a 2FA code.
+        </ConfirmDialog>
       )}
       {dialog?.kind === 'everywhere' && (
         <ConfirmDialog
           title="Log out everywhere?"
-          text="Every browser and device, including this browser, is signed out. Signing in again needs your password and a 2FA code."
           confirmLabel="Log out everywhere"
+          busyLabel="Logging out…"
           failure="Could not log out. Nothing changed; try again."
           onConfirm={logoutEverywhere}
           onClose={() => setDialog(null)}
-        />
+        >
+          Every browser and device, including this browser, is signed out. Signing in again needs
+          your password and a 2FA code.
+        </ConfirmDialog>
       )}
-    </section>
+    </Card>
   );
 }

@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-import Modal from '@/ui/Modal';
+import Modal, { ModalHeader } from '@/ui/Modal';
 import { focusable } from '@/ui/useDialogFocus';
-import CloseButton from '../shell/CloseButton';
 
 interface Props {
   title: string;
@@ -11,6 +10,8 @@ interface Props {
   busy?: boolean;
   /** Prototype .modal.sm (420 px) for a confirmation or a short form. */
   size?: 'narrow' | 'default';
+  /** The step of a longer flow, drawn under the heading. */
+  steps?: { current: number; total: number };
   children: ReactNode;
 }
 
@@ -20,13 +21,14 @@ const firstControl = (root: HTMLElement) =>
     (control) => !control.classList.contains('shell-close'),
   );
 
-// Prototype modal for the security flows: a heading with its ✕, then the step's own form.
+// The security flows' modal: the shared header with its ✕, then the step's own body and footer.
 export default function SecurityDialog({
   title,
   titleId,
   onClose,
   busy = false,
   size = 'default',
+  steps,
   children,
 }: Props) {
   return (
@@ -36,10 +38,13 @@ export default function SecurityDialog({
       onEscape={onClose && !busy ? onClose : undefined}
       initialFocus={firstControl}
     >
-      <div className="ui-modal__head">
-        <h2 id={titleId}>{title}</h2>
-        {onClose && <CloseButton onClick={onClose} disabled={busy} />}
-      </div>
+      <ModalHeader
+        titleId={titleId}
+        title={title}
+        onClose={onClose}
+        closeDisabled={busy}
+        steps={steps}
+      />
       {children}
     </Modal>
   );

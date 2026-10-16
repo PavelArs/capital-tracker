@@ -13,7 +13,8 @@ interface Props {
   onClose: () => void;
 }
 
-// Prototype confirmDialog: one destructive action, Cancel focused first.
+// Deprecated: only the wallets page still uses this; SecuritySettings uses @/ui/ConfirmDialog.
+// Plan 2.9 deletes it once the wallets lane has moved to the shared dialog.
 export default function ConfirmDialog({
   title,
   text,

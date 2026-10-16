@@ -1,6 +1,6 @@
-import { Icon } from '@features/shell/icons';
-import { type ReactNode, type Ref, useState } from 'react';
-import { FieldError } from './AuthFrame';
+import type { ReactNode, Ref } from 'react';
+import { PasswordInput } from '@/ui/PasswordInput';
+import { AuthField as Field } from './AuthField';
 
 interface PasswordFieldProps {
   id: string;
@@ -28,50 +28,21 @@ export default function PasswordField({
   labelAside,
   inputRef,
 }: PasswordFieldProps) {
-  const [visible, setVisible] = useState(false);
-  const described = [hint ? `${id}-hint` : '', error ? `${id}-error` : '']
-    .filter(Boolean)
-    .join(' ');
   return (
-    <div className="auth-field">
-      {labelAside ? (
-        <div className="auth-label-row">
-          <label htmlFor={id}>{label}</label>
-          {labelAside}
-        </div>
-      ) : (
-        <label htmlFor={id}>{label}</label>
-      )}
-      <div className="auth-pw">
-        <input
+    <Field id={id} label={label} hint={hint} error={error} labelAside={labelAside}>
+      {(control) => (
+        <PasswordInput
+          {...control}
           ref={inputRef}
-          className="ui-input"
-          id={id}
-          type={visible ? 'text' : 'password'}
+          showLabel={`Show ${label.toLowerCase()}`}
+          hideLabel={`Hide ${label.toLowerCase()}`}
           autoComplete={autoComplete}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={described || undefined}
           disabled={disabled}
           required
         />
-        <button
-          type="button"
-          className="auth-pw__toggle"
-          aria-label={visible ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
-          aria-controls={id}
-          onClick={() => setVisible((shown) => !shown)}
-        >
-          <Icon name={visible ? 'eyeOff' : 'eye'} />
-        </button>
-      </div>
-      {hint && (
-        <span className="auth-hint" id={`${id}-hint`}>
-          {hint}
-        </span>
       )}
-      {error && <FieldError id={`${id}-error`} message={error} />}
-    </div>
+    </Field>
   );
 }

@@ -81,22 +81,3 @@ export default function AuthFrame({
     </main>
   );
 }
-
-export function FieldError({ id, message }: { id: string; message: string }) {
-  return (
-    <span className="auth-err" id={id} role="alert">
-      <Icon name="alert" />
-      {message}
-    </span>
-  );
-}
-
-export function Notice({ tone, children }: { tone: 'info' | 'neg' | 'pos'; children: ReactNode }) {
-  const icon: IconName = tone === 'info' ? 'info' : tone === 'neg' ? 'alert' : 'check';
-  return (
-    <div className={`auth-note auth-note--${tone}`} role={tone === 'neg' ? 'alert' : 'status'}>
-      <Icon name={icon} />
-      <span>{children}</span>
-    </div>
-  );
-}

@@ -3,6 +3,8 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '@/components/Toast';
+import { ToastProvider } from '@/contexts/ToastContext';
 import SecuritySettings from './SecuritySettings';
 
 const logoutEverywhere = vi.fn();
@@ -162,18 +164,18 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     const end = vi.spyOn(securityApi, 'endSession').mockResolvedValue();
     render(<SecuritySettings />);
     await userEvent.click(await screen.findByRole('button', { name: 'Log out Safari on iPhone' }));
-    const confirm = screen.getByRole('dialog', { name: 'Log out this session?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Log out this session?' });
     expect(confirm).toHaveTextContent('Safari on iPhone is signed out');
     await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
     expect(end).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole('button', { name: 'Log out Safari on iPhone' }));
     await userEvent.click(
-      within(screen.getByRole('dialog')).getByRole('button', { name: 'Log out session' }),
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Log out session' }),
     );
     expect(end).toHaveBeenCalledWith('b'.repeat(32));
     await waitFor(() => expect(screen.queryByText('Safari on iPhone')).toBeNull());
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('keeps the list when a session cannot be logged out', async () => {
@@ -181,9 +183,9 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     render(<SecuritySettings />);
     await userEvent.click(await screen.findByRole('button', { name: 'Log out Unknown device' }));
     await userEvent.click(
-      within(screen.getByRole('dialog')).getByRole('button', { name: 'Log out session' }),
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Log out session' }),
     );
-    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+    expect(await within(screen.getByRole('alertdialog')).findByRole('alert')).toHaveTextContent(
       'Could not log out this session. Try again.',
     );
     expect(screen.getAllByText('Unknown device').length).toBeGreaterThan(0);
@@ -193,7 +195,7 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     logoutEverywhere.mockResolvedValue(undefined);
     render(<SecuritySettings />);
     await userEvent.click(await screen.findByRole('button', { name: 'Log out everywhere' }));
-    const confirm = screen.getByRole('dialog', { name: 'Log out everywhere?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Log out everywhere?' });
     expect(confirm).toHaveTextContent('including this browser');
     await userEvent.click(within(confirm).getByRole('button', { name: 'Log out everywhere' }));
     expect(logoutEverywhere).toHaveBeenCalledTimes(1);
@@ -203,7 +205,7 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     logoutEverywhere.mockRejectedValue(failure(503));
     render(<SecuritySettings />);
     await userEvent.click(await screen.findByRole('button', { name: 'Log out everywhere' }));
-    const confirm = screen.getByRole('dialog', { name: 'Log out everywhere?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Log out everywhere?' });
     await userEvent.click(within(confirm).getByRole('button', { name: 'Log out everywhere' }));
     expect(await within(confirm).findByRole('alert')).toHaveTextContent(
       'Could not log out. Nothing changed; try again.',
@@ -487,11 +489,11 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: 'Log out Safari on iPhone' }));
-    const confirm = screen.getByRole('dialog', { name: 'Log out this session?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Log out this session?' });
     expect(confirm).toHaveClass('ui-modal--narrow');
     expect(within(confirm).getByRole('button', { name: 'Cancel' })).toHaveFocus();
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
 
     await userEvent.click(within(region()).getByRole('button', { name: 'Set up again' }));
     const setup = screen.getByRole('dialog', { name: 'Set up authenticator again' });
@@ -514,7 +516,12 @@ describe('Settings → Security (PR-AUTH-4)', () => {
   describe('SEC-PASSWORD: change the password', () => {
     const open = async () => {
       const user = userEvent.setup();
-      render(<SecuritySettings />);
+      render(
+        <ToastProvider>
+          <SecuritySettings />
+          <ToastViewport />
+        </ToastProvider>,
+      );
       await within(region()).findByText(/7 of 10 unused/);
       await user.click(within(region()).getByRole('button', { name: 'Change password' }));
       return { user, dialog: screen.getByRole('dialog', { name: 'Change password' }) };
@@ -551,9 +558,10 @@ describe('Settings → Security (PR-AUTH-4)', () => {
         code: '123456',
       });
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-      expect(within(region()).getByRole('status')).toHaveTextContent(
-        'Password changed. Every other browser was signed out.',
-      );
+      // The success is a toast now (plan 1.5), not a line in the card.
+      const toast = await screen.findByRole('status');
+      expect(toast).toHaveTextContent('Password changed');
+      expect(toast).toHaveTextContent('Other sessions were signed out.');
       expect(securityApi.get).toHaveBeenCalledTimes(2);
     });
 

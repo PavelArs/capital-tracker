@@ -1,7 +1,12 @@
 import { type AuthenticatorSetup, securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Icon } from '../shell/icons';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { IconButton } from '@/ui/IconButton';
+import { Input } from '@/ui/inputs';
+import { ModalBody, ModalFooter } from '@/ui/Modal';
 import { tooManyAttempts } from './attempts';
 import QrCode from './QrCode';
 import { ShownCodes } from './RecoveryCodesDialog';
@@ -147,7 +152,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
         codes={codes}
         title="Save your new recovery codes"
         titleId="security-authenticator-codes"
-        lead={<p className="security-step">Step 2 of 2</p>}
+        steps={{ current: 2, total: 2 }}
         note="The new authenticator is on and other browsers were signed out. These codes replace your old ones, work once each and are shown only now."
         onDone={onClose}
       />
@@ -155,9 +160,9 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
   }
 
   const errorBlock = error && (
-    <p id="security-authenticator-error" className="ui-banner ui-banner--neg" role="alert">
+    <Banner id="security-authenticator-error" tone="neg">
       {error}
-    </p>
+    </Banner>
   );
 
   if (setup) {
@@ -168,10 +173,10 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
         titleId="security-authenticator-scan"
         onClose={onClose}
         busy={busy}
+        steps={{ current: 1, total: 2 }}
       >
         <form onSubmit={confirm} noValidate>
-          <div className="ui-modal__body">
-            <p className="security-step">Step 1 of 2</p>
+          <ModalBody>
             <p className="security-dialog__text">
               Scan it with Google Authenticator, 1Password, Bitwarden or a similar app. Your current
               authenticator keeps working until you finish.
@@ -182,66 +187,49 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
                 <span className="ui-field__label">Can't scan? Enter this key</span>
                 <div className="security-secret">
                   <span>{grouped(setup.secret)}</span>
-                  <button
-                    type="button"
-                    className="shell-button shell-button--ghost security-secret__copy"
-                    aria-label={copied ? 'Key copied' : 'Copy key'}
+                  <IconButton
+                    size="sm"
+                    label={copied ? 'Key copied' : 'Copy key'}
+                    icon={copied ? 'check' : 'copy'}
                     onClick={() => void copyKey()}
-                  >
-                    <Icon name={copied ? 'check' : 'copy'} className="shell-icon shell-icon--sm" />
-                  </button>
+                  />
                 </div>
               </div>
             </div>
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor="security-new-totp">
-                Code from the new app
-              </label>
-              <input
-                ref={field}
-                id="security-new-totp"
-                className="ui-input security-otp"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={7}
-                value={code}
-                disabled={expired}
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? 'security-authenticator-error' : undefined}
-                onChange={(event) => setCode(event.target.value)}
-              />
-            </div>
+            <Field id="security-new-totp" label="Code from the new app">
+              {(control) => (
+                <Input
+                  {...control}
+                  ref={field}
+                  className="security-otp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={7}
+                  value={code}
+                  disabled={expired}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? 'security-authenticator-error' : undefined}
+                  onChange={(event) => setCode(event.target.value)}
+                />
+              )}
+            </Field>
             {errorBlock}
-          </div>
-          <div className="ui-modal__foot">
-            <button
-              type="button"
-              className="shell-button shell-button--ghost"
-              disabled={busy}
-              onClick={onClose}
-            >
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" disabled={busy} onClick={onClose}>
               Cancel
-            </button>
+            </Button>
             {expired ? (
-              <button
-                ref={restart}
-                type="button"
-                className="shell-button shell-button--primary"
-                onClick={startAgain}
-              >
+              <Button ref={restart} variant="primary" onClick={startAgain}>
                 Start again
-              </button>
+              </Button>
             ) : (
               // auth-02: aria-disabled, not disabled, so focus is not dropped while it checks.
-              <button
-                type="submit"
-                className="shell-button shell-button--primary"
-                aria-disabled={busy}
-              >
+              <Button type="submit" variant="primary" aria-disabled={busy}>
                 {busy ? 'Checking…' : 'Verify and continue'}
-              </button>
+              </Button>
             )}
-          </div>
+          </ModalFooter>
         </form>
       </SecurityDialog>
     );
@@ -256,53 +244,54 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       busy={busy}
     >
       <form onSubmit={prove} noValidate>
-        <div className="ui-modal__body">
+        <ModalBody>
           <p className="security-dialog__text">
             For a new phone, or when the old one is lost. First confirm it's you
             {kind === 'totp'
               ? ' with a code from your current authenticator app.'
               : ' with one of your recovery codes; it is used up.'}
           </p>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor="security-proof">
-              {kind === 'totp' ? 'Code from your authenticator app' : 'Recovery code'}
-            </label>
-            <input
-              ref={field}
-              id="security-proof"
-              className={
-                kind === 'totp' ? 'ui-input security-otp' : 'ui-input security-recovery-input'
-              }
-              inputMode={kind === 'totp' ? 'numeric' : 'text'}
-              autoComplete={kind === 'totp' ? 'one-time-code' : 'off'}
-              autoCapitalize="none"
-              spellCheck={false}
-              maxLength={kind === 'totp' ? 7 : 40}
-              value={code}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? 'security-authenticator-error' : undefined}
-              onChange={(event) => setCode(event.target.value)}
-            />
-          </div>
+          <Field
+            id="security-proof"
+            label={kind === 'totp' ? 'Code from your authenticator app' : 'Recovery code'}
+          >
+            {(control) => (
+              <Input
+                {...control}
+                ref={field}
+                className={kind === 'totp' ? 'security-otp' : undefined}
+                mono={kind === 'recovery'}
+                inputMode={kind === 'totp' ? 'numeric' : 'text'}
+                autoComplete={kind === 'totp' ? 'one-time-code' : 'off'}
+                autoCapitalize="none"
+                spellCheck={false}
+                maxLength={kind === 'totp' ? 7 : 40}
+                value={code}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? 'security-authenticator-error' : undefined}
+                onChange={(event) => setCode(event.target.value)}
+              />
+            )}
+          </Field>
           {errorBlock}
-          <button type="button" className="security-link" disabled={busy} onClick={switchKind}>
-            {kind === 'totp' ? 'Lost the phone? Use a recovery code' : 'Use the authenticator code'}
-          </button>
-        </div>
-        <div className="ui-modal__foot">
           <button
             type="button"
-            className="shell-button shell-button--ghost"
+            className="ui-link security-link"
             disabled={busy}
-            onClick={onClose}
+            onClick={switchKind}
           >
+            {kind === 'totp' ? 'Lost the phone? Use a recovery code' : 'Use the authenticator code'}
+          </button>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
-          </button>
+          </Button>
           {/* auth-02: aria-disabled, not disabled, so focus is not dropped while it checks. */}
-          <button type="submit" className="shell-button shell-button--primary" aria-disabled={busy}>
+          <Button type="submit" variant="primary" aria-disabled={busy}>
             {busy ? 'Checking…' : 'Continue'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </SecurityDialog>
   );
