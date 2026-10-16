@@ -5,8 +5,6 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
-import { REWARD_LIMITS, readRewardCounts, rewardHeadJoin } from '../accounting/asset-reward.store';
-import { swapHeadJoin } from '../accounting/asset-swap.store';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
   type TBankAccount,
@@ -16,7 +14,7 @@ import {
   type TBankPosition,
   type TBankResult,
 } from './tbank-client';
-import { planImport, timeKey } from './tbank-import-plan';
+import { timeKey } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
 import { TBankTokenBox } from './tbank-token-box';
 
@@ -133,10 +131,8 @@ export class BrokerConnectionsService {
    * closed account still has its history, so it is read too.
    */
   async operations(ownerId: string, accountId: string) {
-    const { token, target } = await this.savedConnection(ownerId, accountId);
-    const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
-    if (!result.ok) throw savedTokenFailure(result.reason);
-    const executed = result.value.filter((item) => item.state === 'executed');
+    const { operations: listed } = await this.history(ownerId, accountId);
+    const executed = listed.filter((item) => item.state === 'executed');
     const operations = executed
       .map((item) => ({ ...item, kind: operationKind(item.type) }))
       .sort(
@@ -154,57 +150,22 @@ export class BrokerConnectionsService {
       unsupportedTypes: count(
         operations.filter((item) => item.kind === 'unsupported').map((item) => item.type),
       ),
-      notExecuted: result.value.length - executed.length,
+      notExecuted: listed.length - executed.length,
     };
   }
 
   /**
-   * BROKER-SYNC: the journal entries the account's T-Bank history would become, and whether the
-   * app account already holds entries the import would add to. Nothing is recorded.
+   * BROKER-SYNC: the account's whole operation history as T-Bank lists it, read with the saved
+   * token, and the T-Bank account it was read from.
    */
-  async importPreview(ownerId: string, accountId: string) {
+  async history(
+    ownerId: string,
+    accountId: string,
+  ): Promise<{ brokerAccountId: string; operations: TBankOperation[] }> {
     const { token, target } = await this.savedConnection(ownerId, accountId);
     const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
     if (!result.ok) throw savedTokenFailure(result.reason);
-    const owner = parseUuid(ownerId);
-    const held = await this.holdsEntries(owner, parseUuid(accountId));
-    const plan = planImport(result.value);
-    // The reward journal's caps hold across all the owner's accounts, not only this one.
-    const elsewhere = await readRewardCounts(this.source.manager, owner);
-    const fitsRewardLimit =
-      plan.fitsRewardLimit &&
-      elsewhere.activeCount + plan.rewards <= REWARD_LIMITS.activeRewards &&
-      elsewhere.versionCount + plan.rewards <= REWARD_LIMITS.versions;
-    return { ...plan, fitsRewardLimit, accountHasEntries: held };
-  }
-
-  /**
-   * Whether the account holds any history an import would add to: a standing trade, reward or
-   * swap, a transfer in or out, an opening snapshot, a carried-in journal or any revision. A
-   * voided entry no longer counts.
-   */
-  private async holdsEntries(owner: string, account: string) {
-    const [row]: { held: boolean }[] = await this.source.query(
-      `SELECT EXISTS (SELECT 1 FROM account_trade_versions v JOIN account_trades t
-            ON t."ownerId" = v."ownerId" AND t."accountId" = v."accountId" AND t.id = v."tradeId"
-            AND t."currentVersion" = v.version
-          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
-        OR EXISTS (SELECT 1 FROM account_reward_versions v ${rewardHeadJoin}
-          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
-        OR EXISTS (SELECT 1 FROM account_swap_versions v ${swapHeadJoin}
-          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
-        OR EXISTS (SELECT 1 FROM owned_transfers t JOIN owned_transfer_versions v
-            ON v."ownerId" = t."ownerId" AND v."transferId" = t.id AND v.version = t."currentVersion"
-          WHERE t."ownerId" = $1 AND $2 IN (t."fromAccountId", t."toAccountId")
-            AND v.kind <> 'void')
-        OR EXISTS (SELECT 1 FROM account_opening_snapshots WHERE "ownerId" = $1 AND "accountId" = $2)
-        OR EXISTS (SELECT 1 FROM account_trade_journals
-          WHERE "ownerId" = $1 AND "accountId" = $2 AND "originKind" <> 'declared-empty')
-        OR EXISTS (SELECT 1 FROM manual_accounts
-          WHERE "ownerId" = $1 AND id = $2 AND "currentRevision" IS NOT NULL) AS held`,
-      [owner, account],
-    );
-    return row.held;
+    return { brokerAccountId: target.id, operations: result.value };
   }
 
   async disconnect(ownerId: string, accountId: string) {

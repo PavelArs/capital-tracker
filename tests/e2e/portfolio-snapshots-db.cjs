@@ -599,16 +599,16 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 67/);
+  assert.match(migrated.stdout, /Migrations applied: 68/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 67);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 68);
     assert.deepEqual(
       (await db.query('SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2')).map(
         ({ name }) => name,
       ),
-      ['AddManualPriceCurrency1797400000000', 'AddBrokerConnections1797300000000'],
+      ['AddBrokerImports1797500000000', 'AddManualPriceCurrency1797400000000'],
     );
     const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
       ('snapshot-owner@example.invalid','synthetic-not-a-hash'),

@@ -455,6 +455,7 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       op({ id: '200000001', type: 'OPERATION_TYPE_SOMETHING_NEW' }),
       op({ id: '200000002', type: 'OPERATION_TYPE_INPUT_SECURITIES' }),
       op({ id: '200000003', quantity: '0' }),
+      // A buy that moved shares for no money is not nothing: it is listed, not ignored.
       op({ id: '200000004', payment: '0' }),
       op({ id: '200000005', state: 'canceled' }),
       op({ id: '200000006', paymentCurrency: 'cny' }),
@@ -464,14 +465,20 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
         paymentCurrency: 'cny',
       }),
       op({ id: '200000008', instrumentUid: '' }),
-      op({ id: '200000009', instrumentType: 'currency', ticker: 'SYNTHFX' }),
+      op({
+        id: '200000009',
+        instrumentType: 'currency',
+        ticker: 'USD000UTSTOM',
+        payment: '-200',
+        paymentCurrency: 'usd',
+      }),
     ]);
     expect(plan.entries).toEqual([]);
     expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
       ['200000001', 'unsupported'],
       ['200000002', 'transfer'],
       ['200000003', 'no-quantity'],
-      ['200000004', 'no-amount'],
+      ['200000004', 'no-payment'],
       ['200000006', 'currency'],
       ['200000007', 'currency'],
       ['200000008', 'no-instrument'],
@@ -673,6 +680,447 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     expect([planImport(paid(1001)).rewards, planImport(paid(1001)).fitsRewardLimit]).toEqual([
       1001,
       false,
+    ]);
+  });
+});
+
+describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
+  const dollars = '00000000-0000-4000-8000-0000000000d1';
+  const euros = '00000000-0000-4000-8000-0000000000e1';
+  const gold = '00000000-0000-4000-8000-0000000000f1';
+  const fx = (ticker: string, instrumentUid: string, over: Partial<TBankOperation>) =>
+    op({
+      instrumentUid,
+      ticker,
+      instrumentType: 'currency',
+      price: '',
+      priceCurrency: '',
+      ...over,
+    });
+
+  it('buys and sells dollars and euros as cash paid in rubles, not as assets', () => {
+    const buy = fx('USD000UTSTOM', dollars, {
+      id: '600000001',
+      quantity: '1000',
+      payment: '-90000',
+    });
+    const fee = cash('OPERATION_TYPE_BROKER_FEE', '-45', { id: '600000002', parentId: buy.id });
+    const plan = planImport([
+      buy,
+      fee,
+      fx('EUR_RUB__TOM', euros, {
+        id: '600000003',
+        quantity: '100',
+        payment: '-10000',
+        occurredAt: '2024-03-02T10:00:00Z',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '600000004',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '400',
+        payment: '37000',
+        occurredAt: '2024-03-03T10:00:00Z',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [
+        entry.action,
+        entry.cash,
+        entry.quantity,
+        entry.amount,
+        entry.fee,
+        entry.currency,
+        entry.operationIds,
+      ]),
+    ).toEqual([
+      ['buy', 'usd', '1000', '90000', '45', 'rub', ['600000001', '600000002']],
+      ['buy', 'eur', '100', '10000', '0', 'rub', ['600000003']],
+      ['sell', 'usd', '400', '37000', '0', 'rub', ['600000004']],
+    ]);
+  });
+
+  it('sells dollars the history never shows bought: whether they came in unseen is left to the cash check', () => {
+    const plan = planImport([
+      fx('USD000UTSTOM', dollars, {
+        id: '610000001',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '5',
+        payment: '450',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(plan.entries.map((entry) => [entry.action, entry.cash])).toEqual([['sell', 'usd']]);
+  });
+
+  it('never combines dollar or euro trades, since a later trade may spend that cash', () => {
+    const busy = Array.from({ length: 950 }, (_, index) =>
+      op({
+        occurredAt: new Date(Date.UTC(2024, 0, 1 + Math.floor(index / 10), 9, 0, index % 10))
+          .toISOString()
+          .replace('.000', ''),
+        quantity: '1',
+        payment: '-10',
+      }),
+    );
+    const plan = planImport([
+      ...busy,
+      fx('USD000UTSTOM', dollars, {
+        id: '630000001',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: '2024-03-04T07:00:00Z',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '630000002',
+        quantity: '500',
+        payment: '-45000',
+        occurredAt: '2024-03-04T12:00:00Z',
+      }),
+    ]);
+    expect(plan.grouping).toBe('day');
+    expect(
+      plan.entries
+        .filter((entry) => entry.cash)
+        .map((entry) => [entry.occurredAt, entry.quantity, entry.operationIds]),
+    ).toEqual([
+      ['2024-03-04T07:00:00Z', '1000', ['630000001']],
+      ['2024-03-04T12:00:00Z', '500', ['630000002']],
+    ]);
+  });
+
+  it('buys dollars before a same-instant security bought with them, whatever the operation ids', () => {
+    const plan = planImport([
+      op({
+        id: '800000001',
+        occurredAt: '2024-03-05T10:00:00Z',
+        paymentCurrency: 'usd',
+        payment: '-600',
+        quantity: '2',
+        price: '300',
+        priceCurrency: 'usd',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '800000002',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: '2024-03-05T10:00:00Z',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds]),
+    ).toEqual([
+      ['buy', 'usd', ['800000002']],
+      ['buy', '', ['800000001']],
+    ]);
+  });
+
+  it('keeps a same-instant security bought with exchange cash after the cash it needs', () => {
+    const at = '2024-03-05T10:00:00Z';
+    const plan = planImport([
+      op({
+        id: '810000001',
+        occurredAt: '2024-03-01T10:00:00Z',
+        quantity: '2',
+        payment: '-1000',
+        price: '500',
+      }),
+      op({
+        id: '820000001',
+        occurredAt: at,
+        quantity: '1',
+        payment: '-150',
+        paymentCurrency: 'usd',
+        price: '150',
+        priceCurrency: 'usd',
+      }),
+      op({
+        id: '820000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        quantity: '1',
+        payment: '150',
+        paymentCurrency: 'usd',
+        price: '150',
+        priceCurrency: 'usd',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '820000003',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: at,
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.slice(1).map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', 'usd', '820000003'],
+      ['buy', '', '820000001'],
+      ['sell', '', '820000002'],
+    ]);
+  });
+
+  it('hoists a same-instant security buy over its sale even when unrelated exchange cash is bought', () => {
+    const at = '2024-03-06T10:00:00Z';
+    const plan = planImport([
+      op({ id: '830000001', occurredAt: at, quantity: '1', payment: '-100', price: '100' }),
+      op({
+        id: '830000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        quantity: '1',
+        payment: '100',
+        price: '100',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '830000003',
+        quantity: '100',
+        payment: '-9000',
+        occurredAt: at,
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', '', '830000001'],
+      ['sell', '', '830000002'],
+      ['buy', 'usd', '830000003'],
+    ]);
+  });
+
+  it('buys dollars, then the security bought with them and sold at the same instant, with no holding before', () => {
+    const at = '2024-03-07T10:00:00Z';
+    const plan = planImport([
+      op({
+        id: '840000001',
+        occurredAt: at,
+        paymentCurrency: 'usd',
+        payment: '-150',
+        quantity: '1',
+        price: '150',
+        priceCurrency: 'usd',
+      }),
+      op({
+        id: '840000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        paymentCurrency: 'usd',
+        payment: '150',
+        quantity: '1',
+        price: '150',
+        priceCurrency: 'usd',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '840000003',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: at,
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', 'usd', '840000003'],
+      ['buy', '', '840000001'],
+      ['sell', '', '840000002'],
+    ]);
+  });
+
+  it('keeps a same-instant sale ahead of the dollars its rubles buy, even when a buy is hoisted over it', () => {
+    const at = '2024-03-08T10:00:00Z';
+    const share = '00000000-0000-4000-8000-0000000000a1';
+    const plan = planImport([
+      op({
+        id: '850000001',
+        occurredAt: '2024-03-07T10:00:00Z',
+        instrumentUid: share,
+        quantity: '1',
+        payment: '-100',
+        price: '100',
+      }),
+      op({
+        id: '850000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: at,
+        instrumentUid: share,
+        quantity: '1',
+        payment: '100',
+        price: '100',
+      }),
+      fx('USD000UTSTOM', dollars, {
+        id: '850000003',
+        quantity: '1000',
+        payment: '-90000',
+        occurredAt: at,
+      }),
+      op({
+        id: '850000004',
+        occurredAt: at,
+        instrumentUid: share,
+        paymentCurrency: 'usd',
+        payment: '-90',
+        quantity: '1',
+        price: '90',
+        priceCurrency: 'usd',
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash ?? '', entry.operationIds[0]]),
+    ).toEqual([
+      ['buy', '', '850000001'],
+      ['sell', '', '850000002'],
+      ['buy', 'usd', '850000003'],
+      ['buy', '', '850000004'],
+    ]);
+  });
+
+  it('keeps a same-instant sale ahead of the buy of its share when asked not to hoist', () => {
+    const share = '00000000-0000-4000-8000-0000000000a2';
+    const operations = [
+      op({
+        id: '860000001',
+        occurredAt: '2024-03-07T10:00:00Z',
+        instrumentUid: share,
+        quantity: '1',
+        payment: '-100',
+        price: '100',
+      }),
+      op({
+        id: '860000002',
+        type: 'OPERATION_TYPE_SELL',
+        occurredAt: '2024-03-08T10:00:00Z',
+        instrumentUid: share,
+        quantity: '1',
+        payment: '150',
+        price: '150',
+      }),
+      op({
+        id: '860000003',
+        occurredAt: '2024-03-08T10:00:00Z',
+        instrumentUid: share,
+        quantity: '1',
+        payment: '-150',
+        price: '150',
+      }),
+    ];
+    const order = (plan: ReturnType<typeof planImport>) =>
+      plan.entries.map((entry) => [entry.action, entry.operationIds[0]]);
+    expect(order(planImport(operations))).toEqual([
+      ['buy', '860000001'],
+      ['buy', '860000003'],
+      ['sell', '860000002'],
+    ]);
+    expect(order(planImport(operations, { hoist: false }))).toEqual([
+      ['buy', '860000001'],
+      ['sell', '860000002'],
+      ['buy', '860000003'],
+    ]);
+  });
+
+  it('keeps an alternating sale, buy and sale of one share at one instant in operation order when not hoisting', () => {
+    const share = '00000000-0000-4000-8000-0000000000a3';
+    const at = '2024-03-08T10:00:00Z';
+    const plan = planImport(
+      [
+        op({
+          id: '870000001',
+          occurredAt: '2024-03-07T10:00:00Z',
+          instrumentUid: share,
+          quantity: '1',
+          payment: '-100',
+          price: '100',
+        }),
+        op({
+          id: '870000002',
+          type: 'OPERATION_TYPE_SELL',
+          occurredAt: at,
+          instrumentUid: share,
+          quantity: '1',
+          payment: '150',
+          price: '150',
+        }),
+        op({
+          id: '870000003',
+          occurredAt: at,
+          instrumentUid: share,
+          quantity: '1',
+          payment: '-150',
+          price: '150',
+        }),
+        op({
+          id: '870000004',
+          type: 'OPERATION_TYPE_SELL',
+          occurredAt: at,
+          instrumentUid: share,
+          quantity: '1',
+          payment: '160',
+          price: '160',
+        }),
+      ],
+      { hoist: false },
+    );
+    expect(plan.skipped).toEqual([]);
+    expect(plan.entries.map((entry) => [entry.action, entry.operationIds[0]])).toEqual([
+      ['buy', '870000001'],
+      ['sell', '870000002'],
+      ['buy', '870000003'],
+      ['sell', '870000004'],
+    ]);
+  });
+
+  it('keeps gold and currencies the app does not keep as cash as assets priced in rubles', () => {
+    const plan = planImport([
+      fx('GLDRUB_TOM', gold, { id: '620000001', quantity: '10', payment: '-70000' }),
+      fx('GLDRUB_TOM', gold, {
+        id: '620000002',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '10',
+        payment: '72000',
+        occurredAt: '2024-03-02T10:00:00Z',
+      }),
+      fx('GLDRUB_TOM', gold, {
+        id: '620000003',
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '1',
+        payment: '7000',
+        occurredAt: '2024-03-03T10:00:00Z',
+      }),
+    ]);
+    expect(
+      plan.entries.map((entry) => [entry.action, entry.cash, entry.instrumentUid, entry.quantity]),
+    ).toEqual([
+      ['buy', undefined, gold, '10'],
+      ['sell', undefined, gold, '10'],
+    ]);
+    // Gold is held like a security, so a sale of more than was bought is listed.
+    expect(plan.skipped).toEqual([
+      { operationId: '620000003', type: 'OPERATION_TYPE_SELL', reason: 'not-held' },
+    ]);
+  });
+});
+
+describe('BROKER-SYNC: operations without money', () => {
+  it('ignores a fee of nothing but lists a trade or repayment that moved units for nothing', () => {
+    const plan = planImport([
+      cash('OPERATION_TYPE_BROKER_FEE', '0', { id: '700000001' }),
+      op({ id: '700000002', type: 'OPERATION_TYPE_SELL', payment: '0', quantity: '1' }),
+      op({
+        id: '700000003',
+        type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL',
+        payment: '0',
+        quantity: '0',
+      }),
+    ]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      ['700000001', 'no-amount'],
+      ['700000002', 'no-payment'],
+      ['700000003', 'no-payment'],
     ]);
   });
 });

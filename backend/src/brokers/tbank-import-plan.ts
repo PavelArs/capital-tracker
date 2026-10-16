@@ -27,6 +27,11 @@ export interface PlanEntry {
   instrumentUid: string;
   ticker: string;
   instrumentType: string;
+  /**
+   * For dollars or euros bought or sold on the exchange: the currency the trade moves as cash,
+   * paid for in `currency`. Such a trade holds no security.
+   */
+  cash?: 'usd' | 'eur';
   /** For a reward, the T-Bank instrument that paid it; the reward itself is cash. */
   paidBy?: { instrumentUid: string; ticker: string; instrumentType: string };
   /** Units of the security, or the cash amount when the entry moves only cash. */
@@ -56,6 +61,7 @@ export interface PlanSkip {
     | 'no-quantity'
     | 'fills'
     | 'card'
+    | 'no-payment'
     | 'no-amount';
 }
 
@@ -102,14 +108,28 @@ const cardSettled = new Set([
 ]);
 const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
 /**
+ * Dollars and euros as the Moscow Exchange trades them against rubles, settled the next day or
+ * the same day. The app keeps these as cash; any other currency or metal on the exchange (pounds,
+ * gold) stays an asset priced by hand. Matched by ticker, since T-Bank's operations name no ISO
+ * code and its instrument lookup no longer finds some delisted ones.
+ */
+const exchangeCash: Readonly<Record<string, 'usd' | 'eur'>> = {
+  USD000UTSTOM: 'usd',
+  USD000000TOD: 'usd',
+  EUR_RUB__TOM: 'eur',
+  EUR_RUB__TOD: 'eur',
+};
+/** The currency a dollar or euro trade on the exchange moves as cash, if it is one. */
+const cashOf = (item: TBankOperation) =>
+  item.instrumentType === 'currency' ? exchangeCash[item.ticker] : undefined;
+/**
  * Why a trade's security cannot be recorded: T-Bank names no instrument or does not say what
- * kind it is, or it is a currency bought or sold on the exchange, which is cash rather than a
- * security the app can hold yet.
+ * kind it is, or it buys dollars or euros with the very currency it buys.
  */
 const securityProblem = (item: TBankOperation): PlanSkip['reason'] | null =>
   item.instrumentUid === '' || item.instrumentType === ''
     ? 'no-instrument'
-    : item.instrumentType === 'currency'
+    : cashOf(item) === item.paymentCurrency
       ? 'currency-exchange'
       : null;
 
@@ -249,7 +269,15 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     if (kind === 'transfer') return skip(item, 'transfer');
     if (cardSettled.has(item.type)) return skip(item, 'card');
     if (joins(item)) return [];
-    if (isZero(item.payment)) return skip(item, 'no-amount');
+    if (isZero(item.payment))
+      // A trade or repayment that moved units for no money changed the holding, so it is listed;
+      // only money of nothing moved nothing.
+      return skip(
+        item,
+        kind === 'repayment' || ((kind === 'buy' || kind === 'sell') && !isZero(item.quantity))
+          ? 'no-payment'
+          : 'no-amount',
+      );
     if (!recordable(item.paymentCurrency)) return skip(item, 'currency');
     const incoming = signOf(item.payment) === 'in';
     const expected = expectedSign[kind];
@@ -264,6 +292,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       const weights = parts.map((part) => part.weight);
       const amounts = split(absolute(item.payment), weights);
       const paidFees = split(absolute(sum(fees.map((fee) => fee.payment))), weights);
+      const moved = cashOf(item);
       return parts.map((part, index) => ({
         record: 'trade',
         action: kind,
@@ -271,6 +300,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
         instrumentUid: item.instrumentUid,
         ticker: item.ticker,
         instrumentType: item.instrumentType,
+        ...(moved ? { cash: moved } : {}),
         quantity: formatAtoms(part.quantity),
         amount: amounts[index],
         fee: paidFees[index],
@@ -319,12 +349,13 @@ const actionOrder: PlanAction[] = ['deposit', 'income', 'sell', 'buy', 'fee', 't
  * (a deposit, a sale) is dated by its first part and one that spends money by its last, so the
  * account never holds less cash or fewer shares at any time than it really did.
  */
-function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry[] {
+function combine(list: PlanEntry[], period: (time: string) => string, hoist: boolean): PlanEntry[] {
   const groups = new Map<string, PlanEntry[]>();
   const runs = new Map<string, { action: PlanAction; run: number }>();
   const kept: PlanEntry[] = [];
-  for (const entry of ordered(list)) {
-    if (entry.record !== 'trade') {
+  for (const entry of ordered(list, hoist)) {
+    // Dollars and euros bought are cash a later trade may spend, so each keeps its own time.
+    if (entry.record !== 'trade' || entry.cash) {
       kept.push(entry);
       continue;
     }
@@ -374,14 +405,16 @@ function checkHeld(
   list: PlanEntry[],
   skipped: PlanSkip[],
   typeOf: ReadonlyMap<string, string>,
+  hoist: boolean,
 ): PlanEntry[] {
   const held = new Map<string, bigint>();
   // Units sold that the history never showed held: a buy may cover them, or may not.
   const uncovered = new Map<string, bigint>();
   const listed = new Set<string>();
   const kept: PlanEntry[] = [];
-  for (const entry of ordered(list)) {
-    if (entry.record !== 'trade' || entry.instrumentUid === '') {
+  for (const entry of ordered(list, hoist)) {
+    // Dollars and euros are cash: the journal's own check finds a sale of more than is held.
+    if (entry.record !== 'trade' || entry.instrumentUid === '' || entry.cash) {
       kept.push(entry);
       continue;
     }
@@ -436,14 +469,27 @@ function checkHeld(
 /** T-Bank operation numbers in numeric order: 9 before 10. */
 const byNumber = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
 
-const ordered = (list: PlanEntry[]) =>
+/**
+ * Where an entry falls among the entries of one instant. Dollars and euros bought come after
+ * the securities sold, which may have paid for them, and before the securities bought with them
+ * and the dollars or euros sold, so the cash is there when it is spent.
+ */
+const sameInstantRank = (entry: PlanEntry) => {
+  if (!entry.cash) return actionOrder.indexOf(entry.action);
+  return actionOrder.indexOf('sell') + (entry.action === 'buy' ? 0.5 : 0.75);
+};
+// Without hoisting, the operations of one instant keep T-Bank's own order, which the ranks only
+// guess at: a sale, a buy and a sale of one share in that order is valid, while the ranks put both
+// sales first.
+const ordered = (list: PlanEntry[], hoist: boolean) =>
   buysFirst(
     [...list].sort(
       (a, b) =>
         timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) ||
-        actionOrder.indexOf(a.action) - actionOrder.indexOf(b.action) ||
+        (hoist ? sameInstantRank(a) - sameInstantRank(b) : 0) ||
         byNumber(a.operationIds[0], b.operationIds[0]),
     ),
+    hoist,
   );
 
 /**
@@ -451,10 +497,14 @@ const ordered = (list: PlanEntry[]) =>
  * before a sale of the same security at that instant: the order of the two is unknown, and the
  * sale may sell what the buy brought.
  */
-function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
+function buysFirst(sorted: PlanEntry[], hoist: boolean): PlanEntry[] {
+  if (!hoist) return sorted;
   const result: PlanEntry[] = [];
   const isSecurity = (entry: PlanEntry, action: PlanAction) =>
-    entry.record === 'trade' && entry.action === action && entry.instrumentUid !== '';
+    entry.record === 'trade' &&
+    entry.action === action &&
+    entry.instrumentUid !== '' &&
+    !entry.cash;
   for (let start = 0; start < sorted.length; ) {
     const time = timeKey(sorted[start].occurredAt);
     let end = start;
@@ -469,10 +519,37 @@ function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
       else buys.set(entry.instrumentUid, [entry]);
     }
     const placed = new Set<PlanEntry>();
+    // Dollars or euros bought, or dollars or euros sold for rubles, that pay for a buy at this
+    // instant come before it, so the buy never spends cash not yet there.
+    const producers = (buy: PlanEntry) =>
+      instant.filter(
+        (entry) =>
+          entry.cash !== undefined &&
+          !placed.has(entry) &&
+          ((entry.action === 'buy' && entry.cash === buy.currency) ||
+            (entry.action === 'sell' && entry.currency === buy.currency)),
+      );
+    // The currency a producer spends, and the currency an unplaced entry of this instant still
+    // brings in. A producer is pulled ahead only when no such entry is still to come, since
+    // that entry (a sale, or the exchange purchase of the currency it spends) may pay for it.
+    const spent = (entry: PlanEntry) => (entry.action === 'buy' ? entry.currency : entry.cash);
+    const brought = (entry: PlanEntry) => (entry.action === 'sell' ? entry.currency : entry.cash);
+    const stillToCome = (currency: string | undefined, except: PlanEntry) =>
+      currency !== undefined &&
+      instant.some(
+        (entry) => entry !== except && !placed.has(entry) && brought(entry) === currency,
+      );
     for (const entry of instant) {
       if (placed.has(entry)) continue;
       if (isSecurity(entry, 'sell')) {
         for (const buy of buys.get(entry.instrumentUid) ?? []) {
+          const cash = producers(buy);
+          // Left in place: the buy is placed by its own turn in the instant, after what funds it.
+          if (cash.some((producer) => stillToCome(spent(producer), producer))) continue;
+          for (const producer of cash) {
+            result.push(producer);
+            placed.add(producer);
+          }
           result.push(buy);
           placed.add(buy);
         }
@@ -491,25 +568,29 @@ function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
  * the account's trades leave room under the limit; otherwise entries of one kind and instrument
  * are combined by Moscow day, then by month.
  */
-export function planImport(operations: readonly TBankOperation[]): ImportPlan {
+export function planImport(
+  operations: readonly TBankOperation[],
+  options: { hoist?: boolean } = {},
+): ImportPlan {
+  const hoist = options.hoist ?? true;
   const skipped: PlanSkip[] = [];
   const typeOf = new Map(operations.map((item) => [item.id, item.type]));
-  const single = checkHeld(entries(operations, skipped), skipped, typeOf);
+  const single = checkHeld(entries(operations, skipped), skipped, typeOf, hoist);
   const tradesIn = (list: PlanEntry[]) => list.filter((entry) => entry.record === 'trade').length;
   let grouping: ImportPlan['grouping'] = 'operation';
   let list = single;
   if (tradesIn(list) > COMBINE_ABOVE) {
     grouping = 'day';
-    list = combine(single, moscowDate);
+    list = combine(single, moscowDate, hoist);
   }
   if (tradesIn(list) > COMBINE_ABOVE) {
     grouping = 'month';
-    list = combine(single, (time) => moscowDate(time).slice(0, 7));
+    list = combine(single, (time) => moscowDate(time).slice(0, 7), hoist);
   }
   const trades = tradesIn(list);
   return {
     grouping,
-    entries: ordered(list),
+    entries: ordered(list, hoist),
     skipped,
     trades,
     rewards: list.length - trades,

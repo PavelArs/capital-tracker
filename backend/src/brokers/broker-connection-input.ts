@@ -33,3 +33,14 @@ export function parseConnection(input: unknown): { token: string; brokerAccountI
   if (typeof id !== 'string' || !/^[0-9A-Za-z_-]{1,64}$/.test(id)) return bad();
   return { token: token(record.token), brokerAccountId: id };
 }
+
+/**
+ * BROKER-SYNC: one import of the broker history, named by the client's request and pinned to
+ * the preview the owner saw.
+ */
+export function parseImport(input: unknown): { requestId: string; previewHash: string } {
+  const record = object(input, ['requestId', 'previewHash'], ['requestId', 'previewHash']);
+  const hash = record.previewHash;
+  if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) return bad();
+  return { requestId: parseUuid(record.requestId), previewHash: hash };
+}
