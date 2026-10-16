@@ -480,6 +480,9 @@ export default function GoalChart({ goal }: { goal: Goal }) {
                   <span>Of the sum</span>
                   <span>{share(current.value)}</span>
                 </div>
+                <div className="goal-tip__note">
+                  Money put in leaves out a deposit or withdrawal with no rate on its day.
+                </div>
                 {!current.complete && (
                   <div className="goal-tip__note">Incomplete: an asset had no price or rate</div>
                 )}
