@@ -145,6 +145,7 @@ async function reading(db, InflationService, owner, other) {
   assert.equal(byCurrency.RUB.officialSource, 'Bank of Russia (annual inflation)');
   assert.equal(byCurrency.RUB.lastMonth, '2026-02');
   assert.match(byCurrency.USD.trailingYearPercent, /^12\.6825/, '1.01 ** 12 - 1');
+  assert.equal(byCurrency.USD.trailingYearEstimated, false, 'Twelve published months');
   assert.equal(view.sync.state, 'failed');
   console.log('PASS INFL-OVERVIEW');
 
@@ -203,6 +204,11 @@ async function reading(db, InflationService, owner, other) {
   await rejected(() => service.setMonth(owner, 'USD', '2026-13', { changePercent: '1' }), 400);
   await rejected(() => service.setMonth(owner, 'GBP', '2026-01', { changePercent: '1' }), 400);
   await rejected(() => service.setMonth(owner, 'USD', '2026-01', { changePercent: '-100' }), 400);
+  // A month after the current Moscow month (a typo in the year) is refused; nothing is stored.
+  const stored = await db.query('SELECT * FROM inflation_manual_months ORDER BY currency, month');
+  await rejected(() => service.setMonth(owner, 'USD', '2026-04', { changePercent: '1' }, now), 400);
+  await rejected(() => service.setMonth(owner, 'USD', '2206-03', { changePercent: '1' }, now), 400);
+  assert.deepEqual(await db.query('SELECT * FROM inflation_manual_months ORDER BY currency, month'), stored);
   console.log('PASS INFL-MANUAL');
 
   stage = 'synthetic personal rate: 10 percent a year, per owner, removable';

@@ -5,7 +5,7 @@ import {
   operationsApi,
 } from '@api/operations.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { newRequestId } from '../accounting/feedback';
@@ -30,6 +30,7 @@ import {
   typeLabels,
 } from './operation-format';
 import RemoveCounted from './RemoveCounted';
+import { Glyph, type GlyphName } from './TypeIcon';
 
 type ChainType = ChainClassification['type'];
 type Currency = Extract<ChainClassification, { currency: string }>['currency'];
@@ -69,6 +70,39 @@ const outgoing: [ChainType, string][] = [
 ];
 /** The leg's own direction: a recorded transfer reads as internal in the list. */
 const legDirection = (operation: Operation) => operation.chain?.direction ?? operation.direction;
+
+/** Each answer's mark, as the list's type marks; Other shows only where the coins went. */
+const answerGlyphs: Record<Exclude<ChainType, 'recorded' | 'other'>, GlyphName> = {
+  transfer: 'move',
+  buy: 'buy',
+  sell: 'sell',
+  swap: 'move',
+  income: 'in',
+  expense: 'out',
+  reward: 'reward',
+  'staking-reward': 'reward',
+  airdrop: 'airdrop',
+  gift: 'gift',
+  'pool-reward': 'reward',
+  'pool-withdrawal': 'move',
+  'pool-deposit': 'move',
+  fee: 'fee',
+};
+function answerGlyph(operation: Operation, type: ChainType): GlyphName {
+  if (type !== 'other' && type !== 'recorded') return answerGlyphs[type];
+  const leg = legDirection(operation);
+  return leg === 'internal' ? 'move' : leg;
+}
+
+/**
+ * The answer the transaction itself suggests while it has none: a transfer when the owner's other
+ * address took part (XFER-AUTO), a swap when another coin came back in it (SWAP-ONE-TX-SUGGEST).
+ */
+function suggestedType(operation: Operation): ChainType | null {
+  if (operation.classification?.value) return null;
+  if (operation.counterWallet && operation.counterAccount) return 'transfer';
+  return operation.chain?.swapWith ? 'swap' : null;
+}
 export function choices(operation: Operation): [ChainType, string][] {
   const leg = legDirection(operation);
   if (leg === 'in') return incoming;
@@ -162,13 +196,11 @@ function draftOf(operation: Operation): Draft {
   const replaced = value?.type === 'swap' && 'record' in value ? value.record : null;
   const recorded = value?.type === 'recorded' ? value.operation : null;
   const returned = value?.type === 'pool-withdrawal' ? value : null;
-  // XFER-AUTO: the owner's other address in the same transaction suggests a transfer.
-  const suggested = !value && operation.counterWallet && operation.counterAccount;
-  // SWAP-ONE-TX-SUGGEST: another coin back in the same transaction suggests a swap.
-  const together = !value && !suggested ? operation.chain?.swapWith : undefined;
+  const suggested = suggestedType(operation);
+  const together = suggested === 'swap' ? operation.chain?.swapWith : undefined;
   const offered = value ? '' : suggestedValue(operation);
   return {
-    type: recorded ? 'swap' : (value?.type ?? (suggested ? 'transfer' : together ? 'swap' : null)),
+    type: recorded ? 'swap' : (value?.type ?? suggested),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
@@ -636,7 +668,7 @@ function failure(
     )?.name ?? 'The account';
   const short = shortOf(error);
   if (short)
-    return `${shortText(name(short.accountId), operation.asset.symbol ?? operation.asset.name, short.occurredAt)} Classify the receipts that brought the coins there first, or choose another type.`;
+    return `${shortText(name(short.accountId), operation.asset.symbol ?? operation.asset.name, short.occurredAt, short.of)} Classify the receipts that brought the coins there first, or choose another type.`;
   const coverage = coverageOf(error);
   if (coverage)
     return coverage.coverageFrom === null
@@ -752,7 +784,14 @@ export default function ClassifyForm({
 }: Props) {
   const id = useId();
   const [draft, setDraft] = useState<Draft>(() => draftOf(operation));
+  const suggestion = suggestedType(operation);
   const [tried, setTried] = useState(false);
+  // A refused Save gives the keyboard to the first field to fix, which reads out its error.
+  const form = useRef<HTMLFormElement>(null);
+  const [refusals, setRefusals] = useState(0);
+  useEffect(() => {
+    if (refusals > 0) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [refusals]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<ReactNode>(null);
   // One request id per answer: a retry after a lost response cannot record it twice.
@@ -809,6 +848,7 @@ export default function ClassifyForm({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
+    if (found.size > 0) setRefusals((count) => count + 1);
     if (!ready || found.size > 0 || !operation.wallet || !operation.chain) return;
     setSaving(true);
     setError(null);
@@ -874,7 +914,12 @@ export default function ClassifyForm({
     </div>
   );
   return (
-    <form className="transactions-classify" onSubmit={(event) => void submit(event)} noValidate>
+    <form
+      ref={form}
+      className="transactions-classify"
+      onSubmit={(event) => void submit(event)}
+      noValidate
+    >
       <div className="ui-drawer__body">
         {children}
         {!operation.account && (
@@ -897,9 +942,21 @@ export default function ClassifyForm({
                 type="button"
                 className={`transactions-option${type === 'transfer' ? ' transactions-option--wide' : ''}`}
                 aria-pressed={draft.type === type}
+                aria-describedby={type === suggestion ? `${id}-suggested` : undefined}
                 onClick={() => change({ type })}
               >
+                <Glyph name={answerGlyph(operation, type)} />
                 {label}
+                {type === suggestion && (
+                  // The name stays the answer's words; the tag is its description.
+                  <span
+                    id={`${id}-suggested`}
+                    className="transactions-suggested"
+                    aria-hidden="true"
+                  >
+                    Suggested
+                  </span>
+                )}
               </button>
             ))}
           </div>

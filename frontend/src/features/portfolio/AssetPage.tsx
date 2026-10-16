@@ -9,16 +9,19 @@ import type {
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useTabs } from '@/ui/tabs';
 import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
+import { heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
+import { useAccountClasses } from '../shell/useAccountClasses';
 import { useValueView } from '../shell/value-view';
 import {
   assetKey,
@@ -159,6 +162,8 @@ function ValueChart({
   useEffect(() => {
     void load();
   }, [load]);
+  // portfolio-19: the periods are tabs with arrow keys; the chart is the panel they control.
+  const tabs = useTabs(historyPeriods, period, setPeriod);
   const purchases =
     typeof operations === 'object' ? purchasesOf(operations.operations, instrumentId) : [];
   const unit = asset.symbol ?? asset.name;
@@ -195,40 +200,36 @@ function ValueChart({
             Times are UTC. Cost basis counts the coins with a known purchase price.
           </AboutChart>
         </div>
-        <div className="dashboard-periods" role="tablist" aria-label="Chart period">
+        <div className="dashboard-periods" aria-label="Chart period" {...tabs.list}>
           {historyPeriods.map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={period === value}
-              onClick={() => setPeriod(value)}
-            >
+            <button key={value} type="button" {...tabs.tab(value)}>
               {value}
             </button>
           ))}
         </div>
       </div>
-      {failed ? (
-        <div className="portfolio-state" role="alert">
-          <p>Could not load the chart. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </div>
-      ) : history === null ? (
-        <InlineSkeleton label="Loading the chart" chart />
-      ) : (
-        <AssetChart
-          key={`${history.period}:${history.currency}:${history.at}`}
-          points={history.points}
-          period={history.period}
-          currency={history.currency}
-          symbol={unit}
-          purchases={purchases}
-          label={`${asset.name} position value and cost basis, ${periodNames[history.period]}, in ${history.currency}`}
-        />
-      )}
+      <div {...tabs.panel}>
+        {failed ? (
+          <div className="portfolio-state" role="alert">
+            <p>Could not load the chart. Your data is safe; try again.</p>
+            <button type="button" className="shell-button" onClick={() => void load()}>
+              Try again
+            </button>
+          </div>
+        ) : history === null ? (
+          <InlineSkeleton label="Loading the chart" chart />
+        ) : (
+          <AssetChart
+            key={`${history.period}:${history.currency}:${history.at}`}
+            points={history.points}
+            period={history.period}
+            currency={history.currency}
+            symbol={unit}
+            purchases={purchases}
+            label={`${asset.name} position value and cost basis, ${periodNames[history.period]}, in ${history.currency}`}
+          />
+        )}
+      </div>
     </section>
   );
 }
@@ -340,6 +341,7 @@ function AssetDetails({
   const unit = asset.symbol ?? '';
   const currency = portfolio.currency;
   const chains = useTokenChains();
+  const classes = useAccountClasses();
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
   const unknown = Number(asset.unknownCostQuantity) > 0;
   const missingRate = Number(asset.missingRateQuantity) > 0;
@@ -364,6 +366,7 @@ function AssetDetails({
           symbol={asset.symbol}
           name={asset.name}
           assetType={asset.assetType}
+          assetClass={heldClass(asset.holdings, classes)}
           network={onlyChain(asset.symbol, chains)}
           size="lg"
         />
@@ -373,7 +376,8 @@ function AssetDetails({
         </div>
         <div className="portfolio-head__price">
           <b>{asset.price ? price(asset.price.value, currency) : missingLabel(asset)}</b>
-          {asset.priceChange24hPercent !== null && (
+          {/* A hand price has no market move to show: the page offers Update price instead. */}
+          {asset.priceChange24hPercent !== null && asset.priceSource !== 'manual' && (
             <span className="portfolio-head__change">
               <Change value={asset.priceChange24hPercent} /> today
             </span>
@@ -442,7 +446,7 @@ function AssetDetails({
                       ) : (
                         Number(asset.knownCostQuantity) > 0 && (
                           <span className="portfolio-sub">
-                            {amount(asset.knownCostSubtotal)} known
+                            {amount(asset.knownCostSubtotal)} paid for the known part
                           </span>
                         )
                       )}
@@ -628,17 +632,37 @@ export default function AssetPage() {
     () => cachedReads.portfolio.last(asked) ?? null,
   );
   const [failed, setFailed] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  // portfolio-06: a new asset opens here, once, with word that it was added.
+  const location = useLocation();
+  const [added] = useState(() =>
+    (location.state as { added?: boolean } | null)?.added === true ? assetId : undefined,
+  );
+  // The word is said once: going back to this entry, or reloading it, does not say it again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is cleared.
+  useEffect(() => {
+    if (added)
+      navigate({ pathname: location.pathname, search: location.search }, { replace: true });
+  }, []);
 
-  const load = useCallback(async () => {
-    setFailed(false);
-    const kept = cachedReads.portfolio.last(asked);
-    setPortfolio(kept ?? null);
-    try {
-      setPortfolio(await cachedReads.portfolio.load(asked));
-    } catch {
-      if (!kept) setFailed(true);
-    }
-  }, [asked]);
+  // A refresh after a change (a saved price) keeps the page and its focus on screen: the change
+  // dropped the kept answer, and a skeleton would take the Update price button away (portfolio-02).
+  const load = useCallback(
+    async (quiet = false) => {
+      setFailed(false);
+      setRefreshFailed(false);
+      const kept = cachedReads.portfolio.last(asked);
+      if (!quiet) setPortfolio(kept ?? null);
+      try {
+        setPortfolio(await cachedReads.portfolio.load(asked));
+      } catch {
+        // With an answer on screen (kept or quiet) the page stays and says it is not refreshed.
+        if (quiet || kept) setRefreshFailed(true);
+        else setFailed(true);
+      }
+    },
+    [asked],
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -703,6 +727,19 @@ export default function AssetPage() {
           />
         )}
       </div>
+      {added === assetId && (
+        <p className="ui-banner ui-banner--pos" role="status">
+          Asset added.
+        </p>
+      )}
+      {refreshFailed && !failed && portfolio !== null && (
+        <p className="ui-banner ui-banner--warn portfolio-warn" role="alert">
+          Could not refresh the values; showing the last loaded ones.{' '}
+          <button type="button" className="shell-button" onClick={() => void load(true)}>
+            Refresh
+          </button>
+        </p>
+      )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load this asset. Your data is safe; try again.</p>
@@ -721,7 +758,7 @@ export default function AssetPage() {
           onRetryOperations={() => void loadOperations()}
           kinds={kinds}
           classed={classed}
-          onPriceSaved={() => void load()}
+          onPriceSaved={() => void load(true)}
           now={new Date()}
         />
       ) : (

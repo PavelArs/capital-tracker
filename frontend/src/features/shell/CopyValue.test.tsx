@@ -33,4 +33,28 @@ describe('CopyValue', () => {
 
     expect(screen.getByText('UID 123456789012345678')).toBeVisible();
   });
+
+  it('transactions-17 says the copy is blocked and shows the whole value to select by hand', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockRejectedValue(new DOMException('Denied', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<CopyValue value={address} label="Copy address" />);
+
+    await user.click(screen.getByRole('button', { name: 'Copy address' }));
+
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Copy is blocked here: select the value to copy it');
+    expect(status).toHaveTextContent(address);
+    expect(screen.queryByRole('button', { name: 'Copied' })).toBeNull();
+  });
+
+  it('transactions-17 says the same where the browser has no clipboard', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    render(<CopyValue value={address} label="Copy address" />);
+
+    await user.click(screen.getByRole('button', { name: 'Copy address' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(address);
+  });
 });

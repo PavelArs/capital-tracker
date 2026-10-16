@@ -1,7 +1,8 @@
 import { type AuthenticatorSetup, securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Icon } from '../shell/icons';
+import { tooManyAttempts } from './attempts';
 import QrCode from './QrCode';
 import { ShownCodes } from './RecoveryCodesDialog';
 import SecurityDialog from './SecurityDialog';
@@ -9,7 +10,6 @@ import SecurityDialog from './SecurityDialog';
 type Kind = 'totp' | 'recovery';
 
 const recoveryPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{8}){3}$/i;
-const tooMany = 'Too many attempts. Wait 10 minutes and try again.';
 const unreachable = 'Could not reach the server. Try again.';
 
 function proofFailure(error: unknown, kind: Kind): string {
@@ -19,7 +19,7 @@ function proofFailure(error: unknown, kind: Kind): string {
     return kind === 'totp'
       ? 'That code is not valid. Enter the current code from your authenticator app.'
       : 'That recovery code is not valid or was already used.';
-  if (status === 429) return tooMany;
+  if (status === 429) return tooManyAttempts(error);
   return 'Could not start the setup. Nothing changed.';
 }
 
@@ -34,7 +34,8 @@ function confirmFailure(error: unknown): { message: string; expired?: boolean } 
         'This setup expired or had too many wrong codes. Start again; your current authenticator still works.',
       expired: true,
     };
-  if (status === 429) return { message: 'Too many attempts. Wait a minute and try again.' };
+  // The wait follows the server's Retry-After, as on the other code forms.
+  if (status === 429) return { message: tooManyAttempts(error) };
   return { message: 'Could not finish the setup. Your current authenticator still works.' };
 }
 
@@ -57,6 +58,12 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
   const [setup, setSetup] = useState<AuthenticatorSetup | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [copied, setCopied] = useState(false);
+  // auth-02: after a refused code the keyboard goes back to the field, or to Start again.
+  const field = useRef<HTMLInputElement>(null);
+  const restart = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (expired) restart.current?.focus();
+  }, [expired]);
 
   const switchKind = () => {
     setKind((current) => (current === 'totp' ? 'recovery' : 'totp'));
@@ -66,6 +73,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
 
   const prove = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     const value = kind === 'totp' ? code.replace(/\s/g, '') : code.trim();
     if (kind === 'totp' ? !/^[0-9]{6}$/.test(value) : !recoveryPattern.test(value)) {
       setError(
@@ -73,6 +81,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
           ? 'Enter the 6-digit code from your authenticator app.'
           : 'Recovery codes look like 1a2b3c4d-5e6f7a8b-9c0d1e2f-3a4b5c6d.',
       );
+      field.current?.focus();
       return;
     }
     setBusy(true);
@@ -82,6 +91,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       setExpired(false);
     } catch (caught) {
       setError(proofFailure(caught, kind));
+      field.current?.focus();
     } finally {
       setCode('');
       setBusy(false);
@@ -90,10 +100,11 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
 
   const confirm = async (event: FormEvent) => {
     event.preventDefault();
-    if (!setup) return;
+    if (!setup || busy) return;
     const digits = code.replace(/\s/g, '');
     if (!/^[0-9]{6}$/.test(digits)) {
       setError('Enter the 6-digit code from the new app.');
+      field.current?.focus();
       return;
     }
     setBusy(true);
@@ -107,6 +118,8 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       setError(refused.message);
       setExpired(refused.expired === true);
       setCode('');
+      // An expired setup disables the field; the effect above moves to Start again instead.
+      if (!refused.expired) field.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -153,7 +166,8 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
         key="scan"
         title="Scan the new code"
         titleId="security-authenticator-scan"
-        onEscape={busy ? undefined : onClose}
+        onClose={onClose}
+        busy={busy}
       >
         <form onSubmit={confirm} noValidate>
           <div className="ui-modal__body">
@@ -184,6 +198,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
                 Code from the new app
               </label>
               <input
+                ref={field}
                 id="security-new-totp"
                 className="ui-input security-otp"
                 inputMode="numeric"
@@ -209,6 +224,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             </button>
             {expired ? (
               <button
+                ref={restart}
                 type="button"
                 className="shell-button shell-button--primary"
                 onClick={startAgain}
@@ -216,7 +232,12 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
                 Start again
               </button>
             ) : (
-              <button type="submit" className="shell-button shell-button--primary" disabled={busy}>
+              // auth-02: aria-disabled, not disabled, so focus is not dropped while it checks.
+              <button
+                type="submit"
+                className="shell-button shell-button--primary"
+                aria-disabled={busy}
+              >
                 {busy ? 'Checking…' : 'Verify and continue'}
               </button>
             )}
@@ -231,7 +252,8 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
       key={`prove-${kind}`}
       title="Set up authenticator again"
       titleId="security-authenticator"
-      onEscape={busy ? undefined : onClose}
+      onClose={onClose}
+      busy={busy}
     >
       <form onSubmit={prove} noValidate>
         <div className="ui-modal__body">
@@ -246,6 +268,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
               {kind === 'totp' ? 'Code from your authenticator app' : 'Recovery code'}
             </label>
             <input
+              ref={field}
               id="security-proof"
               className={
                 kind === 'totp' ? 'ui-input security-otp' : 'ui-input security-recovery-input'
@@ -275,7 +298,8 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
           >
             Cancel
           </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={busy}>
+          {/* auth-02: aria-disabled, not disabled, so focus is not dropped while it checks. */}
+          <button type="submit" className="shell-button shell-button--primary" aria-disabled={busy}>
             {busy ? 'Checking…' : 'Continue'}
           </button>
         </div>

@@ -113,25 +113,27 @@ function member<T extends string>(value: unknown, allowed: readonly T[]): T {
     : bad();
 }
 
-export function parseDeposit(
-  input: unknown,
-  payouts: readonly PayoutSchedule[] = offeredPayoutSchedules,
-): DepositInput {
-  const keys = [
-    'requestId',
-    'name',
-    'bank',
-    'currency',
-    'startDate',
-    'endDate',
-    'payout',
-    'capitalized',
-    'dayBasis',
-    'earlyClose',
-    'ratePercent',
-    'amount',
-  ];
-  const record = object(input, keys, keys);
+/** The terms of a deposit as entered, without the request id that makes adding it idempotent. */
+export type DepositTermsInput = Omit<DepositInput, 'requestId'>;
+
+const termKeys = [
+  'name',
+  'bank',
+  'currency',
+  'startDate',
+  'endDate',
+  'payout',
+  'capitalized',
+  'dayBasis',
+  'earlyClose',
+  'ratePercent',
+  'amount',
+] as const;
+
+function depositTerms(
+  record: Record<string, unknown>,
+  payouts: readonly PayoutSchedule[],
+): DepositTermsInput {
   const startDate = parseDate(record.startDate);
   const endDate = record.endDate === null ? null : parseDate(record.endDate);
   const payout = member(record.payout, payouts);
@@ -145,7 +147,6 @@ export function parseDeposit(
   if (payout === 'at-end' && endDate === null) return bad();
   if (typeof record.capitalized !== 'boolean') return bad();
   return {
-    requestId: parseUuid(record.requestId),
     name: text(record.name, 120),
     bank: text(record.bank, 120),
     currency: member(record.currency, depositCurrencies),
@@ -158,6 +159,21 @@ export function parseDeposit(
     ratePercent: parseRate(record.ratePercent),
     amount: parseAmount(record.amount),
   };
+}
+
+export function parseDeposit(
+  input: unknown,
+  payouts: readonly PayoutSchedule[] = offeredPayoutSchedules,
+): DepositInput {
+  const keys = ['requestId', ...termKeys];
+  const record = object(input, keys, keys);
+  const terms = depositTerms(record, payouts);
+  return { requestId: parseUuid(record.requestId), ...terms };
+}
+
+/** DEP-PREVIEW: the body of adding a deposit without its request id; only offered schedules. */
+export function parseDepositPreview(input: unknown): DepositTermsInput {
+  return depositTerms(object(input, termKeys, termKeys), offeredPayoutSchedules);
 }
 
 export function parseMovement(input: unknown): MovementInput {

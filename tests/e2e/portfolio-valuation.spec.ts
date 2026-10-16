@@ -94,8 +94,8 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await expect(cells.nth(3)).toHaveText('$96,000.00');
   await expect(cells.nth(5)).toHaveText('$55,000.00');
   await expect(cells.nth(6)).toHaveText('+$30,000.00+45.45%');
-  // The manual price is the same as 24 hours ago (PV-24H).
-  await expect(cells.nth(7)).toHaveText('0.00%');
+  // portfolio-11: a hand-priced asset has no market move, so its 24h cell says Manual.
+  await expect(cells.nth(7)).toHaveText('Manual');
   // SEARCH: the box next to the type filter finds the asset by its ticker.
   const search = main.getByRole('searchbox', { name: 'Search assets' });
   await search.fill('pvui');
@@ -134,7 +134,9 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     ).toHaveText(value);
   }
   await expect(main.getByText('Manual price set for Jan 4, 2025')).toBeVisible();
-  await expect(main.locator('.portfolio-head__change')).toHaveText('0.00% today');
+  // portfolio-11: no "0.00% today" beside a hand price; the page offers Update price instead.
+  await expect(main.getByRole('button', { name: 'Update price', exact: true })).toBeVisible();
+  await expect(main.locator('.portfolio-head__change')).toHaveCount(0);
   // ASSET-CHART: value against cost basis from stored prices, with the asset's purchases.
   const chart = main.getByRole('region', { name: 'Position value over time' });
   await expect(
@@ -209,6 +211,13 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   });
   expect(await priced.json()).toMatchObject({ kind: 'set', priceUsd: '1.2' });
   await expect(dialog).toHaveCount(0);
+  // portfolio-06: the new asset opens on its own page, which says it was added.
+  const depositId = ((await assetSaved.json()) as { id: string }).id;
+  await expect(page).toHaveURL(`${origin}/portfolio/${depositId}`);
+  await expect(main.getByRole('heading', { level: 1, name: depositName })).toBeVisible();
+  await expect(main.getByRole('status').filter({ hasText: 'Asset added.' })).toBeVisible();
+  await main.getByRole('link', { name: '← Portfolio' }).click();
+  await expect(page).toHaveURL(`${origin}/portfolio`);
   const depositCells = main
     .getByRole('row', { name: new RegExp(`^${depositName}`) })
     .getByRole('cell');

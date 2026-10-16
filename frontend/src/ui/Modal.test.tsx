@@ -111,4 +111,56 @@ describe('Modal', () => {
     );
     expect(screen.getByLabelText('Type to confirm')).toHaveFocus();
   });
+
+  it('auth-02 keeps Tab inside when the focused control was disabled and the keyboard fell to the page', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">Behind</button>
+        <Modal titleId="t">
+          <h2 id="t">Set up again</h2>
+          <input aria-label="Code" />
+          <button type="button">Continue</button>
+        </Modal>
+      </>,
+    );
+    // A submit button that turns disabled while busy drops the keyboard to the body.
+    (document.activeElement as HTMLElement).blur();
+    expect(document.body).toHaveFocus();
+    await user.tab();
+    expect(screen.getByLabelText('Code')).toHaveFocus();
+    (document.activeElement as HTMLElement).blur();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus();
+  });
+
+  it('auth-02 brings Tab back inside from a control behind the scrim', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">Before</button>
+        <Modal titleId="t">
+          <h2 id="t">Generate new codes</h2>
+          <input aria-label="Code" />
+          <button type="button">Generate</button>
+        </Modal>
+        <button type="button">After</button>
+      </>,
+    );
+    screen.getByRole('button', { name: 'After' }).focus();
+    await user.tab();
+    expect(screen.getByLabelText('Code')).toHaveFocus();
+  });
+
+  it('goals-01 starts on the first control when the chosen start is not in the dialog', () => {
+    render(
+      <Modal titleId="t" initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}>
+        <h2 id="t">Delete goal</h2>
+        <p>The goal and its history go away.</p>
+        <button type="button">Cancel</button>
+        <button type="button">Delete</button>
+      </Modal>,
+    );
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  });
 });

@@ -290,6 +290,63 @@ button.wallets-source__open:focus-visible {
   font-size: var(--fs-xs);
 }
 
+/* wallets-13: a source that needs the owner is an amber note with an alert icon. */
+.wallets-message__icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--warn);
+}
+
+/* wallets-02, 07, 21: what the owner just did, said once at the top of the page. */
+.wallets-notice {
+  margin: 0;
+}
+
+.wallets-notice:focus {
+  outline: none;
+}
+
+.wallets-notice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* wallets-14: the API secret with its show/hide button inside the field's right edge. */
+.wallets-secret {
+  position: relative;
+}
+
+.wallets-secret .ui-input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.wallets-secret__toggle {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.wallets-secret__toggle:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.wallets-secret__toggle .shell-icon {
+  width: 16px;
+  height: 16px;
+}
+
 /* W5: the difference on one line; the sums and what to do about it are behind Details. */
 .wallets-diff {
   flex: 1 1 100%;
@@ -358,6 +415,13 @@ button.wallets-source__open:focus-visible {
   background: var(--accent-soft);
   font-size: var(--fs-sm);
   line-height: 1.4;
+}
+
+/* The Bybit key steps: the list numbers sit inside the note, not past its left edge. */
+.wallets-howto {
+  display: grid;
+  gap: 4px;
+  padding-left: 32px;
 }
 
 .wallets-ok {
@@ -575,7 +639,7 @@ button.wallets-source__open:focus-visible {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .wallets-networks {
     grid-template-columns: minmax(0, 1fr);
   }

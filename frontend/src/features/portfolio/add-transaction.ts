@@ -3,6 +3,7 @@ import type { FxRatesReport } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
 import type { TransferCommand } from '@api/owned-transfers.api';
 import type { TradeCommand, TradePurpose } from '@api/trades.api';
+import { moscowDate } from '@/utils/dates';
 
 // "Add transaction" from the accepted prototype: buys and sells, the currency they were paid in
 // (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8). The
@@ -79,6 +80,13 @@ export const valued = (kind: EntryKind) =>
   isPurposeKind(kind) || kind === 'reward' || kind === 'airdrop';
 /** A reward or airdrop may have no known value: it then counts in net worth, not in profit. */
 export const valueOptional = (kind: EntryKind) => kind === 'reward' || kind === 'airdrop';
+
+/**
+ * Kinds whose command carries a comment: trades, with or without a purpose. The reward and
+ * transfer commands have none, and their server parsers refuse one (transactions-01).
+ */
+export const carriesComment = (kind: EntryKind) =>
+  kind === 'buy' || kind === 'sell' || isPurposeKind(kind);
 
 export const MAX_COMMENT_LENGTH = 500;
 
@@ -163,7 +171,8 @@ export function problems(
     if (!valueOptional(kind) || entry.total.trim()) found.add('total');
   if (priced && needsRate(entry.currency) && positive(entry.rate) === null) found.add('rate');
   if ((priced || kind === 'transfer') && entry.fee && decimal(entry.fee) === null) found.add('fee');
-  if ([...entry.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
+  if (carriesComment(kind) && [...entry.comment.trim()].length > MAX_COMMENT_LENGTH)
+    found.add('comment');
   return found;
 }
 
@@ -196,7 +205,7 @@ export function rateDate(
   const timed = editing ? entry : withDefaultTime(entry, now);
   const time = Date.parse(occurredAt(timed));
   if (Number.isNaN(time)) return entry.date;
-  return new Date(time + 3 * 3_600_000).toISOString().slice(0, 10);
+  return moscowDate(time);
 }
 
 /** Two nonnegative decimal strings as integers of the same scale, and that scale. */

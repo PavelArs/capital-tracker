@@ -34,3 +34,24 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* Where the clipboard is blocked: the whole value, ready to select by hand (transactions-17). */
+.copy-value:has(.copy-value__blocked) {
+  flex-wrap: wrap;
+}
+
+.copy-value__blocked {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.copy-value__full {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}

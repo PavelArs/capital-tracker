@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
+import apiClient from '@api/client';
 import {
   type DuplicateProposal,
   type Operation,
@@ -17,7 +18,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from 'vitest';
 import { shortValue } from '../shell/CopyValue';
 import { poolCandidates } from './ClassifyForm';
 import { handOver } from './proposals-handover';
@@ -180,6 +191,17 @@ const cellTexts = (row: HTMLElement) =>
     .getAllByRole('cell')
     .map((cell) => cell.textContent);
 
+// A read a test leaves unmocked (hidden assets, the portfolio, the proposal cards, a history)
+// must not reach a real server: its 401 forgets every kept answer, even in the middle of a later
+// test. Without a network it fails the way an offline read does.
+const networkAdapter = apiClient.defaults.adapter;
+beforeAll(() => {
+  apiClient.defaults.adapter = (config) =>
+    Promise.reject(new AxiosError('No network in tests', 'ERR_NETWORK', config));
+});
+afterAll(() => {
+  apiClient.defaults.adapter = networkAdapter;
+});
 beforeEach(() => {
   vi.restoreAllMocks();
 });
@@ -947,6 +969,50 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     expect(read).toHaveBeenCalledTimes(2);
   });
+
+  it('transactions-21 with nothing left to classify says all is caught up, with no filter to clear', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([transfer, tether, manual]));
+    renderPage('/transactions?status=needs-classification');
+    const caughtUp = await screen.findByRole('heading', { name: 'All caught up' });
+    expect(caughtUp.parentElement).toHaveTextContent(
+      'Every transaction from your wallets is classified. New ones appear here after the next sync.',
+    );
+    expect(caughtUp.parentElement?.querySelector('svg')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('transactions-22 a phone row keeps a short address whole', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      const inWallet = chainOperation(5, {
+        type: 'income',
+        status: 'recorded',
+        account: cold,
+        occurredAt: '2025-06-25T08:00:00.000Z',
+      });
+      const loose = chainOperation(6, { status: 'hidden', occurredAt: '2025-06-24T08:00:00.000Z' });
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([inWallet, loose]));
+      renderPage();
+      const rows = within(await screen.findByRole('list', { name: 'Transactions' })).getAllByRole(
+        'button',
+      );
+      expect(rows.map((row) => row.querySelector('.ui-row__detail')?.textContent)).toEqual([
+        'Cold storage · bc1qsy…f3t4 · 08:00',
+        'Hidden · Bitcoin wallet bc1qsy…f3t4 · 08:00',
+      ]);
+      for (const row of rows)
+        expect(row.querySelector('.ui-row__detail .transactions-nowrap')?.textContent).toBe(
+          'bc1qsy…f3t4',
+        );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe('TransactionsPage manual operations (M9)', () => {
@@ -1025,6 +1091,11 @@ describe('TransactionsPage manual operations (M9)', () => {
     });
     voidTrade.mockReset();
     vi.spyOn(tradesApi, 'void').mockImplementation(voidTrade);
+    // The check before a deletion finds nothing; the void itself may still refuse.
+    vi.spyOn(tradesApi, 'voidCheck').mockImplementation(async (_account, tradeId) => ({
+      tradeId,
+      dependent: null,
+    }));
     vi.spyOn(portfolioAssetsApi, 'listAll').mockResolvedValue([]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({ items: [], nextCursor: null });
   });
@@ -1155,6 +1226,194 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Buy · BTC' })).toBeInTheDocument();
   });
+
+  it('transactions-03 a deleted transaction gives the keyboard to the row above it', async () => {
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(history)
+      .mockResolvedValueOnce(list([later]));
+    voidTrade.mockResolvedValue({} as TradeReceipt);
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await waitFor(() =>
+      expect(within(bodyRows()[0]).getByRole('button', { name: 'Sell' })).toHaveFocus(),
+    );
+  });
+
+  it('transactions-03 deleting the last transaction gives the keyboard to the message saying so', async () => {
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([commented]))
+      .mockResolvedValueOnce(list([]));
+    voidTrade.mockResolvedValue({} as TradeReceipt);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Buy' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    expect(await screen.findByRole('heading', { name: 'No transactions yet' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveFocus());
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it('transactions-04 a failed refresh keeps the rows on screen and says they may be out of date', async () => {
+    const read = vi
+      .spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(history)
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValueOnce(list([later]));
+    voidTrade.mockResolvedValue({} as TradeReceipt);
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent('Could not refresh the list, so it may be out of date.');
+    expect(screen.queryByText(/Could not load your transactions/)).toBeNull();
+    expect(bodyRows()).toHaveLength(2);
+    await user.click(within(banner).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('transactions-04 a failed read of a new period says it did not load and which list is shown', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockImplementation(async (_currency, range) => {
+      if (range) throw new AxiosError('offline');
+      return all;
+    });
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    const shown = bodyRows().length;
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Last 30 days');
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(
+      'Could not load the transactions you asked for. The list still shows all time in USD.',
+    );
+    expect(banner).not.toHaveTextContent('may be out of date');
+    expect(bodyRows()).toHaveLength(shown);
+  });
+
+  it('transactions-06 a blocked deletion of a sale names the coin the later transaction spends', async () => {
+    const sale = operation({ ...later, settlement: { asset: usdt, quantity: '600' } });
+    const spender = operation({
+      id: `trade:${id(34)}`,
+      occurredAt: '2025-07-05T00:00:00.000Z',
+      quantity: '0.001',
+      valueUsd: '500',
+      feeUsd: '0',
+      settlement: { asset: usdt, quantity: '500' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([spender, sale]));
+    voidTrade.mockRejectedValue(
+      conflict({
+        message: 'A later operation depends on this trade',
+        dependent: {
+          operationId: spender.id,
+          accountId: bybit.id,
+          instrumentId: usdt.instrumentId,
+          occurredAt: spender.occurredAt,
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Sell' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    const refusal = await screen.findByRole('alertdialog', {
+      name: "This transaction can't be deleted",
+    });
+    expect(refusal).toHaveTextContent(
+      'Buy of 0.001 BTC on Jul 5, 2025 in Bybit spends these USDT. Without this transaction Bybit would not hold enough. Delete or change that transaction first.',
+    );
+  });
+
+  it('transactions-10 a transaction recorded without a time shows its date alone in the drawer', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
+    const { drawer } = await openBuy();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(within(facts).getByText('Date', { exact: true }).nextElementSibling?.textContent).toBe(
+      'Jun 13, 2025',
+    );
+  });
+
+  it('transactions-11 says a transaction was deleted', async () => {
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(history)
+      .mockResolvedValueOnce(list([later]));
+    voidTrade.mockResolvedValue({} as TradeReceipt);
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Transaction deleted.');
+  });
+
+  it('transactions-11 says a transaction was updated', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [{ ...bybit, kind: null, currentRevision: 0, createdAt: '2025-01-01T00:00:00.000Z' }],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioAssetsApi, 'listAll').mockResolvedValue([
+      {
+        id: id(1),
+        name: 'Bitcoin',
+        symbol: 'BTC',
+        namespace: 'manual',
+        assetType: 'crypto',
+        valuationCurrency: 'USD',
+        priceSource: 'market',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+    ]);
+    const correct = vi.spyOn(tradesApi, 'correct').mockResolvedValue({} as TradeReceipt);
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Edit' }));
+    const edit = screen.getByRole('dialog', { name: 'Edit transaction' });
+    await within(edit).findByRole('group', { name: 'Asset' });
+    await user.click(within(edit).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(correct).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('status')).toHaveTextContent('Transaction updated.');
+  });
+
+  it('transactions-23 OPS-DELETE-GUARD refuses at once, before asking, when the check names a later sale', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
+    const check = vi.spyOn(tradesApi, 'voidCheck').mockResolvedValue({
+      tradeId: id(30),
+      dependent: {
+        operationId: later.id,
+        accountId: bybit.id,
+        instrumentId: id(1),
+        occurredAt: later.occurredAt,
+      },
+    });
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    const refusal = await screen.findByRole('alertdialog', {
+      name: "This purchase can't be deleted",
+    });
+    expect(refusal).toHaveTextContent(
+      'Sell of 0.005 BTC on Jul 1, 2025 in Bybit spends these BTC. Without this purchase Bybit would not hold enough. Delete or change that transaction first.',
+    );
+    expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
+    expect(check).toHaveBeenCalledWith(bybit.id, id(30));
+    expect(voidTrade).not.toHaveBeenCalled();
+    await user.click(within(refusal).getByRole('button', { name: 'OK' }));
+    expect(within(drawer).getByRole('button', { name: 'Delete' })).toHaveFocus();
+  });
+
+  it('transactions-23 asks as before when the check cannot be made', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
+    vi.spyOn(tradesApi, 'voidCheck').mockRejectedValue(new AxiosError('offline'));
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    expect(
+      await screen.findByRole('dialog', { name: 'Delete this transaction?' }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe('classify-chain-transactions (M12)', () => {
@@ -1251,7 +1510,7 @@ describe('classify-chain-transactions (M12)', () => {
       'Pool withdrawal',
       'Other',
     ]);
-    expect(within(drawer).getByText('1 left to classify')).toBeInTheDocument();
+    expect(within(drawer).getByText('2 left to classify')).toBeInTheDocument();
     const save = within(drawer).getByRole('button', { name: 'Save' });
     expect(save).toBeDisabled();
     await user.click(within(question).getByRole('button', { name: 'Buy' }));
@@ -1290,7 +1549,7 @@ describe('classify-chain-transactions (M12)', () => {
       'Pool deposit',
       'Other',
     ]);
-    expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
+    expect(within(next).getByText('1 left to classify')).toBeInTheDocument();
     // The classified row reads as the buy it recorded.
     expect(cellTexts(bodyRows()[0])).toEqual([
       'Buy08:05',
@@ -1300,6 +1559,19 @@ describe('classify-chain-transactions (M12)', () => {
       'Cold storage · bc1qsy…f3t4',
       'RecordedBlockchain',
     ]);
+  });
+
+  it('transactions-02 a refused classification moves the keyboard to the first invalid field', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(classify).not.toHaveBeenCalled();
+    const paid = within(drawer).getByLabelText('You paid');
+    expect(paid).toHaveAttribute('aria-invalid', 'true');
+    expect(paid).toHaveFocus();
+    expect(paid).toHaveAccessibleDescription('Enter the amount you paid');
   });
 
   it('CLS-BUY: a purchase paid in rubles may carry the rate actually paid', async () => {
@@ -1700,6 +1972,29 @@ describe('link-own-transfers (M13)', () => {
       ineligibilityReason: 'already-initialized',
       journal: { journalRevision: 5 } as JournalState['journal'],
     });
+  });
+
+  it('transactions-16 each answer has its icon and the suggested one says so', async () => {
+    const suggested = chainOperation(6, {
+      direction: 'out',
+      occurredAt: '2025-06-23T08:00:00.000Z',
+      quantity: '0.1',
+      account: cold,
+      counterAccount: bybit,
+      counterWallet: other,
+      chain: { txid: txid(6), blockHeight: 800006, priceObservedAt: null, direction: 'out' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
+    const { drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    const question = within(drawer).getByRole('group', { name: 'What was this transaction?' });
+    const transfer = within(question).getByRole('button', { name: 'Transfer between my wallets' });
+    expect(transfer).toHaveAttribute('aria-pressed', 'true');
+    expect(transfer).toHaveAccessibleDescription('Suggested');
+    expect(
+      within(question).getByRole('button', { name: 'Sell' }),
+    ).not.toHaveAccessibleDescription();
+    for (const option of within(question).getAllByRole('button'))
+      expect(option.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
   });
 
   it('BYBIT-EARN: Earn yield Bybit paid is recorded as staking income by itself', async () => {
@@ -3149,6 +3444,8 @@ describe('transactions-page-polish', () => {
       journal: { journalRevision: 2 },
     } as JournalState);
     vi.spyOn(tradesApi, 'void').mockResolvedValue({} as TradeReceipt);
+    // The check before the deletion finds nothing that depends on the purchase.
+    vi.spyOn(tradesApi, 'voidCheck').mockResolvedValue({ tradeId: id(30), dependent: null });
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
     await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Buy' }));

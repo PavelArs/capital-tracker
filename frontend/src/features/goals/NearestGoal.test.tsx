@@ -14,7 +14,13 @@ const goal = (changes: Partial<Goal> & Pick<Goal, 'id' | 'name'>): Goal => ({
   monthlyContribution: null,
   createdAt: '2026-10-01T00:00:00.000Z',
   asOf: '2026-10-13',
-  progress: { current: '40000.00', complete: true, percent: '40.00', remaining: '60000.00' },
+  progress: {
+    current: '40000.00',
+    complete: true,
+    percent: '40.00',
+    remaining: '60000.00',
+    stalePrices: 0,
+  },
   status: 'open',
   scenarios: [],
   ...changes,
@@ -27,7 +33,13 @@ const reached = goal({
   name: 'Laptop',
   deadline: '2020-01-01',
   status: 'reached',
-  progress: { current: '120000.00', complete: true, percent: '100.00', remaining: '0.00' },
+  progress: {
+    current: '120000.00',
+    complete: true,
+    percent: '100.00',
+    remaining: '0.00',
+    stalePrices: 0,
+  },
 });
 
 const list = (...items: Goal[]) =>
@@ -69,6 +81,16 @@ describe('GOAL-DASH: the nearest goal on the dashboard', () => {
       'href',
       '/goals',
     );
+  });
+
+  it('dashboard-14 dashboard-15 styles its links as app links and gives the status badge a dot', async () => {
+    list(sooner);
+    show();
+    const card = await screen.findByRole('region', { name: 'Nearest goal' });
+    // The shared design-system link (accent colour, underline on hover), not the browser's default.
+    expect(within(card).getByRole('link', { name: 'Open goal' })).toHaveClass('shell-link');
+    expect(within(card).getByRole('link', { name: 'All goals · 1' })).toHaveClass('shell-link');
+    expect(within(card).getByText('Behind')).toHaveClass('ui-badge', 'ui-badge--dot');
   });
 
   it('puts a goal without a date after the ones with a date and skips reached goals', async () => {

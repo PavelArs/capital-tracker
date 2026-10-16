@@ -120,7 +120,7 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     await userEvent.type(field, '234567');
     await userEvent.click(submit);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Too many attempts. Wait 10 minutes and try again.',
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
     );
     await userEvent.type(field, '345678');
     await userEvent.click(submit);
@@ -302,10 +302,32 @@ describe('Settings → Security (PR-AUTH-4)', () => {
       code: 'AAAAAAAA-bbbbbbbb-cccccccc-dddddddd',
     });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Too many attempts. Wait 10 minutes and try again.',
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
     );
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('auth-07 SEC-TOTP: the new app step says how long to wait from the server answer', async () => {
+    vi.spyOn(securityApi, 'prepareAuthenticator').mockResolvedValue({
+      uri: 'otpauth://totp/Capital%20Tracker:Owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      candidateId: '33333333-3333-4333-8333-333333333333',
+      expiresAt: '2026-10-09T12:10:00.000Z',
+    });
+    const limited = failure(429);
+    if (limited.response) limited.response.headers = { 'retry-after': '600' };
+    vi.spyOn(securityApi, 'confirmAuthenticator').mockRejectedValue(limited);
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    await userEvent.type(screen.getByLabelText('Code from your authenticator app'), '123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    const scan = await screen.findByRole('dialog', { name: 'Scan the new code' });
+    await userEvent.type(within(scan).getByLabelText('Code from the new app'), '234567');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(await within(scan).findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Wait 10 minutes and try again.',
+    );
   });
 
   it('SEC-TOTP: an expired setup starts again and keeps the current authenticator', async () => {
@@ -329,6 +351,164 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(within(scan).getByLabelText('Code from the new app')).toBeDisabled();
     await userEvent.click(within(scan).getByRole('button', { name: 'Start again' }));
     expect(screen.getByRole('dialog', { name: 'Set up authenticator again' })).toBeInTheDocument();
+  });
+
+  it('auth-07 SEC-CODES: the owner code lock, which sends no Retry-After, promises no wait', async () => {
+    // The cooldown and the hundred-failure lock send the same 429 (mfa.service.ts proveFactor).
+    vi.spyOn(securityApi, 'regenerateRecoveryCodes').mockRejectedValue(
+      failure(429, {
+        statusCode: 429,
+        message: 'Too many attempts',
+        error: 'Too Many Requests',
+        timestamp: '2026-10-15T09:00:00.000Z',
+        path: '/api/auth/security/recovery-codes',
+      }),
+    );
+    render(<SecuritySettings />);
+    await userEvent.click(
+      await within(region()).findByRole('button', { name: 'Generate new codes' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    await userEvent.type(
+      within(dialog).getByLabelText('Code from your authenticator app'),
+      '123456',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate new codes' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Too many wrong codes, so codes are paused. Try again later. If they are still refused, restore access on the server with the owner recovery command.',
+    );
+    expect(alert).not.toHaveTextContent(/minute/i);
+  });
+
+  it('auth-07 SEC-TOTP: asks for a minute when the server says the limit lifts within one', async () => {
+    const limited = failure(429);
+    if (limited.response) limited.response.headers = { 'retry-after': '30' };
+    vi.spyOn(securityApi, 'prepareAuthenticator').mockRejectedValue(limited);
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    await userEvent.type(
+      within(dialog).getByLabelText('Code from your authenticator app'),
+      '123456',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Wait a minute and try again.',
+    );
+  });
+
+  const refused = (path: string) =>
+    failure(422, {
+      statusCode: 422,
+      message: 'Invalid code',
+      error: 'Unprocessable Entity',
+      timestamp: '2026-10-15T09:00:00.000Z',
+      path,
+    });
+
+  it('auth-02 SEC-CODES: a refused code puts focus back in the code field; the button stays focusable while it checks', async () => {
+    let refuse: (error: unknown) => void = () => undefined;
+    const regenerate = vi.spyOn(securityApi, 'regenerateRecoveryCodes').mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    render(<SecuritySettings />);
+    await userEvent.click(
+      await within(region()).findByRole('button', { name: 'Generate new codes' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    const field = within(dialog).getByLabelText('Code from your authenticator app');
+    await userEvent.type(field, '123456');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate new codes' }));
+    const checking = within(dialog).getByRole('button', { name: 'Generating…' });
+    expect(checking).not.toBeDisabled();
+    expect(checking).toHaveAttribute('aria-disabled', 'true');
+    expect(checking).toHaveFocus();
+    await userEvent.click(checking);
+    expect(regenerate).toHaveBeenCalledTimes(1);
+
+    refuse(refused('/api/auth/security/recovery-codes'));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That code is not valid.');
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('auth-02 SEC-TOTP: a refused code puts focus back in the code field, on both steps', async () => {
+    vi.spyOn(securityApi, 'prepareAuthenticator')
+      .mockRejectedValueOnce(refused('/api/auth/security/authenticator'))
+      .mockResolvedValue({
+        uri: 'otpauth://totp/Capital%20Tracker:Owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        candidateId: '33333333-3333-4333-8333-333333333333',
+        expiresAt: '2026-10-09T12:10:00.000Z',
+      });
+    vi.spyOn(securityApi, 'confirmAuthenticator').mockRejectedValue(
+      refused('/api/auth/security/authenticator/confirm'),
+    );
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    const field = within(dialog).getByLabelText('Code from your authenticator app');
+    await userEvent.type(field, '123456');
+    const submit = within(dialog).getByRole('button', { name: 'Continue' });
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That code is not valid.');
+    expect(submit).not.toBeDisabled();
+    expect(document.activeElement).toBe(field);
+
+    await userEvent.type(field, '234567');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const scan = await screen.findByRole('dialog', { name: 'Scan the new code' });
+    const fresh = within(scan).getByLabelText('Code from the new app');
+    await userEvent.type(fresh, '345678');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(await within(scan).findByRole('alert')).toHaveTextContent('That code is not valid.');
+    expect(document.activeElement).toBe(fresh);
+  });
+
+  it('auth-14 security dialogs have a Close button and the small ones are narrow', async () => {
+    render(<SecuritySettings />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Generate new codes' }));
+    const codes = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    expect(codes).toHaveClass('ui-modal--narrow');
+    expect(within(codes).getByLabelText('Code from your authenticator app')).toHaveFocus();
+    await userEvent.click(within(codes).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(within(region()).getByRole('button', { name: 'Change password' }));
+    const password = screen.getByRole('dialog', { name: 'Change password' });
+    expect(password).toHaveClass('ui-modal--narrow');
+    expect(within(password).getByLabelText('Current password')).toHaveFocus();
+    await userEvent.click(within(password).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log out Safari on iPhone' }));
+    const confirm = screen.getByRole('dialog', { name: 'Log out this session?' });
+    expect(confirm).toHaveClass('ui-modal--narrow');
+    expect(within(confirm).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(within(region()).getByRole('button', { name: 'Set up again' }));
+    const setup = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    expect(setup).not.toHaveClass('ui-modal--narrow');
+    expect(within(setup).getByLabelText('Code from your authenticator app')).toHaveFocus();
+    await userEvent.click(within(setup).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // The codes are shown once: the step stays narrow but has no ✕ until they are saved.
+    vi.spyOn(securityApi, 'regenerateRecoveryCodes').mockResolvedValue(newCodes);
+    await userEvent.click(within(region()).getByRole('button', { name: 'Generate new codes' }));
+    const ask = screen.getByRole('dialog', { name: 'Generate new recovery codes' });
+    await userEvent.type(within(ask).getByLabelText('Code from your authenticator app'), '123456');
+    await userEvent.click(within(ask).getByRole('button', { name: 'Generate new codes' }));
+    const shown = await screen.findByRole('dialog', { name: 'New recovery codes' });
+    expect(shown).toHaveClass('ui-modal--narrow');
+    expect(within(shown).queryByRole('button', { name: 'Close' })).toBeNull();
   });
 
   describe('SEC-PASSWORD: change the password', () => {

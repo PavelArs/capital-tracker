@@ -36,7 +36,13 @@ export default function ConfirmDialog({
     }
   };
   return (
-    <SecurityDialog title={title} titleId="security-confirm" onEscape={busy ? undefined : onClose}>
+    <SecurityDialog
+      title={title}
+      titleId="security-confirm"
+      size="narrow"
+      onClose={onClose}
+      busy={busy}
+    >
       <div className="ui-modal__body">
         <p className="security-dialog__text">{text}</p>
         {error && (

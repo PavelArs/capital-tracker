@@ -46,9 +46,9 @@ const paths = {
   ),
 } satisfies Record<string, ReactNode>;
 
-type Glyph = keyof typeof paths;
+export type GlyphName = keyof typeof paths;
 
-function glyph(operation: Operation): Glyph {
+function glyph(operation: Operation): GlyphName {
   switch (operation.type) {
     case 'buy':
     case 'sell':
@@ -83,7 +83,7 @@ function glyph(operation: Operation): Glyph {
   }
 }
 
-export function Glyph({ name }: { name: Glyph }) {
+export function Glyph({ name }: { name: GlyphName }) {
   return (
     <svg className="transactions-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {paths[name]}

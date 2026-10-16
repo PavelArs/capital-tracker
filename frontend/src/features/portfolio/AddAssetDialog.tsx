@@ -30,6 +30,7 @@ import {
   purchasePrice,
 } from './add-asset';
 import { bankRate, MAX_COMMENT_LENGTH } from './add-transaction';
+import { useFocusFirstProblem } from './focus-problem';
 
 const kindHints: Record<AssetKind, string> = {
   cash: 'Cash is worth exactly its amount in its own currency.',
@@ -125,6 +126,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const [balanceUnsure, setBalanceUnsure] = useState(false);
   const id = useId();
   const nameField = useRef<HTMLInputElement>(null);
+  const { form, refused } = useFocusFirstProblem();
 
   // Closing mid-save would let a reopened form send a second request id.
   const finish = () => (created ? onAdded(created) : onClose());
@@ -203,7 +205,10 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (accounts === null || assetProblems(entry, accounts.length).size) return;
+    if (accounts === null || assetProblems(entry, accounts.length).size) {
+      refused();
+      return;
+    }
     setSaving(true);
     setError(null);
     let asset = created;
@@ -319,7 +324,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
       onEscape={saving ? undefined : finish}
       initialFocus={() => nameField.current}
     >
-      <form onSubmit={submit} noValidate>
+      <form ref={form} onSubmit={submit} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>Add asset</h2>
           <CloseButton onClick={finish} disabled={saving} />

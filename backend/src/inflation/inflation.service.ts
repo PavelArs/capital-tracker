@@ -11,6 +11,7 @@ import {
   parseMonth,
   parseMonthlyChange,
   parsePersonalRate,
+  parseTypedMonth,
 } from './inflation-input';
 import {
   buildSeries,
@@ -19,6 +20,7 @@ import {
   type InflationSeries,
   officialFactor,
   personalFactor,
+  trailingYearEstimated,
   trailingYearPercent,
 } from './inflation-math';
 import {
@@ -69,7 +71,11 @@ export async function readEffectiveChanges(
   manager: EntityManager,
   owner: string,
   currency: AccountingCurrency,
-): Promise<{ changes: Map<string, number>; official: MonthRow[]; manual: MonthRow[] }> {
+): Promise<{
+  changes: Map<string, number> & { publishedLast: string | null };
+  official: MonthRow[];
+  manual: MonthRow[];
+}> {
   const official: MonthRow[] = await manager.query(
     `SELECT ${MONTH_ROWS} FROM inflation_months WHERE currency = $1 ORDER BY month`,
     [currency],
@@ -79,7 +85,9 @@ export async function readEffectiveChanges(
       WHERE "ownerId" = $1 AND currency = $2 ORDER BY month`,
     [owner, currency],
   );
-  const changes = new Map<string, number>();
+  const changes = Object.assign(new Map<string, number>(), {
+    publishedLast: official.length ? official[official.length - 1].month : null,
+  });
   for (const row of [...official, ...manual]) changes.set(row.month, Number(row.changePercent));
   return { changes, official, manual };
 }
@@ -257,6 +265,8 @@ export class InflationService {
           // A gap in the middle of the series leaves only the stretch after it comparable.
           comparableFrom: series.chainStart,
           trailingYearPercent: yearly === null ? null : yearly.toFixed(4),
+          // True when one of those twelve months is an estimate, not a published or typed figure.
+          trailingYearEstimated: trailingYearEstimated(series),
           officialTrailingYearPercent: publishedYearly === null ? null : publishedYearly.toFixed(4),
           estimatedMonthlyPercent: series.last === null ? null : (series.trend * 100).toFixed(6),
           personalRatePercent: await readPersonalRate(manager, owner, currency),
@@ -350,10 +360,16 @@ export class InflationService {
     return { currency, annualPercent: rate === null ? null : exact(rate) };
   }
 
-  async setMonth(ownerId: string, currencyInput: string, monthInput: string, input: unknown) {
+  async setMonth(
+    ownerId: string,
+    currencyInput: string,
+    monthInput: string,
+    input: unknown,
+    now = new Date(),
+  ) {
     const owner = parseUuid(ownerId);
     const currency = parseCurrency(currencyInput);
-    const month = parseMonth(monthInput);
+    const month = parseTypedMonth(monthInput, now);
     const changePercent = parseMonthlyChange(input);
     await this.source.query(
       `INSERT INTO inflation_manual_months ("ownerId", currency, month, "changePercent")

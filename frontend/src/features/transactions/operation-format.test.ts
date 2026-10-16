@@ -4,6 +4,9 @@ import {
   exchangeRecord,
   explorerUrl,
   hashOf,
+  operationMoment,
+  placeLabel,
+  placeParts,
   sourceLabel,
   statusLabel,
   transactionHash,
@@ -132,5 +135,59 @@ describe('the explorer page of a transaction', () => {
     expect(explorerUrl('bybit-trade-1', 'bybit')).toBeNull();
     expect(explorerUrl('bybit-trade-1', 'bitcoin')).toBeNull();
     expect(explorerUrl(hex, undefined)).toBeNull();
+  });
+});
+
+describe('transactions-10 the date the drawer shows', () => {
+  const at = (kind: Operation['kind'], occurredAt: string) =>
+    ({ kind, occurredAt }) as unknown as Operation;
+
+  it('leaves out the time of a transaction entered without one, as the list does', () => {
+    expect(operationMoment(at('trade', '2025-06-13T00:00:00.000Z'))).toBe('Jun 13, 2025');
+    expect(operationMoment(at('trade', '2025-06-14T10:30:00.000Z'))).toBe(
+      'Jun 14, 2025, 10:30 UTC',
+    );
+    // A blockchain transaction at midnight has a real time.
+    expect(operationMoment(at('chain', '2025-06-13T00:00:00.000Z'))).toBe(
+      'Jun 13, 2025, 00:00 UTC',
+    );
+  });
+});
+
+describe('transactions-22 the place of a row and its address', () => {
+  const wallet = {
+    id: 'w',
+    network: 'bitcoin',
+    address: 'bc1qsyntheticwalletaddress0f3t4',
+    label: null,
+  };
+  const place = (changes: object) =>
+    ({
+      type: 'income',
+      account: null,
+      counterAccount: null,
+      wallet: null,
+      ...changes,
+    }) as unknown as Operation;
+
+  it('splits off the shortened address and reads the same as the whole label', () => {
+    for (const [operation, parts] of [
+      [place({ wallet }), { lead: 'Bitcoin wallet ', address: 'bc1qsy…f3t4' }],
+      [
+        place({ wallet, account: { id: 'a', name: 'Cold storage' } }),
+        { lead: 'Cold storage · ', address: 'bc1qsy…f3t4' },
+      ],
+      [
+        place({
+          wallet: { ...wallet, label: 'Savings' },
+          account: { id: 'a', name: 'Cold storage' },
+        }),
+        { lead: 'Cold storage · Savings', address: '' },
+      ],
+      [place({ account: { id: 'a', name: 'Bybit' } }), { lead: 'Bybit', address: '' }],
+    ] as const) {
+      expect(placeParts(operation)).toEqual(parts);
+      expect(placeLabel(operation)).toBe(parts.lead + parts.address);
+    }
   });
 });

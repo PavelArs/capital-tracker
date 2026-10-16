@@ -18,11 +18,12 @@ const latest = (dates: (string | null)[]) =>
 /** SYNC-STATUS: the sidebar's one-line state of every background source (prototype "syncbox"). */
 export function summarizeSync(sources: readonly SyncSource[], now = new Date()): SyncSummary {
   const wallets = sources.some((source) => source.kind === 'wallet');
+  // Every wallet address is a source from the start, so none at all means no wallet yet.
   if (sources.length === 0) {
     return {
       tone: 'neutral',
-      title: 'Not synced yet',
-      detail: 'Prices and wallets update every hour',
+      title: 'No wallets yet',
+      detail: 'Prices update every hour',
       problems: [],
     };
   }

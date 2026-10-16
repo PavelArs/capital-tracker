@@ -1,3 +1,4 @@
+import type { AccountClass } from '@api/accounting.api';
 import type { AssetType } from '@api/portfolio-assets.api';
 import type { Network } from '@api/wallet-addresses.api';
 
@@ -39,10 +40,34 @@ function paletteColor(ticker: string): string {
   return `var(--c-p${(hash % 6) + 1})`;
 }
 
+/** Brokers and real estate (prototype CLASSES): their own colours, apart from the Other grey. */
+export const assetClassColors: Record<AccountClass, string> = {
+  broker: 'var(--c-broker)',
+  property: 'var(--c-prop)',
+};
+
+/** Every account's class (v8), by account id: null for a wallet. */
+export type AccountClasses = Readonly<Record<string, AccountClass | null | undefined>>;
+
+/**
+ * The class of the accounts that hold an asset, when they all share one; an asset held in a
+ * wallet as well, or in accounts of two classes, has none.
+ */
+export function heldClass(
+  holdings: readonly { accountId: string }[],
+  classes: AccountClasses,
+): AccountClass | null {
+  const found = new Set(holdings.map((holding) => classes[holding.accountId] ?? null));
+  const [only] = found;
+  return found.size === 1 ? only : null;
+}
+
 export function assetIdentity(asset: {
   symbol: string | null;
   name: string;
   assetType?: AssetType;
+  /** The class of the account that holds it, where the caller knows it. */
+  assetClass?: AccountClass | null;
 }): AssetIdentity {
   const ticker = asset.symbol?.trim().toUpperCase();
   const found = ticker ? known[ticker] : undefined;
@@ -53,7 +78,9 @@ export function assetIdentity(asset: {
         ? cash
         : asset.assetType === 'crypto' && ticker
           ? paletteColor(ticker)
-          : other,
+          : asset.assetClass
+            ? assetClassColors[asset.assetClass]
+            : other,
     glyph: (ticker || asset.name.trim()).slice(0, 1).toUpperCase() || '?',
   };
 }

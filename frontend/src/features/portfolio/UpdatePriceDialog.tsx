@@ -7,6 +7,7 @@ import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { numberProblem, positive } from './add-transaction';
+import { useFocusFirstProblem } from './focus-problem';
 
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
 
@@ -58,6 +59,7 @@ export default function UpdatePriceDialog({
   } | null>(null);
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
+  const { form, refused } = useFocusFirstProblem();
 
   const price = positive(value);
   const problem = price === null ? numberProblem(value, 'Enter a price greater than 0') : null;
@@ -66,7 +68,10 @@ export default function UpdatePriceDialog({
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (price === null) return;
+    if (price === null) {
+      refused();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -107,7 +112,7 @@ export default function UpdatePriceDialog({
         return input.current;
       }}
     >
-      <form onSubmit={save} noValidate>
+      <form ref={form} onSubmit={save} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>Update price</h2>
           <CloseButton onClick={onClose} disabled={saving} />

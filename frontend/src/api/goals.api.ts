@@ -22,6 +22,8 @@ export interface GoalScenario {
   gap: string | null;
   /** Whether the unrounded projection reaches the sum by the date; null without a date. */
   metByDeadline?: boolean | null;
+  /** The value after ten years of the planned contribution; only for a goal without a date. */
+  projectedIn10Years?: string | null;
 }
 
 export interface Goal {
@@ -39,8 +41,14 @@ export interface Goal {
     current: string | null;
     /** False when an asset without a price or rate is left out of the value. */
     complete: boolean;
+    /** The real share of the target, above 100 once it is passed. */
     percent: string | null;
     remaining: string | null;
+    /**
+     * Held assets valued at a stored market price older than 2 hours. Absent in an answer kept
+     * from before the server sent it.
+     */
+    stalePrices?: number;
   };
   status: GoalStatus;
   /** Empty while the portfolio has no value in the goal's currency. */
@@ -78,8 +86,14 @@ export const goalsApi = {
 
   get: async (id: string): Promise<Goal> => (await apiClient.get<Goal>(one(id))).data,
 
-  /** A read sent as a POST so the sums stay out of the address; it saves nothing. */
-  preview: async (terms: Omit<GoalTerms, 'name'>, signal?: AbortSignal): Promise<GoalPreview> =>
+  /**
+   * A read sent as a POST so the sums stay out of the address; it saves nothing. The edit dialog
+   * names its goal, so a date the goal keeps is judged as saving would judge it.
+   */
+  preview: async (
+    terms: Omit<GoalTerms, 'name'> & { goalId?: string },
+    signal?: AbortSignal,
+  ): Promise<GoalPreview> =>
     (await apiClient.post<GoalPreview>(`${path}/preview`, terms, { signal, changesNothing: true }))
       .data,
 

@@ -89,4 +89,15 @@ describe('PROPERTY-ADD property entry', () => {
       feeUsd: '0',
     });
   });
+
+  it('classes-02 takes today as the Moscow day, from 21:00 UTC and across a month end', () => {
+    const at = (instant: string, bought: string) =>
+      purchaseTrade(entry({ bought }), 'instrument', new Date(instant), identity).occurredAt;
+    // 22:30 UTC on Oct 15 is 01:30 on Oct 16 in Moscow: a purchase today is the current minute.
+    expect(at('2026-10-15T22:30:10Z', '2026-10-16')).toBe('2026-10-15T22:30:00.000Z');
+    expect(at('2026-10-15T22:30:10Z', '2026-10-15')).toBe('2026-10-15T00:00:00.000Z');
+    expect(at('2026-10-31T20:59:59Z', '2026-10-31')).toBe('2026-10-31T20:59:00.000Z');
+    expect(at('2026-10-31T21:00:00Z', '2026-11-01')).toBe('2026-10-31T21:00:00.000Z');
+    expect(at('2026-10-31T23:59:59Z', '2026-10-31')).toBe('2026-10-31T00:00:00.000Z');
+  });
 });

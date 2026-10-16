@@ -257,3 +257,89 @@ describe('TOKEN-HIDE: hiding tokens of an address', () => {
     expect(() => parseTokenVisibility(body)).toThrow(BadRequestException);
   });
 });
+
+describe('WAL-INVALID: a new wallet travels with its first address', () => {
+  const requestId = '00000000-0000-4000-8000-0000000000aa';
+
+  it('wallets-01 takes a new wallet with its request id, name and kind', () => {
+    expect(
+      parseRegistration({
+        network: 'bitcoin',
+        address,
+        newAccount: { requestId, name: 'Cold storage', kind: 'hardware' },
+      }),
+    ).toEqual({
+      network: 'bitcoin',
+      address,
+      accountId: null,
+      label: null,
+      newAccount: { requestId, name: 'Cold storage', kind: 'hardware' },
+    });
+  });
+
+  it('wallets-01 takes a new wallet with a Bybit key too', () => {
+    const parsed = parseRegistration({
+      network: 'bybit',
+      apiKey: 'SyntheticKey0001',
+      apiSecret: 'SyntheticSecret000000000000001',
+      newAccount: { requestId, name: 'Bybit' },
+    });
+    expect(parsed).toMatchObject({ network: 'bybit', newAccount: { requestId, name: 'Bybit' } });
+  });
+
+  it.each([
+    [
+      'an existing wallet and a new one',
+      { network: 'bitcoin', address, accountId, newAccount: { requestId, name: 'Cold' } },
+    ],
+    [
+      'a broker account or a property',
+      {
+        network: 'bitcoin',
+        address,
+        newAccount: { requestId, name: 'Studio', assetClass: 'property' },
+      },
+    ],
+    [
+      'a new wallet without a request id',
+      { network: 'bitcoin', address, newAccount: { name: 'Cold' } },
+    ],
+    [
+      'a new wallet without a name',
+      { network: 'bitcoin', address, newAccount: { requestId, name: ' ' } },
+    ],
+    [
+      'a new wallet with an unknown field',
+      { network: 'bitcoin', address, newAccount: { requestId, name: 'Cold', extra: 1 } },
+    ],
+    [
+      'a new wallet with an address the server cannot read',
+      {
+        network: 'bitcoin',
+        address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlj',
+        newAccount: { requestId, name: 'Cold' },
+      },
+    ],
+  ])('wallets-01 refuses %s', (_name, body) => {
+    expect(() => parseRegistration(body)).toThrow(BadRequestException);
+  });
+});
+
+describe('WAL-INVALID: a new wallet for an address already tracked', () => {
+  const requestId = '00000000-0000-4000-8000-0000000000bb';
+
+  it('wallets-01 takes a new wallet in place of an existing one', () => {
+    expect(parseUpdate({ newAccount: { requestId, name: 'Ledger' }, label: null })).toEqual({
+      newAccount: { requestId, name: 'Ledger' },
+      label: null,
+    });
+  });
+
+  it.each([
+    ['an existing wallet and a new one', { accountId, newAccount: { requestId, name: 'Ledger' } }],
+    ['a property', { newAccount: { requestId, name: 'Studio', assetClass: 'property' } }],
+    ['a new wallet without a request id', { newAccount: { name: 'Ledger' } }],
+  ])('wallets-01 refuses %s', (_name, body) => {
+    expect(() => parseUpdate(body)).toThrow(BadRequestException);
+  });
+});

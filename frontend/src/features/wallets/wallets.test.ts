@@ -291,7 +291,7 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
   it.each([
     ['', 'Paste the wallet address.'],
     ['0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31', 'This looks like an Ethereum address.'],
-    ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'pick Solana to track it'],
+    ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'This looks like a Solana address.'],
     ['bitcoin', 'This is not a valid Bitcoin address.'],
     [`zpub${'6'.repeat(90)}`, 'This is not a valid Bitcoin address.'],
     [`tpub${'6'.repeat(107)}`, 'Testnet keys are not tracked'],
@@ -484,8 +484,9 @@ describe('EVM-MULTICHAIN: the 0x address of an Ethereum-like chain', () => {
 });
 
 describe('names', () => {
-  it('shortens an address to its start and end', () => {
-    expect(shortAddress('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBe('bc1qar0s…wf5mdq');
+  it('wallets-12 shortens an address to the design form: six characters (five after 0x) and the last four', () => {
+    expect(shortAddress('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBe('bc1qar…5mdq');
+    expect(shortAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed')).toBe('0x5aA…eAed');
   });
 
   it('finds an account by name whatever the case', () => {
@@ -543,5 +544,22 @@ describe('ZCASH-ADD, WAL-NO-SECRETS: the Zcash address field (M24)', () => {
       const result = checkAddress(network, zcash);
       expect(result.ok === false && result.message).toContain('Zcash');
     }
+  });
+});
+
+describe('wallets-06: an address of another network offers to switch', () => {
+  it.each([
+    ['ethereum', 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'bitcoin'],
+    ['bitcoin', '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'ethereum'],
+    ['solana', '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'ethereum'],
+    ['solana', '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'bitcoin'],
+    ['tron', '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'ethereum'],
+    ['bitcoin', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', 'tron'],
+  ] as const)('wallets-06 on %s names %s as %s', (network, value, other) => {
+    expect(checkAddress(network, value)).toMatchObject({ ok: false, switchTo: other });
+  });
+
+  it('wallets-06 offers no switch for an address no network takes', () => {
+    expect(checkAddress('ethereum', 'not an address')).not.toHaveProperty('switchTo');
   });
 });

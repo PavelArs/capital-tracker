@@ -1,7 +1,7 @@
 // GOAL-FORECAST: closed-form projections for a savings goal. Contributions are added on the same
 // day of every month, the first one a month from today, and grow at the effective yearly return.
-// Figures are plain numbers because a projection is an estimate; stored money never passes
-// through here.
+// Figures are plain numbers because a projection is an estimate; stored money enters only through
+// estimateOf, and what the goal already has is computed exactly elsewhere (goal-view.ts).
 
 /** Days in an average month, to turn a number of days into months. */
 export const DAYS_PER_MONTH = 365.25 / 12;
@@ -9,6 +9,9 @@ export const DAYS_PER_MONTH = 365.25 / 12;
 export const MAX_MONTHS = 1200;
 /** Percentage points the pessimistic and optimistic cases move away from the base return. */
 export const SCENARIO_SPREAD = 4;
+
+/** The plain number a projection starts from: an estimate of a decimal amount, never a result. */
+export const estimateOf = (amount: string) => Number(amount);
 
 export type ScenarioKey = 'pessimistic' | 'base' | 'optimistic';
 

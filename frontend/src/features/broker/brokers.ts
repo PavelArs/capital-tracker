@@ -1,5 +1,6 @@
 import type { AccountSummary } from '@api/accounting.api';
 import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import { sumDecimals } from '@/utils/decimal';
 
 export interface BrokerPosition {
   asset: AssetValuation;
@@ -19,22 +20,6 @@ export interface BrokerAccount {
   unpriced: number;
   /** Positions with a price but no exchange rate to the shown currency, left out too. */
   unrated: number;
-}
-
-const SCALE = 30;
-const units = (value: string) => {
-  const negative = value.startsWith('-');
-  const [whole, fraction = ''] = value.replace(/^[-+]/, '').split('.');
-  const scaled = BigInt(whole + fraction.padEnd(SCALE, '0').slice(0, SCALE));
-  return negative ? -scaled : scaled;
-};
-
-/** The exact sum of decimal strings, without binary floating point. */
-export function sumDecimals(values: readonly string[]): string {
-  const total = values.reduce((sum, value) => sum + units(value), 0n);
-  const digits = (total < 0n ? -total : total).toString().padStart(SCALE + 1, '0');
-  const fraction = digits.slice(-SCALE).replace(/0+$/, '');
-  return `${total < 0n ? '-' : ''}${digits.slice(0, -SCALE)}${fraction ? `.${fraction}` : ''}`;
 }
 
 const unrated = (position: BrokerPosition) => position.asset.missingPrice === 'no-rate';
@@ -81,4 +66,16 @@ export function brokerAccountsOf(
 export function brokerShare(total: string, portfolio: PortfolioValuation): number | null {
   const worth = Number(portfolio.totalValue ?? Number.NaN);
   return worth > 0 ? (Number(total) / worth) * 100 : null;
+}
+
+/** "1 position", "2 positions". */
+export const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;
+
+/** What a total at brokers leaves out: positions without a price, then without a rate. */
+export function leftOut(unpriced: number, unrated: number): string | null {
+  const parts = [
+    unpriced > 0 && `${plural(unpriced, 'position')} without a price left out.`,
+    unrated > 0 && `${plural(unrated, 'position')} without an exchange rate left out.`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
 }

@@ -27,4 +27,4 @@ export function useMediaQuery(query: string): boolean {
 export const useNarrowScreen = () => useMediaQuery('(max-width: 639.98px)');
 
 /** The width where the page header stacks and the bell panel becomes a sheet (shell-page.css). */
-export const useCompactScreen = () => useMediaQuery('(max-width: 560px)');
+export const useCompactScreen = () => useMediaQuery('(max-width: 559.98px)');

@@ -77,7 +77,12 @@ describe('SYNC-STATUS sidebar summary', () => {
     );
   });
 
-  it('claims nothing before any source has run', () => {
-    expect(summarizeSync([], now)).toMatchObject({ tone: 'neutral', title: 'Not synced yet' });
+  it('shell-19 claims nothing before any source has run, in the prototype words', () => {
+    expect(summarizeSync([], now)).toEqual({
+      tone: 'neutral',
+      title: 'No wallets yet',
+      detail: 'Prices update every hour',
+      problems: [],
+    });
   });
 });

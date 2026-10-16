@@ -33,11 +33,17 @@ export default function NearestGoal() {
         <GoalBar goal={goal} />
       </div>
       <div className="goal-dash__verdict">
-        <Badge tone={statusTone[goal.status]}>{statusText[goal.status]}</Badge>
+        <Badge tone={statusTone[goal.status]} dot>
+          {statusText[goal.status]}
+        </Badge>
         <span>{verdict(goal)}</span>
         <span className="goal-dash__links">
-          <Link to={`/goals/${goal.id}`}>Open goal</Link>
-          <Link to="/goals">All goals · {data.items.length}</Link>
+          <Link to={`/goals/${goal.id}`} className="shell-link">
+            Open goal
+          </Link>
+          <Link to="/goals" className="shell-link">
+            All goals · {data.items.length}
+          </Link>
         </span>
       </div>
     </section>

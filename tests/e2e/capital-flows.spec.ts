@@ -33,8 +33,9 @@ function money(value: string | null, signed = false): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(Number(value)));
-  const negative = value.startsWith('-') && Number(value) !== 0;
-  return `${negative ? '-' : signed && Number(value) > 0 ? '+' : ''}$${amount}`;
+  // A figure that rounds to zero at two decimals has no sign (portfolio-12).
+  const sign = !/[1-9]/.test(amount) ? '' : value.startsWith('-') ? '-' : signed ? '+' : '';
+  return `${sign}$${amount}`;
 }
 
 // Exact decimal arithmetic (no floating point).

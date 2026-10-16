@@ -1,5 +1,7 @@
 import type { AccountClass } from '@api/accounting.api';
-import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import type { AssetLots, AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
+import { moscowDate } from '@/utils/dates';
+import { sumDecimals } from '@/utils/decimal';
 
 export interface Property {
   asset: AssetValuation;
@@ -13,10 +15,10 @@ export interface Property {
   unrealizedReturnPercent: string | null;
 }
 
+// The exact sum of the parts (the formatter rounds only what is shown); any part without a value
+// leaves it unknown.
 const sumOf = (values: readonly (string | null)[]): string | null =>
-  values.some((value) => value === null)
-    ? null
-    : values.reduce((sum, value) => sum + Number(value), 0).toFixed(2);
+  values.every((value) => value !== null) ? sumDecimals(values as string[]) : null;
 
 /** The assets held in property accounts (v8), most valuable first. */
 export function propertiesOf(
@@ -57,4 +59,40 @@ export function shareText(share: number): string {
   return shown < 0.01
     ? 'Less than 0.01% yours'
     : `${new Intl.NumberFormat('en-US').format(shown)}% yours`;
+}
+
+/**
+ * What the properties with a value come to, exactly; those without one are left out. When
+ * properties are held and none has a value, the total is unknown (null), not zero.
+ */
+export const propertyTotal = (properties: readonly Pick<Property, 'value'>[]): string | null => {
+  const known = properties.flatMap(({ value }) => (value === null ? [] : [value]));
+  return properties.length > 0 && known.length === 0 ? null : sumDecimals(known);
+};
+
+/** The app reminds the owner of an estimate older than 60 days (v8 accepted defaults: two months). */
+export const ESTIMATE_REMINDER_DAYS = 60;
+
+const DAY_MS = 86_400_000;
+
+/** Whether an estimate is more than 60 days old, counted in Moscow calendar days. */
+export function estimateOverdue(observedAt: string, now: Date): boolean {
+  const days = (Date.parse(moscowDate(now)) - Date.parse(moscowDate(observedAt))) / DAY_MS;
+  return days > ESTIMATE_REMINDER_DAYS;
+}
+
+/**
+ * The Moscow day of the first purchase still held in property accounts, or null when it is not
+ * known: no lot there, or an account whose history may start after the purchase.
+ */
+export function firstBought(
+  answer: AssetLots | null,
+  classes: Readonly<Record<string, AccountClass | null | undefined>>,
+): string | null {
+  if (!answer?.complete) return null;
+  const days = answer.lots
+    .filter((lot) => classes[lot.accountId] === 'property')
+    .map((lot) => moscowDate(lot.acquiredAt))
+    .sort();
+  return days[0] ?? null;
 }

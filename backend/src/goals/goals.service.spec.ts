@@ -22,7 +22,7 @@ function service(complete = true) {
     transaction: async (work: (manager: unknown) => unknown) => work({ query: async () => [] }),
   };
   const snapshots = {
-    current: async () => ({ value: '5000.00', complete }),
+    current: async () => ({ value: '5000.00', complete, stalePrices: 0 }),
     // Refreshing the stored history on every goal read or preview would be wasted work.
     history: async () => {
       throw new Error('goals read the portfolio now, not its history');
@@ -108,5 +108,86 @@ describe('goals service', () => {
     await expect(service().update(owner, row.id, fields)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
+  });
+
+  it('goals-35 carries the count of prices older than 2 hours from the portfolio now', async () => {
+    const goals = service();
+    (goals as unknown as { snapshots: { current: unknown } }).snapshots.current = async () => ({
+      value: '5000.00',
+      complete: true,
+      stalePrices: 2,
+    });
+    const { items } = await goals.list(owner);
+    expect(items[0].progress).toMatchObject({ current: '5000.00', complete: true, stalePrices: 2 });
+  });
+
+  describe('goals-28 on the deadline day, a Moscow day', () => {
+    // 21:30 UTC on Oct 31 is already Nov 1 in Moscow, across a month end.
+    const now = new Date('2026-10-31T21:30:00.000Z');
+    const due = '2026-11-01';
+    const terms = {
+      name: 'Reserve',
+      currency: 'USD',
+      targetAmount: '20000',
+      deadline: due,
+      expectedReturnPercent: '8',
+      monthlyContribution: '100',
+    };
+    beforeEach(() =>
+      jest.useFakeTimers({
+        now,
+        doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate', 'setTimeout', 'setInterval'],
+      }),
+    );
+    afterEach(() => jest.useRealTimers());
+
+    /** A service whose one stored goal is due on `stored`; `writes` collects every UPDATE. */
+    function storedGoal(stored: string | null, writes: unknown[][] = []) {
+      const query = async (sql: string, params: unknown[] = []) => {
+        if (sql.startsWith('UPDATE')) writes.push(params);
+        return sql.includes('FOR UPDATE')
+          ? [{ id: row.id, deadline: stored }]
+          : [{ ...row, deadline: stored }];
+      };
+      const source = {
+        manager: { query },
+        transaction: async (work: (manager: unknown) => unknown) => work({ query }),
+      };
+      const snapshots = {
+        current: async () => ({ value: '5000.00', complete: true, stalePrices: 0 }),
+      };
+      return new GoalsService(source as unknown as DataSource, snapshots as never);
+    }
+
+    it('reads the goal as still open, not overdue', async () => {
+      const goal = await storedGoal(due).get(owner, row.id);
+      expect(goal.asOf).toBe(due);
+      expect(goal.status).toBe('behind');
+      expect(goal.scenarios[1].projectedAtDeadline).toBe('5000.00');
+    });
+
+    it('saves an edit that keeps the date, and previews it, but refuses a date moved to today', async () => {
+      const writes: unknown[][] = [];
+      const goals = storedGoal(due, writes);
+      await expect(
+        goals.update(owner, row.id, { ...terms, name: 'Renamed' }),
+      ).resolves.toMatchObject({ deadline: due });
+      expect(writes).toHaveLength(1);
+      const { name, ...preview } = terms;
+      expect(name).toBeDefined();
+      await expect(goals.preview(owner, { ...preview, goalId: row.id })).resolves.toMatchObject({
+        status: 'behind',
+      });
+      await expect(goals.preview(owner, preview)).rejects.toBeInstanceOf(
+        UnprocessableEntityException,
+      );
+      const moved = storedGoal('2027-01-01');
+      await expect(moved.update(owner, row.id, terms)).rejects.toBeInstanceOf(
+        UnprocessableEntityException,
+      );
+      await expect(moved.preview(owner, { ...preview, goalId: row.id })).rejects.toBeInstanceOf(
+        UnprocessableEntityException,
+      );
+    });
   });
 });

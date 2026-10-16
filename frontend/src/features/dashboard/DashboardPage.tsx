@@ -21,13 +21,14 @@ import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
 import { useValueView } from '../shell/value-view';
-import DashboardLoading from './DashboardLoading';
+import DashboardLoading, { AllocationLoading } from './DashboardLoading';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './dashboard.css';
 import EmptyState from '@/ui/EmptyState';
+import { useTabs } from '@/ui/tabs';
 
 const periodLabels: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
@@ -173,6 +174,18 @@ function NetWorth({
   const note = [unknownCostNote(portfolio), history.complete ? null : INCOMPLETE_NOTE]
     .filter((text) => text !== null)
     .join(' ');
+  const info =
+    note === '' ? null : (
+      <span
+        className="portfolio-info portfolio-info--inline"
+        role="img"
+        tabIndex={0}
+        aria-label={note}
+        data-tip={note}
+      >
+        <Icon name="info" className="shell-icon shell-icon--sm" />
+      </span>
+    );
   return (
     <section className="dashboard-hero" aria-label="Net worth">
       <div className="dashboard-hero__label">Total net worth · {currency}</div>
@@ -188,7 +201,8 @@ function NetWorth({
           {money(profit, currency, true)}
         </span>
         {profitPercent !== null && <span>{percent(profitPercent)}</span>}
-        {invested !== null && (
+        {invested !== null ? (
+          // The note icon is the last word of the line it qualifies, so it wraps with it.
           <span className="dashboard-hero__period">
             {shownReal ? (
               <>
@@ -198,18 +212,10 @@ function NetWorth({
             ) : (
               `on ${money(invested, currency)} net invested`
             )}
+            {info}
           </span>
-        )}
-        {note !== '' && (
-          <span
-            className="portfolio-info portfolio-info--inline"
-            role="img"
-            tabIndex={0}
-            aria-label={note}
-            data-tip={note}
-          >
-            <Icon name="info" className="shell-icon shell-icon--sm" />
-          </span>
+        ) : (
+          info
         )}
       </div>
       {history.real !== undefined && (
@@ -276,6 +282,7 @@ export default function DashboardPage() {
   );
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
+  const tabs = useTabs(historyPeriods, period, setPeriod);
   const [adding, setAdding] = useState(false);
   const latest = useRef(0);
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
@@ -331,7 +338,16 @@ export default function DashboardPage() {
   return (
     <div className="shell-page">
       <PageHeader title="Dashboard" currency={shown?.currency} valueSwitch />
-      {failed ? (
+      {/* A failed later load keeps what is on screen and says so above it. */}
+      {failed && shown !== null && (
+        <div className="ui-banner ui-banner--neg ui-banner--action" role="alert">
+          <span>Could not update your capital history. Showing the last loaded figures.</span>
+          <button type="button" className="shell-button" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      )}
+      {failed && shown === null ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>
           <button type="button" className="shell-button" onClick={() => void load()}>
@@ -347,7 +363,14 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
-          <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} asked={asked} />
+          {portfolio !== null && portfolio.stalePriceCount > 0 && (
+            <p className="ui-banner ui-banner--warn dashboard-banner" role="note">
+              {portfolio.stalePriceCount === 1
+                ? '1 price is older than 2 hours; the last stored price is used.'
+                : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
+            </p>
+          )}
+          <NetWorth history={shown} portfolio={portfolio} asked={asked} />
           <NearestGoal />
           <section
             className="shell-card dashboard-chart-card"
@@ -381,27 +404,23 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
-              <div className="dashboard-periods" role="tablist" aria-label="Chart period">
+              <div className="dashboard-periods" aria-label="Chart period" {...tabs.list}>
                 {historyPeriods.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={period === value}
-                    onClick={() => setPeriod(value)}
-                  >
+                  <button key={value} type="button" {...tabs.tab(value)}>
                     {value}
                   </button>
                 ))}
               </div>
             </div>
-            <HistoryChart
-              key={`${shown.period}:${shown.currency}:${shown.at}`}
-              points={shown.points}
-              period={shown.period}
-              currency={shown.currency}
-              label={chartLabel}
-            />
+            <div {...tabs.panel}>
+              <HistoryChart
+                key={`${shown.period}:${shown.currency}:${shown.at}`}
+                points={shown.points}
+                period={shown.period}
+                currency={shown.currency}
+                label={chartLabel}
+              />
+            </div>
           </section>
           <div className="dashboard-bottom">
             <TopAssets
@@ -411,8 +430,10 @@ export default function DashboardPage() {
               onRetry={() => void loadPortfolio()}
               asked={asked}
             />
-            {portfolio !== null && !portfolioFailed && (
+            {portfolio !== null ? (
               <Allocation portfolio={portfolio} limit={6} />
+            ) : (
+              !portfolioFailed && <AllocationLoading />
             )}
           </div>
         </>

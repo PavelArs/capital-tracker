@@ -1,5 +1,6 @@
 import {
   addMonths,
+  estimateOf,
   futureValue,
   monthlyRate,
   monthsBetween,
@@ -29,6 +30,8 @@ export interface GoalRow {
 export interface PortfolioNow {
   value: string | null;
   complete: boolean;
+  /** Held assets valued at a stored market price older than 2 hours (goals-35). */
+  stalePrices: number;
 }
 
 export type GoalStatus = 'reached' | 'on-track' | 'behind' | 'overdue' | 'open' | 'unknown';
@@ -46,25 +49,81 @@ export interface GoalScenario {
   gap: string | null;
   /** Whether the unrounded projection reaches the target by the deadline; null without one. */
   metByDeadline: boolean | null;
+  /** The value after ten years of the planned contribution; only for a goal without a date. */
+  projectedIn10Years: string | null;
 }
 
-const cents = (value: number) => (Math.round(value * 100) / 100).toFixed(2);
-/** Cents rounded up, for an amount that has to reach a target; a float's noise is not a cent. */
-const centsUp = (value: number) => (Math.ceil(value * 100 - 1e-6) / 100).toFixed(2);
-/** Cents of a projected figure, or null when the maths left the range of a number. */
-const required = (value: number) => (Number.isFinite(value) ? centsUp(value) : null);
-const figure = (value: number) => (Number.isFinite(value) ? cents(value) : null);
+// A projection is an estimate in plain numbers, rounded never in the owner's favour: what is still
+// needed (a contribution, a gap) up to the cent, what the plan is expected to have down. A float's
+// noise is not a cent. Null when the maths left the range of a number.
+const required = (value: number) =>
+  Number.isFinite(value) ? (Math.ceil(value * 100 - 1e-6) / 100).toFixed(2) : null;
+const expected = (value: number) =>
+  Number.isFinite(value) ? (Math.floor(value * 100 + 1e-6) / 100).toFixed(2) : null;
 const percent = (value: number) => value.toFixed(4).replace(/\.?0+$/, '');
+
+/** Signed decimal text of any scale, exactly: `units` parts of `unit`. */
+interface Exact {
+  units: bigint;
+  unit: bigint;
+}
+
+function exact(value: string): Exact {
+  const negative = value.startsWith('-');
+  const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
+  const units = BigInt(`${whole}${fraction}`);
+  return { units: negative ? -units : units, unit: 10n ** BigInt(fraction.length) };
+}
+
+/** numerator / denominator rounded toward minus infinity; the denominator is positive. */
+function floorDiv(numerator: bigint, denominator: bigint) {
+  const quotient = numerator / denominator;
+  return numerator % denominator !== 0n && numerator < 0n ? quotient - 1n : quotient;
+}
+
+/** Hundredths as fixed two-place text: cents of an amount, or a percent to two places. */
+function hundredthsText(value: bigint) {
+  const magnitude = value < 0n ? -value : value;
+  const fraction = (magnitude % 100n).toString().padStart(2, '0');
+  return `${value < 0n ? '-' : ''}${magnitude / 100n}.${fraction}`;
+}
+
+/**
+ * Progress in exact decimals, never better than it is: what the portfolio has is rounded down to
+ * the cent, what is still missing up, and the share of the sum down, so it reads 100% only once
+ * the sum is reached. Beyond the sum the share is the real one (goals-03): 147% is 147%.
+ */
+function progressOf(value: Exact, target: Exact) {
+  // Both sides over one denominator: value / target = have / need.
+  const have = value.units * target.unit;
+  const need = target.units * value.unit;
+  const denominator = value.unit * target.unit;
+  const reached = have >= need;
+  const share = floorDiv(have * 10000n, need);
+  const missing = -floorDiv((have - need) * 100n, denominator);
+  return {
+    reached,
+    current: hundredthsText(floorDiv(value.units * 100n, value.unit)),
+    percent: hundredthsText(share),
+    remaining: hundredthsText(missing > 0n ? missing : 0n),
+  };
+}
 
 /** One goal with its progress and the three return cases (GOAL-FORECAST). */
 export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
-  const target = Number(row.targetAmount);
-  const current = now.value === null ? null : Number(now.value);
-  const plan = row.monthlyContribution === null ? 0 : Number(row.monthlyContribution);
+  const progress =
+    now.value === null ? null : progressOf(exact(now.value), exact(row.targetAmount));
+  // The return cases are estimates in plain numbers; progress and the status stay exact.
+  const target = estimateOf(row.targetAmount);
+  const current = now.value === null ? null : estimateOf(now.value);
+  const plan = row.monthlyContribution === null ? 0 : estimateOf(row.monthlyContribution);
   const months = row.deadline === null ? null : monthsBetween(today, row.deadline);
   const payments = row.deadline === null ? 0 : paymentsBetween(today, row.deadline);
-  // The status reads the raw base projection: the displayed gap is rounded to the cent and
-  // would call a goal on track that falls a fraction of a cent short.
+  // The deadline is a Moscow day and counts in full (goals-28): on that day the goal is still
+  // open, judged on the value now with no payment left; it is overdue from the next day.
+  const passed = row.deadline !== null && row.deadline < today;
+  const horizon = months === null || passed ? null : Math.max(months, 0);
+  // The status reads the raw base projection, not the gap shown to the cent.
   let baseShort = false;
   const scenarios: GoalScenario[] =
     current === null
@@ -76,32 +135,36 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
           ][]
         ).map(([key, yearly]) => {
           const rate = monthlyRate(yearly);
-          const left = monthsToReach(current, target, plan, rate);
+          const raw = monthsToReach(current, target, plan, rate);
+          // A float can round a value just short of the sum up to it: until the exact progress
+          // says reached, the sum is at least a month away, never this month.
+          const left = raw === null || progress?.reached ? raw : Math.max(raw, 1);
           const projected =
-            months !== null && months > 0
-              ? futureValue(current, plan, rate, months, payments)
-              : null;
+            horizon === null ? null : futureValue(current, plan, rate, horizon, payments);
+          const tenYears =
+            row.deadline === null ? futureValue(current, plan, rate, 120, 120) : null;
           if (key === 'base') baseShort = projected === null || !(projected >= target);
           return {
             key,
             returnPercent: percent(yearly),
             requiredMonthly:
-              months !== null && months > 0
-                ? required(requiredContribution(current, target, rate, months, payments))
-                : null,
+              horizon === null
+                ? null
+                : required(requiredContribution(current, target, rate, horizon, payments)),
             monthsToTarget: left === null ? null : Math.ceil(left),
             reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),
-            projectedAtDeadline: projected === null ? null : figure(projected),
-            gap: projected === null ? null : figure(target - projected),
+            projectedAtDeadline: projected === null ? null : expected(projected),
+            gap: projected === null ? null : required(target - projected),
             metByDeadline:
               projected === null || !Number.isFinite(projected) ? null : projected >= target,
+            projectedIn10Years: tenYears === null ? null : expected(tenYears),
           };
         });
   let status: GoalStatus;
-  if (current === null) status = 'unknown';
-  else if (current >= target) status = 'reached';
+  if (progress === null) status = 'unknown';
+  else if (progress.reached) status = 'reached';
   else if (months === null) status = 'open';
-  else if (months <= 0) status = 'overdue';
+  else if (passed) status = 'overdue';
   else status = baseShort ? 'behind' : 'on-track';
   // A value that leaves out an asset without a price or rate only understates the portfolio:
   // reaching the goal stays true, falling behind does not.
@@ -117,10 +180,11 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
     createdAt: row.createdAt,
     asOf: today,
     progress: {
-      current: current === null ? null : cents(current),
+      current: progress?.current ?? null,
       complete: now.complete,
-      percent: current === null ? null : cents(Math.min((current / target) * 100, 100)),
-      remaining: current === null ? null : cents(Math.max(target - current, 0)),
+      percent: progress?.percent ?? null,
+      remaining: progress?.remaining ?? null,
+      stalePrices: now.stalePrices,
     },
     status,
     scenarios,

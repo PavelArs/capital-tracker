@@ -104,7 +104,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     ['Portfolio', '/portfolio'],
     ['Transactions', '/transactions'],
     ['Wallets', '/wallets'],
-    ['Deposits', '/deposits'],
+    ['Banks', '/deposits'],
     ['Goals', '/goals'],
     ['Settings', '/preferences'],
   ] as const;
@@ -183,6 +183,16 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     priceSource: 'manual',
   });
   await expect(addAsset).toHaveCount(0);
+  // portfolio-06: the new asset opens on its own page, which says it was added; the portfolio
+  // lists it once the owner goes back.
+  const assetId = ((await assetResponse.json()) as { id: string }).id;
+  await expect(page).toHaveURL(`${origin}/portfolio/${assetId}`);
+  await expect(
+    portfolio.getByRole('heading', { level: 1, name: depositName, exact: true }),
+  ).toBeVisible();
+  await expect(portfolio.getByRole('status').filter({ hasText: 'Asset added.' })).toBeVisible();
+  await portfolio.getByRole('link', { name: '← Portfolio', exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/portfolio`);
   // The asset cell carries the type and value currency; a coin outside the market catalog
   // never bought shows amount 0 and no price yet (portfolio-valuation PV-5).
   const depositCells = portfolio

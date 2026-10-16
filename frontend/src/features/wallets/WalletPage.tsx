@@ -26,6 +26,7 @@ import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
 import {
   AddressRow,
+  connectsBybit,
   holdingsOf,
   ReconcileNote,
   subtitle,
@@ -205,9 +206,11 @@ export default function WalletPage() {
     runs,
     sync,
     asked,
+    notice,
+    setNotice,
   } = useWallets();
   const navigate = useNavigate();
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<boolean | 'bybit'>(false);
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -268,6 +271,11 @@ export default function WalletPage() {
           ← Wallets
         </Link>
       </div>
+      {notice && (
+        <p className="ui-banner ui-banner--pos wallets-notice" role="status">
+          {notice}
+        </p>
+      )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load this wallet. Your data is safe; try again.</p>
@@ -316,11 +324,14 @@ export default function WalletPage() {
                 Remove
               </button>
               {own.length > 0 && (
+                // wallets-02: the button stays focusable while it runs, so the keyboard stays on it.
                 <button
                   type="button"
                   className="shell-button shell-button--secondary"
-                  disabled={syncing}
-                  onClick={() => void syncAll()}
+                  aria-disabled={syncing}
+                  onClick={() => {
+                    if (!syncing) void syncAll();
+                  }}
                 >
                   <Icon name="refresh" className="shell-icon shell-icon--sm" />
                   {syncing ? 'Syncing…' : 'Sync now'}
@@ -431,13 +442,28 @@ export default function WalletPage() {
           </div>
           {own.length === 0 && (
             <section className="shell-card">
-              <p className="wallets-soft">
-                {account.name} is tracked by hand: balances come from the transactions you add.{' '}
-                <button type="button" className="portfolio-link" onClick={() => setAdding(true)}>
-                  Add a wallet address
-                </button>{' '}
-                to compare them with the blockchain.
-              </p>
+              {connectsBybit(account.name, own, kind) ? (
+                // wallets-08: a Bybit account kept by hand can read itself with a read-only key.
+                <p className="wallets-soft">
+                  {account.name} is tracked by hand: balances come from the transactions you add.{' '}
+                  <button
+                    type="button"
+                    className="portfolio-link"
+                    onClick={() => setAdding('bybit')}
+                  >
+                    Connect Bybit API
+                  </button>{' '}
+                  to read its balances and history with a read-only key.
+                </p>
+              ) : (
+                <p className="wallets-soft">
+                  {account.name} is tracked by hand: balances come from the transactions you add.{' '}
+                  <button type="button" className="portfolio-link" onClick={() => setAdding(true)}>
+                    Add a wallet address
+                  </button>{' '}
+                  to compare them with the blockchain.
+                </p>
+              )}
             </section>
           )}
         </>
@@ -446,7 +472,8 @@ export default function WalletPage() {
         <AddWalletDialog
           accounts={accounts}
           addresses={list}
-          wallet={account.name}
+          accountId={accountId}
+          network={adding === 'bybit' ? 'bybit' : undefined}
           onClose={() => setAdding(false)}
           onOpenExisting={(address) => {
             setAdding(false);
@@ -454,6 +481,13 @@ export default function WalletPage() {
           }}
           onAdded={(address, created) => {
             setAdding(false);
+            // wallets-07: the page says what was added.
+            if (created)
+              setNotice(
+                address.accountId === accountId
+                  ? `Added to ${account.name}. Syncing transactions…`
+                  : 'Wallet added. Syncing transactions…',
+              );
             replace(address);
             void load(true);
             if (created || address.network === 'bybit')
@@ -468,8 +502,10 @@ export default function WalletPage() {
           name={account.name}
           kind={kind}
           onClose={() => setEditing(false)}
-          onSaved={() => {
+          onSaved={(changes) => {
             setEditing(false);
+            // wallets-21: the page says what was saved.
+            setNotice('name' in changes ? 'Wallet renamed.' : 'Wallet saved.');
             refresh();
           }}
         />
@@ -488,7 +524,8 @@ export default function WalletPage() {
           onConfirm={async () => {
             await accountingApi.removeAccount(account.accountId);
             announceSyncChange();
-            navigate(withCurrency('/wallets', asked));
+            // wallets-21: Wallets says what was removed and takes the keyboard there.
+            navigate(withCurrency('/wallets', asked), { state: { removedWallet: account.name } });
           }}
           onClose={() => setRemoving(false)}
         />

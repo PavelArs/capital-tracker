@@ -23,12 +23,14 @@ interface Plotted {
 
 const hourly = (period: HistoryPeriod) => period === '24H' || period === '7D';
 const dayFormat = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
   day: 'numeric',
   month: 'short',
   year: 'numeric',
   timeZone: 'UTC',
 });
 const hourFormat = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
   day: 'numeric',
   month: 'short',
   hour: '2-digit',
@@ -53,7 +55,7 @@ const tickHour = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
-/** "Oct 4, 13:00 UTC" for hourly periods, "Oct 4, 2026" otherwise; the last point is "Now". */
+/** "Sun, Oct 4, 13:00 UTC" for hourly periods, "Sun, Oct 4, 2026" otherwise; the last is "Now". */
 export function pointLabel(
   point: Pick<HistoryPoint, 'at'>,
   period: HistoryPeriod,
@@ -78,13 +80,54 @@ export function niceStep(raw: number): number {
   return (fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10) * power;
 }
 
-/** Axis amounts: $1.2M, ₽850K, €900. */
+const axisNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
+/** Axis amounts with a lowercase k and M, as the prototype writes them: $1.25M, ₽850k, €900. */
 export function compact(value: number, currency: AccountingCurrency): string {
-  const formatted = new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value);
-  return `${currencySymbols[currency]}${formatted}`;
+  const size = Math.abs(value);
+  const [scaled, suffix] =
+    size >= 1e9
+      ? [size / 1e9, 'B']
+      : size >= 1e6
+        ? [size / 1e6, 'M']
+        : size >= 1e3
+          ? [size / 1e3, 'k']
+          : [size, ''];
+  return `${value < 0 ? '-' : ''}${currencySymbols[currency]}${axisNumber.format(scaled)}${suffix}`;
+}
+
+const HOUR_MS = 3_600_000;
+/** A date label this close to an end of the plot is aligned to it instead of centred. */
+const EDGE = 24;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * Where the date labels go: evenly spread over the period. On hourly periods they sit on points
+ * at a whole hour (24H) or at midnight (7D), never at the odd minute of the last snapshot.
+ */
+export function dateTicks(times: number[], period: HistoryPeriod, count: number): number[] {
+  const first = times[0];
+  const last = times[times.length - 1];
+  if (count <= 1) return [first];
+  if (hourly(period)) {
+    const unit = period === '24H' ? HOUR_MS : DAY_MS;
+    const whole = times.filter((time) => time % unit === 0);
+    if (whole.length > 0) {
+      const shown = Math.min(count, whole.length);
+      return [
+        ...new Set(
+          Array.from({ length: shown }, (_, index) =>
+            shown === 1 ? whole[0] : whole[Math.round((index * (whole.length - 1)) / (shown - 1))],
+          ),
+        ),
+      ];
+    }
+  }
+  return [
+    ...new Set(
+      Array.from({ length: count }, (_, index) => first + ((last - first) * index) / (count - 1)),
+    ),
+  ];
 }
 
 /** Net invested added (+) or taken out (−) since the previous point; null when unchanged. */
@@ -226,16 +269,11 @@ export default function HistoryChart({
       ? [{ index, cx: x(timeOf[index]), cy: y(invested[index]!) }]
       : [];
   });
-  const tickCount = chartDateTicks(width, plotted.length);
-  const xTicks = [
-    ...new Set(
-      Array.from({ length: tickCount }, (_, index) =>
-        tickCount === 1
-          ? first.time
-          : first.time + ((last.time - first.time) * index) / (tickCount - 1),
-      ),
-    ),
-  ];
+  const xTicks = dateTicks(
+    plotted.map((entry) => entry.time),
+    period,
+    chartDateTicks(width, plotted.length),
+  );
 
   const current = active === null ? null : plotted[active];
   const startValue = points.find((point) => point.value !== null)?.value ?? null;
@@ -319,7 +357,13 @@ export default function HistoryChart({
             key={time}
             x={x(time)}
             y={HEIGHT - 6}
-            textAnchor={index === 0 ? 'start' : index === xTicks.length - 1 ? 'end' : 'middle'}
+            textAnchor={
+              index === 0 && x(time) - PAD.left < EDGE
+                ? 'start'
+                : index === xTicks.length - 1 && PAD.left + innerWidth - x(time) < EDGE
+                  ? 'end'
+                  : 'middle'
+            }
             className="dashboard-chart__tick"
           >
             {tickLabel(time, period)}

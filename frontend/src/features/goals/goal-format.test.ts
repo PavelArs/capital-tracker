@@ -4,15 +4,18 @@ import {
   againstTarget,
   dateText,
   difference,
+  enteredInput,
   enteredText,
   flooredText,
   monthsFrom,
   monthYear,
+  moscowDay,
   neededText,
   ordered,
   rateText,
   reachedDate,
   span,
+  staleText,
   timeLeft,
   verdict,
   wholeMoney,
@@ -39,7 +42,13 @@ const goal = (change: Partial<Goal> = {}): Goal => ({
   monthlyContribution: '1200.00',
   createdAt: '2026-10-01T00:00:00.000Z',
   asOf: '2026-10-13',
-  progress: { current: '5000.00', complete: true, percent: '25.00', remaining: '15000.00' },
+  progress: {
+    current: '5000.00',
+    complete: true,
+    percent: '25.00',
+    remaining: '15000.00',
+    stalePrices: 0,
+  },
   status: 'on-track',
   scenarios: [scenario()],
   ...change,
@@ -88,12 +97,24 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
   it('says how far above the sum a reached goal is', () => {
     const reached = goal({
       status: 'reached',
-      progress: { current: '21500.00', complete: true, percent: '100.00', remaining: '0.00' },
+      progress: {
+        current: '21500.00',
+        complete: true,
+        percent: '100.00',
+        remaining: '0.00',
+        stalePrices: 0,
+      },
     });
     expect(verdict(reached)).toBe('Reached. Your net worth is $1,500 above it.');
     const exact = goal({
       status: 'reached',
-      progress: { current: '20000.00', complete: true, percent: '100.00', remaining: '0.00' },
+      progress: {
+        current: '20000.00',
+        complete: true,
+        percent: '100.00',
+        remaining: '0.00',
+        stalePrices: 0,
+      },
     });
     expect(verdict(exact)).toBe('Reached.');
   });
@@ -171,7 +192,13 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
         goal({
           status: 'unknown',
           scenarios: [],
-          progress: { current: null, complete: false, percent: null, remaining: null },
+          progress: {
+            current: null,
+            complete: false,
+            percent: null,
+            remaining: null,
+            stalePrices: 0,
+          },
         }),
       ),
     ).toContain('could be valued');
@@ -179,7 +206,13 @@ describe('GOAL-VERDICT the sentence under a goal', () => {
 });
 
 describe('GOAL-VERDICT with assets that have no price', () => {
-  const unpriced = { current: '5000.00', complete: false, percent: '25.00', remaining: null };
+  const unpriced = {
+    current: '5000.00',
+    complete: false,
+    percent: '25.00',
+    remaining: null,
+    stalePrices: 0,
+  };
 
   it('gives no date or sum worked out from an understated value', () => {
     expect(verdict(goal({ progress: unpriced }))).toBe(
@@ -255,7 +288,8 @@ describe('GOAL-AGAINST a projection against the sum', () => {
 describe('GOAL-TIME-LEFT time left to the date', () => {
   it('counts from the day of the forecast, not the browser date', () => {
     expect(timeLeft('2027-01-13', '2026-10-13')).toBe('3 months');
-    expect(timeLeft('2026-10-13', '2026-10-13')).toBeNull();
+    // goals-28: the deadline day itself is still open.
+    expect(timeLeft('2026-10-13', '2026-10-13')).toBe('Due today');
     expect(timeLeft('2026-10-12', '2026-10-13')).toBeNull();
   });
 });
@@ -280,5 +314,49 @@ describe('GOAL-REACHED-DATE when a case gets the sum', () => {
     const short = scenario({ reachedOn: '2026-12-13', gap: '480.00' });
     expect(reachedDate(goal({ deadline: '2026-11-30' }), short)).toBe('2026-12-13');
     expect(reachedDate(goal({ deadline: null }), late)).toBe('2026-12-13');
+  });
+});
+
+describe('goals-28 the deadline day itself', () => {
+  it('goals-28 says the date is today, not that it has passed', () => {
+    expect(timeLeft('2026-10-13', '2026-10-13')).toBe('Due today');
+    expect(timeLeft('2026-10-12', '2026-10-13')).toBeNull();
+    expect(timeLeft('2026-11-01', '2026-10-31')).toBe('under a month');
+  });
+
+  it('goals-28 says a goal due today is due today, with what is left', () => {
+    const due = goal({
+      deadline: '2026-10-13',
+      status: 'behind',
+      scenarios: [scenario({ requiredMonthly: null, gap: '15000.00', metByDeadline: false })],
+    });
+    expect(verdict(due)).toBe('Due today. $15,000 to go.');
+  });
+});
+
+describe('goals-25 the day a goal was set', () => {
+  it('goals-25 is the Moscow day of the instant, also from 21:00 UTC and across a year end', () => {
+    expect(moscowDay('2026-10-14T20:59:59.999Z')).toBe('2026-10-14');
+    expect(moscowDay('2026-10-14T21:00:00.000Z')).toBe('2026-10-15');
+    expect(moscowDay('2026-10-14T23:59:59.999Z')).toBe('2026-10-15');
+    expect(moscowDay('2026-12-31T22:30:00.000Z')).toBe('2027-01-01');
+  });
+});
+
+describe('goals-20 a stored sum in the edit form', () => {
+  it('goals-20 fills a sum as it was entered, without the cents the server padded', () => {
+    expect(enteredInput('22000000.00')).toBe('22000000');
+    expect(enteredInput('150000.50')).toBe('150000.50');
+    expect(enteredInput('150000.05')).toBe('150000.05');
+    expect(enteredInput('0.00')).toBe('0');
+  });
+});
+
+describe('goals-35 prices older than 2 hours', () => {
+  it('goals-35 says how many prices behind the value are old, worded as the portfolio does', () => {
+    expect(staleText(undefined)).toBeNull();
+    expect(staleText(0)).toBeNull();
+    expect(staleText(1)).toBe('1 price is older than 2 hours; the last stored price is used.');
+    expect(staleText(3)).toBe('3 prices are older than 2 hours; the last stored prices are used.');
   });
 });

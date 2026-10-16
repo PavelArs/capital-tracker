@@ -324,6 +324,7 @@
 .transactions-option {
   display: flex;
   align-items: center;
+  gap: 10px;
   min-height: 46px;
   padding: 11px 12px;
   border: 1px solid var(--line-strong);
@@ -533,7 +534,7 @@
   align-self: flex-start;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639.98px) {
   .transactions-proposal {
     flex-direction: column;
     align-items: stretch;
@@ -542,4 +543,28 @@
 
 .transactions-line .copy-value {
   font-size: inherit;
+}
+
+/* Nothing left to classify: the empty-state look inside the list's card, in the positive tint. */
+.transactions-caught-up {
+  padding-block: 32px;
+}
+
+.transactions-caught-up .ui-empty__ill {
+  background: var(--pos-soft);
+  color: var(--pos);
+}
+
+/* Each answer carries its type's mark; the suggested one says so at the end (accepted prototype). */
+.transactions-option .transactions-glyph {
+  color: var(--ink-3);
+}
+
+.transactions-suggested {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }

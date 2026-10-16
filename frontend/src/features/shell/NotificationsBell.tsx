@@ -1,7 +1,10 @@
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useDialogFocus } from '@/ui/useDialogFocus';
+import { useCompactScreen } from '@/ui/useMediaQuery';
 import { age } from '../portfolio/format';
+import { needAttention } from './attention';
 import { useAttention } from './attention-context';
 import CloseButton from './CloseButton';
 import { Icon } from './icons';
@@ -22,6 +25,9 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+  const titleId = useId();
+  // On a phone the panel is a sheet over the page, and a sheet keeps the keyboard (shell-03).
+  const compact = useCompactScreen();
 
   useEffect(() => {
     if (!open) return;
@@ -51,7 +57,7 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
     : checked
       ? `Everything is up to date.${updated ? ` ${updated}` : ''}`
       : 'Could not check the sync status. Try again later.';
-  const label = count === 0 ? 'Notifications' : `Notifications, ${count} need attention`;
+  const label = count === 0 ? 'Notifications' : `Notifications, ${needAttention(count)}`;
 
   return (
     <div className="shell-bell" ref={root}>
@@ -76,10 +82,10 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
         <>
           {/* The dimmed page behind the phone sheet: a tap on it closes the sheet. */}
           <div className="shell-bell__scrim" aria-hidden="true" onClick={() => setOpen(false)} />
-          <section id={panelId} className="shell-bell__panel" aria-label="Notifications">
+          <Panel id={panelId} titleId={titleId} sheet={compact}>
             <header className="shell-bell__head">
-              <h2>Notifications</h2>
-              {count > 0 && <span>{count} need attention</span>}
+              <h2 id={titleId}>Notifications</h2>
+              {count > 0 && <span>{needAttention(count)}</span>}
               <span className="shell-bell__close">
                 <CloseButton
                   onClick={() => {
@@ -130,9 +136,50 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
                 <span>{checked ? updated : 'Some checks could not run.'}</span>
               </p>
             )}
-          </section>
+          </Panel>
         </>
       )}
     </div>
+  );
+}
+
+interface PanelProps {
+  id: string;
+  titleId: string;
+  /** A modal sheet over the page (phones) rather than a popover beside the bell. */
+  sheet: boolean;
+  children: ReactNode;
+}
+
+function Panel({ id, titleId, sheet, children }: PanelProps) {
+  if (sheet)
+    return (
+      <Sheet id={id} titleId={titleId}>
+        {children}
+      </Sheet>
+    );
+  return (
+    <section id={id} className="shell-bell__panel" aria-labelledby={titleId}>
+      {children}
+    </section>
+  );
+}
+
+/** The phone sheet: the keyboard starts on its ✕, stays inside and goes back to the bell. */
+function Sheet({ id, titleId, children }: Omit<PanelProps, 'sheet'>) {
+  const ref = useRef<HTMLElement>(null);
+  // Escape is the bell's own: it closes the panel and puts the keyboard back on the bell.
+  useDialogFocus(ref, {});
+  return (
+    <section
+      ref={ref}
+      id={id}
+      className="shell-bell__panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
+      {children}
+    </section>
   );
 }

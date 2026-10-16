@@ -105,6 +105,11 @@
   text-align: right;
 }
 
+.property-card__badge {
+  margin-left: var(--sp-2);
+  vertical-align: middle;
+}
+
 .property-card__gain--pos {
   color: var(--pos);
 }

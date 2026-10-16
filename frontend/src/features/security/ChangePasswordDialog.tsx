@@ -125,7 +125,9 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
     <SecurityDialog
       title="Change password"
       titleId="security-password"
-      onEscape={busy ? undefined : onClose}
+      size="narrow"
+      onClose={onClose}
+      busy={busy}
     >
       <form onSubmit={submit} noValidate>
         <div className="ui-modal__body">

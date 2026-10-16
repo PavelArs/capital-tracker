@@ -114,7 +114,8 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     'Pool withdrawal',
     'Other',
   ]);
-  await expect(drawer.getByText(`${before - 1} left to classify`)).toBeVisible();
+  // transactions-07: the count includes the transaction being classified.
+  await expect(drawer.getByText(`${before} left to classify`)).toBeVisible();
   await expect(drawer.getByRole('button', { name: 'Save' })).toBeDisabled();
 
   // CLS-BUY: bought for 1000 USDT; only the fields a buy needs appear.

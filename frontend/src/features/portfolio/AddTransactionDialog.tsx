@@ -20,6 +20,7 @@ import { unitPrice } from './add-asset';
 import {
   addDecimal,
   bankRate,
+  carriesComment,
   compareDecimal,
   decimal,
   type EntryKind,
@@ -51,6 +52,7 @@ import {
   valueOptional,
   withDefaultTime,
 } from './add-transaction';
+import { useFocusFirstProblem } from './focus-problem';
 import { money, price, quantity } from './format';
 
 export interface Account {
@@ -71,8 +73,18 @@ const problemText: Record<EntryProblem, string> = {
   comment: `Keep the comment within ${MAX_COMMENT_LENGTH} characters`,
 };
 
-/** The message of a 409 that names the transfer itself as the first operation left short. */
-const OWN_SHORTFALL = 'An account does not hold enough for this transfer';
+/**
+ * The messages of a 409 that names the change itself as the first operation left short, with
+ * what the change is called: a transfer, or a trade (a sale, an expense, a gift sent, a fee).
+ */
+const OWN_SHORTFALL: Record<string, 'transfer' | 'transaction'> = {
+  'An account does not hold enough for this transfer': 'transfer',
+  'An account does not hold enough for this trade': 'transaction',
+};
+const ownShortfall = (message: unknown) =>
+  typeof message === 'string' && Object.hasOwn(OWN_SHORTFALL, message)
+    ? OWN_SHORTFALL[message]
+    : null;
 
 /** The operation a 409 names as depending on the change, if the server named one. */
 export function dependentOf(error: unknown): DependentOperation | null {
@@ -80,19 +92,19 @@ export function dependentOf(error: unknown): DependentOperation | null {
   return isAxiosError(error) &&
     error.response?.status === 409 &&
     data?.dependent &&
-    data.message !== OWN_SHORTFALL
+    ownShortfall(data.message) === null
     ? (data.dependent as DependentOperation)
     : null;
 }
 
-/** The account a new transfer would leave short, when the server named it. */
-export function shortOf(error: unknown): DependentOperation | null {
+/** The account a new transfer or trade would leave short, when the server named it. */
+export function shortOf(
+  error: unknown,
+): (DependentOperation & { of: 'transfer' | 'transaction' }) | null {
   const data = isAxiosError(error) ? error.response?.data : undefined;
-  return isAxiosError(error) &&
-    error.response?.status === 409 &&
-    data?.dependent &&
-    data.message === OWN_SHORTFALL
-    ? (data.dependent as DependentOperation)
+  const of = ownShortfall(data?.message);
+  return isAxiosError(error) && error.response?.status === 409 && data?.dependent && of
+    ? { ...(data.dependent as DependentOperation), of }
     : null;
 }
 
@@ -106,9 +118,13 @@ export function coverageOf(
     : null;
 }
 
-/** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
-export const shortText = (account: string, coin: string, date: string) =>
-  `${account} does not hold enough ${coin} on ${dayText(date)} for this transfer.`;
+/** "Wallet A does not hold enough ETH on Mar 1, 2026 for this transfer." */
+export const shortText = (
+  account: string,
+  coin: string,
+  date: string,
+  of: 'transfer' | 'transaction' = 'transfer',
+) => `${account} does not hold enough ${coin} on ${dayText(date)} for this ${of}.`;
 /**
  * The account's records start later than the transaction, so nothing can move in or out; with no
  * start date its records have not started: it was opened with balances.
@@ -135,7 +151,7 @@ function failure(
   if (status === 409 && message.includes('Bank of Russia rate'))
     return 'No Bank of Russia rate is stored for this date. Enter the rate you paid.';
   if (short)
-    return `${shortText(name(short.accountId), coin, short.occurredAt)} Add the receipts that bring it there first.`;
+    return `${shortText(name(short.accountId), coin, short.occurredAt, short.of)} Add the receipts that bring it there first.`;
   if (coverage)
     return coverage.coverageFrom === null
       ? coverageText(name(coverage.accountId), null, date)
@@ -154,6 +170,36 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** The price per unit a total and an amount imply, exact before it is shown. */
 const derivedPrice = (total: string, amount: string) =>
   priceFigure(Number(unitPrice(total, amount)));
+
+/**
+ * The account that holds the most of an asset now, or null when none holds any, there is only
+ * one account to choose, or any account's balance cannot be read.
+ */
+async function holderOf(
+  accounts: readonly Account[],
+  instrumentId: string | undefined,
+): Promise<string | null> {
+  if (!instrumentId || accounts.length < 2) return null;
+  const at = new Date().toISOString();
+  const held = await Promise.all(
+    accounts.map((account) =>
+      tradesApi
+        .available(account.id, { instrumentId, at })
+        .then((result) => result.quantity)
+        .catch(() => null),
+    ),
+  );
+  // One unread balance may be the largest, so a partial answer suggests no account.
+  if (held.includes(null)) return null;
+  let holder: string | null = null;
+  let most = '0';
+  for (const [index, quantity] of held.entries())
+    if (quantity !== null && compareDecimal(quantity, most) > 0) {
+      holder = accounts[index].id;
+      most = quantity;
+    }
+  return holder;
+}
 
 export async function journalAccounts(): Promise<Account[]> {
   const accounts = [];
@@ -178,6 +224,15 @@ interface Props {
   /** A recorded operation to correct (OPS-EDIT); without it the window adds one. */
   editing?: Operation;
 }
+
+/** What an asset without a ticker (a property, a painting) is counted in. */
+const UNITS = 'units';
+
+/** "0.2 BTC", "2 units", and "1 unit" for exactly one of an asset without a ticker. */
+const counted = (value: string, symbol: string) => {
+  const shown = quantity(value);
+  return `${shown} ${symbol === UNITS && shown === '1' ? 'unit' : symbol}`;
+};
 
 /** The window's types: five in view and four under More (accepted prototype). */
 const mainKinds = [
@@ -307,6 +362,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [saving, setSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
+  const { form, refused } = useFocusFirstProblem();
+  // The owner picked an account or an asset; a default that arrives later leaves them as they are.
+  const accountTouched = useRef(false);
+  const assetTouched = useRef(false);
+  const chooseAccount = (set: (value: string) => void) => (value: string) => {
+    accountTouched.current = true;
+    set(value);
+  };
 
   useEffect(() => {
     let live = true;
@@ -330,7 +393,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       hiddenAssets,
       valuation,
     ])
-      .then(([allAssets, withJournal, hidden, hiddenIds, report]) => {
+      .then(async ([allAssets, withJournal, hidden, hiddenIds, report]) => {
         if (!live) return;
         const prices = new Map<string, string>();
         const shares = new Map<string, number>();
@@ -340,8 +403,6 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           const share = Number(item.allocationPercent);
           if (share > 0) shares.set(item.instrumentId, share);
         }
-        setMarket(prices);
-        setAllocation(shares);
         const tradable = byAllocation(
           allAssets.filter(
             (asset) =>
@@ -352,14 +413,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           ),
           shares,
         );
+        setMarket(prices);
+        setAllocation(shares);
         setAssets(tradable);
         setAllAssets(allAssets);
         setAccounts(withJournal);
-        if (!editing) {
-          setAccountId(withJournal[0]?.id ?? '');
-          setToAccountId(withJournal[1]?.id ?? '');
-          setEntry((current) => ({ ...current, instrumentId: tradable[0]?.id ?? '' }));
-        }
+        if (editing) return;
+        const first = tradable[0]?.id ?? '';
+        const startFrom = (from: string) => {
+          setAccountId(from);
+          setToAccountId(withJournal.find((account) => account.id !== from)?.id ?? '');
+        };
+        startFrom(withJournal[0]?.id ?? '');
+        setEntry((current) => ({ ...current, instrumentId: first }));
+        // The form shows at once. The first asset's largest holder then becomes the account it
+        // starts from, so a sale or a transfer of it does not start from an account that has
+        // none; never once the owner chose an account or another asset.
+        const holder = await holderOf(withJournal, first);
+        if (live && holder && !accountTouched.current && !assetTouched.current) startFrom(holder);
       })
       .catch(() => live && setLoadFailed(true));
     return () => {
@@ -463,12 +534,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const spent = typedAmount && typedFee ? addDecimal(typedAmount, typedFee) : typedAmount;
   const overspent = available !== null && spent !== null && compareDecimal(spent, available) > 0;
 
-  const update = (value: Partial<TransactionEntry>) =>
+  const update = (value: Partial<TransactionEntry>) => {
+    if ('instrumentId' in value) assetTouched.current = true;
     setEntry((current) => ({ ...current, ...value }));
+  };
   const asset = other ? undefined : assets?.find((item) => item.id === entry.instrumentId);
   const otherTicker = other?.ticker.trim().toUpperCase() ?? '';
   const otherValid = tickerPattern.test(otherTicker);
-  const symbol = other ? otherTicker || 'units' : (asset?.symbol ?? 'units');
+  const symbol = other ? otherTicker || UNITS : (asset?.symbol ?? UNITS);
   const unitSymbol = other ? otherTicker || 'unit' : (asset?.symbol ?? asset?.name ?? 'unit');
   // A new asset's ticker stands in for its id until it is saved with the trade.
   const checked: TransactionEntry = other
@@ -486,6 +559,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     setSettled({ date: entry.date, time: entry.time });
   };
   const priced = kind === 'buy' || kind === 'sell';
+  const commented = carriesComment(kind);
   const usd = priced ? usdTotal(shown) : null;
   const accountName = accounts?.find((item) => item.id === accountId)?.name ?? 'This account';
   const sameAccount = transfer && toAccountId === accountId;
@@ -586,8 +660,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     setTried(true);
     const account = accounts?.find((item) => item.id === accountId);
     const receiver = accounts?.find((item) => item.id === toAccountId);
-    if (problems(checked, today(), kind).size || !account || overspent) return;
-    if (transfer && (!receiver || sameAccount)) return;
+    if (
+      problems(checked, today(), kind).size ||
+      !account ||
+      overspent ||
+      (transfer && (!receiver || sameAccount))
+    ) {
+      // The keyboard goes to the first field to fix, which reads out its error.
+      refused();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -691,7 +773,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input[type="radio"]:checked')}
     >
-      <form onSubmit={submit} noValidate>
+      <form ref={form} onSubmit={submit} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
           <CloseButton onClick={onClose} disabled={saving} />
@@ -717,7 +799,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                 aria-controls={`${id}-more-types`}
                 onClick={() => setMoreShown(!moreShown)}
               >
-                More {moreShown ? '▴' : '▾'}
+                More <span aria-hidden="true">{moreShown ? '▴' : '▾'}</span>
               </button>
             </div>
             {moreShown && (
@@ -815,7 +897,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       aria-pressed={other !== null}
                       onClick={() => setOther(other ?? { ticker: '', name: '' })}
                     >
-                      + Other asset
+                      <span aria-hidden="true">+</span> Other asset
                     </button>
                   )}
                 </div>
@@ -1092,7 +1174,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         className="ui-input"
                         value={accountId}
                         disabled={Boolean(editing)}
-                        onChange={(event) => setAccountId(event.target.value)}
+                        onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
                       >
                         {accounts.map((account) => (
                           <option key={account.id} value={account.id}>
@@ -1110,7 +1192,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         className="ui-input"
                         value={toAccountId}
                         disabled={Boolean(editing)}
-                        onChange={(event) => setToAccountId(event.target.value)}
+                        onChange={(event) => chooseAccount(setToAccountId)(event.target.value)}
                         {...(tried && sameAccount
                           ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
                           : {})}
@@ -1144,7 +1226,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     className="ui-input"
                     value={accountId}
                     disabled={Boolean(editing)}
-                    onChange={(event) => setAccountId(event.target.value)}
+                    onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
                   >
                     {accounts.map((account) => (
                       <option key={account.id} value={account.id}>
@@ -1157,16 +1239,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               <details
                 className="portfolio-more"
                 open={
-                  Boolean(entry.time || entry.fee || entry.comment) ||
+                  Boolean(entry.time || entry.fee || (commented && entry.comment)) ||
                   found.has('time') ||
                   found.has('fee') ||
                   found.has('comment')
                 }
               >
                 <summary>
-                  {priced || transfer
-                    ? 'More options: time, fee, comment'
-                    : 'More options: time, comment'}
+                  {`More options: ${['time', ...(priced || transfer ? ['fee'] : []), ...(commented ? ['comment'] : [])].join(', ')}`}
                 </summary>
                 <div className="ui-field-row">
                   <div className="ui-field">
@@ -1208,21 +1288,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     </div>
                   )}
                 </div>
-                <div className="ui-field">
-                  <label className="ui-field__label" htmlFor={`${id}-comment`}>
-                    Comment
-                  </label>
-                  <textarea
-                    id={`${id}-comment`}
-                    className="ui-input ui-textarea"
-                    placeholder="Optional"
-                    value={entry.comment}
-                    onChange={(event) => update({ comment: event.target.value })}
-                    onBlur={leave('comment')}
-                    {...invalid('comment')}
-                  />
-                  {fieldError('comment')}
-                </div>
+                {/* transactions-01: only where the command keeps the comment. */}
+                {commented && (
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-comment`}>
+                      Comment
+                    </label>
+                    <textarea
+                      id={`${id}-comment`}
+                      className="ui-input ui-textarea"
+                      placeholder="Optional"
+                      value={entry.comment}
+                      onChange={(event) => update({ comment: event.target.value })}
+                      onBlur={leave('comment')}
+                      {...invalid('comment')}
+                    />
+                    {fieldError('comment')}
+                  </div>
+                )}
               </details>
             </>
           )}
@@ -1291,7 +1374,7 @@ function Availability({
 }: AvailabilityProps) {
   if (loading) return <span className="ui-field__hint">Checking what {account} holds…</span>;
   if (available === null) return null;
-  const held = `${quantity(available)} ${symbol}`;
+  const held = counted(available, symbol);
   if (Number(available) === 0)
     return (
       <span

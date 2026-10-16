@@ -8,9 +8,13 @@ const number = (value: string, minimum: number, maximum: number) =>
     maximumFractionDigits: maximum,
   }).format(Math.abs(Number(value)));
 
-const sign = (value: string, signed: boolean) => {
-  const negative = value.startsWith('-') && Number(value) !== 0;
-  return negative ? '-' : signed && Number(value) > 0 ? '+' : '';
+/**
+ * The sign of a figure as shown: one that rounds to zero at the digits shown ("0.00") has none,
+ * so a sub-cent loss is not "-$0.00" (portfolio-12).
+ */
+const sign = (value: string, signed: boolean, shown: string) => {
+  if (!/[1-9]/.test(shown)) return '';
+  return value.startsWith('-') ? '-' : signed ? '+' : '';
 };
 
 export const DASH = '—';
@@ -24,7 +28,8 @@ export const currencySymbols: Record<AccountingCurrency, string> = {
 /** $1,234.56, €920.00 or ₽104,500.00; signed adds "+" to gains. Missing is a dash, never 0. */
 export function money(value: string | null, currency: AccountingCurrency, signed = false): string {
   if (value === null) return DASH;
-  return `${sign(value, signed)}${currencySymbols[currency]}${number(value, 2, 2)}`;
+  const shown = number(value, 2, 2);
+  return `${sign(value, signed, shown)}${currencySymbols[currency]}${shown}`;
 }
 
 /** Prices below 1 keep up to six decimals. */
@@ -45,16 +50,19 @@ export function quantity(value: string): string {
   const amount = Number(value);
   if (amount !== 0 && Math.abs(amount) < SMALLEST_QUANTITY) return '<0.00000001';
   // A negative quantity (more left than the history explains) keeps its minus.
-  return `${sign(value, false)}${number(value, 0, 8)}`;
+  const shown = number(value, 0, 8);
+  return `${sign(value, false, shown)}${shown}`;
 }
 
 export function percent(value: string | null, signed = true): string {
   if (value === null) return DASH;
-  return `${sign(value, signed)}${number(value, 2, 2)}%`;
+  const shown = number(value, 2, 2);
+  return `${sign(value, signed, shown)}${shown}%`;
 }
 
+/** The gain or loss colour of an amount or percentage shown with two decimals; none for 0.00. */
 export function tone(value: string | null): 'pos' | 'neg' | undefined {
-  if (value === null || Number(value) === 0) return undefined;
+  if (value === null || !/[1-9]/.test(number(value, 2, 2))) return undefined;
   return value.startsWith('-') ? 'neg' : 'pos';
 }
 

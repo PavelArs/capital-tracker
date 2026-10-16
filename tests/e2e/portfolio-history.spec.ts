@@ -38,7 +38,9 @@ function money(value: string | null, currency: string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(Number(value)));
-  return `${value.startsWith('-') && Number(value) !== 0 ? '-' : ''}${symbols[currency]}${amount}`;
+  // A figure that rounds to zero at two decimals has no sign (portfolio-12).
+  const negative = value.startsWith('-') && /[1-9]/.test(amount);
+  return `${negative ? '-' : ''}${symbols[currency]}${amount}`;
 }
 
 // Exact difference of two decimal strings (no floating point).
@@ -137,8 +139,9 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   await expect(hero.getByText('Total net worth · USD')).toBeVisible();
   await expect(hero.getByText(money(shown.value, 'USD'), { exact: true })).toBeVisible();
   // Profit or loss to date sits under the net worth; the period's split below names the month.
+  const profitText = money(shown.profit, 'USD');
   await expect(hero.getByLabel('Profit or loss to date')).toContainText(
-    money(shown.profit, 'USD').replace(/^(?=[$])/, Number(shown.profit) > 0 ? '+' : ''),
+    profitText.replace(/^(?=[$])/, Number(shown.profit) > 0 && /[1-9]/.test(profitText) ? '+' : ''),
   );
   await expect(hero.getByLabel('What changed')).toContainText('Past month');
   await expect(page.getByText(/not built yet/i)).toHaveCount(0);
@@ -147,10 +150,24 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   await expect(tabs.getByRole('tab', { name: '1M' })).toHaveAttribute('aria-selected', 'true');
   expect(Date.parse(shown.at) - Date.parse(shown.from)).toBe(30 * DAY);
 
-  // DASH-MAIN, ALLOC: the five largest held assets and the allocation the valuation returned,
+  // DASH-MAIN, ALLOC: the five largest holdings and the allocation the valuation returned,
   // and the header bell once its checks have answered (it no longer sits on the page).
+  // Top assets ranks the allocation by asset, bank deposits included (dashboard audit: rank
+  // deposits in top assets), then the held assets without a price, as on the Portfolio.
   const valuation = (await (await valued).json()) as Valuation;
-  const held = valuation.assets.filter((asset) => Number(asset.quantity) !== 0).slice(0, 5);
+  const assetIds = new Set(valuation.assets.map((asset) => asset.instrumentId));
+  const ranked = valuation.allocation.byAsset.flatMap((slice) =>
+    slice.key.startsWith('deposit:')
+      ? [`/deposits/${slice.key.slice('deposit:'.length)}`]
+      : assetIds.has(slice.key)
+        ? [`/portfolio/${slice.key}`]
+        : [],
+  );
+  const listed = new Set(valuation.allocation.byAsset.map((slice) => slice.key));
+  const unpriced = valuation.assets
+    .filter((asset) => Number(asset.quantity) !== 0 && !listed.has(asset.instrumentId))
+    .map((asset) => `/portfolio/${asset.instrumentId}`);
+  const held = [...ranked, ...unpriced].slice(0, 5);
   expect(held.length).toBeGreaterThan(0);
   const top = main.getByRole('region', { name: 'Top assets' });
   await expect(top.getByRole('row')).toHaveCount(held.length + 1);
@@ -158,7 +175,7 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
     .getByRole('table')
     .getByRole('link')
     .evaluateAll((links) => links.map((link) => link.getAttribute('href')));
-  expect(hrefs).toEqual(held.map((asset) => `/portfolio/${asset.instrumentId}`));
+  expect(hrefs).toEqual(held);
   await expect(top.getByRole('link', { name: 'All assets' })).toHaveAttribute('href', '/portfolio');
   const slices = valuation.allocation.byAsset;
   const allocation = main.getByRole('region', { name: 'Allocation' });
@@ -203,7 +220,9 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   const firstValued = all.find((point) => point.value !== null);
   const tip = chart.getByRole('status');
   await expect(tip).toContainText(
+    // The point label names the weekday (dashboard audit: name the weekday).
     new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
       day: 'numeric',
       month: 'short',
       year: 'numeric',

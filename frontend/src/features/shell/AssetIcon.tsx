@@ -1,3 +1,4 @@
+import type { AccountClass } from '@api/accounting.api';
 import type { AssetType } from '@api/portfolio-assets.api';
 import { assetIdentity, type Blockchain, networkIdentity } from './asset-identity';
 import './asset-icon.css';
@@ -11,16 +12,19 @@ export default function AssetIcon({
   symbol,
   name,
   assetType,
+  assetClass,
   network,
   size = 'md',
 }: {
   symbol: string | null;
   name: string;
   assetType?: AssetType;
+  /** The class of the accounts that hold it (`heldClass`), for a broker or property colour. */
+  assetClass?: AccountClass | null;
   network?: Blockchain;
   size?: 'sm' | 'md' | 'lg';
 }) {
-  const { color, glyph } = assetIdentity({ symbol, name, assetType });
+  const { color, glyph } = assetIdentity({ symbol, name, assetType, assetClass });
   const chain = network ? networkIdentity(network) : null;
   return (
     <span

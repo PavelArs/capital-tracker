@@ -43,7 +43,10 @@
 }
 
 .shell-page__head h1 {
+  min-width: 0;
   margin-right: auto;
+  /* A long name with no break point (a goal's) wraps instead of widening the page. */
+  overflow-wrap: anywhere;
 }
 
 .shell-icon--sm {
@@ -108,6 +111,16 @@
   margin-top: 0;
 }
 
+/* A button kept focusable while it cannot act (aria-disabled, wallets-02) looks disabled. */
+.shell-button[aria-disabled="true"] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.shell-button[aria-disabled="true"]:hover {
+  border-color: var(--line-strong);
+}
+
 .shell-page__head .shell-button {
   margin-top: 0;
 }
@@ -136,6 +149,11 @@
 
 .shell-setting__text {
   min-width: 0;
+}
+
+/* A rate row: a long hint wraps beside the rate field instead of pushing it onto a new line. */
+.shell-setting--rate .shell-setting__text {
+  flex: 1 1 16rem;
 }
 
 .shell-setting__hint {
@@ -186,7 +204,7 @@
 /* Phones: the title on a row of its own (the bell sits in the top bar next to the owner),
    then the currency and "Add transaction" on one row, then the page's own actions on a row
    of their own. */
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .shell-page__head h1 {
     order: -2;
     flex: 1 1 100%;
@@ -222,6 +240,25 @@
   width: 8rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* A row whose text takes the room left of its control and wraps, so the control stays at the right. */
+.shell-setting__text--grow {
+  flex: 1 1 16rem;
+}
+
+/* An inflation rate: its label, the field, % and Save; they wrap on a narrow phone. */
+.shell-dust--rate {
+  flex-wrap: wrap;
+}
+
+.shell-dust--rate input {
+  width: 5rem;
+}
+
+.shell-dust__label {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
 }
 
 /* Loading: grey blocks in the layout of the page, instead of a sentence. */
@@ -339,19 +376,19 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--raised);
+  background: transparent;
   color: var(--ink-2);
   cursor: pointer;
 }
 
 .shell-bell__button:hover,
 .shell-bell__button[aria-expanded="true"] {
-  border-color: var(--ink-3);
+  background: var(--raised);
   color: var(--ink);
 }
 
@@ -362,17 +399,17 @@
 
 .shell-bell__count {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: 3px;
+  right: 2px;
   display: grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--warn);
   color: #1a1205;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
 }
@@ -517,7 +554,7 @@
 }
 
 /* Phones: the panel is a sheet over the page, not a popover that runs off the screen. */
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .shell-bell {
     position: static;
   }
@@ -567,7 +604,7 @@
   max-width: 100%;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639.98px) {
   .shell-setting__hint--pending {
     min-height: 2lh;
   }

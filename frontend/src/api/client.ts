@@ -114,6 +114,17 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiError>) => {
+    // A change that got no answer may have been saved: the kept answers may be old as well. A
+    // POST that only reads changed nothing either way, and a request the page cancelled (a
+    // preview superseded by the next keystroke) is not a change that went missing.
+    const cancelled = axios.isCancel(error) || error.code === 'ERR_CANCELED';
+    if (
+      !error.response &&
+      !cancelled &&
+      isUnsafeRequest(error.config) &&
+      !error.config?.changesNothing
+    )
+      forgetReads();
     if (worthRepeating(error) && error.config) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
       return apiClient({ ...error.config, retried: true });

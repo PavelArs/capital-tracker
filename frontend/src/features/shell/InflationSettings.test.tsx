@@ -4,8 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InflationSettings, { monthText, pendingMonths } from './InflationSettings';
 
+// Months back from the running month of the Moscow calendar, which the page counts by.
 const monthsAgo = (count: number) => {
-  const now = new Date();
+  const now = new Date(Date.now() + 3 * 3_600_000);
   const number = now.getUTCFullYear() * 12 + now.getUTCMonth() - count;
   return `${Math.floor(number / 12)}-${String((number % 12) + 1).padStart(2, '0')}`;
 };
@@ -49,6 +50,11 @@ const standard = () =>
     }),
   ]);
 
+// A currency row's own rate: named by the row (currency and index) and "My rate a year".
+const rateName = (currency: string) => new RegExp(`^${currency}( · .*)? My rate a year$`);
+const findRate = (currency: string) => screen.findByRole('textbox', { name: rateName(currency) });
+const getRate = (currency: string) => screen.getByRole('textbox', { name: rateName(currency) });
+
 const stored = new Map<string, string>();
 
 beforeEach(() => {
@@ -71,6 +77,22 @@ describe('INFL-UI pending months', () => {
     expect(pendingMonths(null, now)).toEqual([]);
   });
 
+  it('settings-07 counts the months by the Moscow calendar, also in the last hours of a UTC month', () => {
+    // 21:30 UTC on 31 October is 00:30 on 1 November in Moscow: October has ended there.
+    expect(pendingMonths('2026-08', new Date('2026-10-31T21:30:00Z'))).toEqual([
+      '2026-09',
+      '2026-10',
+    ]);
+    // 20:59 UTC is still 31 October in Moscow: October is the running month and is left out.
+    expect(pendingMonths('2026-08', new Date('2026-10-31T20:59:00Z'))).toEqual(['2026-09']);
+    expect(pendingMonths('2026-08', new Date('2026-10-31T12:00:00Z'))).toEqual(['2026-09']);
+    // Year end: 31 December 22:00 UTC is already January in Moscow.
+    expect(pendingMonths('2026-10', new Date('2026-12-31T22:00:00Z'))).toEqual([
+      '2026-11',
+      '2026-12',
+    ]);
+  });
+
   it('INFL-UI-B: offers at most the newest twelve and names a month as the page does', () => {
     const months = pendingMonths('2020-01', new Date('2026-10-12T10:00:00Z'));
     expect(months).toHaveLength(12);
@@ -83,14 +105,13 @@ describe('INFL-UI Settings → Inflation', () => {
   it('INFL-UI-C: shows each currency with its official rate, source and last published month', async () => {
     vi.spyOn(inflationApi, 'overview').mockResolvedValue(standard());
     render(<InflationSettings />);
-    expect(await screen.findByLabelText('USD · my rate a year')).toBeInTheDocument();
+    expect(await findRate('USD')).toBeInTheDocument();
+    expect(getRate('USD')).toHaveAccessibleName('USD · OECD (US CPI-U) My rate a year');
     expect(
-      screen.getByText(
-        `Official 2.9% over 12 months · OECD (US CPI-U) · published to ${monthText(monthsAgo(3))}`,
-      ),
+      screen.getByText(`Official 2.9% over 12 months · published to ${monthText(monthsAgo(3))}`),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('USD · my rate a year')).toHaveAttribute('placeholder', '2.9');
-    expect(screen.getByLabelText('RUB · my rate a year')).toHaveValue('14');
+    expect(getRate('USD')).toHaveAttribute('placeholder', '2.9');
+    expect(getRate('RUB')).toHaveValue('14');
     expect(screen.getByText(/Eurostat HICP \(euro area\)/)).toBeInTheDocument();
   });
 
@@ -111,7 +132,7 @@ describe('INFL-UI Settings → Inflation', () => {
     const save = vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<InflationSettings />);
-    const input = await screen.findByLabelText('USD · my rate a year');
+    const input = await findRate('USD');
     await user.type(input, '5,5');
     await user.click(
       within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
@@ -126,7 +147,7 @@ describe('INFL-UI Settings → Inflation', () => {
     const save = vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<InflationSettings />);
-    const input = await screen.findByLabelText('RUB · my rate a year');
+    const input = await findRate('RUB');
     await user.clear(input);
     await user.click(
       within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
@@ -139,7 +160,7 @@ describe('INFL-UI Settings → Inflation', () => {
     const save = vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<InflationSettings />);
-    const input = await screen.findByLabelText('USD · my rate a year');
+    const input = await findRate('USD');
     const form = input.closest('form') as HTMLElement;
     await user.type(input, 'lots');
     await user.click(within(form).getByRole('button', { name: 'Save' }));
@@ -156,7 +177,7 @@ describe('INFL-UI Settings → Inflation', () => {
     vi.spyOn(inflationApi, 'setPersonalRate').mockRejectedValue(new Error('offline'));
     const user = userEvent.setup();
     render(<InflationSettings />);
-    const input = await screen.findByLabelText('EUR · my rate a year');
+    const input = await findRate('EUR');
     await user.type(input, '4');
     await user.click(
       within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
@@ -259,12 +280,16 @@ describe('INFL-UI Settings → Inflation', () => {
     vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<InflationSettings />);
-    const input = await screen.findByLabelText('USD · my rate a year');
+    const input = await findRate('USD');
     await user.type(input, '5.50');
     await user.click(
       within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
     );
-    expect(await screen.findByText('Saved. Your USD rate is 5.5% a year.')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Saved. Your USD rate is 5.5% a year. Choose My rate above to use it.',
+      ),
+    ).toBeInTheDocument();
     expect(input).toHaveValue('5.5');
   });
 
@@ -287,12 +312,12 @@ describe('INFL-UI Settings → Inflation', () => {
     vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<InflationSettings />);
-    const usd = await screen.findByLabelText('USD · my rate a year');
+    const usd = await findRate('USD');
     await user.type(usd, '5');
     await user.click(
       within(usd.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
     );
-    const eur = screen.getByLabelText('EUR · my rate a year');
+    const eur = getRate('EUR');
     await user.type(eur, '6');
     await user.click(
       within(eur.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
@@ -301,8 +326,8 @@ describe('INFL-UI Settings → Inflation', () => {
     // the first, older answer arrives last, with USD and EUR still unset
     releaseFirst(standard());
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.getByLabelText('USD · my rate a year')).toHaveValue('5');
-    expect(screen.getByLabelText('EUR · my rate a year')).toHaveValue('6');
+    expect(getRate('USD')).toHaveValue('5');
+    expect(getRate('EUR')).toHaveValue('6');
   });
 
   it('INFL-UI-Q: names the published figure as official even when an entered month is in the year', async () => {
@@ -326,5 +351,122 @@ describe('INFL-UI Settings → Inflation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not load the inflation rates; try again later.',
     );
+  });
+
+  it('settings-06 says no official figures are loaded yet when none are', async () => {
+    vi.spyOn(inflationApi, 'overview').mockResolvedValue(
+      overview([
+        row({ officialLastMonth: null, lastMonth: null, officialTrailingYearPercent: null }),
+        row({ currency: 'EUR', officialSource: 'Eurostat', officialTrailingYearPercent: null }),
+      ]),
+    );
+    render(<InflationSettings />);
+    expect(await screen.findByText('No OECD (US CPI-U) figures loaded yet.')).toBeInTheDocument();
+    // A short published series still says it has less than a year.
+    expect(screen.getByText('Eurostat has no twelve full months yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/OECD \(US CPI-U\) has no twelve/)).not.toBeInTheDocument();
+  });
+
+  it('settings-08 starts the month dialog on the change field and announces a refused save there', async () => {
+    vi.spyOn(inflationApi, 'overview').mockResolvedValue(standard());
+    const save = vi.spyOn(inflationApi, 'setMonth').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<InflationSettings />);
+    await user.click(await screen.findByRole('button', { name: 'Enter a month' }));
+    const dialog = screen.getByRole('dialog', { name: 'Enter a month' });
+    const change = within(dialog).getByLabelText(/How much prices changed/);
+    expect(change).toHaveFocus();
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(change).toHaveFocus();
+    expect(change).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Enter the change for one month, between -5% and 20%',
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('settings-09 names the months each currency estimates until they are published', async () => {
+    vi.spyOn(inflationApi, 'overview').mockResolvedValue(
+      overview([
+        // USD: the month before last typed in, last month still estimated.
+        row({ manualMonths: [{ month: monthsAgo(2), changePercent: '0.3' }] }),
+        row({ currency: 'EUR', officialLastMonth: monthsAgo(1) }),
+        row({ currency: 'RUB', officialSource: 'Bank of Russia' }),
+      ]),
+    );
+    render(<InflationSettings />);
+    expect(await screen.findByText(/Until a figure comes out/)).toHaveTextContent(
+      `USD ${monthText(monthsAgo(1))}; RUB ${monthText(monthsAgo(2))} and ${monthText(monthsAgo(1))}. Until a figure comes out, a month uses the last 12-month rate and is marked as estimated.`,
+    );
+  });
+
+  it('settings-09 names no month when every currency is published to last month', async () => {
+    vi.spyOn(inflationApi, 'overview').mockResolvedValue(
+      overview([row({ officialLastMonth: monthsAgo(1) })]),
+    );
+    render(<InflationSettings />);
+    expect(await screen.findByText(/Until a figure comes out/)).toHaveTextContent(
+      /^Until a figure comes out, a month uses the last 12-month rate and is marked as estimated\./,
+    );
+  });
+
+  it('settings-10 names each row by its currency and index, and says what the rates are used by', async () => {
+    vi.spyOn(inflationApi, 'overview').mockResolvedValue(standard());
+    render(<InflationSettings />);
+    expect(await findRate('EUR')).toHaveAccessibleName(
+      'EUR · Eurostat HICP (euro area) My rate a year',
+    );
+    expect(
+      screen.getByText(
+        'Used by the Nominal / Real switch next to the currency, and by every deposit.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // The server's answer after the save: the USD rate is 5%.
+  const savedFive = () =>
+    overview(
+      standard().currencies.map((item) =>
+        item.currency === 'USD' ? { ...item, personalRatePercent: '5' } : item,
+      ),
+    );
+
+  it('settings-13 says a saved own rate is not in use while the official rate is chosen', async () => {
+    vi.spyOn(inflationApi, 'overview')
+      .mockResolvedValueOnce(standard())
+      .mockResolvedValue(savedFive());
+    vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<InflationSettings />);
+    const input = await findRate('USD');
+    await user.type(input, '5');
+    await user.click(
+      within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
+    );
+    expect(
+      await screen.findByText(
+        'Saved. Your USD rate is 5.0% a year. Choose My rate above to use it.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('settings-13 says a saved own rate is in use while My rate is chosen', async () => {
+    vi.spyOn(inflationApi, 'overview')
+      .mockResolvedValueOnce(standard())
+      .mockResolvedValue(savedFive());
+    vi.spyOn(inflationApi, 'setPersonalRate').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<InflationSettings />);
+    await user.click(await screen.findByRole('radio', { name: 'My rate' }));
+    const input = await findRate('USD');
+    await user.type(input, '5');
+    await user.click(
+      within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
+    );
+    expect(
+      await screen.findByText('Saved. Your USD rate is 5.0% a year. Real values use it now.'),
+    ).toBeInTheDocument();
+    // The choice is kept for the whole page; the other tests start from Official.
+    await user.click(screen.getByRole('radio', { name: 'Official' }));
   });
 });
