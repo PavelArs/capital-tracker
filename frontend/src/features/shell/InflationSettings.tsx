@@ -316,7 +316,7 @@ function MonthDialog({
               />
             )}
           </Field>
-          {error && <Banner tone="neg">{error}</Banner>}
+          {(error ?? (tried ? problem : null)) && <Banner tone="neg">{error ?? problem}</Banner>}
         </ModalBody>
         <ModalFooter>
           <span className="ui-grow" />

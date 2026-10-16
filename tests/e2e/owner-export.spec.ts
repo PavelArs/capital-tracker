@@ -96,7 +96,9 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
       `^trade:[0-9a-f-]{36},trade,buy,in,active,manual,2025-06-13T00:00:00\\.000Z,0,${account.id},${accountName},,,BTC,EXP-UI bitcoin ${suffix},,0\\.00918359,,,,1000,`,
     ),
   );
-  await expect(data.getByText(`Downloaded ${archive.suggestedFilename()}.`)).toBeVisible();
+  await expect(
+    page.getByRole('status').getByText(`Downloaded ${archive.suggestedFilename()}.`),
+  ).toBeVisible();
 
   // EXP-JSON: the same records with a format version, and no password, TOTP or session.
   const backupDownload = page.waitForEvent('download');
@@ -120,7 +122,9 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
     expect(parsed.tables).not.toHaveProperty(secret);
   for (const marker of [owner.email, owner.password, session, hashToken(session), api.csrfToken])
     expect(text).not.toContain(marker);
-  await expect(data.getByText(`Downloaded ${backup.suggestedFilename()}.`)).toBeVisible();
+  await expect(
+    page.getByRole('status').getByText(`Downloaded ${backup.suggestedFilename()}.`),
+  ).toBeVisible();
 
   // At phone width the card fits without a horizontal scroll.
   await page.setViewportSize({ width: 390, height: 844 });

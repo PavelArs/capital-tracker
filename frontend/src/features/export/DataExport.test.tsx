@@ -100,7 +100,7 @@ describe('Settings → Data (EXP-UI)', () => {
     renderExport();
     await userEvent.click(within(card()).getByRole('button', { name: 'Export backup' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not export your data. Nothing was downloaded. Try again.',
+      'Could not export your data; nothing was downloaded. Try again.',
     );
     expect(saved).toEqual([]);
     expect(within(card()).getByRole('button', { name: 'Export backup' })).toBeEnabled();

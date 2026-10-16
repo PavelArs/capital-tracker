@@ -49,7 +49,7 @@ export default function DataExport() {
     } catch {
       toast.show({
         tone: 'error',
-        title: 'Could not export your data. Nothing was downloaded. Try again.',
+        title: 'Could not export your data; nothing was downloaded. Try again.',
       });
     } finally {
       setState({ kind: 'idle' });
