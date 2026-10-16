@@ -236,12 +236,12 @@ async function main() {
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
     assert.equal(
       Number(state.migrations),
-      67,
-      'Run after the actual preserved sixty-seven migrations',
+      68,
+      'Run after the actual preserved sixty-eight migrations',
     );
     assert.equal(
       state.latest_migration,
-      'AddManualPriceCurrency1797400000000',
+      'AddBrokerImports1797500000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
@@ -275,7 +275,7 @@ async function main() {
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map(
       (row) => row.name,
     );
-    assert.equal(shownNames.length, 67);
+    assert.equal(shownNames.length, 68);
     assert.deepEqual(
       shownNames,
       appliedNames,
