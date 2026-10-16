@@ -323,6 +323,21 @@ export class OwnerExportService {
         WHERE h."ownerId"=$1`,
       [owner],
     );
+    // BROKER-CAPRET: the cash that came back; the asset whose cost it lowered is the counter asset.
+    const capitalReturns: Row[] = await manager.query(
+      `SELECT ${entry}, h."accountId", a.name AS "accountName", c.symbol, c.name AS "assetName",
+          ${exact('v.amount')} AS quantity, i.symbol AS "counterSymbol", i.name AS "counterName",
+          ${exact('v."amountUsd"')} AS "amountUsd", v."paidCurrency",
+          ${exact('v."perUsd"')} AS "paidPerUsd", v."rateDate"::text AS "paidRateDate",
+          v."rateSource" AS "paidRateSource", NULL AS "chainTxid"
+        FROM account_capital_returns h
+        ${lastContent('account_capital_return_versions', 'capitalReturnId')}
+        JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
+        JOIN accounting_instruments c ON c."ownerId"=h."ownerId" AND c.id=v."cashInstrumentId"
+        JOIN manual_accounts a ON a."ownerId"=h."ownerId" AND a.id=h."accountId"
+        WHERE h."ownerId"=$1`,
+      [owner],
+    );
     // Known-cost carry-in lots of each journal's current opening, as the list shows them.
     const openings: Row[] = await manager.query(
       `SELECT h.id, NULL AS "headKind", NULL AS version, h."acquiredAt" AS "occurredAt",
@@ -408,6 +423,22 @@ export class OwnerExportService {
           source: chainOr(row, 'manual'),
           valueUsd: text(row.incomeValueUsd),
           costBasisUsd: text(row.acquisitionBasisUsd),
+        }),
+      ),
+      ...capitalReturns.map(
+        (row): ExportOperation => ({
+          ...base(row, 'capital-return'),
+          type: 'capital-return',
+          direction: 'in',
+          source: 'manual',
+          counterAsset: text(row.counterSymbol ?? row.counterName),
+          valueUsd: text(row.amountUsd),
+          paidCurrency: text(row.paidCurrency),
+          paidAmount: row.paidCurrency === null ? null : text(row.quantity),
+          paidFee: row.paidCurrency === null ? null : '0',
+          paidPerUsd: text(row.paidPerUsd),
+          paidRateDate: text(row.paidRateDate),
+          paidRateSource: text(row.paidRateSource),
         }),
       ),
       ...openings.map(

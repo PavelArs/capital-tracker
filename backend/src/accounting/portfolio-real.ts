@@ -10,6 +10,7 @@ import {
 } from './money';
 import {
   convertAmount,
+  lotCostIn,
   type PortfolioAccountInput,
   type PortfolioLot,
 } from './portfolio-valuation';
@@ -48,9 +49,11 @@ const reading = (cost: bigint, value: bigint | null, estimated: boolean): RealRe
   };
 };
 
-/** What one lot cost in the report currency at its day's rate; null without a cost or a rate. */
-const paidOf = (lot: PortfolioLot, fx: FxConverter) =>
-  lot.costUsd === null ? null : convertAmount(fx, lot.costUsd, lot.acquiredAt, lot.native);
+/**
+ * What one lot cost in the report currency at its day's rate, less what a capital return took
+ * off at its own day's; null without a cost or a rate.
+ */
+const paidOf = (lot: PortfolioLot, fx: FxConverter) => lotCostIn(fx, lot);
 
 /**
  * What one lot cost, carried to today by the inflation since its day. Null when the lot has no
@@ -61,14 +64,30 @@ function grownCost(
   fx: FxConverter,
   factorOf: (day: string) => InflationFactor | null,
 ): { cost: bigint; percent: string; estimated: boolean } | null {
-  const paid = paidOf(lot, fx);
-  const factor = paid === null ? null : factorOf(moscowDate(lot.acquiredAt));
-  if (paid === null || factor === null) return null;
-  const scaled = BigInt(Math.round(factor.factor * 1e10));
+  if (lot.costUsd === null) return null;
+  const factor = factorOf(moscowDate(lot.acquiredAt));
+  if (factor === null) return null;
+  const scale = (value: InflationFactor) => BigInt(Math.round(value.factor * 1e10));
+  const scaled = scale(factor);
+  // What came back by a capital return is carried from its own day, not from the purchase day:
+  // the money was not tied up after it came in.
+  let gross = canonicalDecimalToAtoms(lot.costUsd);
+  for (const part of lot.returned ?? []) gross += canonicalDecimalToAtoms(part.costUsd);
+  const bought = convertAmount(fx, formatAtoms(gross), lot.acquiredAt, lot.native);
+  if (bought === null) return null;
+  let cost = (bought * scaled) / FACTOR_SCALE;
+  let estimated = factor.estimated;
+  for (const part of lot.returned ?? []) {
+    const returned = convertAmount(fx, part.costUsd, part.at, part.native);
+    const back = factorOf(moscowDate(part.at));
+    if (returned === null || back === null) return null;
+    cost -= (returned * scale(back)) / FACTOR_SCALE;
+    estimated = estimated || back.estimated;
+  }
   return {
-    cost: (paid * scaled) / FACTOR_SCALE,
+    cost,
     percent: formatPercent(scaled - FACTOR_SCALE, FACTOR_SCALE),
-    estimated: factor.estimated,
+    estimated,
   };
 }
 

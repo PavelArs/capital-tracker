@@ -889,6 +889,32 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('BROKER-CAPRET-UI: a capital return lists the cash that came back and the asset whose cost it lowered, with no edit or delete', async () => {
+    const user = userEvent.setup();
+    const returned = operation({
+      id: `capital-return:${id(60)}`,
+      kind: 'capital-return',
+      type: 'capital-return',
+      asset: usdt,
+      quantity: '250',
+      counterAsset: { instrumentId: id(61), symbol: 'SYNTH', name: 'Synthetic bond' },
+      valueUsd: '250',
+      version: 1,
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([returned]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Capital return' }));
+    const drawer = screen.getByRole('dialog', { name: 'Capital return · USDT' });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Lowered the cost of')).toBe('SYNTH');
+    expect(within(facts).queryByText('Received', { exact: true })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
   it('PR-OPS-2 edits and deletes a transfer here; staking rewards keep their screen', async () => {
     const user = userEvent.setup();
     const staking = operation({

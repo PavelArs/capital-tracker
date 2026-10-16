@@ -1,4 +1,5 @@
 import type { FifoSwap } from '../accounting/asset-swap-types';
+import type { FifoCapitalReturn } from '../accounting/capital-return-types';
 import type { ConnectedLedger } from '../accounting/connected-accounting.store';
 import type { FifoCarryInInput, FifoTrade } from '../accounting/fifo';
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
@@ -59,6 +60,7 @@ function inputs(
     trades?: FifoTrade[];
     initialLots?: FifoCarryInInput[];
     swaps?: FifoSwap[];
+    capitalReturns?: FifoCapitalReturn[];
   }[],
 ): ValuationInputs {
   // Two accounts joined by an own transfer share one ledger; each is read once.
@@ -72,6 +74,7 @@ function inputs(
           trades: account.trades ?? [],
           initialLots: account.initialLots ?? [],
           swaps: account.swaps ?? [],
+          capitalReturns: account.capitalReturns ?? [],
         },
       ]),
     ),
@@ -386,6 +389,43 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     ]);
     expect(coinHidden.slice(1).map((flow) => flow.instrumentId)).toEqual(['usdt', 'usdt', 'rub']);
     expect(coinHidden[3].native).toEqual({ currency: 'RUB', amount: BigInt(units(-20000)) });
+  });
+
+  it('BROKER-CAPRET-HIDE a capital return across the hidden boundary moves its value in or out', () => {
+    const returned = {
+      capitalReturnId: 'return-1',
+      version: 1,
+      instrumentId: 'bond',
+      instrumentName: 'Bond',
+      instrumentSymbol: null,
+      cashInstrumentId: 'rub',
+      cashInstrumentName: 'Ruble',
+      cashInstrumentSymbol: 'RUB',
+      occurredAt: '2025-06-11T00:00:00.000Z',
+      orderWithinTimestamp: 0,
+      amount: '8000',
+      amountUsd: '100',
+      paidCurrency: 'RUB',
+    } satisfies FifoCapitalReturn;
+    const account = {
+      id: 'broker',
+      coverageFrom: '2025-06-01T00:00:00.000Z',
+      capitalReturns: [returned],
+    };
+    // Shown on both sides, principal moving to cash is no money in or out.
+    expect(capitalFlows(inputs([account]))).toEqual([]);
+    // The bond hidden: the cash that came back is money put into what is shown, as paid.
+    const bondHidden = capitalFlows({ ...inputs([account]), hidden: new Set(['bond']) });
+    expect(shown(bondHidden)).toEqual([['2025-06-11T00:00:00.000Z', units(100), '2025-06-11']]);
+    expect(bondHidden[0]).toMatchObject({ instrumentId: 'rub' });
+    expect(bondHidden[0].native).toEqual({ currency: 'RUB', amount: BigInt(units(8000)) });
+    // The cash hidden: the money left what is shown.
+    const cashHidden = capitalFlows({ ...inputs([account]), hidden: new Set(['rub']) });
+    expect(shown(cashHidden)).toEqual([['2025-06-11T00:00:00.000Z', units(-100), '2025-06-11']]);
+    expect(cashHidden[0]).toMatchObject({ instrumentId: 'bond' });
+    expect(cashHidden[0].native).toEqual({ currency: 'RUB', amount: BigInt(units(-8000)) });
+    // Both hidden: out of the figures altogether.
+    expect(capitalFlows({ ...inputs([account]), hidden: new Set(['rub', 'bond']) })).toEqual([]);
   });
 
   it('ASSET-HIDE-SWAP a swap across the hidden boundary moves its value in or out', () => {

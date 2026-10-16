@@ -10,6 +10,7 @@ export const typeLabels: Record<OperationType, string> = {
   transfer: 'Transfer',
   swap: 'Swap',
   reward: 'Reward',
+  'capital-return': 'Capital return',
   'staking-reward': 'Staking reward',
   stake: 'Stake',
   unstake: 'Unstake',

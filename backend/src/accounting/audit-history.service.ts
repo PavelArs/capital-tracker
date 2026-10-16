@@ -84,6 +84,17 @@ const sources = `
     JOIN accounting_instruments i ON i."ownerId" = v."ownerId" AND i.id = v."instrumentId"
     WHERE v."ownerId" = $1
   UNION ALL
+  SELECT 'capital-return', v."capitalReturnId"::text, v.version, ${changeOf('v.kind')},
+      v."createdAt", v."occurredAt", a.name, 'owner',
+      jsonb_build_object('asset', ${symbol('c')}, 'returned', ${symbol('i')},
+        'amount', v.amount::text, 'amountUsd', v."amountUsd"::text,
+        'occurredAt', ${iso('v."occurredAt"')})
+    FROM account_capital_return_versions v
+    JOIN manual_accounts a ON a."ownerId" = v."ownerId" AND a.id = v."accountId"
+    JOIN accounting_instruments i ON i."ownerId" = v."ownerId" AND i.id = v."instrumentId"
+    JOIN accounting_instruments c ON c."ownerId" = v."ownerId" AND c.id = v."cashInstrumentId"
+    WHERE v."ownerId" = $1
+  UNION ALL
   SELECT 'flow', v."flowId"::text, v.version, ${changeOf('v.kind')}, v."createdAt",
       v."occurredAt", NULL, 'owner',
       jsonb_build_object('direction', v.direction, 'amountUsd', v."amountUsd"::text,

@@ -2098,4 +2098,50 @@ describe('list-all-operations projection', () => {
       projectOperations(now, input, undefined, { from: '2026-10-05' }).needsClassificationCount,
     ).toBe(5);
   });
+
+  it('BROKER-CAPRET-OPS: a capital return is listed as cash that came in, naming the asset it lowered, never as a reward', () => {
+    const rub: OperationAsset = { instrumentId: id(40), symbol: 'RUB', name: 'Russian ruble' };
+    const bond: OperationAsset = { instrumentId: id(41), symbol: 'SYNTH', name: 'Synthetic bond' };
+    const input = sources({
+      capitalReturns: [
+        {
+          capitalReturnId: id(50),
+          version: 1,
+          account: bybit,
+          cash: rub,
+          returned: bond,
+          occurredAt: '2025-06-14T10:30:00.000Z',
+          orderWithinTimestamp: 0,
+          amount: '7900',
+          amountUsd: '100',
+          paid: {
+            currency: 'RUB',
+            gross: '7900',
+            fee: '0',
+            rateDate: '2025-06-14',
+            perUsd: '79',
+            rateSource: 'bank-of-russia',
+          },
+        },
+      ],
+    });
+    const rates = { USD: [{ date: '2025-06-14', rubPerUnit: '80' }], EUR: [] };
+    const [usd] = projectOperations(now, input).operations;
+    expect(usd).toMatchObject({
+      id: `capital-return:${id(50)}`,
+      kind: 'capital-return',
+      type: 'capital-return',
+      direction: 'in',
+      asset: rub,
+      quantity: '7900',
+      counterAsset: bond,
+      counterQuantity: null,
+      valueUsd: '100',
+      costBasisUsd: null,
+      status: 'recorded',
+    });
+    // Paid in rubles, the amount stays exactly as paid even at another day's rate.
+    const [inRub] = projectOperations(now, input, new FxConverter(rates, 'RUB')).operations;
+    expect(inRub.value).toBe('7900');
+  });
 });

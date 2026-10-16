@@ -15,6 +15,13 @@ import {
   swapVersionSelect,
 } from './asset-swap.store';
 import { emptySwapSummary, type FifoSwap } from './asset-swap-types';
+import {
+  type CapitalReturnVersionRow,
+  capitalReturnHeadJoin,
+  capitalReturnVersionSelect,
+  projectCapitalReturnVersion,
+} from './capital-return.store';
+import type { CapitalReturnSummary, FifoCapitalReturn } from './capital-return-types';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import {
   readTransferHeads,
@@ -48,6 +55,7 @@ export interface ConnectedLedger {
   participants: ReadonlySet<string>;
   rewardParticipants: ReadonlySet<string>;
   swapParticipants: ReadonlySet<string>;
+  capitalReturnParticipants: ReadonlySet<string>;
 }
 export type ConnectedLedgerCache = Map<string, ConnectedLedger>;
 
@@ -86,6 +94,14 @@ export const emptyRewardSummary = (): RewardSummary => ({
   unknownBasisCount: 0,
   unknownIncomeCount: 0,
   unclassifiedCount: 0,
+});
+
+export const emptyCapitalReturnSummary = (): CapitalReturnSummary => ({
+  activeCount: 0,
+  amountUsd: '0',
+  appliedUsd: '0',
+  realizedUsd: '0',
+  unknownCostCount: 0,
 });
 
 /** Resolve the affected old/new union before taking sorted account locks. */
@@ -223,6 +239,31 @@ export async function readConnectedLedger(
     swaps.push(projectSwapVersion(row));
     swapsByAccount.set(row.accountId, swaps);
   }
+  const returnCounts: { accountId: string; active: number }[] = await manager.query(
+    `SELECT v."accountId",count(*) FILTER(WHERE v.kind<>'void')::int AS active
+      FROM account_capital_return_versions v ${capitalReturnHeadJoin}
+      WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
+    [owner, ids],
+  );
+  if (
+    returnCounts.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeCapitalReturns) ||
+    returnCounts.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeCapitalReturns
+  )
+    throw new OwnedTransferCapacityError();
+  const returnRows: CapitalReturnVersionRow[] = await manager.query(
+    `${capitalReturnVersionSelect} ${capitalReturnHeadJoin}
+      WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."capitalReturnId" LIMIT 1001`,
+    [owner, ids],
+  );
+  if (returnRows.length > OWNED_TRANSFER_LIMITS.activeCapitalReturns)
+    throw new OwnedTransferCapacityError();
+  const returnsByAccount = new Map<string, FifoCapitalReturn[]>();
+  for (const row of returnRows) {
+    const returns = returnsByAccount.get(row.accountId) ?? [];
+    returns.push(projectCapitalReturnVersion(row));
+    returnsByAccount.set(row.accountId, returns);
+  }
   const accounts = new Map<string, ConnectedAccount>();
   for (const journal of journals) {
     accounts.set(journal.accountId, {
@@ -232,6 +273,7 @@ export async function readConnectedLedger(
       trades: byAccount.get(journal.accountId) ?? [],
       rewards: rewardsByAccount.get(journal.accountId) ?? [],
       swaps: swapsByAccount.get(journal.accountId) ?? [],
+      capitalReturns: returnsByAccount.get(journal.accountId) ?? [],
       initialLots: await readBaseline(manager, owner, journal.accountId, journal),
     });
   }
@@ -241,6 +283,7 @@ export async function readConnectedLedger(
     participants: await readTransferParticipants(manager, owner, ids),
     rewardParticipants: new Set(rewardCounts.map((row) => row.accountId)),
     swapParticipants: new Set(swapCounts.map((row) => row.accountId)),
+    capitalReturnParticipants: new Set(returnCounts.map((row) => row.accountId)),
   };
 }
 
@@ -253,6 +296,7 @@ export function projectConnectedLedger(
     trades?: readonly FifoTrade[];
     rewards?: readonly FifoReward[];
     swaps?: readonly FifoSwap[];
+    capitalReturns?: readonly FifoCapitalReturn[];
     transfers?: readonly ActiveTransferInput[];
   } = {},
 ) {
@@ -263,6 +307,7 @@ export function projectConnectedLedger(
           trades: options.trades ?? account.trades,
           rewards: options.rewards ?? account.rewards,
           swaps: options.swaps ?? account.swaps,
+          capitalReturns: options.capitalReturns ?? account.capitalReturns,
         }
       : account,
   );
@@ -277,6 +322,9 @@ export function connectedResult(ledger: ConnectedLedger, id: string, result: Acc
       : {}),
     ...(ledger.swapParticipants.has(id) && !result.swapSummary
       ? { swapSummary: emptySwapSummary() }
+      : {}),
+    ...(ledger.capitalReturnParticipants.has(id) && !result.capitalReturnSummary
+      ? { capitalReturnSummary: emptyCapitalReturnSummary() }
       : {}),
     ...(ledger.rewardParticipants.has(id) && !result.rewardSummary
       ? { rewardSummary: emptyRewardSummary() }

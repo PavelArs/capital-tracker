@@ -9,6 +9,7 @@ export type OperationType =
   | 'transfer'
   | 'swap'
   | 'reward'
+  | 'capital-return'
   | 'staking-reward'
   | 'stake'
   | 'unstake'
@@ -60,7 +61,7 @@ export interface OperationWallet {
 
 export interface Operation {
   id: string;
-  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'opening' | 'flow' | 'chain';
+  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'capital-return' | 'opening' | 'flow' | 'chain';
   /** Null for a blockchain transaction nobody has classified yet. */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';

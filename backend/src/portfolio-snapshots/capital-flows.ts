@@ -49,8 +49,8 @@ const signed = (value: string) =>
  * flow (PR-OPS-2). Holdings carried into a
  * journal enter at its start with their carried cost, stated at their acquisition date's
  * rate like their cost basis. Own transfers, swaps and rewards move no money in or out, so
- * their effect (a transfer fee, a reward) is market effect; only a swap between a shown and a
- * hidden asset does (ASSET-HIDE). The legacy owner-declared USD
+ * their effect (a transfer fee, a reward) is market effect; only a swap or a capital return
+ * between a shown and a hidden asset does (ASSET-HIDE). The legacy owner-declared USD
  * flows never change holdings, so counting them would invent market effect: they are not
  * flows here.
  */
@@ -123,6 +123,28 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
           instrumentId: shownIn ? swap.incomingInstrumentId : swap.outgoingInstrumentId,
           usd: shownIn ? value : -value,
           rateDate: moscowDate(swap.occurredAt),
+        });
+      }
+      for (const returned of account.capitalReturns ?? []) {
+        // ASSET-HIDE: a capital return is principal moving from an asset to its cash. Between a
+        // shown and a hidden one it moves money in or out of what is shown; between two shown
+        // (or two hidden) assets it moves none.
+        const shownCash = !inputs.hidden.has(returned.cashInstrumentId);
+        if (shownCash === !inputs.hidden.has(returned.instrumentId)) continue;
+        const sign = shownCash ? 1n : -1n;
+        flows.push({
+          at: Date.parse(returned.occurredAt),
+          instrumentId: shownCash ? returned.cashInstrumentId : returned.instrumentId,
+          usd: sign * signed(returned.amountUsd),
+          rateDate: moscowDate(returned.occurredAt),
+          ...(returned.paidCurrency
+            ? {
+                native: {
+                  currency: returned.paidCurrency,
+                  amount: sign * signed(returned.amount),
+                },
+              }
+            : {}),
         });
       }
     }

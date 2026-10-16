@@ -70,6 +70,7 @@ function glyph(operation: Operation): GlyphName {
       return 'opening';
     case 'deposit':
     case 'income':
+    case 'capital-return':
       return 'in';
     case 'withdrawal':
     case 'expense':
