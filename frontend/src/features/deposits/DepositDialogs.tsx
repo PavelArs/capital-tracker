@@ -20,15 +20,20 @@ import {
   useRef,
   useState,
 } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Chip, ChipGroup } from '@/ui/Chip';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { Field, type FieldControl } from '@/ui/Field';
+import { Affix, Input, Select } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { Toggle } from '@/ui/Toggle';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { useFocusFirstProblem } from '../portfolio/focus-problem';
-import CloseButton from '../shell/CloseButton';
+import { Icon } from '../shell/icons';
 import { dateText, earlyCloseText, money, movementText, today } from './deposit-format';
-import '@/ui/filters.css';
-import '../transactions/transactions.css';
 import './deposits.css';
 
 const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/;
@@ -96,13 +101,10 @@ function FormDialog({
   onSubmit,
   children,
   wide,
-  danger = false,
 }: {
   title: string;
   note?: string;
   submit: string;
-  /** A destructive confirmation: the submit button is the danger one. */
-  danger?: boolean;
   /** Every field's problem; each is shown under its field once the owner tried to save. */
   problems: () => Problems;
   onClose: () => void;
@@ -138,57 +140,40 @@ function FormDialog({
   return (
     <Modal
       titleId={`${id}-title`}
-      size={wide ? 'wide' : 'narrow'}
+      size={wide ? 'wide' : 'default'}
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
     >
-      <form ref={form} className="deposit-dialog" onSubmit={save} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>{title}</h2>
-          <CloseButton onClick={onClose} disabled={saving} />
-          {note && <p className="shell-note">{note}</p>}
-        </div>
-        <div className="ui-modal__body">
+      <form ref={form} onSubmit={save} noValidate>
+        <ModalHeader
+          titleId={`${id}-title`}
+          title={title}
+          onClose={onClose}
+          closeDisabled={saving}
+          intro={note}
+        />
+        <ModalBody>
           <ShownProblems.Provider value={shown}>{children}</ShownProblems.Provider>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={saving}
-            onClick={onClose}
-          >
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            className={`shell-button shell-button--${danger ? 'danger' : 'primary'}`}
-            disabled={saving}
-          >
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving…' : submit}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );
 }
 
-/** How a field's control points at its message: invalid with the problem, else its hint. */
-interface FieldAria {
-  'aria-invalid'?: true;
-  'aria-describedby'?: string;
-}
-
 /**
- * A labelled field. `name` is its key among the form's problems: once the owner tried to save,
- * its problem is said under it, in place of the hint, and the control is marked invalid.
+ * A labelled field of these forms. `name` is its key among the form's problems: once the owner
+ * tried to save, its problem is said under it, in place of the hint.
  */
-function Field({
+function FormField({
   label,
   hint,
   name,
@@ -197,35 +182,13 @@ function Field({
   label: string;
   hint?: string;
   name?: string;
-  children: (id: string, aria: FieldAria) => ReactNode;
+  children: (control: FieldControl) => ReactNode;
 }) {
-  const id = useId();
   const problems = useContext(ShownProblems);
-  const problem = name ? problems[name] : null;
-  const aria: FieldAria = problem
-    ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` }
-    : hint
-      ? { 'aria-describedby': `${id}-hint` }
-      : {};
   return (
-    <div className="ui-field">
-      <label className="ui-field__label" htmlFor={id}>
-        {label}
-      </label>
-      {children(id, aria)}
-      {problem ? (
-        // Not an alert: a refused save moves the focus to the field, which reads it out once.
-        <span className="ui-field__error" id={`${id}-error`}>
-          {problem}
-        </span>
-      ) : (
-        hint && (
-          <span className="ui-field__hint" id={`${id}-hint`}>
-            {hint}
-          </span>
-        )
-      )}
-    </div>
+    <Field label={label} hint={hint} error={name ? problems[name] : null}>
+      {children}
+    </Field>
   );
 }
 
@@ -255,16 +218,14 @@ function Text({
   children?: ReactNode;
 }) {
   return (
-    <Field label={label} hint={hint} name={name}>
-      {(id, aria) => {
+    <FormField label={label} hint={hint} name={name}>
+      {(control) => {
         const input = (
-          <input
-            id={id}
-            {...aria}
-            className="ui-input"
+          <Input
+            {...control}
             value={value}
             autoComplete="off"
-            inputMode={numeric ? 'decimal' : undefined}
+            numeric={numeric}
             maxLength={maxLength}
             placeholder={placeholder}
             onChange={(event) => onChange(event.target.value)}
@@ -272,19 +233,12 @@ function Text({
         );
         return (
           <>
-            {suffix ? (
-              <span className="ui-affix">
-                {input}
-                <span className="ui-affix__suffix">{suffix}</span>
-              </span>
-            ) : (
-              input
-            )}
+            {suffix ? <Affix suffix={suffix}>{input}</Affix> : input}
             {children}
           </>
         );
       }}
-    </Field>
+    </FormField>
   );
 }
 
@@ -302,22 +256,20 @@ function DateField({
   hint?: string;
 }) {
   return (
-    <Field label={label} hint={hint} name={name}>
-      {(id, aria) => (
-        <input
-          id={id}
-          {...aria}
+    <FormField label={label} hint={hint} name={name}>
+      {(control) => (
+        <Input
+          {...control}
           type="date"
-          className="ui-input"
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
-    </Field>
+    </FormField>
   );
 }
 
-function Select<T extends string>({
+function Choice<T extends string>({
   label,
   value,
   options,
@@ -331,23 +283,17 @@ function Select<T extends string>({
   hint?: string;
 }) {
   return (
-    <Field label={label} hint={hint}>
-      {(id, aria) => (
-        <select
-          id={id}
-          {...aria}
-          className="ui-input"
-          value={value}
-          onChange={(event) => onChange(event.target.value as T)}
-        >
+    <FormField label={label} hint={hint}>
+      {(control) => (
+        <Select {...control} value={value} onChange={(event) => onChange(event.target.value as T)}>
           {options.map(([key, text]) => (
             <option key={key} value={key}>
               {text}
             </option>
           ))}
-        </select>
+        </Select>
       )}
-    </Field>
+    </FormField>
   );
 }
 
@@ -491,19 +437,13 @@ export function AddDepositDialog({
           placeholder="Bank name"
         >
           {knownBanks.length > 0 && (
-            <div className="ui-chips">
+            <ChipGroup label="Banks already entered">
               {knownBanks.map((known) => (
-                <button
-                  key={known}
-                  type="button"
-                  className="ui-chip"
-                  aria-pressed={bank.trim() === known}
-                  onClick={() => setBank(known)}
-                >
+                <Chip key={known} pressed={bank.trim() === known} onClick={() => setBank(known)}>
                   {known}
-                </button>
+                </Chip>
               ))}
-            </div>
+            </ChipGroup>
           )}
         </Text>
         <Text
@@ -558,45 +498,43 @@ export function AddDepositDialog({
         />
       </div>
       <div className="ui-field-row">
-        <Select
+        <Choice
           label="Interest comes"
           value={payout}
           options={payoutOptions}
           onChange={setPayout}
         />
-        <label className="transactions-toggle deposit-toggle">
-          <input
-            type="checkbox"
-            checked={capitalized}
-            onChange={(event) => setCapitalized(event.target.checked)}
-          />
-          Interest is added to the deposit
-        </label>
+        <div className="deposit-toggle">
+          <Toggle checked={capitalized} onChange={setCapitalized}>
+            Interest is added to the deposit
+          </Toggle>
+        </div>
       </div>
-      {figures && (
-        <p className="ui-modal__info" role="note">
-          {figures}
-        </p>
-      )}
-      <details className="deposit-more">
-        <summary>More options</summary>
-        <div className="ui-field-row">
-          <Select
-            label="If closed early"
-            value={earlyClose}
-            options={earlyCloseOptions}
-            onChange={setEarlyClose}
-          />
-          <Select
-            label="Days in a year"
-            value={dayBasis}
-            options={[
-              ['actual-365', 'Always 365'],
-              ['actual-actual', '366 in a leap year'],
-            ]}
-            onChange={setDayBasis}
-            hint="How the bank divides the annual rate by days."
-          />
+      {figures && <Banner tone="info">{figures}</Banner>}
+      <details className="ui-more">
+        <summary>
+          <Icon name="chevron" />
+          More options
+        </summary>
+        <div>
+          <div className="ui-field-row">
+            <Choice
+              label="If closed early"
+              value={earlyClose}
+              options={earlyCloseOptions}
+              onChange={setEarlyClose}
+            />
+            <Choice
+              label="Days in a year"
+              value={dayBasis}
+              options={[
+                ['actual-365', 'Always 365'],
+                ['actual-actual', '366 in a leap year'],
+              ]}
+              onChange={setDayBasis}
+              hint="How the bank divides the annual rate by days."
+            />
+          </div>
         </div>
       </details>
     </FormDialog>
@@ -648,7 +586,7 @@ export function MovementDialog({
         onSaved(await depositsApi.addMovement(id, { requestId: attempt(entries), ...entries }));
       }}
     >
-      <Select label="What happened" value={kind} options={movementOptions} onChange={setKind} />
+      <Choice label="What happened" value={kind} options={movementOptions} onChange={setKind} />
       <div className="ui-field-row">
         <DateField label="Date" name="date" value={date} onChange={setDate} />
         <Text
@@ -760,19 +698,19 @@ export function DeleteDepositDialog({
   onDeleted: () => void;
 }) {
   return (
-    <FormDialog
+    <ConfirmDialog
       title="Delete this deposit?"
-      note={`${name} and the movements, rates and checks entered for it are removed; this cannot be undone.`}
-      submit="Delete deposit"
-      danger
-      problems={() => ({})}
+      confirmLabel="Delete deposit"
+      busyLabel="Deleting…"
+      failure={failure}
       onClose={onClose}
-      onSubmit={async () => {
+      onConfirm={async () => {
         await depositsApi.remove(id);
         onDeleted();
       }}
     >
-      <p className="shell-note">Other assets and operations are not affected.</p>
-    </FormDialog>
+      {name} and the movements, rates and checks entered for it are removed; this cannot be undone.
+      Other assets and operations are not affected.
+    </ConfirmDialog>
   );
 }

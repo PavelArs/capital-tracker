@@ -716,11 +716,11 @@ describe('DEP-DETAIL: one deposit', () => {
     const remove = vi.spyOn(depositsApi, 'remove').mockResolvedValue();
     open(`/deposits/${savings.id}`);
     await user.click(await screen.findByRole('button', { name: 'Delete deposit' }));
-    const dialog = screen.getByRole('dialog', { name: 'Delete this deposit?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete this deposit?' });
     expect(dialog).toHaveTextContent('this cannot be undone');
     const confirm = within(dialog).getByRole('button', { name: 'Delete deposit' });
     // deposits-delete: the destructive confirmation is the danger button, as for goals.
-    expect(confirm).toHaveClass('shell-button--danger');
+    expect(confirm).toHaveClass('ui-btn--danger');
     expect(remove).not.toHaveBeenCalled();
     await user.click(confirm);
     await waitFor(() => expect(remove).toHaveBeenCalledWith(savings.id));
@@ -1094,9 +1094,9 @@ describe('classes-20: the real rate on a deposit card', () => {
     const up = await screen.findByText('Real +2.84% a year after 8.90% inflation');
     const down = screen.getByText('Real -4.62% a year after 8.90% inflation');
     // The terms paragraph sets its own grey; the tint must sit on an element of its own.
-    expect(up).toHaveClass('portfolio-pos');
+    expect(up).toHaveClass('ui-pos');
     expect(up).not.toHaveClass('deposit-card__terms');
-    expect(down).toHaveClass('portfolio-neg');
+    expect(down).toHaveClass('ui-neg');
     expect(down).not.toHaveClass('deposit-card__terms');
   });
 });
@@ -1179,7 +1179,7 @@ describe('the deposit page', () => {
     expect(periods).toHaveTextContent('Jul 1, 2026 – Aug 1, 2026');
     expect(periods).toHaveTextContent('Payable');
     expect(periods).toHaveTextContent('₽1,019.18');
-    expect(within(periods).getByText('+₽52.01 after inflation')).toHaveClass('portfolio-pos');
+    expect(within(periods).getByText('+₽52.01 after inflation')).toHaveClass('ui-pos');
     const movements = screen.getByRole('list', { name: 'Movements' });
     expect(within(movements).getAllByRole('listitem')).toHaveLength(2);
     expect(movements).toHaveTextContent('To card');
