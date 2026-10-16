@@ -9,6 +9,7 @@ import { ListRowText, rowClass } from '@/ui/ListRow';
 import Pager, { usePages } from '@/ui/Pager';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
+import { DASH } from '../portfolio/format';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
@@ -56,13 +57,17 @@ function InterestPeriods({
   periods,
   currency,
   basis,
+  showReal,
 }: {
   periods: DepositDetail['periods'];
   currency: AccountingCurrency;
   basis: InflationBasis;
+  showReal: boolean;
 }) {
-  // Absent in an answer saved before the figure existed: the column is left out, not filled with dashes.
-  const inflated = periods.some((period) => period.afterInflation !== undefined);
+  // Absent in an answer saved before the figure existed: the real reading is left out, not
+  // filled with dashes. One reading at a time: Real shows the interest after inflation instead of
+  // the bank's figure.
+  const inflated = showReal && periods.some((period) => period.afterInflation !== undefined);
   const paged = usePages([...periods].reverse(), (period) => period.to);
   const narrow = useNarrowScreen();
   const treatment = (period: DepositDetail['periods'][number]) =>
@@ -78,13 +83,12 @@ function InterestPeriods({
                 <ListRowText
                   title={treatment(period)}
                   detail={`${dateText(period.from)} – ${dateText(period.to)}`}
-                  amount={money(period.interest, currency)}
-                  value={
+                  amount={
                     inflated ? (
-                      <span className={toneClass(real)}>
-                        {money(real, currency, true)} after inflation
-                      </span>
-                    ) : undefined
+                      <span className={toneClass(real)}>{money(real, currency, true)}</span>
+                    ) : (
+                      money(period.interest, currency)
+                    )
                   }
                 />
               </li>
@@ -103,8 +107,11 @@ function InterestPeriods({
               <th>From</th>
               <th>To</th>
               <th>What happened to it</th>
-              <th className="ui-num">Interest</th>
-              {inflated && <th className="ui-num">After inflation</th>}
+              {inflated ? (
+                <th className="ui-num">After inflation</th>
+              ) : (
+                <th className="ui-num">Interest</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -113,13 +120,14 @@ function InterestPeriods({
                 <td>{dateText(period.from)}</td>
                 <td>{dateText(period.to)}</td>
                 <td>{treatment(period)}</td>
-                <td className="ui-num">{money(period.interest, currency)}</td>
-                {inflated && (
+                {inflated ? (
                   <td
                     className={`ui-num ${toneClass(period.afterInflation?.[basis] ?? null) ?? ''}`}
                   >
                     {money(period.afterInflation?.[basis] ?? null, currency, true)}
                   </td>
+                ) : (
+                  <td className="ui-num">{money(period.interest, currency)}</td>
                 )}
               </tr>
             ))}
@@ -310,7 +318,9 @@ export default function DepositPage() {
   const note = deposit ? attention(deposit, deposit.asOf) : null;
   const check = deposit?.lastCheck ?? null;
   const real = deposit ? realOf(deposit, basis) : null;
-  const rate = realRateText(real);
+  // One reading at a time; an answer saved before real figures existed stays nominal.
+  const showReal = view === 'real' && deposit?.real !== undefined;
+  const rate = showReal ? realRateText(real) : null;
 
   return (
     <div className="shell-page">
@@ -379,17 +389,20 @@ export default function DepositPage() {
           )}
           <div className="deposit-stats">
             <Stat label="In the deposit" value={money(deposit.principal, own)} />
-            {deposit.interestEarned !== undefined && (
-              <Stat
-                label="Interest earned"
-                value={money(deposit.interestEarned, own)}
-                hint={
-                  real?.gain != null
-                    ? `${money(real.gain, own, true)} after ${own} inflation, ${basisText(basis, real, own)}`
-                    : `No ${own} inflation figures for the whole time yet`
-                }
-              />
-            )}
+            {deposit.interestEarned !== undefined &&
+              (showReal ? (
+                <Stat
+                  label="Interest after inflation"
+                  value={real?.gain != null ? money(real.gain, own, true) : DASH}
+                  hint={
+                    real?.gain != null
+                      ? `After ${own} inflation, ${basisText(basis, real, own)}`
+                      : `No ${own} inflation figures for the whole time yet`
+                  }
+                />
+              ) : (
+                <Stat label="Interest earned" value={money(deposit.interestEarned, own)} />
+              ))}
             <Stat
               label="Earned, not posted yet"
               value={money(deposit.accrued, own)}
@@ -419,21 +432,30 @@ export default function DepositPage() {
                 hint={dateText(deposit.nextPayout.date)}
               />
             )}
-            {deposit.atMaturity && (
-              <Stat
-                label="At the end of the term"
-                value={money(deposit.atMaturity.balance, own)}
-                hint={[
-                  `${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`,
-                  deposit.atMaturity.inTodaysMoney?.[basis] &&
-                    `≈ ${money(deposit.atMaturity.inTodaysMoney[basis].amount, own)} in today's money${
-                      deposit.atMaturity.inTodaysMoney[basis].estimated ? ' (estimated)' : ''
-                    }`,
-                ]
-                  .filter(Boolean)
-                  .join(', ')}
-              />
-            )}
+            {deposit.atMaturity &&
+              (showReal ? (
+                <Stat
+                  label="At the end, in today's money"
+                  value={
+                    deposit.atMaturity.inTodaysMoney?.[basis]
+                      ? money(deposit.atMaturity.inTodaysMoney[basis].amount, own)
+                      : DASH
+                  }
+                  hint={
+                    deposit.atMaturity.inTodaysMoney?.[basis]
+                      ? `By ${dateText(deposit.atMaturity.date)}${
+                          deposit.atMaturity.inTodaysMoney[basis].estimated ? ', estimated' : ''
+                        }`
+                      : 'No inflation figures to carry it to today yet'
+                  }
+                />
+              ) : (
+                <Stat
+                  label="At the end of the term"
+                  value={money(deposit.atMaturity.balance, own)}
+                  hint={`${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`}
+                />
+              ))}
             {check && (
               <Stat
                 label="Last check"
@@ -504,7 +526,12 @@ export default function DepositPage() {
               {deposit.periods.length === 0 ? (
                 <p className="shell-note">No interest has been posted yet.</p>
               ) : (
-                <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
+                <InterestPeriods
+                  periods={deposit.periods}
+                  currency={own}
+                  basis={basis}
+                  showReal={showReal}
+                />
               )}
               {Number(deposit.interestForfeited) > 0 && (
                 <p className="shell-note">

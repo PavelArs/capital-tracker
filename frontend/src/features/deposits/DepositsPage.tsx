@@ -15,6 +15,7 @@ import { netWorthUnknown } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
+import { useValueView } from '../shell/value-view';
 import { AddDepositDialog } from './DepositDialogs';
 import {
   attention,
@@ -42,11 +43,14 @@ function Card({
 }) {
   const [asked] = useAskedCurrency();
   const [basis] = useInflationBasis();
+  const [view] = useValueView();
+  // One reading at a time; an answer saved before real figures existed stays nominal.
+  const showReal = view === 'real' && deposit.real !== undefined;
   const note = attention(deposit, asOf);
   const check = deposit.lastCheck;
   const inOwn = shown === deposit.currency;
   const real = realOf(deposit, basis);
-  const rate = realRateText(real);
+  const rate = showReal ? realRateText(real) : null;
   return (
     <li>
       <Link className="deposit-card" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
@@ -65,20 +69,20 @@ function Card({
           </p>
         )}
         <dl className="deposit-card__facts">
-          {deposit.interestEarned !== undefined && (
-            <div>
-              <dt>Interest earned</dt>
-              <dd>
-                {money(deposit.interestEarned, deposit.currency)}
-                {real?.gain != null && (
-                  <span className={toneClass(real.gain)}>
-                    {' '}
-                    ({money(real.gain, deposit.currency, true)} after inflation)
-                  </span>
-                )}
-              </dd>
-            </div>
-          )}
+          {deposit.interestEarned !== undefined &&
+            (showReal ? (
+              <div>
+                <dt>Interest after inflation</dt>
+                <dd className={toneClass(real?.gain ?? null)}>
+                  {real?.gain != null ? money(real.gain, deposit.currency, true) : DASH}
+                </dd>
+              </div>
+            ) : (
+              <div>
+                <dt>Interest earned</dt>
+                <dd>{money(deposit.interestEarned, deposit.currency)}</dd>
+              </div>
+            ))}
           {deposit.nextPayout && (
             <div>
               <dt>Next interest</dt>
@@ -206,6 +210,7 @@ export default function DepositsPage() {
     <div className="shell-page">
       <PageHeader
         title="Banks"
+        valueSwitch
         actions={
           <button
             type="button"
