@@ -78,6 +78,8 @@ interface Props {
   onClose: () => void;
   /** Something was saved: the account, with what it holds or part of it. */
   onAdded: () => void;
+  /** Offered while nothing is saved: read a T-Bank account with a token instead of typing it. */
+  onConnect?: () => void;
 }
 
 /** One holding as it is saved: the asset, the buy that gives it a balance, then its price. */
@@ -113,7 +115,7 @@ interface Holding {
 // "Add broker account" from the accepted mockups (v8): the broker, what the account holds at the
 // price seen there now, and its cash. Each position becomes an asset priced by hand; everything
 // held counts as money put in today, so the gain starts from here.
-export default function AddBrokerDialog({ onClose, onAdded }: Props) {
+export default function AddBrokerDialog({ onClose, onAdded, onConnect }: Props) {
   const [entry, setEntry] = useState<BrokerEntry>(() => ({
     broker: '',
     account: 'Regular',
@@ -409,6 +411,19 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
           <CloseButton onClick={finish} disabled={saving} />
         </div>
         <div className="ui-modal__body">
+          {onConnect && !locked && (
+            <p className="broker-connect-hint">
+              Have a T-Bank account? Connect it with a read-only token and skip typing.{' '}
+              <button
+                type="button"
+                className="shell-button shell-button--secondary"
+                disabled={disabled}
+                onClick={onConnect}
+              >
+                Connect T-Bank
+              </button>
+            </p>
+          )}
           <div className="ui-field">
             <label className="ui-field__label" htmlFor={`${id}-broker`}>
               Broker

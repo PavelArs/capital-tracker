@@ -26,6 +26,7 @@ import {
   leftOut,
   plural,
 } from './brokers';
+import ConnectTBankDialog from './ConnectTBankDialog';
 import '../shell/shell-page.css';
 import './broker.css';
 
@@ -126,6 +127,7 @@ export default function BrokersPage() {
   );
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const latest = useRef(0);
 
   // Only the newest request may change the page; a refresh keeps what is shown and says so
@@ -170,6 +172,16 @@ export default function BrokersPage() {
       Add broker account
     </button>
   );
+  const connectButton = (primary: boolean) => (
+    <button
+      type="button"
+      className={`shell-button ${primary ? 'shell-button--primary' : 'shell-button--secondary'}`}
+      onClick={() => setConnecting(true)}
+    >
+      <Icon name="plus" className="shell-icon shell-icon--sm" />
+      Connect T-Bank
+    </button>
+  );
 
   return (
     <div className="shell-page">
@@ -188,7 +200,12 @@ export default function BrokersPage() {
           id="brokers-empty"
           title="No broker account yet"
           icon={<Icon name="briefcase" />}
-          actions={addButton(true)}
+          actions={
+            <>
+              {connectButton(true)}
+              {addButton(false)}
+            </>
+          }
         >
           Add a broker account with the stocks, bonds and funds it holds and its cash. Prices are
           entered by hand for now, with the price you see at your broker.
@@ -203,7 +220,14 @@ export default function BrokersPage() {
               </button>
             </p>
           )}
-          <PageIntro action={addButton(false)}>
+          <PageIntro
+            action={
+              <>
+                {connectButton(false)}
+                {addButton(false)}
+              </>
+            }
+          >
             Positions are entered by hand for now, with the price you see at your broker. Update a
             price on the position's page.
           </PageIntro>
@@ -232,8 +256,21 @@ export default function BrokersPage() {
           </ul>
         </>
       )}
+      {connecting && (
+        <ConnectTBankDialog
+          onClose={() => setConnecting(false)}
+          onConnected={() => {
+            setConnecting(false);
+            load(true);
+          }}
+        />
+      )}
       {adding && (
         <AddBrokerDialog
+          onConnect={() => {
+            setAdding(false);
+            setConnecting(true);
+          }}
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);

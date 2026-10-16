@@ -22,7 +22,8 @@ const choices: readonly { key: AddChoice; title: string; detail: string; icon: I
   {
     key: 'broker',
     title: 'Broker',
-    detail: 'Stocks, bonds and funds at a broker. Prices by hand for now.',
+    detail:
+      'Stocks, bonds and funds at a broker. Connect T-Bank with a token, or enter prices by hand.',
     icon: 'briefcase',
   },
   {
