@@ -349,11 +349,11 @@ const actionOrder: PlanAction[] = ['deposit', 'income', 'sell', 'buy', 'fee', 't
  * (a deposit, a sale) is dated by its first part and one that spends money by its last, so the
  * account never holds less cash or fewer shares at any time than it really did.
  */
-function combine(list: PlanEntry[], period: (time: string) => string): PlanEntry[] {
+function combine(list: PlanEntry[], period: (time: string) => string, hoist: boolean): PlanEntry[] {
   const groups = new Map<string, PlanEntry[]>();
   const runs = new Map<string, { action: PlanAction; run: number }>();
   const kept: PlanEntry[] = [];
-  for (const entry of ordered(list)) {
+  for (const entry of ordered(list, hoist)) {
     // Dollars and euros bought are cash a later trade may spend, so each keeps its own time.
     if (entry.record !== 'trade' || entry.cash) {
       kept.push(entry);
@@ -405,13 +405,14 @@ function checkHeld(
   list: PlanEntry[],
   skipped: PlanSkip[],
   typeOf: ReadonlyMap<string, string>,
+  hoist: boolean,
 ): PlanEntry[] {
   const held = new Map<string, bigint>();
   // Units sold that the history never showed held: a buy may cover them, or may not.
   const uncovered = new Map<string, bigint>();
   const listed = new Set<string>();
   const kept: PlanEntry[] = [];
-  for (const entry of ordered(list)) {
+  for (const entry of ordered(list, hoist)) {
     // Dollars and euros are cash: the journal's own check finds a sale of more than is held.
     if (entry.record !== 'trade' || entry.instrumentUid === '' || entry.cash) {
       kept.push(entry);
@@ -477,7 +478,7 @@ const sameInstantRank = (entry: PlanEntry) => {
   if (!entry.cash) return actionOrder.indexOf(entry.action);
   return actionOrder.indexOf('sell') + (entry.action === 'buy' ? 0.5 : 0.75);
 };
-const ordered = (list: PlanEntry[]) =>
+const ordered = (list: PlanEntry[], hoist: boolean) =>
   buysFirst(
     [...list].sort(
       (a, b) =>
@@ -485,6 +486,7 @@ const ordered = (list: PlanEntry[]) =>
         sameInstantRank(a) - sameInstantRank(b) ||
         byNumber(a.operationIds[0], b.operationIds[0]),
     ),
+    hoist,
   );
 
 /**
@@ -492,7 +494,8 @@ const ordered = (list: PlanEntry[]) =>
  * before a sale of the same security at that instant: the order of the two is unknown, and the
  * sale may sell what the buy brought.
  */
-function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
+function buysFirst(sorted: PlanEntry[], hoist: boolean): PlanEntry[] {
+  if (!hoist) return sorted;
   const result: PlanEntry[] = [];
   const isSecurity = (entry: PlanEntry, action: PlanAction) =>
     entry.record === 'trade' &&
@@ -562,25 +565,29 @@ function buysFirst(sorted: PlanEntry[]): PlanEntry[] {
  * the account's trades leave room under the limit; otherwise entries of one kind and instrument
  * are combined by Moscow day, then by month.
  */
-export function planImport(operations: readonly TBankOperation[]): ImportPlan {
+export function planImport(
+  operations: readonly TBankOperation[],
+  options: { hoist?: boolean } = {},
+): ImportPlan {
+  const hoist = options.hoist ?? true;
   const skipped: PlanSkip[] = [];
   const typeOf = new Map(operations.map((item) => [item.id, item.type]));
-  const single = checkHeld(entries(operations, skipped), skipped, typeOf);
+  const single = checkHeld(entries(operations, skipped), skipped, typeOf, hoist);
   const tradesIn = (list: PlanEntry[]) => list.filter((entry) => entry.record === 'trade').length;
   let grouping: ImportPlan['grouping'] = 'operation';
   let list = single;
   if (tradesIn(list) > COMBINE_ABOVE) {
     grouping = 'day';
-    list = combine(single, moscowDate);
+    list = combine(single, moscowDate, hoist);
   }
   if (tradesIn(list) > COMBINE_ABOVE) {
     grouping = 'month';
-    list = combine(single, (time) => moscowDate(time).slice(0, 7));
+    list = combine(single, (time) => moscowDate(time).slice(0, 7), hoist);
   }
   const trades = tradesIn(list);
   return {
     grouping,
-    entries: ordered(list),
+    entries: ordered(list, hoist),
     skipped,
     trades,
     rewards: list.length - trades,

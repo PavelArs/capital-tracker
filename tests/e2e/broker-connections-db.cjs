@@ -606,6 +606,22 @@ async function importing(db, service, imports, owner, other) {
   assert.equal(crowded.canImport, false);
   assert.deepEqual(crowded.problems.map((problem) => problem.reason), ['too-many-rewards']);
   console.log('PASS BROKER-SYNC-REWARD-CAP');
+
+  stage = 'BROKER-SYNC-FUNDING: a sale in the same instant pays for the buy it funds, though the buy comes first in the plan';
+  const eighth = await account(db, owner, 'broker');
+  await service.connect(owner, eighth, { token, brokerAccountId: brokerAccount.id });
+  history = [
+    operation('800000001', 'INPUT', '100', { occurredAt: '2024-03-01T10:00:00Z' }),
+    operation('800000002', 'BUY', '-100', share({ occurredAt: '2024-03-02T10:00:00Z', quantity: '1', price: '100' })),
+    operation('800000003', 'SELL', '150', share({ occurredAt: '2024-03-05T10:00:00Z', quantity: '1', price: '150' })),
+    operation('800000004', 'BUY', '-150', share({ occurredAt: '2024-03-05T10:00:00Z', quantity: '1', price: '150' })),
+  ];
+  const funded = await imports.preview(owner, eighth);
+  assert.deepEqual(funded.problems, []);
+  assert.equal(funded.canImport, true);
+  await imports.import(owner, eighth, { requestId: randomUUID(), previewHash: funded.previewHash });
+  assert.equal(await count('broker_imports', `WHERE "accountId" = '${eighth}'`), 1);
+  console.log('PASS BROKER-SYNC-FUNDING');
 }
 
 async function main() {

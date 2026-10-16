@@ -285,7 +285,37 @@ export class BrokerImportService {
     history: { brokerAccountId: string; operations: readonly TBankOperation[] },
     write: boolean,
   ): Promise<Review> {
-    const plan = planImport(history.operations);
+    const review = await this.reviewPlan(
+      manager,
+      owner,
+      account,
+      history,
+      write,
+      planImport(history.operations),
+    );
+    if (!review.problems.some((problem) => problem.reason === 'not-held')) return review;
+    // The planner places a buy ahead of a same-instant sale of its security, so the buy may spend
+    // cash the sale has not yet brought in. The history in its operation order may replay where
+    // the planned order does not, and a history that replays is the one to write.
+    const unhoisted = await this.reviewPlan(
+      manager,
+      owner,
+      account,
+      history,
+      write,
+      planImport(history.operations, { hoist: false }),
+    );
+    return unhoisted.problems.length === 0 ? unhoisted : review;
+  }
+
+  private async reviewPlan(
+    manager: EntityManager,
+    owner: string,
+    account: string,
+    history: { brokerAccountId: string; operations: readonly TBankOperation[] },
+    write: boolean,
+    plan: ImportPlan,
+  ): Promise<Review> {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
     const problems: ImportProblem[] = [];
     // Anything left out that moved money or shares would leave the records better off than the
