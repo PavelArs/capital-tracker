@@ -1984,6 +1984,13 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
 
     await pick(/^Broker/);
     expect(screen.getByRole('dialog', { name: 'Add broker account' })).toBeInTheDocument();
+    // BROKER-SETUP: the same dialog hands over to Connect T-Bank.
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Add broker account' })).getByRole('button', {
+        name: 'Connect T-Bank',
+      }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Connect T-Bank' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 

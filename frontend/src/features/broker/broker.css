@@ -132,3 +132,93 @@
     padding-left: 16px;
   }
 }
+
+/* "Connect T-Bank": the steps to get a token, the token field and the accounts it reaches. */
+.broker-howto {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.broker-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.broker-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.broker-secret {
+  position: relative;
+  display: flex;
+}
+
+.broker-secret .ui-input {
+  flex: 1;
+  padding-right: 44px;
+}
+
+.broker-secret__toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 44px;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.broker-picks,
+.broker-connected {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.broker-pick {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.broker-connected li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.broker-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.broker-toggle input {
+  flex: none;
+  width: 18px;
+  min-height: 0;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--primary-color);
+}
+
+.broker-toggle small {
+  color: var(--ink-3);
+}
+
+.broker-connect-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
