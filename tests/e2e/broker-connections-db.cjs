@@ -138,6 +138,137 @@ async function removal(db, service, owner) {
   console.log('PASS BROKER-CONNECT-REMOVE');
 }
 
+async function setup(db, service, setupService, tbank, owner, other) {
+  stage = 'BROKER-SETUP: one token makes and connects a broker account for each pick, once';
+  const regular = { id: '2000000101', name: 'Synthetic regular', open: true, access: 'read_only' };
+  const iis = { id: '2000000102', name: 'Synthetic IIS', open: true, access: 'read_only' };
+  const closed = { id: '2000000103', name: 'Synthetic closed', open: false, closed: true, access: 'read_only' };
+  tbank.listed = [regular, iis, closed];
+  try {
+    const count = async (table, where = '') =>
+      (await db.query(`SELECT count(*)::int AS n FROM ${table} ${where}`))[0].n;
+    const listing = await setupService.accounts(owner, { token });
+    assert.deepEqual(
+      listing.accounts.map(({ id, connected }) => [id, connected]),
+      [
+        [regular.id, false],
+        [iis.id, false],
+      ],
+      'A closed T-Bank account is not offered',
+    );
+    assert.equal(await count('broker_connections', `WHERE "brokerAccountId" = '${regular.id}'`), 0);
+
+    const picks = [
+      { brokerAccountId: regular.id, requestId: randomUUID(), name: 'T-Bank Synthetic regular' },
+      { brokerAccountId: iis.id, requestId: randomUUID(), name: 'T-Bank Synthetic IIS' },
+    ];
+    const accountsBefore = await count('manual_accounts');
+    const made = await setupService.connect(owner, { token, accounts: picks });
+    assert.equal(made.connections.length, 2);
+    assert.ok(made.connections.every((item) => item.created));
+    assert.ok(!JSON.stringify(made).includes(token), 'The token is never returned');
+    assert.equal(await count('manual_accounts'), accountsBefore + 2);
+    for (const [index, item] of made.connections.entries()) {
+      const [row] = await db.query(
+        'SELECT name, "assetClass", "ownerId" FROM manual_accounts WHERE id = $1',
+        [item.accountId],
+      );
+      assert.deepEqual(
+        [row.name, row.assetClass, row.ownerId],
+        [picks[index].name, 'broker', owner],
+      );
+      const shown = await service.read(owner, item.accountId);
+      assert.equal(shown.connected, true);
+      assert.equal(shown.brokerAccountId, picks[index].brokerAccountId);
+      const [stored] = await db.query(
+        'SELECT credentials::text AS credentials FROM broker_connections WHERE "accountId" = $1',
+        [item.accountId],
+      );
+      assert.ok(!stored.credentials.includes(token), 'The token is stored encrypted');
+    }
+
+    const again = await setupService.connect(owner, { token: replacement, accounts: picks });
+    assert.deepEqual(
+      again.connections.map(({ accountId, created }) => [accountId, created]),
+      made.connections.map(({ accountId }) => [accountId, false]),
+      'The same request finds the accounts it made',
+    );
+    assert.equal(await count('manual_accounts'), accountsBefore + 2);
+    assert.equal(
+      (await service.read(owner, made.connections[0].accountId)).tokenHint,
+      token.slice(-4),
+      'A repeated request writes nothing, so it does not replace the stored token',
+    );
+
+    assert.deepEqual(
+      (await setupService.accounts(owner, { token })).accounts.map(({ id, connected }) => [id, connected]),
+      [
+        [regular.id, true],
+        [iis.id, true],
+      ],
+    );
+    assert.deepEqual(
+      (await setupService.accounts(other, { token })).accounts.map(({ connected }) => connected),
+      [false, false],
+      'Another owner sees nothing connected',
+    );
+    await rejected(
+      () =>
+        setupService.connect(owner, {
+          token,
+          accounts: [{ ...picks[0], requestId: randomUUID() }],
+        }),
+      409,
+    );
+    assert.equal(await count('manual_accounts'), accountsBefore + 2, 'A refused request makes nothing');
+    await rejected(
+      () =>
+        setupService.connect(owner, {
+          token,
+          accounts: [{ brokerAccountId: '9999999999', requestId: randomUUID(), name: 'Other' }],
+        }),
+      422,
+    );
+    await rejected(
+      () => setupService.connect(owner, { token, accounts: [{ ...picks[0], name: 'Changed' }] }),
+      409,
+    );
+    // A repeated request never re-points a connection, restores a disconnected one or stores a
+    // token on an account removed since.
+    await rejected(
+      () =>
+        setupService.connect(owner, {
+          token,
+          accounts: [{ ...picks[0], brokerAccountId: iis.id }],
+        }),
+      409,
+    );
+    assert.equal(
+      (await service.read(owner, made.connections[0].accountId)).brokerAccountId,
+      regular.id,
+      'A repeated request for another T-Bank account re-points nothing',
+    );
+    await service.disconnect(owner, made.connections[1].accountId);
+    await rejected(() => setupService.connect(owner, { token, accounts: [picks[1]] }), 409);
+    assert.equal(
+      await count('broker_connections', `WHERE "accountId" = '${made.connections[1].accountId}'`),
+      0,
+      'A repeated request does not restore a connection the owner removed',
+    );
+    const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
+    await new AccountingService(db).removeAccount(owner, made.connections[0].accountId);
+    await rejected(() => setupService.connect(owner, { token, accounts: [picks[0]] }), 409);
+    assert.equal(
+      await count('broker_connections', `WHERE "accountId" = '${made.connections[0].accountId}'`),
+      0,
+      'A repeated request stores no token on a removed account',
+    );
+    console.log('PASS BROKER-SETUP');
+  } finally {
+    tbank.listed = [brokerAccount];
+  }
+}
+
 async function heldPreview(db, service, imports, owner) {
   stage = 'the import preview counts an opening snapshot as held entries';
   const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
@@ -671,12 +802,15 @@ async function main() {
       new ConfigService({ MFA_KEY_FILE: join(directory, 'key'), MFA_KEY_ID: 'probe-key' }),
     );
     const tbank = {
-      accounts: async () => ({ ok: true, value: [brokerAccount] }),
+      listed: [brokerAccount],
+      accounts: async () => ({ ok: true, value: tbank.listed }),
       operations: async () => ({ ok: true, value: history }),
     };
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
     await removal(db, service, owner.id);
+    const { BrokerSetupService } = require('/app/backend/dist/brokers/broker-setup.service.js');
+    await setup(db, service, new BrokerSetupService(db, service, box), tbank, owner.id, other.id);
     const { BrokerImportService } = require('/app/backend/dist/brokers/broker-import.service.js');
     const imports = new BrokerImportService(db, service);
     const instrument = await heldPreview(db, service, imports, owner.id);

@@ -12,6 +12,7 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerDialog from '../broker/AddBrokerDialog';
+import ConnectTBankDialog from '../broker/ConnectTBankDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
@@ -743,7 +744,9 @@ export default function PortfolioPage() {
   // saved before real figures existed has none to show, so it stays nominal until a fresh one.
   const real = view === 'real' && portfolio?.real !== undefined ? basis : null;
   // Add opens the kind picker; the kind then opens its own form, or the page it is added on.
-  const [adding, setAdding] = useState<'pick' | Exclude<AddChoice, 'crypto'> | null>(null);
+  const [adding, setAdding] = useState<'pick' | 'tbank' | Exclude<AddChoice, 'crypto'> | null>(
+    null,
+  );
   const navigate = useNavigate();
   const [refreshFailed, setRefreshFailed] = useState(false);
   const chains = useTokenChains();
@@ -959,8 +962,15 @@ export default function PortfolioPage() {
       {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
       {adding === 'broker' && (
         <AddBrokerDialog
+          onConnect={() => setAdding('tbank')}
           onClose={() => setAdding(null)}
           onAdded={() => navigate(withCurrency('/brokers', asked))}
+        />
+      )}
+      {adding === 'tbank' && (
+        <ConnectTBankDialog
+          onClose={() => setAdding(null)}
+          onConnected={() => navigate(withCurrency('/brokers', asked))}
         />
       )}
       {adding === 'property' && (

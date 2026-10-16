@@ -3,15 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { BrokerConnectionsController } from './broker-connections.controller';
 import { BrokerConnectionsService } from './broker-connections.service';
 import { BrokerImportService } from './broker-import.service';
+import { BrokerSetupController } from './broker-setup.controller';
+import { BrokerSetupService } from './broker-setup.service';
 import { russianTrustedRootCa } from './russian-trusted-root-ca';
 import { TBankClient } from './tbank-client';
 import { TBankTokenBox } from './tbank-token-box';
 
 @Module({
-  controllers: [BrokerConnectionsController],
+  controllers: [BrokerConnectionsController, BrokerSetupController],
   providers: [
     BrokerConnectionsService,
     BrokerImportService,
+    BrokerSetupService,
     {
       provide: TBankClient,
       useFactory: () => new TBankClient({ extraRoots: [russianTrustedRootCa] }),

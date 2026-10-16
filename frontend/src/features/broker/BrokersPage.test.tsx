@@ -187,6 +187,25 @@ describe('BROKERS the Brokers page', () => {
     renderPage();
     expect(await screen.findByText('No broker account yet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add broker account' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect T-Bank' })).toBeInTheDocument();
+  });
+
+  it('BROKER-SETUP opens Connect T-Bank from the page and from the add dialog', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('region', { name: 'Sample Broker' });
+    await user.click(screen.getByRole('button', { name: 'Connect T-Bank' }));
+    expect(screen.getByRole('dialog', { name: 'Connect T-Bank' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // The add dialog points at it too, and hands over to it.
+    await user.click(screen.getByRole('button', { name: 'Add broker account' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect T-Bank' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Connect T-Bank' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Add broker account' })).toBeNull();
   });
 
   it('says so when a refresh fails and keeps the last loaded figures', async () => {

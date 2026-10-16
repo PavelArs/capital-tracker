@@ -56,13 +56,12 @@ export class BrokerConnectionsService {
     private readonly box: TBankTokenBox,
   ) {}
 
-  /** The open broker accounts a token reaches, once it is known to be unable to trade. */
   async check(ownerId: string, accountId: string, body: unknown) {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
     const input = parseCheck(body);
     await this.brokerAccount(this.source.manager, owner, account);
-    const open = await this.readOnlyAccounts(input.token);
+    const open = await this.reachableAccounts(input.token);
     return { accounts: open.map((item) => ({ id: item.id, name: item.name })) };
   }
 
@@ -70,7 +69,7 @@ export class BrokerConnectionsService {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
     const input = parseConnection(body);
-    const open = await this.readOnlyAccounts(input.token);
+    const open = await this.reachableAccounts(input.token);
     if (!open.some((item) => item.id === input.brokerAccountId))
       throw new UnprocessableEntityException(
         'This token does not reach that T-Bank account. Pick one of the accounts it lists.',
@@ -216,7 +215,8 @@ export class BrokerConnectionsService {
     if (rows.length === 0) throw new NotFoundException('Broker account not found');
   }
 
-  private async readOnlyAccounts(token: string): Promise<TBankAccount[]> {
+  /** The open broker accounts a token reaches, once it is known to be unable to trade. */
+  async reachableAccounts(token: string): Promise<TBankAccount[]> {
     const result: TBankResult<TBankAccount[]> = await this.tbank.accounts(token);
     if (!result.ok) {
       if (result.reason === 'token_rejected')
