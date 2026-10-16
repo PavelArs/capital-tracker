@@ -1,6 +1,12 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
+import { useToast } from '@contexts/ToastContext';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
+import PageIntro from '@/ui/PageIntro';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
@@ -23,11 +29,7 @@ import {
 } from './WalletParts';
 import { gapAddress, isCoin, PENDING, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
-import '../transactions/transactions.css';
 import './wallets.css';
-import EmptyState from '@/ui/EmptyState';
-import PageIntro from '@/ui/PageIntro';
 
 /** The addresses of one wallet, twenty to a page; the page is only shown when there are more. */
 function PagedSources({
@@ -69,17 +71,17 @@ export default function WalletsPage() {
     runs,
     sync,
     asked,
-    notice,
-    setNotice,
   } = useWallets();
+  const toast = useToast();
   // true opens Add wallet on its first step; a wallet's id opens it on that wallet's Bybit key.
   const [adding, setAdding] = useState<boolean | string>(false);
   const [openId, setOpenId] = useState<string | null>(null);
   // wallets-07: the wallet just added gets the keyboard once its card is on the page.
   const [arrived, setArrived] = useState<string | null>(null);
-  // wallets-21: a wallet removed on its own page is named here, with the keyboard on the line.
-  const noticeRef = useRef<HTMLParagraphElement>(null);
-  const [focusNotice, setFocusNotice] = useState(false);
+  // wallets-21: a wallet removed on its own page is named in a toast, and the keyboard lands on
+  // this page's heading (plan 1.5: the row it was on is gone).
+  const page = useRef<HTMLDivElement>(null);
+  const [focusHeading, setFocusHeading] = useState(false);
   // Crypto in Portfolio's Add to portfolio comes here and opens Add wallet once the wallets are
   // known, so a duplicate address is still caught; the request is cleared so Back does not repeat it.
   const location = useLocation();
@@ -93,14 +95,15 @@ export default function WalletsPage() {
   const removed = (location.state as { removedWallet?: unknown } | null)?.removedWallet;
   useEffect(() => {
     if (typeof removed !== 'string') return;
-    setNotice(`${removed} was removed.`);
-    setFocusNotice(true);
+    toast.show({ tone: 'success', title: `${removed} was removed.` });
+    setFocusHeading(true);
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
-  }, [removed, setNotice, navigate, location.pathname, location.search]);
+  }, [removed, toast, navigate, location.pathname, location.search]);
   useEffect(() => {
-    if (!focusNotice || !noticeRef.current) return;
-    noticeRef.current.focus();
-    setFocusNotice(false);
+    const heading = focusHeading ? page.current?.querySelector<HTMLElement>('h1') : null;
+    if (!heading) return;
+    heading.focus();
+    setFocusHeading(false);
   });
   useEffect(() => {
     if (!arrived) return;
@@ -145,14 +148,9 @@ export default function WalletsPage() {
   // PAGES: twenty wallets a page.
   const pagedCards = useInfinite(cards);
   const addButton = (
-    <button
-      type="button"
-      className="shell-button shell-button--primary"
-      onClick={() => setAdding(true)}
-    >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
+    <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
       Add wallet
-    </button>
+    </Button>
   );
   const row = (address: WalletAddress) => (
     <AddressRow
@@ -168,25 +166,12 @@ export default function WalletsPage() {
   );
 
   return (
-    <div className="shell-page">
+    <div ref={page} className="shell-page">
       <PageHeader title="Wallets" currency={portfolio?.currency} />
-      {notice && (
-        <p
-          ref={noticeRef}
-          className="ui-banner ui-banner--pos wallets-notice"
-          role="status"
-          tabIndex={-1}
-        >
-          {notice}
-        </p>
-      )}
       {failed ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load your wallets. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState onRetry={() => void load()}>
+          Could not load your wallets. Your data is safe; try again.
+        </ErrorState>
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallets" show={['cards']} />
       ) : cards.length === 0 && list.length === 0 ? (
@@ -206,7 +191,7 @@ export default function WalletsPage() {
             it never asks for a seed phrase or a private key.
           </PageIntro>
           {unassigned.length > 0 && (
-            <section className="shell-card wallets-card" aria-labelledby="wallets-unassigned">
+            <Card variant="flush" className="wallets-card" labelledBy="wallets-unassigned">
               <div className="wallets-card__head">
                 <span className="wallets-card__icon" aria-hidden="true">
                   <Icon name="wallets" />
@@ -217,7 +202,7 @@ export default function WalletsPage() {
                 </div>
               </div>
               <PagedSources items={unassigned} label="addresses" row={row} />
-            </section>
+            </Card>
           )}
           {pagedCards.rows.map(({ account, addresses: own, holdings: all }) => {
             const holdings = withoutHiddenTokens(all, own);
@@ -228,12 +213,15 @@ export default function WalletsPage() {
             const headingId = `wallet-${account.accountId}`;
             const kind = kinds[account.accountId] ?? null;
             return (
-              <section
+              <Card
                 key={account.accountId}
-                className="shell-card wallets-card"
-                aria-labelledby={headingId}
+                variant="flush"
+                className="wallets-card"
+                labelledBy={headingId}
               >
-                <div className="wallets-card__head">
+                {/* The whole head opens the wallet (prototype): the link's area covers it, and its
+                    name stays the wallet's name. */}
+                <div className="wallets-card__head wallets-card__head--link">
                   <span className="wallets-card__icon" aria-hidden="true">
                     <Icon name={kind ?? 'wallets'} />
                   </span>
@@ -249,7 +237,7 @@ export default function WalletsPage() {
                     <span>{subtitle(own, kind)}</span>
                   </div>
                   <div className="wallets-card__total">
-                    <strong>{money(account.pricedValue, currency)}</strong>
+                    <strong className="ui-num">{money(account.pricedValue, currency)}</strong>
                     <span>{holdings.length === 1 ? '1 asset' : `${holdings.length} assets`}</span>
                   </div>
                 </div>
@@ -280,7 +268,7 @@ export default function WalletsPage() {
                   target={gapAddress(list, account.accountId)}
                   onCounted={() => void load(true)}
                 />
-              </section>
+              </Card>
             );
           })}
           {pagedCards.more && <LoadMore {...pagedCards.more} label="wallets" />}
@@ -299,14 +287,16 @@ export default function WalletsPage() {
           onAdded={async (address, created) => {
             setAdding(false);
             const wallet = accounts.find((item) => item.accountId === address.accountId);
-            // wallets-07: the page says what was added, and a new wallet's address waits for its
-            // card instead of showing as not in a wallet meanwhile.
+            // wallets-07: a toast says what was added and that its history now loads (plan 1.5:
+            // a process that finishes later), and a new wallet's address waits for its card
+            // instead of showing as not in a wallet meanwhile.
             if (created)
-              setNotice(
-                wallet
+              toast.show({
+                tone: 'info',
+                title: wallet
                   ? `Added to ${wallet.name}. Syncing transactions…`
                   : 'Wallet added. Syncing transactions…',
-              );
+              });
             if (address.accountId && !wallet) {
               // A reload that fails leaves the saved address on the page rather than nothing.
               await load(true);

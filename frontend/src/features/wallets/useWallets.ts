@@ -4,6 +4,7 @@ import type { HiddenAsset } from '@api/hidden-assets.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
@@ -44,8 +45,8 @@ export function useWallets() {
   );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
-  // wallets-02, 07, 21: what the owner's last action did, said once at the top of the page.
-  const [notice, setNotice] = useState<string | null>(null);
+  // wallets-02: a sync the owner started says when it is done, as a toast (plan 1.5).
+  const toast = useToast();
   const latest = useRef(0);
   const running = useRef(new Set<string>());
   const mounted = useRef(true);
@@ -140,7 +141,10 @@ export function useWallets() {
         }
         setRun(id, null);
         if (synced?.sync.state === 'complete')
-          setNotice(`${synced.label ?? networkOf(synced).name} is synced.`);
+          toast.show({
+            tone: 'success',
+            title: `${synced.label ?? networkOf(synced).name} is synced.`,
+          });
         // A list asked for while the history loaded may be older than the last page.
         void load(true);
         announceSyncChange();
@@ -165,7 +169,7 @@ export function useWallets() {
         running.current.delete(id);
       }
     },
-    [load, replace, setRun],
+    [load, replace, setRun, toast],
   );
 
   // The background job is loading a history: show its progress without a reload.
@@ -194,7 +198,5 @@ export function useWallets() {
     runs,
     sync,
     asked,
-    notice,
-    setNotice,
   };
 }

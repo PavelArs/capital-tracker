@@ -4,13 +4,22 @@ import type { Operation, OperationList } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '@contexts/ToastContext';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button, ButtonLink } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
+import { Crumb, PageHead } from '@/ui/PageHead';
+import { Stat, Stats } from '@/ui/Stats';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { requestFailure } from '@/utils/request-failure';
 import { withCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
-import ConfirmDialog from '../security/ConfirmDialog';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -34,10 +43,7 @@ import {
 } from './WalletParts';
 import { gapAddress, PENDING, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
-import '../transactions/transactions.css';
 import './wallets.css';
-import EmptyState from '@/ui/EmptyState';
 
 type OperationsState = OperationList | 'loading' | 'failed';
 
@@ -61,15 +67,6 @@ export function accountOperations(operations: readonly Operation[], accountId: s
     );
 }
 
-function Stat({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="portfolio-stat">
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
 /** The least recent state across the addresses: one failing or loading address shows. */
 function LastSync({
   addresses,
@@ -90,12 +87,12 @@ function LastSync({
       order(left) - order(right) ||
       (left.sync.completedAt ?? '').localeCompare(right.sync.completedAt ?? ''),
   )[0];
-  if (!worst) return <span className="wallets-muted">Tracked by hand</span>;
+  if (!worst) return <span className="ui-muted wallets-small">Tracked by hand</span>;
   const when = syncAge(worst, runs[worst.id]);
   return (
     <span className="wallets-status">
       <SyncBadge address={worst} run={runs[worst.id]} />
-      {when && <span className="wallets-muted">{when}</span>}
+      {when && <span className="ui-muted wallets-small">{when}</span>}
     </span>
   );
 }
@@ -116,48 +113,56 @@ function WalletTransactions({
   // PAGES: twenty transactions a page.
   const pagedOwn = useInfinite(own);
   return (
-    <section className="shell-card" aria-labelledby="wallet-transactions">
-      <div className="ui-toolbar">
-        <h2 id="wallet-transactions">Transactions</h2>
-        {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
-      </div>
+    <Card labelledBy="wallet-transactions">
+      <CardHeader
+        id="wallet-transactions"
+        title="Transactions"
+        sub={typeof operations === 'object' ? own.length : undefined}
+      />
       {operations === 'failed' ? (
-        <div className="portfolio-state" role="alert">
-          <p>Could not load this wallet's transactions.</p>
-          <button type="button" className="shell-button" onClick={onRetry}>
-            Try again
-          </button>
-        </div>
+        // The card stays; the failure and Try again are inside it (no card in a card).
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetry}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load this wallet's transactions.
+        </Banner>
       ) : operations === 'loading' ? (
         <InlineSkeleton label="Loading transactions" />
       ) : own.length === 0 ? (
-        <p className="portfolio-none">No transactions yet.</p>
+        <EmptyState id="wallet-transactions-none" title="No transactions yet." compact />
       ) : (
         <>
-          <ul className="portfolio-holdings portfolio-operations">
+          <ul className="wallets-list wallets-holdings">
             {pagedOwn.rows.map((operation) => (
               <li key={operation.id}>
                 <Link
-                  className="portfolio-operation"
+                  className="wallets-holdings__open"
                   to={`/transactions?open=${encodeURIComponent(operation.id)}${asked ? `&currency=${asked}` : ''}`}
                 >
-                  <span>
+                  <span className="wallets-holdings__main">
                     {operation.status === 'needs-classification' ? (
-                      <span className="portfolio-pill">{statusLabels[operation.status]}</span>
+                      <Badge tone="warn" dot>
+                        {statusLabels[operation.status]}
+                      </Badge>
                     ) : (
                       typeLabel(operation)
                     )}
-                    <span className="portfolio-sub">
+                    <span className="ui-sub">
                       {day(operation.occurredAt)}
                       {operation.type === 'transfer' && operation.counterAccount
                         ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
                         : ''}
                     </span>
                   </span>
-                  <span className="ui-num">
+                  <span className="ui-num wallets-holdings__side">
                     {signedAmount(operation)}
                     {operation.value !== null && typeof operations === 'object' && (
-                      <span className="portfolio-sub">
+                      <span className="ui-sub">
                         {money(operation.value, operations.quoteCurrency)}
                       </span>
                     )}
@@ -168,14 +173,14 @@ function WalletTransactions({
           </ul>
           {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
           <Link
-            className="portfolio-link portfolio-operations__all"
+            className="ui-link wallets-all"
             to={`/transactions?account=${encodeURIComponent(accountId)}`}
           >
             Open in Transactions
           </Link>
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -206,9 +211,8 @@ export default function WalletPage() {
     runs,
     sync,
     asked,
-    notice,
-    setNotice,
   } = useWallets();
+  const toast = useToast();
   const navigate = useNavigate();
   const [adding, setAdding] = useState<boolean | 'bybit'>(false);
   const [editing, setEditing] = useState(false);
@@ -266,88 +270,64 @@ export default function WalletPage() {
   return (
     <div className="shell-page">
       <PageHeader title={account?.name ?? 'Wallet'} currency={portfolio?.currency} />
-      <div className="portfolio-crumbs">
-        <Link className="portfolio-crumb" to={withCurrency('/wallets', asked)}>
-          ← Wallets
-        </Link>
+      <div className="wallets-crumbs">
+        <Crumb to={withCurrency('/wallets', asked)}>Wallets</Crumb>
       </div>
-      {notice && (
-        <p className="ui-banner ui-banner--pos wallets-notice" role="status">
-          {notice}
-        </p>
-      )}
       {failed ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load this wallet. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState onRetry={() => void load()}>
+          Could not load this wallet. Your data is safe; try again.
+        </ErrorState>
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
       ) : !account ? (
         <EmptyState
           id="wallet-missing"
           title="Wallet not found"
-          actions={
-            <Link className="shell-button" to={withCurrency('/wallets', asked)}>
-              Open Wallets
-            </Link>
-          }
+          actions={<ButtonLink to={withCurrency('/wallets', asked)}>Open Wallets</ButtonLink>}
         >
           It may belong to another owner or the link is wrong.
         </EmptyState>
       ) : (
         <>
-          <div className="portfolio-head">
-            <span className="wallets-card__icon wallets-card__icon--lg" aria-hidden="true">
-              <Icon name={kind ?? 'wallets'} />
-            </span>
-            <div className="portfolio-head__title">
-              <h2>{account.name}</h2>
-              <span className="portfolio-sub">{subtitle(own, kind)}</span>
-            </div>
-            <div className="wallets-actions">
-              <button
-                type="button"
-                className="shell-button shell-button--ghost"
-                onClick={() => setEditing(true)}
-              >
-                <Icon name="edit" className="shell-icon shell-icon--sm" />
-                Edit
-              </button>
-              <button
-                type="button"
-                className="shell-button shell-button--ghost"
-                onClick={() => setRemoving(true)}
-              >
-                Remove
-              </button>
-              {own.length > 0 && (
-                // wallets-02: the button stays focusable while it runs, so the keyboard stays on it.
-                <button
-                  type="button"
-                  className="shell-button shell-button--secondary"
-                  aria-disabled={syncing}
-                  onClick={() => {
-                    if (!syncing) void syncAll();
-                  }}
-                >
-                  <Icon name="refresh" className="shell-icon shell-icon--sm" />
-                  {syncing ? 'Syncing…' : 'Sync now'}
-                </button>
-              )}
-            </div>
-          </div>
-          <section className="shell-card wallet-overview" aria-label="Summary">
-            <dl className="portfolio-stats">
-              <Stat label="Total value">{money(total, currency)}</Stat>
-              <Stat label="Assets">{holdings.length}</Stat>
-              <Stat label="Tracked addresses">{own.length || 'None'}</Stat>
-              <Stat label="Last sync">
-                <LastSync addresses={own} runs={runs} />
-              </Stat>
-            </dl>
+          <PageHead
+            icon={
+              <span className="wallets-card__icon wallets-card__icon--lg">
+                <Icon name={kind ?? 'wallets'} />
+              </span>
+            }
+            title={account.name}
+            subtitle={subtitle(own, kind)}
+            actions={
+              <>
+                <Button variant="ghost" icon="edit" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+                <Button variant="ghost" destructive onClick={() => setRemoving(true)}>
+                  Remove
+                </Button>
+                {own.length > 0 && (
+                  // wallets-02: the button stays focusable while it runs, so the keyboard stays on it.
+                  <Button
+                    icon="refresh"
+                    aria-disabled={syncing}
+                    onClick={() => {
+                      if (!syncing) void syncAll();
+                    }}
+                  >
+                    {syncing ? 'Syncing…' : 'Sync now'}
+                  </Button>
+                )}
+              </>
+            }
+          />
+          {/* A card named "Summary" (Card names a region only by a heading, and this one has none). */}
+          <section className="ui-card wallet-overview" aria-label="Summary">
+            <Stats size="lg">
+              <Stat lead label="Total value" value={money(total, currency)} />
+              <Stat label="Assets" value={holdings.length} />
+              <Stat label="Tracked addresses" value={own.length || 'None'} />
+              <Stat label="Last sync" value={<LastSync addresses={own} runs={runs} />} />
+            </Stats>
             <ReconcileNote
               result={
                 hiddenSymbols ? reconcile(list, portfolio, accountId, hiddenSymbols) : PENDING
@@ -357,18 +337,16 @@ export default function WalletPage() {
             />
           </section>
           {own.length > 0 && (
-            <section className="shell-card wallets-card" aria-labelledby="wallet-addresses">
-              <div className="ui-toolbar wallets-card__toolbar">
-                <h2 id="wallet-addresses">Addresses</h2>
-                <button
-                  type="button"
-                  className="shell-button shell-button--ghost"
-                  onClick={() => setAdding(true)}
-                >
-                  <Icon name="plus" className="shell-icon shell-icon--sm" />
-                  Add address
-                </button>
-              </div>
+            <Card variant="flush" className="wallets-card" labelledBy="wallet-addresses">
+              <CardHeader
+                id="wallet-addresses"
+                title="Addresses"
+                actions={
+                  <Button variant="ghost" size="sm" icon="plus" onClick={() => setAdding(true)}>
+                    Add address
+                  </Button>
+                }
+              />
               <ul className="wallets-sources">
                 {pagedAddresses.rows.map((address) => (
                   <AddressRow
@@ -384,21 +362,19 @@ export default function WalletPage() {
                 ))}
               </ul>
               {pagedAddresses.more && <LoadMore {...pagedAddresses.more} label="addresses" />}
-            </section>
+            </Card>
           )}
-          <div className="portfolio-split">
-            <section className="shell-card" aria-labelledby="wallet-assets">
-              <div className="ui-toolbar">
-                <h2 id="wallet-assets">Assets</h2>
-              </div>
+          <div className="wallets-split">
+            <Card labelledBy="wallet-assets">
+              <CardHeader id="wallet-assets" title="Assets" />
               {holdings.length === 0 ? (
-                <p className="portfolio-none">No assets in this wallet.</p>
+                <EmptyState id="wallet-assets-none" title="No assets in this wallet." compact />
               ) : (
-                <ul className="portfolio-holdings">
+                <ul className="wallets-list wallets-holdings">
                   {pagedHoldings.rows.map((holding) => (
                     <li key={holding.asset.instrumentId}>
                       <Link
-                        className="wallets-asset"
+                        className="wallets-asset wallets-holdings__asset"
                         to={withCurrency(`/portfolio/${holding.asset.instrumentId}`, asked)}
                       >
                         <AssetIcon
@@ -410,7 +386,7 @@ export default function WalletPage() {
                         />
                         <span>
                           {holding.asset.name}
-                          <span className="portfolio-sub">
+                          <span className="ui-sub">
                             {withChains(
                               `${quantity(holding.quantity)} ${holding.asset.symbol ?? ''}`.trim(),
                               holding.asset.symbol,
@@ -419,10 +395,10 @@ export default function WalletPage() {
                           </span>
                         </span>
                       </Link>
-                      <span className="ui-num">
+                      <span className="ui-num wallets-holdings__side">
                         {holding.value === null ? DASH : money(holding.value, currency)}
                         {holding.value !== null && total !== null && Number(total) > 0 && (
-                          <span className="portfolio-sub">
+                          <span className="ui-sub">
                             {((Number(holding.value) / Number(total)) * 100).toFixed(1)}%
                           </span>
                         )}
@@ -432,7 +408,7 @@ export default function WalletPage() {
                 </ul>
               )}
               {pagedHoldings.more && <LoadMore {...pagedHoldings.more} label="assets" />}
-            </section>
+            </Card>
             <WalletTransactions
               accountId={accountId}
               asked={asked}
@@ -441,30 +417,26 @@ export default function WalletPage() {
             />
           </div>
           {own.length === 0 && (
-            <section className="shell-card">
+            <Card as="div">
               {connectsBybit(account.name, own, kind) ? (
                 // wallets-08: a Bybit account kept by hand can read itself with a read-only key.
-                <p className="wallets-soft">
+                <p className="ui-soft wallets-text">
                   {account.name} is tracked by hand: balances come from the transactions you add.{' '}
-                  <button
-                    type="button"
-                    className="portfolio-link"
-                    onClick={() => setAdding('bybit')}
-                  >
+                  <Button variant="link" onClick={() => setAdding('bybit')}>
                     Connect Bybit API
-                  </button>{' '}
+                  </Button>{' '}
                   to read its balances and history with a read-only key.
                 </p>
               ) : (
-                <p className="wallets-soft">
+                <p className="ui-soft wallets-text">
                   {account.name} is tracked by hand: balances come from the transactions you add.{' '}
-                  <button type="button" className="portfolio-link" onClick={() => setAdding(true)}>
+                  <Button variant="link" onClick={() => setAdding(true)}>
                     Add a wallet address
-                  </button>{' '}
+                  </Button>{' '}
                   to compare them with the blockchain.
                 </p>
               )}
-            </section>
+            </Card>
           )}
         </>
       )}
@@ -481,13 +453,15 @@ export default function WalletPage() {
           }}
           onAdded={(address, created) => {
             setAdding(false);
-            // wallets-07: the page says what was added.
+            // wallets-07: a toast says what was added and that its history now loads.
             if (created)
-              setNotice(
-                address.accountId === accountId
-                  ? `Added to ${account.name}. Syncing transactions…`
-                  : 'Wallet added. Syncing transactions…',
-              );
+              toast.show({
+                tone: 'info',
+                title:
+                  address.accountId === accountId
+                    ? `Added to ${account.name}. Syncing transactions…`
+                    : 'Wallet added. Syncing transactions…',
+              });
             replace(address);
             void load(true);
             if (created || address.network === 'bybit')
@@ -504,8 +478,11 @@ export default function WalletPage() {
           onClose={() => setEditing(false)}
           onSaved={(changes) => {
             setEditing(false);
-            // wallets-21: the page says what was saved.
-            setNotice('name' in changes ? 'Wallet renamed.' : 'Wallet saved.');
+            // wallets-21: a toast says what was saved; the keyboard goes back to Edit.
+            toast.show({
+              tone: 'success',
+              title: 'name' in changes ? 'Wallet renamed.' : 'Wallet saved.',
+            });
             refresh();
           }}
         />
@@ -513,11 +490,6 @@ export default function WalletPage() {
       {removing && account && (
         <ConfirmDialog
           title={`Remove ${account.name}?`}
-          text={
-            own.length > 0
-              ? `${account.name} leaves your wallets and its ${own.length === 1 ? 'address stops' : `${own.length} addresses stop`} syncing. A wallet that holds recorded transactions cannot be removed, because they are your history; remove its addresses instead.`
-              : `${account.name} leaves your wallets. A wallet that holds recorded transactions cannot be removed, because they are your history.`
-          }
           confirmLabel="Remove wallet"
           busyLabel="Removing…"
           failure={removalFailure}
@@ -528,7 +500,11 @@ export default function WalletPage() {
             navigate(withCurrency('/wallets', asked), { state: { removedWallet: account.name } });
           }}
           onClose={() => setRemoving(false)}
-        />
+        >
+          {own.length > 0
+            ? `${account.name} leaves your wallets and its ${own.length === 1 ? 'address stops' : `${own.length} addresses stop`} syncing. A wallet that holds recorded transactions cannot be removed, because they are your history; remove its addresses instead.`
+            : `${account.name} leaves your wallets. A wallet that holds recorded transactions cannot be removed, because they are your history.`}
+        </ConfirmDialog>
       )}
       {open && portfolio && (
         <AddressDrawer

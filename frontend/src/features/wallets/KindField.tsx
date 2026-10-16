@@ -1,4 +1,6 @@
 import type { WalletKind } from '@api/accounting.api';
+import { Field } from '@/ui/Field';
+import { Select } from '@/ui/inputs';
 import { kindLabels, walletKinds } from './wallets';
 
 /** "Not chosen" until the owner picks one of the kinds. */
@@ -15,23 +17,28 @@ export default function KindField({
   onChange: (kind: KindChoice) => void;
 }) {
   return (
-    <div className="ui-field">
-      <label className="ui-field__label" htmlFor={id}>
-        How you hold it <span className="wallets-muted">(optional)</span>
-      </label>
-      <select
-        id={id}
-        className="ui-input"
-        value={value}
-        onChange={(event) => onChange(event.target.value as KindChoice)}
-      >
-        <option value="">Not chosen</option>
-        {walletKinds.map((kind) => (
-          <option key={kind} value={kind}>
-            {kindLabels[kind]}
-          </option>
-        ))}
-      </select>
-    </div>
+    <Field
+      id={id}
+      label={
+        <>
+          How you hold it <span className="ui-muted">(optional)</span>
+        </>
+      }
+    >
+      {(control) => (
+        <Select
+          {...control}
+          value={value}
+          onChange={(event) => onChange(event.target.value as KindChoice)}
+        >
+          <option value="">Not chosen</option>
+          {walletKinds.map((kind) => (
+            <option key={kind} value={kind}>
+              {kindLabels[kind]}
+            </option>
+          ))}
+        </Select>
+      )}
+    </Field>
   );
 }

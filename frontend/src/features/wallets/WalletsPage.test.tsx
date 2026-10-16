@@ -13,6 +13,8 @@ import {
   type WalletAddress,
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
+import ToastViewport from '@components/Toast';
+import { ToastProvider } from '@contexts/ToastContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -202,10 +204,14 @@ function setup(
     items: [],
   });
   vi.spyOn(operationsApi, 'list').mockResolvedValue(noOperations);
+  // Success notices are toasts (plan 1.5): the app's toast region is mounted as in App.tsx.
   render(
-    <MemoryRouter initialEntries={[entry]}>
-      <WalletsPage />
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[entry]}>
+        <WalletsPage />
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 const card = (name: string) => screen.getByRole('region', { name });
@@ -2509,10 +2515,9 @@ describe('UI audit: Wallets', () => {
       within(trustCard).getByRole('button', { name: `Trust Wallet BTC ${addresses.trust}` }),
     ).toHaveFocus();
     finish(synced(wallet(1, {})));
-    expect(await screen.findByText('Trust Wallet BTC is synced.')).toHaveAttribute(
-      'role',
-      'status',
-    );
+    expect(
+      (await screen.findByText('Trust Wallet BTC is synced.')).closest('[role]'),
+    ).toHaveAttribute('role', 'status');
   });
 
   it('wallets-20 tells a sync the server answered with 500 from one that got no answer', async () => {
@@ -2539,7 +2544,7 @@ describe('UI audit: Wallets', () => {
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
     const note = within(trustCard)
       .getByText(/^Bitcoin data is temporarily unavailable\./)
-      .closest('.wallets-message');
+      .closest('.ui-banner');
     expect(note).toHaveClass('ui-banner--warn');
     expect(note).not.toHaveClass('ui-banner--neg');
     expect(note?.querySelector('svg.shell-icon')).not.toBeNull();
@@ -2583,10 +2588,9 @@ describe('UI audit: Wallets', () => {
     await waitFor(() =>
       expect(within(ledgerCard).getByRole('link', { name: 'Ledger' })).toHaveFocus(),
     );
-    expect(screen.getByText('Wallet added. Syncing transactions…')).toHaveAttribute(
-      'role',
-      'status',
-    );
+    expect(
+      screen.getByText('Wallet added. Syncing transactions…').closest('[role]'),
+    ).toHaveAttribute('role', 'status');
   });
 
   it("wallets-07 still shows a new wallet's address when the page cannot reload after adding it", async () => {
@@ -2754,13 +2758,16 @@ describe('UI audit: Wallets', () => {
     expect(secret).toHaveAttribute('type', 'password');
   });
 
-  it('wallets-21 says which wallet was removed and puts the keyboard on that message', async () => {
+  it('wallets-21 says which wallet was removed and puts the keyboard on the page heading', async () => {
     setup([wallet(1, {})], portfolio(), {}, [], {
       pathname: '/wallets',
       state: { removedWallet: 'Old wallet' },
     });
     const said = await screen.findByText('Old wallet was removed.');
-    expect(said).toHaveAttribute('role', 'status');
-    await waitFor(() => expect(said).toHaveFocus());
+    expect(said.closest('[role]')).toHaveAttribute('role', 'status');
+    // The row it was on is gone: the keyboard lands on the Wallets heading (plan 1.5).
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toHaveFocus(),
+    );
   });
 });

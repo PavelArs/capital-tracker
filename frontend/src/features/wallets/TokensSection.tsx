@@ -4,6 +4,8 @@ import {
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
 import { useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
 import { quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 
@@ -55,37 +57,36 @@ export default function TokensSection({
     <>
       {shown.length > 0 && (
         <section aria-labelledby="address-tokens">
-          <h3 id="address-tokens" className="transactions-section">
+          <h3 id="address-tokens" className="ui-section-t">
             Other tokens
           </h3>
-          <ul className="wallets-tokens">
+          <ul className="wallets-list wallets-tokens">
             {shownPages.rows.map((balance) => (
               <li key={balance.symbol}>
                 <span className="wallets-tokens__name">
                   <span>{balance.symbol}</span>
-                  <span className="wallets-muted">
+                  <span className="ui-muted wallets-small">
                     {balance.name}
                     {balance.listed === false && ' · no price'}
                   </span>
                 </span>
-                <span className="wallets-num">{quantity(balance.quantity)}</span>
-                <button
-                  type="button"
-                  className="shell-button shell-button--ghost"
+                <span className="ui-num ui-nowrap">{quantity(balance.quantity)}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   aria-label={`Hide ${balance.symbol}`}
                   disabled={busy}
                   onClick={() => void change([balance.symbol], 'hidden')}
                 >
                   Hide
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
           {shownPages.more && <LoadMore {...shownPages.more} label="tokens" />}
           {unlisted.length > 1 && (
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
+            <Button
+              size="sm"
               disabled={busy}
               onClick={() =>
                 void change(
@@ -95,9 +96,9 @@ export default function TokensSection({
               }
             >
               Hide {unlisted.length} tokens no price source lists
-            </button>
+            </Button>
           )}
-          <p className="wallets-muted wallets-stake__note">
+          <p className="ui-muted wallets-stake__note">
             Anyone can send a wallet a token, and most unpriced ones are spam. A hidden token stays
             out of this balance, its value and the balance check; the transactions stay in the list.
           </p>
@@ -105,46 +106,43 @@ export default function TokensSection({
       )}
       {hidden.length > 0 && (
         <section aria-labelledby="address-hidden-tokens">
-          <h3 id="address-hidden-tokens" className="transactions-section">
+          <h3 id="address-hidden-tokens" className="ui-section-t">
             Hidden tokens ({hidden.length})
           </h3>
           {listed && (
-            <ul className="wallets-tokens">
+            <ul className="wallets-list wallets-tokens">
               {hiddenPages.rows.map((token) => (
                 <li key={token.symbol}>
                   <span className="wallets-tokens__name">
                     <span>{token.symbol}</span>
-                    <span className="wallets-muted">{reasons[token.reason]}</span>
+                    <span className="ui-muted wallets-small">{reasons[token.reason]}</span>
                   </span>
-                  <span className="wallets-num">{quantity(token.quantity)}</span>
-                  <button
-                    type="button"
-                    className="shell-button shell-button--ghost"
+                  <span className="ui-num ui-nowrap">{quantity(token.quantity)}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     aria-label={`Restore ${token.symbol}`}
                     disabled={busy}
                     onClick={() => void change([token.symbol], 'shown')}
                   >
                     Restore
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
           {listed && hiddenPages.more && <LoadMore {...hiddenPages.more} label="hidden tokens" />}
-          <button
-            type="button"
-            className="portfolio-link"
+          <Button
+            variant="link"
             aria-expanded={listed}
             onClick={() => setListed((current) => !current)}
           >
             {listed ? 'Show less' : 'Show more'}
-          </button>
+          </Button>
         </section>
       )}
       {failed && (
-        <p className="ui-banner ui-banner--neg wallets-message" role="alert">
-          Could not change the tokens. Nothing was changed; try again.
-        </p>
+        <Banner tone="neg">Could not change the tokens. Nothing was changed; try again.</Banner>
       )}
     </>
   );

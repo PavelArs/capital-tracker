@@ -59,8 +59,9 @@ export function syncBadge(address: WalletAddress, run: SyncRun | undefined): Syn
 
 export function SyncBadge({ address, run }: { address: WalletAddress; run?: SyncRun }) {
   const { label, tone } = syncBadge(address, run);
+  // A sync running right now pulses (prototype "Syncing").
   return (
-    <Badge tone={tone} dot>
+    <Badge tone={tone} dot pulse={label === 'Syncing'}>
       {label}
     </Badge>
   );

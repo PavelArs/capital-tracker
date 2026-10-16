@@ -10,14 +10,18 @@ import {
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Drawer from '@/ui/Drawer';
+import { AmountHero } from '@/ui/AmountHero';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import Drawer, { DrawerFooter, DrawerHeader } from '@/ui/Drawer';
+import { Field } from '@/ui/Field';
+import { Input, Select } from '@/ui/inputs';
+import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
-import CloseButton from '../shell/CloseButton';
 import CopyValue from '../shell/CopyValue';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
-import { Icon } from '../shell/icons';
 import type { WalletAccount } from './AddWalletDialog';
 import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
@@ -253,30 +257,34 @@ export default function AddressDrawer({
   const running = run?.state === 'running';
   return (
     <Drawer titleId="address-title" onClose={onClose} initialFocus={() => closeButton.current}>
-      <div className="ui-drawer__head">
-        <h2 id="address-title">
-          {wallet
+      <DrawerHeader
+        titleId="address-title"
+        title={
+          wallet
             ? `${wallet.name} · ${network.name}`
-            : `${network.name} ${exchange ? 'account' : 'address'}`}
-        </h2>
-        <CloseButton buttonRef={closeButton} onClick={onClose} />
-      </div>
+            : `${network.name} ${exchange ? 'account' : 'address'}`
+        }
+        onClose={onClose}
+        closeRef={closeButton}
+      />
       <div className="ui-drawer__body">
-        <div className="transactions-hero">
-          <span className="transactions-hero__amount">
-            {balances === null
-              ? exchange
-                ? DASH
-                : `${DASH} ${network.symbol}`
-              : (allCoins ? pieces : pieces.slice(0, SHOWN_COINS)).join(' · ')}
-          </span>
-          <span className="transactions-hero__value">
-            {balances === null
-              ? 'The balance appears once the whole history is loaded.'
-              : value === DASH
-                ? 'No price yet'
-                : value}
-          </span>
+        <div className="wallets-hero">
+          <AmountHero
+            amount={
+              balances === null
+                ? exchange
+                  ? DASH
+                  : `${DASH} ${network.symbol}`
+                : (allCoins ? pieces : pieces.slice(0, SHOWN_COINS)).join(' · ')
+            }
+            detail={
+              balances === null
+                ? 'The balance appears once the whole history is loaded.'
+                : value === DASH
+                  ? 'No price yet'
+                  : value
+            }
+          />
           {balances !== null && (
             <MoreCoins
               total={pieces.length}
@@ -286,215 +294,172 @@ export default function AddressDrawer({
             />
           )}
         </div>
-        <dl className="transactions-facts" aria-label="Details">
-          <div>
-            <dt>Network</dt>
-            <dd>{network.name}</dd>
-          </div>
+        <KeyValue label="Details">
+          <KeyValueRow term="Network">{network.name}</KeyValueRow>
           {network.assets.length > 1 && (
-            <div>
-              <dt>Tracked assets</dt>
-              <dd>
-                {exchange
-                  ? 'Every coin the account holds; Bybit prices the ones Kraken does not list'
-                  : `${network.assets.join(', ')}${network.anyToken ? ' and every other token' : ''}`}
-              </dd>
-            </div>
+            <KeyValueRow term="Tracked assets">
+              {exchange
+                ? 'Every coin the account holds; Bybit prices the ones Kraken does not list'
+                : `${network.assets.join(', ')}${network.anyToken ? ' and every other token' : ''}`}
+            </KeyValueRow>
           )}
-          <div>
-            <dt>{key ? 'Public key' : exchange ? 'Bybit UID' : 'Address'}</dt>
-            <dd>
-              <CopyValue
-                value={address.address}
-                label={key ? 'Copy public key' : exchange ? 'Copy UID' : 'Copy address'}
-              />
-            </dd>
-          </div>
+          <KeyValueRow term={key ? 'Public key' : exchange ? 'Bybit UID' : 'Address'}>
+            <CopyValue
+              value={address.address}
+              label={key ? 'Copy public key' : exchange ? 'Copy UID' : 'Copy address'}
+            />
+          </KeyValueRow>
           {key && (
-            <div>
-              <dt>Addresses</dt>
-              <dd>{key.usedAddresses} used · new ones are found automatically</dd>
-            </div>
+            <KeyValueRow term="Addresses">
+              {key.usedAddresses} used · new ones are found automatically
+            </KeyValueRow>
           )}
           {exchange && (
             <>
-              <div>
-                <dt>API key</dt>
-                <dd>
-                  <span className="wallets-mono">…{exchange.keyHint}</span> · read-only, stored
-                  encrypted
-                </dd>
-              </div>
-              <div>
-                <dt>Key expires</dt>
-                <dd>
-                  {exchange.ipBound
-                    ? 'Never: bound to an IP address'
-                    : exchange.keyExpiresAt
-                      ? `${dayText(exchange.keyExpiresAt)}. Bind it to the server's IP address in Bybit to keep it.`
-                      : 'Unknown'}
-                </dd>
-              </div>
-              <div>
-                <dt>History from</dt>
-                <dd>{dayText(exchange.historyFrom)}</dd>
-              </div>
+              <KeyValueRow term="API key">
+                <span className="ui-mono">…{exchange.keyHint}</span> · read-only, stored encrypted
+              </KeyValueRow>
+              <KeyValueRow term="Key expires">
+                {exchange.ipBound
+                  ? 'Never: bound to an IP address'
+                  : exchange.keyExpiresAt
+                    ? `${dayText(exchange.keyExpiresAt)}. Bind it to the server's IP address in Bybit to keep it.`
+                    : 'Unknown'}
+              </KeyValueRow>
+              <KeyValueRow term="History from">{dayText(exchange.historyFrom)}</KeyValueRow>
               {exchange.reportedAt && (
-                <div>
-                  <dt>Balances</dt>
-                  <dd>As Bybit reported them {age(exchange.reportedAt, new Date())}</dd>
-                </div>
+                <KeyValueRow term="Balances">
+                  As Bybit reported them {age(exchange.reportedAt, new Date())}
+                </KeyValueRow>
               )}
               {exchange.untracked.length > 0 && (
-                <div>
-                  <dt>Not tracked</dt>
-                  <dd>
-                    {exchange.untracked
-                      .map((item) => `${quantity(item.quantity)} ${item.symbol}`)
-                      .join(' · ')}
-                    <span className="wallets-muted"> · not counted</span>
-                  </dd>
-                </div>
+                <KeyValueRow term="Not tracked">
+                  {exchange.untracked
+                    .map((item) => `${quantity(item.quantity)} ${item.symbol}`)
+                    .join(' · ')}
+                  <span className="ui-muted"> · not counted</span>
+                </KeyValueRow>
               )}
             </>
           )}
-          <div>
-            <dt>Status</dt>
-            <dd>
-              <SyncBadge address={address} run={run} />{' '}
-              <span className="wallets-muted">{syncAge(address, run)}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>Transactions</dt>
-            <dd>{count}</dd>
-          </div>
-          <div>
-            <dt>Data source</dt>
-            <dd>{network.source}</dd>
-          </div>
-          <div>
-            <dt>Updates</dt>
-            <dd>Every hour in the background</dd>
-          </div>
-        </dl>
+          <KeyValueRow term="Status">
+            <SyncBadge address={address} run={run} />{' '}
+            <span className="ui-muted wallets-small">{syncAge(address, run)}</span>
+          </KeyValueRow>
+          <KeyValueRow term="Transactions">{count}</KeyValueRow>
+          <KeyValueRow term="Data source">{network.source}</KeyValueRow>
+          <KeyValueRow term="Updates">Every hour in the background</KeyValueRow>
+        </KeyValue>
         {key && key.alsoTracked.length > 0 && (
-          <p className="ui-banner ui-banner--warn wallets-message" role="note">
+          <Banner tone="warn">
             {key.alsoTracked.length === 1
               ? 'One address of this key is also tracked as its own wallet'
               : `${key.alsoTracked.length} addresses of this key are also tracked as their own wallets`}{' '}
             ({key.alsoTracked.map((item) => item.label ?? shortAddress(item.address)).join(', ')}
             ), so their coins count twice.
-          </p>
+          </Banner>
         )}
         {address.network === 'tron' && <ReportedBalanceNote address={address} />}
         <TokensSection address={address} onChange={(saved) => onSaved(saved, false)} />
         {address.staking && <StakingSection address={address} staking={address.staking} />}
         {address.pools && <PoolsSection pools={address.pools} />}
         {address.network === 'stellar' && address.reportedBalance && (
-          <p className="ui-banner ui-banner--warn wallets-message" role="note">
+          <Banner tone="warn">
             Stellar reports {quantity(address.reportedBalance)} {network.symbol}; the transactions
             read give {quantity(address.chainBalance ?? '0')} {network.symbol}. The app does not
             read offers on the Stellar exchange, claimable balances or liquidity pools, and the
             public server keeps only recent history.
-          </p>
+          </Banner>
         )}
         {address.network === 'zcash' && (
-          <p className="wallets-note" role="note">
+          <Banner tone="info">
             This is the balance of the transparent address. Shielded balances are private and the
             app cannot read them: ZEC moved to a shielded address shows as sent.
-          </p>
+          </Banner>
         )}
         {exchange && <EarnSection exchange={exchange} />}
         {exchange && <ConvertNote exchange={exchange} />}
         {syncProblem(address, run) && (
           // wallets-13: an amber note with an alert icon, as on the Wallets row. A sync the owner
           // just ran is said aloud (wallets-02); a failure the background job stored is a note.
-          <p
-            className="ui-banner ui-banner--warn wallets-message"
-            role={run?.state === 'failed' ? 'alert' : 'note'}
-          >
-            <Icon name="alert" className="shell-icon wallets-message__icon" />
-            <span>{syncProblem(address, run)}</span>
-          </p>
+          <Banner tone="warn" role={run?.state === 'failed' ? 'alert' : 'note'}>
+            {syncProblem(address, run)}
+          </Banner>
         )}
         <form className="wallets-edit" onSubmit={save} aria-labelledby="address-wallet">
-          <h3 id="address-wallet" className="transactions-section">
+          <h3 id="address-wallet" className="ui-section-t">
             Wallet and name
           </h3>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor="address-account">
-              Wallet
-            </label>
-            <select
-              id="address-account"
-              className="ui-input"
-              value={choice}
-              onChange={(event) => setChoice(event.target.value)}
-            >
-              <option value={NONE}>Not chosen</option>
-              {accounts.map((account) => (
-                <option key={account.accountId} value={account.accountId}>
-                  {account.name}
-                </option>
-              ))}
-              <option value={NEW}>New wallet…</option>
-            </select>
-          </div>
+          <Field id="address-account" label="Wallet">
+            {(control) => (
+              <Select
+                {...control}
+                value={choice}
+                onChange={(event) => setChoice(event.target.value)}
+              >
+                <option value={NONE}>Not chosen</option>
+                {accounts.map((account) => (
+                  <option key={account.accountId} value={account.accountId}>
+                    {account.name}
+                  </option>
+                ))}
+                <option value={NEW}>New wallet…</option>
+              </Select>
+            )}
+          </Field>
           {choice === NEW && (
             <>
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor="address-new-wallet">
-                  New wallet name
-                </label>
-                <input
-                  id="address-new-wallet"
-                  className="ui-input"
-                  maxLength={120}
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                />
-              </div>
+              <Field id="address-new-wallet" label="New wallet name">
+                {(control) => (
+                  <Input
+                    {...control}
+                    maxLength={120}
+                    value={newName}
+                    onChange={(event) => setNewName(event.target.value)}
+                  />
+                )}
+              </Field>
               <KindField id="address-new-kind" value={kind} onChange={setPickedKind} />
             </>
           )}
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor="address-label">
-              {exchange ? 'Account name' : 'Address name'}{' '}
-              <span className="wallets-muted">(optional)</span>
-            </label>
-            <input
-              id="address-label"
-              className="ui-input"
-              maxLength={40}
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-            />
-          </div>
-          {message && (
-            <p
-              className={`ui-banner wallets-message ${message.error ? 'ui-banner--neg' : 'ui-banner--info'}`}
-              role={message.error ? 'alert' : 'status'}
-            >
-              {message.text}
-            </p>
-          )}
-          <button
-            type="submit"
-            className="shell-button shell-button--secondary wallets-edit__save"
-            disabled={saving}
+          <Field
+            id="address-label"
+            label={
+              <>
+                {exchange ? 'Account name' : 'Address name'}{' '}
+                <span className="ui-muted">(optional)</span>
+              </>
+            }
           >
+            {(control) => (
+              <Input
+                {...control}
+                maxLength={40}
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+              />
+            )}
+          </Field>
+          {/* The drawer stays open after Save, so its result is said here (plan 1.5: a toast is
+              for a command whose drawer closed). */}
+          {message &&
+            (message.error ? (
+              <Banner tone="neg">{message.text}</Banner>
+            ) : (
+              <Banner tone="pos">{message.text}</Banner>
+            ))}
+          <Button type="submit" className="wallets-edit__save" disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
-          </button>
+          </Button>
         </form>
         <section aria-labelledby="address-transactions">
-          <h3 id="address-transactions" className="transactions-section">
+          <h3 id="address-transactions" className="ui-section-t">
             {exchange ? 'Bybit records' : 'Blockchain transactions'}
           </h3>
           {waiting ? (
-            <p className="wallets-muted">Loading…</p>
+            <p className="ui-muted wallets-small">Loading…</p>
           ) : shown.length === 0 ? (
-            <p className="wallets-muted">
+            <p className="ui-muted wallets-small">
               {history === null
                 ? 'Could not load them; they are in Transactions.'
                 : dust > 0
@@ -502,19 +467,19 @@ export default function AddressDrawer({
                   : 'None loaded yet. They appear here after a sync.'}
             </p>
           ) : (
-            <ul className="wallets-recent">
+            <ul className="wallets-list wallets-recent">
               {shown.map((item) => {
                 const operation = listed?.get(item.txid);
                 const line = (
                   <>
                     <span>
                       {exchange ? recordLabel(item) : directionLabels[item.direction]}{' '}
-                      <span className="wallets-muted">
+                      <span className="ui-muted">
                         {dayText(item.blockTime)}
                         {operation?.status === 'dust' && ' · dust'}
                       </span>
                     </span>
-                    <span className="wallets-num">
+                    <span className="ui-num ui-nowrap">
                       {item.net.startsWith('-') ? '-' : '+'}
                       {quantity(item.net.replace(/^-/, ''))} {item.symbol}
                     </span>
@@ -548,9 +513,8 @@ export default function AddressDrawer({
           )}
           <div className="wallets-recent__more">
             {dust > 0 && (
-              <button
-                type="button"
-                className="portfolio-link"
+              <Button
+                variant="link"
                 aria-expanded={showDust}
                 onClick={() => {
                   setShowDust((current) => !current);
@@ -558,11 +522,11 @@ export default function AddressDrawer({
                 }}
               >
                 {showDust ? 'Hide dust' : `Show ${dustLabel}`}
-              </button>
+              </Button>
             )}
             {count > 0 && (
               <Link
-                className="portfolio-link"
+                className="ui-link"
                 to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
               >
                 All in Transactions
@@ -573,18 +537,12 @@ export default function AddressDrawer({
         <SyncJournal address={address} run={run} />
         <RemoveAddress id={address.id} exchange={!!exchange} onRemoved={() => onRemoved(address)} />
       </div>
-      <div className="ui-drawer__foot">
-        <span className="transactions-grow" />
-        <button
-          type="button"
-          className="shell-button shell-button--secondary"
-          disabled={running}
-          onClick={onSync}
-        >
-          <Icon name="refresh" className="shell-icon shell-icon--sm" />
+      <DrawerFooter>
+        <span className="ui-grow" />
+        <Button icon="refresh" disabled={running} onClick={onSync}>
           {running ? 'Syncing…' : 'Sync now'}
-        </button>
-      </div>
+        </Button>
+      </DrawerFooter>
     </Drawer>
   );
 }

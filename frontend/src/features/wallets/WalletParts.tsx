@@ -16,13 +16,16 @@ import type {
 import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { useId, useRef, useState } from 'react';
 import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { ListRowText, rowClass } from '@/ui/ListRow';
+import { Progress } from '@/ui/Progress';
 import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { CopyButton } from '../shell/CopyValue';
-import { Icon } from '../shell/icons';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
 import {
@@ -151,29 +154,28 @@ const earnProducts: Record<EarnHolding['product'], string> = {
 export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
   if (exchange.earnAllowed === false)
     return (
-      <p className="ui-banner ui-banner--warn wallets-message" role="note">
+      <Banner tone="warn">
         This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key,
         tick Earn under Read-Only and press Sync now; no need to add the account again.
-      </p>
+      </Banner>
     );
   const earn = (exchange.earn ?? []).filter((item) => Number(item.quantity) !== 0);
   if (earn.length === 0) return null;
   return (
     <section aria-labelledby="address-earn">
-      <h3 id="address-earn" className="transactions-section">
+      <h3 id="address-earn" className="ui-section-t">
         Earn
       </h3>
-      <dl className="transactions-facts">
+      <KeyValue>
         {earn.map((item) => (
-          <div key={`${item.product}-${item.symbol}`}>
-            <dt>{earnProducts[item.product]}</dt>
-            <dd className="wallets-num">
+          <KeyValueRow key={`${item.product}-${item.symbol}`} term={earnProducts[item.product]}>
+            <span className="ui-num ui-nowrap">
               {quantity(item.quantity)} {item.symbol}
-            </dd>
-          </div>
+            </span>
+          </KeyValueRow>
         ))}
-      </dl>
-      <p className="wallets-muted wallets-stake__note">
+      </KeyValue>
+      <p className="ui-muted wallets-stake__note">
         Coins in Bybit Earn stay yours: they count in this balance and in net worth. Yield Bybit
         paid in the last three months is recorded as staking income by itself; Bybit lists no older
         yield.
@@ -189,11 +191,11 @@ export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
 export function ConvertNote({ exchange }: { exchange: ExchangeAccount }) {
   if (exchange.convertAllowed !== false) return null;
   return (
-    <p className="ui-banner ui-banner--warn wallets-message" role="note">
+    <Banner tone="warn">
       This key cannot read convert history, so coins converted on Bybit are missing from the
       records. In Bybit, edit the key, tick Exchange History under Read-Only and press Sync now; no
       need to add the account again.
-    </p>
+    </Banner>
   );
 }
 
@@ -242,14 +244,15 @@ export function ReportedBalanceNote({ address }: { address: WalletAddress }) {
   const symbol = networkOf(address).symbol;
   const missing = sum([reported, `-${address.chainBalance}`]);
   const more = !missing.startsWith('-');
+  // No role, as before: it is read with the rest of the drawer.
   return (
-    <p className="ui-banner ui-banner--warn wallets-message">
+    <Banner tone="warn" role="none">
       Tron reports {quantity(reported)} {symbol} at this address, staked included; its transactions
       explain {quantity(address.chainBalance)} {symbol}.{' '}
       {more
         ? `${quantity(missing)} ${symbol} arrived in transfers TronGrid does not list, such as a payout made by a contract, so they are not in the balance or net worth.`
         : `${quantity(missing.slice(1))} ${symbol} left in transfers TronGrid does not list, so the balance and net worth still count them.`}
-    </p>
+    </Banner>
   );
 }
 
@@ -266,39 +269,35 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
   const tron = address.network === 'tron';
   return (
     <section aria-labelledby="address-staking">
-      <h3 id="address-staking" className="transactions-section">
+      <h3 id="address-staking" className="ui-section-t">
         Staking
       </h3>
-      <dl className="transactions-facts">
+      <KeyValue>
         {available !== null && (
-          <div>
-            <dt>Available</dt>
-            <dd className="wallets-num">
+          <KeyValueRow term="Available">
+            <span className="ui-num ui-nowrap">
               {quantity(available)} {symbol}
-            </dd>
-          </div>
+            </span>
+          </KeyValueRow>
         )}
-        <div>
-          <dt>Staked</dt>
-          <dd className="wallets-num">
+        <KeyValueRow term="Staked">
+          <span className="ui-num ui-nowrap">
             {quantity(staking.quantity)} {symbol}
-          </dd>
-        </div>
-        <div>
-          <dt>{tron ? 'Rewards claimed' : 'Rewards so far'}</dt>
-          <dd className="wallets-num">
+          </span>
+        </KeyValueRow>
+        <KeyValueRow term={tron ? 'Rewards claimed' : 'Rewards so far'}>
+          <span className="ui-num ui-nowrap">
             {quantity(staking.rewards)} {symbol}
-          </dd>
-        </div>
+          </span>
+        </KeyValueRow>
         {staking.unclaimedRewards && (
-          <div>
-            <dt>Not claimed yet</dt>
-            <dd className="wallets-num">
+          <KeyValueRow term="Not claimed yet">
+            <span className="ui-num ui-nowrap">
               {quantity(staking.unclaimedRewards)} {symbol}
-            </dd>
-          </div>
+            </span>
+          </KeyValueRow>
         )}
-      </dl>
+      </KeyValue>
       <ul
         className="wallets-stake"
         aria-label={tron ? 'Staked TRX' : pools ? 'Staking pools' : 'Stake accounts'}
@@ -312,14 +311,14 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
                 {resource ? (
                   <span>{resource.name}</span>
                 ) : (
-                  <span className="wallets-mono">{shortAddress(item.account)}</span>
+                  <span className="ui-mono">{shortAddress(item.account)}</span>
                 )}
-                <span className="wallets-muted">
+                <span className="ui-muted wallets-small">
                   {resource ? resource.detail : stakeDetail(item, pools)}
                 </span>
               </span>
               <span className="wallets-stake__side">
-                <span className="wallets-num">
+                <span className="ui-num ui-nowrap">
                   {quantity(item.quantity)} {symbol}
                 </span>
                 {state ? (
@@ -327,7 +326,7 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
                     {state.label}
                   </Badge>
                 ) : (
-                  <span className="wallets-muted">Checked on the next sync</span>
+                  <span className="ui-muted wallets-small">Checked on the next sync</span>
                 )}
               </span>
             </li>
@@ -335,20 +334,20 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
         })}
       </ul>
       {staking.reportedQuantity && (
-        <p className="wallets-muted wallets-stake__note">
+        <p className="ui-muted wallets-stake__note">
           Tron reports {quantity(staking.reportedQuantity)} {symbol} staked; the wallet's
           transactions explain {quantity(staking.quantity)} {symbol}. The balance follows the
           transactions.
         </p>
       )}
       {tron ? (
-        <p className="wallets-muted wallets-stake__note">
+        <p className="ui-muted wallets-stake__note">
           Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and
           staking or unstaking is not a sale. Energy and bandwidth are not assets. Claimed vote
           rewards are recorded as Staking reward income; rewards not claimed yet are not counted.
         </p>
       ) : (
-        <p className="wallets-muted wallets-stake__note">
+        <p className="ui-muted wallets-stake__note">
           Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and
           moving it into a {pools ? 'staking pool' : 'stake account'} or back is not a sale. Rewards
           count as received coins without a purchase price, not as deposits.
@@ -365,20 +364,19 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
 export function PoolsSection({ pools }: { pools: ChainBalance[] }) {
   return (
     <section aria-labelledby="address-pools">
-      <h3 id="address-pools" className="transactions-section">
+      <h3 id="address-pools" className="ui-section-t">
         Liquidity pools
       </h3>
-      <dl className="transactions-facts">
+      <KeyValue>
         {pools.map((item) => (
-          <div key={item.symbol}>
-            <dt>In pools</dt>
-            <dd className="wallets-num">
+          <KeyValueRow key={item.symbol} term="In pools">
+            <span className="ui-num ui-nowrap">
               {quantity(item.quantity)} {item.symbol}
-            </dd>
-          </div>
+            </span>
+          </KeyValueRow>
         ))}
-      </dl>
-      <p className="wallets-muted wallets-stake__note">
+      </KeyValue>
+      <p className="ui-muted wallets-stake__note">
         Coins you put into a liquidity pool stay yours: they count in this balance and in net worth
         with their purchase price until a pool withdrawal returns them. What comes back above the
         deposit is pool income; less is a loss.
@@ -407,17 +405,12 @@ export function MoreCoins({
   return (
     <div className="wallets-more">
       {extra > 0 && (
-        <button
-          type="button"
-          className="portfolio-link"
-          aria-expanded={expanded}
-          onClick={onToggle}
-        >
+        <Button variant="link" aria-expanded={expanded} onClick={onToggle}>
           {expanded ? 'Show less' : `Show ${extra} more`}
-        </button>
+        </Button>
       )}
       {hidden > 0 && (
-        <span className="wallets-muted">
+        <span className="ui-muted">
           {hidden} hidden {hidden === 1 ? 'token' : 'tokens'}
         </span>
       )}
@@ -447,7 +440,7 @@ function ChainAmounts({
   const note =
     notes.length > 0 &&
     notes.map((piece) => (
-      <span key={piece} className="wallets-muted wallets-amounts__staked">
+      <span key={piece} className="ui-muted wallets-amounts__staked">
         {piece}
       </span>
     ));
@@ -464,7 +457,7 @@ function ChainAmounts({
     <span id={id} className="wallets-amounts">
       {pieces.flatMap((piece, index) => [
         index ? ' ' : null,
-        <span key={piece} className="wallets-num">
+        <span key={piece} className="ui-num">
           {piece}
           {index < pieces.length - 1 && ' ·'}
         </span>,
@@ -509,37 +502,45 @@ export function AddressRow({
   const loading =
     address.sync.state !== 'complete' &&
     (run?.state === 'running' || (run === undefined && address.sync.status === 'syncing'));
+  // The row's messages have no role of their own (a card of synced rows has no notes), except a
+  // failed sync the owner just ran.
   const message = loading ? (
-    <div className="ui-banner ui-banner--info wallets-message">
+    <Banner tone="info" role="none" className="wallets-inset">
       Loading the transaction history. A long history takes a few minutes; it keeps loading in the
       background, so you can leave this page.
-    </div>
+    </Banner>
   ) : problem ? (
     // wallets-13: an amber note with an alert icon. A sync the owner just ran is said aloud
     // (wallets-02); a failure the background job stored is only shown.
-    <div
-      className="ui-banner ui-banner--warn wallets-message"
-      role={run?.state === 'failed' ? 'alert' : undefined}
+    <Banner
+      tone="warn"
+      role={run?.state === 'failed' ? 'alert' : 'none'}
+      className="wallets-inset"
+      action={
+        <Button size="sm" icon="refresh" onClick={start}>
+          Retry now
+        </Button>
+      }
     >
-      <Icon name="alert" className="shell-icon wallets-message__icon" />
-      <span>{problem}</span>
-      <button type="button" className="shell-button shell-button--secondary" onClick={start}>
-        <Icon name="refresh" className="shell-icon shell-icon--sm" />
-        Retry now
-      </button>
-    </div>
+      {problem}
+    </Banner>
   ) : run === undefined && address.sync.state !== 'complete' ? (
-    <div className="ui-banner ui-banner--info wallets-message">
-      <span>
-        {address.sync.state === 'partial'
-          ? 'Part of the history is loaded; the balance appears when the rest is.'
-          : 'The transaction history is not loaded yet.'}
-      </span>
-      <button type="button" className="shell-button shell-button--secondary" onClick={start}>
-        {address.sync.state === 'partial' ? 'Continue loading' : 'Load history'}
-      </button>
-    </div>
+    <Banner
+      tone="info"
+      role="none"
+      className="wallets-inset"
+      action={
+        <Button size="sm" onClick={start}>
+          {address.sync.state === 'partial' ? 'Continue loading' : 'Load history'}
+        </Button>
+      }
+    >
+      {address.sync.state === 'partial'
+        ? 'Part of the history is loaded; the balance appears when the rest is.'
+        : 'The transaction history is not loaded yet.'}
+    </Banner>
   ) : null;
+  const syncing = syncBadge(address, run).label === 'Syncing';
   const label = `${name} ${address.address}`;
   const more = (
     <MoreCoins
@@ -603,10 +604,10 @@ export function AddressRow({
           <AssetIcon {...networkIcon(network)} size="sm" />
           <span className="wallets-asset__text">
             <span className="wallets-asset__name">{name}</span>
-            {derived && <span className="portfolio-sub">{derived}</span>}
+            {derived && <span className="ui-sub">{derived}</span>}
           </span>
         </span>
-        <span className="wallets-mono wallets-soft" title={address.address}>
+        <span className="ui-mono ui-soft wallets-place" title={address.address}>
           {place(address)}
         </span>
         <ChainAmounts
@@ -615,18 +616,23 @@ export function AddressRow({
           stacked={false}
           expanded={expanded}
         />
-        <span id={`${detailsId}-value`} className="wallets-num wallets-right">
+        <span id={`${detailsId}-value`} className="ui-num ui-nowrap wallets-right">
           {addressValue(address, prices, currency)}
         </span>
         <span id={`${detailsId}-status`} className="wallets-right wallets-status">
           <SyncBadge address={address} run={run} />
-          {when && <span className="wallets-muted">{when}</span>}
+          {syncing && <Progress size="thin" label="Syncing transactions" />}
+          {when && <span className="ui-muted">{when}</span>}
         </span>
       </button>
       {copyable && (
         <div className="wallets-source__copy">
           <span className="wallets-source__copy-cell">
-            <span className="wallets-mono wallets-soft" aria-hidden="true" title={address.address}>
+            <span
+              className="ui-mono ui-soft wallets-place"
+              aria-hidden="true"
+              title={address.address}
+            >
               {place(address)}
             </span>
             <CopyButton value={address.address} label={`Copy address of ${name}`} />
@@ -655,7 +661,7 @@ export function ManualRow({
   // Each coin is one unbreakable piece, so a long list wraps between coins inside its column.
   const amounts = holdings.flatMap((holding, index) => [
     index ? ' ' : null,
-    <span key={holding.asset.instrumentId} className="wallets-num">
+    <span key={holding.asset.instrumentId} className="ui-num">
       {quantity(holding.quantity)} {ticker(holding.asset)}
       {index < holdings.length - 1 && ' ·'}
     </span>,
@@ -676,9 +682,9 @@ export function ManualRow({
     </span>
   );
   const connect = onConnect && (
-    <button type="button" className="portfolio-link" onClick={onConnect}>
+    <Button variant="link" onClick={onConnect}>
       Connect Bybit API
-    </button>
+    </Button>
   );
   if (narrow) {
     return (
@@ -697,8 +703,10 @@ export function ManualRow({
         {icons}
         <span>{names} tracked by hand</span>
         <span className="wallets-amounts">{amounts}</span>
-        <span className="wallets-num wallets-right">{value}</span>
-        <span className="wallets-right wallets-muted">{connect ?? 'From your transactions'}</span>
+        <span className="ui-num ui-nowrap wallets-right">{value}</span>
+        <span className="wallets-right ui-muted wallets-small">
+          {connect ?? 'From your transactions'}
+        </span>
       </div>
     </li>
   );
@@ -758,7 +766,7 @@ export function ReconcileNote({
     .map(({ symbol, difference }) => `${quantity(difference.replace(/^-/, ''))} ${symbol}`)
     .join(', ')}`;
   return (
-    <div className="ui-banner ui-banner--warn wallets-message" role="note">
+    <Banner tone="warn" className="wallets-inset">
       <details className="wallets-diff">
         <summary>
           <span className="wallets-diff__line">{headline}</span>
@@ -773,14 +781,9 @@ export function ReconcileNote({
               Or count the difference now: each coin becomes one record of this account, without a
               purchase price, that you can answer later as a purchase, a deposit or anything else.
             </p>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={counting}
-              onClick={() => void count()}
-            >
+            <Button size="sm" disabled={counting} onClick={() => void count()}>
               {counting ? 'Counting…' : 'Count the difference'}
-            </button>
+            </Button>
             {failed && (
               <p role="alert">
                 Could not count every coin. Bybit may have reported another balance; reload and try
@@ -790,7 +793,7 @@ export function ReconcileNote({
           </>
         )}
       </details>
-    </div>
+    </Banner>
   );
 }
 

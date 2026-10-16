@@ -7,6 +7,8 @@ import {
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import ToastViewport from '@components/Toast';
+import { ToastProvider } from '@contexts/ToastContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -251,13 +253,17 @@ function setup({
   vi.spyOn(walletAddressesApi, 'syncRuns').mockResolvedValue([]);
   vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
   vi.spyOn(operationsApi, 'list').mockResolvedValue(operations(items));
+  // Success notices are toasts (plan 1.5): the app's toast region is mounted as in App.tsx.
   render(
-    <MemoryRouter initialEntries={[`/wallets/${account}`]}>
-      <Routes>
-        <Route path="/wallets/:accountId" element={<WalletPage />} />
-        <Route path="/wallets" element={listPage} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[`/wallets/${account}`]}>
+        <Routes>
+          <Route path="/wallets/:accountId" element={<WalletPage />} />
+          <Route path="/wallets" element={listPage} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 
@@ -273,7 +279,10 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     setup();
     expect(await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' })).toBeVisible();
     expect(screen.getByText('Bitcoin · 1 address')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '← Wallets' })).toHaveAttribute('href', '/wallets');
+    expect(screen.getByRole('link', { name: 'Back to Wallets' })).toHaveAttribute(
+      'href',
+      '/wallets',
+    );
 
     const summary = screen.getByRole('region', { name: 'Summary' });
     const stat = (label: string) =>
@@ -448,7 +457,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     const remove = vi.spyOn(accountingApi, 'removeAccount').mockResolvedValue(undefined);
 
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    const dialog = screen.getByRole('dialog', { name: 'Remove Trust Wallet?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Remove Trust Wallet?' });
     expect(dialog).toHaveTextContent('its address stops syncing');
     expect(dialog).toHaveTextContent('A wallet that holds recorded transactions cannot be removed');
     expect(remove).not.toHaveBeenCalled();
@@ -472,13 +481,13 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     vi.spyOn(accountingApi, 'removeAccount').mockRejectedValue(refused);
 
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    const dialog = screen.getByRole('dialog', { name: 'Remove Trust Wallet?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Remove Trust Wallet?' });
     await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'This wallet has recorded transactions, so it stays in your history.',
     );
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog', { name: 'Remove Trust Wallet?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Remove Trust Wallet?' })).toBeNull();
     expect(screen.getByRole('heading', { level: 2, name: 'Trust Wallet' })).toBeVisible();
   });
 
@@ -493,17 +502,17 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     const remove = vi.spyOn(walletAddressesApi, 'remove').mockResolvedValue(undefined);
 
     await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
-    const confirm = within(drawer).getByRole('group', { name: 'Remove this address' });
+    const confirm = within(drawer).getByRole('alertdialog', { name: 'Remove this address?' });
     expect(confirm).toHaveTextContent('stay in your history');
     expect(confirm).toHaveTextContent('Adding it again brings them back');
     await user.click(within(confirm).getByRole('button', { name: 'Cancel' }));
-    expect(within(drawer).queryByRole('group', { name: 'Remove this address' })).toBeNull();
+    expect(within(drawer).queryByRole('alertdialog', { name: 'Remove this address?' })).toBeNull();
     expect(remove).not.toHaveBeenCalled();
 
     await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
     vi.mocked(walletAddressesApi.list).mockResolvedValue([]);
     await user.click(
-      within(within(drawer).getByRole('group', { name: 'Remove this address' })).getByRole(
+      within(within(drawer).getByRole('alertdialog', { name: 'Remove this address?' })).getByRole(
         'button',
         { name: 'Remove address' },
       ),
@@ -525,7 +534,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
 
     await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
     await user.click(
-      within(within(drawer).getByRole('group', { name: 'Remove this address' })).getByRole(
+      within(within(drawer).getByRole('alertdialog', { name: 'Remove this address?' })).getByRole(
         'button',
         { name: 'Remove address' },
       ),
@@ -676,19 +685,26 @@ describe('UI audit: one wallet', () => {
     await user.clear(within(dialog).getByLabelText('Name'));
     await user.type(within(dialog).getByLabelText('Name'), 'Ledger');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Wallet renamed.')).toHaveAttribute('role', 'status');
+    expect((await screen.findByText('Wallet renamed.')).closest('[role]')).toHaveAttribute(
+      'role',
+      'status',
+    );
   });
 
-  it('wallets-21 lands on Wallets with the keyboard on what was removed', async () => {
+  it('wallets-21 lands on Wallets, says what was removed and puts the keyboard on its heading', async () => {
     const user = userEvent.setup();
     setup({ listPage: <WalletsPage /> });
     await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
     vi.spyOn(accountingApi, 'removeAccount').mockResolvedValue(undefined);
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    const dialog = screen.getByRole('dialog', { name: 'Remove Trust Wallet?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Remove Trust Wallet?' });
     await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
     const said = await screen.findByText('Trust Wallet was removed.');
-    await waitFor(() => expect(said).toHaveFocus());
+    expect(said.closest('[role]')).toHaveAttribute('role', 'status');
+    // The row it was on is gone: the keyboard lands on the Wallets heading (plan 1.5).
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toHaveFocus(),
+    );
   });
 
   it('wallets-08 offers to connect the Bybit API on a Bybit wallet tracked by hand', async () => {
