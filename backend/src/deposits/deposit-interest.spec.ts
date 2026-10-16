@@ -354,6 +354,33 @@ describe('interest paid out after the term or the closure', () => {
   });
 });
 
+describe('firstImpossibleMovement of an account with missing interest', () => {
+  const account = (rates: DepositTerms['rates']) =>
+    terms({ kind: 'account', endDate: null, capitalized: true, rates });
+  const held = [topup('2026-01-01', '1000')];
+  const bigger: DepositMovement = { date: '2026-02-10', kind: 'withdrawal', amount: '1050' };
+
+  it('DEP-ACCOUNT accepts a withdrawal above the money the app counts, as the interest is unknown', () => {
+    expect(firstImpossibleMovement(account([]), [...held, bigger])).toBe(-1);
+    // A rate from a later date still leaves the earlier days open.
+    expect(
+      firstImpossibleMovement(account([{ effectiveFrom: '2026-02-05', ratePercent: '6' }]), [
+        ...held,
+        bigger,
+      ]),
+    ).toBe(-1);
+  });
+
+  it('DEP-ACCOUNT still refuses it once a rate covers the whole time', () => {
+    expect(
+      firstImpossibleMovement(account([{ effectiveFrom: '2026-01-01', ratePercent: '6' }]), [
+        ...held,
+        bigger,
+      ]),
+    ).toBe(1);
+  });
+});
+
 describe('nextPayout', () => {
   it('estimates the next posting from what is held now', () => {
     const next = nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-02-10');

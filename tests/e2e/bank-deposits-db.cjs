@@ -340,6 +340,24 @@ async function account(db, service, owner) {
     amount: '10000.00',
   });
   assert.equal(withdrawn.status, 'active', 'Taking money out does not close an account');
+  // While the interest is missing the app's money is a floor: the bank may have credited more, so
+  // a larger withdrawal is recorded (the replay takes out at most what it holds), but not once a
+  // rate covers the whole time.
+  const floor = await service.create(owner, { ...terms, name: 'Current F', amount: '1000.00' });
+  const bigger = await service.addMovement(owner, floor.id, {
+    date: '2026-07-10',
+    kind: 'withdrawal',
+    amount: '1050.00',
+  });
+  assert.equal(bigger.status, 'active');
+  assert.equal(bigger.balance, '0.00');
+  const sure = await service.create(owner, { ...terms, name: 'Current G', amount: '1000.00' });
+  await service.addRate(owner, sure.id, { effectiveFrom: '2026-07-01', ratePercent: '6' });
+  await rejected(
+    () =>
+      service.addMovement(owner, sure.id, { date: '2026-07-10', kind: 'withdrawal', amount: '1050.00' }),
+    422,
+  );
   // Emptying an account leaves it open: it takes the next top-up, and a term deposit does not.
   const empty = await service.create(owner, { ...terms, name: 'Current Z', amount: '100.00' });
   const zero = await service.addMovement(owner, empty.id, {
