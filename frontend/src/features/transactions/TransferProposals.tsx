@@ -14,6 +14,7 @@ import { newRequestId } from '../accounting/feedback';
 import { quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress } from './operation-format';
+import { ProposalCard, ProposalItem } from './ProposalCard';
 import { takeHandover } from './proposals-handover';
 
 const place = (leg: ProposedLeg) =>
@@ -97,58 +98,54 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
   };
 
   return (
-    <section className="shell-card transactions-proposals" aria-labelledby="transfer-proposals">
-      <h2 id="transfer-proposals">
-        {proposals.length === 1
+    <ProposalCard
+      id="transfer-proposals"
+      title={
+        proposals.length === 1
           ? 'One possible transfer between your accounts'
-          : `${proposals.length} possible transfers between your accounts`}
-      </h2>
-      <p className="transactions-proposals__lead">
-        Coins left one account and arrived in another a little later, under different transaction
-        hashes. Join them to keep the cost basis; only the difference counts as a fee. Nothing
-        changes until you do.
-      </p>
-      <ul className="transactions-proposals__list">
-        {paged.rows.map((item) => {
-          const key = keyOf(item);
-          const hasFee = Number(item.fee) > 0;
-          return (
-            <li key={key} className="transactions-proposal">
-              <div className="transactions-proposal__text">
+          : `${proposals.length} possible transfers between your accounts`
+      }
+      lead="Coins left one account and arrived in another a little later, under different transaction hashes. Join them to keep the cost basis; only the difference counts as a fee. Nothing changes until you do."
+      rule={
+        <>
+          Offered when the same coin arrives within {found?.windowHours} hours of the withdrawal and
+          at most {found?.feePercent}% less. Anything less certain stays to classify.
+        </>
+      }
+      more={paged.more && <LoadMore {...paged.more} label="proposals" />}
+    >
+      {paged.rows.map((item) => {
+        const key = keyOf(item);
+        const hasFee = Number(item.fee) > 0;
+        return (
+          <ProposalItem
+            key={key}
+            summary={
+              <span>
                 <strong>
                   {quantity(item.arrived)} {item.coin}
                 </strong>{' '}
                 from {item.outgoing.accountName} to {item.incoming.accountName}
-                <span className="portfolio-sub">
-                  Left {place(item.outgoing)} {moment(item.outgoing.occurredAt)}, arrived in{' '}
-                  {place(item.incoming)} {moment(item.incoming.occurredAt)}
-                  {hasFee
-                    ? `. ${quantity(item.sent)} ${item.coin} left, so ${quantity(item.fee)} ${item.coin} is the fee`
-                    : ''}
-                </span>
-                {problem?.key === key && (
-                  <span className="transactions-proposal__error" role="alert">
-                    {problem.text}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                className="shell-button"
-                disabled={busy !== null}
-                onClick={() => void join(item)}
-              >
-                {busy === key ? 'Joining…' : 'Join as one transfer'}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {paged.more && <LoadMore {...paged.more} label="proposals" />}
-      <p className="shell-note">
-        Offered when the same coin arrives within {found?.windowHours} hours of the withdrawal and
-        at most {found?.feePercent}% less. Anything less certain stays to classify.
-      </p>
-    </section>
+              </span>
+            }
+            details={
+              <span className="ui-sub">
+                Left {place(item.outgoing)} {moment(item.outgoing.occurredAt)}, arrived in{' '}
+                {place(item.incoming)} {moment(item.incoming.occurredAt)}
+                {hasFee
+                  ? `. ${quantity(item.sent)} ${item.coin} left, so ${quantity(item.fee)} ${item.coin} is the fee`
+                  : ''}
+              </span>
+            }
+            problem={problem?.key === key ? problem.text : null}
+            action="Join as one transfer"
+            busyLabel="Joining…"
+            busy={busy === key}
+            locked={busy !== null}
+            onAct={() => void join(item)}
+          />
+        );
+      })}
+    </ProposalCard>
   );
 }

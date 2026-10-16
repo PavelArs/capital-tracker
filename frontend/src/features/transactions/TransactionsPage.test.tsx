@@ -14,9 +14,20 @@ import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-v
 import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import ToastViewport from '@components/Toast';
+import { ToastProvider } from '@contexts/ToastContext';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
+import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import {
   afterAll,
@@ -34,6 +45,17 @@ import { poolCandidates } from './ClassifyForm';
 import { handOver } from './proposals-handover';
 import TransactionsPage from './TransactionsPage';
 import TransferProposals from './TransferProposals';
+
+// The app's toasts, as App.tsx mounts them: completed commands are said there.
+function WithToasts({ children }: { children: ReactNode }) {
+  return (
+    <ToastProvider>
+      {children}
+      <ToastViewport />
+    </ToastProvider>
+  );
+}
+const render = (ui: Parameters<typeof renderBare>[0]) => renderBare(ui, { wrapper: WithToasts });
 
 // Synthetic ids, names and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -1006,9 +1028,7 @@ describe('TransactionsPage (list-all-operations)', () => {
         'Hidden · Bitcoin wallet bc1qsy…f3t4 · 08:00',
       ]);
       for (const row of rows)
-        expect(row.querySelector('.ui-row__detail .transactions-nowrap')?.textContent).toBe(
-          'bc1qsy…f3t4',
-        );
+        expect(row.querySelector('.ui-row__detail .ui-nowrap')?.textContent).toBe('bc1qsy…f3t4');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1241,7 +1261,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     );
   });
 
-  it('transactions-03 deleting the last transaction gives the keyboard to the message saying so', async () => {
+  it('transactions-03 deleting the last transaction says so and gives the keyboard to the page heading', async () => {
     vi.spyOn(operationsApi, 'list')
       .mockResolvedValueOnce(list([commented]))
       .mockResolvedValueOnce(list([]));
@@ -1253,7 +1273,10 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(await screen.findByRole('heading', { name: 'No transactions yet' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('status')).toHaveFocus());
+    expect(screen.getByRole('status')).toHaveTextContent('Transaction deleted.');
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Transactions' })).toHaveFocus(),
+    );
     expect(document.body).not.toHaveFocus();
   });
 
@@ -1987,9 +2010,12 @@ describe('link-own-transfers (M13)', () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
     const { drawer } = await openRow(0, 'Outgoing transaction · BTC');
     const question = within(drawer).getByRole('group', { name: 'What was this transaction?' });
-    const transfer = within(question).getByRole('button', { name: 'Transfer between my wallets' });
+    // The visible "Suggested" tag is read after the answer's words (ui/OptionTile).
+    const transfer = within(question).getByRole('button', {
+      name: 'Transfer between my wallets Suggested',
+    });
     expect(transfer).toHaveAttribute('aria-pressed', 'true');
-    expect(transfer).toHaveAccessibleDescription('Suggested');
+    expect(within(question).getAllByRole('button', { name: /Suggested$/ })).toEqual([transfer]);
     expect(
       within(question).getByRole('button', { name: 'Sell' }),
     ).not.toHaveAccessibleDescription();
@@ -2100,13 +2126,17 @@ describe('link-own-transfers (M13)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(1));
     await user.click(within(bodyRows()[0]).getByRole('button'));
     const drawer = screen.getByRole('dialog');
-    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     expect(remove).not.toHaveBeenCalled();
-    expect(within(drawer).getByText(/the difference shows again/)).toBeInTheDocument();
-    await user.click(within(drawer).getByText('Keep'));
-    expect(within(drawer).getByText('Delete', { selector: 'button' })).toBeInTheDocument();
-    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
-    await user.click(within(drawer).getByText('Delete record'));
+    const asking = screen.getByRole('alertdialog', { name: 'Delete this record?' });
+    expect(within(asking).getByText(/the difference shows again/)).toBeInTheDocument();
+    await user.click(within(asking).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete record' }),
+    );
     await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
     expect(remove.mock.calls[0][1]).toBe(`bybit-deposit-gap-${id(70)}`);
     expect(remove.mock.calls[0][2]).toEqual({ requestId: expect.any(String), expectedVersion: 0 });
@@ -2394,7 +2424,7 @@ describe('link-own-transfers (M13)', () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
     const { drawer } = await openRow(0, 'Outgoing transaction · BTC');
     expect(
-      within(drawer).getByRole('button', { name: 'Transfer between my wallets' }),
+      within(drawer).getByRole('button', { name: 'Transfer between my wallets Suggested' }),
     ).toHaveAttribute('aria-pressed', 'true');
     expect(within(drawer).getByLabelText('Sent to')).toHaveValue(bybit.id);
     // The suggestion is not a place: the row stays in its own wallet.
@@ -3311,7 +3341,7 @@ describe('swap in one transaction (SWAP-ONE-TX)', () => {
     expect(
       within(facts).getByText('Contract call', { exact: true }).nextElementSibling?.textContent,
     ).toBe('swapExactETHForTokens');
-    expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+    expect(within(drawer).getByRole('button', { name: 'Swap Suggested' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );

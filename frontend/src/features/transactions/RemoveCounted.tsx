@@ -1,9 +1,11 @@
 import type { Operation } from '@api/operations.api';
 import { operationsApi } from '@api/operations.api';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Button } from '@/ui/Button';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
-import { Icon } from '../shell/icons';
 import { isCountedGap } from './operation-format';
 
 interface Props {
@@ -30,66 +32,44 @@ const failure = (error: unknown) =>
  */
 export default function RemoveCounted({ operation, disabled = false, onDeleted }: Props) {
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   if (!operation.chain || !operation.wallet || !isCountedGap(operation.chain.txid)) return null;
   const { wallet } = operation;
   const { txid } = operation.chain;
+  // A failure stays in the confirmation; the drawer closes when the record is gone.
   const remove = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await operationsApi.removeCounted(wallet, txid, {
-        requestId: newRequestId(),
-        expectedVersion: operation.classification?.version ?? 0,
-      });
-      onDeleted();
-    } catch (failed) {
-      setBusy(false);
-      setAsking(false);
-      setError(failure(failed));
-    }
+    await operationsApi.removeCounted(wallet, txid, {
+      requestId: newRequestId(),
+      expectedVersion: operation.classification?.version ?? 0,
+    });
+    onDeleted();
   };
-  if (!asking)
-    return (
-      <>
-        {error && (
-          <span className="ui-banner ui-banner--neg" role="alert">
-            {error}
-          </span>
-        )}
-        <button
-          type="button"
-          className="shell-button shell-button--ghost transactions-delete"
-          disabled={disabled}
-          onClick={() => setAsking(true)}
-        >
-          <Icon name="trash" className="shell-icon shell-icon--sm" />
-          Delete
-        </button>
-      </>
-    );
   return (
-    <div className="transactions-remove">
-      <p className="transactions-remove__text">
-        Bybit still holds these coins, so the difference shows again.
-      </p>
-      <button
-        type="button"
-        className="shell-button shell-button--secondary"
-        disabled={busy}
-        onClick={() => setAsking(false)}
+    <>
+      <Button
+        variant="ghost"
+        destructive
+        icon="trash"
+        disabled={disabled}
+        onClick={() => setAsking(true)}
       >
-        Keep
-      </button>
-      <button
-        type="button"
-        className="shell-button shell-button--ghost transactions-delete"
-        disabled={busy}
-        onClick={() => void remove()}
-      >
-        {busy ? 'Deleting…' : 'Delete record'}
-      </button>
-    </div>
+        Delete
+      </Button>
+      {/* The confirmation covers the drawer it is opened from, so it is drawn outside it. */}
+      {asking &&
+        createPortal(
+          <ConfirmDialog
+            title="Delete this record?"
+            confirmLabel="Delete record"
+            busyLabel="Deleting…"
+            failure={failure}
+            onConfirm={remove}
+            onClose={() => setAsking(false)}
+            overDrawer
+          >
+            Bybit still holds these coins, so the difference shows again.
+          </ConfirmDialog>,
+          document.body,
+        )}
+    </>
   );
 }

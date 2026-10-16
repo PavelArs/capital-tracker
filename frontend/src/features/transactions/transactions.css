@@ -1,18 +1,21 @@
-/* Transactions list and side drawer (prototype table, chip, badge and drawer patterns). */
-.transactions-chip--warn .ui-chip__count {
-  color: var(--warn);
-  font-weight: 700;
+/* Transactions: the list's table and phone rows, the side drawer and the offers above the list.
+   Buttons, banners, chips, fields, facts and the amount hero are the shared ui/ components. */
+
+/* The list's card: the toolbar, notes, the rows and the footnote one under the other. */
+.transactions-card {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+/* "All caught up" sits inside the list's card: no second card around it. */
+.transactions-card .ui-empty.ui-card {
+  padding-block: var(--sp-6);
+  border: 0;
+  background: transparent;
 }
 
 .transactions-table tbody tr {
   cursor: pointer;
-}
-
-/* The prototype table sits on the card: no legacy table fill, header band or underlines. */
-.transactions-table,
-.transactions-table th,
-.transactions-table tr:hover {
-  background: transparent;
 }
 
 /* Six columns of fixed shares fit 1280 px: a chip or filter that shows other rows never
@@ -45,18 +48,16 @@
 
 .transactions-table th,
 .transactions-table td {
-  padding-inline: 8px;
-  border-bottom: 0;
+  padding-inline: var(--sp-2);
 }
 
-/* Day headings of the prototype: rows of their own, never clickable. */
+/* Day headings of the prototype (tr.grp): rows of their own, never clickable. */
 .transactions-table tr.transactions-day {
   cursor: default;
 }
 
 .transactions-table tr.transactions-day th {
-  padding: 18px 8px 6px;
-  background: transparent;
+  padding: 18px var(--sp-2) 6px;
   color: var(--ink-3);
   font-weight: 600;
   font-size: var(--fs-xs);
@@ -65,6 +66,15 @@
 
 .transactions-table tbody tr.transactions-day:hover th {
   background: transparent;
+}
+
+/* The header sticks from 1360 px (ui/table.css); the day headings scroll with their rows. */
+@media (min-width: 1360px) {
+  .transactions-table tr.transactions-day th {
+    position: static;
+    background: transparent;
+    box-shadow: none;
+  }
 }
 
 .transactions-type {
@@ -79,7 +89,7 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: var(--raised);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--ink-2);
@@ -111,6 +121,10 @@
   box-shadow: inset 3px 0 0 var(--warn);
 }
 
+.transactions-row--hidden td {
+  color: var(--ink-3);
+}
+
 .transactions-open {
   padding: 0;
   border: 0;
@@ -127,24 +141,16 @@
 }
 
 .transactions-open:focus-visible {
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.transactions-nowrap {
-  white-space: nowrap;
 }
 
 .transactions-asset {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-weight: 600;
-}
-
-.transactions-muted {
-  color: var(--ink-2);
 }
 
 .transactions-status {
@@ -155,10 +161,169 @@
   font-size: var(--fs-sm);
 }
 
+/* The source sits under the status (OPS-COMPACT). */
+.transactions-source {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.transactions-source .transactions-glyph {
+  width: 12px;
+  height: 12px;
+}
+
+/* CLS-NEXT: the open row stands above the drawer's scrim, so the list shows which it is. */
+.transactions-table tr.transactions-row--open td {
+  position: relative;
+  z-index: calc(var(--z-scrim) + 1);
+  background: var(--raised);
+}
+
+.transactions-table tr.transactions-row--open td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* Phones (below 640 px): the rows (ui/list-row.css) under a heading per day that sticks under
+   the title bar. The list reaches 8 px past the card's text, so the heading keeps 8 px in. */
+.transactions-list__heading {
+  position: sticky;
+  top: var(--appbar-h);
+  z-index: var(--z-sticky);
+  margin: 0;
+  padding: 18px var(--sp-2) 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The drawer: a swap's two amounts, one above the other in the hero. */
+.transactions-hero__line {
+  display: block;
+}
+
+/* TX-HASH: the short hash with its copy button, the explorer link after it. */
+.transactions-hash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) 14px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+/* A wallet or address line: the network and label, then the address with its copy button. */
+.transactions-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
+.transactions-line .copy-value {
+  font-size: inherit;
+}
+
+/* CLS-COMPACT: the folded technical facts of a transaction waiting for its answer. */
+.transactions-facts-more {
+  margin-top: var(--sp-3);
+}
+
+.transactions-history {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.transactions-history li {
+  display: grid;
+  gap: 2px;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line);
+}
+
+/* M12: the drawer's "What was this transaction?" form: its body and footer are the drawer's. */
+.transactions-classify {
+  display: contents;
+}
+
+.transactions-left {
+  align-self: center;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+/* XFER-PROPOSED, CLS-DUPLICATE: offers above the list, each with its one action. */
+.transactions-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.transactions-proposals .ui-card-h {
+  margin-bottom: 0;
+}
+
+.transactions-proposals__lead {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.transactions-proposals__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transactions-proposal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.transactions-proposal__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.transactions-proposal__text .ui-banner {
+  margin-top: var(--sp-2);
+}
+
+@media (max-width: 639.98px) {
+  .transactions-proposal {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------
+   Still used by other features (history, wallets, deposits, goals) until their lanes move to
+   the shared components; the integration step (plan 2.9) deletes this block after a grep.
+   ------------------------------------------------------------------------------------------ */
 .transactions-none {
   display: grid;
   justify-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .transactions-none p {
@@ -209,35 +374,11 @@
   overflow-wrap: anywhere;
 }
 
-.transactions-mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-/* TX-HASH: the short hash with its copy button, the explorer link after it. */
-.transactions-hash {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 14px;
-  min-width: 0;
-  font-size: var(--fs-sm);
-}
-
-/* A wallet or address line: the network and label, then the address with its copy button. */
-.transactions-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  min-width: 0;
-}
-
 .transactions-info {
   margin: 0;
-  padding: 10px 12px;
+  padding: 10px var(--sp-3);
   border-radius: var(--r-md);
-  background: var(--accent-soft);
+  background: var(--info-soft);
   font-size: var(--fs-sm);
   line-height: 1.4;
 }
@@ -246,144 +387,10 @@
   flex: 1;
 }
 
-.transactions-delete {
-  color: var(--neg);
-}
-
-/* BYBIT-GAP-DELETE: the question and its two answers take the whole footer. */
-.transactions-remove {
-  display: flex;
-  flex: 1 1 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.transactions-remove__text {
-  flex: 1 1 100%;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-
 .transactions-section {
   margin: 0 0 10px;
   font-size: var(--fs-sm);
   font-weight: 600;
-}
-
-.transactions-history {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-sm);
-}
-
-.transactions-history li {
-  display: grid;
-  gap: 2px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-.transactions-confirm__text {
-  margin: 0;
-  color: var(--ink-2);
-  line-height: 1.45;
-}
-
-/* Phones (below 640 px): the rows (ui/list-row.css) under a heading per day. The list reaches
-   8 px past the card's text, so the heading keeps 8 px in. */
-.transactions-list__heading {
-  margin: 0;
-  padding: 18px 8px 6px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-/* M12: the drawer's "What was this transaction?" form (accepted prototype). */
-.transactions-classify {
-  display: contents;
-}
-
-.transactions-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.transactions-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 11px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.transactions-option:hover {
-  border-color: var(--ink-3);
-  background: var(--raised);
-}
-
-/* M13: "Transfer between my wallets" spans the row (accepted prototype). */
-.transactions-option--wide {
-  grid-column: 1 / -1;
-}
-
-.transactions-option[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.transactions-option:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.transactions-subform {
-  display: grid;
-  gap: var(--sp-4);
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--raised);
-}
-
-.transactions-more summary {
-  color: var(--ink-2);
-  font-weight: 500;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.transactions-more[open] > summary {
-  margin-bottom: var(--sp-4);
-}
-
-/* CLS-COMPACT: the folded technical facts of a transaction waiting for its answer. */
-.transactions-more--facts {
-  margin-top: var(--sp-3);
-}
-
-.transactions-more > .ui-field {
-  margin-bottom: var(--sp-4);
 }
 
 .transactions-toggle {
@@ -404,11 +411,11 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--line-control);
   cursor: pointer;
   appearance: none;
-  transition: background 0.15s;
+  transition: background var(--dur-2);
 }
 
 .transactions-toggle input::after {
@@ -418,9 +425,10 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   content: "";
-  transition: transform 0.15s;
+  transition: transform var(--dur-2);
 }
 
 .transactions-toggle input:checked {
@@ -434,137 +442,4 @@
 .transactions-toggle input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.transactions-left {
-  align-self: center;
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-}
-
-.transactions-notice {
-  line-height: 1.4;
-}
-
-.shell-page > .transactions-notice {
-  margin-bottom: var(--sp-4);
-}
-
-.transactions-row--hidden td {
-  color: var(--ink-3);
-}
-
-.transactions-classify__warn {
-  margin: 0;
-}
-
-/* The source sits under the status (OPS-COMPACT). */
-.transactions-source {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 3px;
-}
-
-.transactions-source .transactions-glyph {
-  width: 12px;
-  height: 12px;
-}
-
-/* CLS-NEXT: the open row stands above the drawer's scrim, so the list shows which it is. */
-.transactions-table tr.transactions-row--open td {
-  position: relative;
-  z-index: 81;
-  background: var(--raised);
-}
-
-.transactions-table tr.transactions-row--open td:first-child {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-/* XFER-PROPOSED: pairs of a withdrawal and a receipt the owner can join in one tap. */
-.transactions-proposals {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.transactions-proposals h2,
-.transactions-proposals p {
-  margin: 0;
-}
-
-.transactions-proposals__lead {
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-
-.transactions-proposals__list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.transactions-proposal {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-}
-
-.transactions-proposal__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.transactions-proposal__error {
-  color: var(--neg);
-  font-size: var(--fs-sm);
-}
-
-.transactions-proposals .shell-link {
-  align-self: flex-start;
-}
-
-@media (max-width: 639.98px) {
-  .transactions-proposal {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-.transactions-line .copy-value {
-  font-size: inherit;
-}
-
-/* Nothing left to classify: the empty-state look inside the list's card, in the positive tint. */
-.transactions-caught-up {
-  padding-block: 32px;
-}
-
-.transactions-caught-up .ui-empty__ill {
-  background: var(--pos-soft);
-  color: var(--pos);
-}
-
-/* Each answer carries its type's mark; the suggested one says so at the end (accepted prototype). */
-.transactions-option .transactions-glyph {
-  color: var(--ink-3);
-}
-
-.transactions-suggested {
-  margin-left: auto;
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
