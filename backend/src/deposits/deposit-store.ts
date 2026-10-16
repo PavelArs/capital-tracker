@@ -45,6 +45,7 @@ const columns = `id, kind, name, bank, currency, to_char("startDate", 'YYYY-MM-D
   to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis", "earlyClose"`;
 
 export const termsOf = (stored: Stored): DepositTerms => ({
+  kind: stored.deposit.kind,
   startDate: stored.deposit.startDate,
   endDate: stored.deposit.endDate,
   payout: stored.deposit.payout,

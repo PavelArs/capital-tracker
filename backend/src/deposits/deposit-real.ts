@@ -104,7 +104,8 @@ export interface RealDepositInput {
   /** What the deposit is worth on the day, in its currency. */
   balance: string;
   active: boolean;
-  ratePercent: string;
+  /** Null where the deposit has no rate in force on the day: no real rate is stated for it. */
+  ratePercent: string | null;
   terms: Pick<DepositTerms, 'capitalized' | 'payout'>;
   /** Everything recorded up to the day. */
   movements: readonly DepositMovement[];
@@ -125,7 +126,7 @@ export function depositReal(input: RealDepositInput, reading: InflationReading):
   const profit = realProfit(input.balance, false, flows, (day) => reading.factor(day, input.asOf));
   const inflation = reading.yearPercent(input.asOf);
   const rate =
-    input.active && inflation !== null
+    input.active && inflation !== null && input.ratePercent !== null
       ? ((1 + effectiveRatePercent(input.ratePercent, input.terms) / 100) / (1 + inflation / 100) -
           1) *
         100

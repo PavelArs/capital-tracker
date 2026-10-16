@@ -248,6 +248,7 @@ const data: ExportData = {
       capitalized: true,
       dayBasis: 'actual-365',
       earlyClose: 'forfeits-interest',
+      kind: 'term-deposit',
       createdAt: '2025-03-01T08:00:00.000Z',
     },
   ],
@@ -373,11 +374,26 @@ describe('owner data export (EXP-CSV)', () => {
     ]);
   });
 
+  it('DEP-ACCOUNT exports an account as an account, so it is not read back as a term deposit', () => {
+    const account = {
+      ...data.deposits[0],
+      name: 'Synthetic account',
+      kind: 'account',
+      endDate: null,
+    };
+    const csv = exportFiles({ ...data, deposits: [account] })
+      .find((file) => file.name === 'deposits.csv')
+      ?.data.toString('utf8');
+    const [header, row] = (csv ?? '').slice(1, -2).split('\r\n');
+    expect(header.split(',')).toContain('kind');
+    expect(row.split(',')[header.split(',').indexOf('kind')]).toBe('account');
+  });
+
   it('lists deposits as entered, with their rates, movements and bank balance checks', () => {
     const name = `"'=Synthetic, deposit"`;
     expect(lines('deposits.csv')).toEqual([
-      'id,name,bank,currency,start_date,end_date,payout,capitalized,day_basis,early_close,created_at',
-      `${depositId},${name},Synthetic Bank,RUB,2025-03-01,2026-03-01,daily,true,actual-365,forfeits-interest,2025-03-01T08:00:00.000Z`,
+      'id,name,bank,currency,start_date,end_date,payout,capitalized,day_basis,early_close,kind,created_at',
+      `${depositId},${name},Synthetic Bank,RUB,2025-03-01,2026-03-01,daily,true,actual-365,forfeits-interest,term-deposit,2025-03-01T08:00:00.000Z`,
     ]);
     expect(lines('deposit-rates.csv')).toEqual([
       'deposit_id,deposit,effective_from,rate_percent',

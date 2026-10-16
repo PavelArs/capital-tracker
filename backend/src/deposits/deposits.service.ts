@@ -494,10 +494,12 @@ export class DepositsService {
           };
         })()
       : null;
+    const inForce = [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf);
+    // A term deposit read before its first rate still shows that rate; an account has none until
+    // a rate takes effect, and a missing rate is not stated as 0%.
     const ratePercent =
-      [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf)?.ratePercent ??
-      terms.rates[0]?.ratePercent ??
-      '0';
+      inForce?.ratePercent ??
+      (stored.deposit.kind === 'account' ? null : (terms.rates[0]?.ratePercent ?? null));
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
       reading
         ? depositReal(
@@ -524,8 +526,7 @@ export class DepositsService {
       capitalized: terms.capitalized,
       dayBasis: terms.dayBasis,
       earlyClose: terms.earlyClose,
-      // An account with no rate entered has none to show: 0 would read as a rate the bank pays.
-      ratePercent: terms.rates.length === 0 ? null : ratePercent,
+      ratePercent,
       status,
       closedOn: now.closedOn,
       principal: now.principal,

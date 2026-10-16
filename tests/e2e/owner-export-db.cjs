@@ -585,8 +585,19 @@ async function csvArchive(db, s, f, made) {
       depositRow.end_date,
       depositRow.payout,
       depositRow.capitalized,
+      depositRow.kind,
     ],
-    [made.deposit, `'=Savings, ruble`, 'Synthetic Bank', 'RUB', '2025-07-01', '2026-07-01', 'daily', 'true'],
+    [
+      made.deposit,
+      `'=Savings, ruble`,
+      'Synthetic Bank',
+      'RUB',
+      '2025-07-01',
+      '2026-07-01',
+      'daily',
+      'true',
+      'term-deposit',
+    ],
   );
   assert.deepEqual(
     table('deposit-rates.csv').map((row) => [row.deposit_id, row.effective_from, row.rate_percent]),

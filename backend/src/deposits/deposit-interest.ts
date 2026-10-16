@@ -22,6 +22,8 @@ export interface RateVersion {
 }
 
 export interface DepositTerms {
+  /** An account is never closed by emptying it; absent means a term deposit. */
+  kind?: 'term-deposit' | 'account';
   /** The first day the money earns interest. */
   startDate: string;
   /** The day the term ends and the money is returned; null for a deposit without a term. */
@@ -195,7 +197,8 @@ export function projectDeposit(
         paidOut += taken;
       } else {
         principal -= amount < principal ? amount : principal;
-        if (principal === 0n) {
+        // An account has no term: emptying it leaves it open for the next top-up.
+        if (principal === 0n && terms.kind !== 'account') {
           closedOn = date;
           if (terms.endDate === null || date < terms.endDate) {
             if (terms.earlyClose === 'forfeits-interest') forfeited = accrued;
@@ -293,7 +296,8 @@ export function depositBalances(
         due -= amount < due ? amount : due;
       } else {
         principal -= amount < principal ? amount : principal;
-        if (principal === 0n) {
+        // An account has no term: emptying it leaves it open for the next top-up.
+        if (principal === 0n && terms.kind !== 'account') {
           closedOn = date;
           if (terms.endDate === null || date < terms.endDate) {
             if (terms.earlyClose !== 'forfeits-interest') due += roundToCents(accrued);

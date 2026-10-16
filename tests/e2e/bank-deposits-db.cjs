@@ -291,6 +291,10 @@ async function account(db, service, owner) {
   const rated = await service.get(owner, made.id, '2026-09-01');
   assert.equal(rated.ratePercent, '6');
   assert.notEqual(rated.balance, '100000.00', 'Interest from the rate date is added');
+  // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
+  const unrated = await service.get(owner, made.id, '2026-07-15');
+  assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');
+  assert.equal(unrated.balance, '100000.00');
   assert.equal(rated.status, 'active');
   const withdrawn = await service.addMovement(owner, made.id, {
     date: '2026-09-02',
@@ -298,6 +302,22 @@ async function account(db, service, owner) {
     amount: '10000.00',
   });
   assert.equal(withdrawn.status, 'active', 'Taking money out does not close an account');
+  // Emptying an account leaves it open: it takes the next top-up, and a term deposit does not.
+  const empty = await service.create(owner, { ...terms, name: 'Current Z', amount: '100.00' });
+  const zero = await service.addMovement(owner, empty.id, {
+    date: '2026-07-10',
+    kind: 'withdrawal',
+    amount: '100.00',
+  });
+  assert.equal(zero.status, 'active', 'An emptied account is not closed');
+  assert.equal(zero.balance, '0.00');
+  const refilled = await service.addMovement(owner, empty.id, {
+    date: '2026-07-20',
+    kind: 'topup',
+    amount: '50.00',
+  });
+  assert.equal(refilled.status, 'active');
+  assert.equal(refilled.balance, '50.00');
   // An account has no term: no end date, and no payout that waits for one.
   await rejected(() => service.create(owner, { ...terms, endDate: '2027-07-01' }), 400);
   await rejected(() => service.create(owner, { ...terms, payout: 'at-end' }), 400);

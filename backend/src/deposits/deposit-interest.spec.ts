@@ -431,3 +431,36 @@ describe('depositBalances', () => {
     expect(depositBalances(terms(), [], []).size).toBe(0);
   });
 });
+
+describe('DEP-ACCOUNT: an account that reaches zero stays open', () => {
+  const account = terms({
+    kind: 'account',
+    endDate: null,
+    payout: 'monthly',
+    capitalized: true,
+    earlyClose: 'keeps-interest',
+  });
+  const emptied: DepositMovement[] = [
+    topup('2026-01-01', '1000.00'),
+    { date: '2026-01-20', kind: 'withdrawal', amount: '1000.00' },
+  ];
+
+  it('is not closed by a withdrawal of everything, and takes a top-up afterwards', () => {
+    expect(projectDeposit(account, emptied, '2026-02-10').closedOn).toBeNull();
+    expect(firstImpossibleMovement(account, [...emptied, topup('2026-02-01', '50.00')])).toBe(-1);
+    // A term deposit emptied the same way is closed and refuses the top-up, as before.
+    const term = terms({ endDate: null });
+    expect(projectDeposit(term, emptied, '2026-02-10').closedOn).toBe('2026-01-20');
+    expect(firstImpossibleMovement(term, [...emptied, topup('2026-02-01', '50.00')])).toBe(2);
+  });
+
+  it('earns again on the money put back, in the balances as in the projection', () => {
+    const back = [...emptied, topup('2026-02-01', '1000.00')];
+    const projected = projectDeposit(account, back, '2026-03-01');
+    expect(canonicalDecimalToAtoms(projected.balance)).toBeGreaterThan(
+      canonicalDecimalToAtoms('1000.00'),
+    );
+    const balances = depositBalances(account, back, ['2026-03-01']);
+    expect(balances.get('2026-03-01')).toBe(canonicalDecimalToAtoms(projected.balance));
+  });
+});
