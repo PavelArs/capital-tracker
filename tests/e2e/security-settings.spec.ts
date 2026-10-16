@@ -107,7 +107,7 @@ test('SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new
 
     // SEC-SESSIONS: log out everywhere ends both browsers and this one returns to login.
     await security.getByRole('button', { name: 'Log out everywhere', exact: true }).click();
-    const confirm = page.getByRole('dialog', { name: 'Log out everywhere?' });
+    const confirm = page.getByRole('alertdialog', { name: 'Log out everywhere?' });
     const ended = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === '/api/auth/security/logout-everywhere' &&

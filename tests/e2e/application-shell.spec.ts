@@ -157,10 +157,9 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   ).toBeVisible();
   await expect(portfolio.getByText(/not built yet/i)).toHaveCount(0);
   await portfolio.getByRole('button', { name: 'Add', exact: true }).first().click();
-  await page
-    .getByRole('dialog', { name: 'Add to portfolio' })
-    .getByRole('button', { name: /^Something else/ })
-    .click();
+  const addTo = page.getByRole('dialog', { name: 'Add to portfolio' });
+  await addTo.getByRole('button', { name: /^Something else/ }).click();
+  await addTo.getByRole('button', { name: 'Continue', exact: true }).click();
   const addAsset = page.getByRole('dialog', { name: 'Add asset' });
   // A coin may start without a balance whatever accounts the shared database holds.
   const depositName = `SHELL-UI coin ${randomUUID()}`;
@@ -190,8 +189,14 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await expect(
     portfolio.getByRole('heading', { level: 1, name: depositName, exact: true }),
   ).toBeVisible();
-  await expect(portfolio.getByRole('status').filter({ hasText: 'Asset added.' })).toBeVisible();
-  await portfolio.getByRole('link', { name: '← Portfolio', exact: true }).click();
+  // The notice is a toast in the Notifications region, outside main.
+  await expect(
+    page
+      .getByRole('region', { name: 'Notifications' })
+      .getByRole('status')
+      .filter({ hasText: 'Asset added.' }),
+  ).toBeVisible();
+  await portfolio.getByRole('link', { name: 'Back to Portfolio', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
   // The asset cell carries the type and value currency; a coin outside the market catalog
   // never bought shows amount 0 and no price yet (portfolio-valuation PV-5).

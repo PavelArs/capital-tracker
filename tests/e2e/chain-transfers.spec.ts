@@ -208,8 +208,9 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   await page.screenshot({ path: testInfo.outputPath('transfer-manual-1440-dark.png') });
   await payment.getByRole('button', { name: 'Save' }).click();
   await expect(payment).toHaveCount(0);
+  // The result is a toast in the Notifications region, outside main.
   await expect(
-    main.getByText(
+    page.getByRole('region', { name: 'Notifications' }).getByText(
       /^(Saved as Transfer\. Nothing else to classify here\.|All transactions classified\. The last one was saved as Transfer\.)$/,
     ),
   ).toBeVisible();
