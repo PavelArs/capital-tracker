@@ -659,12 +659,14 @@ const movementOptions: readonly (readonly [MovementKind, string])[] = (
 export function MovementDialog({
   id,
   currency,
+  depositKind = 'term-deposit',
   initial = 'topup',
   onClose,
   onSaved,
 }: {
   id: string;
   currency: DepositCurrency;
+  depositKind?: DepositKind;
   initial?: MovementKind;
   onClose: () => void;
   onSaved: (deposit: DepositDetail) => void;
@@ -674,10 +676,15 @@ export function MovementDialog({
   const [amount, setAmount] = useState('');
   const [comment, setComment] = useState('');
   const attempt = useAttempt();
+  const isAccount = depositKind === 'account';
   const hints: Record<MovementKind, string> = {
-    topup: 'Money you put into the deposit.',
-    withdrawal: 'Money you took out of the deposit. Taking all of it closes the deposit.',
-    'interest-payout': 'Interest the bank paid to your account. It does not change the deposit.',
+    topup: isAccount ? 'Money you put into the account.' : 'Money you put into the deposit.',
+    withdrawal: isAccount
+      ? 'Money you took out of the account. The account stays open when it reaches zero.'
+      : 'Money you took out of the deposit. Taking all of it closes the deposit.',
+    'interest-payout': isAccount
+      ? 'Interest the bank paid to your account. It does not change the account balance.'
+      : 'Interest the bank paid to your account. It does not change the deposit.',
   };
   return (
     <FormDialog

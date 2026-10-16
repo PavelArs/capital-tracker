@@ -656,6 +656,23 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(screen.getByText('Interest to be paid out').parentElement).toHaveTextContent('$12.30');
   });
 
+  it('DEP-ACCOUNT tells a withdrawal from an account that it stays open, and a term deposit that it closes', async () => {
+    const user = userEvent.setup();
+    const account: Deposit = { ...dollars, kind: 'account', currency: 'RUB' };
+    for (const [deposit, note] of [
+      [account, 'Money you took out of the account. The account stays open when it reaches zero.'],
+      [savings, 'Money you took out of the deposit. Taking all of it closes the deposit.'],
+    ] as const) {
+      vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(deposit));
+      open(`/deposits/${deposit.id}?currency=RUB`);
+      await user.click(await screen.findByRole('button', { name: 'Record movement' }));
+      const dialog = screen.getByRole('dialog', { name: 'Record a movement' });
+      await user.selectOptions(within(dialog).getByLabelText('What happened'), 'withdrawal');
+      expect(within(dialog).getByText(note)).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
   it('records a movement and shows the new figures', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));

@@ -559,6 +559,7 @@ export default function DepositPage() {
             <MovementDialog
               id={deposit.id}
               currency={own}
+              depositKind={deposit.kind}
               onClose={() => setDialog(null)}
               onSaved={saved}
             />

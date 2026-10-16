@@ -307,8 +307,15 @@ export class DepositsService {
       const stored = await this.locked(manager, owner, depositId);
       if (input.effectiveFrom > moscowDate(new Date()))
         throw new UnprocessableEntityException('The rate change date is in the future');
+      // A term deposit opens with its rate; an account entered without one may be given its first
+      // rate from its opening day, so that day's interest is not lost.
+      const firstRateOfAccount =
+        stored.deposit.kind === 'account' &&
+        !stored.rates.some((rate) => rate.effectiveFrom === stored.deposit.startDate);
       if (
-        input.effectiveFrom <= stored.deposit.startDate ||
+        (firstRateOfAccount
+          ? input.effectiveFrom < stored.deposit.startDate
+          : input.effectiveFrom <= stored.deposit.startDate) ||
         (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
       )
         throw new UnprocessableEntityException('The rate must change inside the term');

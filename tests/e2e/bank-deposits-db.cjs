@@ -318,6 +318,20 @@ async function account(db, service, owner) {
   });
   assert.equal(refilled.status, 'active');
   assert.equal(refilled.balance, '50.00');
+  // The first rate of an account may begin on its opening day; a term deposit's opening rate may not
+  // be changed that day.
+  const opened = await service.create(owner, { ...terms, name: 'Current S' });
+  await service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '6' });
+  assert.equal((await service.get(owner, opened.id, '2026-07-02')).ratePercent, '6');
+  await rejected(
+    () => service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '7' }),
+    422,
+  );
+  const fixed = await service.create(owner, { ...savings, name: 'Term D' });
+  await rejected(
+    () => service.addRate(owner, fixed.id, { effectiveFrom: '2026-07-01', ratePercent: '5' }),
+    422,
+  );
   // An account has no term: no end date, and no payout that waits for one.
   await rejected(() => service.create(owner, { ...terms, endDate: '2027-07-01' }), 400);
   await rejected(() => service.create(owner, { ...terms, payout: 'at-end' }), 400);
