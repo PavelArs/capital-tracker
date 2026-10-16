@@ -14,8 +14,7 @@ import { TBankTokenBox } from './tbank-token-box';
 /**
  * BROKER-SETUP: one read-only T-Bank token turns into a broker account for each T-Bank account
  * the owner picks, each connected and ready to read. It is one idempotent command: the accounts
- * are made under the client's request ids, so a repeat finds them again and only renews the
- * token. A T-Bank account that is already connected is never given a second broker account, which
+ * are made under the client's request ids, so a repeat returns them and writes nothing. A T-Bank account that is already connected is never given a second broker account, which
  * would count its history twice.
  */
 @Injectable()
@@ -50,6 +49,10 @@ export class BrokerSetupService {
   async connect(ownerId: string, body: unknown) {
     const owner = parseUuid(ownerId);
     const input = parseSetup(body);
+    // A retry of a command that already finished needs nothing from T-Bank: it is answered from
+    // what is saved, so a lost answer is recoverable while T-Bank is down or the token is revoked.
+    const finished = await this.finished(owner, input.accounts);
+    if (finished) return { connections: finished };
     const open = await this.connections.reachableAccounts(input.token);
     const reached = new Set(open.map((item) => item.id));
     if (!input.accounts.every((item) => reached.has(item.brokerAccountId)))
@@ -119,5 +122,50 @@ export class BrokerSetupService {
       return made;
     });
     return { connections };
+  }
+
+  /**
+   * The connections of a command whose every pick was already made, live and still reading its
+   * T-Bank account, or null when any pick still needs work (or conflicts, which the command then
+   * reports as it does for a first request).
+   */
+  private async finished(
+    owner: string,
+    picks: { brokerAccountId: string; requestId: string; name: string }[],
+  ) {
+    const rows: {
+      requestId: string;
+      id: string;
+      name: string;
+      canonicalPayload: string;
+      removedAt: Date | null;
+      brokerAccountId: string | null;
+    }[] = await this.source.query(
+      `SELECT a."requestId", a.id, a.name, a."canonicalPayload", a."removedAt", c."brokerAccountId"
+         FROM manual_accounts a
+         LEFT JOIN broker_connections c ON c."accountId" = a.id AND c.provider = 'tbank'
+        WHERE a."ownerId" = $1 AND a."requestId" = ANY($2::uuid[])`,
+      [owner, picks.map((pick) => pick.requestId)],
+    );
+    const saved = new Map(rows.map((row) => [row.requestId, row]));
+    const made: { accountId: string; name: string; brokerAccountId: string; created: false }[] = [];
+    for (const pick of picks) {
+      const row = saved.get(pick.requestId);
+      // The payload is the one insertAccount saves for this pick, so a changed name is not a repeat.
+      if (
+        !row ||
+        row.removedAt ||
+        row.brokerAccountId !== pick.brokerAccountId ||
+        row.canonicalPayload !== JSON.stringify({ name: pick.name, assetClass: 'broker' })
+      )
+        return null;
+      made.push({
+        accountId: row.id,
+        name: row.name,
+        brokerAccountId: pick.brokerAccountId,
+        created: false,
+      });
+    }
+    return made;
   }
 }
