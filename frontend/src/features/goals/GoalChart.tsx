@@ -36,6 +36,22 @@ interface Ahead {
 }
 
 /** A path through the points that have a figure, broken where one is missing. */
+/** A step line: the value holds until the next point and changes there, never in between. */
+function steps(points: readonly ([number, number] | null)[]): string {
+  let path = '';
+  let open = false;
+  for (const point of points) {
+    if (point === null) {
+      open = false;
+      continue;
+    }
+    const [px, py] = [point[0].toFixed(1), point[1].toFixed(1)];
+    path += open ? `H${px}V${py}` : `M${px} ${py}`;
+    open = true;
+  }
+  return path;
+}
+
 function line(points: readonly ([number, number] | null)[]): string {
   let path = '';
   let open = false;
@@ -190,7 +206,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     point.value === null ? null : [x(Date.parse(point.at)), y(Number(point.value))],
   );
   const valuePath = line(valued);
-  const investedPath = line(
+  const investedPath = steps(
     points.map((point): [number, number] | null =>
       point.invested === null ? null : [x(Date.parse(point.at)), y(Number(point.invested))],
     ),
