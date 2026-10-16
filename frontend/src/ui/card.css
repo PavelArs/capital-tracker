@@ -1,6 +1,5 @@
 /* Cards (prototype .card and .card-h). Loaded once from main.tsx. */
-.ui-card,
-.shell-card {
+.ui-card {
   min-width: 0;
   padding: 20px 22px;
   border: 1px solid var(--line);
@@ -21,13 +20,6 @@
 /* A list item card keeps no bullet. */
 li.ui-card {
   list-style: none;
-}
-
-/* Deprecated alias (plan 2.9 deletes it): a card's own h2 without the header row. */
-.shell-card h2 {
-  margin: 0;
-  font-weight: 600;
-  font-size: var(--fs-lg);
 }
 
 .ui-card-h {
@@ -67,8 +59,7 @@ li.ui-card {
 /* Phones: 16 px around a card's content; an account card's header runs 16 px from its edges
    (its rows follow the same edge in their own CSS). */
 @media (max-width: 639.98px) {
-  .ui-card,
-  .shell-card {
+  .ui-card {
     padding: var(--sp-4);
   }
 

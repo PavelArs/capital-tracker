@@ -295,7 +295,7 @@ export default function SettingsPage() {
   return (
     <div className="shell-page">
       <PageHeader title="Settings" />
-      <div className="shell-settings">
+      <div className="settings-stack">
         <Profile />
         <SecuritySettings />
         <Card labelledBy="settings-display">

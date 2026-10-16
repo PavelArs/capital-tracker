@@ -60,7 +60,6 @@
   font-weight: 600;
 }
 
-.ui-modal__head .shell-note,
 .ui-modal__intro {
   flex-basis: 100%;
   margin-top: 8px;
@@ -219,9 +218,7 @@
 
   /* The main action takes the room that is left. */
   .ui-modal .ui-modal__foot > .ui-btn--primary,
-  .ui-modal .ui-modal__foot > .ui-btn--danger,
-  .ui-modal .ui-modal__foot > .shell-button--primary,
-  .ui-modal .ui-modal__foot > .shell-button--danger {
+  .ui-modal .ui-modal__foot > .ui-btn--danger {
     flex: 1 1 auto;
   }
 
@@ -243,8 +240,7 @@
     border-top: 0;
   }
 
-  .ui-modal--narrow .ui-modal__foot > .ui-btn,
-  .ui-modal--narrow .ui-modal__foot > .shell-button {
+  .ui-modal--narrow .ui-modal__foot > .ui-btn {
     flex: 1 1 0;
   }
 }

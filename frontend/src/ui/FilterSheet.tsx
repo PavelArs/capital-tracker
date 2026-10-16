@@ -1,4 +1,5 @@
 import { type ReactNode, useId, useState } from 'react';
+import { Button } from './Button';
 import Modal from './Modal';
 import { useNarrowScreen } from './useMediaQuery';
 import './filter-sheet.css';
@@ -37,16 +38,15 @@ export default function FilterSheet({ active, onReset, done = 'Done', search, ch
   return (
     <div className="ui-filter-bar">
       {search}
-      <button
-        type="button"
-        className="shell-button ui-filter-bar__button"
+      <Button
+        className="ui-filter-bar__button"
         aria-haspopup="dialog"
         aria-label={active > 0 ? `Filters, ${active} set` : 'Filters'}
         onClick={() => setOpen(true)}
       >
         Filters
         {active > 0 && <span className="ui-filter-bar__count">{active}</span>}
-      </button>
+      </Button>
       {open && (
         <Modal
           titleId={titleId}
@@ -61,9 +61,7 @@ export default function FilterSheet({ active, onReset, done = 'Done', search, ch
             {children}
           </div>
           <div className="ui-modal__foot">
-            <button
-              type="button"
-              className="shell-button"
+            <Button
               disabled={active === 0}
               onClick={() => {
                 onReset();
@@ -71,14 +69,10 @@ export default function FilterSheet({ active, onReset, done = 'Done', search, ch
               }}
             >
               Reset
-            </button>
-            <button
-              type="button"
-              className="shell-button shell-button--primary"
-              onClick={() => setOpen(false)}
-            >
+            </Button>
+            <Button variant="primary" onClick={() => setOpen(false)}>
               {done}
-            </button>
+            </Button>
           </div>
         </Modal>
       )}

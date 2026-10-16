@@ -139,27 +139,3 @@
   width: 15px;
   height: 15px;
 }
-
-/* ---------------------------------------------------------------------------------------------
-   Deprecated aliases, kept until every feature uses Banner and .ui-link (plan 2.9 deletes them).
-   --------------------------------------------------------------------------------------------- */
-.shell-note {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-}
-
-.shell-note a {
-  color: var(--accent);
-}
-
-/* A link inside text: the accent colour without the browser's underline (design system "link"). */
-.shell-link {
-  color: var(--accent);
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.shell-link:hover {
-  text-decoration: underline;
-}

@@ -104,12 +104,8 @@
 }
 
 .ui-banner--action .shell-icon,
-.ui-banner--action .shell-button {
+.ui-banner--action .ui-btn {
   flex: none;
-}
-
-.ui-banner--action .shell-button {
-  text-decoration: none;
 }
 
 .ui-banner--warn.ui-banner--action .shell-icon {

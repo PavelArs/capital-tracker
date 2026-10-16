@@ -1,6 +1,6 @@
-/* Charts shared by the dashboard, an asset, a deposit and the goal pages: the card, the legend,
-   the period tabs, the drawn SVG, its tooltip and the "about this chart" note. The class names
-   keep their dashboard- prefix: tests and e2e select .dashboard-chart__deposit and its kin. */
+/* Charts shared by the dashboard, an asset, a deposit and the goal pages: the card, the drawn
+   SVG, its tooltip and the "about this chart" note. The class names keep their dashboard-
+   prefix: tests and e2e select .dashboard-chart__deposit and its kin. */
 .dashboard-chart-card {
   padding: 18px 22px 14px;
 }
@@ -16,74 +16,6 @@
   gap: 6px 24px;
 }
 
-.dashboard-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-}
-
-.dashboard-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dashboard-legend__line {
-  display: inline-block;
-  width: 14px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.dashboard-legend__line--invested {
-  background: var(--ink-3);
-}
-
-.dashboard-legend__deposit {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ink-2);
-}
-
-.dashboard-periods {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--sunken);
-}
-
-.dashboard-periods button {
-  padding: 5px 11px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-weight: 500;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.dashboard-periods button:hover {
-  color: var(--ink);
-}
-
-.dashboard-periods button[aria-selected="true"] {
-  background: var(--raised);
-  color: var(--ink);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.18),
-    inset 0 0 0 1px var(--line);
-}
-
-.dashboard-periods button:focus-visible,
 .dashboard-chart:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

@@ -84,13 +84,6 @@
   overflow-wrap: anywhere;
 }
 
-.security-secret .security-secret__copy {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-}
-
 .security-skeleton .shell-bone + .shell-bone {
   margin-top: 6px;
 }

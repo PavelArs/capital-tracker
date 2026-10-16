@@ -18,7 +18,7 @@ interface Props {
 // The ✕ comes first in the box; a step still opens on its own first control.
 const firstControl = (root: HTMLElement) =>
   [...root.querySelectorAll<HTMLElement>(focusable)].find(
-    (control) => !control.classList.contains('shell-close'),
+    (control) => !control.classList.contains('ui-close'),
   );
 
 // The security flows' modal: the shared header with its ✕, then the step's own body and footer.

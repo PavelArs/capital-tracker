@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Button } from '@/ui/Button';
 import './infinite-scroll.css';
 
 /** Rows added each time the owner reaches the end of a list. */
@@ -122,9 +123,9 @@ export default function LoadMore({
         Showing {shown}
         {total === undefined ? '' : ` of ${total}`} {label}
       </span>
-      <button type="button" className="shell-button more__button" disabled={busy} onClick={onMore}>
+      <Button disabled={busy} onClick={onMore}>
         {busy ? 'Loading…' : 'Show more'}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -60,17 +60,8 @@
   border-top: 1px solid var(--line);
 }
 
-.ui-drawer__foot .shell-button {
-  margin-top: 0;
-}
-
 /* "Save" and "Saving…" take the same room in the Button component too. */
 .ui-drawer__foot .ui-btn--primary {
-  min-width: 96px;
-}
-
-/* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
-.ui-drawer__foot .shell-button--primary {
   min-width: 96px;
 }
 
@@ -95,8 +86,7 @@
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
-  .ui-drawer__foot > .ui-btn--primary,
-  .ui-drawer__foot > .shell-button--primary {
+  .ui-drawer__foot > .ui-btn--primary {
     flex: 1 1 auto;
   }
 }

@@ -11,10 +11,8 @@
   min-width: 0;
 }
 
-.ui-filter-bar__button.shell-button {
+.ui-filter-bar__button {
   flex: none;
-  height: var(--h-md);
-  margin-top: 0;
 }
 
 .ui-filter-bar__count {
@@ -48,9 +46,8 @@
   padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
 }
 
-.ui-modal--sheet .ui-modal__foot .shell-button {
+.ui-modal--sheet .ui-modal__foot .ui-btn {
   flex: 1;
-  margin-top: 0;
 }
 
 /* One filter a row, labels above, full width. */

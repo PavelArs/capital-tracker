@@ -12,12 +12,3 @@
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
-
-.more__button {
-  margin-top: 0;
-}
-
-.more__button:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}

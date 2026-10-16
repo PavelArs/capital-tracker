@@ -47,10 +47,6 @@
   margin-top: 10px;
 }
 
-.ui-empty__actions .shell-button {
-  margin-top: 0;
-}
-
 /* Inside a card: no card of its own, a smaller title and less room. */
 .ui-empty--compact {
   gap: 6px;

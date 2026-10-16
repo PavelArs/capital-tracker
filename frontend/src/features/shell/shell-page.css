@@ -73,11 +73,6 @@
     min-width: 0;
   }
 
-  .shell-page__head > .shell-button--primary {
-    flex: 1;
-    min-height: 40px;
-  }
-
   .shell-page__actions {
     display: flex;
     flex-wrap: wrap;
@@ -256,4 +251,11 @@
     border-radius: var(--r-xl) var(--r-xl) 0 0;
     animation: ui-sheet-in var(--dur-3) var(--ease-out);
   }
+}
+
+/* The Settings page: its cards one under another at a readable width. */
+.settings-stack {
+  display: grid;
+  gap: var(--sp-5);
+  max-width: 780px;
 }
