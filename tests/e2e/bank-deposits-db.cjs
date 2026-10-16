@@ -485,7 +485,7 @@ async function backfill() {
     assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
     assert.match(migrated.stdout, /Migrations applied: 6/);
     const events = await prior.query(
-      `SELECT version, kind, name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
+      `SELECT version, kind, "depositKind", name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
           to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,
           "ratePercent"::text AS rate, comment, to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI') AS at
         FROM bank_deposit_events WHERE "depositId"=$1 ORDER BY version`,
@@ -493,17 +493,17 @@ async function backfill() {
     );
     assert.deepEqual(events, [
       {
-        version: 1, kind: 'opened', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        version: 1, kind: 'opened', depositKind: 'term-deposit', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
         day: '2026-01-01', endDate: '2027-01-01', payout: 'monthly', movementKind: null,
         amount: '5000.00', rate: '11.5000', comment: null, at: '2026-01-02T08:00',
       },
       {
-        version: 2, kind: 'movement-added', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        version: 2, kind: 'movement-added', depositKind: 'term-deposit', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
         day: '2026-03-01', endDate: null, payout: null, movementKind: 'topup',
         amount: '700.10', rate: null, comment: 'Later top-up', at: '2026-03-02T09:00',
       },
       {
-        version: 3, kind: 'movement-added', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        version: 3, kind: 'movement-added', depositKind: 'term-deposit', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
         day: '2026-02-01', endDate: null, payout: null, movementKind: 'withdrawal',
         amount: '100.00', rate: null, comment: null, at: '2026-03-03T09:00',
       },
@@ -589,6 +589,35 @@ async function history(db, service, owner, other) {
   const created = await audit.read(owner, { change: 'created' });
   assert.ok(created.events.some((event) => event.entity === 'deposit'), 'In the unfiltered list');
   assert.deepEqual(await events(other), [], 'An owner with no deposit sees none of it');
+
+  // An account is still an account in History after it is deleted: the row that said so is gone.
+  const account = await service.create(owner, {
+    ...savings,
+    kind: 'account',
+    name: 'History B',
+    endDate: null,
+    ratePercent: null,
+  });
+  await service.remove(owner, account.id);
+  const accountEvents = (await events(owner)).filter((event) => event.entityId === account.id);
+  assert.deepEqual(accountEvents.map(action), ['Account opened', 'Account deleted']);
+  assert.deepEqual(
+    (
+      await db.query(
+        'SELECT "depositKind" FROM bank_deposit_events WHERE "depositId"=$1 ORDER BY version',
+        [account.id],
+      )
+    ).map((row) => row.depositKind),
+    ['account', 'account'],
+  );
+  assert.deepEqual(
+    (
+      await db.query('SELECT DISTINCT "depositKind" FROM bank_deposit_events WHERE "depositId"=$1', [
+        made.id,
+      ])
+    ).map((row) => row.depositKind),
+    ['term-deposit'],
+  );
   console.log('PASS DEP-HISTORY');
 }
 

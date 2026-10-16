@@ -1452,11 +1452,17 @@ function manualPriceCurrencyAddition(kind, row) {
   );
 }
 function depositKindAddition(kind, row) {
-  if (kind === 'columns') return row.table_name === 'bank_deposits' && row.column_name === 'kind';
+  if (kind === 'columns')
+    return (
+      (row.table_name === 'bank_deposits' && row.column_name === 'kind') ||
+      (row.table_name === 'bank_deposit_events' && row.column_name === 'depositKind')
+    );
   return (
     kind === 'constraints' &&
-    row.relname === 'bank_deposits' &&
-    ['bank_deposits_kind_check', 'bank_deposits_account_has_no_term'].includes(row.conname)
+    ((row.relname === 'bank_deposits' &&
+      ['bank_deposits_kind_check', 'bank_deposits_account_has_no_term'].includes(row.conname)) ||
+      (row.relname === 'bank_deposit_events' &&
+        row.conname === 'bank_deposit_events_depositKind_check'))
   );
 }
 function replacedOriginCheck(kind, row) {
