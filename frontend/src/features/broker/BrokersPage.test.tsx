@@ -201,7 +201,7 @@ describe('BROKERS the Brokers page', () => {
       'Could not refresh your broker accounts; showing the last loaded figures.',
     );
     expect(screen.getByRole('region', { name: 'Total at brokers' })).toHaveTextContent('$5,934.00');
-    await user.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 

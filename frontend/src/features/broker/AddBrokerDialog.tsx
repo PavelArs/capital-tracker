@@ -12,14 +12,16 @@ import {
 import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Affix, Input } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { ambiguousComma, numberProblem } from '../portfolio/add-transaction';
-import CloseButton from '../shell/CloseButton';
-import { Icon } from '../shell/icons';
 import {
   type BrokerEntry,
   type BrokerProblem,
@@ -76,8 +78,11 @@ const failure = (error: unknown, saved: string) => {
 
 interface Props {
   onClose: () => void;
-  /** Something was saved: the account, with what it holds or part of it. */
-  onAdded: () => void;
+  /**
+   * Something was saved: the account, with what it holds or part of it. `name` is given only
+   * when everything the form asked for was saved.
+   */
+  onAdded: (name?: string) => void;
 }
 
 /** One holding as it is saved: the asset, the buy that gives it a balance, then its price. */
@@ -393,7 +398,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
         return;
       }
     }
-    onAdded();
+    onAdded(entry.broker.trim());
   };
 
   return (
@@ -404,34 +409,32 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
       initialFocus={() => first.current}
     >
       <form onSubmit={submit} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>Add broker account</h2>
-          <CloseButton onClick={finish} disabled={saving} />
-        </div>
-        <div className="ui-modal__body">
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor={`${id}-broker`}>
-              Broker
-            </label>
-            <input
-              id={`${id}-broker`}
-              ref={first}
-              className="ui-input"
-              maxLength={MAX_BROKER_NAME}
-              autoComplete="off"
-              placeholder="e.g. Sample Broker"
-              value={entry.broker}
-              disabled={disabled}
-              onChange={(event) => update({ broker: event.target.value })}
-              onBlur={leave('broker')}
-              {...invalid('broker')}
-            />
-            {found.has('broker') && (
-              <span className="ui-field__error" id={`${id}-broker-error`}>
-                Enter the broker, on one line
-              </span>
+        <ModalHeader
+          titleId={`${id}-title`}
+          title="Add broker account"
+          onClose={finish}
+          closeDisabled={saving}
+        />
+        <ModalBody>
+          <Field
+            id={`${id}-broker`}
+            label="Broker"
+            error={found.has('broker') ? 'Enter the broker, on one line' : null}
+          >
+            {(control) => (
+              <Input
+                {...control}
+                ref={first}
+                maxLength={MAX_BROKER_NAME}
+                autoComplete="off"
+                placeholder="e.g. Sample Broker"
+                value={entry.broker}
+                disabled={disabled}
+                onChange={(event) => update({ broker: event.target.value })}
+                onBlur={leave('broker')}
+              />
             )}
-          </div>
+          </Field>
           <div className="ui-field broker-account-type">
             <span id={`${id}-account`} className="ui-field__label">
               Account
@@ -476,8 +479,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
                 return (
                   // biome-ignore lint/suspicious/noArrayIndexKey: rows are only ever added at the end.
                   <div key={index} className="broker-positions__row">
-                    <input
-                      className="ui-input"
+                    <Input
                       aria-label={`Ticker or name ${row}`}
                       maxLength={MAX_TICKER}
                       autoComplete="off"
@@ -488,10 +490,9 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
                       onBlur={leave(field('ticker'))}
                       {...invalid(field('ticker'), `${id}-positions-error`)}
                     />
-                    <input
-                      className="ui-input"
+                    <Input
                       aria-label={`Quantity ${row}`}
-                      inputMode="decimal"
+                      numeric
                       placeholder="0"
                       value={position.quantity}
                       disabled={disabled}
@@ -499,10 +500,9 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
                       onBlur={leave(field('quantity'))}
                       {...invalid(field('quantity'), `${id}-positions-error`)}
                     />
-                    <input
-                      className="ui-input"
+                    <Input
                       aria-label={`Price ${row}`}
-                      inputMode="decimal"
+                      numeric
                       placeholder="0"
                       value={position.price}
                       disabled={disabled}
@@ -515,15 +515,16 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
               })}
             </div>
             {entry.positions.length < MAX_POSITIONS && (
-              <button
-                type="button"
-                className="shell-button shell-button--ghost broker-positions__add"
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="plus"
+                className="broker-positions__add"
                 disabled={disabled}
                 onClick={() => update({ positions: [...entry.positions, blankPosition()] })}
               >
-                <Icon name="plus" className="shell-icon shell-icon--sm" />
                 Add position
-              </button>
+              </Button>
             )}
             {positionProblem ? (
               <span className="ui-field__error" id={`${id}-positions-error`}>
@@ -541,57 +542,43 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
               )
             )}
           </fieldset>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor={`${id}-cash`}>
-              Cash at the broker (optional)
-            </label>
-            <span className="ui-affix">
-              <input
-                id={`${id}-cash`}
-                className="ui-input"
-                inputMode="decimal"
-                placeholder="0"
-                value={entry.cash}
-                disabled={disabled}
-                onChange={(event) => update({ cash: event.target.value })}
-                onBlur={leave('cash')}
-                {...invalid('cash')}
-              />
-              <span className="ui-affix__suffix">{entry.currency}</span>
-            </span>
-            {found.has('cash') && (
-              <span className="ui-field__error" id={`${id}-cash-error`}>
-                {numberProblem(entry.cash, 'Enter an amount greater than 0, or leave it empty')}
-              </span>
+          <Field
+            id={`${id}-cash`}
+            label="Cash at the broker (optional)"
+            error={
+              found.has('cash')
+                ? numberProblem(entry.cash, 'Enter an amount greater than 0, or leave it empty')
+                : null
+            }
+          >
+            {(control) => (
+              <Affix suffix={entry.currency}>
+                <Input
+                  {...control}
+                  numeric
+                  placeholder="0"
+                  value={entry.cash}
+                  disabled={disabled}
+                  onChange={(event) => update({ cash: event.target.value })}
+                  onBlur={leave('cash')}
+                />
+              </Affix>
             )}
-          </div>
-          <p className="ui-modal__info" role="note">
+          </Field>
+          <Banner tone="info">
             Prices for stocks and funds aren't loaded yet: update them on the position's page.
             Adding the account counts as money put in.
-          </p>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={finish}
-            disabled={saving}
-          >
+          </Banner>
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" onClick={finish} disabled={saving}>
             {saved.current.holdings.some((holding) => holding.receipt) ? 'Close' : 'Cancel'}
-          </button>
-          <button
-            type="submit"
-            className="shell-button shell-button--primary"
-            disabled={saving || closing}
-          >
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving || closing}>
             Add account
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );

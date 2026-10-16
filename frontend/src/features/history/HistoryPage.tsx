@@ -8,9 +8,17 @@ import {
 } from '@api/audit-history.api';
 import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button, ButtonLink } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { Chip, ChipGroup } from '@/ui/Chip';
+import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
 import FilterSheet from '@/ui/FilterSheet';
+import { Input, Select } from '@/ui/inputs';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
@@ -28,11 +36,7 @@ import {
   summary,
 } from './history-format';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
-import '../transactions/transactions.css';
 import './history.css';
-import EmptyState from '@/ui/EmptyState';
-import { ListRowText, rowClass } from '@/ui/ListRow';
 
 const changes = Object.keys(changeLabels) as AuditChange[];
 const entities = Object.keys(entityLabels) as AuditEntity[];
@@ -46,7 +50,7 @@ function Mark({ event }: { event: AuditEvent }) {
   return event.asset ? (
     <AssetIcon symbol={event.asset} name={event.asset} size="sm" />
   ) : (
-    <span className="transactions-type-icon">
+    <span className="history-mark">
       <Glyph name={glyphOf(event)} />
     </span>
   );
@@ -67,7 +71,7 @@ function Row({
 }) {
   return (
     <tr
-      className={current ? 'transactions-row--open' : undefined}
+      className={current ? 'history-row--open' : undefined}
       data-event={event.id}
       aria-current={current || undefined}
       onClick={onOpen}
@@ -76,13 +80,13 @@ function Row({
       <td>
         <ChangeBadge change={event.change} />
       </td>
-      <td className="transactions-wrap">
-        <span className="transactions-type">
+      <td className="history-wrap">
+        <span className="history-type">
           <Mark event={event} />
           <span>
             <button
               type="button"
-              className="transactions-open"
+              className="history-open"
               onClick={(click) => {
                 click.stopPropagation();
                 onOpen();
@@ -90,11 +94,11 @@ function Row({
             >
               {event.title}
             </button>
-            <span className="portfolio-sub">{event.account ?? 'No account'}</span>
+            <span className="history-sub">{event.account ?? 'No account'}</span>
           </span>
         </span>
       </td>
-      <td className="transactions-wrap">{summary(event)}</td>
+      <td className="history-wrap">{summary(event)}</td>
       <td>{actorLabels[event.actor]}</td>
     </tr>
   );
@@ -230,18 +234,15 @@ export default function HistoryPage() {
       <PageHeader
         title="History"
         actions={
-          <Link className="shell-button shell-button--ghost" to="/preferences">
+          <ButtonLink variant="ghost" to="/preferences">
             Back to Settings
-          </Link>
+          </ButtonLink>
         }
       />
       {failed === 'load' && history === null ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load the change history. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState onRetry={() => void load()}>
+          Could not load the change history. Your data is safe; try again.
+        </ErrorState>
       ) : history === null ? (
         <PageSkeleton label="Loading the change history" show={['rows']} rows={8} />
       ) : events.length === 0 && !filtered ? (
@@ -250,37 +251,29 @@ export default function HistoryPage() {
           transaction, is listed here with the time it happened.
         </EmptyState>
       ) : (
-        <section className="shell-card" aria-label="Change history">
+        <Card labelledBy="history-list-title">
+          <h2 id="history-list-title" className="ui-sr">
+            Change history
+          </h2>
           <div className="ui-toolbar">
-            <div className="ui-chips" role="group" aria-label="Filter by change">
-              <button
-                type="button"
-                className="ui-chip"
-                aria-pressed={!change}
-                onClick={() => update({ change: '' })}
-              >
+            <ChipGroup label="Filter by change">
+              <Chip pressed={!change} onClick={() => update({ change: '' })}>
                 All
-              </button>
+              </Chip>
               {changes.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  className="ui-chip"
-                  aria-pressed={change === key}
-                  onClick={() => update({ change: key })}
-                >
+                <Chip key={key} pressed={change === key} onClick={() => update({ change: key })}>
                   {changeLabels[key]}
-                </button>
+                </Chip>
               ))}
-            </div>
+            </ChipGroup>
             <FilterSheet
               active={[entity, actor, from, to].filter(Boolean).length}
               onReset={() => update({ entity: '', actor: '', from: '', to: '' })}
             >
               <label className="ui-filter">
                 <span>Type</span>
-                <select
-                  className="ui-input ui-input--sm"
+                <Select
+                  size="sm"
                   value={entity ?? ''}
                   onChange={(event) => update({ entity: event.target.value })}
                 >
@@ -290,12 +283,12 @@ export default function HistoryPage() {
                       {entityLabels[key]}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="ui-filter">
                 <span>Source</span>
-                <select
-                  className="ui-input ui-input--sm"
+                <Select
+                  size="sm"
                   value={actor ?? ''}
                   onChange={(event) => update({ actor: event.target.value })}
                 >
@@ -305,12 +298,12 @@ export default function HistoryPage() {
                       {actorLabels[key]}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="ui-filter">
                 <span>From</span>
-                <input
-                  className="ui-input ui-input--sm"
+                <Input
+                  size="sm"
                   type="date"
                   value={from ?? ''}
                   max={to ?? undefined}
@@ -319,8 +312,8 @@ export default function HistoryPage() {
               </label>
               <label className="ui-filter">
                 <span>To</span>
-                <input
-                  className="ui-input ui-input--sm"
+                <Input
+                  size="sm"
                   type="date"
                   value={to ?? ''}
                   min={from ?? undefined}
@@ -330,22 +323,20 @@ export default function HistoryPage() {
             </FilterSheet>
           </div>
           {events.length === 0 ? (
-            <div className="portfolio-none transactions-none">
-              <p>No changes match</p>
-              <button
-                type="button"
-                className="shell-button"
-                onClick={() => replaceParams(new URLSearchParams())}
-              >
-                Clear filters
-              </button>
-            </div>
+            <EmptyState
+              id="history-none"
+              title="No changes match"
+              compact
+              actions={
+                <Button onClick={() => replaceParams(new URLSearchParams())}>Clear filters</Button>
+              }
+            />
           ) : narrow ? (
-            <ol className="ui-rows transactions-list" aria-label="Changes">
+            <ol className="history-list" aria-label="Changes">
               {days.map((group) => (
-                <li key={group.heading} className="transactions-list__day">
-                  <h2 className="transactions-list__heading">{group.heading}</h2>
-                  <ul>
+                <li key={group.heading} className="history-list__day">
+                  <h2 className="history-list__heading">{group.heading}</h2>
+                  <ul className="ui-rows">
                     {group.events.map((event) => (
                       <Item
                         key={event.id}
@@ -360,7 +351,7 @@ export default function HistoryPage() {
             </ol>
           ) : (
             <div className="ui-table-wrap">
-              <table className="ui-table transactions-table history-table" aria-label="Changes">
+              <table className="ui-table history-table" aria-label="Changes">
                 <colgroup>
                   <col className="history-col--when" />
                   <col className="history-col--change" />
@@ -381,7 +372,7 @@ export default function HistoryPage() {
                 </thead>
                 {days.map((group) => (
                   <tbody key={group.heading}>
-                    <tr className="transactions-day">
+                    <tr className="history-day">
                       <th scope="rowgroup" colSpan={5}>
                         {group.heading}
                       </th>
@@ -400,18 +391,19 @@ export default function HistoryPage() {
             </div>
           )}
           {failed && (
-            <p className="ui-banner ui-banner--neg" role="alert">
+            <Banner
+              tone="warn"
+              role="alert"
+              action={
+                <Button size="sm" onClick={() => void (failed === 'more' ? more() : load())}>
+                  Try again
+                </Button>
+              }
+            >
               {failed === 'more'
                 ? 'Could not load older changes.'
-                : 'Could not load the changes for these filters.'}{' '}
-              <button
-                type="button"
-                className="shell-button shell-button--ghost"
-                onClick={() => void (failed === 'more' ? more() : load())}
-              >
-                Try again
-              </button>
-            </p>
+                : 'Could not load the changes for these filters.'}
+            </Banner>
           )}
           {history.next && !failed && (
             <LoadMore
@@ -421,13 +413,13 @@ export default function HistoryPage() {
               label="changes"
             />
           )}
-          <p className="shell-note portfolio-note">
+          <p className="ui-sub history-note">
             {events.length} {events.length === 1 ? 'change' : 'changes'} shown, newest first. Every
             change is kept as a new version, so nothing is overwritten; deleting a transaction adds
             a version that removes it from your calculations. Blockchain transactions are never
             deleted, only classified or hidden. Times are in UTC.
           </p>
-        </section>
+        </Card>
       )}
       {opened && <HistoryDrawer event={opened} onClose={() => setOpenId(null)} />}
     </div>
