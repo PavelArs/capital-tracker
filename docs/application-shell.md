@@ -50,18 +50,20 @@ already say what needs attention). **Skip to content** jumps to the main area. D
 and 1280 show the full sidebar. On phones (under 560 px) a page header is the title, then the
 currency switch with **Add transaction** on one row, then the page's own buttons.
 
-Pages that show values after inflation (the Dashboard, the Portfolio and an asset's page so far) add a **Nominal / Real** switch
-beside the currency switch, one choice for all of them, kept in this browser and Nominal on the
-first visit. Both readings stay on screen, so nothing moves when it changes: under Nominal the
-profit to date is first and the real profit sits below it, under Real the other way round. The
-rate behind "real" (the published index, or the owner's own yearly rate) is picked in Settings.
+Pages that show values after inflation (the Dashboard, the Portfolio and an asset's page so far)
+add a **Nominal / Real** switch beside the currency switch, one choice for all of them, kept in
+this browser and Nominal on the first visit. **One reading at a time:** Nominal means the figures
+as counted, with no inflation figure, label or note anywhere on the page; Real means the figures
+in today's money, with no nominal figure beside them. A figure Real cannot work out (a purchase
+with no price, rate or inflation figure) shows a dash and the reason, never the nominal figure in
+its place. The rate behind "real" (the published index, or the owner's own yearly rate) is picked
+in Settings and named in a note under the figures, under Real only.
 On the Portfolio, Real shows the cost of what is held in today's money (each purchase grown by the
-inflation since its day) and the profit over it, for the portfolio and for each asset; an asset
-with a purchase that has no price, rate or inflation figure shows a dash. An asset's page shows
-the same two figures for that asset under its own switch, and below the chart a **Purchases after
-inflation** card lists each purchase still held (newest first) with what it cost, the inflation
-since its day, the cost in today's money, its value now and the real profit with the nominal one
-beneath. The card follows the chosen rate, shows a dash for a purchase it cannot read, and warns
+inflation since its day) and the profit over it, for the portfolio and for each asset. An asset's
+page shows the same two figures for that asset under its own switch, and, under Real only, below
+the chart a **Purchases after inflation** card lists each purchase still held (newest first) with
+what it cost, the inflation since its day, the cost in today's money, its value now and the real
+profit. The card follows the chosen rate, shows a dash for a purchase it cannot read, and warns
 while an account whose history starts later may hold more purchases than are listed. It is read
 on its own from `GET /accounting/portfolio/assets/:instrumentId/lots`; phones get two-line rows.
 

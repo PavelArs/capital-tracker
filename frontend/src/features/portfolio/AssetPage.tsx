@@ -48,7 +48,6 @@ import {
   sourceName,
 } from './format';
 import HideAsset from './HideAsset';
-import { adjustmentText } from './real-cost';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
@@ -441,27 +440,10 @@ function AssetDetails({
                       <span className="portfolio-sub">
                         a purchase price, exchange rate or inflation figure is missing for some lots
                       </span>
-                      {asset.costBasis !== null ? (
-                        <span className="portfolio-sub">{amount(asset.costBasis)} paid</span>
-                      ) : (
-                        Number(asset.knownCostQuantity) > 0 && (
-                          <span className="portfolio-sub">
-                            {amount(asset.knownCostSubtotal)} paid for the known part
-                          </span>
-                        )
-                      )}
                     </>
                   )
                 ) : (
-                  <>
-                    {amount(reading.costBasis)}
-                    {asset.costBasis !== null && (
-                      <span className="portfolio-sub">
-                        {amount(asset.costBasis)} paid{' '}
-                        {adjustmentText(reading.costBasis, asset.costBasis, amount)}
-                      </span>
-                    )}
-                  </>
+                  amount(reading.costBasis)
                 )}
               </Stat>
               <Stat label="Real P&L">
@@ -470,28 +452,12 @@ function AssetDetails({
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
-                {asset.unrealizedPnl !== null || sold ? (
-                  <span className="portfolio-sub">
-                    Nominal {money(sold ? '0' : asset.unrealizedPnl, currency, true)}
-                  </span>
-                ) : (
-                  asset.knownUnrealizedPnl !== null && (
-                    <span className="portfolio-sub">
-                      Nominal {money(asset.knownUnrealizedPnl, currency, true)} known
-                    </span>
-                  )
-                )}
               </Stat>
             </>
           ) : (
             <>
               <Stat label="Cost basis">
                 {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
-                {reading !== null && asset.costBasis !== null && (
-                  <span className="portfolio-sub">
-                    {amount(reading.costBasis)} in today&apos;s money
-                  </span>
-                )}
               </Stat>
               <Stat label="Unrealized P&L">
                 <Signed
@@ -501,11 +467,6 @@ function AssetDetails({
                     partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
                   }
                 />
-                {reading?.unrealizedPnl != null && asset.unrealizedPnl !== null && (
-                  <span className="portfolio-sub">
-                    Real {money(reading.unrealizedPnl, currency, true)}
-                  </span>
-                )}
               </Stat>
             </>
           )}
@@ -540,9 +501,18 @@ function AssetDetails({
           <p className="ui-banner ui-banner--warn ui-banner--action portfolio-warn" role="note">
             <Icon name="alert" className="shell-icon shell-icon--sm" />
             <span>
-              {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
-              unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known cost:{' '}
-              {amount(asset.knownCostSubtotal)}.
+              {showReal ? (
+                <>
+                  {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so the real
+                  cost and profit cannot be worked out.
+                </>
+              ) : (
+                <>
+                  {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis
+                  and unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known
+                  cost: {amount(asset.knownCostSubtotal)}.
+                </>
+              )}
             </span>
             <Link
               className="shell-button"
@@ -555,8 +525,8 @@ function AssetDetails({
         {missingRate && (
           <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
             {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
-            rates, so its cost in {currency} is unknown. Known cost:{' '}
-            {amount(asset.knownCostSubtotal)}.
+            rates, so its cost in {currency} is unknown.
+            {!showReal && <> Known cost: {amount(asset.knownCostSubtotal)}.</>}
           </p>
         )}
         {asset.unknownRealizedCount > 0 && (
@@ -567,7 +537,7 @@ function AssetDetails({
         )}
       </section>
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
-      {!sold && (
+      {!sold && showReal && (
         <AssetLotsCard
           instrumentId={asset.instrumentId}
           asked={asked}
