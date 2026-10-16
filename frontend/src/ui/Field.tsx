@@ -11,8 +11,9 @@ export interface FieldControl {
 /**
  * A form field (prototype .field): the label over the control, a hint or, once the value is
  * wrong, the error in its place. The control is drawn by `children` with the id and ARIA it is
- * given. Ids: the control `id`, the hint `${id}-hint`, the error `${id}-error`. The error has no
- * role of its own: the dialog's banner, or the focus moved to the first wrong field, announces it.
+ * given. Ids: the control `id`, the hint `${id}-hint`, the error `${id}-error`. By default the
+ * error has no role of its own: the dialog's banner, or the focus moved to the first wrong field,
+ * announces it. `liveError` makes it an alert, for a form with no banner (sign-in, password).
  */
 export function Field({
   label,
@@ -20,6 +21,7 @@ export function Field({
   error,
   id,
   labelAside,
+  liveError = false,
   className,
   children,
 }: {
@@ -30,6 +32,8 @@ export function Field({
   id?: string;
   /** At the right end of the label row, such as "Forgot password?". */
   labelAside?: ReactNode;
+  /** The error is announced as an alert when it appears. */
+  liveError?: boolean;
   className?: string;
   children: (control: FieldControl) => ReactNode;
 }) {
@@ -61,7 +65,7 @@ export function Field({
       )}
       {children(control)}
       {error ? (
-        <span id={errorId} className="ui-field__error">
+        <span id={errorId} className="ui-field__error" role={liveError ? 'alert' : undefined}>
           {error}
         </span>
       ) : (

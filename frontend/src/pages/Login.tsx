@@ -1,5 +1,4 @@
 import { useAuth } from '@contexts/AuthContext';
-import { AuthField as Field } from '@features/password-reset/AuthField';
 import AuthFrame, { focusOnMount, useFocusAfterAnswer } from '@features/password-reset/AuthFrame';
 import PasswordField from '@features/password-reset/PasswordField';
 import { tooManyAttempts } from '@features/security/attempts';
@@ -8,6 +7,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
 import { Input } from '@/ui/inputs';
 
 type FactorKind = 'totp' | 'recovery';
@@ -174,7 +174,7 @@ export default function Login() {
       <AuthFrame title="Sign in" onSubmit={submitPassword}>
         <p className="auth-sub">Only the owner account can sign in.</p>
         {failure && <Banner tone="neg">{failure}</Banner>}
-        <Field id="login-email" label="Email" error={fieldErrors.email}>
+        <Field id="login-email" label="Email" error={fieldErrors.email} liveError>
           {(control) => (
             <Input
               {...control}
@@ -226,7 +226,7 @@ export default function Login() {
           after signing in.
         </p>
         {failure && <Banner tone="neg">{failure}</Banner>}
-        <Field id="login-recovery" label="Recovery code" error={codeError}>
+        <Field id="login-recovery" label="Recovery code" error={codeError} liveError>
           {(control) => (
             <Input
               {...control}
@@ -270,6 +270,7 @@ export default function Login() {
       <p className="auth-sub">Enter the 6-digit code from your authenticator app.</p>
       {failure && <Banner tone="neg">{failure}</Banner>}
       <Field
+        liveError
         id="login-totp"
         label={<span className="ui-sr">Code from your authenticator app</span>}
         error={codeError}

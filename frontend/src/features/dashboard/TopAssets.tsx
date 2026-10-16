@@ -340,7 +340,7 @@ export default function TopAssets({
   const phone = useNarrowScreen();
   const holdings = portfolio ? topAssets(portfolio) : [];
   return (
-    <Card className="dashboard-assets" labelledBy={heading}>
+    <Card className="dashboard-assets" labelledBy={heading} busy={portfolio === null && !failed}>
       <CardHeader
         id={heading}
         title="Top assets"

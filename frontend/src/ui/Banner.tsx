@@ -32,6 +32,8 @@ export function Banner({
   action,
   role,
   id,
+  label,
+  busy = false,
   className,
   children,
 }: {
@@ -43,6 +45,10 @@ export function Banner({
   action?: ReactNode;
   role?: 'note' | 'status' | 'alert' | 'none';
   id?: string;
+  /** A name for the banner (aria-label), such as the region it reports on. */
+  label?: string;
+  /** What it reports is still loading (aria-busy). */
+  busy?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
@@ -52,7 +58,13 @@ export function Banner({
     .filter(Boolean)
     .join(' ');
   return (
-    <div id={id} className={classes} role={chosen === 'none' ? undefined : chosen}>
+    <div
+      id={id}
+      className={classes}
+      role={chosen === 'none' ? undefined : chosen}
+      aria-label={label}
+      aria-busy={busy || undefined}
+    >
       {name && <Icon name={name} className="shell-icon ui-banner__icon" />}
       <div className="ui-banner__text">
         {title && <b className="ui-banner__title">{title}</b>}

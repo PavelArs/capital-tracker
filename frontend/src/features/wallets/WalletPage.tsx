@@ -320,8 +320,7 @@ export default function WalletPage() {
               </>
             }
           />
-          {/* A card named "Summary" (Card names a region only by a heading, and this one has none). */}
-          <section className="ui-card wallet-overview" aria-label="Summary">
+          <Card className="wallet-overview" label="Summary">
             <Stats size="lg">
               <Stat lead label="Total value" value={money(total, currency)} />
               <Stat label="Assets" value={holdings.length} />
@@ -335,7 +334,7 @@ export default function WalletPage() {
               target={gapAddress(list, accountId)}
               onCounted={() => void load(true)}
             />
-          </section>
+          </Card>
           {own.length > 0 && (
             <Card variant="flush" className="wallets-card" labelledBy="wallet-addresses">
               <CardHeader

@@ -1,6 +1,6 @@
 import type { ReactNode, Ref } from 'react';
+import { Field } from '@/ui/Field';
 import { PasswordInput } from '@/ui/PasswordInput';
-import { AuthField as Field } from './AuthField';
 
 interface PasswordFieldProps {
   id: string;
@@ -29,7 +29,7 @@ export default function PasswordField({
   inputRef,
 }: PasswordFieldProps) {
   return (
-    <Field id={id} label={label} hint={hint} error={error} labelAside={labelAside}>
+    <Field id={id} label={label} hint={hint} error={error} labelAside={labelAside} liveError>
       {(control) => (
         <PasswordInput
           {...control}

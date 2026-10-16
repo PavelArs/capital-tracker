@@ -1,9 +1,9 @@
 import { securityApi } from '@api/security.api';
-import { AuthField as FormField } from '@features/password-reset/AuthField';
 import { isAxiosError } from 'axios';
 import { type ChangeEvent, type FormEvent, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
+import { Field as FormField } from '@/ui/Field';
 import { Input } from '@/ui/inputs';
 import { ModalBody, ModalFooter } from '@/ui/Modal';
 import { PasswordInput } from '@/ui/PasswordInput';
@@ -101,7 +101,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
     set: (value: string) => void,
     extra: { type?: string; autoComplete: string; hint?: string; otp?: boolean },
   ) => (
-    <FormField id={id} label={label} hint={extra.hint} error={problems[field]}>
+    <FormField id={id} label={label} hint={extra.hint} error={problems[field]} liveError>
       {(control) => {
         const shared = {
           ...control,

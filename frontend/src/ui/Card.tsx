@@ -2,11 +2,14 @@ import type { ReactNode } from 'react';
 
 /**
  * A card (prototype .card): the surface with a hairline border. As a `section` with
- * `labelledBy` it is a region named by its header.
+ * `labelledBy` (or a `label` when it has no heading of its own) it is a named region; `busy`
+ * says its content is still loading.
  */
 export function Card({
   as: Tag = 'section',
   labelledBy,
+  label,
+  busy = false,
   variant = 'default',
   className,
   children,
@@ -14,6 +17,10 @@ export function Card({
   as?: 'section' | 'div' | 'article' | 'li';
   /** The id of the heading that names the card (CardHeader's `id`). */
   labelledBy?: string;
+  /** The card's name when no heading in it names it (aria-label). */
+  label?: string;
+  /** Its content is loading (aria-busy). */
+  busy?: boolean;
   /** flush: no padding (account cards with rows to the edge); chart: the chart card's padding. */
   variant?: 'default' | 'flush' | 'chart';
   className?: string;
@@ -23,7 +30,12 @@ export function Card({
     .filter(Boolean)
     .join(' ');
   return (
-    <Tag className={classes} aria-labelledby={labelledBy}>
+    <Tag
+      className={classes}
+      aria-labelledby={labelledBy}
+      aria-label={label}
+      aria-busy={busy || undefined}
+    >
       {children}
     </Tag>
   );

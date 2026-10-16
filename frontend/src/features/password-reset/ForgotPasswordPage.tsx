@@ -4,8 +4,8 @@ import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
 import { Input } from '@/ui/inputs';
-import { AuthField as Field } from './AuthField';
 import AuthFrame, { focusOnMount, useFocusAfterAnswer } from './AuthFrame';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -106,7 +106,7 @@ export default function ForgotPasswordPage() {
         Enter the email you sign in with. We'll send a link to set a new password.
       </p>
       {failure && <Banner tone="neg">{failure}</Banner>}
-      <Field id="reset-email" label="Email" error={fieldError}>
+      <Field id="reset-email" label="Email" error={fieldError} liveError>
         {(control) => (
           <Input
             {...control}

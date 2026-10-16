@@ -633,6 +633,13 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(screen.queryByRole('region', { name: 'Net worth' })).toBeNull();
   });
 
+  it('DASH-TOP-BUSY says the Top assets card is busy while the valuation loads', async () => {
+    valued.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    expect(top).toHaveAttribute('aria-busy', 'true');
+  });
+
   it('DASH-EMPTY invites the first wallet or transaction when nothing is recorded', async () => {
     const user = userEvent.setup();
     get.mockResolvedValue(nothing());

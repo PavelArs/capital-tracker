@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import { Link } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Card } from '@/ui/Card';
 import { Icon } from '../shell/icons';
 import { useCachedRead } from '../shell/useCachedRead';
 import { GoalBar, GoalFigures } from './GoalProgress';
@@ -16,8 +17,7 @@ export default function NearestGoal() {
   const goal = ordered(data.items).find((item) => item.status !== 'reached');
   if (!goal) return null;
   return (
-    // The shared card's class on a section of its own: Card has no name to give a region.
-    <section className="ui-card goal-dash" aria-label="Nearest goal">
+    <Card className="goal-dash" label="Nearest goal">
       <div className="goal-dash__head">
         <span className="goal-icon" aria-hidden="true">
           <Icon name="target" className="shell-icon shell-icon--sm" />
@@ -47,6 +47,6 @@ export default function NearestGoal() {
           </Link>
         </span>
       </div>
-    </section>
+    </Card>
   );
 }

@@ -59,4 +59,32 @@ describe('Field', () => {
     expect(input).not.toHaveAttribute('aria-invalid');
     expect(input).toHaveAccessibleDescription('Optional.');
   });
+
+  it('FIELD-LIVE with liveError announces the error as an alert and keeps it the description', () => {
+    const { rerender } = render(
+      <Field id="password" label="Password" liveError>
+        {(control) => <Input {...control} />}
+      </Field>,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    rerender(
+      <Field id="password" label="Password" liveError error="Wrong email or password.">
+        {(control) => <Input {...control} />}
+      </Field>,
+    );
+    const input = screen.getByRole('textbox', { name: 'Password' });
+    expect(screen.getByRole('alert')).toHaveTextContent('Wrong email or password.');
+    expect(screen.getByRole('alert')).toHaveAttribute('id', 'password-error');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription('Wrong email or password.');
+  });
+
+  it('without liveError leaves the announcing to the dialog: the error has no role', () => {
+    render(
+      <Field id="t" label="Target" error="Enter an amount above 0.">
+        {(control) => <Input {...control} />}
+      </Field>,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });

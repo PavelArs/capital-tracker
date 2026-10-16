@@ -75,4 +75,14 @@ describe('Banner', () => {
     expect(banner).toHaveTextContent('Showing saved data.The last refresh failed.Try again');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
+
+  it('BANNER-LABEL takes a name and a busy state', () => {
+    render(
+      <Banner tone="info" role="status" label="Refreshing" busy>
+        Checking prices.
+      </Banner>,
+    );
+    const banner = screen.getByRole('status', { name: 'Refreshing' });
+    expect(banner).toHaveAttribute('aria-busy', 'true');
+  });
 });

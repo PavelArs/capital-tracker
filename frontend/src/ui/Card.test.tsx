@@ -47,4 +47,20 @@ describe('Card and CardHeader', () => {
     expect(container.querySelector('div.ui-card')).toHaveClass('ui-card--chart', 'extra');
     expect(container.querySelector('.ui-card-h__sub')).toBeNull();
   });
+
+  it('CARD-LABEL is a region named by aria-label, and says it is busy while it loads', () => {
+    const { rerender } = render(
+      <Card label="Nearest goal" busy>
+        <p>Rows</p>
+      </Card>,
+    );
+    const region = screen.getByRole('region', { name: 'Nearest goal' });
+    expect(region).toHaveAttribute('aria-busy', 'true');
+    rerender(
+      <Card label="Nearest goal">
+        <p>Rows</p>
+      </Card>,
+    );
+    expect(screen.getByRole('region', { name: 'Nearest goal' })).not.toHaveAttribute('aria-busy');
+  });
 });
