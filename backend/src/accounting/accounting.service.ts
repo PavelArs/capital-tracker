@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { stopTracking } from '../wallet-addresses/wallet-removal';
 import { lockAccountingOwner } from './accounting-lock';
 import {
@@ -18,6 +18,7 @@ import {
 } from './asset-classification';
 import {
   type AccountClass,
+  type AccountInput,
   parseAccount,
   parseAccountChange,
   parseHistoryQuery,
@@ -110,6 +111,54 @@ function queryNumber(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Makes an account once per request id; a repeated request returns the same account and a
+ * changed one is a conflict. A wallet added with its first address (WAL-INVALID) is made by the
+ * same rule inside that address's transaction.
+ */
+export async function insertAccount(
+  db: Pick<EntityManager, 'query'>,
+  owner: string,
+  value: AccountInput,
+): Promise<{ created: boolean; value: AccountSummary }> {
+  // The kind and the class join the payload only when sent, so an earlier request keeps its
+  // exact payload.
+  const payload = JSON.stringify({
+    name: value.name,
+    ...(value.kind ? { kind: value.kind } : {}),
+    ...(value.assetClass ? { assetClass: value.assetClass } : {}),
+  });
+  // Each optional column is named only when sent, so the database checks that build an
+  // account on a schema from before the column still work.
+  const optional: [string, string][] = [];
+  if (value.kind) optional.push(['kind', value.kind]);
+  if (value.assetClass) optional.push(['"assetClass"', value.assetClass]);
+  const rows: AccountRow[] = await db.query(
+    `INSERT INTO manual_accounts
+      (id,"ownerId","requestId","canonicalPayload",name${optional.map(([column]) => `,${column}`).join('')})
+      VALUES ($1,$2,$3,$4,$5${optional.map((_, index) => `,$${index + 6}`).join('')})
+      ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
+    [
+      randomUUID(),
+      owner,
+      value.requestId,
+      payload,
+      value.name,
+      ...optional.map(([, item]) => item),
+    ],
+  );
+  const row =
+    rows[0] ??
+    ((
+      await db.query(`SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND "requestId"=$2`, [
+        owner,
+        value.requestId,
+      ])
+    )[0] as AccountRow | undefined);
+  if (!row || row.canonicalPayload !== payload) throw conflict();
+  return { created: rows.length === 1, value: accountView(row) };
+}
+
 @Injectable()
 export class AccountingService {
   constructor(private readonly source: DataSource) {}
@@ -118,44 +167,7 @@ export class AccountingService {
     ownerId: string,
     input: unknown,
   ): Promise<{ created: boolean; value: AccountSummary }> {
-    const owner = parseUuid(ownerId);
-    const value = parseAccount(input);
-    // The kind and the class join the payload only when sent, so an earlier request keeps its
-    // exact payload.
-    const payload = JSON.stringify({
-      name: value.name,
-      ...(value.kind ? { kind: value.kind } : {}),
-      ...(value.assetClass ? { assetClass: value.assetClass } : {}),
-    });
-    // Each optional column is named only when sent, so the database checks that build an
-    // account on a schema from before the column still work.
-    const optional: [string, string][] = [];
-    if (value.kind) optional.push(['kind', value.kind]);
-    if (value.assetClass) optional.push(['"assetClass"', value.assetClass]);
-    const rows: AccountRow[] = await this.source.query(
-      `INSERT INTO manual_accounts
-      (id,"ownerId","requestId","canonicalPayload",name${optional.map(([column]) => `,${column}`).join('')})
-      VALUES ($1,$2,$3,$4,$5${optional.map((_, index) => `,$${index + 6}`).join('')})
-      ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
-      [
-        randomUUID(),
-        owner,
-        value.requestId,
-        payload,
-        value.name,
-        ...optional.map(([, item]) => item),
-      ],
-    );
-    const row =
-      rows[0] ??
-      ((
-        await this.source.query(
-          `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND "requestId"=$2`,
-          [owner, value.requestId],
-        )
-      )[0] as AccountRow | undefined);
-    if (!row || row.canonicalPayload !== payload) throw conflict();
-    return { created: rows.length === 1, value: accountView(row) };
+    return insertAccount(this.source, parseUuid(ownerId), parseAccount(input));
   }
 
   async createInstrument(

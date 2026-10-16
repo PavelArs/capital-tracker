@@ -1,12 +1,20 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { BadRequestException } from '@nestjs/common';
-import { parseFactorQuery, parseMonthlyChange, parsePersonalRate } from './inflation-input';
+import type { EntityManager } from 'typeorm';
+import { readEffectiveChanges } from './inflation.service';
+import {
+  parseFactorQuery,
+  parseMonthlyChange,
+  parsePersonalRate,
+  parseTypedMonth,
+} from './inflation-input';
 import {
   buildSeries,
   formatFactor,
   levelOn,
   officialFactor,
   personalFactor,
+  trailingYearEstimated,
   trailingYearPercent,
 } from './inflation-math';
 import {
@@ -88,6 +96,99 @@ describe('INFL-INDEX the level of prices', () => {
     expect(broken.chainStart).toBe('2024-12');
     expect(levelOn(broken, '2024-02-15')).toBeNull();
     expect(officialFactor(broken, '2025-01-15', '2025-02-15')?.factor).toBeCloseTo(1.01, 12);
+  });
+
+  // Published 2025-01 .. 2026-08 at 0.3% a month; the owner types October 2026 only.
+  const published = months('2025-01', Array(20).fill(0.3));
+  const typedLater = Object.assign(new Map<string, number>([...published, ['2026-10', 0.5]]), {
+    publishedLast: '2026-08',
+  });
+
+  it('settings-01 estimates an unpublished month before a typed one instead of breaking the chain', () => {
+    const gap = buildSeries(typedLater);
+    expect(gap.chainStart).toBe('2024-12');
+    expect(gap.last).toBe('2026-10');
+    expect(gap.estimatedMonths).toEqual(new Set(['2026-09']));
+    // September at the trailing twelve-month rate of the months before it, October as typed.
+    expect(gap.levels.get('2026-09')).toBeCloseTo(1.003 ** 21, 12);
+    expect(gap.levels.get('2026-10')).toBeCloseTo(1.003 ** 21 * 1.005, 12);
+    // The published stretch keeps its real figures and is not an estimate.
+    expect(officialFactor(gap, '2025-06-15', '2026-08-15')).toEqual({
+      factor: expect.closeTo(1.003 ** 14, 12),
+      estimated: false,
+    });
+    expect(officialFactor(gap, '2025-06-15', '2026-08-01')?.estimated).toBe(false);
+    // A span over the estimated month says so, even when it ends on the typed month.
+    expect(officialFactor(gap, '2026-08-15', '2026-10-15')).toEqual({
+      factor: expect.closeTo(1.003 * 1.005, 12),
+      estimated: true,
+    });
+    expect(officialFactor(gap, '2026-09-10', '2026-10-15')?.estimated).toBe(true);
+    // From the typed month's own span on, the estimated month no longer counts.
+    expect(officialFactor(gap, '2026-09-15', '2026-10-15')).toEqual({
+      factor: expect.closeTo(1.005, 12),
+      estimated: false,
+    });
+    expect(trailingYearPercent(gap)).toBeCloseTo((1.003 ** 11 * 1.005 - 1) * 100, 9);
+  });
+
+  it('settings-01 fills only months with no figure: published and typed months stay as they are', () => {
+    const typedBoth = Object.assign(new Map<string, number>([...typedLater, ['2026-09', 0.1]]), {
+      publishedLast: '2026-08',
+    });
+    const full = buildSeries(typedBoth);
+    expect(full.estimatedMonths.size).toBe(0);
+    expect(full.levels.get('2026-09')).toBeCloseTo(1.003 ** 20 * 1.001, 12);
+    // A gap inside the published months still breaks the chain, as a missing official month does.
+    const holed = new Map(published);
+    holed.delete('2025-06');
+    const broken = buildSeries(Object.assign(holed, { publishedLast: '2026-08' }));
+    expect(broken.chainStart).toBe('2025-06');
+    expect(broken.estimatedMonths.size).toBe(0);
+  });
+
+  it('settings-01 reads the latest published month with the owner months laid over', async () => {
+    const rows: Record<string, { month: string; changePercent: string }[]> = {
+      inflation_months: [
+        { month: '2026-07', changePercent: '0.300' },
+        { month: '2026-08', changePercent: '0.300' },
+      ],
+      inflation_manual_months: [
+        { month: '2026-08', changePercent: '0.900' },
+        { month: '2026-10', changePercent: '0.500' },
+      ],
+    };
+    const manager = {
+      query: async (sql: string) => rows[/FROM (\w+)/.exec(sql)?.[1] ?? ''] ?? [],
+    } as unknown as EntityManager;
+    const { changes } = await readEffectiveChanges(
+      manager,
+      '00000000-0000-4000-8000-000000000001',
+      'EUR',
+    );
+    expect(changes.publishedLast).toBe('2026-08');
+    // The priority between a typed and a published month is unchanged: the typed one is used.
+    expect(changes.get('2026-08')).toBe(0.9);
+    expect(buildSeries(changes).estimatedMonths).toEqual(new Set(['2026-09']));
+  });
+
+  it('B-P3-5 says when the twelve-month inflation takes in an estimated month', () => {
+    expect(trailingYearEstimated(buildSeries(typedLater))).toBe(true);
+    const typedBoth = Object.assign(new Map<string, number>([...typedLater, ['2026-09', 0.1]]), {
+      publishedLast: '2026-08',
+    });
+    expect(trailingYearEstimated(buildSeries(typedBoth))).toBe(false);
+    // An estimated month a full year back is the base of the year, not one of its twelve months.
+    const yearOn = Object.assign(new Map<string, number>(typedLater), { publishedLast: '2026-08' });
+    for (let index = 1; index <= 11; index++)
+      yearOn.set(`2027-${String(index).padStart(2, '0')}`, 0.2);
+    yearOn.set('2026-11', 0.2).set('2026-12', 0.2);
+    const later = buildSeries(yearOn);
+    expect(later.last).toBe('2027-11');
+    expect(later.estimatedMonths).toEqual(new Set(['2026-09']));
+    expect(trailingYearEstimated(later)).toBe(false);
+    expect(trailingYearEstimated(buildSeries(new Map()))).toBeNull();
+    expect(trailingYearEstimated(series)).toBeNull();
   });
 
   it('reports the twelve-month inflation only with twelve months of history', () => {
@@ -455,6 +556,22 @@ describe('INFL-INPUT owner input', () => {
     [null],
   ])('refuses the monthly change %j', (body) => {
     expect(() => parseMonthlyChange(body)).toThrow(BadRequestException);
+  });
+
+  it('B-P3-4 refuses a typed month after the current Moscow month', () => {
+    const now = new Date('2026-10-15T12:00:00.000Z');
+    expect(parseTypedMonth('2026-10', now)).toBe('2026-10');
+    expect(parseTypedMonth('1995-01', now)).toBe('1995-01');
+    expect(() => parseTypedMonth('2026-11', now)).toThrow(
+      'An inflation month cannot be after the current month',
+    );
+    expect(() => parseTypedMonth('2206-10', now)).toThrow(BadRequestException);
+    expect(() => parseTypedMonth('2026-13', now)).toThrow(BadRequestException);
+    // 21:00 UTC on the last day of October is already November in Moscow.
+    expect(parseTypedMonth('2026-11', new Date('2026-10-31T21:00:00.000Z'))).toBe('2026-11');
+    expect(() => parseTypedMonth('2026-11', new Date('2026-10-31T20:59:59.999Z'))).toThrow(
+      BadRequestException,
+    );
   });
 
   it('accepts an annual personal rate or its removal', () => {

@@ -7,7 +7,12 @@ import {
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
-import { type SyncResult, type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import {
+  type NewWalletAccount,
+  type SyncResult,
+  type WalletAddress,
+  walletAddressesApi,
+} from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -236,7 +241,7 @@ describe('WAL-LIST: wallets grouped by account', () => {
     const row = within(trustCard).getByRole('button', {
       name: `Trust Wallet BTC ${addresses.trust}`,
     });
-    expect(row).toHaveTextContent('bc1qar0s…wf5mdq');
+    expect(row).toHaveTextContent('bc1qar…5mdq');
     expect(row).toHaveTextContent('0.01 BTC');
     expect(row).toHaveTextContent('$800.00');
     expect(row).toHaveTextContent('Synced');
@@ -320,7 +325,7 @@ describe('WAL-LIST: wallets grouped by account', () => {
       name: `Trust Wallet BTC ${addresses.trust}`,
     });
     expect(row).toHaveClass('ui-row');
-    expect(row).toHaveTextContent('bc1qar0s…wf5mdq · Synced');
+    expect(row).toHaveTextContent('bc1qar…5mdq · Synced');
     expect(row).toHaveTextContent('0.01 BTC$800.00');
   });
 });
@@ -488,13 +493,13 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
 
   it('W1 sends the chosen kind with a new wallet; a changed kind is a new request', async () => {
     setup([]);
-    const create = vi
-      .spyOn(accountingApi, 'createAccount')
-      .mockResolvedValue(account(id(12), 'Ledger', 'hardware'));
-    vi.spyOn(walletAddressesApi, 'add')
+    // wallets-01: the new wallet travels with its address, in the same request.
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
       .mockRejectedValueOnce(new Error('offline'))
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValue({ created: false, address: wallet(4, { accountId: id(12) }) });
+    const sent = (call: number) => add.mock.calls[call][0].newAccount as NewWalletAccount;
     const user = userEvent.setup();
     const dialog = await openAddWallet(user);
     await user.type(within(dialog).getByLabelText('Bitcoin wallet address'), addresses.fresh);
@@ -504,24 +509,21 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
-    expect(create.mock.calls[0][0]).toEqual(create.mock.calls[1][0]);
-    expect(create.mock.calls[0][0]).toMatchObject({ name: 'Ledger', kind: 'hardware' });
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(2));
+    expect(sent(0)).toEqual(sent(1));
+    expect(sent(0)).toMatchObject({ name: 'Ledger', kind: 'hardware' });
     await within(dialog).findByRole('alert');
     // Another kind for the same name cannot reuse the earlier request.
     await user.selectOptions(within(dialog).getByLabelText(/How you hold it/), 'software');
     await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(3));
-    expect(create.mock.calls[2][0]).toMatchObject({ name: 'Ledger', kind: 'software' });
-    expect(create.mock.calls[2][0].requestId).not.toBe(create.mock.calls[0][0].requestId);
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(3));
+    expect(sent(2)).toMatchObject({ name: 'Ledger', kind: 'software' });
+    expect(sent(2).requestId).not.toBe(sent(0).requestId);
   });
 
   it('W1 leaves the kind out when none is chosen, and for a wallet that already exists', async () => {
     setup([]);
-    const create = vi
-      .spyOn(accountingApi, 'createAccount')
-      .mockResolvedValue(account(id(12), 'Ledger', null));
-    vi.spyOn(walletAddressesApi, 'add').mockResolvedValue({
+    const add = vi.spyOn(walletAddressesApi, 'add').mockResolvedValue({
       created: false,
       address: wallet(4, { accountId: id(12) }),
     });
@@ -534,19 +536,14 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     await user.clear(within(dialog).getByLabelText(/^Wallet/));
     await user.type(within(dialog).getByLabelText(/^Wallet/), 'Ledger');
     await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-    expect(create.mock.calls[0][0]).not.toHaveProperty('kind');
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
+    expect(add.mock.calls[0][0].newAccount).toMatchObject({ name: 'Ledger' });
+    expect(add.mock.calls[0][0].newAccount).not.toHaveProperty('kind');
   });
 
   it('creates a new wallet once for the typed name', async () => {
     setup([]);
-    const create = vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({
-      id: id(12),
-      name: 'Ledger',
-      kind: null,
-      currentRevision: 1,
-      createdAt: '',
-    });
+    const create = vi.spyOn(accountingApi, 'createAccount');
     const add = vi
       .spyOn(walletAddressesApi, 'add')
       .mockRejectedValueOnce(new Error('offline'))
@@ -563,13 +560,14 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     );
     await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull());
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls[0][0].requestId).toBe(create.mock.calls[1][0].requestId);
-    expect(create.mock.calls[0][0].name).toBe('Ledger');
+    // wallets-01: one request carries the new wallet; a retry repeats its request id.
+    expect(create).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(add.mock.calls[0][0]).toEqual(add.mock.calls[1][0]);
     expect(add).toHaveBeenLastCalledWith({
       network: 'bitcoin',
       address: addresses.fresh,
-      accountId: id(12),
+      newAccount: { requestId: expect.any(String), name: 'Ledger' },
     });
   });
 
@@ -944,7 +942,7 @@ describe('M14: Ethereum wallets', () => {
     expect(staking).toHaveTextContent('Rewards so far0.002 ETH');
     const list = within(staking).getByRole('list', { name: 'Staking pools' });
     const [item] = within(list).getAllByRole('listitem');
-    expect(item).toHaveTextContent('0x7c7c7c…7c7c7c');
+    expect(item).toHaveTextContent('0x7c7…7c7c');
     expect(item).toHaveTextContent('ocsETH staking pool');
     expect(item).toHaveTextContent('Active');
     expect(staking).toHaveTextContent('moving it into a staking pool or back is not a sale');
@@ -1158,8 +1156,8 @@ describe('M15: Solana wallets', () => {
     expect(staking).toHaveTextContent('Staked10.04 SOL');
     expect(staking).toHaveTextContent('Rewards so far0.04 SOL');
     const [item] = within(staking).getAllByRole('listitem');
-    expect(item).toHaveTextContent('StakeAcc…111111');
-    expect(item).toHaveTextContent('Validator Vote8Syn…111111');
+    expect(item).toHaveTextContent('StakeA…1111');
+    expect(item).toHaveTextContent('Validator Vote8S…1111');
     expect(item).toHaveTextContent('10.04 SOL');
     expect(item).toHaveTextContent('Active');
     expect(staking).toHaveTextContent('moving it into a stake account or back is not a sale');
@@ -1567,9 +1565,7 @@ describe('M22: Bybit accounts', () => {
       .spyOn(walletAddressesApi, 'add')
       .mockResolvedValue({ created: true, address: added });
     const sync = vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
-    const create = vi
-      .spyOn(accountingApi, 'createAccount')
-      .mockResolvedValue({ id: bybit } as never);
+    const create = vi.spyOn(accountingApi, 'createAccount');
     const user = userEvent.setup();
     const dialog = await openBybit(user);
     expect(dialog).toHaveTextContent(
@@ -1592,12 +1588,15 @@ describe('M22: Bybit accounts', () => {
     expect(dialog).not.toHaveTextContent(apiSecret);
     await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(add).toHaveBeenCalledWith({ network: 'bybit', apiKey, apiSecret, accountId: bybit });
+    // W1: a new Bybit account starts as an exchange; wallets-01: it is made with the key.
+    expect(add).toHaveBeenCalledWith({
+      network: 'bybit',
+      apiKey,
+      apiSecret,
+      newAccount: { requestId: expect.any(String), name: 'Bybit', kind: 'exchange' },
+    });
+    expect(create).not.toHaveBeenCalled();
     expect(sync).toHaveBeenCalledWith(added.id);
-    // W1: a new Bybit account starts as an exchange.
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Bybit', kind: 'exchange' }),
-    );
   });
 
   it('BYBIT-KEY shows why the server refused a key and keeps the form', async () => {
@@ -2425,5 +2424,339 @@ describe('DRAWER-DUST: dust stays out of the blockchain transactions of an addre
     ).getByRole('region', { name: 'Blockchain transactions' });
     await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
     expect(within(section).queryByRole('link', { name: /Sent|Received/ })).toBeNull();
+  });
+});
+
+describe('UI audit: Wallets', () => {
+  // An axios failure as the client sees it: a status when the server answered, none when not.
+  const failure = (status?: number) =>
+    Object.assign(new Error('failed'), {
+      isAxiosError: true,
+      response: status === undefined ? undefined : { status, data: {} },
+    });
+  const failing = () =>
+    wallet(1, {
+      sync: {
+        ...wallet(1, {}).sync,
+        status: 'failed',
+        errorMessage: 'Bitcoin data is temporarily unavailable.',
+      },
+    });
+  const keyApi = 'SyntheticKey0001';
+  const keySecret = 'SyntheticSecret000000000000001';
+  const openNetwork = async (user: ReturnType<typeof userEvent.setup>, network: RegExp) => {
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: network }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    return dialog;
+  };
+
+  it('wallets-01 sends a new wallet with its address in one request, so a refused address leaves none', async () => {
+    setup([]);
+    const create = vi.spyOn(accountingApi, 'createAccount');
+    const add = vi.spyOn(walletAddressesApi, 'add').mockRejectedValue(failure(400));
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    await user.type(within(dialog).getByLabelText('Bitcoin wallet address'), addresses.fresh);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText(/^Wallet/), 'Ledger');
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This is not a valid Bitcoin address',
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith({
+      network: 'bitcoin',
+      address: addresses.fresh,
+      newAccount: { requestId: expect.any(String), name: 'Ledger' },
+    });
+  });
+
+  it('wallets-01 moves an address into a new wallet in one request, so a refused save leaves none', async () => {
+    const loose = wallet(2, { accountId: null, label: null, address: addresses.loose });
+    setup([loose]);
+    const create = vi.spyOn(accountingApi, 'createAccount');
+    const update = vi.spyOn(walletAddressesApi, 'update').mockRejectedValue(failure(404));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Bitcoin ${addresses.loose}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Bitcoin address' });
+    await user.selectOptions(within(drawer).getByLabelText('Wallet'), 'New wallet…');
+    await user.type(within(drawer).getByLabelText('New wallet name'), 'Ledger');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByText(/no longer exists/)).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(loose.id, {
+      newAccount: { requestId: expect.any(String), name: 'Ledger' },
+      label: null,
+    });
+  });
+
+  it('wallets-02 keeps the keyboard on the row after Retry now and announces the result', async () => {
+    setup([failing()]);
+    let finish: (result: SyncResult) => void = () => undefined;
+    vi.spyOn(walletAddressesApi, 'sync').mockReturnValue(
+      new Promise((resolve) => (finish = resolve)),
+    );
+    const user = userEvent.setup();
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    await user.click(within(trustCard).getByRole('button', { name: 'Retry now' }));
+    expect(
+      within(trustCard).getByRole('button', { name: `Trust Wallet BTC ${addresses.trust}` }),
+    ).toHaveFocus();
+    finish(synced(wallet(1, {})));
+    expect(await screen.findByText('Trust Wallet BTC is synced.')).toHaveAttribute(
+      'role',
+      'status',
+    );
+  });
+
+  it('wallets-20 tells a sync the server answered with 500 from one that got no answer', async () => {
+    setup([failing()]);
+    const sync = vi.spyOn(walletAddressesApi, 'sync').mockRejectedValueOnce(failure(500));
+    const user = userEvent.setup();
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    await user.click(within(trustCard).getByRole('button', { name: 'Retry now' }));
+    // wallets-02: a failure the owner just caused is announced.
+    expect(await within(trustCard).findByRole('alert')).toHaveTextContent(
+      /^The server could not finish the sync\. Try again\./,
+    );
+    sync.mockRejectedValueOnce(failure());
+    await user.click(within(trustCard).getByRole('button', { name: 'Retry now' }));
+    await waitFor(() =>
+      expect(within(trustCard).getByRole('alert')).toHaveTextContent(
+        /^Could not reach the server\. Try again\./,
+      ),
+    );
+  });
+
+  it('wallets-13 shows a failed source as an amber note with an alert icon', async () => {
+    setup([failing()]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const note = within(trustCard)
+      .getByText(/^Bitcoin data is temporarily unavailable\./)
+      .closest('.wallets-message');
+    expect(note).toHaveClass('ui-banner--warn');
+    expect(note).not.toHaveClass('ui-banner--neg');
+    expect(note?.querySelector('svg.shell-icon')).not.toBeNull();
+  });
+
+  it('wallets-07 confirms a new wallet, never lists its address as not in a wallet, and moves to it', async () => {
+    setup([]);
+    const ledger = id(12);
+    const added = wallet(3, {
+      address: addresses.fresh,
+      accountId: ledger,
+      label: null,
+      transactionCount: 0,
+      chainBalance: null,
+      sync: { ...wallet(3, {}).sync, state: 'never', completedAt: null },
+    });
+    const valuation = portfolio();
+    valuation.accounts.push({
+      accountId: ledger,
+      name: 'Ledger',
+      coverage: 'not-started',
+      pricedValue: null,
+      missingPriceCount: 0,
+    });
+    vi.spyOn(walletAddressesApi, 'add').mockImplementation(async () => {
+      vi.mocked(walletAddressesApi.list).mockResolvedValue([added]);
+      vi.mocked(portfolioValuationApi.get).mockResolvedValue(valuation);
+      return { created: true, address: added };
+    });
+    vi.spyOn(walletAddressesApi, 'sync').mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    await user.type(within(dialog).getByLabelText('Bitcoin wallet address'), addresses.fresh);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText(/^Wallet/), 'Ledger');
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('region', { name: 'Not in a wallet yet' })).toBeNull();
+    const ledgerCard = await screen.findByRole('region', { name: 'Ledger' });
+    expect(screen.queryByRole('region', { name: 'Not in a wallet yet' })).toBeNull();
+    await waitFor(() =>
+      expect(within(ledgerCard).getByRole('link', { name: 'Ledger' })).toHaveFocus(),
+    );
+    expect(screen.getByText('Wallet added. Syncing transactions…')).toHaveAttribute(
+      'role',
+      'status',
+    );
+  });
+
+  it("wallets-07 still shows a new wallet's address when the page cannot reload after adding it", async () => {
+    setup([]);
+    const added = wallet(3, {
+      address: addresses.fresh,
+      accountId: id(12),
+      label: null,
+      transactionCount: 0,
+      chainBalance: null,
+      sync: { ...wallet(3, {}).sync, state: 'never', completedAt: null },
+    });
+    vi.spyOn(walletAddressesApi, 'add').mockImplementation(async () => {
+      vi.mocked(walletAddressesApi.list).mockRejectedValue(new Error('offline'));
+      return { created: true, address: added };
+    });
+    vi.spyOn(walletAddressesApi, 'sync').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    await user.type(within(dialog).getByLabelText('Bitcoin wallet address'), addresses.fresh);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText(/^Wallet/), 'Ledger');
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The address the server saved stays on the page until a reload can place it in its wallet.
+    expect(
+      await screen.findByRole('button', { name: new RegExp(addresses.fresh) }),
+    ).toBeInTheDocument();
+  });
+
+  it('wallets-08 offers to connect the Bybit API from a Bybit wallet tracked by hand', async () => {
+    const bybit = id(13);
+    const valuation = portfolio();
+    valuation.accounts.push({
+      accountId: bybit,
+      name: 'Bybit',
+      coverage: 'covered',
+      pricedValue: '50',
+      missingPriceCount: 0,
+    });
+    valuation.assets[1].holdings.push({
+      accountId: bybit,
+      accountName: 'Bybit',
+      quantity: '50',
+      value: '50',
+    });
+    setup([wallet(1, {})], valuation, {}, [], '/wallets', [account(bybit, 'Bybit', 'exchange')]);
+    const user = userEvent.setup();
+    const bybitCard = await screen.findByRole('region', { name: 'Bybit' });
+    // Another wallet tracked by hand is not a Bybit account.
+    expect(
+      within(card('Trust Wallet')).queryByRole('button', { name: 'Connect Bybit API' }),
+    ).toBeNull();
+    await user.click(within(bybitCard).getByRole('button', { name: 'Connect Bybit API' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    expect(within(dialog).getByText('Step 2 of 3')).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('API key'), keyApi);
+    await user.type(within(dialog).getByLabelText('API secret'), keySecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByLabelText(/^Wallet/)).toHaveValue('Bybit');
+  });
+
+  it('wallets-08 connects the Bybit wallet it was opened from, not another of the same name', async () => {
+    const ledger = id(14);
+    const bybit = id(13);
+    const valuation = portfolio();
+    for (const accountId of [ledger, bybit]) {
+      valuation.accounts.push({
+        accountId,
+        name: 'Bybit',
+        coverage: 'covered',
+        pricedValue: '50',
+        missingPriceCount: 0,
+      });
+      valuation.assets[1].holdings.push({
+        accountId,
+        accountName: 'Bybit',
+        quantity: '25',
+        value: '25',
+      });
+    }
+    setup([wallet(1, {})], valuation, {}, [], '/wallets', [
+      account(ledger, 'Bybit', 'hardware'),
+      account(bybit, 'Bybit', null),
+    ]);
+    const add = vi.spyOn(walletAddressesApi, 'add').mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByRole('region', { name: 'Bybit' })).toHaveLength(2));
+    const [hardware, unset] = screen.getAllByRole('region', { name: 'Bybit' });
+    // A hardware wallet named Bybit is no Bybit account; one without a kind may be.
+    await waitFor(() =>
+      expect(within(unset).getByRole('button', { name: 'Connect Bybit API' })).toBeVisible(),
+    );
+    expect(within(hardware).queryByRole('button', { name: 'Connect Bybit API' })).toBeNull();
+    await user.click(within(unset).getByRole('button', { name: 'Connect Bybit API' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.type(within(dialog).getByLabelText('API key'), keyApi);
+    await user.type(within(dialog).getByLabelText('API secret'), keySecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ accountId: bybit }));
+  });
+
+  it('wallets-09 describes each row with its balance, value and sync status', async () => {
+    setup([wallet(1, {})]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', {
+      name: `Trust Wallet BTC ${addresses.trust}`,
+    });
+    expect(row).toHaveAccessibleDescription(/0\.01 BTC.*\$800\.00.*Synced.*8 min ago/);
+  });
+
+  it('wallets-12 shows the design short form with the full address as its tooltip', async () => {
+    setup([wallet(1, {})]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const place = within(trustCard).getAllByText('bc1qar…5mdq')[0];
+    expect(place).toHaveAttribute('title', addresses.trust);
+  });
+
+  it('wallets-04 puts the keyboard on the address a failed Continue refused, and says why aloud', async () => {
+    setup([]);
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    const field = within(dialog).getByLabelText('Bitcoin wallet address');
+    await user.type(field, 'bc1qinvalidsyntheticaddress');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(field).toHaveFocus();
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'This is not a valid Bitcoin address',
+    );
+  });
+
+  it('wallets-04 puts the keyboard on the Bybit key a failed Continue refused', async () => {
+    setup([]);
+    const user = userEvent.setup();
+    const dialog = await openNetwork(user, /^Bybit/);
+    await user.type(within(dialog).getByLabelText('API secret'), keySecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByLabelText('API key')).toHaveFocus();
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Paste the API key.');
+  });
+
+  it('wallets-06 offers to switch to the network the address belongs to', async () => {
+    setup([]);
+    const user = userEvent.setup();
+    const dialog = await openNetwork(user, /^Ethereum/);
+    await user.type(within(dialog).getByLabelText('Ethereum wallet address'), addresses.trust);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Switch to Bitcoin' }));
+    expect(within(dialog).getByLabelText('Bitcoin wallet address')).toHaveValue(addresses.trust);
+    expect(within(dialog).getByText('Native SegWit address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByText('Step 3 of 3')).toBeInTheDocument();
+  });
+
+  it('wallets-14 shows and hides the API secret', async () => {
+    setup([]);
+    const user = userEvent.setup();
+    const dialog = await openNetwork(user, /^Bybit/);
+    const secret = within(dialog).getByLabelText('API secret');
+    expect(secret).toHaveAttribute('type', 'password');
+    await user.click(within(dialog).getByRole('button', { name: 'Show secret' }));
+    expect(secret).toHaveAttribute('type', 'text');
+    await user.click(within(dialog).getByRole('button', { name: 'Hide secret' }));
+    expect(secret).toHaveAttribute('type', 'password');
+  });
+
+  it('wallets-21 says which wallet was removed and puts the keyboard on that message', async () => {
+    setup([wallet(1, {})], portfolio(), {}, [], {
+      pathname: '/wallets',
+      state: { removedWallet: 'Old wallet' },
+    });
+    const said = await screen.findByText('Old wallet was removed.');
+    expect(said).toHaveAttribute('role', 'status');
+    await waitFor(() => expect(said).toHaveFocus());
   });
 });

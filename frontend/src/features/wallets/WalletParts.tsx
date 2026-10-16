@@ -14,7 +14,7 @@ import type {
   WalletAddress,
 } from '@api/wallet-addresses.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import Badge from '@/ui/Badge';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { dayText } from '@/utils/dates';
@@ -42,12 +42,23 @@ export interface Holding {
   value: string | null;
 }
 
+/**
+ * What one account holds, largest value first (wallets-11): the order is this account's, not
+ * the whole portfolio's. A holding without a value comes last; Number() only orders them.
+ */
 export function holdingsOf(portfolio: PortfolioValuation, accountId: string): Holding[] {
-  return portfolio.assets.flatMap((asset) =>
-    asset.holdings
-      .filter((holding) => holding.accountId === accountId && Number(holding.quantity) !== 0)
-      .map((holding) => ({ asset, quantity: holding.quantity, value: holding.value })),
-  );
+  return portfolio.assets
+    .flatMap((asset) =>
+      asset.holdings
+        .filter((holding) => holding.accountId === accountId && Number(holding.quantity) !== 0)
+        .map((holding) => ({ asset, quantity: holding.quantity, value: holding.value })),
+    )
+    .sort(
+      (left, right) =>
+        Number(right.value !== null) - Number(left.value !== null) ||
+        Number(right.value ?? 0) - Number(left.value ?? 0) ||
+        ticker(left.asset).localeCompare(ticker(right.asset), 'en'),
+    );
 }
 
 const ticker = (asset: AssetValuation) => asset.symbol ?? asset.name;
@@ -418,10 +429,12 @@ export function MoreCoins({
 // Staked SOL and coins in liquidity pools are already in the amounts; muted lines under them
 // say how much.
 function ChainAmounts({
+  id,
   address,
   stacked,
   expanded,
 }: {
+  id?: string;
   address: WalletAddress;
   stacked: boolean;
   expanded: boolean;
@@ -440,7 +453,7 @@ function ChainAmounts({
     ));
   if (stacked)
     return (
-      <span className="ui-row__amount wallets-stack">
+      <span id={id} className="ui-row__amount wallets-stack">
         {pieces.map((piece) => (
           <span key={piece}>{piece}</span>
         ))}
@@ -448,7 +461,7 @@ function ChainAmounts({
       </span>
     );
   return (
-    <span className="wallets-amounts">
+    <span id={id} className="wallets-amounts">
       {pieces.flatMap((piece, index) => [
         index ? ' ' : null,
         <span key={piece} className="wallets-num">
@@ -483,6 +496,16 @@ export function AddressRow({
   const name = address.label ?? network.name;
   const when = syncAge(address, run);
   const problem = syncProblem(address, run);
+  // wallets-02: the button that starts a sync goes away while it runs, so the keyboard moves to
+  // the row first; the row then says "Syncing".
+  const openRef = useRef<HTMLButtonElement>(null);
+  const start = () => {
+    openRef.current?.focus();
+    onSync();
+  };
+  // wallets-09: the row is named by its name and full address and described by what it shows.
+  const detailsId = useId();
+  const described = `${detailsId}-amounts ${detailsId}-value ${detailsId}-status`;
   const loading =
     address.sync.state !== 'complete' &&
     (run?.state === 'running' || (run === undefined && address.sync.status === 'syncing'));
@@ -492,9 +515,15 @@ export function AddressRow({
       background, so you can leave this page.
     </div>
   ) : problem ? (
-    <div className="ui-banner ui-banner--neg wallets-message">
+    // wallets-13: an amber note with an alert icon. A sync the owner just ran is said aloud
+    // (wallets-02); a failure the background job stored is only shown.
+    <div
+      className="ui-banner ui-banner--warn wallets-message"
+      role={run?.state === 'failed' ? 'alert' : undefined}
+    >
+      <Icon name="alert" className="shell-icon wallets-message__icon" />
       <span>{problem}</span>
-      <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
+      <button type="button" className="shell-button shell-button--secondary" onClick={start}>
         <Icon name="refresh" className="shell-icon shell-icon--sm" />
         Retry now
       </button>
@@ -506,7 +535,7 @@ export function AddressRow({
           ? 'Part of the history is loaded; the balance appears when the rest is.'
           : 'The transaction history is not loaded yet.'}
       </span>
-      <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
+      <button type="button" className="shell-button shell-button--secondary" onClick={start}>
         {address.sync.state === 'partial' ? 'Continue loading' : 'Load history'}
       </button>
     </div>
@@ -525,13 +554,31 @@ export function AddressRow({
   if (narrow) {
     return (
       <li className="wallets-source">
-        <button type="button" className={rowClass()} aria-label={label} onClick={onOpen}>
+        <button
+          ref={openRef}
+          type="button"
+          className={rowClass()}
+          aria-label={label}
+          aria-describedby={described}
+          onClick={onOpen}
+        >
           <AssetIcon {...networkIcon(network)} />
           <ListRowText
             title={name}
-            detail={`${derived ?? place(address)} · ${syncBadge(address, run).label}`}
-            amount={<ChainAmounts address={address} stacked expanded={expanded} />}
-            value={addressValue(address, prices, currency)}
+            detail={
+              <span id={`${detailsId}-status`} className="ui-row__detail">
+                {derived ?? place(address)} · {syncBadge(address, run).label}
+              </span>
+            }
+            amount={
+              <ChainAmounts
+                id={`${detailsId}-amounts`}
+                address={address}
+                stacked
+                expanded={expanded}
+              />
+            }
+            value={<span id={`${detailsId}-value`}>{addressValue(address, prices, currency)}</span>}
           />
         </button>
         {more}
@@ -544,7 +591,14 @@ export function AddressRow({
   const copyable = !network.exchange;
   return (
     <li className={copyable ? 'wallets-source wallets-source--copy' : 'wallets-source'}>
-      <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
+      <button
+        ref={openRef}
+        type="button"
+        className="wallets-source__open"
+        aria-label={label}
+        aria-describedby={described}
+        onClick={onOpen}
+      >
         <span className="wallets-asset">
           <AssetIcon {...networkIcon(network)} size="sm" />
           <span className="wallets-asset__text">
@@ -552,10 +606,19 @@ export function AddressRow({
             {derived && <span className="portfolio-sub">{derived}</span>}
           </span>
         </span>
-        <span className="wallets-mono wallets-soft">{place(address)}</span>
-        <ChainAmounts address={address} stacked={false} expanded={expanded} />
-        <span className="wallets-num wallets-right">{addressValue(address, prices, currency)}</span>
-        <span className="wallets-right wallets-status">
+        <span className="wallets-mono wallets-soft" title={address.address}>
+          {place(address)}
+        </span>
+        <ChainAmounts
+          id={`${detailsId}-amounts`}
+          address={address}
+          stacked={false}
+          expanded={expanded}
+        />
+        <span id={`${detailsId}-value`} className="wallets-num wallets-right">
+          {addressValue(address, prices, currency)}
+        </span>
+        <span id={`${detailsId}-status`} className="wallets-right wallets-status">
           <SyncBadge address={address} run={run} />
           {when && <span className="wallets-muted">{when}</span>}
         </span>
@@ -563,7 +626,7 @@ export function AddressRow({
       {copyable && (
         <div className="wallets-source__copy">
           <span className="wallets-source__copy-cell">
-            <span className="wallets-mono wallets-soft" aria-hidden="true">
+            <span className="wallets-mono wallets-soft" aria-hidden="true" title={address.address}>
               {place(address)}
             </span>
             <CopyButton value={address.address} label={`Copy address of ${name}`} />
@@ -580,10 +643,13 @@ export function ManualRow({
   holdings,
   currency,
   narrow,
+  onConnect,
 }: {
   holdings: Holding[];
   currency: AccountingCurrency;
   narrow: boolean;
+  /** wallets-08: a Bybit account kept by hand can read itself through the read-only API. */
+  onConnect?: () => void;
 }) {
   const names = holdings.map((holding) => ticker(holding.asset)).join(', ');
   // Each coin is one unbreakable piece, so a long list wraps between coins inside its column.
@@ -609,6 +675,11 @@ export function ManualRow({
       ))}
     </span>
   );
+  const connect = onConnect && (
+    <button type="button" className="portfolio-link" onClick={onConnect}>
+      Connect Bybit API
+    </button>
+  );
   if (narrow) {
     return (
       <li className="wallets-source wallets-source--manual">
@@ -616,6 +687,7 @@ export function ManualRow({
           {icons}
           <ListRowText title={names} detail="Tracked by hand" amount={value} />
         </div>
+        {connect && <div className="wallets-more">{connect}</div>}
       </li>
     );
   }
@@ -626,7 +698,7 @@ export function ManualRow({
         <span>{names} tracked by hand</span>
         <span className="wallets-amounts">{amounts}</span>
         <span className="wallets-num wallets-right">{value}</span>
-        <span className="wallets-right wallets-muted">From your transactions</span>
+        <span className="wallets-right wallets-muted">{connect ?? 'From your transactions'}</span>
       </div>
     </li>
   );
@@ -796,4 +868,21 @@ export function leftOutSymbols(
 /** Holdings the account's addresses already show from the chain are not listed again. */
 export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
   return new Set(addresses.flatMap(addressAssets));
+}
+
+/**
+ * wallets-08: a wallet named after Bybit, held as an exchange account (or not said how), that no
+ * Bybit API key reads yet; it can be connected. Bybit is the only exchange the app reads, so
+ * another exchange's wallet, or a hardware wallet with Bybit in its name, is not offered this.
+ */
+export function connectsBybit(
+  name: string,
+  addresses: WalletAddress[],
+  kind: WalletKind | null,
+): boolean {
+  return (
+    (kind === null || kind === 'exchange') &&
+    /\bbybit\b/i.test(name) &&
+    !addresses.some((address) => address.network === 'bybit')
+  );
 }

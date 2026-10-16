@@ -1,6 +1,7 @@
 import type { WalletKind } from '@api/accounting.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { ChainBalance, WalletAddress } from '@api/wallet-addresses.api';
+import { shortValue } from '../shell/CopyValue';
 import { isEvm } from '../shell/evm-networks';
 import { addressAssets, networkOf } from './networks';
 
@@ -165,7 +166,8 @@ export function gapAddress(
 
 export type AddressCheck =
   | { ok: true; address: string; kind: string }
-  | { ok: false; message: string; secret?: true };
+  /** `switchTo`: the network the address belongs to, offered as a switch (wallets-06). */
+  | { ok: false; message: string; secret?: true; switchTo?: WalletAddress['network'] };
 
 const SEED_PHRASE =
   'This looks like a seed phrase. Never share it: the app needs only the public address.';
@@ -253,8 +255,21 @@ const looksStellar = (value: string) => /^G[A-Z2-7]{55}$/.test(value);
 const looksZcash = (value: string) =>
   /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/.test(value) && base58Length(value) === 26;
 
-const otherNetwork = (network: string, other: string) =>
-  `This is not a ${network} address: it looks like a${other === 'Ethereum' ? 'n' : ''} ${other} address. Go back and pick ${other} to track it.`;
+type MainNetwork = 'Bitcoin' | 'Ethereum' | 'Solana' | 'Tron' | 'Stellar' | 'Zcash';
+
+/** An address of another network: says which, and offers to switch to it. */
+const otherNetwork = (network: string, other: MainNetwork): AddressCheck => ({
+  ok: false,
+  message: `This is not a${network === 'Ethereum' ? 'n' : ''} ${network} address: it looks like a${other === 'Ethereum' ? 'n' : ''} ${other} address.`,
+  switchTo: other.toLowerCase() as WalletAddress['network'],
+});
+
+/** "This looks like a Tron address.": the Bitcoin field's words for another network's address. */
+const looksLike = (other: MainNetwork): AddressCheck => ({
+  ok: false,
+  message: `This looks like a${other === 'Ethereum' ? 'n' : ''} ${other} address.`,
+  switchTo: other.toLowerCase() as WalletAddress['network'],
+});
 
 /** TRON-ADD: the server verifies the checksum; the hex form is refused with a hint. */
 export function checkTronAddress(raw: string): AddressCheck {
@@ -269,14 +284,13 @@ export function checkTronAddress(raw: string): AddressCheck {
       ok: false,
       message: 'This is the hex form of a Tron address. Paste the address that starts with T.',
     };
-  if (/^0x[0-9a-f]{40}$/i.test(value))
-    return { ok: false, message: otherNetwork('Tron', 'Ethereum') };
-  if (looksStellar(value)) return { ok: false, message: otherNetwork('Tron', 'Stellar') };
-  if (looksZcash(value)) return { ok: false, message: otherNetwork('Tron', 'Zcash') };
+  if (/^0x[0-9a-f]{40}$/i.test(value)) return otherNetwork('Tron', 'Ethereum');
+  if (looksStellar(value)) return otherNetwork('Tron', 'Stellar');
+  if (looksZcash(value)) return otherNetwork('Tron', 'Zcash');
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
-    return { ok: false, message: otherNetwork('Tron', 'Bitcoin') };
+    return otherNetwork('Tron', 'Bitcoin');
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value) && base58Length(value) === 32)
-    return { ok: false, message: otherNetwork('Tron', 'Solana') };
+    return otherNetwork('Tron', 'Solana');
   return {
     ok: false,
     message: 'This is not a valid Tron address. Check that it was copied in full.',
@@ -309,12 +323,11 @@ export function checkZcashAddress(raw: string): AddressCheck {
     };
   if (/^tm[1-9A-HJ-NP-Za-km-z]{33}$/.test(value))
     return { ok: false, message: 'Testnet addresses are not tracked. Paste a mainnet address.' };
-  if (looksTron(value)) return { ok: false, message: otherNetwork('Zcash', 'Tron') };
-  if (/^0x[0-9a-f]{40}$/i.test(value))
-    return { ok: false, message: otherNetwork('Zcash', 'Ethereum') };
+  if (looksTron(value)) return otherNetwork('Zcash', 'Tron');
+  if (/^0x[0-9a-f]{40}$/i.test(value)) return otherNetwork('Zcash', 'Ethereum');
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
-    return { ok: false, message: otherNetwork('Zcash', 'Bitcoin') };
-  if (looksStellar(value)) return { ok: false, message: otherNetwork('Zcash', 'Stellar') };
+    return otherNetwork('Zcash', 'Bitcoin');
+  if (looksStellar(value)) return otherNetwork('Zcash', 'Stellar');
   return {
     ok: false,
     message: 'This is not a valid Zcash address. Check that it was copied in full.',
@@ -334,14 +347,13 @@ export function checkStellarAddress(raw: string): AddressCheck {
       message:
         'This is a muxed address, used by exchanges for one customer. Paste the account address that starts with G.',
     };
-  if (looksTron(value)) return { ok: false, message: otherNetwork('Stellar', 'Tron') };
-  if (looksZcash(value)) return { ok: false, message: otherNetwork('Stellar', 'Zcash') };
-  if (/^0x[0-9a-f]{40}$/i.test(value))
-    return { ok: false, message: otherNetwork('Stellar', 'Ethereum') };
+  if (looksTron(value)) return otherNetwork('Stellar', 'Tron');
+  if (looksZcash(value)) return otherNetwork('Stellar', 'Zcash');
+  if (/^0x[0-9a-f]{40}$/i.test(value)) return otherNetwork('Stellar', 'Ethereum');
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
-    return { ok: false, message: otherNetwork('Stellar', 'Bitcoin') };
+    return otherNetwork('Stellar', 'Bitcoin');
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value) && base58Length(value) === 32)
-    return { ok: false, message: otherNetwork('Stellar', 'Solana') };
+    return otherNetwork('Stellar', 'Solana');
   return {
     ok: false,
     message: 'This is not a valid Stellar address. Check that it was copied in full.',
@@ -356,21 +368,12 @@ export function checkSolanaAddress(raw: string): AddressCheck {
   // Base58 is case-sensitive: the address is kept exactly as pasted.
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value) && base58Length(value) === 32)
     return { ok: true, address: value, kind: 'Solana address' };
-  if (/^0x[0-9a-f]{40}$/i.test(value))
-    return {
-      ok: false,
-      message:
-        'This is not a Solana address: it looks like an Ethereum address. Go back and pick Ethereum to track it.',
-    };
-  if (looksTron(value)) return { ok: false, message: otherNetwork('Solana', 'Tron') };
-  if (looksStellar(value)) return { ok: false, message: otherNetwork('Solana', 'Stellar') };
-  if (looksZcash(value)) return { ok: false, message: otherNetwork('Solana', 'Zcash') };
+  if (/^0x[0-9a-f]{40}$/i.test(value)) return otherNetwork('Solana', 'Ethereum');
+  if (looksTron(value)) return otherNetwork('Solana', 'Tron');
+  if (looksStellar(value)) return otherNetwork('Solana', 'Stellar');
+  if (looksZcash(value)) return otherNetwork('Solana', 'Zcash');
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
-    return {
-      ok: false,
-      message:
-        'This is not a Solana address: it looks like a Bitcoin address. Go back and pick Bitcoin to track it.',
-    };
+    return otherNetwork('Solana', 'Bitcoin');
   return {
     ok: false,
     message: 'This is not a valid Solana address. Check that it was copied in full.',
@@ -385,15 +388,11 @@ export function checkEthereumAddress(raw: string): AddressCheck {
   // The server checks the EIP-55 checksum of a mixed-case address.
   if (/^0x[0-9a-f]{40}$/i.test(value))
     return { ok: true, address: value.toLowerCase(), kind: 'Ethereum address' };
-  if (looksTron(value)) return { ok: false, message: otherNetwork('Ethereum', 'Tron') };
-  if (looksStellar(value)) return { ok: false, message: otherNetwork('Ethereum', 'Stellar') };
-  if (looksZcash(value)) return { ok: false, message: otherNetwork('Ethereum', 'Zcash') };
+  if (looksTron(value)) return otherNetwork('Ethereum', 'Tron');
+  if (looksStellar(value)) return otherNetwork('Ethereum', 'Stellar');
+  if (looksZcash(value)) return otherNetwork('Ethereum', 'Zcash');
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
-    return {
-      ok: false,
-      message:
-        'This is not an Ethereum address: it looks like a Bitcoin address. Go back and pick Bitcoin to track it.',
-    };
+    return otherNetwork('Ethereum', 'Bitcoin');
   return {
     ok: false,
     message: 'This is not a valid Ethereum address. Check that it was copied in full.',
@@ -406,10 +405,7 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
   const secret = secretCheck(value);
   if (secret) return secret;
   if (/^0x[0-9a-f]{40}$/i.test(value)) {
-    return {
-      ok: false,
-      message: 'This looks like an Ethereum address. Go back and pick Ethereum to track it.',
-    };
+    return looksLike('Ethereum');
   }
   // M21: the server verifies the key's checksum and derives the account's addresses.
   if (/^[xyz]pub[1-9A-HJ-NP-Za-km-z]{107,108}$/.test(value)) {
@@ -441,28 +437,16 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
     };
   }
   if (looksTron(value)) {
-    return {
-      ok: false,
-      message: 'This looks like a Tron address. Go back and pick Tron to track it.',
-    };
+    return looksLike('Tron');
   }
   if (looksStellar(value)) {
-    return {
-      ok: false,
-      message: 'This looks like a Stellar address. Go back and pick Stellar to track it.',
-    };
+    return looksLike('Stellar');
   }
   if (looksZcash(value)) {
-    return {
-      ok: false,
-      message: 'This looks like a Zcash address. Go back and pick Zcash to track it.',
-    };
+    return looksLike('Zcash');
   }
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
-    return {
-      ok: false,
-      message: 'This looks like a Solana address. Go back and pick Solana to track it.',
-    };
+    return looksLike('Solana');
   }
   return {
     ok: false,
@@ -477,9 +461,12 @@ export function keyAddresses(address: Pick<WalletAddress, 'accountKey'>): string
   return `${used} address${used === 1 ? '' : 'es'}`;
 }
 
-/** "bc1qar…mdq" keeps the start and end an owner compares with their wallet app. */
+/**
+ * "bc1qar…mdq" keeps the start and end an owner compares with their wallet app, in the one short
+ * form the app uses everywhere (wallets-12).
+ */
 export function shortAddress(address: string): string {
-  return address.length > 16 ? `${address.slice(0, 8)}…${address.slice(-6)}` : address;
+  return shortValue(address);
 }
 
 /** Existing account whose name matches, ignoring case and outer spaces. */

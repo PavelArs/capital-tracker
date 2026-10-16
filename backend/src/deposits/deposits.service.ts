@@ -17,6 +17,7 @@ import {
   parseAsOfDate,
   parseCheck,
   parseDeposit,
+  parseDepositPreview,
   parseMovement,
   parseRateChange,
   parseUuid,
@@ -31,6 +32,7 @@ import {
   firstImpossibleMovement,
   nextPayout,
   payoutSchedules,
+  previewDeposit,
   projectDeposit,
 } from './deposit-interest';
 import {
@@ -178,6 +180,28 @@ export class DepositsService {
       return depositId;
     });
     return this.get(owner, id, undefined);
+  }
+
+  /**
+   * DEP-PREVIEW: what the deposit being entered would earn, from the same terms and the same
+   * interest code as a saved one. Nothing is read or written.
+   */
+  preview(ownerId: string, raw: unknown) {
+    parseUuid(ownerId);
+    const input = parseDepositPreview(raw);
+    if (input.startDate > moscowDate(new Date()))
+      throw new UnprocessableEntityException('Start date is in the future');
+    // A new deposit has one rate from its start, as adding it stores.
+    const terms: DepositTerms = {
+      startDate: input.startDate,
+      endDate: input.endDate,
+      payout: input.payout,
+      capitalized: input.capitalized,
+      dayBasis: input.dayBasis,
+      earlyClose: input.earlyClose,
+      rates: [{ effectiveFrom: input.startDate, ratePercent: input.ratePercent }],
+    };
+    return previewDeposit(terms, input.amount);
   }
 
   async addMovement(ownerId: string, id: string, raw: unknown) {

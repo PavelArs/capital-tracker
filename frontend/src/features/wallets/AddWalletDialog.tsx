@@ -1,5 +1,8 @@
-import { accountingApi } from '@api/accounting.api';
-import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import {
+  type NewWalletAccount,
+  type WalletAddress,
+  walletAddressesApi,
+} from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
@@ -7,6 +10,7 @@ import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
 import { isEvm } from '../shell/evm-networks';
+import { Icon } from '../shell/icons';
 import KindField, { type KindChoice } from './KindField';
 import { networkIcon, networks as tracked } from './networks';
 import { accountNamed, checkAddress, checkApiKey } from './wallets';
@@ -107,8 +111,13 @@ interface Props {
   onAdded: (address: WalletAddress, created: boolean) => void;
   /** Opens a wallet the owner tried to add again (WAL-DUP). */
   onOpenExisting: (address: WalletAddress) => void;
-  /** The wallet the address joins unless the owner picks another (from a wallet's own page). */
-  wallet?: string;
+  /**
+   * The wallet the address joins unless the owner names another (from a wallet's own page or its
+   * Connect Bybit API), by its id: another wallet may have the same name.
+   */
+  accountId?: string;
+  /** Opens on this network's form, as "Connect Bybit API" does (wallets-08). */
+  network?: Network;
 }
 
 // "Add wallet" from the accepted prototype: network, address, then which wallet holds it.
@@ -118,10 +127,14 @@ export default function AddWalletDialog({
   onClose,
   onAdded,
   onOpenExisting,
-  wallet,
+  accountId,
+  network: initialNetwork,
 }: Props) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [network, setNetwork] = useState<Network | null>(null);
+  const opened = accountId
+    ? accounts.find((account) => account.accountId === accountId)
+    : undefined;
+  const [step, setStep] = useState<1 | 2 | 3>(initialNetwork ? 2 : 1);
+  const [network, setNetwork] = useState<Network | null>(initialNetwork ?? null);
   const [input, setInput] = useState('');
   const [tried, setTried] = useState(false);
   // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
@@ -132,7 +145,9 @@ export default function AddWalletDialog({
   // M22: a Bybit account is read with an API key and secret, kept in memory only until sent.
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
-  const [walletName, setWalletName] = useState(wallet ?? '');
+  // wallets-14: the secret can be shown to check it was pasted in full; hidden again on each step.
+  const [secretShown, setSecretShown] = useState(false);
+  const [walletName, setWalletName] = useState(opened?.name ?? '');
   const [label, setLabel] = useState('');
   // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
   const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
@@ -144,10 +159,12 @@ export default function AddWalletDialog({
   const form = useRef<HTMLFormElement>(null);
   // Each step puts the keyboard on its first field.
   useEffect(() => {
+    setSecretShown(false);
     form.current
       ?.querySelector<HTMLElement>(step === 1 ? '[aria-pressed]' : 'input:not([disabled])')
       ?.focus();
   }, [step]);
+  const focusField = (id: string) => form.current?.querySelector<HTMLElement>(`#${id}`)?.focus();
 
   const chosen = tracked[network ?? 'bitcoin'];
   const exchange = network === 'bybit';
@@ -162,12 +179,18 @@ export default function AddWalletDialog({
     ? accounts.find((account) => account.accountId === existing.accountId)?.name
     : undefined;
   const showError = !check.ok && (tried || left.has('address'));
+  // wallets-04: after a failed Continue a field's problem is said aloud; on leaving a field it is
+  // only shown.
+  const alertOnTry = tried ? 'alert' : undefined;
+  // wallets-06: an address of another network offers to switch to it.
+  const switchTo = check.ok ? undefined : check.switchTo;
   const showKeyError = !keyCheck.ok && (tried || left.has('key'));
   const showSecretError = !secretCheck.ok && (tried || left.has('secret'));
   // M21: an account public key (xpub, ypub, zpub) stands for every address of the account.
   const isKey = check.ok && /^[xyz]pub/.test(check.address);
   const chosenName = walletName.trim() || chosen.defaultWallet;
-  const match = accountNamed(accounts, chosenName);
+  // The wallet it was opened for while its name stands, else the one the owner names.
+  const match = opened && chosenName === opened.name ? opened : accountNamed(accounts, chosenName);
   const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
 
   // WAL-NO-SECRETS: a seed phrase or private key pasted as the key is dropped at once.
@@ -205,6 +228,9 @@ export default function AddWalletDialog({
     if (step === 2) {
       setTried(true);
       if (exchange ? keyReady : check.ok && !existing) setStep(3);
+      // wallets-04: the keyboard goes to the field that needs the owner.
+      else if (!exchange) focusField('wallet-address');
+      else focusField(keyCheck.ok ? 'bybit-secret' : 'bybit-key');
       return;
     }
     void save();
@@ -215,23 +241,32 @@ export default function AddWalletDialog({
     setSaving(true);
     setError(null);
     try {
-      let accountId = match?.accountId;
-      if (!accountId) {
+      // WAL-INVALID: a new wallet goes with its address in one request, so an address the server
+      // refuses leaves no empty wallet behind.
+      let destination: { accountId: string } | { newAccount: NewWalletAccount };
+      if (match) destination = { accountId: match.accountId };
+      else {
         const key = `${chosenName}\n${kind}`;
         if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
-        accountId = (
-          await accountingApi.createAccount({
+        destination = {
+          newAccount: {
             requestId: attempt.current.requestId,
             name: chosenName,
             ...(kind ? { kind } : {}),
-          })
-        ).id;
+          },
+        };
       }
       const named = label.trim() ? { label: label.trim() } : {};
       const result = await walletAddressesApi.add(
         network === 'bybit'
-          ? { network, apiKey: apiKey.trim(), apiSecret: apiSecret.trim(), accountId, ...named }
-          : { network, address: check.ok ? check.address : '', accountId, ...named },
+          ? {
+              network,
+              apiKey: apiKey.trim(),
+              apiSecret: apiSecret.trim(),
+              ...destination,
+              ...named,
+            }
+          : { network, address: check.ok ? check.address : '', ...destination, ...named },
       );
       onAdded(result.address, result.created);
     } catch (caught) {
@@ -245,7 +280,9 @@ export default function AddWalletDialog({
       titleId="add-wallet"
       size="wide"
       onEscape={saving ? undefined : onClose}
-      initialFocus={(root) => root.querySelector<HTMLElement>('[aria-pressed]')}
+      initialFocus={(root) =>
+        root.querySelector<HTMLElement>(initialNetwork ? 'input' : '[aria-pressed]')
+      }
     >
       <form ref={form} onSubmit={next} noValidate>
         <div className="ui-modal__head">
@@ -321,32 +358,49 @@ export default function AddWalletDialog({
                   onBlur={leave('key')}
                 />
                 <span id="bybit-key-help">
-                  {showKeyError && <span className="ui-field__error">{keyCheck.message}</span>}
+                  {showKeyError && (
+                    <span className="ui-field__error" role={alertOnTry}>
+                      {keyCheck.message}
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="ui-field">
                 <label className="ui-field__label" htmlFor="bybit-secret">
                   API secret
                 </label>
-                <input
-                  id="bybit-secret"
-                  type="password"
-                  className="ui-input wallets-mono"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={apiSecret}
-                  aria-invalid={showSecretError ? true : undefined}
-                  aria-describedby="bybit-secret-help"
-                  onChange={(event) => changeKey(event.target.value, 'secret')}
-                  onBlur={leave('secret')}
-                />
+                <div className="wallets-secret">
+                  <input
+                    id="bybit-secret"
+                    type={secretShown ? 'text' : 'password'}
+                    className="ui-input wallets-mono"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={apiSecret}
+                    aria-invalid={showSecretError ? true : undefined}
+                    aria-describedby="bybit-secret-help"
+                    onChange={(event) => changeKey(event.target.value, 'secret')}
+                    onBlur={leave('secret')}
+                  />
+                  <button
+                    type="button"
+                    className="wallets-secret__toggle"
+                    aria-label={secretShown ? 'Hide secret' : 'Show secret'}
+                    aria-controls="bybit-secret"
+                    onClick={() => setSecretShown((shown) => !shown)}
+                  >
+                    <Icon name={secretShown ? 'eyeOff' : 'eye'} className="shell-icon" />
+                  </button>
+                </div>
                 <span id="bybit-secret-help">
                   {secretMessage ? (
                     <span className="ui-field__error" role="alert">
                       {secretMessage} It was not saved.
                     </span>
                   ) : showSecretError ? (
-                    <span className="ui-field__error">{secretCheck.message}</span>
+                    <span className="ui-field__error" role={alertOnTry}>
+                      {secretCheck.message}
+                    </span>
                   ) : (
                     <span className="ui-field__hint">
                       Stored encrypted on the server and never shown again.
@@ -388,7 +442,7 @@ export default function AddWalletDialog({
                       {secretMessage} It was not saved.
                     </span>
                   ) : existing ? (
-                    <span className="ui-field__error">
+                    <span className="ui-field__error" role={alertOnTry}>
                       {isKey ? 'This key is already tracked' : 'This address is already tracked'}
                       {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
                       <button
@@ -402,7 +456,25 @@ export default function AddWalletDialog({
                   ) : check.ok ? (
                     <span className="wallets-ok">{check.kind}</span>
                   ) : showError ? (
-                    <span className="ui-field__error">{check.message}</span>
+                    <span className="ui-field__error" role={alertOnTry}>
+                      {check.message}
+                      {switchTo && (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            className="portfolio-link"
+                            onClick={() => {
+                              setNetwork(switchTo);
+                              setError(null);
+                              focusField('wallet-address');
+                            }}
+                          >
+                            Switch to {tracked[switchTo].name}
+                          </button>
+                        </>
+                      )}
+                    </span>
                   ) : (
                     <span className="ui-field__hint">
                       {network === 'bitcoin'

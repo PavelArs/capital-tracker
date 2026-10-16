@@ -483,10 +483,10 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     }));
     const { dialog, onSaved } = await open();
     const view = within(dialog);
-    await user.click(view.getByRole('button', { name: 'More ▾' }));
+    await user.click(view.getByRole('button', { name: 'More' }));
     await user.click(view.getByRole('radio', { name: 'Gift' }));
     await user.click(view.getByRole('radio', { name: 'Sent' }));
-    expect(view.queryByRole('button', { name: '+ Other asset' })).not.toBeInTheDocument();
+    expect(view.queryByRole('button', { name: 'Other asset' })).not.toBeInTheDocument();
     expect(await view.findByText(/Available in Hardware wallet: 0\.2 BTC/)).toBeInTheDocument();
     await user.type(view.getByLabelText('Amount'), '0.3');
     // The warning waits for the owner to leave the amount.
@@ -525,7 +525,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.queryByLabelText('Wallet or account')).not.toBeInTheDocument();
     expect(view.getByLabelText('From')).toHaveValue(id(11));
     expect(view.getByLabelText('To')).toHaveValue(id(12));
-    await user.click(view.getByText('More options: time, fee, comment'));
+    await user.click(view.getByText('More options: time, fee'));
     await user.type(view.getByLabelText('Fee (optional)'), '0.0001');
     await user.click(await view.findByRole('button', { name: 'Use all' }));
     expect(view.getByLabelText('Amount')).toHaveValue('0.4999');
@@ -613,7 +613,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     const rewardCreate = vi.spyOn(assetRewardsApi, 'create').mockResolvedValue({} as RewardReceipt);
     const { dialog, onSaved } = await open();
     const view = within(dialog);
-    await user.click(view.getByRole('button', { name: 'More ▾' }));
+    await user.click(view.getByRole('button', { name: 'More' }));
     await user.click(view.getByRole('radio', { name: 'Airdrop' }));
     await user.click(view.getByRole('button', { name: /ETH$/ }));
     await user.type(view.getByLabelText('Amount'), '5');
@@ -668,6 +668,35 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ side: 'sell', quantity: '0.2' });
+  });
+
+  it('err-form copy: a whole property without a ticker is counted as "1 unit", a coin keeps its ticker', async () => {
+    const user = userEvent.setup();
+    const studio = {
+      ...asset(6, 'Studio apartment', null, 'manual'),
+      priceSource: 'manual' as const,
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, studio]);
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '1',
+    }));
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Sell' }));
+    await user.clear(view.getByLabelText('Date'));
+    await user.type(view.getByLabelText('Date'), '2026-04-01');
+    await user.tab();
+    expect(await view.findByText(/Available in Hardware wallet: 1 BTC/)).toBeInTheDocument();
+    await user.click(view.getByRole('button', { name: /Studio apartment/ }));
+    expect(await view.findByText(/Available in Hardware wallet: 1 unit ·/)).toBeInTheDocument();
+    await user.type(view.getByLabelText('Amount'), '2');
+    await user.tab();
+    expect(view.getByRole('alert')).toHaveTextContent(
+      'Only 1 unit is available in Hardware wallet on Apr 1, 2026 · Use all',
+    );
   });
 
   it('OPS-SAME-DAY a new sale dated today without a time stands for the current minute', async () => {
@@ -850,6 +879,110 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(correct.mock.calls[0][2]).not.toHaveProperty('orderWithinTimestamp');
   });
 
+  it('transactions-05 a sale the server finds larger than the holding names the account, coin and day', async () => {
+    const user = userEvent.setup();
+    create.mockRejectedValueOnce(
+      new AxiosError('conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'An account does not hold enough for this trade',
+          // The new sale's own id: no operation in the list has it.
+          dependent: {
+            operationId: `trade:${id(77)}`,
+            accountId: id(11),
+            instrumentId: id(1),
+            occurredAt: '2025-07-01T12:00:00.000Z',
+          },
+        },
+      }),
+    );
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Sell' }));
+    await user.type(view.getByLabelText('Amount'), '0.5');
+    await user.type(view.getByLabelText('Total received'), '40000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Hardware wallet does not hold enough BTC on Jul 1, 2025 for this transaction. Add the receipts that bring it there first.',
+    );
+    expect(alert).not.toHaveTextContent('A later transaction');
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('transactions-02 a refused Save moves the keyboard to the first invalid field', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const save = view.getByRole('button', { name: 'Save transaction' });
+    await user.click(save);
+    expect(create).not.toHaveBeenCalled();
+    const amount = view.getByLabelText('Amount');
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount).toHaveFocus();
+    expect(amount).toHaveAccessibleDescription('Enter an amount greater than 0');
+    // Fixed fields leave the next invalid one to receive the keyboard.
+    await user.type(amount, '0.5');
+    await user.click(save);
+    expect(view.getByLabelText('Total paid')).toHaveFocus();
+  });
+
+  it('transactions-12 a new entry starts in the account that holds the first asset', async () => {
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: accountId === id(13) && query.instrumentId === id(1) ? '0.75' : '0',
+    }));
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    expect(view.getByRole('button', { name: /BTC/, pressed: true })).toBeInTheDocument();
+    expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13));
+    await user.click(view.getByRole('radio', { name: 'Sell' }));
+    expect(await view.findByText(/Available in Exchange: 0\.75 BTC/)).toBeInTheDocument();
+  });
+
+  it('transactions-12 a transfer starts from the account that holds the asset to another one', async () => {
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: accountId === id(12) ? '0.3' : '0',
+    }));
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Transfer' }));
+    expect(view.getByLabelText('From')).toHaveValue(id(12));
+    expect(view.getByLabelText('To')).toHaveValue(id(11));
+  });
+
+  it('transactions-12 without a holding anywhere the first account stays the choice', async () => {
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '0',
+    }));
+    const { dialog } = await open();
+    expect(within(dialog).getByLabelText('Wallet or account')).toHaveValue(id(11));
+  });
+
+  it('transactions-25 names the More and Other asset buttons by their words alone', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const more = view.getByRole('button', { name: 'More' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await user.click(more);
+    expect(view.getByRole('button', { name: 'More' })).toHaveAttribute('aria-expanded', 'true');
+    expect(view.getByRole('button', { name: 'Other asset' })).toBeInTheDocument();
+  });
+
   it('X2 offers the market price of today and fills it in', async () => {
     const user = userEvent.setup();
     const { dialog } = await open();
@@ -900,7 +1033,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     const createAsset = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(created);
     const { dialog, onSaved } = await open();
     const view = within(dialog);
-    await user.click(view.getByRole('button', { name: '+ Other asset' }));
+    await user.click(view.getByRole('button', { name: 'Other asset' }));
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     expect(view.getByText('Enter the ticker: letters and digits, up to 32')).toBeInTheDocument();
     await user.type(view.getByLabelText('Ticker'), 'ton');
@@ -1003,6 +1136,66 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     );
   });
 
+  // The balances that pick the account a new entry starts from, answered when the test says.
+  const heldLater = () => {
+    let answer: (most: string) => void = () => undefined;
+    const answered = new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: accountId === (await answered) ? '2' : '0.5',
+    }));
+    return answer;
+  };
+  const account = (dialog: HTMLElement) =>
+    within(dialog).getByLabelText('Wallet or account') as HTMLSelectElement;
+
+  it('add-transaction-holder shows the form at once and then starts from the largest holder', async () => {
+    const answer = heldLater();
+    const { dialog } = await open();
+    expect(account(dialog)).toHaveValue(id(11));
+    answer(id(13));
+    await waitFor(() => expect(account(dialog)).toHaveValue(id(13)));
+  });
+
+  it('add-transaction-holder keeps the account the owner chose before the balances arrive', async () => {
+    const user = userEvent.setup();
+    const answer = heldLater();
+    const { dialog } = await open();
+    await user.selectOptions(account(dialog), 'No journal');
+    answer(id(13));
+    // Every balance read has answered; the owner's choice still stands.
+    await waitFor(async () => {
+      await Promise.all(available.mock.results.map((result) => result.value));
+      expect(available.mock.results.length).toBeGreaterThanOrEqual(3);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(account(dialog)).toHaveValue(id(12));
+  });
+
+  it('add-transaction-holder picks no account when one balance cannot be read', async () => {
+    available.mockImplementation(async (accountId, query) => {
+      if (accountId === id(13)) throw new Error('offline');
+      return {
+        accountId,
+        ...query,
+        journalRevision: 4,
+        quantity: accountId === id(12) ? '2' : '0.5',
+      };
+    });
+    const { dialog } = await open();
+    // The unread account may hold the most, so the form keeps its first account.
+    await waitFor(async () => {
+      await Promise.allSettled(available.mock.results.map((result) => result.value));
+      expect(available.mock.results.length).toBeGreaterThanOrEqual(3);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(account(dialog)).toHaveValue(id(11));
+  });
+
   it('ASSET-ORDER keeps the order given while the valuation cannot be read', async () => {
     vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, tether]);
     vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
@@ -1042,7 +1235,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       await view.findByText('Paid from the USDT cash in Hardware wallet.'),
     ).toBeInTheDocument();
     // A new coin is paid from the cash too; a new asset typed as the cash itself is not.
-    await user.click(view.getByRole('button', { name: '+ Other asset' }));
+    await user.click(view.getByRole('button', { name: 'Other asset' }));
     await user.type(view.getByLabelText('Ticker'), 'usdt');
     expect(view.queryByText('Paid from the USDT cash in Hardware wallet.')).not.toBeInTheDocument();
     await user.clear(view.getByLabelText('Ticker'));
@@ -1055,6 +1248,45 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ settlementCurrency: 'USDT' });
   });
+
+  // transactions-01: the reward and transfer commands carry no comment and their server parsers
+  // refuse one, so the window offers a comment only where the command keeps it.
+  it.each([
+    ['Reward', true, 'More options: time'],
+    ['Airdrop', true, 'More options: time'],
+    ['Transfer', false, 'More options: time, fee'],
+  ])(
+    'transactions-01 %s offers no comment field, which its command would drop',
+    async (kind, more, summary) => {
+      const user = userEvent.setup();
+      const { dialog } = await open();
+      const view = within(dialog);
+      if (more) await user.click(view.getByRole('button', { name: 'More' }));
+      await user.click(view.getByRole('radio', { name: kind }));
+      const options = view.getByText(summary);
+      expect(options.tagName).toBe('SUMMARY');
+      expect(options).not.toHaveTextContent(/comment/i);
+      await user.click(options);
+      expect(view.queryByLabelText('Comment')).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ['Buy', false, 'More options: time, fee, comment'],
+    ['Income', false, 'More options: time, comment'],
+    ['Fee', true, 'More options: time, comment'],
+  ])(
+    'transactions-01 %s keeps the comment field, which its command sends',
+    async (kind, more, summary) => {
+      const user = userEvent.setup();
+      const { dialog } = await open();
+      const view = within(dialog);
+      if (more) await user.click(view.getByRole('button', { name: 'More' }));
+      await user.click(view.getByRole('radio', { name: kind }));
+      await user.click(view.getByText(summary));
+      expect(view.getByLabelText('Comment')).toBeVisible();
+    },
+  );
 });
 
 describe('ASSET-CHIPS which assets become chips', () => {

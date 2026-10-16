@@ -77,7 +77,7 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639.98px) {
   .toast-viewport {
     right: var(--sp-3);
     left: var(--sp-3);

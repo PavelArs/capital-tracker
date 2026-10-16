@@ -2,7 +2,15 @@ import type { AssetType } from '@api/portfolio-assets.api';
 import type { AllocationSlice, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useId, useState } from 'react';
 import { SegmentedControl } from '@/ui/SegmentedControl';
-import { assetIdentity, assetTypeColors, depositColor } from '../shell/asset-identity';
+import {
+  type AccountClasses,
+  assetClassColors,
+  assetIdentity,
+  assetTypeColors,
+  depositColor,
+  heldClass,
+} from '../shell/asset-identity';
+import { useAccountClasses } from '../shell/useAccountClasses';
 import { sum } from '../wallets/wallets';
 import { money, percent } from './format';
 
@@ -16,18 +24,28 @@ const groupings: [Grouping, string][] = [
 /** Allocation key of all bank deposits in the by-type grouping. */
 const DEPOSITS = 'deposits';
 
-/** Slice colour: the asset's own or its type's; accounts keep the positional palette. */
+/**
+ * Slice colour: the asset's own, or its class's when brokers or property accounts hold it; a
+ * type's; a broker or property account's class colour; other accounts keep the positional palette.
+ */
 function sliceColor(
   portfolio: PortfolioValuation,
+  classes: AccountClasses,
   grouping: Grouping,
   key: string,
 ): string | undefined {
   if (grouping === 'byType')
     return key === DEPOSITS ? depositColor : assetTypeColors[key as AssetType];
-  if (grouping === 'byAccount') return key.startsWith('bank:') ? depositColor : undefined;
+  if (grouping === 'byAccount') {
+    if (key.startsWith('bank:')) return depositColor;
+    const assetClass = classes[key];
+    return assetClass ? assetClassColors[assetClass] : undefined;
+  }
   if (key.startsWith('deposit:')) return depositColor;
   const asset = portfolio.assets.find((item) => item.instrumentId === key);
-  return asset ? assetIdentity(asset).color : undefined;
+  return asset
+    ? assetIdentity({ ...asset, assetClass: heldClass(asset.holdings, classes) }).color
+    : undefined;
 }
 
 const OTHER = '__other__';
@@ -64,10 +82,11 @@ export default function Allocation({
 }) {
   const [grouping, setGrouping] = useState<Grouping>('byAsset');
   const heading = useId();
+  const classes = useAccountClasses();
   const { shown, rest } = folded(portfolio.allocation[grouping], limit);
   const slices = shown.map((slice, index) => {
     const other = slice.key === OTHER;
-    const color = other ? 'var(--c-other)' : sliceColor(portfolio, grouping, slice.key);
+    const color = other ? 'var(--c-other)' : sliceColor(portfolio, classes, grouping, slice.key);
     const asset =
       grouping === 'byAsset'
         ? portfolio.assets.find((item) => item.instrumentId === slice.key)

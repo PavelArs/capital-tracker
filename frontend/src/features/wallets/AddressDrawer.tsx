@@ -1,9 +1,9 @@
-import { accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { Operation } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import {
   type AddressTransaction,
+  type NewWalletAccount,
   type WalletAddress,
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
@@ -214,20 +214,20 @@ export default function AddressDrawer({
     }
     setSaving(true);
     try {
-      let accountId: string | null = choice === NONE ? null : choice;
+      // WAL-INVALID: a new wallet goes with the move in one request, so a refused save leaves
+      // no empty wallet behind.
+      let destination: { accountId: string | null } | { newAccount: NewWalletAccount } = {
+        accountId: choice === NONE ? null : choice,
+      };
       if (choice === NEW) {
         const key = `${name}\n${kind}`;
         if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
-        accountId = (
-          await accountingApi.createAccount({
-            requestId: attempt.current.requestId,
-            name,
-            ...(kind ? { kind } : {}),
-          })
-        ).id;
+        destination = {
+          newAccount: { requestId: attempt.current.requestId, name, ...(kind ? { kind } : {}) },
+        };
       }
       const saved = await walletAddressesApi.update(address.id, {
-        accountId,
+        ...destination,
         label: label.trim() || null,
       });
       onSaved(saved, choice === NEW);
@@ -408,8 +408,10 @@ export default function AddressDrawer({
         {exchange && <EarnSection exchange={exchange} />}
         {exchange && <ConvertNote exchange={exchange} />}
         {syncProblem(address, run) && (
-          <p className="ui-banner ui-banner--neg wallets-message" role="alert">
-            {syncProblem(address, run)}
+          // wallets-13: an amber note with an alert icon, as on the Wallets row.
+          <p className="ui-banner ui-banner--warn wallets-message" role="alert">
+            <Icon name="alert" className="shell-icon wallets-message__icon" />
+            <span>{syncProblem(address, run)}</span>
           </p>
         )}
         <form className="wallets-edit" onSubmit={save} aria-labelledby="address-wallet">

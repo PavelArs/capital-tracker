@@ -2,7 +2,7 @@ import { passwordResetApi } from '@api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AuthFrame, { FieldError, focusOnMount, Notice } from './AuthFrame';
+import AuthFrame, { FieldError, focusOnMount, Notice, useFocusAfterAnswer } from './AuthFrame';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -21,8 +21,10 @@ export default function ForgotPasswordPage() {
   const [failure, setFailure] = useState('');
   const [resent, setResent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const focusAfterAnswer = useFocusAfterAnswer();
 
-  const send = async (address: string) => {
+  /** `retry` is the control the owner tries again with after a refusal. */
+  const send = async (address: string, retry: string) => {
     setBusy(true);
     setFailure('');
     try {
@@ -30,6 +32,7 @@ export default function ForgotPasswordPage() {
       return true;
     } catch (error) {
       setFailure(requestFailure(error));
+      focusAfterAnswer(retry);
       return false;
     } finally {
       setBusy(false);
@@ -42,16 +45,20 @@ export default function ForgotPasswordPage() {
     const address = email.trim();
     if (!emailPattern.test(address)) {
       setFieldError('Enter the email you sign in with');
+      focusAfterAnswer('reset-email');
       return;
     }
     setFieldError('');
-    if (await send(address)) setSentTo(address);
+    if (await send(address, 'reset-email')) setSentTo(address);
   };
 
   const handleResend = async () => {
     if (busy || sentTo === null) return;
     setResent(false);
-    if (await send(sentTo)) setResent(true);
+    if (await send(sentTo, 'reset-resend')) {
+      setResent(true);
+      focusAfterAnswer('reset-resend');
+    }
   };
 
   const back = (
@@ -75,6 +82,7 @@ export default function ForgotPasswordPage() {
           <Notice tone="info">Nothing after a few minutes? Check spam, or send it again.</Notice>
         )}
         <button
+          id="reset-resend"
           type="button"
           className="auth-btn auth-btn--secondary"
           onClick={handleResend}

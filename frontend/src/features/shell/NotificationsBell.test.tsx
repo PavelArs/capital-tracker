@@ -164,7 +164,7 @@ describe('ATTN-BELL: the header bell', () => {
     const user = userEvent.setup();
     toClassify.mockResolvedValue(1);
     renderHeader();
-    const bell = await screen.findByRole('button', { name: 'Notifications, 1 need attention' });
+    const bell = await screen.findByRole('button', { name: 'Notifications, 1 needs attention' });
     await user.click(bell);
     expect(screen.getByRole('region', { name: 'Notifications' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -176,6 +176,17 @@ describe('ATTN-BELL: the header bell', () => {
     await user.click(bell);
     await user.click(screen.getByRole('link', { name: 'Review' }));
     expect(screen.queryByRole('region', { name: 'Notifications' })).toBeNull();
+  });
+
+  it('shell-08 says that one thing needs attention in the singular', async () => {
+    const user = userEvent.setup();
+    toClassify.mockResolvedValue(1);
+    renderHeader();
+    const bell = await screen.findByRole('button', { name: 'Notifications, 1 needs attention' });
+    await user.click(bell);
+    expect(screen.getByRole('region', { name: 'Notifications' })).toHaveTextContent(
+      '1 needs attention',
+    );
   });
 
   it('is absent where the page has no shell around it', () => {

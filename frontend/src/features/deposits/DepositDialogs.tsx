@@ -2,19 +2,34 @@ import {
   type DayBasis,
   type DepositCurrency,
   type DepositDetail,
+  type DepositPreview,
+  type DepositTerms,
   depositsApi,
   type EarlyClose,
   type MovementKind,
   type NewDeposit,
   type PayoutSchedule,
 } from '@api/deposits.api';
-import { type FormEvent, type ReactNode, useId, useRef, useState } from 'react';
+import {
+  createContext,
+  type FormEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import Modal from '@/ui/Modal';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
+import { useFocusFirstProblem } from '../portfolio/focus-problem';
 import CloseButton from '../shell/CloseButton';
-import { movementText, today } from './deposit-format';
+import { dateText, earlyCloseText, money, movementText, today } from './deposit-format';
+import '@/ui/filters.css';
 import '../transactions/transactions.css';
+import './deposits.css';
 
 const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/;
 /** The longest term the server accepts, in years. */
@@ -22,16 +37,28 @@ const MAX_TERM_YEARS = 30;
 const RATE = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-const amountProblem = (value: string, label: string, zero = false) =>
-  !MONEY.test(value.trim()) || (!zero && Number(value) === 0)
-    ? `${label}: a number with up to two decimals${zero ? '' : ', above 0'}`
-    : null;
+// What is wrong with a field, said under it; null when nothing is.
+const amountProblem = (value: string, what: string, zero = false) =>
+  !value.trim()
+    ? `Enter ${what}`
+    : !MONEY.test(value.trim()) || (!zero && Number(value) === 0)
+      ? `A number with up to 12 digits and two decimals${zero ? '' : ', above 0'}`
+      : null;
 const rateProblem = (value: string) =>
-  RATE.test(value.trim()) ? null : 'Rate: percent a year, up to four decimals';
-const dateProblem = (value: string, label: string) =>
-  DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
-    ? null
-    : `${label}: pick a date`;
+  !value.trim()
+    ? 'Enter the rate'
+    : RATE.test(value.trim())
+      ? null
+      : 'Percent a year, up to four decimals';
+const dateProblem = (value: string) =>
+  DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? null : 'Pick a date';
+
+/** Each field's problem by the field's key; a field without one is fine. */
+type Problems = Record<string, string | null>;
+const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean);
+
+/** The problems shown in a form: none until the owner first tries to save it. */
+const ShownProblems = createContext<Problems>({});
 
 /**
  * The id of this attempt. A retry of the same entries after a lost answer keeps it, so the
@@ -64,16 +91,20 @@ function FormDialog({
   title,
   note,
   submit,
-  problem,
+  problems,
   onClose,
   onSubmit,
   children,
   wide,
+  danger = false,
 }: {
   title: string;
   note?: string;
   submit: string;
-  problem: () => string | null;
+  /** A destructive confirmation: the submit button is the danger one. */
+  danger?: boolean;
+  /** Every field's problem; each is shown under its field once the owner tried to save. */
+  problems: () => Problems;
   onClose: () => void;
   onSubmit: () => Promise<void>;
   children: ReactNode;
@@ -83,12 +114,17 @@ function FormDialog({
   const [error, setError] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Each refused save puts the keyboard on the first field that needs a fix.
+  const { form, refused } = useFocusFirstProblem();
 
-  const hint = tried ? problem() : null;
+  const shown = tried ? problems() : {};
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (problem() !== null) return;
+    if (hasProblems(problems())) {
+      refused();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -106,17 +142,17 @@ function FormDialog({
       onEscape={saving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
     >
-      <form onSubmit={save} noValidate>
+      <form ref={form} className="deposit-dialog" onSubmit={save} noValidate>
         <div className="ui-modal__head">
           <h2 id={`${id}-title`}>{title}</h2>
           <CloseButton onClick={onClose} disabled={saving} />
           {note && <p className="shell-note">{note}</p>}
         </div>
         <div className="ui-modal__body">
-          {children}
-          {(hint || error) && (
+          <ShownProblems.Provider value={shown}>{children}</ShownProblems.Provider>
+          {error && (
             <p className="ui-banner ui-banner--neg" role="alert">
-              {hint ?? error}
+              {error}
             </p>
           )}
         </div>
@@ -129,7 +165,11 @@ function FormDialog({
           >
             Cancel
           </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          <button
+            type="submit"
+            className={`shell-button shell-button--${danger ? 'danger' : 'primary'}`}
+            disabled={saving}
+          >
             {saving ? 'Saving…' : submit}
           </button>
         </div>
@@ -138,78 +178,135 @@ function FormDialog({
   );
 }
 
+/** How a field's control points at its message: invalid with the problem, else its hint. */
+interface FieldAria {
+  'aria-invalid'?: true;
+  'aria-describedby'?: string;
+}
+
+/**
+ * A labelled field. `name` is its key among the form's problems: once the owner tried to save,
+ * its problem is said under it, in place of the hint, and the control is marked invalid.
+ */
 function Field({
   label,
   hint,
+  name,
   children,
 }: {
   label: string;
   hint?: string;
-  children: (id: string) => ReactNode;
+  name?: string;
+  children: (id: string, aria: FieldAria) => ReactNode;
 }) {
   const id = useId();
+  const problems = useContext(ShownProblems);
+  const problem = name ? problems[name] : null;
+  const aria: FieldAria = problem
+    ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` }
+    : hint
+      ? { 'aria-describedby': `${id}-hint` }
+      : {};
   return (
     <div className="ui-field">
       <label className="ui-field__label" htmlFor={id}>
         {label}
       </label>
-      {children(id)}
-      {hint && <span className="ui-field__hint">{hint}</span>}
+      {children(id, aria)}
+      {problem ? (
+        // Not an alert: a refused save moves the focus to the field, which reads it out once.
+        <span className="ui-field__error" id={`${id}-error`}>
+          {problem}
+        </span>
+      ) : (
+        hint && (
+          <span className="ui-field__hint" id={`${id}-hint`}>
+            {hint}
+          </span>
+        )
+      )}
     </div>
   );
 }
 
 function Text({
   label,
+  name,
   value,
   onChange,
   hint,
   numeric,
   maxLength,
   placeholder,
+  suffix,
+  children,
 }: {
   label: string;
+  name?: string;
   value: string;
   onChange: (value: string) => void;
   hint?: string;
   numeric?: boolean;
   maxLength?: number;
   placeholder?: string;
+  /** A unit shown inside the field's end, such as the currency or %. */
+  suffix?: string;
+  /** Shown under the field, such as choices that fill it in. */
+  children?: ReactNode;
 }) {
   return (
-    <Field label={label} hint={hint}>
-      {(id) => (
-        <input
-          id={id}
-          className="ui-input"
-          value={value}
-          autoComplete="off"
-          inputMode={numeric ? 'decimal' : undefined}
-          maxLength={maxLength}
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
+    <Field label={label} hint={hint} name={name}>
+      {(id, aria) => {
+        const input = (
+          <input
+            id={id}
+            {...aria}
+            className="ui-input"
+            value={value}
+            autoComplete="off"
+            inputMode={numeric ? 'decimal' : undefined}
+            maxLength={maxLength}
+            placeholder={placeholder}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        );
+        return (
+          <>
+            {suffix ? (
+              <span className="ui-affix">
+                {input}
+                <span className="ui-affix__suffix">{suffix}</span>
+              </span>
+            ) : (
+              input
+            )}
+            {children}
+          </>
+        );
+      }}
     </Field>
   );
 }
 
 function DateField({
   label,
+  name,
   value,
   onChange,
   hint,
 }: {
   label: string;
+  name?: string;
   value: string;
   onChange: (value: string) => void;
   hint?: string;
 }) {
   return (
-    <Field label={label} hint={hint}>
-      {(id) => (
+    <Field label={label} hint={hint} name={name}>
+      {(id, aria) => (
         <input
           id={id}
+          {...aria}
           type="date"
           className="ui-input"
           value={value}
@@ -235,9 +332,10 @@ function Select<T extends string>({
 }) {
   return (
     <Field label={label} hint={hint}>
-      {(id) => (
+      {(id, aria) => (
         <select
           id={id}
+          {...aria}
           className="ui-input"
           value={value}
           onChange={(event) => onChange(event.target.value as T)}
@@ -260,14 +358,69 @@ const payoutOptions: readonly (readonly [PayoutSchedule, string])[] = [
   ['at-end', 'At the end of the term'],
 ];
 
+const currencies: readonly DepositCurrency[] = ['RUB', 'USD', 'EUR'];
+const earlyCloseOptions = (['forfeits-interest', 'keeps-interest'] as const).map(
+  (rule) => [rule, earlyCloseText[rule]] as const,
+);
+/** What a deposit is called when the owner leaves the name empty. */
+const DEFAULT_NAME = 'Deposit';
+/** How long the entries stay still before the figures are asked for: typing asks once. */
+const PREVIEW_DELAY_MS = 400;
+
+/**
+ * DEP-PREVIEW: what the server computes for these terms, asked once they are all valid and have
+ * stayed still a moment. Only the answer for the terms as they are now is returned: a changed
+ * entry, a refusal or no answer yet gives null, never a zero.
+ */
+function usePreview(terms: DepositTerms | null): DepositPreview | null {
+  const key = terms && JSON.stringify(terms);
+  const [answer, setAnswer] = useState<{ key: string; figures: DepositPreview } | null>(null);
+  useEffect(() => {
+    if (key === null) return;
+    // A newer entry or a closed dialog stops the request still on its way.
+    const asked = new AbortController();
+    const timer = setTimeout(() => {
+      depositsApi.preview(JSON.parse(key) as DepositTerms, asked.signal).then(
+        (figures) => {
+          if (!asked.signal.aborted) setAnswer({ key, figures });
+        },
+        () => undefined,
+      );
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      asked.abort();
+      clearTimeout(timer);
+    };
+  }, [key]);
+  return answer !== null && answer.key === key ? answer.figures : null;
+}
+
+/** "At this rate, at the end of the term, on Dec 1, 2026: ₽105,030.14, of which … interest. …" */
+function previewText(preview: DepositPreview, currency: DepositCurrency): string | null {
+  const { atMaturity: end, firstPayout: first } = preview;
+  const parts = [
+    end &&
+      `At this rate, at the end of the term, on ${dateText(end.date)}: ${money(end.balance, currency)}, of which ${money(end.interest, currency)} interest.`,
+    first &&
+      `The first interest, ${money(first.interest, currency)}, ${
+        first.treatment === 'capitalized' ? 'is added on' : 'comes on'
+      } ${dateText(first.date)}.`,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 /** DEP-TERMS: a deposit is entered once; the app computes the rest. */
 export function AddDepositDialog({
+  banks = [],
   onClose,
   onSaved,
 }: {
+  /** The banks of the deposits already entered, offered as one-tap choices. */
+  banks?: readonly string[];
   onClose: () => void;
   onSaved: (deposit: DepositDetail) => void;
 }) {
+  const id = useId();
   const [name, setName] = useState('');
   const [bank, setBank] = useState('');
   const [currency, setCurrency] = useState<DepositCurrency>('RUB');
@@ -276,115 +429,164 @@ export function AddDepositDialog({
   const [startDate, setStartDate] = useState(today());
   const [endDate, setEndDate] = useState('');
   const [payout, setPayout] = useState<PayoutSchedule>('monthly');
-  const [capitalized, setCapitalized] = useState(false);
+  // Most deposits add the interest to themselves; the owner turns it off for one that pays out.
+  const [capitalized, setCapitalized] = useState(true);
   const [dayBasis, setDayBasis] = useState<DayBasis>('actual-365');
   const [earlyClose, setEarlyClose] = useState<EarlyClose>('forfeits-interest');
   const attempt = useAttempt();
+  const knownBanks = [...new Set(banks)];
+  const entries: DepositTerms = {
+    name: name.trim() || DEFAULT_NAME,
+    bank: bank.trim(),
+    currency,
+    startDate,
+    endDate: endDate || null,
+    payout,
+    capitalized,
+    dayBasis,
+    earlyClose,
+    ratePercent: rate.trim(),
+    amount: amount.trim(),
+  };
 
-  const problem = () =>
-    (!name.trim() ? 'Name: give the deposit a name' : null) ??
-    (!bank.trim() ? 'Bank: enter the bank' : null) ??
-    amountProblem(amount, 'Amount put in') ??
-    rateProblem(rate) ??
-    dateProblem(startDate, 'Start date') ??
-    (endDate ? dateProblem(endDate, 'End date') : null) ??
-    (endDate && endDate <= startDate ? 'End date: must be after the start date' : null) ??
-    (endDate && endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
-      ? `End date: a term is at most ${MAX_TERM_YEARS} years`
-      : null) ??
-    (payout === 'at-end' && !endDate ? 'Interest at the end of the term needs an end date' : null);
+  const problems = (): Problems => ({
+    bank: bank.trim() ? null : 'Enter the bank',
+    amount: amountProblem(amount, 'the amount put in'),
+    rate: rateProblem(rate),
+    startDate: dateProblem(startDate),
+    endDate: endDate
+      ? (dateProblem(endDate) ??
+        (endDate <= startDate
+          ? 'Must be after the opening date'
+          : endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
+            ? `A term is at most ${MAX_TERM_YEARS} years`
+            : null))
+      : payout === 'at-end'
+        ? 'Interest at the end of the term needs an end date'
+        : null,
+  });
+  const preview = usePreview(hasProblems(problems()) ? null : entries);
+  const figures = preview && previewText(preview, currency);
 
   return (
     <FormDialog
-      title="Add deposit"
+      title="Add bank deposit"
       note="Enter the terms once. The app counts the interest and what the deposit is worth; you only record top-ups and payouts."
       submit="Add deposit"
-      problem={problem}
+      problems={problems}
       onClose={onClose}
       wide
       onSubmit={async () => {
-        const entries = {
-          name: name.trim(),
-          bank: bank.trim(),
-          currency,
-          startDate,
-          endDate: endDate || null,
-          payout,
-          capitalized,
-          dayBasis,
-          earlyClose,
-          ratePercent: rate.trim(),
-          amount: amount.trim(),
-        };
         const body: NewDeposit = { requestId: attempt(entries), ...entries };
         onSaved(await depositsApi.create(body));
       }}
     >
       <div className="ui-field-row">
-        <Text label="Name" value={name} onChange={setName} maxLength={120} placeholder="Savings" />
         <Text
           label="Bank"
+          name="bank"
           value={bank}
           onChange={setBank}
           maxLength={120}
           placeholder="Bank name"
+        >
+          {knownBanks.length > 0 && (
+            <div className="ui-chips">
+              {knownBanks.map((known) => (
+                <button
+                  key={known}
+                  type="button"
+                  className="ui-chip"
+                  aria-pressed={bank.trim() === known}
+                  onClick={() => setBank(known)}
+                >
+                  {known}
+                </button>
+              ))}
+            </div>
+          )}
+        </Text>
+        <Text
+          label="Name (optional)"
+          value={name}
+          onChange={setName}
+          maxLength={120}
+          placeholder={DEFAULT_NAME}
+        />
+      </div>
+      <div className="ui-field">
+        <span id={`${id}-currency`} className="ui-field__label">
+          Currency
+        </span>
+        <SegmentedControl
+          name={`${id}-currency`}
+          labelledBy={`${id}-currency`}
+          options={currencies}
+          value={currency}
+          onChange={setCurrency}
         />
       </div>
       <div className="ui-field-row">
-        <Select
-          label="Currency"
-          value={currency}
-          options={[
-            ['RUB', 'RUB'],
-            ['USD', 'USD'],
-            ['EUR', 'EUR'],
-          ]}
-          onChange={setCurrency}
-        />
         <Text
           label="Amount put in"
+          name="amount"
           value={amount}
           onChange={setAmount}
           numeric
-          placeholder="0.00"
+          placeholder="0"
+          suffix={currency}
         />
-      </div>
-      <div className="ui-field-row">
         <Text
           label="Rate, % a year"
+          name="rate"
           value={rate}
           onChange={setRate}
           numeric
-          hint="The rate the bank pays now. Add a change later if it moves."
-        />
-        <Select
-          label="Interest"
-          value={payout}
-          options={payoutOptions}
-          onChange={setPayout}
-          hint="When the bank posts it."
+          placeholder="16"
+          suffix="%"
+          hint="The rate the bank pays now. A change can be added later."
         />
       </div>
       <div className="ui-field-row">
-        <DateField label="Start date" value={startDate} onChange={setStartDate} />
+        <DateField label="Opened on" name="startDate" value={startDate} onChange={setStartDate} />
         <DateField
-          label="End date (optional)"
+          label="Ends on (optional)"
+          name="endDate"
           value={endDate}
           onChange={setEndDate}
           hint="Leave empty for a deposit with no term."
         />
       </div>
-      <label className="transactions-toggle">
-        <input
-          type="checkbox"
-          checked={capitalized}
-          onChange={(event) => setCapitalized(event.target.checked)}
+      <div className="ui-field-row">
+        <Select
+          label="Interest comes"
+          value={payout}
+          options={payoutOptions}
+          onChange={setPayout}
         />
-        Interest is added to the deposit and earns interest itself
-      </label>
+        <label className="transactions-toggle deposit-toggle">
+          <input
+            type="checkbox"
+            checked={capitalized}
+            onChange={(event) => setCapitalized(event.target.checked)}
+          />
+          Interest is added to the deposit
+        </label>
+      </div>
+      {figures && (
+        <p className="ui-modal__info" role="note">
+          {figures}
+        </p>
+      )}
       <details className="deposit-more">
         <summary>More options</summary>
         <div className="ui-field-row">
+          <Select
+            label="If closed early"
+            value={earlyClose}
+            options={earlyCloseOptions}
+            onChange={setEarlyClose}
+          />
           <Select
             label="Days in a year"
             value={dayBasis}
@@ -394,15 +596,6 @@ export function AddDepositDialog({
             ]}
             onChange={setDayBasis}
             hint="How the bank divides the annual rate by days."
-          />
-          <Select
-            label="Closing before the end"
-            value={earlyClose}
-            options={[
-              ['forfeits-interest', 'Loses the interest not yet posted'],
-              ['keeps-interest', 'Keeps the interest earned'],
-            ]}
-            onChange={setEarlyClose}
           />
         </div>
       </details>
@@ -443,7 +636,7 @@ export function MovementDialog({
       title="Record a movement"
       note={hints[kind]}
       submit="Record"
-      problem={() => dateProblem(date, 'Date') ?? amountProblem(amount, `Amount, ${currency}`)}
+      problems={() => ({ date: dateProblem(date), amount: amountProblem(amount, 'the amount') })}
       onClose={onClose}
       onSubmit={async () => {
         const entries = {
@@ -457,9 +650,10 @@ export function MovementDialog({
     >
       <Select label="What happened" value={kind} options={movementOptions} onChange={setKind} />
       <div className="ui-field-row">
-        <DateField label="Date" value={date} onChange={setDate} />
+        <DateField label="Date" name="date" value={date} onChange={setDate} />
         <Text
           label={`Amount, ${currency}`}
+          name="amount"
           value={amount}
           onChange={setAmount}
           numeric
@@ -497,10 +691,10 @@ export function CheckDialog({
           : 'The app compares it with the deposit and all the interest earned so far.'
       }`}
       submit="Save check"
-      problem={() =>
-        dateProblem(date, 'Date') ??
-        amountProblem(balance, `Balance in the bank, ${currency}`, true)
-      }
+      problems={() => ({
+        date: dateProblem(date),
+        balance: amountProblem(balance, 'the balance the bank shows', true),
+      })}
       onClose={onClose}
       onSubmit={async () => {
         const entries = { checkedOn: date, bankBalance: balance.trim() };
@@ -508,9 +702,10 @@ export function CheckDialog({
       }}
     >
       <div className="ui-field-row">
-        <DateField label="Date" value={date} onChange={setDate} />
+        <DateField label="Date" name="date" value={date} onChange={setDate} />
         <Text
           label={`Balance in the bank, ${currency}`}
+          name="balance"
           value={balance}
           onChange={setBalance}
           numeric
@@ -538,15 +733,15 @@ export function RateDialog({
       title="Change the rate"
       note="From this date on interest is counted at the new rate. Earlier days keep the rate they had."
       submit="Change rate"
-      problem={() => dateProblem(date, 'From') ?? rateProblem(rate)}
+      problems={() => ({ from: dateProblem(date), rate: rateProblem(rate) })}
       onClose={onClose}
       onSubmit={async () =>
         onSaved(await depositsApi.addRate(id, { effectiveFrom: date, ratePercent: rate.trim() }))
       }
     >
       <div className="ui-field-row">
-        <DateField label="From" value={date} onChange={setDate} />
-        <Text label="New rate, % a year" value={rate} onChange={setRate} numeric />
+        <DateField label="From" name="from" value={date} onChange={setDate} />
+        <Text label="New rate, % a year" name="rate" value={rate} onChange={setRate} numeric />
       </div>
     </FormDialog>
   );
@@ -566,10 +761,11 @@ export function DeleteDepositDialog({
 }) {
   return (
     <FormDialog
-      title="Delete deposit"
-      note={`${name} and the movements, rates and checks entered for it will be removed. This cannot be undone.`}
-      submit="Delete"
-      problem={() => null}
+      title="Delete this deposit?"
+      note={`${name} and the movements, rates and checks entered for it are removed; this cannot be undone.`}
+      submit="Delete deposit"
+      danger
+      problems={() => ({})}
       onClose={onClose}
       onSubmit={async () => {
         await depositsApi.remove(id);

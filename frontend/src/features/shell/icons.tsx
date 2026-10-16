@@ -101,6 +101,12 @@ const paths = {
       <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4" />
     </>
   ),
+  bank: (
+    <>
+      <path d="M12 2 21 7H3z" />
+      <path d="M3 21h18M5 10v8M9.67 10v8M14.33 10v8M19 10v8" />
+    </>
+  ),
   briefcase: (
     <>
       <rect x="2" y="7" width="20" height="14" rx="2" />

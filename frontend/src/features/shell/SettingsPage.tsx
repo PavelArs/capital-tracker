@@ -113,7 +113,7 @@ function MainCurrency() {
           : 'Portfolio values, cost and P&L are shown in it; the other two stay one click away.';
   return (
     <div className="shell-setting">
-      <div className="shell-setting__text">
+      <div className="shell-setting__text shell-setting__text--grow">
         <span id="settings-currency" className="shell-setting__label">
           Main currency
         </span>
@@ -292,6 +292,7 @@ export default function SettingsPage() {
         <SecuritySettings />
         <section className="shell-card" aria-labelledby="settings-display">
           <h2 id="settings-display">Display</h2>
+          <MainCurrency />
           <div className="shell-setting">
             <div className="shell-setting__text">
               <span id="settings-theme" className="shell-setting__label">
@@ -312,7 +313,6 @@ export default function SettingsPage() {
               onChange={setTheme}
             />
           </div>
-          <MainCurrency />
         </section>
         <InflationSettings />
         <section className="shell-card" aria-labelledby="settings-wallets">

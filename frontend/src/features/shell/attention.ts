@@ -160,6 +160,10 @@ function balanceItems(
   });
 }
 
+/** "1 needs attention", "3 need attention": the bell and the sync plate count alike. */
+export const needAttention = (count: number) =>
+  count === 1 ? '1 needs attention' : `${count} need attention`;
+
 /**
  * ATTN-BELL: everything that needs the owner, most urgent kind first (prototype "Needs
  * your attention"): old prices and rates, transactions to classify, wallets that did not

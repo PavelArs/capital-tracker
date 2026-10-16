@@ -3,30 +3,23 @@ import { cachedReads } from '@api/cached-reads';
 import { forgetReads } from '@api/read-cache';
 import { AuthProvider } from '@contexts/AuthContext';
 import { ErrorProvider } from '@contexts/ErrorContext';
-import { createInstance } from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import ru from '../i18n/locales/ru.json';
 import Layout from './Layout';
 
 // Static presentation only: server rendering runs no authentication effects and
 // substitutes no API/context responses. Real login and interactions are in SHELL-UI.
 async function markup(path = '/dashboard') {
-  const i18n = createInstance();
-  await i18n.init({ lng: 'ru', resources: { ru: { translation: ru } } });
   const document = new DOMParser().parseFromString(
     renderToStaticMarkup(
-      <I18nextProvider i18n={i18n}>
-        <MemoryRouter initialEntries={[path]}>
-          <AuthProvider>
-            <ErrorProvider>
-              <Layout />
-            </ErrorProvider>
-          </AuthProvider>
-        </MemoryRouter>
-      </I18nextProvider>,
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <ErrorProvider>
+            <Layout />
+          </ErrorProvider>
+        </AuthProvider>
+      </MemoryRouter>,
     ),
     'text/html',
   );
@@ -79,7 +72,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       ['Portfolio', '/portfolio'],
       ['Transactions', '/transactions'],
       ['Wallets', '/wallets'],
-      ['Deposits', '/deposits'],
+      ['Banks', '/deposits'],
       ['Goals', '/goals'],
       ['Settings', '/preferences'],
     ]);
@@ -95,7 +88,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Portfolio',
       'Transactions',
       'Wallets',
-      'Deposits',
+      'Banks',
       'Real estate',
       'Goals',
       'Settings',
@@ -127,7 +120,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Portfolio',
       'Transactions',
       'Wallets',
-      'Deposits',
+      'Banks',
       'Brokers',
       'Goals',
       'Settings',
@@ -155,8 +148,8 @@ describe('SHELL-001 the sections, no Legacy group', () => {
     });
     await cachedReads.accounts.load();
     const held = await sections();
-    expect(held.slice(held.indexOf('Deposits'))).toEqual([
-      'Deposits',
+    expect(held.slice(held.indexOf('Banks'))).toEqual([
+      'Banks',
       'Brokers',
       'Real estate',
       'Goals',

@@ -17,7 +17,7 @@ const choices: readonly { key: AddChoice; title: string; detail: string; icon: I
     key: 'bank',
     title: 'Bank',
     detail: 'A deposit or a savings account. The app counts the interest.',
-    icon: 'archive',
+    icon: 'bank',
   },
   {
     key: 'broker',

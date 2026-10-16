@@ -226,23 +226,43 @@ export function explorerUrl(hash: string, network: string | undefined): string |
   return page && /^(0x)?[0-9A-Za-z]+$/.test(hash) ? page(hash) : null;
 }
 
-/** Where the operation happened: an account, two for a transfer, or a wallet. */
-export function placeLabel(operation: Operation): string {
+/**
+ * Where the operation happened, as the text before an address and the shortened address itself,
+ * which a narrow row keeps whole; the address is empty when the place names none.
+ */
+export function placeParts(operation: Operation): { lead: string; address: string } {
+  const whole = (lead: string) => ({ lead, address: '' });
   // XFER-AUTO: a transfer between wallets names both, a blockchain one included.
   if (operation.type === 'transfer' && operation.account && operation.counterAccount)
-    return `${operation.account.name} → ${operation.counterAccount.name}`;
+    return whole(`${operation.account.name} → ${operation.counterAccount.name}`);
   // CLS-SWAP: paid from one wallet, received in another; within one wallet, just that wallet.
   if (operation.type === 'swap' && operation.wallet && operation.account)
-    return operation.counterAccount
-      ? `${operation.counterAccount.name} → ${operation.account.name}`
-      : operation.account.name;
+    return whole(
+      operation.counterAccount
+        ? `${operation.counterAccount.name} → ${operation.account.name}`
+        : operation.account.name,
+    );
   // A chain row of an address in a wallet shows the wallet, then the address's own name.
   if (operation.wallet && operation.account)
-    return `${operation.account.name} · ${operation.wallet.label ?? shortAddress(operation.wallet.address)}`;
-  if (operation.wallet) return walletLabel(operation.wallet);
+    return operation.wallet.label
+      ? whole(`${operation.account.name} · ${operation.wallet.label}`)
+      : { lead: `${operation.account.name} · `, address: shortAddress(operation.wallet.address) };
+  if (operation.wallet)
+    return operation.wallet.network === 'bybit'
+      ? whole(walletLabel(operation.wallet))
+      : {
+          lead: `${networkNames[operation.wallet.network]} wallet `,
+          address: shortAddress(operation.wallet.address),
+        };
   if (operation.account && operation.counterAccount)
-    return `${operation.account.name} → ${operation.counterAccount.name}`;
-  return operation.account?.name ?? 'Whole portfolio';
+    return whole(`${operation.account.name} → ${operation.counterAccount.name}`);
+  return whole(operation.account?.name ?? 'Whole portfolio');
+}
+
+/** Where the operation happened: an account, two for a transfer, or a wallet. */
+export function placeLabel(operation: Operation): string {
+  const { lead, address } = placeParts(operation);
+  return lead + address;
 }
 
 /** Dates and times are shown in UTC, as stored. */
@@ -273,6 +293,13 @@ export function dayHeading(iso: string, now: string): string {
 
 export function moment(iso: string): string {
   return `${day(iso)}, ${time(iso)}`;
+}
+
+/** The drawer's date: with its time, unless it was entered without one (as `rowTime`). */
+export function operationMoment(operation: Operation): string {
+  return rowTime(operation) === 'No time'
+    ? day(operation.occurredAt)
+    : moment(operation.occurredAt);
 }
 
 export { DASH };

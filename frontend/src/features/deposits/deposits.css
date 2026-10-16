@@ -10,6 +10,11 @@
   font-size: var(--fs-sm);
 }
 
+.deposit-total__reason {
+  display: block;
+  max-width: 32ch;
+}
+
 .deposit-total__value {
   font-size: var(--fs-2xl, 28px);
   font-weight: 600;
@@ -17,6 +22,7 @@
 }
 
 .deposit-total__note,
+.deposit-total__reason,
 .deposit-stat__hint {
   color: var(--ink-3);
   font-size: var(--fs-xs);
@@ -63,12 +69,6 @@
 .deposit-card__name {
   display: block;
   font-weight: 600;
-}
-
-.deposit-card__bank {
-  display: block;
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
 }
 
 .deposit-card__value,
@@ -160,21 +160,6 @@
   text-align: right;
 }
 
-.deposit-rates {
-  display: grid;
-  gap: 6px;
-  margin: var(--sp-3) 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-sm);
-}
-
-.deposit-rates li {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
 .deposit-actions {
   display: flex;
   flex-wrap: wrap;
@@ -191,8 +176,152 @@
   margin-bottom: var(--sp-3);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 559.98px) {
   .deposit-list {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* The capitalisation toggle sits beside "Interest comes", level with its field. */
+.deposit-toggle {
+  align-self: end;
+  min-height: 40px;
+}
+
+/* The list, bank by bank (classes-19): one card per bank holding its deposits. */
+.deposit-total__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) 48px;
+}
+
+.deposit-total__figures > div {
+  display: grid;
+  gap: 4px;
+}
+
+.deposit-banks {
+  display: grid;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deposit-bank {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.deposit-bank__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.deposit-bank__name {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.deposit-bank__count {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.deposit-bank__total {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.deposit-bank__total strong {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.deposit-bank__total span {
+  max-width: 32ch;
+  color: var(--warn, var(--ink-2));
+  font-size: var(--fs-xs);
+}
+
+/* The deposit page: the terms beside the interest by period where both fit (classes-21). */
+.deposit-columns {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+@media (min-width: 1280px) {
+  .deposit-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    align-items: start;
+  }
+}
+
+.deposit-terms {
+  display: grid;
+  gap: 8px;
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+}
+
+.deposit-terms > div {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+
+.deposit-terms dt {
+  color: var(--ink-3);
+}
+
+.deposit-terms dd {
+  margin: 0;
+}
+
+.deposit-terms__rate {
+  display: block;
+}
+
+.deposit-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.deposit-link:focus-visible {
+  border-radius: var(--r-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Phone rows of the deposit page (classes-15) have no icon in front, so the text takes the room
+   the shared row rule keeps for one and the figures stay at the right edge. */
+.deposit-rows .ui-row > .ui-row__main {
+  flex: 1;
+}
+
+/* The destructive button of the delete confirmation, as the goal dialog has it. */
+.deposit-dialog .shell-button--danger {
+  border-color: transparent;
+  background: var(--neg);
+  color: var(--neg-ink);
+}
+
+.deposit-dialog .shell-button--danger:hover {
+  border-color: transparent;
+  filter: brightness(1.08);
+}
+
+.deposit-dialog .shell-button--danger:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }

@@ -413,6 +413,28 @@ describe('cookie session API client', () => {
     expect(sent.at(-1)?.headers.get('X-CSRF-Token')).toBe('csrf');
   });
 
+  it('keeps the reads after a deposit preview, which saves nothing', async () => {
+    const cache = await import('./read-cache');
+    const { depositsApi } = await import('./deposits.api');
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      return config.url === '/auth/csrf'
+        ? response(config, { csrfToken: 'csrf' })
+        : response(config, {});
+    };
+    cache.remember('page', { total: 1 }, cache.generationNow());
+
+    const controller = new AbortController();
+    await depositsApi.preview({} as Parameters<typeof depositsApi.preview>[0], controller.signal);
+
+    expect(sent.at(-1)?.url).toBe('/deposits/preview');
+    expect(sent.at(-1)?.changesNothing).toBe(true);
+    // A superseded preview can be cancelled.
+    expect(sent.at(-1)?.signal).toBe(controller.signal);
+    expect(cache.recall('page')).toEqual({ total: 1 });
+  });
+
   it('keeps the reads after a write the server refused', async () => {
     const cache = await import('./read-cache');
     apiClient.defaults.adapter = async (config) => {
@@ -423,6 +445,68 @@ describe('cookie session API client', () => {
     cache.remember('page', 1, cache.generationNow());
 
     await expect(apiClient.post('/accounting/trades', {})).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBe(1);
+  });
+
+  it('goals-02 drops every kept read when a write gets no answer, since it may have been saved', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.post('/goals', {})).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBeUndefined();
+  });
+
+  it('keeps the kept reads when a POST that only reads gets no answer or is cancelled', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      if (config.url === '/goals/preview') throw new AxiosError('canceled', 'ERR_CANCELED', config);
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(
+      apiClient.post('/deposits/preview', {}, { changesNothing: true }),
+    ).rejects.toBeInstanceOf(AxiosError);
+    await expect(
+      apiClient.post('/goals/preview', {}, { changesNothing: true }),
+    ).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBe(1);
+  });
+
+  it('keeps the kept reads when a write is cancelled before an answer, as a superseded preview is', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      throw new AxiosError('canceled', 'ERR_CANCELED', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.post('/deposits/preview', {})).rejects.toBeInstanceOf(AxiosError);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      apiClient.post('/goals/preview', {}, { signal: controller.signal }),
+    ).rejects.toBeTruthy();
+
+    expect(cache.recall('page')).toBe(1);
+  });
+
+  it('goals-02 keeps the kept reads when a read gets no answer', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.get('/goals')).rejects.toBeInstanceOf(AxiosError);
 
     expect(cache.recall('page')).toBe(1);
   });

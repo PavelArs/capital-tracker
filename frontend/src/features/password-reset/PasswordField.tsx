@@ -1,5 +1,5 @@
 import { Icon } from '@features/shell/icons';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, type Ref, useState } from 'react';
 import { FieldError } from './AuthFrame';
 
 interface PasswordFieldProps {
@@ -13,6 +13,7 @@ interface PasswordFieldProps {
   autoComplete?: 'new-password' | 'current-password';
   /** Shown at the end of the label row, such as "Forgot password?". */
   labelAside?: ReactNode;
+  inputRef?: Ref<HTMLInputElement>;
 }
 
 export default function PasswordField({
@@ -25,6 +26,7 @@ export default function PasswordField({
   disabled,
   autoComplete = 'new-password',
   labelAside,
+  inputRef,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   const described = [hint ? `${id}-hint` : '', error ? `${id}-error` : '']
@@ -42,6 +44,7 @@ export default function PasswordField({
       )}
       <div className="auth-pw">
         <input
+          ref={inputRef}
           className="ui-input"
           id={id}
           type={visible ? 'text' : 'password'}

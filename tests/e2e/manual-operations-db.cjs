@@ -357,9 +357,57 @@ async function remove(db, s, f) {
   assert.equal(body.dependent?.operationId, `trade:${fits.tradeId}`);
   assert.equal(await fingerprint(db), before);
 
+  stage = 'OPS-DELETE-GUARD the check before the confirmation names what the deletion would';
+  assert.deepEqual(await s.trades.voidCheck(owner, trust, buy.tradeId), {
+    tradeId: buy.tradeId,
+    dependent: refusal.getResponse().dependent,
+  });
+  assert.deepEqual(await s.trades.voidCheck(owner, trust, fits.tradeId), {
+    tradeId: fits.tradeId,
+    dependent: null,
+  });
+  await rejected(() => s.trades.voidCheck(f.other, trust, buy.tradeId), 404);
+  await rejected(() => s.trades.voidCheck(owner, trust, randomUUID()), 404);
+  // A deletion the void refuses before any dependency (a full journal, an entry dated before
+  // the records start) is refused by the check the same way, never blamed on another operation.
+  const journal = (column, value) =>
+    db.query(`UPDATE account_trade_journals SET "${column}"=$2 WHERE "accountId"=$1`, [
+      trust,
+      value,
+    ]);
+  const [kept] = await db.query(
+    'SELECT "currentRevision","coverageFrom" FROM account_trade_journals WHERE "accountId"=$1',
+    [trust],
+  );
+  const refusedWith = (action) =>
+    action().then(
+      () => assert.fail('Not refused'),
+      (error) => [error.getStatus?.(), error.getResponse?.()],
+    );
+  const refusedAlike = async (tradeId) => {
+    // The revision the owner's screen holds; reading the journal again needs a sound history.
+    const voided = await refusedWith(() =>
+      s.trades.void(owner, trust, tradeId, {
+        requestId: randomUUID(),
+        expectedJournalRevision: kept.currentRevision,
+      }),
+    );
+    assert.equal(voided[0], 409);
+    assert.equal(voided[1]?.dependent, undefined);
+    assert.deepEqual(await refusedWith(() => s.trades.voidCheck(owner, trust, tradeId)), voided);
+  };
+  await journal('currentRevision', 10000);
+  await refusedAlike(fits.tradeId);
+  await journal('currentRevision', kept.currentRevision);
+  await journal('coverageFrom', day('2025-03-02'));
+  await refusedAlike(buy.tradeId);
+  await journal('coverageFrom', kept.coverageFrom);
+  assert.equal(await fingerprint(db), before);
+
   for (const later of [fits, sale]) assert.equal((await voidTrade(later.tradeId)).created, true);
   const deleted = await voidTrade(buy.tradeId);
   assert.equal(deleted.value.trade.kind, 'void');
+  await rejected(() => s.trades.voidCheck(owner, trust, buy.tradeId), 409);
   const versions = await s.trades.listVersions(owner, trust, buy.tradeId);
   assert.deepEqual(
     versions.items.map(({ version, kind }) => [version, kind]),
@@ -378,7 +426,7 @@ async function remove(db, s, f) {
       'Deleted trade left the list',
     );
   console.log(
-    'PASS OPS-DELETE-GUARD names the dependent sale; OPS-DELETE keeps the void in history',
+    'PASS OPS-DELETE-GUARD names the dependent sale, before and on the deletion; OPS-DELETE keeps the void in history',
   );
 }
 

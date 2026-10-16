@@ -3,6 +3,7 @@ import type {
   DepositDetail,
   DepositReal,
   DepositStatus,
+  EarlyClose,
   MovementKind,
 } from '@api/deposits.api';
 
@@ -10,7 +11,7 @@ type DepositPeriod = DepositDetail['periods'][number];
 
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import type { BadgeTone } from '@/ui/Badge';
-import { dayText } from '@/utils/dates';
+import { dayText, moscowDate } from '@/utils/dates';
 import { currencySymbols, DASH, percent, tone } from '../portfolio/format';
 import type { InflationBasis } from '../shell/inflation-basis';
 
@@ -23,10 +24,8 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 }
 
-const MOSCOW_OFFSET_MS = 3 * 3_600_000;
-
 /** Today's calendar date in Moscow, the day the server counts interest by. */
-export const today = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+export const today = () => moscowDate(Date.now());
 
 /** The badge tone of each status. */
 export const statusTone: Record<DepositStatus, BadgeTone> = {
@@ -45,6 +44,12 @@ export const movementText: Record<MovementKind, string> = {
   topup: 'Top-up',
   withdrawal: 'Withdrawal',
   'interest-payout': 'Interest paid out',
+};
+
+/** What closing a deposit before its end does to its interest, in the form and on its page. */
+export const earlyCloseText: Record<EarlyClose, string> = {
+  'forfeits-interest': 'Loses the interest not yet posted',
+  'keeps-interest': 'Keeps the interest earned',
 };
 
 const payoutNames = {
@@ -116,6 +121,23 @@ export function capitalizedInterest(
   const text = cents.toString().padStart(3, '0');
   return `${text.slice(0, -2)}.${text.slice(-2)}`;
 }
+
+const payoutTerms: Record<Deposit['payout'], string> = {
+  daily: 'Every day',
+  monthly: 'Every month',
+  quarterly: 'Every quarter',
+  'at-end': 'At the end of the term',
+};
+
+/** "Every month, paid out": when the interest comes and where it goes. */
+export const interestText = (deposit: Pick<Deposit, 'payout' | 'capitalized'>): string =>
+  `${payoutTerms[deposit.payout]}, ${deposit.capitalized ? 'added to the deposit' : 'paid out'}`;
+
+/** "Jul 1, 2026 to Dec 1, 2026", or "From Jul 1, 2026, no end date". */
+export const periodText = (deposit: Pick<Deposit, 'startDate' | 'endDate'>): string =>
+  deposit.endDate
+    ? `${dateText(deposit.startDate)} to ${dateText(deposit.endDate)}`
+    : `From ${dateText(deposit.startDate)}, no end date`;
 
 /** The deposit after inflation by the basis the owner chose; null while the server has none. */
 export function realOf(deposit: Pick<Deposit, 'real'>, basis: InflationBasis): DepositReal | null {

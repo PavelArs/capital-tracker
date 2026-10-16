@@ -1,8 +1,8 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal, GoalScenario } from '@api/goals.api';
 import { isAxiosError } from 'axios';
-import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
@@ -17,11 +17,13 @@ import {
   enteredText,
   flooredText,
   monthYear,
+  moscowDay,
   neededText,
   rateText,
   reachedDate,
   scenarioText,
   span,
+  staleText,
   statusText,
   statusTone,
   timeLeft,
@@ -60,7 +62,7 @@ function Cases({ goal }: { goal: Goal }) {
             {dated ? (
               <>
                 <th className="ui-num">At {monthYear(goal.deadline as string)}</th>
-                <th className="ui-num">Against the sum</th>
+                <th className="ui-num">Against the target</th>
                 <th className="ui-num">Needed a month</th>
                 <th className="ui-num">Reached</th>
               </>
@@ -68,6 +70,7 @@ function Cases({ goal }: { goal: Goal }) {
               <>
                 <th className="ui-num">Reached</th>
                 <th className="ui-num">Takes</th>
+                <th className="ui-num">In 10 years</th>
               </>
             )}
           </tr>
@@ -88,7 +91,7 @@ function Cases({ goal }: { goal: Goal }) {
                     <td className="ui-num" data-label={`At ${monthYear(goal.deadline as string)}`}>
                       {money(scenario.projectedAtDeadline)}
                     </td>
-                    <td className="ui-num" data-label="Against the sum">
+                    <td className="ui-num" data-label="Against the target">
                       {against && (
                         <span
                           className={
@@ -120,6 +123,9 @@ function Cases({ goal }: { goal: Goal }) {
                         ? '—'
                         : span(scenario.monthsToTarget)}
                     </td>
+                    <td className="ui-num" data-label="In 10 years">
+                      {money(scenario.projectedIn10Years ?? null)}
+                    </td>
                   </>
                 )}
               </tr>
@@ -143,13 +149,33 @@ function offsets(goal: Goal): { less: string; more: string } | null {
   };
 }
 
+/** The icon of the verdict: a check when it is good news, an alert when it is not. */
+const verdictIcon = (status: Goal['status']) =>
+  status === 'behind' || status === 'overdue'
+    ? 'alert'
+    : status === 'reached' || status === 'on-track'
+      ? 'check'
+      : 'info';
+
 // GOAL-PAGE: one goal with its figures, the verdict and the three return cases.
 export default function GoalPage() {
   const { goalId = '' } = useParams();
   const { data: goal, error, replace } = useCachedRead(cachedReads.goal, goalId);
   const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
   const navigate = useNavigate();
-  const missing = isAxiosError(error) && error.response?.status === 404;
+  const location = useLocation();
+  // goals-08: a new goal opens here, once, with word that it was added; an edit says it saved.
+  const [notice, setNotice] = useState<string | null>(() =>
+    (location.state as { notice?: string } | null)?.notice === 'added' ? 'Goal added.' : null,
+  );
+  // The word is said once: going back to this entry, or reloading it, does not say it again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is cleared.
+  useEffect(() => {
+    if (notice) navigate({ pathname: location.pathname }, { replace: true });
+  }, []);
+  // A malformed id in the address names no goal either (goals-23).
+  const status = isAxiosError(error) ? error.response?.status : undefined;
+  const missing = status === 404 || status === 400;
 
   if (missing)
     return (
@@ -173,6 +199,7 @@ export default function GoalPage() {
   // figures to act on, even for a goal that is already reached.
   const known = goal ? goal.progress.complete : false;
   const against = known ? againstTarget(base?.gap ?? null, goal?.currency ?? 'USD') : null;
+  const stale = goal ? staleText(goal.progress.stalePrices) : null;
 
   return (
     <div className="shell-page">
@@ -191,18 +218,21 @@ export default function GoalPage() {
               </button>
               <button
                 type="button"
-                className="shell-button shell-button--ghost"
+                className="shell-button shell-button--ghost goal-icon-button"
+                aria-label="Delete goal"
+                title="Delete goal"
                 onClick={() => setDialog('delete')}
               >
                 <Icon name="trash" className="shell-icon shell-icon--sm" />
-                Delete
               </button>
             </>
           )
         }
       />
       <p className="goal-back">
-        <Link to="/goals">← Goals</Link>
+        <Link to="/goals" className="shell-link">
+          ← Goals
+        </Link>
       </p>
       {error && goal === null ? (
         <p className="shell-note" role="alert">
@@ -214,22 +244,34 @@ export default function GoalPage() {
         <>
           <section className="shell-card goal-head">
             <div className="goal-head__top">
-              <Badge tone={statusTone[goal.status]}>{statusText[goal.status]}</Badge>
+              <Badge tone={statusTone[goal.status]} dot>
+                {statusText[goal.status]}
+              </Badge>
               <small>
                 {goal.deadline ? `By ${dateText(goal.deadline)}` : 'No date'} · whole portfolio ·
-                set {dateText(goal.createdAt.slice(0, 10))}
+                set {dateText(moscowDay(goal.createdAt))}
               </small>
             </div>
             <GoalFigures goal={goal} />
             <GoalBar goal={goal} />
           </section>
-          <p className={`ui-banner ui-banner--${bannerTone[goal.status]}`} role="status">
-            <Icon
-              name={goal.status === 'behind' || goal.status === 'overdue' ? 'alert' : 'info'}
-              className="shell-icon shell-icon--sm"
-            />
+          {notice && (
+            <p className="ui-banner ui-banner--pos" role="status">
+              {notice}
+            </p>
+          )}
+          <p
+            className={`ui-banner ui-banner--${bannerTone[goal.status]} ui-banner--action goal-verdict`}
+            role="status"
+          >
+            <Icon name={verdictIcon(goal.status)} className="shell-icon shell-icon--sm" />
             <span>{verdict(goal)}</span>
           </p>
+          {stale && (
+            <p className="ui-banner ui-banner--warn" role="note">
+              {stale}
+            </p>
+          )}
           <div className="goal-stats">
             <Stat
               label="Portfolio now"
@@ -237,10 +279,10 @@ export default function GoalPage() {
               hint={
                 percent === null
                   ? undefined
-                  : `${percent}% of the sum${goal.progress.complete ? '' : '; some assets have no price'}`
+                  : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price'}`
               }
             />
-            <Stat label="Sum to reach" value={entered(goal.targetAmount)} />
+            <Stat label="Target" value={entered(goal.targetAmount)} />
             <Stat
               label="Time left"
               value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
@@ -313,7 +355,9 @@ export default function GoalPage() {
                 <Icon name="info" className="shell-icon shell-icon--sm" /> A projection, not a
                 promise: the same return every year on the whole portfolio, with{' '}
                 {planned ? `${entered(goal.monthlyContribution)} put in` : 'nothing put in'} once a
-                month, the first a month from {dateText(goal.asOf)}.
+                month, the first a month from {dateText(goal.asOf)}, and interest compounded
+                monthly. Bank deposits count at the same rate for now. Markets do not move in a
+                straight line.
               </p>
             </section>
           )}
@@ -325,6 +369,7 @@ export default function GoalPage() {
               onSaved={(saved) => {
                 setDialog(null);
                 replace(saved);
+                setNotice('Goal saved.');
               }}
             />
           )}
@@ -332,7 +377,7 @@ export default function GoalPage() {
             <DeleteGoalDialog
               goal={goal}
               onClose={() => setDialog(null)}
-              onDeleted={() => navigate('/goals')}
+              onDeleted={() => navigate('/goals', { state: { notice: 'deleted' } })}
             />
           )}
         </>

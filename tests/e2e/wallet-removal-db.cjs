@@ -2,6 +2,8 @@
 // wallet-removal (WALLET-REMOVE) against fresh synthetic PostgreSQL: stopping to track an
 // address or a wallet keeps every stored transaction, answer and entry; the address only leaves
 // the lists, the balances and the sync schedule, and adding it again brings its history back.
+// A wallet made with its address (WAL-INVALID) is made once per request and never for a refused
+// address, and a repeated request never adds an address to that wallet once it is removed.
 // All data is synthetic.
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
@@ -337,6 +339,110 @@ async function exchangeKey(db, s, owner) {
   console.log('PASS WALLET-REMOVE-KEY');
 }
 
+// The wallets and addresses of an owner, to show that a refused command changed neither.
+async function walletState(db, owner) {
+  const rows = [];
+  for (const table of ['manual_accounts', 'wallet_addresses'])
+    rows.push(
+      await db.query(
+        `SELECT to_jsonb(t)::text AS row FROM ${table} t WHERE "ownerId"=$1 ORDER BY row`,
+        [owner],
+      ),
+    );
+  return sha256(JSON.stringify(rows));
+}
+
+async function newWallet(db, s, owner) {
+  // Public example addresses (P2PKH and P2SH) not used above.
+  const P2PKH = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2';
+  const P2SH = '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy';
+  const wallet = (name) => ({ requestId: randomUUID(), name, kind: 'hardware' });
+  const made = async (requestId) =>
+    (
+      await db.query(
+        'SELECT count(*)::int AS n FROM manual_accounts WHERE "ownerId"=$1 AND "requestId"=$2',
+        [owner, requestId],
+      )
+    )[0].n;
+
+  stage = 'WAL-INVALID an address the server cannot read makes no wallet';
+  const start = await walletState(db, owner);
+  await rejected(
+    () =>
+      s.addresses.register(owner, {
+        network: 'bitcoin',
+        address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlj',
+        newAccount: wallet('Cold storage'),
+      }),
+    400,
+  );
+  assert.equal(await walletState(db, owner), start, 'No wallet and no address');
+
+  stage = 'WAL-INVALID moving a missing or removed address makes no wallet';
+  const stopped = (await s.addresses.register(owner, { network: 'bitcoin', address: P2SH })).value
+    .id;
+  await s.addresses.remove(owner, stopped);
+  const before = await walletState(db, owner);
+  for (const id of [randomUUID(), stopped])
+    await rejected(() => s.addresses.update(owner, id, { newAccount: wallet('Ledger') }), 404);
+  assert.equal(await walletState(db, owner), before, 'The wallet went with the refused move');
+
+  stage = 'WAL-INVALID a repeated request makes one wallet';
+  const cold = wallet('Cold storage');
+  const added = await s.addresses.register(owner, {
+    network: 'bitcoin',
+    address: P2PKH,
+    newAccount: cold,
+  });
+  assert.equal(added.created, true);
+  const repeat = await s.addresses.register(owner, {
+    network: 'bitcoin',
+    address: P2PKH,
+    newAccount: cold,
+  });
+  assert.equal(repeat.created, false);
+  assert.equal(repeat.value.accountId, added.value.accountId);
+  assert.equal(await made(cold.requestId), 1);
+  const ledger = wallet('Ledger');
+  const moved = await s.addresses.update(owner, added.value.id, { newAccount: ledger });
+  const movedAgain = await s.addresses.update(owner, added.value.id, { newAccount: ledger });
+  assert.notEqual(moved.accountId, added.value.accountId);
+  assert.equal(movedAgain.accountId, moved.accountId);
+  assert.equal(await made(ledger.requestId), 1);
+
+  stage = 'WAL-INVALID the same request id with another name is refused and changes nothing';
+  const settled = await walletState(db, owner);
+  await rejected(
+    () =>
+      s.addresses.update(owner, added.value.id, { newAccount: { ...ledger, name: 'Other' } }),
+    409,
+  );
+  await rejected(
+    () =>
+      s.addresses.register(owner, {
+        network: 'bitcoin',
+        address: P2SH,
+        newAccount: { ...cold, name: 'Other' },
+      }),
+    409,
+  );
+  assert.equal(await walletState(db, owner), settled);
+
+  stage = 'WAL-INVALID a repeated request never adds an address to a wallet removed since';
+  await s.accounting.removeAccount(owner, moved.accountId);
+  const loose = (await s.addresses.register(owner, { network: 'bitcoin', address: P2SH })).value;
+  assert.equal(loose.accountId, null);
+  const removed = await walletState(db, owner);
+  await rejected(
+    () =>
+      s.addresses.register(owner, { network: 'bitcoin', address: P2PKH, newAccount: ledger }),
+    409,
+  );
+  await rejected(() => s.addresses.update(owner, loose.id, { newAccount: ledger }), 409);
+  assert.equal(await walletState(db, owner), removed, 'The removed wallet stays empty');
+  console.log('PASS WAL-INVALID new wallets with their address: refused input, replay, conflict');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -373,13 +479,15 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
+    const [owner, other, walletOwner] = await db.query(`INSERT INTO users(email,password) VALUES
       ('removal-owner@example.invalid','synthetic-not-a-hash'),
-      ('removal-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('removal-other@example.invalid','synthetic-not-a-hash'),
+      ('removal-new-wallet@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = await removeAddress(db, s, owner.id);
     await removeWallet(db, s, owner.id, f);
     await exchangeKey(db, s, owner.id);
+    await newWallet(db, s, walletOwner.id);
     assert.deepEqual(await listed(s, other.id), [], 'Another owner sees nothing of it');
   } finally {
     if (db.isInitialized) await db.destroy();

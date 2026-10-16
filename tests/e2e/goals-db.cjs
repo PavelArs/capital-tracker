@@ -153,6 +153,7 @@ async function forecast(db, service, owner) {
     complete: true,
     percent: '50.00',
     remaining: '5000.00',
+    stalePrices: 0,
   });
   assert.equal(goal.status, 'on-track', '5,000 and 200 a month for three years pass 10,000');
   assert.deepEqual(
@@ -215,9 +216,101 @@ async function forecast(db, service, owner) {
     targetAmount: '4000',
   });
   assert.equal(reached.status, 'reached');
-  assert.equal(reached.progress.percent, '100.00');
+  assert.equal(reached.progress.percent, '125.00', 'goals-03: the real share, not capped at 100');
   assert.equal(reached.scenarios[1].monthsToTarget, 0);
   console.log('PASS GOAL-REACHED');
+
+  stage = 'goals-28 synthetic goal on its deadline day, a Moscow day';
+  const moscowToday = "(now() AT TIME ZONE 'Europe/Moscow')::date";
+  const due = await service.create(owner, { ...reserve(), targetAmount: '20000' });
+  await db.query(`UPDATE savings_goals SET deadline = ${moscowToday} WHERE id=$1`, [due.id]);
+  const onTheDay = await service.get(owner, due.id);
+  assert.equal(onTheDay.deadline, onTheDay.asOf, 'The deadline is the Moscow day of the read');
+  assert.equal(onTheDay.status, 'behind', 'The deadline day itself is not overdue');
+  assert.equal(onTheDay.scenarios[1].projectedAtDeadline, '5000.00');
+  const { requestId: dueRequest, ...dueFields } = reserve();
+  assert.ok(dueRequest);
+  const renamed = await service.update(owner, due.id, {
+    ...dueFields,
+    targetAmount: '20000',
+    name: 'Due today',
+    deadline: onTheDay.deadline,
+  });
+  assert.equal(renamed.name, 'Due today', 'An edit that keeps the date is saved on its day');
+  const { name: dueName, ...dueTerms } = dueFields;
+  assert.ok(dueName);
+  assert.equal(
+    (await service.preview(owner, { ...dueTerms, deadline: onTheDay.deadline, goalId: due.id }))
+      .status,
+    'behind',
+    'The edit dialog previews a kept date',
+  );
+  await rejected(() => service.preview(owner, { ...dueTerms, deadline: onTheDay.deadline }), 422);
+  await db.query(`UPDATE savings_goals SET deadline = ${moscowToday} + 1 WHERE id=$1`, [due.id]);
+  await rejected(
+    () => service.update(owner, due.id, { ...dueFields, deadline: onTheDay.deadline }),
+    422,
+  );
+  await db.query(`UPDATE savings_goals SET deadline = ${moscowToday} - 1 WHERE id=$1`, [due.id]);
+  assert.equal((await service.get(owner, due.id)).status, 'overdue', 'Overdue from the next day');
+  await service.remove(owner, due.id);
+  console.log('PASS GOAL-DUE-DAY');
+}
+
+async function stale(db, service, owner) {
+  stage = 'goals-35 synthetic bitcoin held at a stored price older than 2 hours';
+  const make = (file, name) => new (require(`/app/backend/dist/accounting/${file}.js`)[name])(db);
+  const accounting = make('accounting.service', 'AccountingService');
+  const trades = make('trade.service', 'TradeService');
+  const btc = (
+    await accounting.createInstrument(owner, {
+      requestId: randomUUID(),
+      name: 'Bitcoin',
+      symbol: 'BTC',
+      assetType: 'crypto',
+    })
+  ).value.id;
+  const account = (await accounting.createAccount(owner, { requestId: randomUUID(), name: 'Cold' }))
+    .value.id;
+  const hoursAgo = (hours) => new Date(Date.now() - hours * 3_600_000).toISOString();
+  await trades.initialize(owner, account, {
+    requestId: randomUUID(),
+    coverageFrom: hoursAgo(48),
+    assertEmpty: true,
+  });
+  await trades.create(owner, account, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 0,
+    instrumentId: btc,
+    side: 'buy',
+    occurredAt: hoursAgo(24),
+    orderWithinTimestamp: 0,
+    quantity: '1',
+    grossUsd: '50000',
+    feeUsd: '0',
+  });
+  await db.query(
+    `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+      VALUES ('BTC','USD','kraken',$1,60000,'hourly-close')`,
+    [hoursAgo(3)],
+  );
+  const goal = await service.create(owner, { ...reserve(), targetAmount: '100000' });
+  assert.deepEqual(goal.progress, {
+    current: '60000.00',
+    complete: true,
+    percent: '60.00',
+    remaining: '40000.00',
+    stalePrices: 1,
+  });
+  await db.query(
+    `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+      VALUES ('BTC','USD','kraken',$1,61000,'hourly-close')`,
+    [hoursAgo(0.25)],
+  );
+  const fresh = await service.get(owner, goal.id);
+  assert.equal(fresh.progress.current, '61000.00');
+  assert.equal(fresh.progress.stalePrices, 0, 'A price from the last 2 hours is not old');
+  console.log('PASS GOAL-STALE-PRICES');
 }
 
 async function main() {
@@ -256,11 +349,12 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other, third, fourth] = await db.query(`INSERT INTO users(email,password) VALUES
+    const [owner, other, third, fourth, fifth] = await db.query(`INSERT INTO users(email,password) VALUES
       ('goal-owner@example.invalid','synthetic-not-a-hash'),
       ('goal-other@example.invalid','synthetic-not-a-hash'),
       ('goal-third@example.invalid','synthetic-not-a-hash'),
-      ('goal-fourth@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('goal-fourth@example.invalid','synthetic-not-a-hash'),
+      ('goal-fifth@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { GoalsService } = require(modulePath);
     const {
       PortfolioSnapshotsService,
@@ -269,6 +363,7 @@ async function main() {
     await terms(db, service, owner.id, other.id);
     await limit(service, third.id);
     await forecast(db, service, fourth.id);
+    await stale(db, service, fifth.id);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

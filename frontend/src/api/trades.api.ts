@@ -218,6 +218,11 @@ export interface DependentOperation {
   instrumentId: string;
   occurredAt: string;
 }
+export interface TradeVoidCheck {
+  tradeId: string;
+  /** The later operation a deletion of the trade would leave short, or null. */
+  dependent: DependentOperation | null;
+}
 export interface VoidCommand {
   requestId: string;
   expectedJournalRevision: number;
@@ -236,6 +241,12 @@ export const tradesApi = {
     (await apiClient.post<TradeReceipt>(`${tradePath(id, tradeId)}/corrections`, input)).data,
   void: async (id: string, tradeId: string, input: VoidCommand): Promise<TradeReceipt> =>
     (await apiClient.post<TradeReceipt>(`${tradePath(id, tradeId)}/voids`, input)).data,
+  /**
+   * OPS-DELETE-GUARD: asks, without changing anything, whether deleting a trade would leave a
+   * later operation short, so the owner hears it before confirming. The void itself still refuses.
+   */
+  voidCheck: async (id: string, tradeId: string): Promise<TradeVoidCheck> =>
+    (await apiClient.get<TradeVoidCheck>(`${tradePath(id, tradeId)}/void-check`)).data,
   /** The account's trades as they stand now, latest version of each, a page at a time. */
   list: async (id: string): Promise<TradePage> =>
     (await apiClient.get<TradePage>(`${accountPath(id)}/trades`, { params: { limit: 100 } })).data,

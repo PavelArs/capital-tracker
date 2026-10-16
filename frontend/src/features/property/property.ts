@@ -1,5 +1,6 @@
 import type { NewPortfolioAsset, ValuationCurrency } from '@api/portfolio-assets.api';
 import type { TradeCommand } from '@api/trades.api';
+import { moscowDate } from '@/utils/dates';
 import { decimal, positive, tradeFromEntry } from '../portfolio/add-transaction';
 
 // "Add property" from the accepted mockups (v8): a property is a hand-valued asset in an account
@@ -87,13 +88,14 @@ export function purchaseTrade(
   identity: { requestId: string; expectedJournalRevision: number },
 ): TradeCommand {
   const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000).toISOString();
-  const today = entry.bought === minute.slice(0, 10);
+  // Today is the Moscow day; its current minute can still fall on the day before in UTC.
+  const today = entry.bought === moscowDate(now);
   return tradeFromEntry(
     {
       side: 'buy',
       instrumentId,
       amount: shareQuantity(entry.share),
-      date: entry.bought,
+      date: today ? minute.slice(0, 10) : entry.bought,
       time: today ? minute.slice(11, 16) : '00:00',
       total: shareOf(entry.cost, entry.share),
       currency: entry.currency,

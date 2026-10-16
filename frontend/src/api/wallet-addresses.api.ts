@@ -1,3 +1,4 @@
+import type { WalletKind } from './accounting.api';
 import apiClient from './client';
 import type { SourceState } from './sync-status.api';
 
@@ -177,14 +178,32 @@ export interface WalletAddress {
   };
 }
 
-export type NewWalletAddress =
-  | { network: Exclude<Network, 'bybit'>; address: string; accountId?: string; label?: string }
-  | { network: 'bybit'; apiKey: string; apiSecret: string; accountId?: string; label?: string };
-
-export interface WalletAddressChanges {
-  accountId?: string | null;
-  label?: string | null;
+/**
+ * WAL-INVALID: a wallet made together with its first address, in the same request, so an address
+ * the server refuses leaves no empty wallet. The request id makes a retry return the same wallet.
+ */
+export interface NewWalletAccount {
+  requestId: string;
+  name: string;
+  kind?: WalletKind;
 }
+
+/** The address joins `accountId`, or a wallet made with it (`newAccount`), or none. */
+type Destination =
+  | { accountId?: string; newAccount?: never }
+  | { accountId?: never; newAccount: NewWalletAccount };
+
+export type NewWalletAddress = (
+  | { network: Exclude<Network, 'bybit'>; address: string; label?: string }
+  | { network: 'bybit'; apiKey: string; apiSecret: string; label?: string }
+) &
+  Destination;
+
+/** The address moves to `accountId` (null: none) or into a wallet made with the move. */
+export type WalletAddressChanges = { label?: string | null } & (
+  | { accountId?: string | null; newAccount?: never }
+  | { accountId?: never; newAccount: NewWalletAccount }
+);
 
 export interface SyncResult {
   outcome: SyncOutcome;

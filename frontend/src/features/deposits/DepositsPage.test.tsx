@@ -5,6 +5,7 @@ import {
   type DepositList,
   depositsApi,
 } from '@api/deposits.api';
+import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -91,8 +92,52 @@ const detail = (deposit: Deposit, change: Partial<DepositDetail> = {}): DepositD
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  // The list asks for net worth for the share of it; unanswered unless a test answers it.
+  vi.spyOn(portfolioValuationApi, 'get').mockReturnValue(new Promise(() => undefined));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+/** Net worth as GET /accounting/portfolio states it, in RUB. */
+const netWorth = (totalValue: string | null): PortfolioValuation => ({
+  at: '2026-10-11T12:00:00.000Z',
+  currency: 'RUB',
+  mainCurrency: 'RUB',
+  rates: [],
+  completeness: totalValue === null ? 'incomplete' : 'complete',
+  totalValue,
+  pricedSubtotal: '5550150.70',
+  missingPriceCount: totalValue === null ? 1 : 0,
+  stalePriceCount: 0,
+  unavailableAccountCount: 0,
+  depositsValue: '555015.07',
+  unratedDepositCount: 0,
+  costBasis: null,
+  knownCostSubtotal: '0',
+  unknownCostCount: 0,
+  missingRateCount: 0,
+  unrealizedPnl: null,
+  unrealizedReturnPercent: null,
+  knownUnrealizedPnl: null,
+  knownUnrealizedReturnPercent: null,
+  realizedPnl: null,
+  knownRealizedSubtotal: '0',
+  unknownRealizedCount: 0,
+  assets: [],
+  allocation: { complete: totalValue !== null, byAsset: [], byType: [], byAccount: [] },
+  accounts: [],
+});
+
+/** Below 640 px, as a phone is. */
+const phone = () =>
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === '(max-width: 639.98px)',
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
 
 function open(path: string) {
   render(
@@ -131,8 +176,15 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(within(usd).getByText('₽454,686.30')).toBeInTheDocument();
     expect(within(usd).getByText('$5,052.07')).toBeInTheDocument();
     expect(within(usd).getByText(/differs by \$0\.03/)).toBeInTheDocument();
-    expect(screen.getByText('₽555,015.07')).toBeInTheDocument();
+    const total = screen.getByRole('region', { name: 'Total in deposits' });
+    expect(within(total).getByText('₽555,015.07')).toBeInTheDocument();
     expect(card).toHaveAttribute('href', `/deposits/${savings.id}?currency=RUB`);
+  });
+
+  it('classes-19 calls the section Banks, as the accepted v8 prototype does', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
+    open('/deposits');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Banks' })).toBeInTheDocument();
   });
 
   it('invites the first deposit when there is none', async () => {
@@ -150,21 +202,23 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   it('adds a deposit from the dialog and opens it', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    expect(within(dialog).getByLabelText('Name')).toHaveFocus();
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
+    expect(within(dialog).getByLabelText('Bank')).toHaveFocus();
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Name');
-    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
+    expect(within(dialog).getByLabelText('Bank')).toHaveAccessibleDescription('Enter the bank');
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Name (optional)'), 'Savings A');
     await user.type(within(dialog).getByLabelText('Amount put in'), '100000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
-    await user.clear(within(dialog).getByLabelText('Start date'));
-    await user.type(within(dialog).getByLabelText('Start date'), '2026-07-01');
-    await user.type(within(dialog).getByLabelText('End date (optional)'), '2026-12-01');
+    await user.clear(within(dialog).getByLabelText('Opened on'));
+    await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
+    await user.type(within(dialog).getByLabelText('Ends on (optional)'), '2026-12-01');
+    await user.click(within(dialog).getByLabelText('Interest is added to the deposit'));
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create).toHaveBeenCalledWith({
@@ -184,13 +238,176 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
   });
 
+  it('classes-07 asks for the bank first, an optional name, the currency as a choice and the terms as the prototype words them', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(dollars));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars));
+    open('/deposits');
+    await user.click(await screen.findByRole('button', { name: 'Add deposit' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
+    const bank = within(dialog).getByLabelText('Bank');
+    expect(bank).toHaveFocus();
+    // The banks already used are one tap away, each once.
+    const chip = within(dialog).getByRole('button', { name: 'Synthetic Bank' });
+    await user.click(chip);
+    expect(bank).toHaveValue('Synthetic Bank');
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    const currency = within(dialog).getByRole('radiogroup', { name: 'Currency' });
+    expect(
+      within(currency)
+        .getAllByRole('radio')
+        .map((radio) => (radio as HTMLInputElement).value),
+    ).toEqual(['RUB', 'USD', 'EUR']);
+    expect(within(currency).getByRole('radio', { name: 'RUB' })).toBeChecked();
+    await user.click(within(currency).getByRole('radio', { name: 'USD' }));
+    const amount = within(dialog).getByLabelText('Amount put in');
+    expect(amount.closest('.ui-affix')).toHaveTextContent('USD');
+    const rate = within(dialog).getByLabelText('Rate, % a year');
+    expect(rate.closest('.ui-affix')).toHaveTextContent('%');
+    expect(rate).toHaveAttribute('placeholder', '16');
+    expect(within(dialog).getByLabelText('Opened on')).toHaveAttribute('type', 'date');
+    expect(within(dialog).getByLabelText('Ends on (optional)')).toHaveAttribute('type', 'date');
+    expect(within(dialog).getByLabelText('Interest comes')).toHaveValue('monthly');
+    expect(within(dialog).getByLabelText('Interest is added to the deposit')).toBeChecked();
+    // The name may stay empty: the deposit is then called Deposit.
+    expect(within(dialog).getByLabelText('Name (optional)')).toHaveAttribute(
+      'placeholder',
+      'Deposit',
+    );
+    await user.type(amount, '5000');
+    await user.type(rate, '4');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({
+      name: 'Deposit',
+      bank: 'Synthetic Bank',
+      currency: 'USD',
+      capitalized: true,
+    });
+  });
+
+  it('classes-04 marks every problem under its field and puts the keyboard on the first one', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Rate, % a year'), '12.34567');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    const amount = within(dialog).getByLabelText('Amount put in');
+    const rate = within(dialog).getByLabelText('Rate, % a year');
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount).toHaveAccessibleDescription('Enter the amount put in');
+    expect(rate).toHaveAttribute('aria-invalid', 'true');
+    expect(rate).toHaveAccessibleDescription('Percent a year, up to four decimals');
+    expect(within(dialog).getByLabelText('Bank')).not.toHaveAttribute('aria-invalid');
+    // Said once: the focus takes each problem with its field, so the messages are no alerts.
+    expect(within(dialog).queryAllByRole('alert')).toHaveLength(0);
+    expect(within(dialog).getByText('Enter the amount put in')).toBeVisible();
+    await waitFor(() => expect(amount).toHaveFocus());
+    // Fixing a field clears its message at once.
+    await user.type(amount, '1000');
+    expect(amount).not.toHaveAttribute('aria-invalid');
+    expect(within(dialog).queryByText('Enter the amount put in')).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  describe('classes-05: the figures of the deposit being entered', () => {
+    const terms = {
+      name: 'Deposit',
+      bank: 'Synthetic Bank',
+      currency: 'RUB',
+      startDate: '2026-07-01',
+      endDate: null,
+      payout: 'monthly',
+      capitalized: false,
+      dayBasis: 'actual-365',
+      earlyClose: 'forfeits-interest',
+      ratePercent: '12',
+      amount: '100000',
+    };
+    const enter = async (user: ReturnType<typeof userEvent.setup>, end?: string) => {
+      vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+      open('/deposits');
+      await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+      const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
+      await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+      await user.type(within(dialog).getByLabelText('Amount put in'), '100000');
+      await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
+      await user.clear(within(dialog).getByLabelText('Opened on'));
+      await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
+      if (end) await user.type(within(dialog).getByLabelText('Ends on (optional)'), end);
+      await user.click(within(dialog).getByLabelText('Interest is added to the deposit'));
+      return dialog;
+    };
+
+    it('classes-05 says when the first interest comes, from the server, and drops it once an entry changes', async () => {
+      const user = userEvent.setup();
+      const preview = vi.spyOn(depositsApi, 'preview').mockResolvedValue({
+        atMaturity: null,
+        firstPayout: { date: '2026-08-01', interest: '1019.18', treatment: 'payable' },
+      });
+      const dialog = await enter(user);
+      expect(
+        await within(dialog).findByText('The first interest, ₽1,019.18, comes on Aug 1, 2026.'),
+      ).toBeInTheDocument();
+      expect(preview).toHaveBeenLastCalledWith(terms, expect.any(AbortSignal));
+      preview.mockReturnValue(new Promise(() => undefined));
+      await user.type(within(dialog).getByLabelText('Amount put in'), '0');
+      expect(within(dialog).queryByText(/The first interest/)).toBeNull();
+    });
+
+    it('classes-05 gives the balance at the end of the term and the interest in it', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(depositsApi, 'preview').mockResolvedValue({
+        atMaturity: { date: '2026-12-01', balance: '105030.14', interest: '5030.14' },
+        firstPayout: { date: '2026-08-01', interest: '1019.18', treatment: 'payable' },
+      });
+      const dialog = await enter(user, '2026-12-01');
+      const note = await within(dialog).findByRole('note');
+      expect(note).toHaveTextContent(
+        'At this rate, at the end of the term, on Dec 1, 2026: ₽105,030.14, of which ₽5,030.14 interest. The first interest, ₽1,019.18, comes on Aug 1, 2026.',
+      );
+    });
+
+    it('deposits-preview stops the earlier preview when the terms change and when the dialog closes', async () => {
+      const user = userEvent.setup();
+      const preview = vi
+        .spyOn(depositsApi, 'preview')
+        .mockReturnValue(new Promise(() => undefined));
+      const dialog = await enter(user);
+      await waitFor(() => expect(preview).toHaveBeenCalledTimes(1));
+      const signal = (call: number) => preview.mock.calls[call][1] as AbortSignal;
+      expect(signal(0).aborted).toBe(false);
+      await user.type(within(dialog).getByLabelText('Amount put in'), '0');
+      expect(signal(0).aborted).toBe(true);
+      await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
+      expect(signal(1).aborted).toBe(false);
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(signal(1).aborted).toBe(true);
+    });
+
+    it('classes-05 shows no figure, and no zero, when the preview cannot be computed', async () => {
+      const user = userEvent.setup();
+      const preview = vi.spyOn(depositsApi, 'preview').mockRejectedValue(new Error('down'));
+      const dialog = await enter(user);
+      await waitFor(() => expect(preview).toHaveBeenCalled());
+      expect(within(dialog).queryByRole('note')).toBeNull();
+      expect(within(dialog).queryByText(/₽0\.00/)).toBeNull();
+    });
+  });
+
   it('offers daily interest and no longer quarterly', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    const interest = within(dialog).getByLabelText('Interest');
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
+    const interest = within(dialog).getByLabelText('Interest comes');
     expect(
       within(interest)
         .getAllByRole('option')
@@ -205,16 +422,18 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
-    await user.clear(within(dialog).getByLabelText('Start date'));
-    await user.type(within(dialog).getByLabelText('Start date'), '2026-07-01');
-    await user.type(within(dialog).getByLabelText('End date (optional)'), '2999-01-01');
+    await user.clear(within(dialog).getByLabelText('Opened on'));
+    await user.type(within(dialog).getByLabelText('Opened on'), '2026-07-01');
+    await user.type(within(dialog).getByLabelText('Ends on (optional)'), '2999-01-01');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('at most 30 years');
+    await waitFor(() => expect(within(dialog).getByLabelText('Ends on (optional)')).toHaveFocus());
+    expect(within(dialog).getByLabelText('Ends on (optional)')).toHaveAccessibleDescription(
+      /at most 30 years/,
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -224,13 +443,15 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
     await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
-    const dialog = screen.getByRole('dialog', { name: 'Add deposit' });
-    await user.type(within(dialog).getByLabelText('Name'), 'Savings A');
+    const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000000000000');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12');
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Amount put in');
+    await waitFor(() => expect(within(dialog).getByLabelText('Amount put in')).toHaveFocus());
+    expect(within(dialog).getByLabelText('Amount put in')).toHaveAccessibleDescription(
+      /up to 12 digits/,
+    );
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -403,6 +624,25 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(add.mock.calls[2][1].requestId).not.toBe(add.mock.calls[0][1].requestId);
   });
 
+  it('classes-04 marks each problem of a movement under its field and puts the keyboard on the first', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    const add = vi.spyOn(depositsApi, 'addMovement').mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}`);
+    await user.click(await screen.findByRole('button', { name: 'Record movement' }));
+    const dialog = screen.getByRole('dialog', { name: 'Record a movement' });
+    await user.clear(within(dialog).getByLabelText('Date'));
+    await user.click(within(dialog).getByRole('button', { name: 'Record' }));
+    const date = within(dialog).getByLabelText('Date');
+    const amount = within(dialog).getByLabelText('Amount, RUB');
+    expect(date).toHaveAttribute('aria-invalid', 'true');
+    expect(date).toHaveAccessibleDescription('Pick a date');
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount).toHaveAccessibleDescription('Enter the amount');
+    await waitFor(() => expect(date).toHaveFocus());
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it('shows the explanation the server gives for a movement the deposit could not have had', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
@@ -476,9 +716,13 @@ describe('DEP-DETAIL: one deposit', () => {
     const remove = vi.spyOn(depositsApi, 'remove').mockResolvedValue();
     open(`/deposits/${savings.id}`);
     await user.click(await screen.findByRole('button', { name: 'Delete deposit' }));
-    const dialog = screen.getByRole('dialog', { name: 'Delete deposit' });
+    const dialog = screen.getByRole('dialog', { name: 'Delete this deposit?' });
+    expect(dialog).toHaveTextContent('this cannot be undone');
+    const confirm = within(dialog).getByRole('button', { name: 'Delete deposit' });
+    // deposits-delete: the destructive confirmation is the danger button, as for goals.
+    expect(confirm).toHaveClass('shell-button--danger');
     expect(remove).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await user.click(confirm);
     await waitFor(() => expect(remove).toHaveBeenCalledWith(savings.id));
     expect(await screen.findByRole('heading', { name: 'No deposits yet' })).toBeInTheDocument();
   });
@@ -729,5 +973,223 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     expect(
       await screen.findByText(/≈ ₽99,000\.00 in today's money \(estimated\)/),
     ).toBeInTheDocument();
+  });
+});
+
+describe('classes-19: deposits grouped by bank', () => {
+  const other: Deposit = {
+    ...savings,
+    id: '00000000-0000-4000-8000-000000000003',
+    name: 'Other C',
+    bank: 'Other Synthetic Bank',
+    values: { USD: '10.00', EUR: '9.00', RUB: '900.00' },
+  };
+
+  it('classes-19 shows one card per bank with how many deposits it holds and their exact total', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars, other]));
+    open('/deposits?currency=RUB');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    expect(within(bank).getByText('2 deposits')).toBeInTheDocument();
+    // 100,328.77 + 454,686.30, summed as decimals.
+    expect(within(bank).getByText('₽555,015.07')).toBeInTheDocument();
+    expect(
+      within(bank)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual([expect.stringContaining('Savings A'), expect.stringContaining('Dollar B')]);
+    const second = screen.getByRole('region', { name: 'Other Synthetic Bank' });
+    expect(within(second).getByText('1 deposit')).toBeInTheDocument();
+    expect(within(second).getAllByText('₽900.00').length).toBeGreaterThan(0);
+  });
+
+  it('classes-19 marks a bank total incomplete when a deposit has no value in the currency shown', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(
+      list([
+        savings,
+        { ...dollars, bank: 'Synthetic Bank', values: { ...dollars.values, RUB: null } },
+      ]),
+    );
+    open('/deposits?currency=RUB');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    const total = bank.querySelector('.deposit-bank__total') as HTMLElement;
+    expect(within(total).getByText('₽100,328.77')).toBeInTheDocument();
+    expect(total).toHaveTextContent('Incomplete: 1 deposit has no current exchange rate to RUB');
+  });
+
+  it('classes-19 gives the share of net worth only while net worth is known', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    const worth = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(netWorth('5550150.70'));
+    open('/deposits?currency=RUB');
+    const summary = await screen.findByRole('region', { name: 'Total in deposits' });
+    // 555,015.07 of 5,550,150.70.
+    expect(await within(summary).findByText('10.0%')).toBeInTheDocument();
+    expect(within(summary).getByText('Share of net worth')).toBeInTheDocument();
+    cleanup();
+    forgetReads();
+    worth.mockResolvedValue(netWorth(null));
+    open('/deposits?currency=RUB');
+    await screen.findByRole('region', { name: 'Total in deposits' });
+    await waitFor(() => expect(worth).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('10.0%')).toBeNull();
+  });
+
+  it('deposits-share says why the share of net worth is missing', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    const worth = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(netWorth(null));
+    open('/deposits?currency=RUB');
+    const summary = await screen.findByRole('region', { name: 'Total in deposits' });
+    const share = (await within(summary).findByText('Share of net worth'))
+      .parentElement as HTMLElement;
+    expect(share).toHaveTextContent(
+      'Share of net worth—Net worth unknown: 1 asset without a price or exchange rate.',
+    );
+    cleanup();
+    forgetReads();
+    worth.mockResolvedValue(netWorth('-1250.00'));
+    open('/deposits?currency=RUB');
+    const below = await screen.findByRole('region', { name: 'Total in deposits' });
+    expect((await within(below).findByText('Share of net worth')).parentElement).toHaveTextContent(
+      'Share of net worth—Net worth is below zero.',
+    );
+  });
+
+  it('deposits-bank-total a bank whose deposits are all closed and settled holds 0.00, not a dash', async () => {
+    const closed = (deposit: Deposit): Deposit => ({
+      ...deposit,
+      status: 'closed',
+      closedOn: '2026-10-05',
+      due: '0.00',
+      accrued: '0.00',
+      balance: '0.00',
+      values: { USD: '0.00', EUR: '0.00', RUB: '0.00' },
+      nextPayout: null,
+    });
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      ...list([closed(savings), closed(dollars)]),
+      totals: { USD: '0.00', EUR: '0.00', RUB: '0.00' },
+    });
+    open('/deposits?currency=RUB');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    const total = bank.querySelector('.deposit-bank__total') as HTMLElement;
+    expect(total).toHaveTextContent(/^₽0\.00$/);
+  });
+});
+
+describe('classes-20: the real rate on a deposit card', () => {
+  const reading = (ratePercent: string) => ({
+    inflationPercent: '8.90',
+    ratePercent,
+    gain: null,
+    estimated: false,
+  });
+
+  it('classes-20 tints a positive real rate green and a negative one red, over the grey of the terms', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(
+      list([
+        { ...savings, real: { official: reading('2.84'), personal: null } },
+        { ...dollars, real: { official: reading('-4.62'), personal: null } },
+      ]),
+    );
+    open('/deposits');
+    const up = await screen.findByText('Real +2.84% a year after 8.90% inflation');
+    const down = screen.getByText('Real -4.62% a year after 8.90% inflation');
+    // The terms paragraph sets its own grey; the tint must sit on an element of its own.
+    expect(up).toHaveClass('portfolio-pos');
+    expect(up).not.toHaveClass('deposit-card__terms');
+    expect(down).toHaveClass('portfolio-neg');
+    expect(down).not.toHaveClass('deposit-card__terms');
+  });
+});
+
+describe('the deposit page', () => {
+  afterEach(() => setValueView('nominal'));
+
+  it('classes-16 carries the Nominal/Real switch its chart follows', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(savings, {
+        chart: [
+          {
+            date: '2026-07-01',
+            balance: '100000.00',
+            invested: '100000.00',
+            real: {
+              official: { balance: '100000.00', invested: '100000.00', estimated: false },
+              personal: null,
+            },
+          },
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    const header = heading.closest('header') as HTMLElement;
+    const values = within(header).getByRole('radiogroup', { name: 'Values' });
+    await user.click(within(values).getByRole('radio', { name: 'Real' }));
+    expect(
+      within(screen.getByLabelText('Chart legend')).getByText("Value in today's money"),
+    ).toBeInTheDocument();
+  });
+
+  it('classes-21 shows the terms with the rate and its change and what closing early does', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}`);
+    const terms = await screen.findByRole('region', { name: 'Terms' });
+    const value = (term: string) =>
+      within(terms).getByText(term, { selector: 'dt' }).nextElementSibling as HTMLElement;
+    expect(value('Bank')).toHaveTextContent('Synthetic Bank');
+    expect(value('Currency')).toHaveTextContent('RUB');
+    expect(value('Rate')).toHaveTextContent('12% a year from Jul 1, 2026');
+    expect(value('Interest')).toHaveTextContent('Every month, paid out');
+    expect(value('Term')).toHaveTextContent('Jul 1, 2026 to Dec 1, 2026');
+    expect(value('Closing early')).toHaveTextContent('Loses the interest not yet posted');
+    await user.click(within(value('Rate')).getByRole('button', { name: 'Change the rate' }));
+    expect(screen.getByRole('dialog', { name: 'Change the rate' })).toBeInTheDocument();
+  });
+
+  it('classes-15 lists the periods, movements and checks as rows on a phone, without a table', async () => {
+    phone();
+    const check = {
+      id: 'c1',
+      checkedOn: '2026-10-11',
+      bankBalance: '100330.00',
+      calculated: '100328.77',
+      difference: '1.23',
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(savings, {
+        checks: [check],
+        lastCheck: check,
+        periods: [
+          {
+            from: '2026-07-01',
+            to: '2026-08-01',
+            interest: '1019.18',
+            treatment: 'payable',
+            afterInflation: { official: '52.01', personal: null },
+          },
+        ],
+      }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    expect(screen.queryAllByRole('table')).toHaveLength(0);
+    const periods = screen.getByRole('list', { name: 'Interest by period' });
+    expect(periods).toHaveTextContent('Jul 1, 2026 – Aug 1, 2026');
+    expect(periods).toHaveTextContent('Payable');
+    expect(periods).toHaveTextContent('₽1,019.18');
+    expect(within(periods).getByText('+₽52.01 after inflation')).toHaveClass('portfolio-pos');
+    const movements = screen.getByRole('list', { name: 'Movements' });
+    expect(within(movements).getAllByRole('listitem')).toHaveLength(2);
+    expect(movements).toHaveTextContent('To card');
+    expect(
+      within(movements).getByRole('button', {
+        name: 'Remove the interest paid out of Aug 1, 2026',
+      }),
+    ).toBeInTheDocument();
+    const checks = screen.getByRole('list', { name: 'Checks against the bank' });
+    expect(checks).toHaveTextContent('Bank ₽100,330.00 · App ₽100,328.77');
+    expect(checks).toHaveTextContent('+₽1.23');
   });
 });

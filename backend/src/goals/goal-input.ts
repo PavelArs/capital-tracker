@@ -81,13 +81,16 @@ export type GoalPreviewInput = Omit<GoalInput, 'name'>;
 
 const previewFields = fields.filter((key) => key !== 'name');
 
-/** GOAL-PREVIEW: what the add and edit dialogs ask about before anything is saved. */
-export function parseGoalPreview(input: unknown): GoalPreviewInput {
-  const record = object(input, previewFields, [
-    'currency',
-    'targetAmount',
-    'expectedReturnPercent',
-  ]);
+/**
+ * GOAL-PREVIEW: what the add and edit dialogs ask about before anything is saved. The edit
+ * dialog names the goal, so a date it keeps is judged as saving it would judge it.
+ */
+export function parseGoalPreview(input: unknown): GoalPreviewInput & { goalId?: string } {
+  const record = object(
+    input,
+    [...previewFields, 'goalId'],
+    ['currency', 'targetAmount', 'expectedReturnPercent'],
+  );
   if (!(goalCurrencies as readonly unknown[]).includes(record.currency)) return bad();
   const given = (value: unknown) =>
     value === undefined || value === null || value === '' ? null : value;
@@ -99,5 +102,6 @@ export function parseGoalPreview(input: unknown): GoalPreviewInput {
     deadline: deadline === null ? null : parseDate(deadline),
     expectedReturnPercent: parseRate(record.expectedReturnPercent),
     monthlyContribution: monthly === null ? null : parseAmount(monthly, true),
+    goalId: record.goalId === undefined ? undefined : parseUuid(record.goalId),
   };
 }

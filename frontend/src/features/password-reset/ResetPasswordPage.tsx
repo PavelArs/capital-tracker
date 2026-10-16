@@ -4,7 +4,7 @@ import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AuthFrame, { Notice } from './AuthFrame';
+import AuthFrame, { focusOnMount, Notice, useFocusAfterAnswer } from './AuthFrame';
 import PasswordField from './PasswordField';
 
 type Screen = 'checking' | ResetLinkState | 'done';
@@ -42,6 +42,7 @@ export default function ResetPasswordPage() {
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
   const { restartPassword } = useAuth();
+  const focusAfterAnswer = useFocusAfterAnswer();
 
   useEffect(() => {
     if (!token) return;
@@ -78,7 +79,10 @@ export default function ResetPasswordPage() {
       confirmation: !problem && password !== confirmation ? "Passwords don't match" : undefined,
     };
     setErrors(next);
-    if (next.password || next.confirmation) return;
+    if (next.password || next.confirmation) {
+      focusAfterAnswer(next.password ? 'reset-password' : 'reset-confirmation');
+      return;
+    }
     setBusy(true);
     setFailure('');
     try {
@@ -99,6 +103,7 @@ export default function ResetPasswordPage() {
       } else {
         setFailure("Couldn't reset the password. Check your connection and try again.");
       }
+      if (!refused) focusAfterAnswer('reset-password');
     } finally {
       setBusy(false);
     }
@@ -171,6 +176,7 @@ export default function ResetPasswordPage() {
       <PasswordField
         id="reset-password"
         label="New password"
+        inputRef={focusOnMount}
         value={password}
         onChange={setPassword}
         error={errors.password}

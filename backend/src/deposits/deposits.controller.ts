@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { DepositsService } from './deposits.service';
 
@@ -14,6 +14,13 @@ export class DepositsController {
   @Post()
   create(@CurrentUser() owner: OwnerIdentity, @Body() body: unknown) {
     return this.deposits.create(owner.userId, body);
+  }
+
+  /** DEP-PREVIEW: the figures of a deposit being entered; reads and writes nothing, so 200. */
+  @Post('preview')
+  @HttpCode(200)
+  preview(@CurrentUser() owner: OwnerIdentity, @Body() body: unknown) {
+    return this.deposits.preview(owner.userId, body);
   }
 
   @Get(':id')

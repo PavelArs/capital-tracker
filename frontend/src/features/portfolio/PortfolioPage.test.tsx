@@ -262,6 +262,9 @@ beforeEach(() => {
   setPrice.mockReset();
   vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates('90.12', '100.5'));
   vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
+  // The token chains read the wallets. Unanswered, that read fails as signed out, and a sign-out
+  // drops every kept answer, also those of a later test that is still on its way.
+  vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([]);
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       {
@@ -368,7 +371,8 @@ describe('PV-UI Portfolio values every asset', () => {
       '—',
       '—',
       '—',
-      '—',
+      // portfolio-11: a hand price has no 24h change to show.
+      'Manual',
     ]);
     expect(within(rowOf('Bitcoin')).getByRole('link', { name: 'Bitcoin' })).toHaveAttribute(
       'href',
@@ -552,6 +556,91 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
   });
 
+  it('portfolio-03 says under Cost basis and Unrealized P&L that bank deposits are left out', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { depositsValue: '20000' }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('Cost basis$70,000.00excluding bank deposits');
+    expect(summary).toHaveTextContent('Unrealized P&L+$30,000.00+42.86%excluding bank deposits');
+    cleanup();
+    // Without deposits in the value the three figures cover the same assets: nothing to say.
+    vi.mocked(portfolioValuationApi.get).mockResolvedValue(portfolio([bitcoin]));
+    forgetReads();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(screen.getByRole('region', { name: 'Portfolio summary' })).not.toHaveTextContent(
+      'excluding bank deposits',
+    );
+  });
+
+  it('portfolio-15 styles the bank deposits link as the other links on the page', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { depositsValue: '20000' }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    expect(within(summary).getByRole('link', { name: 'bank deposits' })).toHaveClass('shell-link');
+  });
+
+  it('portfolio-11 shows Manual instead of a 24h change for a hand-priced asset', async () => {
+    const gadget = valued(
+      8,
+      'Gadget',
+      null,
+      { assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' },
+      {
+        quantity: '1',
+        price: {
+          value: '150',
+          observedAt: '2026-10-05T00:00:00.000Z',
+          source: 'manual',
+          status: 'manual',
+        },
+        missingPrice: null,
+        // The server compares the hand price with the one a day earlier: unchanged is 0.
+        priceChange24hPercent: '0.00',
+        value: '150',
+      },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, gadget]));
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Gadget/ });
+    expect(cells(rowOf('Gadget')).at(-1)).toBe('Manual');
+    // Cash at a fixed price keeps its change: in another currency it moves with the rate.
+    expect(cells(rowOf('US dollar')).at(-1)).toBe('0.00%');
+    expect(cells(rowOf('Bitcoin')).at(-1)).toBe('-1.40%');
+    // Ordered by 24h, a hand price has no change to rank: it goes after the ones that have.
+    const by24h = sortAssets([gadget, cash, bitcoin], { key: 'change', direction: 'desc' });
+    expect(by24h.map((asset) => asset.name)).toEqual(['US dollar', 'Bitcoin', 'Gadget']);
+    cleanup();
+    renderAt(`/portfolio/${gadget.instrumentId}`);
+    expect(await screen.findByRole('button', { name: 'Update price' })).toBeInTheDocument();
+    expect(screen.queryByText(/% today$/)).toBeNull();
+  });
+
+  it('portfolio-16 offers a type filter only for the types that hold assets', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    expect(
+      within(chips)
+        .getAllByRole('button')
+        .map((chip) => chip.textContent),
+    ).toEqual(['All 2', 'Crypto 2']);
+  });
+
+  it('portfolio-19 names the assets table', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    renderAt('/portfolio');
+    const table = await screen.findByRole('table', { name: 'Assets' });
+    expect(within(table).getByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+  });
+
   it('shows the value and allocation of an owner who holds nothing but bank deposits', async () => {
     const base = portfolio([]);
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
@@ -594,6 +683,8 @@ describe('PV-UI Portfolio values every asset', () => {
   });
 
   it('keeps the loaded portfolio when a later refresh fails and ignores a stale reply', async () => {
+    // Adding an asset now opens its page (portfolio-06), so the list is asked again when the
+    // currency changes: the ruble answer hangs, the euro one answers first, then the late reply.
     let resolveSlow: (value: PortfolioValuation) => void = () => {};
     const get = vi
       .spyOn(portfolioValuationApi, 'get')
@@ -604,39 +695,26 @@ describe('PV-UI Portfolio values every asset', () => {
             resolveSlow = resolve;
           }),
       )
-      .mockResolvedValueOnce(portfolio([bitcoin, cash]))
+      .mockResolvedValueOnce(portfolio([bitcoin, cash], { currency: 'EUR' }))
       .mockRejectedValueOnce(new AxiosError('offline'));
-    // A saved asset drops what was kept, as the client does after any write, so a refresh
-    // asks again instead of joining the one still on its way.
-    vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
-      forgetReads();
-      return depositAsset;
-    });
     const user = userEvent.setup();
-    const add = async () => {
-      await openAddAsset(user);
-      const dialog = screen.getByRole('dialog', { name: 'Add asset' });
-      await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
-      await user.type(within(dialog).getByLabelText('Name'), 'Toncoin');
-      await user.type(within(dialog).getByLabelText('Ticker'), 'TON');
-      await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
-      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    };
-    renderAt('/portfolio');
+    renderAt('/portfolio?currency=USD');
     await screen.findByRole('row', { name: /^Bitcoin/ });
-    // The first refresh hangs; the second answers first, then the late reply arrives.
-    await add();
-    await add();
+    const switcher = screen.getByRole('radiogroup', { name: 'Currency' });
+    await user.click(within(switcher).getByRole('radio', { name: 'RUB' }));
+    await user.click(within(switcher).getByRole('radio', { name: 'EUR' }));
     await screen.findByRole('row', { name: /^US dollar/ });
-    resolveSlow(portfolio([toncoin]));
+    resolveSlow(portfolio([toncoin], { currency: 'RUB' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole('row', { name: /^Toncoin/ })).toBeNull();
     expect(rowOf('US dollar')).toBeInTheDocument();
 
-    await add();
+    // Back in dollars the kept answer stays on screen when its refresh fails.
+    await user.click(within(switcher).getByRole('radio', { name: 'USD' }));
     expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(4);
     expect(rowOf('Bitcoin')).toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: /^US dollar/ })).toBeNull();
     expect(screen.queryByText(/could not load your portfolio/i)).toBeNull();
   });
 
@@ -907,10 +985,11 @@ describe('Portfolio after inflation', () => {
     );
     expect(summary()).toHaveTextContent('$70,000.00 paid');
     expect(summary()).toHaveTextContent('Nominal +$30,000.00');
-    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
+    // portfolio-08: the row keeps its nominal profit when it has no real one.
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—nominal +$30,000.00');
   });
 
-  it('PF-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+  it("settings-04 PF-REAL-UNKNOWN-PARTIAL names the known nominal cost as paid, not as a figure in today's money", async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio(
@@ -928,9 +1007,11 @@ describe('Portfolio after inflation', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(summary()).toHaveTextContent("Cost in today's money—");
-    expect(summary()).toHaveTextContent('$40,000.00 known');
+    // Under "Cost in today's money" the nominal subtotal says what it is: paid, for part.
+    expect(summary()).toHaveTextContent('$40,000.00 paid for the known part');
+    expect(summary()).not.toHaveTextContent('$40,000.00 known');
+    expect(summary().textContent?.match(/paid/g)).toHaveLength(1);
     expect(summary()).toHaveTextContent('Nominal +$12,000.00 known');
-    expect(summary()).not.toHaveTextContent('paid');
   });
 
   it('PF-REAL-UNAVAILABLE names the account history that starts later, not a missing lot figure', async () => {
@@ -1008,7 +1089,7 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent('Nominal +$30,000.00');
   });
 
-  it('ASSET-REAL-UNKNOWN-PARTIAL keeps the known nominal cost when only part of it is known', async () => {
+  it("settings-04 ASSET-REAL-UNKNOWN-PARTIAL names the known nominal cost as paid, not as a figure in today's money", async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([
@@ -1027,12 +1108,13 @@ describe('Portfolio after inflation', () => {
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent("Cost in today's money—");
-    expect(position()).toHaveTextContent('$40,000.00 known');
+    expect(position()).toHaveTextContent('$40,000.00 paid for the known part');
+    expect(position()).not.toHaveTextContent('$40,000.00 known');
+    expect(position().textContent?.match(/paid/g)).toHaveLength(1);
     expect(position()).toHaveTextContent('Nominal +$12,000.00 known');
-    expect(position()).not.toHaveTextContent('paid');
   });
 
-  it('ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one', async () => {
+  it('settings-04 ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one, as paid', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([
@@ -1049,7 +1131,7 @@ describe('Portfolio after inflation', () => {
     );
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
-    expect(position()).toHaveTextContent('$0.00 known');
+    expect(position()).toHaveTextContent('$0.00 paid for the known part');
   });
 
   it('ASSET-REAL-INCOMPLETE says the figures leave out an account whose history starts later, in every view', async () => {
@@ -1168,9 +1250,65 @@ describe('Portfolio after inflation', () => {
       setValueView('real');
       renderAt('/portfolio');
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
-      expect(row).toHaveTextContent('Bitcoin1.2 BTC$96,000.00+$21,000.00 · +28.00%');
+      expect(row).toHaveTextContent('Bitcoin1.2 BTC$96,000.00+$21,000.00 real · +28.00%');
       const sort = screen.getByRole('combobox', { name: 'Sort by' });
       expect(within(sort).getByRole('option', { name: 'Real P&L' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  const phoneScreen = () =>
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+
+  it("portfolio-17 says a phone row's profit is real under Real, and not under Nominal", async () => {
+    phoneScreen();
+    try {
+      setValueView('real');
+      renderAt('/portfolio');
+      expect(await screen.findByRole('link', { name: /^US dollar/ })).toHaveTextContent(
+        '-$100.00 real · -2.44%',
+      );
+      cleanup();
+      setValueView('nominal');
+      renderAt('/portfolio');
+      const row = await screen.findByRole('link', { name: /^Bitcoin/ });
+      expect(row).toHaveTextContent('+$30,000.00 · +45.45%');
+      expect(row).not.toHaveTextContent('real');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('portfolio-08 keeps the nominal profit of an asset without a real reading', async () => {
+    setValueView('real');
+    // Part of the coins has no purchase price: the nominal profit is the known part's.
+    const partBitcoin = {
+      ...bitcoin,
+      unrealizedPnl: null,
+      unrealizedReturnPercent: null,
+      knownUnrealizedPnl: '-3916.9',
+      knownUnrealizedReturnPercent: '-5.60',
+      real: { official: null, personal: null },
+    };
+    vi.mocked(portfolioValuationApi.get).mockResolvedValue(
+      withReal({ assets: [partBitcoin, realCash] }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—nominal -$3,916.90 known');
+    expect(cells(rowOf('US dollar')).at(-2)).toBe('-$100.00-2.44%nominal $0.00');
+    cleanup();
+    phoneScreen();
+    try {
+      renderAt('/portfolio');
+      const row = await screen.findByRole('link', { name: /^Bitcoin/ });
+      expect(row).toHaveTextContent('$96,000.00—nominal -$3,916.90 known');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1257,6 +1395,15 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     setValueView('nominal');
     setInflationBasis('official');
     vi.unstubAllGlobals();
+  });
+
+  it('portfolio-19 names the purchases table', async () => {
+    withLots([lot()]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const region = await card();
+    expect(within(region).getByRole('table', { name: 'Purchases after inflation' })).toBe(
+      within(region).getByRole('table'),
+    );
   });
 
   it('LOTS-ROWS lists each purchase newest first with what it cost in today money', async () => {
@@ -1646,6 +1793,56 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(within(dialog).queryByText('Enter a name')).not.toBeInTheDocument();
   });
 
+  it('portfolio-05 moves focus to the first field with a problem when Add asset is refused', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const create = vi.spyOn(portfolioAssetsApi, 'create');
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    const submit = within(dialog).getByRole('button', { name: 'Add asset' });
+    await user.click(submit);
+    const name = within(dialog).getByLabelText('Name');
+    expect(name).toHaveFocus();
+    expect(name).toHaveAccessibleDescription('Enter a name');
+    await user.type(name, 'Gold');
+    await user.click(submit);
+    const amount = within(dialog).getByLabelText('Amount');
+    expect(amount).toHaveFocus();
+    expect(amount).toHaveAccessibleDescription('Enter an amount greater than 0');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('portfolio-06 opens the page of the new asset and says it was added', async () => {
+    let assets = [bitcoin];
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio(assets));
+    vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
+      forgetReads();
+      assets = [...assets, { ...deposit, quantity: '100', value: '1' }];
+      return depositAsset;
+    });
+    const Probe = () => <p data-testid="where">{useLocation().pathname}</p>;
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/portfolio']}>
+        <Routes>
+          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/portfolio/:assetId" element={<AssetPage />} />
+        </Routes>
+        <Probe />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByTestId('where')).toHaveTextContent(`/portfolio/${deposit.instrumentId}`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(screen.getByText('Asset added.')).toHaveAttribute('role', 'status');
+  });
+
   it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     const user = userEvent.setup();
@@ -1704,7 +1901,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       }),
     );
     expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
-    const deposit = screen.getByRole('dialog', { name: 'Add deposit' });
+    const deposit = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.keyboard('{Escape}');
     expect(deposit).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus();
@@ -1784,8 +1981,11 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       currency: 'RUB',
       assertReviewed: true,
     });
+    // portfolio-06: the new asset opens on its own page; the list shows it on the way back.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledTimes(3);
     expect(cells(rowOf('Deposit')).slice(0, 2)).toEqual(['DepositManual · RUB', '150,000']);
 
     await user.click(screen.getByRole('button', { name: /^Manual/ }));
@@ -1839,6 +2039,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       feeUsd: '0',
     });
 
+    // portfolio-06: the new asset's page opened; the next one is added from the list again.
+    await user.click(await screen.findByRole('link', { name: '← Portfolio' }));
     dialog = await openDialog(user);
     await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
     expect(within(dialog).getByLabelText('Amount (optional)')).toBeInTheDocument();
@@ -1937,7 +2139,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(createTrade).toHaveBeenCalledTimes(3);
     expect(setPrice).toHaveBeenCalledTimes(2);
     expect(setPrice.mock.calls[1][1].requestId).toBe(setPrice.mock.calls[0][1].requestId);
-    expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
+    // portfolio-06: the new asset opens on its own page.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);
   });
 
@@ -1960,6 +2163,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(
       within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
     );
+    // portfolio-06: the saved asset opens on its own page, and is in the list on the way back.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
@@ -2081,12 +2287,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.type(within(dialog).getByLabelText('Amount'), '100');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^All(?!o)/ })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('searchbox', { name: 'Search assets' })).toHaveValue('');
+    // portfolio-06: it opens on its own page, which no filter or search on the list can hide.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
   });
 
   it('keeps focus inside the dialog, returns it on close and cannot close mid-save', async () => {
@@ -2332,6 +2534,22 @@ describe('CACHE-UI coming back to a page shows the last answer at once', () => {
     renderAt('/portfolio');
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not refresh the values/i);
     expect(screen.getByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+  });
+
+  it('portfolio-refresh the asset page says so when its first load fails behind a kept answer', async () => {
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([bitcoin]))
+      .mockRejectedValueOnce(httpError(500));
+    const first = renderAt('/portfolio');
+    expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    first.unmount();
+
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.map((alert) => alert.textContent).join(' ')).toMatch(
+      /could not refresh the values/i,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: /Bitcoin/ })).toBeInTheDocument();
   });
 
   it('does not paint another currency or anything older than a change by the owner', async () => {
@@ -2777,6 +2995,90 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(setPrice.mock.calls[2][1].expectedRevision).toBe(4);
     expect(setPrice.mock.calls[2][1].requestId).not.toBe(setPrice.mock.calls[0][1].requestId);
+  });
+
+  it('portfolio-02 keeps the asset on screen after Save price and returns focus to Update price', async () => {
+    // The refresh after the save stays open until the test lets it answer.
+    let answer: (value: PortfolioValuation) => void = () => undefined;
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([deposit]))
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      );
+    vi.spyOn(manualPricesApi, 'list').mockResolvedValue(priceBook(3));
+    // A saved change drops the kept reads, as the API client does after every write.
+    setPrice.mockImplementation(async () => {
+      forgetReads();
+      return {} as PriceReceipt;
+    });
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${deposit.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Update price' }));
+    const dialog = screen.getByRole('dialog', { name: 'Update price' });
+    await user.type(within(dialog).getByLabelText('Price of one unit, RUB'), '10');
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('status', { name: 'Loading asset' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Position' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update price' })).toHaveFocus();
+    const price = {
+      value: '10',
+      observedAt: '2026-10-05T00:00:00.000Z',
+      source: 'manual',
+      status: 'manual',
+    } as const;
+    answer(portfolio([{ ...deposit, price, missingPrice: null }]));
+    expect(await screen.findByText('$10.00')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update price' })).toHaveFocus();
+  });
+
+  it('portfolio-05 moves focus back to the price when Save price is refused', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([deposit]));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${deposit.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Update price' }));
+    const dialog = screen.getByRole('dialog', { name: 'Update price' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    const field = within(dialog).getByLabelText('Price of one unit, RUB');
+    expect(field).toHaveFocus();
+    expect(field).toHaveAccessibleDescription('Enter a price greater than 0');
+    expect(setPrice).not.toHaveBeenCalled();
+  });
+
+  it('portfolio-19 moves between chart periods with the arrow keys, Home and End', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const history = vi.mocked(assetHistoryApi.get);
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const chart = await screen.findByRole('region', { name: 'Position value over time' });
+    const tab = (name: string) => within(chart).getByRole('tab', { name });
+    // One tab stop: the chosen period; the panel it controls is the chart.
+    expect(tab('1M')).toHaveAttribute('tabindex', '0');
+    expect(tab('7D')).toHaveAttribute('tabindex', '-1');
+    const panel = within(chart).getByRole('tabpanel', { name: '1M' });
+    expect(tab('1M')).toHaveAttribute('aria-controls', panel.id);
+    tab('1M').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(tab('3M')).toHaveFocus();
+    expect(tab('3M')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('3M')).toHaveAttribute('tabindex', '0');
+    expect(tab('1M')).toHaveAttribute('tabindex', '-1');
+    await user.keyboard('{End}');
+    expect(tab('ALL')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(tab('24H')).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(tab('ALL')).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(tab('24H')).toHaveFocus();
+    expect(tab('24H')).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() =>
+      expect(history).toHaveBeenLastCalledWith(bitcoin.instrumentId, '24H', undefined),
+    );
+    expect(within(chart).getByRole('tabpanel', { name: '24H' })).toBe(panel);
   });
 });
 

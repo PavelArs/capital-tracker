@@ -5,7 +5,9 @@ import { isAxiosError } from 'axios';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { ListRowText, rowClass } from '@/ui/ListRow';
 import Pager, { usePages } from '@/ui/Pager';
+import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
@@ -21,8 +23,11 @@ import {
   attention,
   capitalizedInterest,
   dateText,
+  earlyCloseText,
+  interestText,
   money,
   movementText,
+  periodText,
   realOf,
   realRateText,
   statusText,
@@ -59,6 +64,36 @@ function InterestPeriods({
   // Absent in an answer saved before the figure existed: the column is left out, not filled with dashes.
   const inflated = periods.some((period) => period.afterInflation !== undefined);
   const paged = usePages([...periods].reverse(), (period) => period.to);
+  const narrow = useNarrowScreen();
+  const treatment = (period: DepositDetail['periods'][number]) =>
+    period.treatment === 'capitalized' ? 'Added to the deposit' : 'Payable';
+  if (narrow)
+    return (
+      <>
+        <ol className="ui-rows deposit-rows" aria-label="Interest by period">
+          {paged.rows.map((period) => {
+            const real = period.afterInflation?.[basis] ?? null;
+            return (
+              <li key={period.to} className={rowClass()}>
+                <ListRowText
+                  title={treatment(period)}
+                  detail={`${dateText(period.from)} – ${dateText(period.to)}`}
+                  amount={money(period.interest, currency)}
+                  value={
+                    inflated ? (
+                      <span className={toneClass(real)}>
+                        {money(real, currency, true)} after inflation
+                      </span>
+                    ) : undefined
+                  }
+                />
+              </li>
+            );
+          })}
+        </ol>
+        {paged.pager && <Pager {...paged.pager} label="periods" />}
+      </>
+    );
   return (
     <>
       <div className="ui-table-wrap">
@@ -77,7 +112,7 @@ function InterestPeriods({
               <tr key={period.to}>
                 <td>{dateText(period.from)}</td>
                 <td>{dateText(period.to)}</td>
-                <td>{period.treatment === 'capitalized' ? 'Added to the deposit' : 'Payable'}</td>
+                <td>{treatment(period)}</td>
                 <td className="ui-num">{money(period.interest, currency)}</td>
                 {inflated && (
                   <td
@@ -109,6 +144,36 @@ function Movements({
   // The first top-up is the deposit itself; it goes with the deposit, not on its own.
   const opening = movements[0]?.id;
   const paged = usePages([...movements].reverse(), (movement) => movement.id);
+  const narrow = useNarrowScreen();
+  const remove = (movement: DepositDetail['movements'][number]) =>
+    movement.id !== opening && (
+      <button
+        type="button"
+        className="shell-close"
+        aria-label={`Remove the ${movementText[movement.kind].toLowerCase()} of ${dateText(movement.date)}`}
+        onClick={() => onRemove(movement.id)}
+      >
+        <Icon name="trash" />
+      </button>
+    );
+  if (narrow)
+    return (
+      <>
+        <ol className="ui-rows deposit-rows" aria-label="Movements">
+          {paged.rows.map((movement) => (
+            <li key={movement.id} className={rowClass()}>
+              <ListRowText
+                title={movementText[movement.kind]}
+                detail={[dateText(movement.date), movement.comment].filter(Boolean).join(' · ')}
+                amount={money(movement.amount, currency)}
+              />
+              {remove(movement)}
+            </li>
+          ))}
+        </ol>
+        {paged.pager && <Pager {...paged.pager} label="movements" />}
+      </>
+    );
   return (
     <>
       <div className="ui-table-wrap">
@@ -129,18 +194,7 @@ function Movements({
                 <td>{movementText[movement.kind]}</td>
                 <td>{movement.comment ?? ''}</td>
                 <td className="ui-num">{money(movement.amount, currency)}</td>
-                <td className="deposit-table__act">
-                  {movement.id !== opening && (
-                    <button
-                      type="button"
-                      className="shell-close"
-                      aria-label={`Remove the ${movementText[movement.kind].toLowerCase()} of ${dateText(movement.date)}`}
-                      onClick={() => onRemove(movement.id)}
-                    >
-                      <Icon name="trash" />
-                    </button>
-                  )}
-                </td>
+                <td className="deposit-table__act">{remove(movement)}</td>
               </tr>
             ))}
           </tbody>
@@ -160,6 +214,27 @@ function Checks({
   currency: AccountingCurrency;
 }) {
   const paged = usePages(checks, (check) => check.id);
+  const narrow = useNarrowScreen();
+  const difference = (row: DepositDetail['checks'][number]) =>
+    Number(row.difference) === 0 ? '—' : money(row.difference, currency, true);
+  if (narrow)
+    return (
+      <>
+        <ol className="ui-rows deposit-rows" aria-label="Checks against the bank">
+          {paged.rows.map((row) => (
+            <li key={row.id} className={rowClass()}>
+              <ListRowText
+                title={dateText(row.checkedOn)}
+                detail={`Bank ${money(row.bankBalance, currency)} · App ${money(row.calculated, currency)}`}
+                amount={difference(row)}
+                value="Difference"
+              />
+            </li>
+          ))}
+        </ol>
+        {paged.pager && <Pager {...paged.pager} label="checks" />}
+      </>
+    );
   return (
     <>
       <div className="ui-table-wrap">
@@ -178,9 +253,7 @@ function Checks({
                 <td>{dateText(row.checkedOn)}</td>
                 <td className="ui-num">{money(row.bankBalance, currency)}</td>
                 <td className="ui-num">{money(row.calculated, currency)}</td>
-                <td className="ui-num">
-                  {Number(row.difference) === 0 ? '—' : money(row.difference, currency, true)}
-                </td>
+                <td className="ui-num">{difference(row)}</td>
               </tr>
             ))}
           </tbody>
@@ -243,6 +316,7 @@ export default function DepositPage() {
     <div className="shell-page">
       <PageHeader
         title={deposit ? deposit.name : 'Deposit'}
+        valueSwitch
         actions={
           deposit && (
             <>
@@ -267,7 +341,7 @@ export default function DepositPage() {
         }
       />
       <p className="deposit-back">
-        <Link to={back}>← Deposits</Link>
+        <Link to={back}>← Banks</Link>
       </p>
       {failed ? (
         <p className="shell-note" role="alert">
@@ -380,19 +454,66 @@ export default function DepositPage() {
             />
           )}
 
-          <section className="shell-card" aria-labelledby="deposit-periods">
-            <h2 id="deposit-periods">Interest by period</h2>
-            {deposit.periods.length === 0 ? (
-              <p className="shell-note">No interest has been posted yet.</p>
-            ) : (
-              <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
-            )}
-            {Number(deposit.interestForfeited) > 0 && (
-              <p className="shell-note">
-                Closing the deposit early lost {money(deposit.interestForfeited, own)} of interest.
-              </p>
-            )}
-          </section>
+          <div className="deposit-columns">
+            <section className="shell-card" aria-labelledby="deposit-terms">
+              <h2 id="deposit-terms">Terms</h2>
+              <dl className="deposit-terms">
+                <div>
+                  <dt>Bank</dt>
+                  <dd>{deposit.bank}</dd>
+                </div>
+                <div>
+                  <dt>Currency</dt>
+                  <dd>{own}</dd>
+                </div>
+                <div>
+                  <dt>Rate</dt>
+                  <dd>
+                    {deposit.rates.map((rate) => (
+                      <span key={rate.effectiveFrom} className="deposit-terms__rate">
+                        {rate.ratePercent}% a year from {dateText(rate.effectiveFrom)}
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      className="deposit-link"
+                      aria-label="Change the rate"
+                      onClick={() => setDialog('rate')}
+                    >
+                      Change
+                    </button>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Interest</dt>
+                  <dd>{interestText(deposit)}</dd>
+                </div>
+                <div>
+                  <dt>Term</dt>
+                  <dd>{periodText(deposit)}</dd>
+                </div>
+                <div>
+                  <dt>Closing early</dt>
+                  <dd>{earlyCloseText[deposit.earlyClose]}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="shell-card" aria-labelledby="deposit-periods">
+              <h2 id="deposit-periods">Interest by period</h2>
+              {deposit.periods.length === 0 ? (
+                <p className="shell-note">No interest has been posted yet.</p>
+              ) : (
+                <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
+              )}
+              {Number(deposit.interestForfeited) > 0 && (
+                <p className="shell-note">
+                  Closing the deposit early lost {money(deposit.interestForfeited, own)} of
+                  interest.
+                </p>
+              )}
+            </section>
+          </div>
 
           <section className="shell-card" aria-labelledby="deposit-movements">
             <h2 id="deposit-movements">Movements</h2>
@@ -420,34 +541,16 @@ export default function DepositPage() {
             )}
           </section>
 
-          <section className="shell-card" aria-labelledby="deposit-rates">
-            <h2 id="deposit-rates">Rate</h2>
-            <ul className="deposit-rates">
-              {deposit.rates.map((rate) => (
-                <li key={rate.effectiveFrom}>
-                  <span>From {dateText(rate.effectiveFrom)}</span>
-                  <strong>{rate.ratePercent}% a year</strong>
-                </li>
-              ))}
-            </ul>
-            <div className="deposit-actions">
-              <button
-                type="button"
-                className="shell-button shell-button--secondary"
-                onClick={() => setDialog('rate')}
-              >
-                Change the rate
-              </button>
-              <button
-                type="button"
-                className="shell-button shell-button--ghost"
-                onClick={() => setDialog('delete')}
-              >
-                <Icon name="trash" className="shell-icon shell-icon--sm" />
-                Delete deposit
-              </button>
-            </div>
-          </section>
+          <div className="deposit-actions">
+            <button
+              type="button"
+              className="shell-button shell-button--ghost"
+              onClick={() => setDialog('delete')}
+            >
+              <Icon name="trash" className="shell-icon shell-icon--sm" />
+              Delete deposit
+            </button>
+          </div>
 
           {dialog === 'movement' && (
             <MovementDialog

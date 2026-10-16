@@ -8,7 +8,7 @@ export type SyncRun = { state: 'running' } | { state: 'failed'; message: string 
 
 /** Why the page's own sync stopped, naming the network's data ("Bitcoin data …"). */
 export function failureMessage(
-  reason: ProviderFailure | 'server' | 'busy',
+  reason: ProviderFailure | 'server' | 'failed' | 'session' | 'busy',
   address?: Pick<WalletAddress, 'network'>,
 ): string {
   const network = address ? networkOf(address).name : 'Blockchain';
@@ -33,6 +33,10 @@ export function failureMessage(
       return `The free Etherscan plan does not cover ${network}, and no other free source is set up for it yet.`;
     case 'server':
       return 'Could not reach the server. Try again.';
+    case 'failed':
+      return 'The server could not finish the sync. Try again.';
+    case 'session':
+      return 'Your session has ended. Sign in again.';
     case 'busy':
       return 'Another sync of this address is running. Try again in a moment.';
   }

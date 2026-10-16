@@ -10,6 +10,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import Modal from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { purchasePrice, unitPrice } from '../portfolio/add-asset';
@@ -29,7 +30,6 @@ import './property.css';
 
 const currencies: ValuationCurrency[] = ['USD', 'EUR', 'RUB'];
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
-const utcDay = (now: Date) => now.toISOString().slice(0, 10);
 
 const problemText: Record<PropertyProblem, string> = {
   name: `Keep the name on one line, within ${MAX_PROPERTY_NAME} characters`,
@@ -76,7 +76,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     name: '',
     currency: 'RUB',
     cost: '',
-    bought: utcDay(new Date()),
+    bought: moscowDate(new Date()),
     estimate: '',
     share: '100',
   }));
@@ -110,7 +110,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     setEntry((current) => ({ ...current, ...changes }));
   const leave = (problem: PropertyProblem) => () =>
     setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
-  const all = propertyProblems(entry, utcDay(new Date()));
+  const all = propertyProblems(entry, moscowDate(new Date()));
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const fieldError = (problem: PropertyProblem, value = '') =>
     found.has(problem) && (
@@ -127,7 +127,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     event.preventDefault();
     setTried(true);
     const now = startedAt.current ?? new Date();
-    if (propertyProblems(entry, utcDay(now)).size) return;
+    if (propertyProblems(entry, moscowDate(now)).size) return;
     setSaving(true);
     setError(null);
     const done = saved.current;
@@ -175,7 +175,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     // (AST-MANUAL-VALUE), so an estimate of 9,000,000 RUB stays 9,000,000 RUB.
     const currency = asset.valuationCurrency;
     const estimated = estimate ? { price: unitPrice(estimate, '1'), currency } : null;
-    const boughtToday = entry.bought === utcDay(now);
+    const boughtToday = entry.bought === moscowDate(now);
     const prices = [
       {
         observedAt: trade.occurredAt,
@@ -293,7 +293,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
                 id={`${id}-bought`}
                 className="ui-input"
                 type="date"
-                max={utcDay(new Date())}
+                max={moscowDate(new Date())}
                 value={entry.bought}
                 disabled={locked || saving}
                 onChange={(event) => update({ bought: event.target.value })}

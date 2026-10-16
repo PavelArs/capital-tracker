@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseUuid } from '../accounting/input';
+import { type AccountInput, parseAccount, parseUuid } from '../accounting/input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
 import { isExtendedKey, normalizeExtendedKey } from './bitcoin-xpub';
 import type { BybitCredentials } from './bybit-client';
@@ -40,12 +40,25 @@ function label(value: unknown): string | null {
 function account(value: unknown): string | null {
   return value === null || value === undefined ? null : parseUuid(value);
 }
+/**
+ * WAL-INVALID: a wallet made with its first address, so a refused address leaves none behind.
+ * Present only when sent; it never comes with an existing wallet, and addresses go into wallets,
+ * never into a broker account or a property (v8).
+ */
+function newAccount(row: Record<string, unknown>): { newAccount?: AccountInput } {
+  if (row.newAccount === undefined) return {};
+  if (row.accountId !== undefined && row.accountId !== null) return bad();
+  const value = parseAccount(row.newAccount);
+  if (value.assetClass) return bad();
+  return { newAccount: value };
+}
 
 export interface Registration {
   network: Exclude<Network, 'bybit'>;
   address: string;
   accountId: string | null;
   label: string | null;
+  newAccount?: AccountInput;
 }
 /** BYBIT-KEY (M22): an exchange account is added by its read-only API key, not an address. */
 export interface ExchangeRegistration {
@@ -53,6 +66,7 @@ export interface ExchangeRegistration {
   credentials: BybitCredentials;
   accountId: string | null;
   label: string | null;
+  newAccount?: AccountInput;
 }
 
 const normalizers: Record<Exclude<Network, 'bybit'>, (value: unknown) => string> = {
@@ -76,7 +90,7 @@ const normalizers: Record<Exclude<Network, 'bybit'>, (value: unknown) => string>
 // Stellar (M23), Zcash (M24).
 export function parseRegistration(raw: unknown): Registration | ExchangeRegistration {
   if ((raw as Record<string, unknown> | null)?.network === 'bybit') {
-    const row = object(raw, ['network', 'apiKey', 'apiSecret', 'accountId', 'label']);
+    const row = object(raw, ['network', 'apiKey', 'apiSecret', 'accountId', 'label', 'newAccount']);
     // Surrounding spaces from a copy are dropped; anything else must be exactly the key.
     const apiKey = typeof row.apiKey === 'string' ? row.apiKey.trim() : row.apiKey;
     const apiSecret = typeof row.apiSecret === 'string' ? row.apiSecret.trim() : row.apiSecret;
@@ -86,9 +100,10 @@ export function parseRegistration(raw: unknown): Registration | ExchangeRegistra
       credentials: { apiKey, apiSecret },
       accountId: account(row.accountId),
       label: label(row.label),
+      ...newAccount(row),
     };
   }
-  const row = object(raw, ['network', 'address', 'accountId', 'label']);
+  const row = object(raw, ['network', 'address', 'accountId', 'label', 'newAccount']);
   const network = row.network ?? 'bitcoin';
   if (!isNetwork(network) || network === 'bybit') return bad();
   return {
@@ -96,20 +111,25 @@ export function parseRegistration(raw: unknown): Registration | ExchangeRegistra
     address: normalizers[network](row.address),
     accountId: account(row.accountId),
     label: label(row.label),
+    ...newAccount(row),
   };
 }
 
 export interface Update {
   accountId?: string | null;
   label?: string | null;
+  /** WAL-INVALID: the address moves into a wallet made with the move, in place of `accountId`. */
+  newAccount?: AccountInput;
 }
 
 export function parseUpdate(raw: unknown): Update {
-  const row = object(raw, ['accountId', 'label']);
-  if (!('accountId' in row) && !('label' in row)) return bad();
+  const row = object(raw, ['accountId', 'label', 'newAccount']);
+  if (!('accountId' in row) && !('label' in row) && !('newAccount' in row)) return bad();
+  if ('accountId' in row && 'newAccount' in row) return bad();
   return {
     ...('accountId' in row ? { accountId: account(row.accountId) } : {}),
     ...('label' in row ? { label: label(row.label) } : {}),
+    ...newAccount(row),
   };
 }
 

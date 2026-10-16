@@ -15,13 +15,32 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/portfolio', label: 'Portfolio', icon: 'portfolio' },
   { path: '/transactions', label: 'Transactions', icon: 'transactions' },
   { path: '/wallets', label: 'Wallets', icon: 'wallets' },
-  { path: '/deposits', label: 'Deposits', icon: 'archive' },
+  { path: '/deposits', label: 'Banks', icon: 'bank' },
   { path: '/brokers', label: 'Brokers', icon: 'briefcase', held: 'broker' },
   { path: '/real-estate', label: 'Real estate', icon: 'home', held: 'property' },
   { path: '/goals', label: 'Goals', icon: 'target' },
   // `/settings` was the legacy settings screen; it now redirects here (M20).
   { path: '/preferences', label: 'Settings', icon: 'settings' },
 ];
+
+export const appTitle = 'Capital Tracker';
+
+// The pages under a section, named in the browser tab without their record's name.
+const detailTitles: readonly (readonly [string, string])[] = [
+  ['/portfolio/', 'Asset'],
+  ['/wallets/', 'Wallet'],
+  ['/deposits/', 'Deposit'],
+  ['/goals/', 'Goal'],
+];
+
+/** The browser tab title of a page: its section or page kind, then the app (WCAG 2.4.2). */
+export function pageTitle(pathname: string): string {
+  const name =
+    shellSections.find((section) => section.path === pathname)?.label ??
+    detailTitles.find(([prefix]) => pathname.startsWith(prefix))?.[1] ??
+    (pathname === '/history' ? 'History' : null);
+  return name ? `${name} · ${appTitle}` : appTitle;
+}
 
 // Retired screens (M20) send old bookmarks to the section that replaced them. `/assets/*`
 // is not here: the web server keeps that prefix for the built bundle, so the old asset

@@ -176,7 +176,12 @@ function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
-): (SnapshotValue & { unpriced: boolean; unrated: boolean; held: HeldAssets })[] {
+): (SnapshotValue & {
+  unpriced: boolean;
+  unrated: boolean;
+  held: HeldAssets;
+  stalePrices: number;
+})[] {
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
@@ -212,6 +217,8 @@ function valuesAt(
           .filter((asset) => asset.quantity !== '0')
           .map((asset) => [asset.instrumentId, { quantity: asset.quantity, value: asset.value }]),
       ),
+      // Held assets valued at a stored market price older than 2 hours, as the portfolio counts them.
+      stalePrices: report.stalePriceCount,
     };
   });
 }
@@ -473,7 +480,8 @@ export class PortfolioSnapshotsService {
 
   /**
    * The portfolio's value now in one currency, read the way `history` closes its period but
-   * without refreshing the stored snapshots, so a frequent read stays cheap.
+   * without refreshing the stored snapshots, so a frequent read stays cheap. `stalePrices` counts
+   * the held assets valued at a stored market price older than 2 hours, as the portfolio does.
    */
   async current(ownerId: string, currency: AccountingCurrency, now = new Date()) {
     const owner = parseUuid(ownerId);
@@ -484,7 +492,7 @@ export class PortfolioSnapshotsService {
       const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
       const [value] = valuesAt(valuation, now.getTime(), prices, [fx]);
-      return { value: value.value, complete: value.complete };
+      return { value: value.value, complete: value.complete, stalePrices: value.stalePrices };
     });
   }
 
