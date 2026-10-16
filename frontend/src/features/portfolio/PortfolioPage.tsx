@@ -31,7 +31,7 @@ import Allocation, { shareText } from './Allocation';
 import { assetCaption, Change, Signed, toneClass } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity } from './format';
-import { adjustmentText, compareDecimals } from './real-cost';
+import { compareDecimals } from './real-cost';
 import '../shell/shell-page.css';
 import './portfolio.css';
 import { Banner } from '@/ui/Banner';
@@ -199,16 +199,6 @@ export function realProfit(
 }
 
 /**
- * The nominal profit beside or instead of a real one, "known" when it covers only the coins with a
- * purchase price (portfolio-08); null when there is none.
- */
-function nominalLine(asset: AssetValuation, currency: AccountingCurrency): string | null {
-  const { pnl } = shownProfit(asset);
-  if (pnl === null) return null;
-  return `nominal ${money(pnl, currency, true)}${asset.unrealizedPnl === null ? ' known' : ''}`;
-}
-
-/**
  * Assets in the chosen order. Assets no longer held go last, as the server ranks them, so a
  * holding without a price stays above them; then unknown figures (no price, no purchase price)
  * go last in either direction; ties keep the names A to Z. A name order is only names.
@@ -284,7 +274,7 @@ function Summary({
 }: {
   portfolio: PortfolioValuation;
   asked: AccountingCurrency | undefined;
-  /** Under Real the cost and the profit are the ones after inflation, the nominal ones below. */
+  /** Under Real the cost and the profit are the ones after inflation, and no nominal figure. */
   real: boolean;
   basis: InflationBasis;
 }) {
@@ -361,34 +351,14 @@ function Summary({
                     <span className="ui-sub">
                       {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
                     </span>
-                    {portfolio.costBasis !== null ? (
-                      <span className="ui-sub">{amount(portfolio.costBasis)} paid</span>
-                    ) : (
-                      portfolio.assets.some((asset) => Number(asset.knownCostQuantity) > 0) && (
-                        <span className="ui-sub">
-                          {amount(portfolio.knownCostSubtotal)} paid for the known part
-                        </span>
-                      )
-                    )}
                   </>
                 ) : (
-                  <>
-                    {amount(reading.costBasis)}
-                    {portfolio.costBasis !== null && (
-                      <span className="ui-sub">
-                        {amount(portfolio.costBasis)} paid{' '}
-                        {adjustmentText(reading.costBasis, portfolio.costBasis, amount)}
-                      </span>
-                    )}
-                  </>
+                  amount(reading.costBasis)
                 )
               ) : partialCost ? (
                 amount(portfolio.knownCostSubtotal)
               ) : (
                 amount(portfolio.costBasis)
-              )}
-              {!showReal && reading !== null && portfolio.costBasis !== null && (
-                <span className="ui-sub">{amount(reading.costBasis)} in today&apos;s money</span>
               )}
               {!showReal && portfolio.costBasis === null && !partialCost && (
                 <span className="ui-sub">
@@ -409,24 +379,11 @@ function Summary({
           value={
             <>
               {showReal ? (
-                <>
-                  <Signed
-                    value={reading?.unrealizedPnl ?? null}
-                    currency={currency}
-                    ratio={reading?.unrealizedReturnPercent ?? null}
-                  />
-                  {portfolio.unrealizedPnl !== null ? (
-                    <span className="ui-sub">
-                      Nominal {money(portfolio.unrealizedPnl, currency, true)}
-                    </span>
-                  ) : (
-                    partialProfit && (
-                      <span className="ui-sub">
-                        Nominal {money(portfolio.knownUnrealizedPnl, currency, true)} known
-                      </span>
-                    )
-                  )}
-                </>
+                <Signed
+                  value={reading?.unrealizedPnl ?? null}
+                  currency={currency}
+                  ratio={reading?.unrealizedReturnPercent ?? null}
+                />
               ) : partialProfit ? (
                 <Signed
                   value={portfolio.knownUnrealizedPnl}
@@ -434,18 +391,11 @@ function Summary({
                   ratio={portfolio.knownUnrealizedReturnPercent}
                 />
               ) : (
-                <>
-                  <Signed
-                    value={portfolio.unrealizedPnl}
-                    currency={currency}
-                    ratio={portfolio.unrealizedReturnPercent}
-                  />
-                  {reading?.unrealizedPnl != null && portfolio.unrealizedPnl !== null && (
-                    <span className="ui-sub">
-                      Real {money(reading.unrealizedPnl, currency, true)}
-                    </span>
-                  )}
-                </>
+                <Signed
+                  value={portfolio.unrealizedPnl}
+                  currency={currency}
+                  ratio={portfolio.unrealizedReturnPercent}
+                />
               )}
               {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
             </>
@@ -595,26 +545,12 @@ function AssetsTable({
                   {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
                 </td>
                 <td className="ui-num">
-                  {real === null ? (
-                    <Signed
-                      value={shownProfit(asset).pnl}
-                      currency={currency}
-                      ratio={shownProfit(asset).ratio}
-                      inline
-                    />
-                  ) : (
-                    <>
-                      <Signed
-                        value={realProfit(asset, real).pnl}
-                        currency={currency}
-                        ratio={realProfit(asset, real).ratio}
-                        inline
-                      />
-                      {nominalLine(asset, currency) !== null && (
-                        <span className="ui-sub">{nominalLine(asset, currency)}</span>
-                      )}
-                    </>
-                  )}
+                  <Signed
+                    value={(real === null ? shownProfit(asset) : realProfit(asset, real)).pnl}
+                    currency={currency}
+                    ratio={(real === null ? shownProfit(asset) : realProfit(asset, real)).ratio}
+                    inline
+                  />
                 </td>
                 <td className="ui-num">
                   {asset.priceSource === 'manual' ? (
@@ -634,7 +570,7 @@ function AssetsTable({
 
 /**
  * A phone row's unrealized P&L: money and percent, coloured by sign; under Real it says so, and an
- * asset without a real reading keeps its nominal profit.
+ * asset without a real reading shows a dash, never its nominal profit (VIEW-ONE).
  */
 function Profit({
   asset,
@@ -646,17 +582,7 @@ function Profit({
   real: InflationBasis | null;
 }) {
   const { pnl, ratio } = real === null ? shownProfit(asset) : realProfit(asset, real);
-  if (pnl === null) {
-    const nominal = real === null ? null : nominalLine(asset, currency);
-    return nominal === null ? (
-      DASH
-    ) : (
-      <>
-        {DASH}
-        <span className="ui-sub">{nominal}</span>
-      </>
-    );
-  }
+  if (pnl === null) return DASH;
   return (
     <span className={toneClass(pnl)}>
       {money(pnl, currency, true)}

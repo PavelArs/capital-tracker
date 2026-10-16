@@ -4,7 +4,6 @@ import {
   type HistoryPeriod,
   historyPeriods,
   type PortfolioHistory,
-  type RealProfit,
 } from '@api/portfolio-history.api';
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { clockText } from '@utils/dates';
@@ -14,7 +13,7 @@ import NearestGoal from '../goals/NearestGoal';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
-import { money, percent, quantity, tone } from '../portfolio/format';
+import { DASH, money, percent, quantity, tone } from '../portfolio/format';
 import AboutChart from '../shell/AboutChart';
 import { useAttention } from '../shell/attention-context';
 import { basisText } from '../shell/basis-text';
@@ -143,56 +142,6 @@ function Amount({ value, currency }: { value: string; currency: AccountingCurren
 const NO_REAL =
   'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.';
 
-// The other reading of the profit, always on screen beside the one the switch picked, so
-// nothing moves when it changes: the real profit under Nominal, the nominal one under Real.
-function OtherReading({
-  history,
-  real,
-  basis,
-  view,
-}: {
-  history: PortfolioHistory;
-  real: RealProfit | null;
-  basis: 'official' | 'personal';
-  view: 'nominal' | 'real';
-}) {
-  const { currency } = history;
-  if (real === null)
-    return (
-      <div className="dashboard-hero__real" aria-label="Profit or loss after inflation">
-        <span className="dashboard-hero__period">{NO_REAL}</span>
-      </div>
-    );
-  const [label, profit, percentText] =
-    view === 'real'
-      ? ['Nominal', history.profit, history.profitPercent]
-      : ['After inflation', real.profit, real.profitPercent];
-  const direction = tone(profit);
-  return (
-    <div
-      className="dashboard-hero__real"
-      aria-label={view === 'real' ? 'Nominal profit or loss' : 'Profit or loss after inflation'}
-    >
-      <span className="dashboard-hero__period">{label}</span>
-      <span className={direction ? `ui-${direction}` : undefined}>
-        {money(profit, currency, true)}
-      </span>
-      {percentText !== null && <span>{percent(percentText)}</span>}
-      <span className="dashboard-hero__period">
-        {view === 'real' ? (
-          'before inflation'
-        ) : (
-          <>
-            {basisText(basis, real, currency)}
-            {' · '}
-            <Link to="/settings">Settings</Link>
-          </>
-        )}
-      </span>
-    </div>
-  );
-}
-
 // Under the net worth: profit or loss to date against all the money put in, whatever the
 // period; the period itself only drives the chart and the split below. Under Real, money put
 // in is grown by the inflation since each deposit's day (INFL-REAL).
@@ -212,11 +161,15 @@ function NetWorth({
   const [view] = useValueView();
   const [basis] = useInflationBasis();
   const real = history.real?.[basis] ?? null;
-  // Without a real figure the nominal one stays, and the line below says why.
-  const shownReal = view === 'real' && real !== null;
-  const profit = shownReal ? real.profit : history.profit;
-  const profitPercent = shownReal ? real.profitPercent : history.profitPercent;
-  const invested = shownReal ? real.invested : history.invested;
+  // VIEW-ONE: one reading at a time. Under Real a profit that cannot be computed is a dash and
+  // the reason, never the nominal one; an answer saved before real figures existed has none to
+  // miss, so it stays nominal until a fresh one arrives.
+  const realView = view === 'real' && history.real !== undefined;
+  const shownReal = realView && real !== null;
+  const noReal = realView && real === null;
+  const profit = shownReal ? real.profit : noReal ? null : history.profit;
+  const profitPercent = shownReal ? real.profitPercent : noReal ? null : history.profitPercent;
+  const invested = shownReal ? real.invested : noReal ? null : history.invested;
   const direction = tone(profit);
   // What is left out of these figures is said once, in a tooltip, not as lines of text.
   const note = [unknownCostNote(portfolio), history.complete ? null : INCOMPLETE_NOTE]
@@ -250,14 +203,19 @@ function NetWorth({
       </div>
       <div
         className={`dashboard-hero__delta${direction ? ` ui-${direction}` : ''}`}
-        aria-label={shownReal ? 'Real profit or loss to date' : 'Profit or loss to date'}
+        aria-label={realView ? 'Real profit or loss to date' : 'Profit or loss to date'}
       >
         <span>
           {direction === 'neg' ? '▼ ' : direction === 'pos' ? '▲ ' : ''}
-          {money(profit, currency, true)}
+          {noReal ? DASH : money(profit, currency, true)}
         </span>
         {profitPercent !== null && <span>{percent(profitPercent)}</span>}
-        {invested !== null ? (
+        {noReal ? (
+          <span className="dashboard-hero__period">
+            {NO_REAL}
+            {info}
+          </span>
+        ) : invested !== null ? (
           // The note icon is the last word of the line it qualifies, so it wraps with it.
           <span className="dashboard-hero__period">
             {shownReal ? (
@@ -274,9 +232,6 @@ function NetWorth({
           info
         )}
       </div>
-      {history.real !== undefined && (
-        <OtherReading history={history} real={real} basis={basis} view={view} />
-      )}
       {portfolio !== null &&
         portfolio.currency === currency &&
         Number(portfolio.depositsValue) > 0 && (
