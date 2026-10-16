@@ -13,7 +13,7 @@ const row: GoalRow = {
   createdAt: '2026-10-01T00:00:00.000Z',
 };
 const today = '2026-10-13';
-const now = (value: string | null, complete = true) => ({ value, complete });
+const now = (value: string | null, complete = true) => ({ value, complete, stalePrices: 0 });
 
 describe('GOAL-CHART goal forecast', () => {
   it('starts at the portfolio now and steps a month at a time to the deadline', () => {

@@ -57,7 +57,7 @@ export interface GoalScenario {
  * A whole number of cents as a plain decimal string, also past 1e21 where `toFixed` turns to
  * exponent form; null when the maths left the range of a number.
  */
-export function centsText(hundredths: number): string | null {
+function centsText(hundredths: number): string | null {
   if (!Number.isFinite(hundredths)) return null;
   const atoms = BigInt(hundredths);
   const digits = (atoms < 0n ? -atoms : atoms).toString().padStart(3, '0');
@@ -69,7 +69,7 @@ export function centsText(hundredths: number): string | null {
 // noise is not a cent. Null when the maths left the range of a number.
 const required = (value: number) =>
   Number.isFinite(value) ? centsText(Math.ceil(value * 100 - 1e-6)) : null;
-const expected = (value: number) =>
+export const expected = (value: number) =>
   Number.isFinite(value) ? centsText(Math.floor(value * 100 + 1e-6)) : null;
 const percent = (value: number) => value.toFixed(4).replace(/\.?0+$/, '');
 
