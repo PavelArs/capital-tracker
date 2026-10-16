@@ -51,6 +51,15 @@ function sliceColor(
     : undefined;
 }
 
+/**
+ * A slice's share of the portfolio as shown. A held share too small for two decimals reads
+ * "<0.01%", never "0.00%", which would say it holds nothing (polish 23).
+ */
+export function shareText(value: string | null): string {
+  const shown = percent(value, false);
+  return value !== null && shown === '0.00%' && Number(value) > 0 ? '<0.01%' : shown;
+}
+
 const OTHER = '__other__';
 
 /** At most `limit` rows: the largest slices, then the rest added up as "Other". */
@@ -152,7 +161,7 @@ export default function Allocation({
                 <span className="portfolio-slices__value">
                   {money(slice.value, portfolio.currency)}
                 </span>
-                <span className="portfolio-slices__percent">{percent(slice.percent, false)}</span>
+                <span className="portfolio-slices__percent">{shareText(slice.percent)}</span>
               </li>
             ))}
           </ul>

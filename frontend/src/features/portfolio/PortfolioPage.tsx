@@ -26,7 +26,7 @@ import { useAccountClasses } from '../shell/useAccountClasses';
 import { useValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
-import Allocation from './Allocation';
+import Allocation, { shareText } from './Allocation';
 import { assetCaption, Change, Signed, toneClass } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity } from './format';
@@ -514,7 +514,7 @@ function AssetsTable({
                     />
                   </span>
                   <span className="portfolio-share__text">
-                    {percent(asset.allocationPercent, false)}
+                    {shareText(asset.allocationPercent)}
                   </span>
                 </span>
               </td>
