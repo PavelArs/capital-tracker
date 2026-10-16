@@ -127,6 +127,24 @@ describe('BROKER-SETUP connecting T-Bank with one token', () => {
     expect(screen.getByLabelText('T-Bank token')).toHaveValue(TOKEN);
   });
 
+  it('selects at most 20 accounts, the most the server connects at once', async () => {
+    const many = Array.from({ length: 22 }, (_, n) =>
+      option(String(2000000100 + n), `Account ${n + 1}`),
+    );
+    vi.spyOn(brokersApi, 'tbankAccounts').mockResolvedValue(many);
+    const user = userEvent.setup();
+    open();
+    await paste(user);
+    const boxes = await screen.findAllByRole('checkbox');
+    expect(boxes.filter((box) => (box as HTMLInputElement).checked)).toHaveLength(20);
+    expect(boxes[20]).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Connect 20 accounts' })).toBeEnabled();
+    expect(screen.getByText(/20 accounts is the most to connect at once/)).toBeInTheDocument();
+    // Unchecking one frees a place for another.
+    await user.click(boxes[0]);
+    expect(boxes[20]).toBeEnabled();
+  });
+
   it('says so when every account is already connected and offers nothing to connect', async () => {
     vi.spyOn(brokersApi, 'tbankAccounts').mockResolvedValue([
       option('2000000003', 'Old account', { connected: true }),

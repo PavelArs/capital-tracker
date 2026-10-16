@@ -8,6 +8,8 @@ import { Icon } from '../shell/icons';
 import './broker.css';
 
 const MAX_NAME = 120;
+// The most accounts one command connects, as the server checks.
+const MAX_PICKS = 20;
 // The token T-Bank shows once: letters, digits and . _ - only, as the server also checks.
 const tokenShape = /^[0-9A-Za-z._-]{20,200}$/;
 
@@ -69,12 +71,15 @@ export default function ConnectTBankDialog({ onClose, onConnected }: Props) {
     try {
       const found = await brokersApi.tbankAccounts(trimmed);
       setAccounts(found);
+      // Past the limit the rest stay unchecked, to be connected in a second go.
+      let free = MAX_PICKS;
       setPicks(
         Object.fromEntries(
-          found.map((account) => [
-            account.id,
-            { checked: !account.connected, name: defaultName(account) },
-          ]),
+          found.map((account) => {
+            const checked = !account.connected && free > 0;
+            if (checked) free -= 1;
+            return [account.id, { checked, name: defaultName(account) }];
+          }),
         ),
       );
     } catch (caught) {
@@ -216,6 +221,12 @@ export default function ConnectTBankDialog({ onClose, onConnected }: Props) {
                   ? 'Every open account this token reaches is already connected.'
                   : 'Pick the accounts to read. Each becomes a broker account here, and you can rename it.'}
               </p>
+              {chosen.length >= MAX_PICKS && (
+                <p className="broker-note" role="status">
+                  {MAX_PICKS} accounts is the most to connect at once. Connect the rest afterwards
+                  with the same token.
+                </p>
+              )}
               <ul className="broker-picks">
                 {accounts.map((account) => {
                   const pick = picks[account.id];
@@ -225,7 +236,11 @@ export default function ConnectTBankDialog({ onClose, onConnected }: Props) {
                         <input
                           type="checkbox"
                           checked={pick.checked}
-                          disabled={busy || account.connected}
+                          disabled={
+                            busy ||
+                            account.connected ||
+                            (!pick.checked && chosen.length >= MAX_PICKS)
+                          }
                           onChange={(event) =>
                             change(account.id, { checked: event.target.checked })
                           }
