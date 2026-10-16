@@ -233,6 +233,7 @@ export default function HistoryPage() {
     <div className="shell-page">
       <PageHeader
         title="History"
+        currencySwitch={false}
         actions={
           <ButtonLink variant="ghost" to="/preferences">
             Back to Settings

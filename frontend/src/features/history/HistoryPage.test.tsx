@@ -170,6 +170,16 @@ describe('audit history screen (BR 14)', () => {
     expect(screen.getByText(/nothing is overwritten/)).toBeInTheDocument();
   });
 
+  it('HIST-NO-SWITCH: shows recorded amounts as recorded, so it offers no currency or value switch', async () => {
+    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction]));
+    renderPage();
+    const heading = await screen.findByRole('heading', { level: 1, name: 'History' });
+    // Neither the switch nor the room held for it while the main currency loads.
+    expect(heading.closest('header')?.querySelector('.ui-seg')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Currency' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Values' })).toBeNull();
+  });
+
   it('HIST-DRAWER: opening a row shows every value before and after, and Escape closes it', async () => {
     const user = userEvent.setup();
     vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction, quiet]));
