@@ -8,7 +8,7 @@ import {
   type ScenarioKey,
   scenarioReturns,
 } from './goal-forecast';
-import { centsText, type GoalRow, type PortfolioNow } from './goal-view';
+import { expected, type GoalRow, type PortfolioNow } from './goal-view';
 
 /** Without a deadline the chart runs a year past the month the base case gets there. */
 const AFTER_REACHED = 12;
@@ -69,7 +69,7 @@ export function goalForecast(row: GoalRow, now: PortfolioNow, today: string) {
       ['on', on],
       ...rates.map(([key, rate]) => [
         key,
-        centsText(Math.round(futureValue(current, plan, rate, elapsed, payments) * 100)),
+        expected(futureValue(current, plan, rate, elapsed, payments)),
       ]),
     ]) as GoalForecastPoint;
   const points = months.map((month) => point(addMonths(today, month), month, month));
