@@ -41,7 +41,7 @@ import {
   subtitle,
   withoutHiddenTokens,
 } from './WalletParts';
-import { gapAddress, PENDING, pricesOf, reconcile } from './wallets';
+import { gapAddress, holdingShare, PENDING, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import './wallets.css';
 
@@ -398,9 +398,7 @@ export default function WalletPage() {
                       <span className="ui-num wallets-holdings__side">
                         {holding.value === null ? DASH : money(holding.value, currency)}
                         {holding.value !== null && total !== null && Number(total) > 0 && (
-                          <span className="ui-sub">
-                            {((Number(holding.value) / Number(total)) * 100).toFixed(1)}%
-                          </span>
+                          <span className="ui-sub">{holdingShare(holding.value, total)}</span>
                         )}
                       </span>
                     </li>

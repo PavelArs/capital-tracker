@@ -7,6 +7,7 @@ import {
   checkApiKey,
   checkBitcoinAddress,
   hiddenSymbolsOf,
+  holdingShare,
   reconcile,
   shortAddress,
   sum,
@@ -561,5 +562,28 @@ describe('wallets-06: an address of another network offers to switch', () => {
 
   it('wallets-06 offers no switch for an address no network takes', () => {
     expect(checkAddress('ethereum', 'not an address')).not.toHaveProperty('switchTo');
+  });
+});
+
+describe('WALLET-SHARE a held asset too small for one decimal is not shown as nothing', () => {
+  it('WALLET-SHARE shows a share above 0 that rounds to 0.0% as <0.1%', () => {
+    expect(holdingShare('0.04', '100')).toBe('<0.1%');
+    expect(holdingShare('0.000001', '12345.67')).toBe('<0.1%');
+  });
+
+  it('WALLET-SHARE keeps 0 and every share that shows a tenth, rounded half up', () => {
+    expect(holdingShare('0', '100')).toBe('0.0%');
+    expect(holdingShare('0.05', '100')).toBe('0.1%');
+    expect(holdingShare('1', '3')).toBe('33.3%');
+    expect(holdingShare('2', '3')).toBe('66.7%');
+    expect(holdingShare('250', '250')).toBe('100.0%');
+    expect(holdingShare('-1', '3')).toBe('-33.3%');
+  });
+
+  it('WALLET-SHARE rounds the exact share, not a float approximation of it', () => {
+    // As floats, 0.15 / 100 * 100 is just under 0.15 and toFixed(1) reads 0.1%.
+    expect(holdingShare('0.15', '100')).toBe('0.2%');
+    expect(holdingShare('1.45', '100')).toBe('1.5%');
+    expect(holdingShare('0.00045', '1')).toBe('<0.1%');
   });
 });
