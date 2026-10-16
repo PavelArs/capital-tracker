@@ -74,7 +74,7 @@ async function createDatabase() {
 // TrackTronWallets1793600000000, ReadBybitEarn1794000000000, ReadBybitConverts1794400000000,
 // PriceBybitCoins1794500000000, TrackAnyChainToken1794900000000, TrackStellarWallets1795000000000,
 // HideChainTokens1795200000000, TrackZcashWallets1795300000000 and
-// TrackEvmChains1796000000000, JournalWalletSyncs1796100000000, KindOfWallet1796200000000, StopTrackingWallets1796300000000, HideAssets1796400000000, AddBankDeposits1796500000000, AddInflation1796700000000, DailyDepositInterest1796800000000, ClassOfAccount1796900000000, DropLegacySchema1797000000000, AddDepositEvents1797100000000, AddSavingsGoals1797200000000, AddBrokerConnections1797300000000, AddManualPriceCurrency1797400000000 and AddBrokerImports1797500000000 do not touch instruments), run as a release without the classification did.
+// TrackEvmChains1796000000000, JournalWalletSyncs1796100000000, KindOfWallet1796200000000, StopTrackingWallets1796300000000, HideAssets1796400000000, AddBankDeposits1796500000000, AddInflation1796700000000, DailyDepositInterest1796800000000, ClassOfAccount1796900000000, DropLegacySchema1797000000000, AddDepositEvents1797100000000, AddSavingsGoals1797200000000, AddBrokerConnections1797300000000, AddManualPriceCurrency1797400000000, AddBrokerImports1797500000000 and AddCapitalReturns1797700000000 do not touch instruments), run as a release without the classification did.
 async function createPreviousSchema() {
   const classes = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
@@ -85,7 +85,7 @@ async function createPreviousSchema() {
         /^[A-Za-z]+\d{13}$/.test(entry.name) &&
         entry.name !== migration,
     );
-  assert.equal(classes.length, 67, 'Every migration but the classification: exactly sixty-seven');
+  assert.equal(classes.length, 68, 'Every migration but the classification: exactly sixty-eight');
   const prior = new DataSource({
     type: 'postgres',
     host: settings.DB_HOST,

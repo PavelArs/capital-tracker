@@ -89,6 +89,18 @@ interface RewardRow extends Versioned {
   incomeValueUsd: string | null;
   acquisitionBasisUsd: string | null;
 }
+interface CapitalReturnRow extends Versioned {
+  capitalReturnId: string;
+  returnedInstrumentId: string;
+  returnedName: string;
+  returnedSymbol: string | null;
+  amount: string;
+  amountUsd: string;
+  paidCurrency: string | null;
+  rateDate: string | null;
+  perUsd: string | null;
+  rateSource: string | null;
+}
 interface OpeningRow extends Named {
   lotId: string;
   originalQuantity: string;
@@ -177,6 +189,20 @@ function payment(row: TradeRow): TradePayment | null {
     rateDate: row.paidRateDate,
     perUsd: parseDecimal(row.paidPerUsd, true),
     rateSource: row.paidRateSource,
+  };
+}
+
+function returnedPayment(row: CapitalReturnRow): TradePayment | null {
+  if (row.paidCurrency === null) return null;
+  if (!isPaidCurrency(row.paidCurrency) || !isRateSource(row.rateSource) || !row.rateDate)
+    throw new Error('Invalid stored capital return rate');
+  return {
+    currency: row.paidCurrency,
+    gross: decimal(row.amount),
+    fee: '0',
+    rateDate: row.rateDate,
+    perUsd: parseDecimal(row.perUsd, true),
+    rateSource: row.rateSource,
   };
 }
 
@@ -293,6 +319,23 @@ export class OperationListService {
           JOIN account_reward_versions v ON v."ownerId"=r."ownerId" AND v."accountId"=r."accountId"
             AND v."rewardId"=r.id AND v.version=r."currentVersion"
           ${instrumentJoin} ${accountJoin}
+          WHERE r."ownerId"=$1 AND v.kind<>'void'`,
+        [owner],
+      );
+      const capitalReturns: CapitalReturnRow[] = await manager.query(
+        `SELECT r.id AS "capitalReturnId", v."accountId", a.name AS "accountName",
+            v."cashInstrumentId" AS "instrumentId", ci.name AS "instrumentName",
+            ci.symbol AS "instrumentSymbol", v."occurredAt", v."orderWithinTimestamp", v.version,
+            v."instrumentId" AS "returnedInstrumentId", i.name AS "returnedName",
+            i.symbol AS "returnedSymbol", v.amount::text AS amount, v."amountUsd"::text AS "amountUsd",
+            v."paidCurrency", v."rateDate"::text AS "rateDate", v."perUsd"::text AS "perUsd",
+            v."rateSource"
+          FROM account_capital_returns r
+          JOIN account_capital_return_versions v ON v."ownerId"=r."ownerId"
+            AND v."accountId"=r."accountId" AND v."capitalReturnId"=r.id
+            AND v.version=r."currentVersion"
+          ${instrumentJoin} ${accountJoin}
+          JOIN accounting_instruments ci ON ci."ownerId"=v."ownerId" AND ci.id=v."cashInstrumentId"
           WHERE r."ownerId"=$1 AND v.kind<>'void'`,
         [owner],
       );
@@ -451,6 +494,18 @@ export class OperationListService {
             quantity: decimal(row.quantity),
             incomeValueUsd: optional(row.incomeValueUsd),
             acquisitionBasisUsd: optional(row.acquisitionBasisUsd),
+          })),
+          capitalReturns: capitalReturns.map((row) => ({
+            capitalReturnId: row.capitalReturnId,
+            version: row.version,
+            account: place(row),
+            cash: held(row),
+            returned: asset(row.returnedInstrumentId, row.returnedName, row.returnedSymbol),
+            occurredAt: row.occurredAt.toISOString(),
+            orderWithinTimestamp: row.orderWithinTimestamp,
+            amount: decimal(row.amount),
+            amountUsd: decimal(row.amountUsd),
+            paid: returnedPayment(row),
           })),
           openings: openings.map((row) => {
             const quantity = decimal(row.carriedQuantity);

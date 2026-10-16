@@ -22,7 +22,7 @@ const settings = {
 };
 const database = 'capital_tracker_broker_connections_e2e';
 const servicePath = '/app/backend/dist/brokers/broker-connections.service.js';
-const MIGRATIONS = 68;
+const MIGRATIONS = 69;
 const token = 't.SyntheticToken000000000000000001';
 const replacement = 't.SyntheticToken000000000000000002';
 const brokerAccount = { id: '2000000001', name: 'Synthetic', open: true, access: 'read_only' };
@@ -622,6 +622,97 @@ async function importing(db, service, imports, owner, other) {
   await imports.import(owner, eighth, { requestId: randomUUID(), previewHash: funded.previewHash });
   assert.equal(await count('broker_imports', `WHERE "accountId" = '${eighth}'`), 1);
   console.log('PASS BROKER-SYNC-FUNDING');
+
+  stage = 'BROKER-CAPRET: a bond paid back in part lowers its cost and brings cash in, once';
+  const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
+  const { OperationListService } = require('/app/backend/dist/accounting/operation-list.service.js');
+  const bondUid = '10000000-0000-4000-8000-0000000000c3';
+  const bond = (over) => ({
+    instrumentUid: bondUid,
+    instrumentType: 'bond',
+    ticker: 'SYNTHBOND',
+    ...over,
+  });
+  const ninth = await account(db, owner, 'broker');
+  await service.connect(owner, ninth, { token, brokerAccountId: brokerAccount.id });
+  history = [
+    operation('900000001', 'INPUT', '10000', { occurredAt: '2024-03-01T07:00:00Z' }),
+    operation('900000002', 'BUY', '-9000', bond({ occurredAt: '2024-03-01T08:00:00Z', quantity: '10' })),
+    operation('900000003', 'BOND_REPAYMENT', '2000', bond({ occurredAt: '2024-03-15T07:00:00Z' })),
+    operation('900000004', 'BOND_REPAYMENT_FULL', '7500', bond({ occurredAt: '2024-03-20T07:00:00Z' })),
+  ];
+  const returns = await imports.preview(owner, ninth);
+  assert.deepEqual(returns.problems, []);
+  assert.deepEqual(
+    returns.entries.map((entry) => [entry.record, entry.action, entry.amount]),
+    [
+      ['trade', 'deposit', '10000'],
+      ['trade', 'buy', '9000'],
+      ['capital-return', 'return', '2000'],
+      ['trade', 'sell', '7500'],
+    ],
+  );
+  assert.deepEqual([returns.trades, returns.rewards, returns.capitalReturns], [3, 0, 1]);
+  assert.equal(returns.canImport, true);
+  const returnRequest = randomUUID();
+  const returned = await imports.import(owner, ninth, { requestId: returnRequest, previewHash: returns.previewHash });
+  assert.deepEqual(
+    [returned.value.trades, returned.value.rewards, returned.value.capitalReturns, returned.value.lastJournalRevision],
+    [3, 0, 1, 4],
+  );
+  assert.deepEqual(
+    await imports.import(owner, ninth, { requestId: returnRequest, previewHash: returns.previewHash }),
+    { created: false, value: returned.value },
+    'A repeated request returns its receipt and writes no second return',
+  );
+  assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
+  const [heldReturn] = await db.query(
+    `SELECT v.kind, v.version, v."journalRevision", v.amount, v."amountUsd", v."paidCurrency",
+        v."rateDate"::text AS "rateDate", v."perUsd", v."rateSource", v."occurredAt"
+      FROM account_capital_return_versions v WHERE v."accountId" = $1`,
+    [ninth],
+  );
+  const trim = (value) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
+  assert.deepEqual(
+    [heldReturn.kind, heldReturn.version, heldReturn.journalRevision, trim(heldReturn.amount), heldReturn.paidCurrency],
+    ['create', 1, 3, '2000', 'RUB'],
+  );
+  assert.deepEqual(
+    [heldReturn.rateDate, trim(heldReturn.perUsd), heldReturn.rateSource, heldReturn.occurredAt.toISOString()],
+    ['2024-03-15', '90', 'bank-of-russia', '2024-03-15T07:00:00.000Z'],
+  );
+  assert.equal(trim(heldReturn.amountUsd), '22.222222222222222222222222222222'.replace(/0+$/, ''));
+  const [byReturn] = await db.query(
+    `SELECT o."operationId", i."capitalReturns" FROM broker_imported_operations o
+      JOIN broker_imports i ON i.id = o."importId"
+      WHERE o."accountId" = $1 AND o."capitalReturnId" IS NOT NULL`,
+    [ninth],
+  );
+  assert.deepEqual([byReturn.operationId, byReturn.capitalReturns], ['900000003', 1]);
+  const [rubCash] = await db.query(
+    `SELECT id FROM accounting_instruments WHERE "ownerId" = $1 AND "assetType" = 'fiat' AND symbol = 'RUB'`,
+    [owner],
+  );
+  const bonds = await db.query(
+    `SELECT i.id FROM broker_instrument_links l JOIN accounting_instruments i ON i.id = l."instrumentId"
+      WHERE l."ownerId" = $1 AND l."providerInstrumentId" = $2`,
+    [owner, bondUid],
+  );
+  const atEnd = '2024-04-01T00:00:00.000Z';
+  // 10000 in, 9000 on the bond, 2000 came back, 7500 on its full repayment.
+  assert.equal((await trades.available(owner, ninth, { instrumentId: rubCash.id, at: atEnd })).quantity, '10500');
+  assert.equal((await trades.available(owner, ninth, { instrumentId: bonds[0].id, at: atEnd })).quantity, '0');
+  const listed = (await new OperationListService(db).read(owner, {})).operations.filter(
+    (item) => item.kind === 'capital-return',
+  );
+  assert.deepEqual(
+    listed.map((item) => [item.type, item.direction, trim(item.quantity), item.counterAsset.symbol, item.account.id]),
+    [['capital-return', 'in', '2000', 'SYNTHBOND', ninth]],
+  );
+  assert.equal(listed[0].paid.currency, 'RUB');
+  await rejected(() => new AccountingService(db).removeAccount(owner, ninth), 409);
+  assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
+  console.log('PASS BROKER-CAPRET');
 }
 
 async function main() {

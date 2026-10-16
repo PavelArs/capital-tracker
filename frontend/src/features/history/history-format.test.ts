@@ -122,6 +122,7 @@ describe('glyphOf', () => {
     expect(glyphOf(event({ entity: 'transfer' }))).toBe('move');
     expect(glyphOf(event({ entity: 'swap' }))).toBe('move');
     expect(glyphOf(event({ entity: 'reward' }))).toBe('reward');
+    expect(glyphOf(event({ entity: 'capital-return' }))).toBe('in');
     expect(glyphOf(event({ entity: 'flow', title: 'Deposit' }))).toBe('in');
     expect(glyphOf(event({ entity: 'flow', title: 'Withdrawal' }))).toBe('out');
     expect(glyphOf(event({ entity: 'price' }))).toBe('opening');

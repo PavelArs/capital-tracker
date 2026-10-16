@@ -7,6 +7,7 @@ export type AuditEntity =
   | 'transfer'
   | 'swap'
   | 'reward'
+  | 'capital-return'
   | 'flow'
   | 'price'
   | 'classification'

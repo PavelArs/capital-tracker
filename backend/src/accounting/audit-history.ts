@@ -2,7 +2,7 @@ import { chainAsset, networkNames } from '../wallet-addresses/chain-assets';
 
 // audit-history (M27, BR 14): who changed what and when, read from the immutable version
 // rows every journal already keeps. Nothing is stored for this screen; each version of a
-// trade, transfer, swap, reward, external flow, manual price or chain classification is one
+// trade, transfer, swap, reward, capital return, external flow, manual price or chain classification is one
 // event, compared with the version before it. A bank deposit keeps a log of what the owner did
 // to it instead (DEP-HISTORY): each action is one event that lists its own facts.
 
@@ -11,6 +11,7 @@ export const auditEntities = [
   'transfer',
   'swap',
   'reward',
+  'capital-return',
   'flow',
   'price',
   'classification',
@@ -171,6 +172,14 @@ function rewardFields(s: Snapshot): Fields {
     ['Date', moment(s.occurredAt)],
   ];
 }
+function capitalReturnFields(s: Snapshot): Fields {
+  return [
+    ['Came back', quantity(s.amount, s.asset)],
+    ['Lowered the cost of', text(s.returned)],
+    ['Value', usd(s.amountUsd)],
+    ['Date', moment(s.occurredAt)],
+  ];
+}
 function flowFields(s: Snapshot): Fields {
   return [
     ['Direction', text(s.direction ? humanize(s.direction) : null)],
@@ -236,6 +245,7 @@ const fieldsOf: Record<AuditEntity, (snapshot: Snapshot) => Fields> = {
   transfer: transferFields,
   swap: swapFields,
   reward: rewardFields,
+  'capital-return': capitalReturnFields,
   flow: flowFields,
   price: priceFields,
   classification: classificationFields,
@@ -302,6 +312,8 @@ function titleOf(row: AuditRow): { title: string; asset: string | null } {
       return { title: `Swap ${s.gaveAsset ?? ''} → ${s.gotAsset ?? ''}`, asset: s.gaveAsset };
     case 'reward':
       return { title: `Reward ${s.asset ?? ''}`.trim(), asset: s.asset };
+    case 'capital-return':
+      return { title: `Capital return ${s.returned ?? ''}`.trim(), asset: s.returned };
     case 'flow':
       return { title: s.direction === 'withdrawal' ? 'Withdrawal' : 'Deposit', asset: null };
     case 'price':

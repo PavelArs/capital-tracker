@@ -414,6 +414,9 @@ function facts(
     else rows.push(['Account', operation.account?.name ?? 'Whole portfolio']);
     if (operation.counterAsset && operation.counterQuantity)
       rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
+    // BROKER-CAPRET: the money came back out of what these units cost.
+    if (operation.type === 'capital-return' && operation.counterAsset)
+      rows.push(['Lowered the cost of', ticker(operation.counterAsset)]);
     rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
     if ((operation.type === 'buy' || operation.type === 'sell') && operation.value !== null)
       rows.push([

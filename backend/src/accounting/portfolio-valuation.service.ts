@@ -430,6 +430,7 @@ function allAccountsAt(
           projection.accounts.get(row.accountId)!,
           journal,
           projection.swapAllocations,
+          projection.capitalReturnAllocations,
         );
       const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
       projections.set(ledger, projection);

@@ -12,6 +12,13 @@ import {
 import { rewardPayload } from '../accounting/asset-reward-input';
 import { swapHeadJoin } from '../accounting/asset-swap.store';
 import { firstShortfall } from '../accounting/available-quantity';
+import {
+  appendCapitalReturnVersion,
+  CAPITAL_RETURN_LIMITS,
+  capitalReturnHeadJoin,
+  capitalReturnPayload,
+  readCapitalReturnCounts,
+} from '../accounting/capital-return.store';
 import { rethrowAccountingHistory } from '../accounting/connected-accounting.store';
 import { type Execution, FifoHistoryError } from '../accounting/fifo';
 import {
@@ -37,6 +44,7 @@ import {
   type ImportInstrument,
   type JournalEntry,
   journalEntries,
+  recordOf,
 } from './tbank-import-entries';
 import { type ImportPlan, type PlanEntry, planImport } from './tbank-import-plan';
 
@@ -51,6 +59,7 @@ export interface ImportProblem {
     | 'not-held'
     | 'before-records'
     | 'too-many-rewards'
+    | 'too-many-capital-returns'
     | 'too-many-entries';
   occurredAt: string | null;
   ticker: string;
@@ -73,6 +82,7 @@ interface ImportRow {
   canonicalPayload: string;
   trades: number;
   rewards: number;
+  capitalReturns: number;
   firstJournalRevision: number;
   lastJournalRevision: number;
   createdAt: Date;
@@ -88,6 +98,7 @@ function receipt(row: ImportRow) {
     requestId: row.requestId,
     trades: row.trades,
     rewards: row.rewards,
+    capitalReturns: row.capitalReturns,
     firstJournalRevision: row.firstJournalRevision,
     lastJournalRevision: row.lastJournalRevision,
     createdAt: row.createdAt.toISOString(),
@@ -168,13 +179,14 @@ export class BrokerImportService {
         const last = journal.currentRevision + review.entries.length;
         const id = randomUUID();
         const trades = review.entries.filter((entry) => entry.trade).length;
+        const capitalReturns = review.entries.filter((entry) => entry.capitalReturn).length;
         const [saved]: ImportRow[] = await manager.query(
           `INSERT INTO broker_imports (id, "ownerId", "accountId", provider, "brokerAccountId",
-              "requestId", "canonicalPayload", trades, rewards, "firstJournalRevision",
-              "lastJournalRevision")
-            VALUES ($1, $2, $3, 'tbank', $10, $4, $5, $6, $7, $8, $9)
+              "requestId", "canonicalPayload", trades, rewards, "capitalReturns",
+              "firstJournalRevision", "lastJournalRevision")
+            VALUES ($1, $2, $3, 'tbank', $11, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id, "accountId", "requestId", "canonicalPayload", trades, rewards,
-              "firstJournalRevision", "lastJournalRevision", "createdAt"`,
+              "capitalReturns", "firstJournalRevision", "lastJournalRevision", "createdAt"`,
           [
             id,
             owner,
@@ -182,7 +194,8 @@ export class BrokerImportService {
             input.requestId,
             payload,
             trades,
-            review.entries.length - trades,
+            review.entries.length - trades - capitalReturns,
+            capitalReturns,
             first,
             last,
             history.brokerAccountId,
@@ -190,10 +203,12 @@ export class BrokerImportService {
         );
         const written = { operations: [] as string[], trades: [] as (string | null)[] };
         const rewards: (string | null)[] = [];
+        const returns: (string | null)[] = [];
         for (const [index, entry] of review.entries.entries()) {
           const revision = first + index;
           let tradeId: string | null = null;
           let rewardId: string | null = null;
+          let capitalReturnId: string | null = null;
           if (entry.trade) {
             tradeId = randomUUID();
             const fields = execution(entry.trade);
@@ -210,6 +225,31 @@ export class BrokerImportService {
                 kind: 'create',
                 expectedJournalRevision: revision - 1,
                 ...fields,
+              }),
+            });
+          } else if (entry.capitalReturn) {
+            capitalReturnId = randomUUID();
+            const { capitalReturnId: _, version, ...fields } = entry.capitalReturn;
+            const requestId = randomUUID();
+            await appendCapitalReturnVersion(manager, owner, {
+              ...fields,
+              capitalReturnId,
+              version,
+              accountId: account,
+              kind: 'create',
+              requestId,
+              journalRevision: revision,
+              rate: entry.rate,
+              canonicalPayload: capitalReturnPayload('create', {
+                expectedJournalRevision: revision - 1,
+                instrumentId: fields.instrumentId,
+                cashInstrumentId: fields.cashInstrumentId,
+                occurredAt: fields.occurredAt,
+                orderWithinTimestamp: fields.orderWithinTimestamp,
+                amount: fields.amount,
+                amountUsd: fields.amountUsd,
+                paidCurrency: fields.paidCurrency,
+                rate: entry.rate,
               }),
             });
           } else {
@@ -236,13 +276,16 @@ export class BrokerImportService {
             written.operations.push(operationId);
             written.trades.push(tradeId);
             rewards.push(rewardId);
+            returns.push(capitalReturnId);
           }
         }
         await manager.query(
           `INSERT INTO broker_imported_operations ("ownerId", "accountId", provider,
-              "brokerAccountId", "operationId", "importId", "tradeId", "rewardId")
-            SELECT $1, $2, 'tbank', $7, operation, $3, trade, reward
-              FROM unnest($4::text[], $5::uuid[], $6::uuid[]) AS item(operation, trade, reward)`,
+              "brokerAccountId", "operationId", "importId", "tradeId", "rewardId",
+              "capitalReturnId")
+            SELECT $1, $2, 'tbank', $8, operation, $3, trade, reward, capital_return
+              FROM unnest($4::text[], $5::uuid[], $6::uuid[], $7::uuid[])
+                AS item(operation, trade, reward, capital_return)`,
           [
             owner,
             account,
@@ -250,6 +293,7 @@ export class BrokerImportService {
             written.operations,
             written.trades,
             rewards,
+            returns,
             history.brokerAccountId,
           ],
         );
@@ -261,7 +305,7 @@ export class BrokerImportService {
 
   private async replay(manager: EntityManager, owner: string, account: string, request: string) {
     const [row]: ImportRow[] = await manager.query(
-      `SELECT id, "accountId", "requestId", "canonicalPayload", trades, rewards,
+      `SELECT id, "accountId", "requestId", "canonicalPayload", trades, rewards, "capitalReturns",
           "firstJournalRevision", "lastJournalRevision", "createdAt"
         FROM broker_imports WHERE "ownerId" = $1 AND "accountId" = $2 AND "requestId" = $3`,
       [owner, account, request],
@@ -348,9 +392,12 @@ export class BrokerImportService {
     const entries = built.entries;
     const trades = entries.flatMap((entry) => (entry.trade ? [entry.trade] : []));
     const rewards = entries.flatMap((entry) => (entry.reward ? [entry.reward] : []));
+    const capitalReturns = entries.flatMap((entry) =>
+      entry.capitalReturn ? [entry.capitalReturn] : [],
+    );
     const journal = await readJournal(manager, owner, account);
     const coverageFrom = journal?.coverageFrom.toISOString() ?? AUTOMATIC_COVERAGE_FROM;
-    const early = entries.find((entry) => (entry.trade ?? entry.reward).occurredAt < coverageFrom);
+    const early = entries.find((entry) => recordOf(entry).occurredAt < coverageFrom);
     if (early) problems.push(problemOf('before-records', early));
     // The reward journal's caps hold across all the owner's accounts, not only this one.
     const counts = await readRewardCounts(manager, owner);
@@ -360,15 +407,29 @@ export class BrokerImportService {
       counts.versionCount + plan.rewards <= REWARD_LIMITS.versions;
     if (!fitsRewardLimit)
       problems.push({ reason: 'too-many-rewards', occurredAt: null, ticker: '', operationIds: [] });
+    // The same holds for capital returns.
+    const returned = await readCapitalReturnCounts(manager, owner);
+    const fitsCapitalReturnLimit =
+      plan.fitsCapitalReturnLimit &&
+      returned.activeCount + plan.capitalReturns <= CAPITAL_RETURN_LIMITS.activeReturns &&
+      returned.versionCount + plan.capitalReturns <= CAPITAL_RETURN_LIMITS.versions;
+    if (!fitsCapitalReturnLimit)
+      problems.push({
+        reason: 'too-many-capital-returns',
+        occurredAt: null,
+        ticker: '',
+        operationIds: [],
+      });
     if ((journal?.currentRevision ?? 0) + entries.length > 10000)
       problems.push({ reason: 'too-many-entries', occurredAt: null, ticker: '', operationIds: [] });
     // Past a cap the replay cannot run; that cap is already listed as the problem.
-    if (plan.fitsTradeLimit && fitsRewardLimit && entries.length > 0) {
+    if (plan.fitsTradeLimit && fitsRewardLimit && fitsCapitalReturnLimit && entries.length > 0) {
       const replayed = {
         accountId: account,
         coverageFrom: AUTOMATIC_COVERAGE_FROM,
         trades,
         rewards,
+        capitalReturns,
         initialLots: [],
       };
       try {
@@ -382,8 +443,13 @@ export class BrokerImportService {
           accounts: new Map([[account, replayed]]),
           transfers: [],
         });
-        const id = shortfall?.operationId.replace(/^(trade|reward):/, '');
-        const entry = entries.find((item) => (item.trade?.tradeId ?? item.reward?.rewardId) === id);
+        const id = shortfall?.operationId.replace(/^(trade|reward|capital-return):/, '');
+        const entry = entries.find(
+          (item) =>
+            (item.trade?.tradeId ??
+              item.reward?.rewardId ??
+              item.capitalReturn?.capitalReturnId) === id,
+        );
         problems.push(
           entry
             ? problemOf('not-held', entry)
@@ -394,19 +460,28 @@ export class BrokerImportService {
     // The hash pins what the owner reviewed: the plan, the amounts it becomes at the rates stored
     // then (instrument ids aside, since the preview only names the ones it would create) and
     // what stood in the way, so a rate that arrives later cannot slip an unreviewed entry in.
-    const derived = entries.map(({ trade, reward }) =>
-      trade
-        ? [
-            trade.side,
-            trade.quantity,
-            trade.grossUsd,
-            trade.feeUsd,
-            trade.paid ?? null,
-            trade.purpose ?? null,
-            trade.settlement?.quantity ?? null,
-          ]
-        : [reward.quantity, reward.acquisitionBasisUsd, reward.incomeValueUsd],
-    );
+    const derived = entries.map((entry) => {
+      const { trade, reward, capitalReturn } = entry;
+      if (trade)
+        return [
+          trade.side,
+          trade.quantity,
+          trade.grossUsd,
+          trade.feeUsd,
+          trade.paid ?? null,
+          trade.purpose ?? null,
+          trade.settlement?.quantity ?? null,
+        ];
+      if (capitalReturn)
+        return [
+          'capital-return',
+          capitalReturn.amount,
+          capitalReturn.amountUsd,
+          capitalReturn.paidCurrency,
+          entry.rate,
+        ];
+      return [reward.quantity, reward.acquisitionBasisUsd, reward.incomeValueUsd];
+    });
     const previewHash = createHash('sha256')
       .update(
         JSON.stringify([
@@ -420,7 +495,7 @@ export class BrokerImportService {
       )
       .digest('hex');
     return {
-      plan: { ...plan, fitsRewardLimit },
+      plan: { ...plan, fitsRewardLimit, fitsCapitalReturnLimit },
       accountHasEntries,
       entries,
       problems,
@@ -431,8 +506,8 @@ export class BrokerImportService {
   }
 
   /**
-   * Whether the account holds any history an import would add to: a standing trade, reward or
-   * swap, a transfer in or out, an opening snapshot, a carried-in journal or any revision. A
+   * Whether the account holds any history an import would add to: a standing trade, reward,
+   * swap or capital return, a transfer in or out, an opening snapshot, a carried-in journal or any revision. A
    * voided entry no longer counts.
    */
   private async holdsEntries(manager: EntityManager, owner: string, account: string) {
@@ -444,6 +519,8 @@ export class BrokerImportService {
         OR EXISTS (SELECT 1 FROM account_reward_versions v ${rewardHeadJoin}
           WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
         OR EXISTS (SELECT 1 FROM account_swap_versions v ${swapHeadJoin}
+          WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
+        OR EXISTS (SELECT 1 FROM account_capital_return_versions v ${capitalReturnHeadJoin}
           WHERE v."ownerId" = $1 AND v."accountId" = $2 AND v.kind <> 'void')
         OR EXISTS (SELECT 1 FROM owned_transfers t JOIN owned_transfer_versions v
             ON v."ownerId" = t."ownerId" AND v."transferId" = t.id AND v.version = t."currentVersion"
@@ -553,7 +630,7 @@ function listed(reason: ImportProblem['reason'], operationIds: string[]): Import
 function problemOf(reason: ImportProblem['reason'], entry: JournalEntry): ImportProblem {
   return {
     reason,
-    occurredAt: (entry.trade ?? entry.reward).occurredAt,
+    occurredAt: recordOf(entry).occurredAt,
     ticker: entry.source.ticker,
     operationIds: entry.source.operationIds,
   };

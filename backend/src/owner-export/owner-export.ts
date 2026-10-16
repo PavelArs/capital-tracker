@@ -34,7 +34,7 @@ export interface ExportWallet {
 export interface ExportOperation {
   /** As the Transactions list names it: `trade:<id>`, `transfer:<id>` and so on. */
   id: string;
-  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'opening' | 'flow';
+  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'capital-return' | 'opening' | 'flow';
   type: string;
   direction: 'in' | 'out' | 'internal';
   status: 'active' | 'voided';

@@ -128,6 +128,23 @@ export interface RewardOperationInput {
   incomeValueUsd: string | null;
   acquisitionBasisUsd: string | null;
 }
+/**
+ * BROKER-CAPRET: part of the cost of a held asset came back as cash. The row is the cash that
+ * came in; `returned` is the asset whose cost it lowered.
+ */
+export interface CapitalReturnOperationInput {
+  capitalReturnId: string;
+  version: number;
+  account: OperationPlace;
+  cash: OperationAsset;
+  returned: OperationAsset;
+  occurredAt: string;
+  orderWithinTimestamp: number;
+  amount: string;
+  amountUsd: string;
+  /** The amount as paid in RUB or EUR, with the rate its USD worth was derived at. */
+  paid: TradePayment | null;
+}
 export interface OpeningOperationInput {
   lotId: string;
   account: OperationPlace;
@@ -194,6 +211,7 @@ export interface OperationSources {
   transfers: readonly TransferOperationInput[];
   swaps: readonly SwapOperationInput[];
   rewards: readonly RewardOperationInput[];
+  capitalReturns?: readonly CapitalReturnOperationInput[];
   openings: readonly OpeningOperationInput[];
   flows: readonly FlowOperationInput[];
   chain: readonly ChainOperationInput[];
@@ -219,6 +237,7 @@ export type OperationType =
   | 'transfer'
   | 'swap'
   | 'reward'
+  | 'capital-return'
   | 'staking-reward'
   | 'stake'
   | 'unstake'
@@ -237,7 +256,7 @@ export type OperationType =
 
 export interface Operation {
   id: string;
-  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'opening' | 'flow' | 'chain';
+  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'capital-return' | 'opening' | 'flow' | 'chain';
   /** Null until the owner classifies a chain transaction (M12). */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';
@@ -893,6 +912,27 @@ export function projectOperations(
         quantity: row.quantity,
         valueUsd: row.incomeValueUsd,
         costBasisUsd: row.acquisitionBasisUsd,
+        account: row.account,
+        version: row.version,
+      },
+      row.orderWithinTimestamp,
+    );
+  }
+  for (const row of sources.capitalReturns ?? []) {
+    push(
+      {
+        ...blank,
+        ...recorded,
+        id: `capital-return:${row.capitalReturnId}`,
+        kind: 'capital-return',
+        type: 'capital-return',
+        direction: 'in',
+        occurredAt: row.occurredAt,
+        asset: row.cash,
+        quantity: row.amount,
+        counterAsset: row.returned,
+        valueUsd: row.amountUsd,
+        paid: row.paid,
         account: row.account,
         version: row.version,
       },

@@ -28,7 +28,7 @@ export interface Shortfall {
 }
 
 // Same order as the FIFO replay: instant, order within it, then kind and position.
-const rank = { opening: -1, trade: 0, reward: 1, swap: 2, transfer: 3 } as const;
+const rank = { opening: -1, trade: 0, reward: 1, swap: 2, capitalReturn: 3, transfer: 4 } as const;
 
 function movements(ledger: LedgerView): Movement[] {
   const found: Movement[] = [];
@@ -90,6 +90,18 @@ function movements(ledger: LedgerView): Movement[] {
         deltas,
       });
     }
+    // A capital return brings cash in; the units it lowers the cost of stay where they are.
+    for (const [index, capitalReturn] of (account.capitalReturns ?? []).entries())
+      found.push({
+        operationId: `capital-return:${capitalReturn.capitalReturnId}`,
+        occurredAt: capitalReturn.occurredAt,
+        orderWithinTimestamp: capitalReturn.orderWithinTimestamp,
+        rank: rank.capitalReturn,
+        index,
+        deltas: [
+          [id, capitalReturn.cashInstrumentId, canonicalDecimalToAtoms(capitalReturn.amount)],
+        ],
+      });
   }
   for (const [index, transfer] of ledger.transfers.entries()) {
     const quantity = canonicalDecimalToAtoms(transfer.quantity);

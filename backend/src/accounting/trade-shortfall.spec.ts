@@ -46,6 +46,7 @@ function ledger(trades: FifoTrade[]): ConnectedLedger {
     participants: new Set(),
     rewardParticipants: new Set(),
     swapParticipants: new Set(),
+    capitalReturnParticipants: new Set(),
   };
 }
 

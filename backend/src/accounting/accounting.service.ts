@@ -355,6 +355,7 @@ export class AccountingService {
         transfers: number;
         swaps: number;
         rewards: number;
+        capitalReturns: number;
       }[] = await manager.query(
         `SELECT
             (SELECT count(*) FROM account_opening_snapshots
@@ -374,7 +375,11 @@ export class AccountingService {
             (SELECT count(*) FROM account_rewards t JOIN account_reward_versions v
               ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId" AND v."rewardId"=t.id
               AND v.version=t."currentVersion"
-              WHERE t."ownerId"=$1 AND t."accountId"=$2 AND v.kind<>'void')::int AS rewards`,
+              WHERE t."ownerId"=$1 AND t."accountId"=$2 AND v.kind<>'void')::int AS rewards,
+            (SELECT count(*) FROM account_capital_returns t JOIN account_capital_return_versions v
+              ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId" AND v."capitalReturnId"=t.id
+              AND v.version=t."currentVersion"
+              WHERE t."ownerId"=$1 AND t."accountId"=$2 AND v.kind<>'void')::int AS "capitalReturns"`,
         [owner, id],
       );
       const parts = [
@@ -383,6 +388,7 @@ export class AccountingService {
         [held.transfers, 'transfer', 'transfers'],
         [held.swaps, 'swap', 'swaps'],
         [held.rewards, 'reward', 'rewards'],
+        [held.capitalReturns, 'capital return', 'capital returns'],
       ]
         .filter(([n]) => n)
         .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);

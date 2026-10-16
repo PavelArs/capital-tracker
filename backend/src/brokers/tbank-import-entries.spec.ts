@@ -223,6 +223,90 @@ describe('BROKER-SYNC: the journal entries a T-Bank import writes', () => {
   });
 });
 
+describe('BROKER-CAPRET: a part of a bond paid back becomes a capital return', () => {
+  const returned = (over: Partial<PlanEntry> = {}) =>
+    entry({
+      record: 'capital-return',
+      action: 'return',
+      instrumentUid: share,
+      ticker: 'SYNTH',
+      instrumentType: 'bond',
+      quantity: '270',
+      amount: '270',
+      occurredAt: '2024-03-02T10:00:00Z',
+      operationIds: ['2'],
+      ...over,
+    });
+
+  it('prices the cash that came back at its date, in the currency paid, with its rate', () => {
+    const { entries, problems } = journalEntries([returned()], instruments, rates);
+    expect(problems).toEqual([]);
+    expect(entries[0]).toMatchObject({
+      rate: { rateDate: '2024-03-02', rateSource: 'bank-of-russia' },
+      capitalReturn: {
+        instrumentId: id(4),
+        cashInstrumentId: id(1),
+        amount: '270',
+        amountUsd: '3',
+        paidCurrency: 'RUB',
+        occurredAt: '2024-03-02T10:00:00.000Z',
+      },
+    });
+  });
+
+  it('keeps dollars as dollars, with no rate and no paid currency', () => {
+    const { entries } = journalEntries(
+      [returned({ currency: 'usd', amount: '3', quantity: '3' })],
+      instruments,
+      rates,
+    );
+    expect(entries[0]).toMatchObject({ rate: null });
+    expect(entries[0].capitalReturn).toMatchObject({
+      cashInstrumentId: id(2),
+      amount: '3',
+      amountUsd: '3',
+      paidCurrency: null,
+    });
+  });
+
+  it('names a return whose date has no Bank of Russia rate instead of writing it', () => {
+    const { entries, problems } = journalEntries(
+      [returned({ occurredAt: '2023-01-01T10:00:00Z' })],
+      instruments,
+      rates,
+    );
+    expect(entries).toEqual([]);
+    expect(problems).toEqual([
+      { reason: 'no-rate', occurredAt: '2023-01-01T10:00:00.000Z', operationIds: ['2'] },
+    ]);
+  });
+
+  it('lowers the cost of the units held and brings the money in as cash the FIFO replay holds', () => {
+    // 900 paid in, a buy of 2 units costing 459, then 270 of it comes back.
+    const { entries } = journalEntries([entry({}), buy(), returned()], instruments, rates);
+    const result = calculateOwnedTransfers(
+      [
+        {
+          accountId: id(9),
+          coverageFrom: '1970-01-01T00:00:00.000Z',
+          trades: entries.flatMap((item) => (item.trade ? [item.trade] : [])),
+          capitalReturns: entries.flatMap((item) =>
+            item.capitalReturn ? [item.capitalReturn] : [],
+          ),
+          initialLots: [],
+        },
+      ],
+      [],
+    ).accounts.get(id(9))!;
+    const bond = result.lots.find((lot) => lot.instrumentId === id(4))!;
+    expect([bond.remainingQuantity, bond.remainingCostUsd]).toEqual(['2', '2.1']);
+    expect(
+      result.lots.filter((lot) => lot.instrumentId === id(1)).map((lot) => lot.remainingQuantity),
+    ).toEqual(['441', '270']);
+    expect(result.capitalReturnSummary).toMatchObject({ activeCount: 1, amountUsd: '3' });
+  });
+});
+
 describe('BROKER-SYNC-FX: dollars and euros bought on the exchange', () => {
   it('buys dollar cash with ruble cash, and a dollar buy then spends those dollars', () => {
     const { entries, problems } = journalEntries(
