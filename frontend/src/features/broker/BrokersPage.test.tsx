@@ -205,9 +205,36 @@ describe('BROKERS the Brokers page', () => {
     get.mockResolvedValue(valuation([held[3]]));
     renderPage();
     await screen.findByText('No broker account yet');
+    const empty = screen.getByRole('button', { name: 'Add broker account' });
+    expect(empty.closest('.ui-intro')).not.toBeNull();
+    expect(empty).toHaveClass('shell-button--primary');
+  });
+
+  it('SECTION-STATES keeps the Add broker account action while the page loads and when it cannot load', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
+    renderPage();
     expect(
       screen.getByRole('button', { name: 'Add broker account' }).closest('.ui-intro'),
     ).not.toBeNull();
+    await screen.findByText('Could not load your broker accounts. Your data is safe; try again.');
+    expect(
+      screen.getByRole('button', { name: 'Add broker account' }).closest('.ui-intro'),
+    ).not.toBeNull();
+  });
+
+  it('SECTION-STATES says nothing about last loaded figures above the empty card', async () => {
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(wallet, 'Home safe', null)],
+      nextCursor: null,
+    });
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([held[3]]));
+    await cachedReads.portfolio.load(undefined);
+    await cachedReads.accounts.load();
+    get.mockRejectedValueOnce(new Error('offline'));
+    renderPage();
+    await screen.findByText('No broker account yet');
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('SECTION-LAYOUT-GRID lists the accounts as wide cards, one on each line', async () => {

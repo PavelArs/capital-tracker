@@ -24,23 +24,31 @@ export function netWorthUnknown(portfolio: PortfolioValuation): string | null {
   return reasons.length ? `Net worth unknown: ${reasons.join(', ')}.` : 'Net worth unknown.';
 }
 
-/** A part of the net worth as a percentage, or null when the part or the net worth is unknown or the net worth is not above zero. */
+/**
+ * A part of the net worth as a percentage, or null when the part or the net worth is unknown or
+ * the net worth is not above zero. Display only: the share is never stored or summed.
+ */
 export function shareOfNetWorth(part: string | null, portfolio: PortfolioValuation): number | null {
   if (part === null) return null;
   const worth = Number(portfolio.totalValue ?? Number.NaN);
   return worth > 0 ? (Number(part) / worth) * 100 : null;
 }
 
+/** A share is rounded down to a tenth: a share is never shown larger than it is. */
+const shareText = (share: number) =>
+  `${new Intl.NumberFormat('en-US', { minimumFractionDigits: share % 1 === 0 ? 0 : 1, maximumFractionDigits: 1 }).format(Math.floor(share * 10 + 1e-9) / 10)}%`;
+
 /** The "Share of net worth" figure of a section's totals card: the number, or a dash and why. */
 export function shareFigure(part: string | null, portfolio: PortfolioValuation): SummaryFigure {
   const share = shareOfNetWorth(part, portfolio);
-  const unknown = netWorthUnknown(portfolio);
   return {
     label: 'Share of net worth',
-    value:
-      share === null
-        ? '—'
-        : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`,
-    note: share === null && part !== null ? unknown : undefined,
+    value: share === null ? '—' : shareText(share),
+    note:
+      share !== null
+        ? undefined
+        : part === null
+          ? 'The total is unknown.'
+          : netWorthUnknown(portfolio),
   };
 }

@@ -163,7 +163,7 @@ export default function BrokersPage() {
       intro="Positions are entered by hand for now, with the price you see at your broker. Update a price on the position's page."
       action={<SectionAction onClick={() => setAdding(true)}>Add broker account</SectionAction>}
       notice={
-        failed && brokers ? (
+        failed && brokers && brokers.length > 0 ? (
           <p className="ui-banner ui-banner--warn" role="alert">
             Could not refresh your broker accounts; showing the last loaded figures.{' '}
             <button type="button" className="shell-button" onClick={() => load(true)}>

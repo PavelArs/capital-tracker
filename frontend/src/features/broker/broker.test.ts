@@ -3,6 +3,7 @@ import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuatio
 import { describe, expect, it } from 'vitest';
 import { moscowDate } from '@/utils/dates';
 import { sumDecimals } from '@/utils/decimal';
+import { shareOfNetWorth } from '../shell/net-worth';
 import {
   type BrokerEntry,
   blankPosition,
@@ -15,7 +16,7 @@ import {
   positionAsset,
   times,
 } from './broker';
-import { brokerAccountsOf, brokerShare } from './brokers';
+import { brokerAccountsOf } from './brokers';
 
 // Synthetic names, ids and amounts only.
 const entry = (changes: Partial<BrokerEntry> = {}): BrokerEntry => ({
@@ -258,8 +259,8 @@ describe('BROKERS the page figures', () => {
   });
 
   it('gives the share of net worth only while the net worth is known', () => {
-    expect(brokerShare('5000', portfolio)).toBe(25);
-    expect(brokerShare('5000', { ...portfolio, totalValue: null })).toBeNull();
+    expect(shareOfNetWorth('5000', portfolio)).toBe(25);
+    expect(shareOfNetWorth('5000', { ...portfolio, totalValue: null })).toBeNull();
   });
 
   it('adds values exactly', () => {

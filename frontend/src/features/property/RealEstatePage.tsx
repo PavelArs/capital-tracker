@@ -147,7 +147,7 @@ export default function RealEstatePage() {
       intro="Valued at your own estimate. Update it on the property's page whenever you like."
       action={<SectionAction onClick={() => setAdding(true)}>Add property</SectionAction>}
       notice={
-        failed && properties ? (
+        failed && properties && properties.length > 0 ? (
           <p className="ui-banner ui-banner--warn" role="alert">
             Could not refresh your real estate; showing the last loaded figures.{' '}
             <button type="button" className="shell-button" onClick={() => load(true)}>
