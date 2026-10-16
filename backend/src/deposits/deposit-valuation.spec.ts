@@ -119,7 +119,7 @@ describe('depositValuesAt', () => {
   });
 });
 
-describe('DEP-ACCOUNT depositValuesAt says when an account has no rate to earn interest by', () => {
+describe('DEP-ACCOUNT depositValuesAt says when an account has days without a rate', () => {
   const account = (rates: Stored['rates']) => ({
     ...deposit({ kind: 'account', currency: 'RUB' }),
     rates,
@@ -127,12 +127,15 @@ describe('DEP-ACCOUNT depositValuesAt says when an account has no rate to earn i
   const at = new Date('2026-01-14T12:00:00Z');
   const missing = (held: Stored) => depositValuesAt([held], at, fx('RUB'))[0].interestMissing;
 
-  it('flags an account with no rate in force on the day, and nothing else', () => {
+  it('flags an account whose rates do not reach back to its opening day, and nothing else', () => {
     expect(missing(account([]))).toBe(true);
-    // A rate that begins later is no rate on this day.
-    expect(
-      missing(account([{ depositId: 'd1', effectiveFrom: '2026-02-01', ratePercent: '5' }])),
-    ).toBe(true);
+    // A rate that begins after the opening leaves the days before it without one, also later on.
+    const later = account([{ depositId: 'd1', effectiveFrom: '2026-01-05', ratePercent: '5' }]);
+    expect(missing(later)).toBe(true);
+    expect(depositValuesAt([later], new Date('2026-03-01T12:00:00Z'), fx('RUB'))[0]).toMatchObject({
+      interestMissing: true,
+    });
+    // An explicit 0% from the opening day is a rate.
     expect(
       missing(account([{ depositId: 'd1', effectiveFrom: '2026-01-01', ratePercent: '0' }])),
     ).toBe(false);

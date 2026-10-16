@@ -300,9 +300,11 @@ async function account(db, service, owner) {
   const rated = await service.get(owner, made.id, '2026-09-01');
   assert.equal(rated.ratePercent, '6');
   assert.notEqual(rated.balance, '100000.00', 'Interest from the rate date is added');
-  assert.equal(rated.interestMissing, false);
-  assert.notEqual(rated.interestEarned, null);
+  // The days before the first rate stay without one: the interest of that time is still unknown.
+  assert.equal(rated.interestMissing, true, 'A rate from a later date leaves the earlier days open');
+  assert.notEqual(rated.interestEarned, null, 'The interest from the rate date is stated');
   assert.notEqual(rated.accrued, null);
+  assert.equal((await service.list(owner, '2026-09-01')).interestMissingCount, 1);
   // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
   const unrated = await service.get(owner, made.id, '2026-07-15');
   assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');
@@ -335,6 +337,9 @@ async function account(db, service, owner) {
   const opened = await service.create(owner, { ...terms, name: 'Current S' });
   await service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '6' });
   assert.equal((await service.get(owner, opened.id, '2026-07-02')).ratePercent, '6');
+  const covered = await service.get(owner, opened.id, '2026-07-02');
+  assert.equal(covered.interestMissing, false, 'A rate from the opening day covers the whole time');
+  assert.notEqual(covered.interestEarned, null);
   await rejected(
     () => service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '7' }),
     422,

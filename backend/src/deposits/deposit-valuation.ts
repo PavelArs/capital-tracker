@@ -7,7 +7,7 @@ import {
 } from '../fx-rates/fx-conversion';
 import type { StatedFlow } from '../portfolio-snapshots/capital-flows';
 import { type DepositCurrency, depositBalances, projectDeposit } from './deposit-interest';
-import { interestMissingOn, movementsOf, type Stored, termsOf } from './deposit-store';
+import { interestMissing, movementsOf, type Stored, termsOf } from './deposit-store';
 
 // DEP-VALUE: what the owner's deposits add to the whole portfolio. A deposit is worth its
 // computed balance at the Bank of Russia rate of the day; money put in or taken out by the
@@ -108,7 +108,7 @@ export function depositValuesAt(holdings: readonly DepositHolding[], at: Date, f
     name: holding.deposit.name,
     bank: holding.deposit.bank,
     value: depositValueOn(holding, date, fx),
-    interestMissing: interestMissingOn(holding, date),
+    interestMissing: interestMissing(holding),
   }));
 }
 

@@ -59,11 +59,18 @@ const payoutNames = {
   'at-end': 'at the end of the term',
 };
 
-/** What a total says when it counts accounts at what was put in, for want of a rate. */
+/** The day the first rate takes effect, for an account whose rates start after its opening. */
+export const firstRateDate = (rates: readonly { effectiveFrom: string }[]): string =>
+  rates.reduce(
+    (first, rate) => (rate.effectiveFrom < first ? rate.effectiveFrom : first),
+    rates[0]?.effectiveFrom ?? '',
+  );
+
+/** What a total says when an account has days with no rate, whose interest is not counted. */
 export const accountsWithoutRate = (count: number): string =>
   count === 1
-    ? '1 account has no rate entered; its interest is not counted.'
-    : `${count} accounts have no rate entered; their interest is not counted.`;
+    ? '1 account has days with no rate entered; the interest of those days is not counted.'
+    : `${count} accounts have days with no rate entered; the interest of those days is not counted.`;
 
 /** "12%", or "No rate entered" for an account that has none (DEP-ACCOUNT); never "null%". */
 export const rateText = (deposit: Pick<Deposit, 'ratePercent'>): string =>

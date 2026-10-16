@@ -572,7 +572,9 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     expect(card).not.toHaveTextContent(/₽0\.00/);
     expect(card).not.toHaveTextContent('Next interest');
     expect(
-      screen.getByText(/1 account has no rate entered; its interest is not counted\./),
+      screen.getByText(
+        /1 account has days with no rate entered; the interest of those days is not counted\./,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -585,6 +587,33 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     expect(screen.queryByText('Earned, not posted yet')).toBeNull();
     expect(screen.queryByText('Interest to be paid out')).toBeNull();
     expect(screen.getByText('In the deposit').parentElement).toHaveTextContent('₽50,000.00');
+  });
+
+  it('says which days a rate from a later date leaves out, and still states the interest after it', async () => {
+    const later: Deposit = {
+      ...unrated,
+      ratePercent: '6',
+      accrued: '12.34',
+      due: '0.00',
+      interestEarned: '12.34',
+      nextPayout: { date: '2026-11-01', interest: '25.00', treatment: 'capitalized' },
+    };
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([later]), interestMissingCount: 1 });
+    open('/deposits?currency=RUB');
+    const card = await screen.findByRole('link', { name: /Current C/ });
+    expect(card).toHaveTextContent('Not counted before the first rate');
+    expect(card).toHaveTextContent('Interest earned');
+    cleanup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(later, { rates: [{ effectiveFrom: '2026-08-01', ratePercent: '6' }] }),
+    );
+    open(`/deposits/${later.id}?currency=RUB`);
+    expect(
+      await screen.findByText(
+        /Interest before Aug 1, 2026 is not counted: no rate was entered for those days\. Enter the rate from Jul 1, 2026/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
   });
 
   it('keeps the interest figures of an account once a rate is in force', async () => {

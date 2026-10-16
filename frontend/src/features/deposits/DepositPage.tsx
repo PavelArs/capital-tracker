@@ -24,6 +24,7 @@ import {
   capitalizedInterest,
   dateText,
   earlyCloseText,
+  firstRateDate,
   interestText,
   money,
   movementText,
@@ -379,8 +380,9 @@ export default function DepositPage() {
           )}
           {deposit.interestMissing && (
             <p className="ui-banner ui-banner--warn" role="note">
-              No rate entered, so the interest is not counted. The balance is what you put in, less
-              what you took out. Change the rate to count interest from its date.
+              {deposit.ratePercent === null
+                ? `No rate entered, so the interest is not counted. The balance is what you put in, less what you took out. Enter the rate from ${dateText(deposit.startDate)} to count it.`
+                : `Interest before ${dateText(firstRateDate(deposit.rates))} is not counted: no rate was entered for those days. Enter the rate from ${dateText(deposit.startDate)} to count them.`}
             </p>
           )}
           <div className="deposit-stats">

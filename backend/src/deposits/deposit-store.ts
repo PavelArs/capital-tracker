@@ -58,10 +58,16 @@ export const termsOf = (stored: Stored): DepositTerms => ({
   })),
 });
 /**
- * An account with no rate in force on the day: its interest is unknown, not zero, so what it
- * holds is only what was put in less what was taken out (DEP-ACCOUNT).
+ * An account whose rates do not reach back to its opening day: the interest of the days before
+ * its first rate is unknown, not zero, so what it holds leaves that interest out (DEP-ACCOUNT).
+ * An explicit 0% rate from the opening day is a rate and clears it.
  */
-export const interestMissingOn = (stored: Stored, date: string): boolean =>
+export const interestMissing = (stored: Stored): boolean =>
+  stored.deposit.kind === 'account' &&
+  !stored.rates.some((rate) => rate.effectiveFrom <= stored.deposit.startDate);
+
+/** An account with no rate in force on the day: there is no interest to state for that day. */
+export const noRateInForceOn = (stored: Stored, date: string): boolean =>
   stored.deposit.kind === 'account' && !stored.rates.some((rate) => rate.effectiveFrom <= date);
 export const movementsOf = (stored: Stored): DepositMovement[] =>
   stored.movements.map((row) => ({ date: row.occurredOn, kind: row.kind, amount: row.amount }));

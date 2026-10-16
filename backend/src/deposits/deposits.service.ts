@@ -45,9 +45,10 @@ import {
   periodsAfterInflation,
 } from './deposit-real';
 import {
-  interestMissingOn,
+  interestMissing as accountInterestMissing,
   loadDeposits,
   movementsOf,
+  noRateInForceOn,
   type Stored,
   termsOf,
 } from './deposit-store';
@@ -517,11 +518,12 @@ export class DepositsService {
     const ratePercent =
       inForce?.ratePercent ??
       (stored.deposit.kind === 'account' ? null : (terms.rates[0]?.ratePercent ?? null));
-    // Missing is not zero: without a rate the interest is unknown, so none of the figures that
-    // depend on it is stated, and what the deposit holds is what was put in less what was taken.
-    const interestMissing = interestMissingOn(stored, asOf);
+    // Missing is not zero: the days of an account before its first rate have unknown interest,
+    // and a day with no rate in force has none to state, so those figures are not stated.
+    const interestMissing = accountInterestMissing(stored);
+    const noRate = noRateInForceOn(stored, asOf);
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
-      reading && !interestMissing
+      reading && !noRate
         ? depositReal(
             {
               balance: now.balance,
@@ -551,11 +553,11 @@ export class DepositsService {
       closedOn: now.closedOn,
       principal: now.principal,
       interestMissing,
-      accrued: interestMissing ? null : now.accrued,
-      due: interestMissing ? null : now.due,
+      accrued: noRate ? null : now.accrued,
+      due: noRate ? null : now.due,
       balance: now.balance,
       // Everything the deposit has earned, posted or not, less what was forfeited.
-      interestEarned: interestMissing
+      interestEarned: noRate
         ? null
         : centsText(
             canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
@@ -565,8 +567,7 @@ export class DepositsService {
         personal: afterInflation(readings?.personal),
       },
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
-      nextPayout:
-        status === 'active' && !interestMissing ? nextPayout(knownTerms, known, asOf) : null,
+      nextPayout: status === 'active' && !noRate ? nextPayout(knownTerms, known, asOf) : null,
       atMaturity: maturity
         ? {
             date: terms.endDate as string,
@@ -591,7 +592,7 @@ export class DepositsService {
     const terms = termsOf(stored);
     const projection = projectDeposit(terms, movementsOf(stored), asOf);
     // Without a rate there is no interest to list: the periods would all read 0.00 (DEP-ACCOUNT).
-    const periods = interestMissingOn(stored, asOf) ? [] : projection.periods;
+    const periods = noRateInForceOn(stored, asOf) ? [] : projection.periods;
     // One replay gives the money held at the start of every period.
     const held = depositBalances(
       terms,

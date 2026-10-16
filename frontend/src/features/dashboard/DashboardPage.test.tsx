@@ -1165,7 +1165,9 @@ describe('Dashboard UI audit', () => {
     renderPage();
     await screen.findByRole('region', { name: 'Top assets' });
     expect(
-      await screen.findByText('1 account has no rate entered; its interest is not counted.'),
+      await screen.findByText(
+        '1 account has days with no rate entered; the interest of those days is not counted.',
+      ),
     ).toBeInTheDocument();
   });
 

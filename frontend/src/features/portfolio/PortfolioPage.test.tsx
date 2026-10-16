@@ -563,7 +563,9 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(
-      screen.getByText('2 accounts have no rate entered; their interest is not counted.'),
+      screen.getByText(
+        '2 accounts have days with no rate entered; the interest of those days is not counted.',
+      ),
     ).toBeInTheDocument();
   });
 

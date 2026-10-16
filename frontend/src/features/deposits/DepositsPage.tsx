@@ -69,7 +69,11 @@ function Card({
           {deposit.interestMissing && (
             <div>
               <dt>Interest</dt>
-              <dd>Not counted, no rate entered</dd>
+              <dd>
+                {deposit.ratePercent === null
+                  ? 'Not counted, no rate entered'
+                  : 'Not counted before the first rate'}
+              </dd>
             </div>
           )}
           {deposit.interestEarned != null && (
