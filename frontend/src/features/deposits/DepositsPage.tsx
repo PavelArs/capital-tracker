@@ -17,6 +17,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { AddDepositDialog } from './DepositDialogs';
 import {
+  accountsWithoutRate,
   attention,
   dateText,
   money,
@@ -65,7 +66,13 @@ function Card({
           </p>
         )}
         <dl className="deposit-card__facts">
-          {deposit.interestEarned !== undefined && (
+          {deposit.interestMissing && (
+            <div>
+              <dt>Interest</dt>
+              <dd>Not counted, no rate entered</dd>
+            </div>
+          )}
+          {deposit.interestEarned != null && (
             <div>
               <dt>Interest earned</dt>
               <dd>
@@ -264,6 +271,9 @@ export default function DepositsPage() {
             <span className="deposit-total__note">
               At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only
               while interest it earned is unpaid.
+              {list.interestMissingCount
+                ? ` ${accountsWithoutRate(list.interestMissingCount)}`
+                : ''}
             </span>
           </section>
           <ul className="deposit-banks">

@@ -536,6 +536,74 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   });
 });
 
+// An account with no rate entered: its interest is unknown, so none is stated (DEP-ACCOUNT).
+const unrated: Deposit = {
+  ...savings,
+  id: '00000000-0000-4000-8000-000000000003',
+  kind: 'account',
+  name: 'Current C',
+  currency: 'RUB',
+  endDate: null,
+  payout: 'monthly',
+  capitalized: true,
+  ratePercent: null,
+  interestMissing: true,
+  accrued: null,
+  due: null,
+  interestEarned: null,
+  nextPayout: null,
+  atMaturity: null,
+  principal: '50000.00',
+  balance: '50000.00',
+  values: { USD: '555.55', EUR: '500.00', RUB: '50000.00' },
+};
+
+describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, not as 0.00', () => {
+  it('says on its card that the interest is not counted, and what the list total leaves out', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      ...list([unrated]),
+      interestMissingCount: 1,
+    });
+    open('/deposits?currency=RUB');
+    const card = await screen.findByRole('link', { name: /Current C/ });
+    expect(card).toHaveTextContent('Interest');
+    expect(card).toHaveTextContent('Not counted, no rate entered');
+    expect(card).not.toHaveTextContent('Interest earned');
+    expect(card).not.toHaveTextContent(/₽0\.00/);
+    expect(card).not.toHaveTextContent('Next interest');
+    expect(
+      screen.getByText(/1 account has no rate entered; its interest is not counted\./),
+    ).toBeInTheDocument();
+  });
+
+  it('says it once on the page, with no interest figures and no periods', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(unrated, { periods: [] }));
+    open(`/deposits/${unrated.id}?currency=RUB`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Current C' })).toBeInTheDocument();
+    expect(screen.getByText(/No rate entered, so the interest is not counted/)).toBeInTheDocument();
+    expect(screen.queryByText('Interest earned')).toBeNull();
+    expect(screen.queryByText('Earned, not posted yet')).toBeNull();
+    expect(screen.queryByText('Interest to be paid out')).toBeNull();
+    expect(screen.getByText('In the deposit').parentElement).toHaveTextContent('₽50,000.00');
+  });
+
+  it('keeps the interest figures of an account once a rate is in force', async () => {
+    const rated: Deposit = {
+      ...unrated,
+      ratePercent: '6',
+      interestMissing: false,
+      accrued: '12.34',
+      due: '0.00',
+      interestEarned: '12.34',
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(rated));
+    open(`/deposits/${rated.id}?currency=RUB`);
+    await screen.findByRole('heading', { level: 1, name: 'Current C' });
+    expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
+    expect(screen.queryByText(/No rate entered, so the interest is not counted/)).toBeNull();
+  });
+});
+
 describe('DEP-DETAIL: one deposit', () => {
   it('shows the computed figures, the periods, the movements and the terms', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));

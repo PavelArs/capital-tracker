@@ -67,11 +67,17 @@ export interface Deposit {
   status: DepositStatus;
   closedOn: string | null;
   principal: string;
-  accrued: string;
-  due: string;
+  /**
+   * True for an account with no rate in force on the day: its interest is unknown, not zero, so
+   * the interest figures below are null and the balance is only what was put in less what was
+   * taken out. Absent in an answer the browser saved before this.
+   */
+  interestMissing?: boolean;
+  accrued: string | null;
+  due: string | null;
   balance: string;
   /** All the interest earned, posted or not. Absent in an answer the browser saved before this. */
-  interestEarned?: string;
+  interestEarned?: string | null;
   real?: { official: DepositReal | null; personal: DepositReal | null };
   values: Values;
   nextPayout: { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null;
@@ -117,6 +123,8 @@ export interface DepositDetail extends Deposit {
 export interface DepositList {
   asOf: string;
   items: Deposit[];
+  /** Accounts holding money with no rate entered, whose interest the totals leave out. */
+  interestMissingCount?: number;
   totals: Values;
 }
 

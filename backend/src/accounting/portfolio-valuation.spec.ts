@@ -662,6 +662,25 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
     expect(result.allocation.complete).toBe(false);
   });
 
+  it('DEP-ACCOUNT counts the accounts without a rate, whose interest is not in the value', () => {
+    const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', worth(15_000)),
+      { ...bank(2, 'First Bank', worth(5_000)), interestMissing: true },
+      { ...bank(3, 'First Bank', 0n), interestMissing: true },
+    ]);
+    // Their balance is what the owner put in: the total stands, and says what it leaves out.
+    expect(result).toMatchObject({
+      completeness: 'complete',
+      totalValue: '100000',
+      depositsValue: '20000',
+      interestMissingDepositCount: 1,
+    });
+    const without = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', worth(15_000)),
+    ]);
+    expect(without.interestMissingDepositCount).toBe(0);
+  });
+
   it('keeps a deposit that is worth nothing out of the allocation', () => {
     const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
       bank(1, 'First Bank', 0n),

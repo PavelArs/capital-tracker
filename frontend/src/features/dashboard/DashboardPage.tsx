@@ -8,6 +8,7 @@ import {
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { accountsWithoutRate } from '../deposits/deposit-format';
 import NearestGoal from '../goals/NearestGoal';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
@@ -363,6 +364,11 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
+          {portfolio !== null && !!portfolio.interestMissingDepositCount && (
+            <p className="ui-banner ui-banner--warn dashboard-banner" role="note">
+              {accountsWithoutRate(portfolio.interestMissingDepositCount)}
+            </p>
+          )}
           {portfolio !== null && portfolio.stalePriceCount > 0 && (
             <p className="ui-banner ui-banner--warn dashboard-banner" role="note">
               {portfolio.stalePriceCount === 1

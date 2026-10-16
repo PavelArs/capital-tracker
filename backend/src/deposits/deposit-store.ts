@@ -57,6 +57,12 @@ export const termsOf = (stored: Stored): DepositTerms => ({
     ratePercent: rate.ratePercent,
   })),
 });
+/**
+ * An account with no rate in force on the day: its interest is unknown, not zero, so what it
+ * holds is only what was put in less what was taken out (DEP-ACCOUNT).
+ */
+export const interestMissingOn = (stored: Stored, date: string): boolean =>
+  stored.deposit.kind === 'account' && !stored.rates.some((rate) => rate.effectiveFrom <= date);
 export const movementsOf = (stored: Stored): DepositMovement[] =>
   stored.movements.map((row) => ({ date: row.occurredOn, kind: row.kind, amount: row.amount }));
 

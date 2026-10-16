@@ -1152,6 +1152,23 @@ describe('Dashboard UI audit', () => {
     expect(within(top).getAllByRole('listitem')).toHaveLength(5);
   });
 
+  it('dashboard-02 DEP-ACCOUNT says the value leaves out the interest of an account with no rate', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) => ({
+      ...withDeposit(currency),
+      interestMissingDepositCount: 1,
+    }));
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [savings],
+      totals: savings.values,
+    });
+    renderPage();
+    await screen.findByRole('region', { name: 'Top assets' });
+    expect(
+      await screen.findByText('1 account has no rate entered; its interest is not counted.'),
+    ).toBeInTheDocument();
+  });
+
   it('dashboard-04 says when prices are old and marks the stale price', async () => {
     valued.mockImplementation(async (currency?: AccountingCurrency) =>
       valuation({

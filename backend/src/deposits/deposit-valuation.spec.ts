@@ -119,6 +119,27 @@ describe('depositValuesAt', () => {
   });
 });
 
+describe('DEP-ACCOUNT depositValuesAt says when an account has no rate to earn interest by', () => {
+  const account = (rates: Stored['rates']) => ({
+    ...deposit({ kind: 'account', currency: 'RUB' }),
+    rates,
+  });
+  const at = new Date('2026-01-14T12:00:00Z');
+  const missing = (held: Stored) => depositValuesAt([held], at, fx('RUB'))[0].interestMissing;
+
+  it('flags an account with no rate in force on the day, and nothing else', () => {
+    expect(missing(account([]))).toBe(true);
+    // A rate that begins later is no rate on this day.
+    expect(
+      missing(account([{ depositId: 'd1', effectiveFrom: '2026-02-01', ratePercent: '5' }])),
+    ).toBe(true);
+    expect(
+      missing(account([{ depositId: 'd1', effectiveFrom: '2026-01-01', ratePercent: '0' }])),
+    ).toBe(false);
+    expect(missing(deposit({ currency: 'RUB' }))).toBe(false);
+  });
+});
+
 describe('depositFlows', () => {
   it('counts a top-up as money in and a withdrawal and a payout as money out', () => {
     const moved = deposit({}, [

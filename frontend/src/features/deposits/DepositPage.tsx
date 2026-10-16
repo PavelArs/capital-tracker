@@ -377,9 +377,15 @@ export default function DepositPage() {
               <span>{note}</span>
             </p>
           )}
+          {deposit.interestMissing && (
+            <p className="ui-banner ui-banner--warn" role="note">
+              No rate entered, so the interest is not counted. The balance is what you put in, less
+              what you took out. Change the rate to count interest from its date.
+            </p>
+          )}
           <div className="deposit-stats">
             <Stat label="In the deposit" value={money(deposit.principal, own)} />
-            {deposit.interestEarned !== undefined && (
+            {deposit.interestEarned != null && (
               <Stat
                 label="Interest earned"
                 value={money(deposit.interestEarned, own)}
@@ -390,11 +396,13 @@ export default function DepositPage() {
                 }
               />
             )}
-            <Stat
-              label="Earned, not posted yet"
-              value={money(deposit.accrued, own)}
-              hint="Until the next interest date"
-            />
+            {deposit.accrued !== null && (
+              <Stat
+                label="Earned, not posted yet"
+                value={money(deposit.accrued, own)}
+                hint="Until the next interest date"
+              />
+            )}
             {deposit.capitalized && (
               <Stat
                 label="Interest added so far"
@@ -403,7 +411,7 @@ export default function DepositPage() {
               />
             )}
             {/* A capitalizing deposit closed early can still owe the interest it kept. */}
-            {(!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
+            {deposit.due !== null && (!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
               <Stat
                 label="Interest to be paid out"
                 value={money(deposit.due, own)}

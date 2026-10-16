@@ -59,6 +59,12 @@ const payoutNames = {
   'at-end': 'at the end of the term',
 };
 
+/** What a total says when it counts accounts at what was put in, for want of a rate. */
+export const accountsWithoutRate = (count: number): string =>
+  count === 1
+    ? '1 account has no rate entered; its interest is not counted.'
+    : `${count} accounts have no rate entered; their interest is not counted.`;
+
 /** "12%", or "No rate entered" for an account that has none (DEP-ACCOUNT); never "null%". */
 export const rateText = (deposit: Pick<Deposit, 'ratePercent'>): string =>
   deposit.ratePercent === null ? 'No rate entered' : `${deposit.ratePercent}%`;

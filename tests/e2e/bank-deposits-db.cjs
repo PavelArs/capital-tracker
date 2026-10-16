@@ -284,13 +284,25 @@ async function account(db, service, owner) {
   const read = (await service.list(owner, '2026-07-04')).items.find((item) => item.id === made.id);
   assert.equal(read.kind, 'account');
   assert.equal(read.principal, '100000.00');
-  assert.equal(read.balance, '100000.00', 'Nothing is earned while no rate is entered');
-  assert.equal(read.interestEarned, '0.00');
+  assert.equal(read.balance, '100000.00', 'What was put in, no interest is counted');
+  // Missing is not zero: with no rate the interest figures are unknown, not 0.00.
+  assert.equal(read.interestMissing, true);
+  assert.deepEqual(
+    [read.accrued, read.due, read.interestEarned, read.nextPayout, read.real.official],
+    [null, null, null, null, null],
+  );
+  const listed = await service.list(owner, '2026-07-04');
+  assert.equal(listed.interestMissingCount, 1, 'The list says its total leaves interest out');
+  const shown = await service.get(owner, made.id, '2026-07-04');
+  assert.deepEqual(shown.periods, [], 'No periods of interest are listed without a rate');
   // The rate the bank pays from a date is added later, and interest is earned from that date.
   await service.addRate(owner, made.id, { effectiveFrom: '2026-08-01', ratePercent: '6' });
   const rated = await service.get(owner, made.id, '2026-09-01');
   assert.equal(rated.ratePercent, '6');
   assert.notEqual(rated.balance, '100000.00', 'Interest from the rate date is added');
+  assert.equal(rated.interestMissing, false);
+  assert.notEqual(rated.interestEarned, null);
+  assert.notEqual(rated.accrued, null);
   // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
   const unrated = await service.get(owner, made.id, '2026-07-15');
   assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');
@@ -797,6 +809,7 @@ async function wholePortfolio(db, owner) {
   const rub = await valuation.read(owner, { currency: 'RUB' }, now);
   assert.equal(rub.completeness, 'complete');
   assert.equal(rub.unratedDepositCount, 0);
+  assert.equal(rub.interestMissingDepositCount, 0, 'Both deposits have a rate');
   assert.equal(rub.depositsValue, rub.totalValue, 'Nothing but deposits is held');
   assert.match(rub.totalValue, /^557710\.9[56]/, 'The same sum the deposits list states');
   assert.deepEqual(rub.allocation.byType.map((slice) => [slice.key, slice.percent]), [

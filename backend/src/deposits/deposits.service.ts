@@ -44,7 +44,13 @@ import {
   inTodaysMoney,
   periodsAfterInflation,
 } from './deposit-real';
-import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
+import {
+  interestMissingOn,
+  loadDeposits,
+  movementsOf,
+  type Stored,
+  termsOf,
+} from './deposit-store';
 import { ratesAreFresh } from './deposit-valuation';
 
 const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
@@ -80,6 +86,10 @@ export class DepositsService {
       return {
         asOf: date,
         items,
+        // Accounts holding money with no rate entered: the totals count what was put in only.
+        interestMissingCount: open.filter(
+          (item) => item.interestMissing && canonicalDecimalToAtoms(item.balance) > 0n,
+        ).length,
         totals: Object.fromEntries(
           accountingCurrencies.map((currency) => {
             const values = open.map((item) => item.values[currency]);
@@ -507,8 +517,11 @@ export class DepositsService {
     const ratePercent =
       inForce?.ratePercent ??
       (stored.deposit.kind === 'account' ? null : (terms.rates[0]?.ratePercent ?? null));
+    // Missing is not zero: without a rate the interest is unknown, so none of the figures that
+    // depend on it is stated, and what the deposit holds is what was put in less what was taken.
+    const interestMissing = interestMissingOn(stored, asOf);
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
-      reading
+      reading && !interestMissing
         ? depositReal(
             {
               balance: now.balance,
@@ -537,19 +550,23 @@ export class DepositsService {
       status,
       closedOn: now.closedOn,
       principal: now.principal,
-      accrued: now.accrued,
-      due: now.due,
+      interestMissing,
+      accrued: interestMissing ? null : now.accrued,
+      due: interestMissing ? null : now.due,
       balance: now.balance,
       // Everything the deposit has earned, posted or not, less what was forfeited.
-      interestEarned: centsText(
-        canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
-      ),
+      interestEarned: interestMissing
+        ? null
+        : centsText(
+            canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
+          ),
       real: {
         official: afterInflation(readings?.official),
         personal: afterInflation(readings?.personal),
       },
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
-      nextPayout: status === 'active' ? nextPayout(knownTerms, known, asOf) : null,
+      nextPayout:
+        status === 'active' && !interestMissing ? nextPayout(knownTerms, known, asOf) : null,
       atMaturity: maturity
         ? {
             date: terms.endDate as string,
@@ -573,14 +590,16 @@ export class DepositsService {
   ) {
     const terms = termsOf(stored);
     const projection = projectDeposit(terms, movementsOf(stored), asOf);
+    // Without a rate there is no interest to list: the periods would all read 0.00 (DEP-ACCOUNT).
+    const periods = interestMissingOn(stored, asOf) ? [] : projection.periods;
     // One replay gives the money held at the start of every period.
     const held = depositBalances(
       terms,
       movementsOf(stored),
-      projection.periods.map((period) => period.from),
+      periods.map((period) => period.from),
     );
-    const official = readings && periodsAfterInflation(projection.periods, held, readings.official);
-    const personal = readings && periodsAfterInflation(projection.periods, held, readings.personal);
+    const official = readings && periodsAfterInflation(periods, held, readings.official);
+    const personal = readings && periodsAfterInflation(periods, held, readings.personal);
     // The value by month from the start, each movement day and the day asked.
     const dates = chartDates(
       terms.startDate,
@@ -613,7 +632,7 @@ export class DepositsService {
           comment: row.comment,
         })),
       chart,
-      periods: projection.periods.map((period, index) => ({
+      periods: periods.map((period, index) => ({
         ...period,
         afterInflation: {
           official: official?.[index] ?? null,
