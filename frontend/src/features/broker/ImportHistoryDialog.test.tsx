@@ -206,7 +206,9 @@ describe('BROKER-HISTORY loading a T-Bank history into an empty account', () => 
   it('notes when trades are combined to fit the limit', async () => {
     vi.spyOn(brokersApi, 'importPreview').mockResolvedValue(preview({ grouping: 'day' }));
     open();
-    expect(await screen.findByText(/trades of one share in one day are combined into one entry/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/trades of one share in one day are combined into one entry/),
+    ).toBeInTheDocument();
   });
 });
 
