@@ -478,12 +478,15 @@ const sameInstantRank = (entry: PlanEntry) => {
   if (!entry.cash) return actionOrder.indexOf(entry.action);
   return actionOrder.indexOf('sell') + (entry.action === 'buy' ? 0.5 : 0.75);
 };
+// Without hoisting, the operations of one instant keep T-Bank's own order, which the ranks only
+// guess at: a sale, a buy and a sale of one share in that order is valid, while the ranks put both
+// sales first.
 const ordered = (list: PlanEntry[], hoist: boolean) =>
   buysFirst(
     [...list].sort(
       (a, b) =>
         timeKey(a.occurredAt).localeCompare(timeKey(b.occurredAt)) ||
-        sameInstantRank(a) - sameInstantRank(b) ||
+        (hoist ? sameInstantRank(a) - sameInstantRank(b) : 0) ||
         byNumber(a.operationIds[0], b.operationIds[0]),
     ),
     hoist,

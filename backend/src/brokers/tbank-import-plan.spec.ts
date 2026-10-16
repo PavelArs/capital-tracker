@@ -1022,6 +1022,57 @@ describe('BROKER-SYNC-FX: currencies and gold bought on the exchange', () => {
     ]);
   });
 
+  it('keeps an alternating sale, buy and sale of one share at one instant in operation order when not hoisting', () => {
+    const share = '00000000-0000-4000-8000-0000000000a3';
+    const at = '2024-03-08T10:00:00Z';
+    const plan = planImport(
+      [
+        op({
+          id: '870000001',
+          occurredAt: '2024-03-07T10:00:00Z',
+          instrumentUid: share,
+          quantity: '1',
+          payment: '-100',
+          price: '100',
+        }),
+        op({
+          id: '870000002',
+          type: 'OPERATION_TYPE_SELL',
+          occurredAt: at,
+          instrumentUid: share,
+          quantity: '1',
+          payment: '150',
+          price: '150',
+        }),
+        op({
+          id: '870000003',
+          occurredAt: at,
+          instrumentUid: share,
+          quantity: '1',
+          payment: '-150',
+          price: '150',
+        }),
+        op({
+          id: '870000004',
+          type: 'OPERATION_TYPE_SELL',
+          occurredAt: at,
+          instrumentUid: share,
+          quantity: '1',
+          payment: '160',
+          price: '160',
+        }),
+      ],
+      { hoist: false },
+    );
+    expect(plan.skipped).toEqual([]);
+    expect(plan.entries.map((entry) => [entry.action, entry.operationIds[0]])).toEqual([
+      ['buy', '870000001'],
+      ['sell', '870000002'],
+      ['buy', '870000003'],
+      ['sell', '870000004'],
+    ]);
+  });
+
   it('keeps gold and currencies the app does not keep as cash as assets priced in rubles', () => {
     const plan = planImport([
       fx('GLDRUB_TOM', gold, { id: '620000001', quantity: '10', payment: '-70000' }),
