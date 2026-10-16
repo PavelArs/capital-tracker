@@ -245,9 +245,34 @@ describe('PROPERTY-LIST Real estate', () => {
     get.mockResolvedValue(valuation([properties[2]]));
     renderPage();
     await screen.findByText('No property yet');
+    const empty = screen.getByRole('button', { name: 'Add property' });
+    expect(empty.closest('.ui-intro')).not.toBeNull();
+    expect(empty).toHaveClass('shell-button--primary');
+  });
+
+  it('SECTION-STATES keeps the Add property action while the page loads and when it cannot load', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
+    renderPage();
     expect(
       screen.getByRole('button', { name: 'Add property' }).closest('.ui-intro'),
     ).not.toBeNull();
+    await screen.findByText('Could not load your real estate. Your data is safe; try again.');
+    expect(
+      screen.getByRole('button', { name: 'Add property' }).closest('.ui-intro'),
+    ).not.toBeNull();
+  });
+
+  it('SECTION-STATES says nothing about last loaded figures above the empty card', async () => {
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValue(valuation([properties[2]]));
+    await cachedReads.portfolio.load(undefined);
+    await cachedReads.accounts.load();
+    get.mockRejectedValueOnce(new Error('offline'));
+    renderPage();
+    await screen.findByText('No property yet');
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('SECTION-LAYOUT-SHARE shows the share of net worth beside the total, and why when it is unknown', async () => {

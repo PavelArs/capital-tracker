@@ -1,7 +1,6 @@
 import type { AccountSummary } from '@api/accounting.api';
 import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { sumDecimals } from '@/utils/decimal';
-import { shareOfNetWorth } from '../shell/net-worth';
 
 export interface BrokerPosition {
   asset: AssetValuation;
@@ -62,9 +61,6 @@ export function brokerAccountsOf(
         Number(right.value) - Number(left.value) || left.name.localeCompare(right.name, 'en'),
     );
 }
-
-/** The share of net worth held at brokers, or null while the net worth is unknown. */
-export const brokerShare = shareOfNetWorth;
 
 /** "1 position", "2 positions". */
 export const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;

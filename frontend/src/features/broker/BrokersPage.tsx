@@ -13,7 +13,7 @@ import { money, price, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { Icon } from '../shell/icons';
-import { netWorthUnknown } from '../shell/net-worth';
+import { netWorthUnknown, shareOfNetWorth } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useAccountClasses } from '../shell/useAccountClasses';
@@ -22,7 +22,6 @@ import {
   type BrokerAccount,
   type BrokerPosition,
   brokerAccountsOf,
-  brokerShare,
   leftOut,
   plural,
 } from './brokers';
@@ -157,7 +156,7 @@ export default function BrokersPage() {
   const total = sumDecimals(brokers?.map((account) => account.value) ?? []);
   const unpriced = brokers?.reduce((sum, account) => sum + account.unpriced, 0) ?? 0;
   const unrated = brokers?.reduce((sum, account) => sum + account.unrated, 0) ?? 0;
-  const share = portfolio && brokerShare(total, portfolio);
+  const share = portfolio && shareOfNetWorth(total, portfolio);
   const unknown = portfolio && netWorthUnknown(portfolio);
   const missing = leftOut(unpriced, unrated);
   const addButton = (primary: boolean) => (
