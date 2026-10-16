@@ -858,7 +858,7 @@ describe('show-dashboard-top-assets', () => {
   });
 });
 
-// INFL-REAL: the profit to date after inflation, beside the nominal one, under one switch.
+// VIEW-ONE: the profit to date in one reading at a time, under one switch.
 describe('Dashboard after inflation', () => {
   const real = {
     official: { invested: '96000', profit: '19000', profitPercent: '19.79', estimated: true },
@@ -879,23 +879,20 @@ describe('Dashboard after inflation', () => {
   });
   const profitLine = (hero: HTMLElement, name: string) => within(hero).getByLabelText(name);
 
-  it('DASH-REAL-NOMINAL opens on the nominal profit and shows the real one beside it', async () => {
+  it('DASH-ONE-NOMINAL shows the nominal profit and nothing about inflation', async () => {
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     expect(profitLine(hero, 'Profit or loss to date')).toHaveTextContent(
       '▲ +$25,000.00+27.78%on $90,000.00 net invested',
     );
-    const other = profitLine(hero, 'Profit or loss after inflation');
-    expect(other).toHaveTextContent('After inflation+$19,000.00+19.79%');
-    expect(other).toHaveTextContent('at the official rate, latest months estimated');
-    expect(within(other).getByRole('link', { name: 'Settings' })).toHaveAttribute(
-      'href',
-      '/settings',
-    );
+    expect(within(hero).queryByLabelText('Profit or loss after inflation')).toBeNull();
+    expect(within(hero).queryByLabelText('Real profit or loss to date')).toBeNull();
+    expect(hero).not.toHaveTextContent(/inflation|official rate|\+\$19,000\.00/);
+    expect(within(hero).queryByRole('link', { name: 'Settings' })).toBeNull();
     expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
   });
 
-  it('DASH-REAL-SWITCH Real puts the real profit first and keeps the nominal one in sight', async () => {
+  it('DASH-ONE-REAL shows only the real profit, with the rate it rests on', async () => {
     const user = userEvent.setup();
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
@@ -908,11 +905,9 @@ describe('Dashboard after inflation', () => {
       'href',
       '/settings',
     );
-    // The rate belongs to the real figure: the nominal row beside it does not repeat it.
-    const nominal = profitLine(hero, 'Nominal profit or loss');
-    expect(nominal).toHaveTextContent('Nominal+$25,000.00+27.78%before inflation');
-    expect(nominal).not.toHaveTextContent('official rate');
-    expect(within(nominal).queryByRole('link')).toBeNull();
+    expect(within(hero).queryByLabelText('Nominal profit or loss')).toBeNull();
+    expect(within(hero).queryByLabelText('Profit or loss to date')).toBeNull();
+    expect(hero).not.toHaveTextContent(/nominal|before inflation|\+\$25,000\.00|net invested/i);
     // The net worth itself is the same in both readings.
     expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
     expect(window.localStorage.setItem).toHaveBeenCalledWith('value-view', 'real');
@@ -928,41 +923,64 @@ describe('Dashboard after inflation', () => {
 
   it('DASH-REAL-OWN-RATE reads the profit after the owner own rate when that is chosen', async () => {
     setInflationBasis('personal');
-    const user = userEvent.setup();
+    setValueView('real');
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
-    const other = profitLine(hero, 'Profit or loss after inflation');
-    expect(other).toHaveTextContent('After inflation+$22,500.00+24.32%');
-    expect(other).toHaveTextContent('at your own rate');
-    await user.click(screen.getByRole('radio', { name: 'Real' }));
-    const real = profitLine(hero, 'Real profit or loss to date');
-    expect(real).toHaveTextContent(
+    expect(profitLine(hero, 'Real profit or loss to date')).toHaveTextContent(
       "+$22,500.00+24.32%real, on $92,500.00 put in, in today's money · at your own rate · Settings",
     );
-    expect(profitLine(hero, 'Nominal profit or loss')).not.toHaveTextContent('own rate');
+    expect(hero).not.toHaveTextContent(/nominal|\+\$25,000\.00/i);
   });
 
-  it('DASH-REAL-UNKNOWN keeps the nominal profit and says why there is no real one', async () => {
+  it('DASH-ONE-REAL-UNKNOWN shows a dash and why, not the nominal profit', async () => {
     setValueView('real');
     get.mockImplementation(async (period: HistoryPeriod) =>
       history({ period, real: { official: null, personal: null } }),
     );
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
-    expect(profitLine(hero, 'Profit or loss to date')).toHaveTextContent(
-      '▲ +$25,000.00+27.78%on $90,000.00 net invested',
+    const line = profitLine(hero, 'Real profit or loss to date');
+    expect(line).toHaveTextContent(
+      '—No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.',
     );
-    expect(profitLine(hero, 'Profit or loss after inflation')).toHaveTextContent(
-      'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.',
-    );
+    expect(hero).not.toHaveTextContent(/\+\$25,000\.00|net invested|nominal/i);
     setInflationBasis('personal');
     expect(
       await within(hero).findByText(/No real profit: an inflation figure, exchange rate or price/),
     ).toBeInTheDocument();
   });
 
+  it('DASH-ONE-REAL-NO-PROFIT gives the reason when the real reading exists but states no profit', async () => {
+    setValueView('real');
+    get.mockImplementation(async (period: HistoryPeriod) =>
+      history({
+        period,
+        real: {
+          official: { invested: '96800', profit: null, profitPercent: null, estimated: false },
+          personal: null,
+        },
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const line = profitLine(hero, 'Real profit or loss to date');
+    expect(line).toHaveTextContent('—No real profit');
+    expect(hero).not.toHaveTextContent(/\+\$25,000\.00|net invested|put in/i);
+  });
+
+  it('DASH-ONE-NOMINAL-UNKNOWN keeps quiet about a real profit that is missing', async () => {
+    get.mockImplementation(async (period: HistoryPeriod) =>
+      history({ period, real: { official: null, personal: null } }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(profitLine(hero, 'Profit or loss to date')).toHaveTextContent('+$25,000.00');
+    expect(hero).not.toHaveTextContent(/No real profit/);
+  });
+
   it('DASH-REAL-FOLLOW-OFFICIAL says so when My rate has no rate for the currency', async () => {
     setInflationBasis('personal');
+    setValueView('real');
     get.mockImplementation(async (period: HistoryPeriod) =>
       history({
         period,
@@ -971,10 +989,10 @@ describe('Dashboard after inflation', () => {
     );
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
-    const other = profitLine(hero, 'Profit or loss after inflation');
-    expect(other).toHaveTextContent('After inflation+$19,000.00+19.79%');
-    expect(other).toHaveTextContent('no rate of your own for USD, so the official one');
-    expect(other).not.toHaveTextContent('at your own rate');
+    const line = profitLine(hero, 'Real profit or loss to date');
+    expect(line).toHaveTextContent('+$19,000.00+19.79%');
+    expect(line).toHaveTextContent('no rate of your own for USD, so the official one');
+    expect(line).not.toHaveTextContent('at your own rate');
   });
 
   it('DASH-REAL-OLD-ANSWER shows nothing extra for an answer saved before this existed', async () => {
