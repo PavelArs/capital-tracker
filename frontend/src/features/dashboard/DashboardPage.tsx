@@ -165,8 +165,9 @@ function NetWorth({
   // the reason, never the nominal one; an answer saved before real figures existed has none to
   // miss, so it stays nominal until a fresh one arrives.
   const realView = view === 'real' && history.real !== undefined;
-  const shownReal = realView && real !== null;
-  const noReal = realView && real === null;
+  // A real reading can exist and still state no profit (nothing held is priced): same dash and reason.
+  const shownReal = realView && real !== null && real.profit !== null;
+  const noReal = realView && !shownReal;
   const profit = shownReal ? real.profit : noReal ? null : history.profit;
   const profitPercent = shownReal ? real.profitPercent : noReal ? null : history.profitPercent;
   const invested = shownReal ? real.invested : noReal ? null : history.invested;

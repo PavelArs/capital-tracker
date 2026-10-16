@@ -256,6 +256,8 @@ export function matchesSearch(asset: AssetValuation, search: string): boolean {
 
 const PARTIAL_NOTE =
   'Coins without a price or without a purchase price are left out: current value counts the priced assets, cost basis and P&L the coins whose purchase price is known. Open an asset to see what is missing.';
+const PARTIAL_NOTE_REAL =
+  'Coins without a price are left out: current value counts the priced assets. Open an asset to see what is missing.';
 
 // Bank deposits are part of the value even when no asset is held.
 const hasDeposits = (portfolio: PortfolioValuation) =>
@@ -310,13 +312,13 @@ function Summary({
       <h2 id={summaryTitle} className="ui-sr">
         Portfolio summary
       </h2>
-      {partial && (
+      {(showReal ? partialValue : partial) && (
         <span
           className="portfolio-info"
           role="img"
           tabIndex={0}
-          aria-label={PARTIAL_NOTE}
-          data-tip={PARTIAL_NOTE}
+          aria-label={showReal ? PARTIAL_NOTE_REAL : PARTIAL_NOTE}
+          data-tip={showReal ? PARTIAL_NOTE_REAL : PARTIAL_NOTE}
         >
           <Icon name="info" className="shell-icon shell-icon--sm" />
         </span>
