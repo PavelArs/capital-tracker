@@ -56,6 +56,18 @@ function build(
           removedAt: null,
         },
       ];
+    if (replay && sql.includes('a."requestId", a.id'))
+      return (parameters[1] as string[]).map((requestId) => ({
+        requestId,
+        id: request(101),
+        name: 'T-Bank Synthetic regular',
+        canonicalPayload: JSON.stringify({
+          name: 'T-Bank Synthetic regular',
+          assetClass: 'broker',
+        }),
+        removedAt: replay.removed ? new Date(0) : null,
+        brokerAccountId: replay.brokerAccountId,
+      }));
     if (replay && sql.includes('LEFT JOIN broker_connections'))
       return [
         {
@@ -215,6 +227,20 @@ describe('BROKER-SETUP-CONNECT one command makes and connects a broker account f
       },
     ]);
     expect(stored(writes)).toEqual([]);
+  });
+
+  it('answers a finished request from what is saved, without asking T-Bank', async () => {
+    const { service, writes } = build(
+      { ok: false, reason: 'unavailable' },
+      {},
+      { brokerAccountId: regular.id, removed: false },
+    );
+    const shown = await service.connect(owner, { token, accounts: [pick(1, regular)] });
+    expect(shown.connections).toEqual([
+      expect.objectContaining({ accountId: request(101), created: false }),
+    ]);
+    expect(stored(writes)).toEqual([]);
+    expect(created(writes)).toEqual([]);
   });
 
   it.each([
