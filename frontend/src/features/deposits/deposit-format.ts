@@ -59,9 +59,13 @@ const payoutNames = {
   'at-end': 'at the end of the term',
 };
 
+/** "12%", or "No rate entered" for an account that has none (DEP-ACCOUNT); never "null%". */
+export const rateText = (deposit: Pick<Deposit, 'ratePercent'>): string =>
+  deposit.ratePercent === null ? 'No rate entered' : `${deposit.ratePercent}%`;
+
 /** "12% · interest paid monthly · until 1 Oct 2026"; an account has no term to end (DEP-ACCOUNT). */
 export function termText(deposit: Deposit): string {
-  const rate = deposit.ratePercent === null ? 'No rate entered' : `${deposit.ratePercent}%`;
+  const rate = rateText(deposit);
   const interest = deposit.capitalized
     ? `interest added ${payoutNames[deposit.payout]}`
     : `interest paid ${payoutNames[deposit.payout]}`;

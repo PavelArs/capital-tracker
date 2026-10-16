@@ -1089,6 +1089,49 @@ describe('Dashboard UI audit', () => {
     );
   });
 
+  it('dashboard-02 DEP-ACCOUNT names a savings account without a rate and never prints null', async () => {
+    const account: Deposit = {
+      ...savings,
+      kind: 'account',
+      endDate: null,
+      ratePercent: null,
+      atMaturity: null,
+      nextPayout: null,
+    };
+    valued.mockImplementation(async (currency?: AccountingCurrency) => withDeposit(currency));
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [account],
+      totals: account.values,
+    });
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    await within(top).findByText('Synthetic Bank · No rate entered');
+    expect(top).not.toHaveTextContent('null');
+    expect(top).not.toHaveTextContent('no end date');
+  });
+
+  it('dashboard-02 DEP-ACCOUNT gives a savings account with a rate no end date', async () => {
+    const account: Deposit = {
+      ...savings,
+      kind: 'account',
+      endDate: null,
+      ratePercent: '4',
+      atMaturity: null,
+      nextPayout: null,
+    };
+    valued.mockImplementation(async (currency?: AccountingCurrency) => withDeposit(currency));
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [account],
+      totals: account.values,
+    });
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    await within(top).findByText('Synthetic Bank · 4%');
+    expect(top).not.toHaveTextContent('no end date');
+  });
+
   it('dashboard-02 lists the bank deposit among the top assets on phones', async () => {
     phone();
     valued.mockImplementation(async (currency?: AccountingCurrency) => withDeposit(currency));
