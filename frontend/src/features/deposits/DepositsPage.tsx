@@ -101,7 +101,7 @@ function Card({
                 {dateText(check.checkedOn)},{' '}
                 {Number(check.difference) === 0
                   ? 'matches the bank'
-                  : `differs by ${money(check.difference, deposit.currency)}`}
+                  : `differs by ${money(check.difference, deposit.currency, false, 'exact')}`}
               </dd>
             </div>
           )}

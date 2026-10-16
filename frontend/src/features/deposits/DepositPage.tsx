@@ -165,7 +165,7 @@ function Movements({
               <ListRowText
                 title={movementText[movement.kind]}
                 detail={[dateText(movement.date), movement.comment].filter(Boolean).join(' · ')}
-                amount={money(movement.amount, currency)}
+                amount={money(movement.amount, currency, false, 'exact')}
               />
               {remove(movement)}
             </li>
@@ -193,7 +193,7 @@ function Movements({
                 <td>{dateText(movement.date)}</td>
                 <td>{movementText[movement.kind]}</td>
                 <td>{movement.comment ?? ''}</td>
-                <td className="ui-num">{money(movement.amount, currency)}</td>
+                <td className="ui-num">{money(movement.amount, currency, false, 'exact')}</td>
                 <td className="deposit-table__act">{remove(movement)}</td>
               </tr>
             ))}
@@ -216,7 +216,7 @@ function Checks({
   const paged = usePages(checks, (check) => check.id);
   const narrow = useNarrowScreen();
   const difference = (row: DepositDetail['checks'][number]) =>
-    Number(row.difference) === 0 ? '—' : money(row.difference, currency, true);
+    Number(row.difference) === 0 ? '—' : money(row.difference, currency, true, 'exact');
   if (narrow)
     return (
       <>
@@ -225,7 +225,7 @@ function Checks({
             <li key={row.id} className={rowClass()}>
               <ListRowText
                 title={dateText(row.checkedOn)}
-                detail={`Bank ${money(row.bankBalance, currency)} · App ${money(row.calculated, currency)}`}
+                detail={`Bank ${money(row.bankBalance, currency, false, 'exact')} · App ${money(row.calculated, currency)}`}
                 amount={difference(row)}
                 value="Difference"
               />
@@ -251,7 +251,7 @@ function Checks({
             {paged.rows.map((row) => (
               <tr key={row.id}>
                 <td>{dateText(row.checkedOn)}</td>
-                <td className="ui-num">{money(row.bankBalance, currency)}</td>
+                <td className="ui-num">{money(row.bankBalance, currency, false, 'exact')}</td>
                 <td className="ui-num">{money(row.calculated, currency)}</td>
                 <td className="ui-num">{difference(row)}</td>
               </tr>
@@ -378,7 +378,7 @@ export default function DepositPage() {
             </p>
           )}
           <div className="deposit-stats">
-            <Stat label="In the deposit" value={money(deposit.principal, own)} />
+            <Stat label="In the deposit" value={money(deposit.principal, own, false, 'exact')} />
             {deposit.interestEarned !== undefined && (
               <Stat
                 label="Interest earned"
@@ -438,9 +438,11 @@ export default function DepositPage() {
               <Stat
                 label="Last check"
                 value={
-                  Number(check.difference) === 0 ? 'Matches' : money(check.difference, own, true)
+                  Number(check.difference) === 0
+                    ? 'Matches'
+                    : money(check.difference, own, true, 'exact')
                 }
-                hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`}
+                hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own, false, 'exact')}, app ${money(check.calculated, own)}`}
               />
             )}
           </div>
@@ -508,8 +510,8 @@ export default function DepositPage() {
               )}
               {Number(deposit.interestForfeited) > 0 && (
                 <p className="shell-note">
-                  Closing the deposit early lost {money(deposit.interestForfeited, own)} of
-                  interest.
+                  Closing the deposit early lost{' '}
+                  {money(deposit.interestForfeited, own, false, 'up')} of interest.
                 </p>
               )}
             </section>

@@ -13,7 +13,7 @@ import Modal from '@/ui/Modal';
 import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
-import { DASH, money, price, quantity } from '../portfolio/format';
+import { DASH, money, price, quantity, type Rounding } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
 import CopyValue from '../shell/CopyValue';
 import { Icon } from '../shell/icons';
@@ -31,6 +31,7 @@ import {
   networkName,
   operationMoment,
   placeLabel,
+  rounding,
   signedAmount,
   sourceLabel,
   statusLabel,
@@ -157,8 +158,9 @@ function shown(
   usd: string | null,
   currency: AccountingCurrency,
   missing: string,
+  rounded: Rounding = 'down',
 ): string {
-  if (value !== null) return money(value, currency);
+  if (value !== null) return money(value, currency, false, rounded);
   return usd === null ? missing : 'No Bank of Russia rate for this date';
 }
 
@@ -249,7 +251,16 @@ function swapFacts(
     rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
   rows.push(
     ['Network fee', operation.fee ? networkFee(operation.fee, currency) : 'Paid by sender'],
-    ['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')],
+    [
+      'Value',
+      shown(
+        operation.value,
+        operation.valueUsd,
+        currency,
+        'Not recorded',
+        rounding(operation, currency),
+      ),
+    ],
     ['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, 'Unknown')],
   );
   return rows;
@@ -378,7 +389,16 @@ function facts(
           : 'A record added by hand or from CSV',
       ]);
     if (operation.status === 'recorded' && !moved && !staking && !pooled && !linked) {
-      rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+      rows.push([
+        'Value',
+        shown(
+          operation.value,
+          operation.valueUsd,
+          currency,
+          'Not recorded',
+          rounding(operation, currency),
+        ),
+      ]);
       if (
         exchange &&
         (operation.type === 'buy' || operation.type === 'sell') &&
@@ -414,7 +434,16 @@ function facts(
     else rows.push(['Account', operation.account?.name ?? 'Whole portfolio']);
     if (operation.counterAsset && operation.counterQuantity)
       rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
-    rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+    rows.push([
+      'Value',
+      shown(
+        operation.value,
+        operation.valueUsd,
+        currency,
+        'Not recorded',
+        rounding(operation, currency),
+      ),
+    ]);
     if ((operation.type === 'buy' || operation.type === 'sell') && operation.value !== null)
       rows.push([
         'Price',
@@ -438,7 +467,7 @@ function facts(
     rows.push([
       'Fee',
       operation.feeUsd !== null && Number(operation.feeUsd) !== 0
-        ? shown(operation.feeValue, operation.feeUsd, currency, DASH)
+        ? shown(operation.feeValue, operation.feeUsd, currency, DASH, rounding(operation, currency))
         : operation.fee
           ? amount(operation.fee.quantity, operation.fee.asset)
           : 'None',
@@ -687,7 +716,7 @@ export default function OperationDrawer({
   const dust = operation.status === 'dust';
   const value =
     operation.value !== null
-      ? money(operation.value, currency)
+      ? money(operation.value, currency, false, rounding(operation, currency))
       : operation.estimatedValue !== null
         ? `≈ ${money(operation.estimatedValue, currency)} at the price at the time`
         : null;

@@ -481,20 +481,20 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(cellTexts(bodyRows()[0])[3]).toBe('—No rate'));
     expect(screen.getByRole('radio', { name: 'RUB' })).toBeChecked();
     // The Manual filter stays; the paid line is not repeated in its own currency.
-    expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual(['—No rate', '₽80,000.00']);
+    expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual(['—No rate', '₽80,000']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual([
-      '≈ ₽74,109.50',
+      '≈ ₽74,109',
       '—No rate',
-      '₽83,000.00',
-      '₽80,000.00',
+      '₽83,000',
+      '₽80,000',
     ]);
     await user.click(within(bodyRows()[2]).getByRole('button', { name: 'Buy' }));
     const drawer = screen.getByRole('dialog', { name: 'Buy · BTC' });
     const facts = within(drawer).getByRole('region', { name: 'Details' });
     const fact = (label: string) =>
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
-    expect(fact('Value')).toBe('₽83,000.00');
+    expect(fact('Value')).toBe('₽83,000');
     expect(fact('Price')).toBe('₽8,300,000.00 per BTC');
     expect(fact('Fee')).toBe('₽98.76');
   });

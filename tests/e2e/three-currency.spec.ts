@@ -163,15 +163,15 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     // The other two currencies stay one click away.
     await switcher.getByRole('radio', { name: 'RUB' }).check();
     await expect(page).toHaveURL(`${origin}/portfolio?currency=RUB`);
-    await expect(cells.nth(3)).toHaveText('₽92,000.00');
-    await expect(cells.nth(6)).toHaveText('+₽28,000.00+43.75%');
+    await expect(cells.nth(3)).toHaveText('₽92,000');
+    await expect(cells.nth(6)).toHaveText('+₽28,000+43.75%');
     await row.getByRole('link', { name: assetName, exact: true }).click();
     await expect(page).toHaveURL(`${origin}/portfolio/${created.id}?currency=RUB`);
     const position = main.getByRole('region', { name: 'Position' });
     for (const [label, value] of [
-      ['Current value', '₽92,000.00'],
-      ['Cost basis', '₽64,000.00'],
-      ['Unrealized P&L', '+₽28,000.00+43.75%'],
+      ['Current value', '₽92,000'],
+      ['Cost basis', '₽64,000'],
+      ['Unrealized P&L', '+₽28,000+43.75%'],
     ] as const) {
       await expect(
         position.getByText(label, { exact: true }).locator('xpath=following-sibling::dd[1]'),
