@@ -1,11 +1,11 @@
 import { type ExportKind, exportApi } from '@api/export.api';
+import { useToast } from '@contexts/ToastContext';
 import { useState } from 'react';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { SettingRow } from '@/ui/SettingRow';
 
-type State =
-  | { kind: 'idle' }
-  | { kind: 'preparing'; what: ExportKind }
-  | { kind: 'done'; what: ExportKind; filename: string }
-  | { kind: 'failed'; what: ExportKind };
+type State = { kind: 'idle' } | { kind: 'preparing'; what: ExportKind };
 
 const choices: { what: ExportKind; label: string; hint: string; action: string }[] = [
   {
@@ -39,48 +39,45 @@ function save(blob: Blob, filename: string) {
 // PR-EXP-1, prototype Settings → Data: the CSV archive (EXP-CSV) and the JSON backup (EXP-JSON).
 export default function DataExport() {
   const [state, setState] = useState<State>({ kind: 'idle' });
+  const toast = useToast();
   const run = async (what: ExportKind) => {
     setState({ kind: 'preparing', what });
     try {
       const { blob, filename } = await exportApi.download(what);
       save(blob, filename);
-      setState({ kind: 'done', what, filename });
+      toast.show({ tone: 'success', title: `Downloaded ${filename}.` });
     } catch {
-      setState({ kind: 'failed', what });
+      toast.show({
+        tone: 'error',
+        title: 'Could not export your data. Nothing was downloaded. Try again.',
+      });
+    } finally {
+      setState({ kind: 'idle' });
     }
   };
   return (
-    <section className="shell-card" aria-labelledby="settings-data">
-      <h2 id="settings-data">Data</h2>
+    <Card labelledBy="settings-data">
+      <CardHeader id="settings-data" title="Data" />
       {choices.map(({ what, label, hint, action }) => {
-        const mine = state.kind !== 'idle' && state.what === what;
+        const mine = state.kind === 'preparing' && state.what === what;
         return (
-          <div className="shell-setting" key={what}>
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">{label}</span>
-              <p className="shell-setting__hint">{hint}</p>
-              {mine && state.kind === 'done' && (
-                <p className="shell-setting__hint" role="status">
-                  Downloaded {state.filename}.
-                </p>
-              )}
-              {mine && state.kind === 'failed' && (
-                <p className="shell-setting__hint shell-setting__hint--error" role="alert">
-                  Could not export your data; nothing was downloaded. Try again.
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={state.kind === 'preparing'}
-              onClick={() => void run(what)}
-            >
-              {mine && state.kind === 'preparing' ? 'Preparing…' : action}
-            </button>
-          </div>
+          <SettingRow
+            key={what}
+            title={label}
+            description={hint}
+            control={
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={state.kind === 'preparing'}
+                onClick={() => void run(what)}
+              >
+                {mine ? 'Preparing…' : action}
+              </Button>
+            }
+          />
         );
       })}
-    </section>
+    </Card>
   );
 }

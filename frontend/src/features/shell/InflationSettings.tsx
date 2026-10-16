@@ -1,12 +1,20 @@
 import { type CurrencyInflation, type InflationOverview, inflationApi } from '@api/inflation.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { useToast } from '@contexts/ToastContext';
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { ErrorState } from '@/ui/ErrorState';
+import { Field } from '@/ui/Field';
+import { Affix, Input, Select } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { SettingRow } from '@/ui/SettingRow';
 import { dayText, moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
-import CloseButton from './CloseButton';
 import { type InflationBasis, useInflationBasis } from './inflation-basis';
+import { Bone } from './Skeleton';
 
 // INFL-UI: Settings → Inflation. The rate that values "after inflation" use: the published index
 // of each currency or the owner's own yearly rate, and the months the index has not come out for.
@@ -83,6 +91,7 @@ function CurrencyRow({
   onSaved: (rate: string | null) => void;
 }) {
   const id = useId();
+  const toast = useToast();
   const [text, setText] = useState(row.personalRatePercent ?? '');
   const [state, setState] = useState<'ready' | 'saving' | 'saved' | 'invalid' | 'failed'>('ready');
   const [failure, setFailure] = useState('');
@@ -103,8 +112,14 @@ function CurrencyRow({
       onSaved(rate === null ? null : exact(rate));
       setState('saved');
     } catch (error) {
-      setFailure(saveFailure(`your ${row.currency} rate`)(error));
+      const message = saveFailure(`your ${row.currency} rate`)(error);
+      setFailure(message);
       setState('failed');
+      toast.show({
+        tone: 'error',
+        title: `Could not save your ${row.currency} rate`,
+        detail: message,
+      });
     }
   };
   const hint = (() => {
@@ -125,56 +140,55 @@ function CurrencyRow({
   })();
   const alert = state === 'invalid' || state === 'failed';
   return (
-    <form
-      className="shell-setting shell-setting--rate"
-      onSubmit={(event) => void save(event)}
-      noValidate
-    >
-      <div className="shell-setting__text shell-setting__text--grow">
-        <span id={`${id}-title`} className="shell-setting__label">
-          {row.currency}
-          {row.officialSource && ` · ${row.officialSource}`}
-        </span>
-        <p
-          id={`${id}-hint`}
-          className={`shell-setting__hint${alert ? ' shell-setting__hint--error' : ''}`}
-          role={alert ? 'alert' : undefined}
-        >
-          {hint}
-        </p>
-      </div>
-      <div className="shell-dust shell-dust--rate">
-        <label id={`${id}-label`} htmlFor={`${id}-rate`} className="shell-dust__label">
-          My rate a year
-        </label>
-        <input
-          id={`${id}-rate`}
-          aria-labelledby={`${id}-title ${id}-label`}
-          className="ui-input"
-          type="text"
-          inputMode="decimal"
-          autoComplete="off"
-          placeholder={official?.replace('%', '') ?? 'Official'}
-          value={text}
-          disabled={state === 'saving'}
-          aria-invalid={state === 'invalid' || undefined}
-          aria-describedby={`${id}-hint`}
-          onChange={(event) => {
-            setText(event.target.value);
-            if (state !== 'saving') setState('ready');
-          }}
-        />
-        <span className="shell-dust__unit" aria-hidden="true">
-          %
-        </span>
-        <button
-          type="submit"
-          className="shell-button shell-button--secondary"
-          disabled={state === 'saving' || text.trim() === (row.personalRatePercent ?? '')}
-        >
-          {state === 'saving' ? 'Saving…' : 'Save'}
-        </button>
-      </div>
+    <form onSubmit={(event) => void save(event)} noValidate>
+      <SettingRow
+        title={
+          <span id={`${id}-title`}>
+            {row.currency}
+            {row.officialSource && ` · ${row.officialSource}`}
+          </span>
+        }
+        description={
+          <span id={`${id}-hint`} role={alert ? 'alert' : undefined}>
+            {hint}
+          </span>
+        }
+        control={
+          <>
+            <label id={`${id}-label`} htmlFor={`${id}-rate`} className="ui-soft">
+              My rate a year
+            </label>
+            <div style={{ width: '6.5rem' }}>
+              <Affix suffix="%">
+                <Input
+                  id={`${id}-rate`}
+                  aria-labelledby={`${id}-title ${id}-label`}
+                  numeric
+                  type="text"
+                  autoComplete="off"
+                  placeholder={official?.replace('%', '') ?? 'Official'}
+                  value={text}
+                  disabled={state === 'saving'}
+                  aria-invalid={state === 'invalid' || undefined}
+                  aria-describedby={`${id}-hint`}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    if (state !== 'saving') setState('ready');
+                  }}
+                />
+              </Affix>
+            </div>
+            <Button
+              type="submit"
+              variant="secondary"
+              size="sm"
+              disabled={state === 'saving' || text.trim() === (row.personalRatePercent ?? '')}
+            >
+              {state === 'saving' ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      />
     </form>
   );
 }
@@ -236,104 +250,83 @@ function MonthDialog({
       initialFocus={() => field.current}
     >
       <form onSubmit={(event) => void save(event)} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>Enter a month</h2>
-          <CloseButton onClick={onClose} disabled={saving} />
-          <p className="shell-note">
-            Use this while the official figure isn't out yet. It replaces the estimate for that
-            month only; remove it once the official figure is published.
-          </p>
-        </div>
-        <div className="ui-modal__body">
-          <div className="ui-field-row">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-currency`}>
-                Currency
-              </label>
-              <select
-                id={`${id}-currency`}
-                className="ui-input"
-                value={currency}
-                disabled={saving}
-                onChange={(event) => {
-                  const next = event.target.value as AccountingCurrency;
-                  setCurrency(next);
-                  const list = pendingMonths(
-                    rows.find((row) => row.currency === next)?.officialLastMonth ?? null,
-                  );
-                  setMonth(list[list.length - 1] ?? '');
-                }}
-              >
-                {open.map((row) => (
-                  <option key={row.currency}>{row.currency}</option>
-                ))}
-              </select>
-            </div>
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-month`}>
-                Month
-              </label>
-              <select
-                id={`${id}-month`}
-                className="ui-input"
-                value={chosen}
-                disabled={saving}
-                onChange={(event) => setMonth(event.target.value)}
-              >
-                {months.map((value) => (
-                  <option key={value} value={value}>
-                    {monthText(value)}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <ModalHeader
+          titleId={`${id}-title`}
+          title="Enter a month"
+          onClose={onClose}
+          closeDisabled={saving}
+          intro="Use this while the official figure isn't out yet. It replaces the estimate for that month only; remove it once the official figure is published."
+        />
+        <ModalBody>
+          <div className="ui-row2">
+            <Field label="Currency" id={`${id}-currency`}>
+              {(control) => (
+                <Select
+                  {...control}
+                  value={currency}
+                  disabled={saving}
+                  onChange={(event) => {
+                    const next = event.target.value as AccountingCurrency;
+                    setCurrency(next);
+                    const list = pendingMonths(
+                      rows.find((row) => row.currency === next)?.officialLastMonth ?? null,
+                    );
+                    setMonth(list[list.length - 1] ?? '');
+                  }}
+                >
+                  {open.map((row) => (
+                    <option key={row.currency}>{row.currency}</option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Month" id={`${id}-month`}>
+              {(control) => (
+                <Select
+                  {...control}
+                  value={chosen}
+                  disabled={saving}
+                  onChange={(event) => setMonth(event.target.value)}
+                >
+                  {months.map((value) => (
+                    <option key={value} value={value}>
+                      {monthText(value)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
           </div>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor={`${id}-change`}>
-              How much prices changed over the month, %
-            </label>
-            <input
-              ref={field}
-              id={`${id}-change`}
-              className="ui-input"
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="0.6"
-              value={text}
-              disabled={saving}
-              aria-invalid={tried && problem ? true : undefined}
-              aria-describedby={`${id}-change-hint`}
-              onChange={(event) => setText(event.target.value)}
-            />
-            {tried && problem ? (
-              <span className="ui-field__error" id={`${id}-change-hint`} role="alert">
-                {problem}
-              </span>
-            ) : (
-              <span className="ui-field__hint" id={`${id}-change-hint`}>
-                For example 0.6 for a month when prices rose 0.6%.
-              </span>
-            )}
-          </div>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={saving}
-            onClick={onClose}
+          <Field
+            label="How much prices changed over the month, %"
+            id={`${id}-change`}
+            hint="For example 0.6 for a month when prices rose 0.6%."
+            error={tried ? problem : null}
           >
+            {(control) => (
+              <Input
+                {...control}
+                ref={field}
+                numeric
+                autoComplete="off"
+                placeholder="0.6"
+                value={text}
+                disabled={saving}
+                onChange={(event) => setText(event.target.value)}
+              />
+            )}
+          </Field>
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <span className="ui-grow" />
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -353,6 +346,7 @@ export default function InflationSettings() {
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
   // The newest read of the rates; an older answer arriving after it would undo a newer save.
   const newest = useRef(0);
+  const toast = useToast();
 
   // A save shows at once from what was sent; the server's own answer is read right after, and if
   // that read fails the page already shows what was saved.
@@ -378,21 +372,23 @@ export default function InflationSettings() {
     },
     [],
   );
-  useEffect(() => {
-    let live = true;
+  const load = useCallback(() => {
     const mine = ++newest.current;
+    setLoadFailed(false);
     inflationApi
       .overview()
       .then((loaded) => {
-        if (!live || mine !== newest.current) return;
-        setOverview(loaded);
-        setLoadFailed(false);
+        if (mine === newest.current) setOverview(loaded);
       })
-      .catch(() => live && setLoadFailed(true));
-    return () => {
-      live = false;
-    };
+      .catch(() => mine === newest.current && setLoadFailed(true));
   }, []);
+  useEffect(() => {
+    load();
+    return () => {
+      newest.current++;
+    };
+  }, [load]);
+  const retry = load;
 
   const remove = async (currency: AccountingCurrency, month: string) => {
     const key = currency + month;
@@ -404,6 +400,7 @@ export default function InflationSettings() {
         ...row,
         manualMonths: row.manualMonths.filter((item) => item.month !== month),
       }));
+      toast.show({ tone: 'success', title: `${currency} ${monthText(month)} removed` });
     } catch {
       setRemoveFailed(key);
     } finally {
@@ -430,39 +427,42 @@ export default function InflationSettings() {
     : null;
 
   return (
-    <section className="shell-card" aria-labelledby="settings-inflation">
-      <h2 id="settings-inflation">Inflation</h2>
-      <p className="shell-setting__hint">
+    <Card labelledBy="settings-inflation">
+      <CardHeader id="settings-inflation" title="Inflation" />
+      <p className="ui-sub">
         Used by the Nominal / Real switch next to the currency, and by every deposit.
       </p>
-      <div className="shell-setting">
-        <div className="shell-setting__text">
-          <span id="settings-inflation-basis" className="shell-setting__label">
-            Rate for real values
-          </span>
-          <p id="settings-inflation-basis-hint" className="shell-setting__hint">
+      <SettingRow
+        title="Rate for real values"
+        titleId="settings-inflation-basis"
+        description={
+          <span id="settings-inflation-basis-hint">
             {basis === 'official'
               ? 'Official indexes, loaded every month. Saved in this browser.'
               : 'Your own yearly rate for each currency; a currency without one follows the official rate. Saved in this browser.'}
-          </p>
-        </div>
-        <SegmentedControl<InflationBasis>
-          name="inflation-basis"
-          labelledBy="settings-inflation-basis"
-          describedBy="settings-inflation-basis-hint"
-          options={basisChoices}
-          value={basis}
-          onChange={setBasis}
-        />
-      </div>
+          </span>
+        }
+        control={
+          <SegmentedControl<InflationBasis>
+            name="inflation-basis"
+            labelledBy="settings-inflation-basis"
+            describedBy="settings-inflation-basis-hint"
+            options={basisChoices}
+            value={basis}
+            onChange={setBasis}
+          />
+        }
+      />
       {overview === null ? (
-        <p
-          className="shell-setting__hint"
-          role={loadFailed ? 'alert' : undefined}
-          aria-busy={!loadFailed}
-        >
-          {loadFailed ? 'Could not load the inflation rates; try again later.' : 'Loading…'}
-        </p>
+        loadFailed ? (
+          <ErrorState onRetry={retry}>
+            Could not load the inflation rates; try again later.
+          </ErrorState>
+        ) : (
+          <p className="ui-sub" aria-busy="true">
+            <Bone width="60%" height={12} />
+          </p>
+        )
       ) : (
         <>
           {rows.map((row) => (
@@ -470,41 +470,35 @@ export default function InflationSettings() {
               key={row.currency}
               row={row}
               basis={basis}
-              onSaved={(rate) =>
-                changed(row.currency, (current) => ({ ...current, personalRatePercent: rate }))
-              }
+              onSaved={(rate) => {
+                changed(row.currency, (current) => ({ ...current, personalRatePercent: rate }));
+                toast.show({ tone: 'success', title: `${row.currency} rate saved` });
+              }}
             />
           ))}
-          <div className="shell-setting">
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">Months not published yet</span>
-              <p className="shell-setting__hint">
-                {estimated.length > 0 && `${estimated.join('; ')}. `}Until a figure comes out, a
-                month uses the last 12-month rate and is marked as estimated. {syncHint}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={!canEnter}
-              onClick={() => setEntering(true)}
-            >
-              Enter a month
-            </button>
-          </div>
+          <SettingRow
+            title="Months not published yet"
+            description={`${estimated.length > 0 ? `${estimated.join('; ')}. ` : ''}Until a figure comes out, a month uses the last 12-month rate and is marked as estimated. ${syncHint ?? ''}`.trim()}
+            control={
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!canEnter}
+                onClick={() => setEntering(true)}
+              >
+                Enter a month
+              </Button>
+            }
+          />
           {entered.map(({ row, month, changePercent }) => {
             const key = row.currency + month;
             const out = row.officialLastMonth !== null && month <= row.officialLastMonth;
             return (
-              <div className="shell-setting" key={key}>
-                <div className="shell-setting__text">
-                  <span className="shell-setting__label">
-                    {row.currency} · {monthText(month)}
-                  </span>
-                  <p
-                    className={`shell-setting__hint${removeFailed === key ? ' shell-setting__hint--error' : ''}`}
-                    role={removeFailed === key ? 'alert' : undefined}
-                  >
+              <SettingRow
+                key={key}
+                title={`${row.currency} · ${monthText(month)}`}
+                description={
+                  <span role={removeFailed === key ? 'alert' : undefined}>
                     {removeFailed === key
                       ? `Could not remove ${row.currency} ${monthText(month)}. Try again.`
                       : `Entered by you · prices ${Number(changePercent) >= 0 ? 'rose' : 'fell'} ${Math.abs(Number(changePercent)).toFixed(2)}% over the month${
@@ -512,18 +506,20 @@ export default function InflationSettings() {
                             ? '. The official figure is out; yours is used until you remove it.'
                             : ''
                         }`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="shell-button shell-button--secondary"
-                  disabled={removing !== null}
-                  aria-label={`Remove ${row.currency} ${monthText(month)}`}
-                  onClick={() => void remove(row.currency, month)}
-                >
-                  Remove
-                </button>
-              </div>
+                  </span>
+                }
+                control={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={removing !== null}
+                    aria-label={`Remove ${row.currency} ${monthText(month)}`}
+                    onClick={() => void remove(row.currency, month)}
+                  >
+                    Remove
+                  </Button>
+                }
+              />
             );
           })}
         </>
@@ -541,9 +537,10 @@ export default function InflationSettings() {
               ].sort((a, b) => a.month.localeCompare(b.month)),
             }));
             setEntering(false);
+            toast.show({ tone: 'success', title: `${currency} ${monthText(month)} entered` });
           }}
         />
       )}
-    </section>
+    </Card>
   );
 }

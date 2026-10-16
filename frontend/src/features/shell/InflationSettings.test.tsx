@@ -379,7 +379,8 @@ describe('INFL-UI Settings → Inflation', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(change).toHaveFocus();
     expect(change).toHaveAttribute('aria-invalid', 'true');
-    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+    // The field's error is its description; focus on the field announces it.
+    expect(change).toHaveAccessibleDescription(
       'Enter the change for one month, between -5% and 20%',
     );
     expect(save).not.toHaveBeenCalled();
