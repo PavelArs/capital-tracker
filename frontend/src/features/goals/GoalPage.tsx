@@ -23,6 +23,7 @@ import {
   bannerTone,
   dateText,
   enteredText,
+  exactDifference,
   flooredText,
   monthYear,
   moscowDay,
@@ -141,10 +142,9 @@ function offsets(goal: Goal): { less: string; more: string } | null {
     goal.scenarios.find((scenario) => scenario.key === key)?.returnPercent;
   const [low, base, high] = [rate('pessimistic'), rate('base'), rate('optimistic')];
   if (low === undefined || base === undefined || high === undefined) return null;
-  return {
-    less: rateText((Number(base) - Number(low)).toFixed(4)),
-    more: rateText((Number(high) - Number(base)).toFixed(4)),
-  };
+  const less = exactDifference(base, low);
+  const more = exactDifference(high, base);
+  return less === null || more === null ? null : { less: rateText(less), more: rateText(more) };
 }
 
 /** The icon of the verdict: a check when it is good news, an alert when it is not. */

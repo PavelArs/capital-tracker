@@ -1,6 +1,7 @@
 import type { HistoryPeriod, HistoryPoint } from '@api/portfolio-history.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
+import { exactDifference } from '../goals/goal-format';
 import { currencySymbols, money, tone } from '../portfolio/format';
 
 const HEIGHT = 290;
@@ -135,15 +136,15 @@ function flowSince(points: HistoryPoint[], index: number): string | null {
   const now = points[index]?.invested ?? null;
   const before = index > 0 ? points[index - 1].invested : null;
   if (now === null || before === null) return null;
-  // Display only, like the tooltip's change in period.
-  const flow = Number(now) - Number(before);
-  return flow === 0 ? null : flow.toFixed(2);
+  // Exact, like the amounts it sits beside: no float error in a cent.
+  const flow = exactDifference(now, before);
+  return flow === '0' ? null : flow;
 }
 
 function signedDifference(value: string | null, start: string | null): string | null {
   if (value === null || start === null) return null;
-  // Display only: the tooltip difference is rounded to cents like every shown amount.
-  return (Number(value) - Number(start)).toFixed(2);
+  // Exact; the amount is rounded to cents only when it is shown.
+  return exactDifference(value, start);
 }
 
 // Value of the portfolio over the period (record-portfolio-snapshots, CHART-PERIODS) and the

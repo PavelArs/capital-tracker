@@ -121,6 +121,28 @@ export function difference(larger: string, smaller: string): string {
   return `${negative ? '-' : ''}${text.slice(0, -2)}.${text.slice(-2)}`;
 }
 
+/**
+ * The exact difference of two decimal strings, at full precision and without trailing zeros
+ * ("0.3" - "0.1" is "0.2"), with no floating-point number in between. Returns null for text
+ * that is not a plain decimal.
+ */
+export function exactDifference(larger: string, smaller: string): string | null {
+  if (!PLAIN.test(larger) || !PLAIN.test(smaller)) return null;
+  const places = (value: string) => value.split('.')[1]?.length ?? 0;
+  const scale = Math.max(places(larger), places(smaller));
+  const atoms = (value: string) => {
+    const negative = value.startsWith('-');
+    const [whole, fraction = ''] = value.replace('-', '').split('.');
+    const total = BigInt(whole + fraction.padEnd(scale, '0'));
+    return negative ? -total : total;
+  };
+  const delta = atoms(larger) - atoms(smaller);
+  const digits = (delta < 0n ? -delta : delta).toString().padStart(scale + 1, '0');
+  const whole = digits.slice(0, digits.length - scale);
+  const fraction = digits.slice(digits.length - scale).replace(/0+$/, '');
+  return `${delta < 0n ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
 const isPositive = (value: string | null): value is string => value !== null && toCents(value) > 0n;
 
 /** A yearly return without trailing zeros: "8", "7.5". */

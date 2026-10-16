@@ -15,7 +15,7 @@
   gap: var(--sp-3);
 }
 
-/* The whole card opens the goal: the name's link stretches over it. Edit and Delete stay above. */
+/* The whole card opens the goal: the name's link stretches over it. */
 .goal-card:hover {
   border-color: var(--line-strong);
   background: var(--raised);
@@ -91,12 +91,6 @@
   margin: 0;
   color: var(--ink-2);
   font-size: var(--fs-sm);
-}
-
-.goal-card__actions {
-  position: relative;
-  display: flex;
-  gap: var(--sp-4);
 }
 
 .goal-figures {

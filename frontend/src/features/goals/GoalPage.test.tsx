@@ -450,3 +450,118 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(alert).not.toHaveTextContent('Nothing was saved');
   });
 });
+
+// Changing and deleting a goal moved from the list cards to the goal page; these were the
+// list's GOAL-TERMS tests and prove the same things from the page.
+describe('GOAL-TERMS: changing and deleting a goal from its page', () => {
+  const flat: Goal = { ...dated, deadline: '2028-12-01' };
+
+  async function edit(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('heading', { name: 'Down payment A' });
+    await user.click(screen.getByRole('button', { name: 'Edit goal' }));
+    return screen.findByRole('dialog', { name: 'Edit goal' });
+  }
+
+  it('goals-20 changes a goal with its entries filled in as they were entered', async () => {
+    const user = userEvent.setup();
+    answers(flat);
+    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...flat, name: 'Flat' });
+    show(flat);
+    const dialog = await edit(user);
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('Down payment A');
+    // goals-20: the sums as the owner entered them, without the padded cents.
+    expect(within(dialog).getByLabelText('Sum to reach')).toHaveValue('22000000');
+    expect(within(dialog).getByLabelText('Expected return, % a year')).toHaveValue('14');
+    expect(within(dialog).getByLabelText(/^You put in a month/)).toHaveValue('150000');
+    await user.clear(within(dialog).getByLabelText('Name'));
+    await user.type(within(dialog).getByLabelText('Name'), 'Flat');
+    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(flat.id, {
+        name: 'Flat',
+        currency: 'RUB',
+        targetAmount: '22000000',
+        deadline: '2028-12-01',
+        expectedReturnPercent: '14',
+        monthlyContribution: '150000',
+      }),
+    );
+  });
+
+  it.each([
+    ['10.0000', '10'],
+    ['100', '100'],
+    ['0.0000', '0'],
+  ])('fills a whole-number return of %s without losing digits', async (stored, shown) => {
+    const user = userEvent.setup();
+    answers({ ...flat, expectedReturnPercent: stored });
+    show(flat);
+    const dialog = await edit(user);
+    expect(within(dialog).getByLabelText('Expected return, % a year')).toHaveValue(shown);
+  });
+
+  it('keeps a stored zero contribution when a goal is changed', async () => {
+    const user = userEvent.setup();
+    answers({ ...flat, monthlyContribution: '0.00' });
+    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue(flat);
+    show(flat);
+    const dialog = await edit(user);
+    expect(within(dialog).getByLabelText(/^You put in a month/)).toHaveValue('0');
+    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        flat.id,
+        expect.objectContaining({ monthlyContribution: '0' }),
+      ),
+    );
+  });
+
+  it('goals-28 saves an overdue goal with its date kept, but asks for a later date when it is moved', async () => {
+    const user = userEvent.setup();
+    answers({ ...flat, deadline: '2020-01-01' });
+    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue(flat);
+    show(flat);
+    let dialog = await edit(user);
+    await user.clear(within(dialog).getByLabelText(/^By/));
+    await user.type(within(dialog).getByLabelText(/^By/), '2020-02-01');
+    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
+    expect(within(dialog).getByLabelText(/^By/)).toHaveAccessibleDescription(
+      'Pick a date after today, or clear it',
+    );
+    expect(update).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Edit goal' }));
+    dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        flat.id,
+        expect.objectContaining({ deadline: '2020-01-01' }),
+      ),
+    );
+  });
+
+  it('goals-08 says a goal changed from its page was saved', async () => {
+    const user = userEvent.setup();
+    answers(flat);
+    vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...flat, name: 'Flat' });
+    show(flat);
+    const dialog = await edit(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
+    expect((await screen.findByText('Goal saved.')).closest('[role="status"]')).not.toBeNull();
+  });
+
+  it('deletes a goal after asking', async () => {
+    const user = userEvent.setup();
+    answers(flat);
+    const remove = vi.spyOn(goalsApi, 'remove').mockResolvedValue();
+    show(flat);
+    await screen.findByRole('heading', { name: 'Down payment A' });
+    await user.click(screen.getByRole('button', { name: 'Delete goal' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
+    expect(dialog).toHaveTextContent('Down payment A and its plan are removed');
+    expect(remove).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(flat.id));
+  });
+});

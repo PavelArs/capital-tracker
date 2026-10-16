@@ -15,7 +15,7 @@ import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
-import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
+import { GoalDialog } from './GoalDialogs';
 import { GoalBar, GoalFigures } from './GoalProgress';
 import {
   dateText,
@@ -29,15 +29,7 @@ import {
 import '../shell/shell-page.css';
 import './goals.css';
 
-function GoalCard({
-  goal,
-  onEdit,
-  onDelete,
-}: {
-  goal: Goal;
-  onEdit: (goal: Goal) => void;
-  onDelete: (goal: Goal) => void;
-}) {
+function GoalCard({ goal }: { goal: Goal }) {
   return (
     <Card as="li" className="goal-card">
       <div className="goal-card__head">
@@ -60,36 +52,27 @@ function GoalCard({
       <GoalFigures goal={goal} />
       <GoalBar goal={goal} />
       <p className="goal-card__verdict">{verdict(goal)}</p>
-      {/* The name's link covers the card; these two stay above it. */}
-      <div className="goal-card__actions">
-        <Button variant="link" onClick={() => onEdit(goal)}>
-          Edit
-        </Button>
-        <Button variant="link" onClick={() => onDelete(goal)}>
-          Delete
-        </Button>
-      </div>
     </Card>
   );
 }
 
-// GOAL-LIST: every goal with where the portfolio stands against it and what it takes.
+// GOAL-LIST: every goal with where the portfolio stands against it and what it takes. The whole
+// card opens the goal; changing or deleting one is done on its page.
 export default function GoalsPage() {
   const { data: list, error, reload } = useCachedRead(cachedReads.goals);
-  const [editing, setEditing] = useState<Goal | 'new' | null>(null);
-  const [deleting, setDeleting] = useState<Goal | null>(null);
+  const [adding, setAdding] = useState(false);
   const { main } = useMainCurrency();
   const navigate = useNavigate();
   const location = useLocation();
-  // goals-08, goals-09: a toast says what was just done. A goal deleted on its own page
-  // arrives here with word of it, said once; going back to this entry does not say it again.
+  // goals-09: a toast says what was just done. A goal deleted on its own page arrives here with
+  // word of it, said once; going back to this entry does not say it again.
   const toast = useToast();
   const page = useRef<HTMLDivElement>(null);
   const arrivedDeleted = useRef(
     (location.state as { notice?: string } | null)?.notice === 'deleted',
   );
-  // After a delete the button that opened the dialog is gone: the keyboard goes to the page's
-  // heading, not to the page body.
+  // After a delete the page the keyboard was on is gone: it goes to this page's heading, not to
+  // the page body.
   const [refocus, setRefocus] = useState(0);
   useEffect(() => {
     if (refocus > 0) page.current?.querySelector<HTMLElement>('h1')?.focus();
@@ -107,7 +90,7 @@ export default function GoalsPage() {
   );
 
   const add = (
-    <Button icon="plus" onClick={() => setEditing('new')}>
+    <Button icon="plus" onClick={() => setAdding(true)}>
       Add goal
     </Button>
   );
@@ -125,7 +108,7 @@ export default function GoalsPage() {
           title="No goals yet"
           icon={<Icon name="target" />}
           actions={
-            <Button variant="primary" onClick={() => setEditing('new')}>
+            <Button variant="primary" onClick={() => setAdding(true)}>
               Add goal
             </Button>
           }
@@ -142,7 +125,7 @@ export default function GoalsPage() {
           {stale && <Banner tone="warn">{stale}</Banner>}
           <ul className="goal-list">
             {ordered(list.items).map((goal) => (
-              <GoalCard key={goal.id} goal={goal} onEdit={setEditing} onDelete={setDeleting} />
+              <GoalCard key={goal.id} goal={goal} />
             ))}
           </ul>
           <Banner tone="neutral" icon="info">
@@ -150,33 +133,13 @@ export default function GoalsPage() {
           </Banner>
         </>
       )}
-      {editing !== null && (
+      {adding && (
         <GoalDialog
-          goal={editing === 'new' ? undefined : editing}
           defaultCurrency={main ?? 'USD'}
-          onClose={() => setEditing(null)}
+          onClose={() => setAdding(false)}
           onSaved={(saved) => {
             // A new goal opens on its own page, which says it was added.
-            if (editing === 'new') {
-              navigate(`/goals/${saved.id}`, { state: { notice: 'added' } });
-              return;
-            }
-            setEditing(null);
-            toast.show({ tone: 'success', title: 'Goal saved.', detail: verdict(saved) });
-            reload(true);
-          }}
-        />
-      )}
-      {deleting !== null && (
-        <DeleteGoalDialog
-          goal={deleting}
-          onClose={() => setDeleting(null)}
-          onDeleted={() => {
-            setDeleting(null);
-            toast.show({ tone: 'success', title: 'Goal deleted.' });
-            setRefocus((count) => count + 1);
-            // The other goals stay on screen while the list is asked for again.
-            reload(true);
+            navigate(`/goals/${saved.id}`, { state: { notice: 'added' } });
           }}
         />
       )}
