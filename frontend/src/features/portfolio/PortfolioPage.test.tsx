@@ -973,6 +973,25 @@ describe('Portfolio after inflation', () => {
     // A row without a real reading is a dash; the nominal profit is a switch away.
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
   });
+  it('PF-ONE-REAL-PARTIAL-NOTE words the partial-figures note for the Real reading only', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({
+        totalValue: null,
+        costBasis: null,
+        unknownCostCount: 1,
+        unrealizedPnl: null,
+        knownUnrealizedPnl: '30000',
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(within(summary()).getByRole('img').getAttribute('aria-label')).toMatch(/cost basis/);
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    const note = within(summary()).getByRole('img').getAttribute('aria-label');
+    expect(note).toMatch(/current value/);
+    expect(note).not.toMatch(/cost basis|purchase price|P&L/);
+  });
   it('PF-ONE-REAL-UNKNOWN-PARTIAL leaves the known nominal cost and profit out under Real', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(

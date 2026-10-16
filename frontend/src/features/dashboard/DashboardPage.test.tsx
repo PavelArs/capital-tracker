@@ -950,6 +950,24 @@ describe('Dashboard after inflation', () => {
     ).toBeInTheDocument();
   });
 
+  it('DASH-ONE-REAL-NO-PROFIT gives the reason when the real reading exists but states no profit', async () => {
+    setValueView('real');
+    get.mockImplementation(async (period: HistoryPeriod) =>
+      history({
+        period,
+        real: {
+          official: { invested: '96800', profit: null, profitPercent: null, estimated: false },
+          personal: null,
+        },
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const line = profitLine(hero, 'Real profit or loss to date');
+    expect(line).toHaveTextContent('—No real profit');
+    expect(hero).not.toHaveTextContent(/\+\$25,000\.00|net invested|put in/i);
+  });
+
   it('DASH-ONE-NOMINAL-UNKNOWN keeps quiet about a real profit that is missing', async () => {
     get.mockImplementation(async (period: HistoryPeriod) =>
       history({ period, real: { official: null, personal: null } }),
