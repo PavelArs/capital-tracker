@@ -556,6 +556,19 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
   });
 
+  it('DEP-ACCOUNT says the value leaves out the interest of an account with no rate entered', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { depositsValue: '20000', interestMissingDepositCount: 2 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(
+      screen.getByText(
+        '2 accounts have days with no rate entered; the interest of those days is not counted.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('portfolio-03 says under Cost basis and Unrealized P&L that bank deposits are left out', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin], { depositsValue: '20000' }),

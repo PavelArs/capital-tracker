@@ -24,6 +24,7 @@ import {
   capitalizedInterest,
   dateText,
   earlyCloseText,
+  firstRateDate,
   interestText,
   money,
   movementText,
@@ -216,7 +217,11 @@ function Checks({
   const paged = usePages(checks, (check) => check.id);
   const narrow = useNarrowScreen();
   const difference = (row: DepositDetail['checks'][number]) =>
-    Number(row.difference) === 0 ? '—' : money(row.difference, currency, true);
+    row.difference === null
+      ? 'Not compared'
+      : Number(row.difference) === 0
+        ? '—'
+        : money(row.difference, currency, true);
   if (narrow)
     return (
       <>
@@ -377,9 +382,16 @@ export default function DepositPage() {
               <span>{note}</span>
             </p>
           )}
+          {deposit.interestMissing && (
+            <p className="ui-banner ui-banner--warn" role="note">
+              {deposit.ratePercent === null
+                ? `No rate entered, so the interest is not counted. The balance is what you put in, less what you took out. Enter the rate from ${dateText(deposit.startDate)} to count it.`
+                : `Interest before ${dateText(firstRateDate(deposit.rates))} is not counted: no rate was entered for those days. Enter the rate from ${dateText(deposit.startDate)} to count them.`}
+            </p>
+          )}
           <div className="deposit-stats">
             <Stat label="In the deposit" value={money(deposit.principal, own)} />
-            {deposit.interestEarned !== undefined && (
+            {deposit.interestEarned != null && (
               <Stat
                 label="Interest earned"
                 value={money(deposit.interestEarned, own)}
@@ -390,11 +402,13 @@ export default function DepositPage() {
                 }
               />
             )}
-            <Stat
-              label="Earned, not posted yet"
-              value={money(deposit.accrued, own)}
-              hint="Until the next interest date"
-            />
+            {deposit.accrued !== null && (
+              <Stat
+                label="Earned, not posted yet"
+                value={money(deposit.accrued, own)}
+                hint="Until the next interest date"
+              />
+            )}
             {deposit.capitalized && (
               <Stat
                 label="Interest added so far"
@@ -403,7 +417,7 @@ export default function DepositPage() {
               />
             )}
             {/* A capitalizing deposit closed early can still owe the interest it kept. */}
-            {(!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
+            {deposit.due !== null && (!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
               <Stat
                 label="Interest to be paid out"
                 value={money(deposit.due, own)}
@@ -438,9 +452,17 @@ export default function DepositPage() {
               <Stat
                 label="Last check"
                 value={
-                  Number(check.difference) === 0 ? 'Matches' : money(check.difference, own, true)
+                  check.difference === null
+                    ? 'Not compared'
+                    : Number(check.difference) === 0
+                      ? 'Matches'
+                      : money(check.difference, own, true)
                 }
-                hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`}
+                hint={
+                  check.calculated === null
+                    ? `${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}. The app cannot say what the bank should show while the interest is missing.`
+                    : `${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`
+                }
               />
             )}
           </div>
@@ -469,6 +491,7 @@ export default function DepositPage() {
                 <div>
                   <dt>Rate</dt>
                   <dd>
+                    {deposit.rates.length === 0 && <span>No rate entered</span>}
                     {deposit.rates.map((rate) => (
                       <span key={rate.effectiveFrom} className="deposit-terms__rate">
                         {rate.ratePercent}% a year from {dateText(rate.effectiveFrom)}
@@ -492,10 +515,12 @@ export default function DepositPage() {
                   <dt>Term</dt>
                   <dd>{periodText(deposit)}</dd>
                 </div>
-                <div>
-                  <dt>Closing early</dt>
-                  <dd>{earlyCloseText[deposit.earlyClose]}</dd>
-                </div>
+                {deposit.kind !== 'account' && (
+                  <div>
+                    <dt>Closing early</dt>
+                    <dd>{earlyCloseText[deposit.earlyClose]}</dd>
+                  </div>
+                )}
               </dl>
             </section>
 
@@ -556,6 +581,7 @@ export default function DepositPage() {
             <MovementDialog
               id={deposit.id}
               currency={own}
+              depositKind={deposit.kind}
               onClose={() => setDialog(null)}
               onSaved={saved}
             />

@@ -136,6 +136,8 @@ export interface PortfolioDeposit {
   name: string;
   bank: string;
   value: bigint | null;
+  /** An account with no rate entered: its value leaves out interest that is not known. */
+  interestMissing?: boolean;
 }
 const NO_RATES: FxRates = { USD: [], EUR: [] };
 export const usdOnly = () => new FxConverter(NO_RATES, 'USD');
@@ -697,9 +699,11 @@ export function projectPortfolio(
 
   let depositValue = 0n;
   let unratedDepositCount = 0;
+  let interestMissingDepositCount = 0;
   for (const deposit of deposits) {
     if (deposit.value === null) unratedDepositCount++;
     else if (deposit.value > 0n) {
+      if (deposit.interestMissing) interestMissingDepositCount++;
       depositValue += deposit.value;
       subtotal += deposit.value;
       add(byAsset, `deposit:${deposit.id}`, deposit.name, deposit.value);
@@ -714,7 +718,12 @@ export function projectPortfolio(
     at: at.toISOString(),
     currency: fx.currency as AccountingCurrency,
     rates: fx.ratesOn(today),
-    completeness: complete ? ('complete' as const) : ('incomplete' as const),
+    // The total of an account whose interest is missing is a floor: it stays a figure, marked
+    // incomplete so history and goals do not take it for exact.
+    completeness:
+      complete && interestMissingDepositCount === 0
+        ? ('complete' as const)
+        : ('incomplete' as const),
     totalValue: complete ? formatProduct(subtotal) : null,
     pricedSubtotal: formatProduct(subtotal),
     missingPriceCount,
@@ -722,6 +731,7 @@ export function projectPortfolio(
     unavailableAccountCount,
     depositsValue: formatProduct(depositValue),
     unratedDepositCount,
+    interestMissingDepositCount,
     costBasis: costComplete ? formatAtoms(knownCost) : null,
     knownCostSubtotal: formatAtoms(knownCost),
     unknownCostCount,

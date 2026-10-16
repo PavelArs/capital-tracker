@@ -13,6 +13,10 @@ import {
 
 export { parseUuid };
 
+/** A term deposit runs to its end date at a rate; an account has a balance and no term (DEP-ACCOUNT). */
+export const depositKinds = ['term-deposit', 'account'] as const;
+export type DepositKind = (typeof depositKinds)[number];
+
 export interface DepositInput {
   requestId: string;
   name: string;
@@ -24,7 +28,9 @@ export interface DepositInput {
   capitalized: boolean;
   dayBasis: DayBasis;
   earlyClose: EarlyCloseRule;
-  ratePercent: string;
+  kind: DepositKind;
+  /** Null for an account entered without a rate: it earns no interest. */
+  ratePercent: string | null;
   amount: string;
 }
 export interface MovementInput {
@@ -126,9 +132,15 @@ const termKeys = [
   'capitalized',
   'dayBasis',
   'earlyClose',
+  'kind',
   'ratePercent',
   'amount',
 ] as const;
+
+/** The keys an answer may leave out: a deposit without a kind is a term deposit (as before). */
+const optionalKeys = ['kind', 'ratePercent'] as const;
+/** An account pays out no term: only these schedules fit it. */
+const accountPayouts = ['daily', 'monthly'] as const;
 
 function depositTerms(
   record: Record<string, unknown>,
@@ -137,6 +149,11 @@ function depositTerms(
   const startDate = parseDate(record.startDate);
   const endDate = record.endDate === null ? null : parseDate(record.endDate);
   const payout = member(record.payout, payouts);
+  const kind = record.kind === undefined ? 'term-deposit' : member(record.kind, depositKinds);
+  if (kind === 'account') {
+    // An account has no term: no end date, and interest is paid out or added as it is earned.
+    if (endDate !== null || !(accountPayouts as readonly string[]).includes(payout)) return bad();
+  }
   if (endDate !== null && endDate <= startDate) return bad();
   // A bank term never runs this long; the figures are replayed day by day to the end date.
   if (
@@ -156,7 +173,11 @@ function depositTerms(
     capitalized: record.capitalized,
     dayBasis: member(record.dayBasis, dayBases),
     earlyClose: member(record.earlyClose, earlyCloseRules),
-    ratePercent: parseRate(record.ratePercent),
+    kind,
+    ratePercent:
+      kind === 'account' && (record.ratePercent === undefined || record.ratePercent === null)
+        ? null
+        : parseRate(record.ratePercent),
     amount: parseAmount(record.amount),
   };
 }
@@ -166,14 +187,25 @@ export function parseDeposit(
   payouts: readonly PayoutSchedule[] = offeredPayoutSchedules,
 ): DepositInput {
   const keys = ['requestId', ...termKeys];
-  const record = object(input, keys, keys);
+  const record = object(
+    input,
+    keys,
+    keys.filter((key) => !(optionalKeys as readonly string[]).includes(key)),
+  );
   const terms = depositTerms(record, payouts);
   return { requestId: parseUuid(record.requestId), ...terms };
 }
 
 /** DEP-PREVIEW: the body of adding a deposit without its request id; only offered schedules. */
 export function parseDepositPreview(input: unknown): DepositTermsInput {
-  return depositTerms(object(input, termKeys, termKeys), offeredPayoutSchedules);
+  return depositTerms(
+    object(
+      input,
+      termKeys,
+      termKeys.filter((key) => !(optionalKeys as readonly string[]).includes(key)),
+    ),
+    offeredPayoutSchedules,
+  );
 }
 
 export function parseMovement(input: unknown): MovementInput {

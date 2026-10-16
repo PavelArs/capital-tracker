@@ -11,6 +11,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
+import { accountsWithoutRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
@@ -385,6 +386,11 @@ function Summary({
           <Link className="shell-link" to="/settings">
             Settings
           </Link>
+        </p>
+      )}
+      {!!portfolio.interestMissingDepositCount && (
+        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+          {accountsWithoutRate(portfolio.interestMissingDepositCount)}
         </p>
       )}
       {portfolio.stalePriceCount > 0 && (

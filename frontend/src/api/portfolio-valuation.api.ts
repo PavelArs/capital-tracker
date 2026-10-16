@@ -130,6 +130,8 @@ export interface PortfolioValuation {
   depositsValue: string;
   /** Deposits whose currency has no fresh Bank of Russia rate; left out of the value. */
   unratedDepositCount: number;
+  /** Accounts with no rate entered, in the value at what was put in; absent in an older answer. */
+  interestMissingDepositCount?: number;
   costBasis: string | null;
   knownCostSubtotal: string;
   unknownCostCount: number;

@@ -444,7 +444,7 @@ export class OwnerExportService {
     const deposits: Row[] = await manager.query(
       `SELECT id, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
           to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis",
-          "earlyClose", "createdAt"
+          "earlyClose", kind, "createdAt"
         FROM bank_deposits WHERE "ownerId"=$1`,
       [owner],
     );
@@ -482,6 +482,7 @@ export class OwnerExportService {
         capitalized: row.capitalized === true,
         dayBasis: String(row.dayBasis),
         earlyClose: String(row.earlyClose),
+        kind: String(row.kind),
         createdAt: iso(row.createdAt),
       })),
       depositRates: rates.map((row) => ({

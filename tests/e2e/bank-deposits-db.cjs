@@ -19,7 +19,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 68;
+const MIGRATIONS = 69;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -260,6 +260,153 @@ async function daily(db, service, owner) {
   console.log('PASS DEP-DAILY');
 }
 
+async function account(db, service, owner) {
+  stage = 'DEP-ACCOUNT a savings or current account: no term, and no rate entered is not a rate';
+  const terms = {
+    name: 'Current A',
+    bank: 'Synthetic Bank',
+    currency: 'RUB',
+    startDate: '2026-07-01',
+    endDate: null,
+    payout: 'monthly',
+    capitalized: true,
+    dayBasis: 'actual-365',
+    earlyClose: 'keeps-interest',
+    kind: 'account',
+    ratePercent: null,
+    amount: '100000.00',
+  };
+  const made = await service.create(owner, terms);
+  assert.equal(made.kind, 'account');
+  assert.equal(made.ratePercent, null, 'An account entered without a rate shows none, not 0%');
+  assert.equal(made.status, 'active', 'An account has no term to end');
+  assert.equal(made.atMaturity, null);
+  const read = (await service.list(owner, '2026-07-04')).items.find((item) => item.id === made.id);
+  assert.equal(read.kind, 'account');
+  assert.equal(read.principal, '100000.00');
+  assert.equal(read.balance, '100000.00', 'What was put in, no interest is counted');
+  // Missing is not zero: with no rate the interest figures are unknown, not 0.00.
+  assert.equal(read.interestMissing, true);
+  assert.deepEqual(
+    [read.accrued, read.due, read.interestEarned, read.nextPayout, read.real.official],
+    [null, null, null, null, null],
+  );
+  const listed = await service.list(owner, '2026-07-04');
+  assert.equal(listed.interestMissingCount, 1, 'The list says its total leaves interest out');
+  const shown = await service.get(owner, made.id, '2026-07-04');
+  assert.deepEqual(shown.periods, [], 'No periods of interest are listed without a rate');
+  // The rate the bank pays from a date is added later, and interest is earned from that date.
+  await service.addRate(owner, made.id, { effectiveFrom: '2026-08-01', ratePercent: '6' });
+  const rated = await service.get(owner, made.id, '2026-09-01');
+  assert.equal(rated.ratePercent, '6');
+  assert.notEqual(rated.balance, '100000.00', 'Interest from the rate date is added');
+  // The days before the first rate stay without one: the interest of that time is still unknown.
+  assert.equal(rated.interestMissing, true, 'A rate from a later date leaves the earlier days open');
+  assert.notEqual(rated.interestEarned, null, 'The interest from the rate date is stated');
+  assert.notEqual(rated.accrued, null);
+  assert.equal((await service.list(owner, '2026-09-01')).interestMissingCount, 1);
+  // The periods that contain a day before the first rate are not listed, and a check against the
+  // bank states no calculated balance and no difference: both would be a guess.
+  assert.deepEqual(
+    rated.periods.filter((period) => period.from < '2026-08-01'),
+    [],
+    'No period lists interest for days that had no rate',
+  );
+  await service.addCheck(owner, made.id, { checkedOn: '2026-08-15', bankBalance: '100400.00' });
+  const checked = await service.get(owner, made.id, '2026-09-01');
+  assert.deepEqual(
+    [checked.lastCheck.calculated, checked.lastCheck.difference, checked.checks[0].calculated],
+    [null, null, null],
+    'A check against an account with missing interest is not compared',
+  );
+  // A payout whose period starts before the first rate is not forecast, and no real gain is stated.
+  const partial = await service.create(owner, { ...terms, name: 'Current P' });
+  await service.addRate(owner, partial.id, { effectiveFrom: '2026-07-15', ratePercent: '6' });
+  const midway = await service.get(owner, partial.id, '2026-07-20');
+  assert.equal(midway.interestMissing, true);
+  assert.equal(midway.nextPayout, null, 'The next payout would count the days without a rate as 0%');
+  assert.ok(
+    [midway.real.official, midway.real.personal].every((real) => real === null || real.gain === null),
+    'No real gain while interest is missing',
+  );
+  // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
+  const unrated = await service.get(owner, made.id, '2026-07-15');
+  assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');
+  assert.equal(unrated.balance, '100000.00');
+  assert.equal(rated.status, 'active');
+  const withdrawn = await service.addMovement(owner, made.id, {
+    date: '2026-09-02',
+    kind: 'withdrawal',
+    amount: '10000.00',
+  });
+  assert.equal(withdrawn.status, 'active', 'Taking money out does not close an account');
+  // While the interest is missing the app's money is a floor: the bank may have credited more, so
+  // a larger withdrawal is recorded (the replay takes out at most what it holds), but not once a
+  // rate covers the whole time.
+  const floor = await service.create(owner, { ...terms, name: 'Current F', amount: '1000.00' });
+  const bigger = await service.addMovement(owner, floor.id, {
+    date: '2026-07-10',
+    kind: 'withdrawal',
+    amount: '1050.00',
+  });
+  assert.equal(bigger.status, 'active');
+  assert.equal(bigger.balance, '0.00');
+  const sure = await service.create(owner, { ...terms, name: 'Current G', amount: '1000.00' });
+  await service.addRate(owner, sure.id, { effectiveFrom: '2026-07-01', ratePercent: '6' });
+  await rejected(
+    () =>
+      service.addMovement(owner, sure.id, { date: '2026-07-10', kind: 'withdrawal', amount: '1050.00' }),
+    422,
+  );
+  // Emptying an account leaves it open: it takes the next top-up, and a term deposit does not.
+  const empty = await service.create(owner, { ...terms, name: 'Current Z', amount: '100.00' });
+  const zero = await service.addMovement(owner, empty.id, {
+    date: '2026-07-10',
+    kind: 'withdrawal',
+    amount: '100.00',
+  });
+  assert.equal(zero.status, 'active', 'An emptied account is not closed');
+  assert.equal(zero.balance, '0.00');
+  const refilled = await service.addMovement(owner, empty.id, {
+    date: '2026-07-20',
+    kind: 'topup',
+    amount: '50.00',
+  });
+  assert.equal(refilled.status, 'active');
+  assert.equal(refilled.balance, '50.00');
+  // The first rate of an account may begin on its opening day; a term deposit's opening rate may not
+  // be changed that day.
+  const opened = await service.create(owner, { ...terms, name: 'Current S' });
+  await service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '6' });
+  assert.equal((await service.get(owner, opened.id, '2026-07-02')).ratePercent, '6');
+  const covered = await service.get(owner, opened.id, '2026-07-02');
+  assert.equal(covered.interestMissing, false, 'A rate from the opening day covers the whole time');
+  assert.notEqual(covered.nextPayout, null, 'A fully covered period is forecast');
+  assert.notEqual(covered.interestEarned, null);
+  await rejected(
+    () => service.addRate(owner, opened.id, { effectiveFrom: '2026-07-01', ratePercent: '7' }),
+    422,
+  );
+  const fixed = await service.create(owner, { ...savings, name: 'Term D' });
+  await rejected(
+    () => service.addRate(owner, fixed.id, { effectiveFrom: '2026-07-01', ratePercent: '5' }),
+    422,
+  );
+  // An account has no term: no end date, and no payout that waits for one.
+  await rejected(() => service.create(owner, { ...terms, endDate: '2027-07-01' }), 400);
+  await rejected(() => service.create(owner, { ...terms, payout: 'at-end' }), 400);
+  await rejected(() => service.create(owner, { ...terms, payout: 'quarterly' }), 400);
+  // A term deposit still needs its rate.
+  await rejected(() => service.create(owner, { ...savings, name: 'No rate', ratePercent: null }), 400);
+  // The database refuses an account that still has a term, whatever the application sends.
+  const term = await service.create(owner, { ...savings, name: 'Term C' });
+  await assert.rejects(
+    () => db.query(`UPDATE bank_deposits SET kind='account' WHERE id=$1`, [term.id]),
+    /bank_deposits_account_has_no_term/,
+  );
+  console.log('PASS DEP-ACCOUNT');
+}
+
 async function movements(db, service, owner, other, ids) {
   stage = 'synthetic movements: payouts, withdrawals and what a deposit could not have had';
   await rejected(
@@ -396,9 +543,9 @@ async function backfill() {
       timeout: 60000,
     });
     assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
-    assert.match(migrated.stdout, /Migrations applied: 5/);
+    assert.match(migrated.stdout, /Migrations applied: 6/);
     const events = await prior.query(
-      `SELECT version, kind, name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
+      `SELECT version, kind, "depositKind", name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
           to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,
           "ratePercent"::text AS rate, comment, to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI') AS at
         FROM bank_deposit_events WHERE "depositId"=$1 ORDER BY version`,
@@ -406,17 +553,17 @@ async function backfill() {
     );
     assert.deepEqual(events, [
       {
-        version: 1, kind: 'opened', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        version: 1, kind: 'opened', depositKind: 'term-deposit', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
         day: '2026-01-01', endDate: '2027-01-01', payout: 'monthly', movementKind: null,
         amount: '5000.00', rate: '11.5000', comment: null, at: '2026-01-02T08:00',
       },
       {
-        version: 2, kind: 'movement-added', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        version: 2, kind: 'movement-added', depositKind: 'term-deposit', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
         day: '2026-03-01', endDate: null, payout: null, movementKind: 'topup',
         amount: '700.10', rate: null, comment: 'Later top-up', at: '2026-03-02T09:00',
       },
       {
-        version: 3, kind: 'movement-added', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
+        version: 3, kind: 'movement-added', depositKind: 'term-deposit', name: 'Old deposit', bank: 'Synthetic Bank', currency: 'RUB',
         day: '2026-02-01', endDate: null, payout: null, movementKind: 'withdrawal',
         amount: '100.00', rate: null, comment: null, at: '2026-03-03T09:00',
       },
@@ -502,6 +649,35 @@ async function history(db, service, owner, other) {
   const created = await audit.read(owner, { change: 'created' });
   assert.ok(created.events.some((event) => event.entity === 'deposit'), 'In the unfiltered list');
   assert.deepEqual(await events(other), [], 'An owner with no deposit sees none of it');
+
+  // An account is still an account in History after it is deleted: the row that said so is gone.
+  const account = await service.create(owner, {
+    ...savings,
+    kind: 'account',
+    name: 'History B',
+    endDate: null,
+    ratePercent: null,
+  });
+  await service.remove(owner, account.id);
+  const accountEvents = (await events(owner)).filter((event) => event.entityId === account.id);
+  assert.deepEqual(accountEvents.map(action), ['Account opened', 'Account deleted']);
+  assert.deepEqual(
+    (
+      await db.query(
+        'SELECT "depositKind" FROM bank_deposit_events WHERE "depositId"=$1 ORDER BY version',
+        [account.id],
+      )
+    ).map((row) => row.depositKind),
+    ['account', 'account'],
+  );
+  assert.deepEqual(
+    (
+      await db.query('SELECT DISTINCT "depositKind" FROM bank_deposit_events WHERE "depositId"=$1', [
+        made.id,
+      ])
+    ).map((row) => row.depositKind),
+    ['term-deposit'],
+  );
   console.log('PASS DEP-HISTORY');
 }
 
@@ -681,6 +857,7 @@ async function wholePortfolio(db, owner) {
   const rub = await valuation.read(owner, { currency: 'RUB' }, now);
   assert.equal(rub.completeness, 'complete');
   assert.equal(rub.unratedDepositCount, 0);
+  assert.equal(rub.interestMissingDepositCount, 0, 'Both deposits have a rate');
   assert.equal(rub.depositsValue, rub.totalValue, 'Nothing but deposits is held');
   assert.match(rub.totalValue, /^557710\.9[56]/, 'The same sum the deposits list states');
   assert.deepEqual(rub.allocation.byType.map((slice) => [slice.key, slice.percent]), [
@@ -826,6 +1003,7 @@ async function main() {
     });
     const ids = await accrual(db, service, owner.id);
     await daily(db, service, fourth.id);
+    await account(db, service, fourth.id);
     await movements(db, service, owner.id, other.id, ids);
     await checks(db, service, owner.id, ids);
     await owners(db, service, owner.id, other.id, ids);

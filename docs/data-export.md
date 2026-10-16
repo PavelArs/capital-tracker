@@ -26,7 +26,7 @@ number) is written with a leading `'`.
 | `wallets.csv` | tracked address | network, address, wallet label and the account it belongs to. |
 | `operations.csv` | journal entry | every buy, sell, income, expense, gift, fee, transfer, swap, reward, opening balance, deposit and withdrawal. |
 | `chain-transactions.csv` | raw blockchain transaction leg | amounts in coins, the owner's classification and the operation it produced. |
-| `deposits.csv` | bank deposit | name, bank, currency, term, payout schedule, capitalization, day basis and early-close rule as entered. |
+| `deposits.csv` | bank deposit | name, bank, currency, term, payout schedule, capitalization, day basis, early-close rule and `kind` (`term-deposit`, or `account` for a savings or current account with no term) as entered. |
 | `deposit-rates.csv` | rate of a deposit from a date on | annual rate in percent; the first row of a deposit is the rate it opened with. |
 | `deposit-movements.csv` | top-up, withdrawal or interest payout | in the order the bank dated them; `recorded_at` is when the owner entered it and `position` is the order of entry within the deposit, which settles two movements of one day. |
 | `deposit-checks.csv` | balance read in the bank's own app | the figure the owner compared with the computed balance; of two checks on one day the higher `position` was entered later. |

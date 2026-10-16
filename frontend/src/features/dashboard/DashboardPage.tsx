@@ -8,6 +8,7 @@ import {
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { accountsWithoutRate } from '../deposits/deposit-format';
 import NearestGoal from '../goals/NearestGoal';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
@@ -81,7 +82,7 @@ export function unknownCostNote(portfolio: PortfolioValuation | null): string | 
 }
 
 const INCOMPLETE_NOTE =
-  'Incomplete: some assets had no price or rate in this period, so their value is not included. Add the missing prices on the Portfolio page.';
+  'Incomplete: some assets had no price or rate, or an account had no interest rate, in this period, so their value is not fully included. Add the missing prices on the Portfolio page.';
 
 // The prototype dims the cents of the big number: $42,738.84 with .84 muted.
 function Amount({ text }: { text: string }) {
@@ -363,6 +364,11 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
+          {portfolio !== null && !!portfolio.interestMissingDepositCount && (
+            <p className="ui-banner ui-banner--warn dashboard-banner" role="note">
+              {accountsWithoutRate(portfolio.interestMissingDepositCount)}
+            </p>
+          )}
           {portfolio !== null && portfolio.stalePriceCount > 0 && (
             <p className="ui-banner ui-banner--warn dashboard-banner" role="note">
               {portfolio.stalePriceCount === 1

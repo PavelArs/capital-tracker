@@ -190,6 +190,7 @@ async function wholePortfolio(db, s, f) {
       'unavailableAccountCount',
       'depositsValue',
       'unratedDepositCount',
+      'interestMissingDepositCount',
       'costBasis',
       'knownCostSubtotal',
       'unknownCostCount',
@@ -215,7 +216,11 @@ async function wholePortfolio(db, s, f) {
   assert.equal(report.at, now.toISOString());
   assert.equal(report.completeness, 'complete');
   assert.equal(report.totalValue, '10000');
-  assert.deepEqual([report.depositsValue, report.unratedDepositCount], ['0', 0], 'No bank deposits');
+  assert.deepEqual(
+    [report.depositsValue, report.unratedDepositCount, report.interestMissingDepositCount],
+    ['0', 0, 0],
+    'No bank deposits',
+  );
   assert.equal(report.stalePriceCount, 1);
   assert.equal(report.costBasis, '9100');
   assert.equal(report.unrealizedPnl, '900');
@@ -595,7 +600,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 68);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 69);
     const [owner, other, third, fourth] =
       await db.query(`INSERT INTO users(email,password) VALUES
       ('portfolio-owner@example.invalid','synthetic-not-a-hash'),

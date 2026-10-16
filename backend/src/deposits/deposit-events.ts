@@ -32,12 +32,12 @@ export async function recordDepositEvent(
 ): Promise<void> {
   await manager.query(
     `INSERT INTO bank_deposit_events
-       (id, "ownerId", "depositId", version, kind, name, bank, currency, "occurredOn", "endDate",
-        payout, "movementKind", amount, "ratePercent", "bankBalance", comment)
+       (id, "ownerId", "depositId", version, kind, "depositKind", name, bank, currency, "occurredOn",
+        "endDate", payout, "movementKind", amount, "ratePercent", "bankBalance", comment)
      SELECT $1::uuid, d."ownerId", d.id,
        (SELECT coalesce(max(e.version), 0) + 1 FROM bank_deposit_events e
          WHERE e."ownerId" = d."ownerId" AND e."depositId" = d.id),
-       $4::text, d.name, d.bank, d.currency, $5::date,
+       $4::text, d.kind, d.name, d.bank, d.currency, $5::date,
        CASE WHEN $4::text = 'opened' THEN d."endDate" END,
        CASE WHEN $4::text = 'opened' THEN d.payout END,
        $6::text, $7::numeric, $8::numeric, $9::numeric, $10::text
