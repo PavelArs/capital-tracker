@@ -24,7 +24,6 @@ import AssetIcon from '../shell/AssetIcon';
 import LoadMore, { PAGE_SIZE } from '../shell/InfiniteScroll';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
-import { dayHeading, time } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
 import HistoryDrawer from './HistoryDrawer';
 import {
@@ -33,6 +32,8 @@ import {
   changeTones,
   entityLabels,
   glyphOf,
+  moscowClock,
+  moscowDayHeading,
   summary,
 } from './history-format';
 import '../shell/shell-page.css';
@@ -76,7 +77,7 @@ function Row({
       aria-current={current || undefined}
       onClick={onOpen}
     >
-      <td className="ui-num history-when">{time(event.at).replace(' UTC', '')}</td>
+      <td className="ui-num history-when">{moscowClock(event.at)}</td>
       <td>
         <ChangeBadge change={event.change} />
       </td>
@@ -122,7 +123,7 @@ function Item({
           title={event.title}
           detail={summary(event)}
           amount={changeLabels[event.change]}
-          value={`${time(event.at).replace(' UTC', '')} · ${actorLabels[event.actor]}`}
+          value={`${moscowClock(event.at)} MSK · ${actorLabels[event.actor]}`}
         />
       </button>
     </li>
@@ -220,10 +221,10 @@ export default function HistoryPage() {
   const filtered = Boolean(entity || change || actor || from || to);
   const opened = events.find((event) => event.id === openId) ?? null;
 
-  // One group per UTC day of the change, under a heading as in Transactions.
+  // One group per Moscow day of the change (the app's day), under a heading as in Transactions.
   const days: { heading: string; events: AuditEvent[] }[] = [];
   for (const event of events) {
-    const heading = dayHeading(event.at, history?.at ?? event.at);
+    const heading = moscowDayHeading(event.at, history?.at ?? event.at);
     const last = days.at(-1);
     if (last?.heading === heading) last.events.push(event);
     else days.push({ heading, events: [event] });
@@ -363,7 +364,7 @@ export default function HistoryPage() {
                 <thead>
                   <tr>
                     <th scope="col" className="ui-num">
-                      Time
+                      Time, MSK
                     </th>
                     <th scope="col">Change</th>
                     <th scope="col">Transaction</th>

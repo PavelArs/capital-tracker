@@ -161,13 +161,33 @@ describe('audit history screen (BR 14)', () => {
         .map((cell) => cell.textContent),
     ).toEqual(['Today', 'Yesterday', 'Oct 7, 2026']);
     expect(bodyRows().map(cells)).toEqual([
-      ['12:30', 'Changed', 'Buy BTCBybit', 'Amount: $30,000.00 → $31,000.00 +1 more', 'You'],
-      ['09:15', 'Deleted', 'Sell BTCBybit', 'Quantity 0.25 BTC · Amount $15,000.00', 'You'],
-      ['18:00', 'Created', 'Buy BTCBybit', 'Side Buy · Quantity 0.02 BTC', 'CSV import'],
-      ['08:00', 'Created', 'Transfer BTCCold storage', 'Quantity 0.005 BTC', 'Automatic'],
+      // Moscow times (UTC+3): 12:30, 09:15, 18:00 and 08:00 UTC; the days are the same.
+      ['15:30', 'Changed', 'Buy BTCBybit', 'Amount: $30,000.00 → $31,000.00 +1 more', 'You'],
+      ['12:15', 'Deleted', 'Sell BTCBybit', 'Quantity 0.25 BTC · Amount $15,000.00', 'You'],
+      ['21:00', 'Created', 'Buy BTCBybit', 'Side Buy · Quantity 0.02 BTC', 'CSV import'],
+      ['11:00', 'Created', 'Transfer BTCCold storage', 'Quantity 0.005 BTC', 'Automatic'],
     ]);
     expect(screen.getByText(/4 changes shown, newest first/)).toBeInTheDocument();
     expect(screen.getByText(/nothing is overwritten/)).toBeInTheDocument();
+  });
+
+  it('HIST-MSK-DAY: groups the changes by Moscow day and shows Moscow times, also between 21:00 and 24:00 UTC', async () => {
+    const late = { ...correction, id: 'trade:t1:000003', at: '2026-10-16T21:14:00.000Z' };
+    const before = { ...removal, id: 'trade:t2:000002', at: '2026-10-16T20:52:00.000Z' };
+    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue({
+      ...page([late, before]),
+      at: '2026-10-16T21:20:00.000Z',
+    });
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'History' });
+    // 21:14 UTC is already 17 Oct in Moscow; 20:52 UTC is still 16 Oct there.
+    expect(
+      within(table())
+        .getAllByRole('rowheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Today', 'Yesterday']);
+    expect(bodyRows().map((row) => cells(row)[0])).toEqual(['00:14', '23:52']);
+    expect(within(table()).getByRole('columnheader', { name: 'Time, MSK' })).toBeInTheDocument();
   });
 
   it('HIST-NO-SWITCH: shows recorded amounts as recorded, so it offers no currency or value switch', async () => {
@@ -217,7 +237,7 @@ describe('audit history screen (BR 14)', () => {
     renderPage();
     await screen.findByRole('button', { name: 'Savings account' });
     expect(bodyRows().map(cells)).toEqual([
-      ['10:10', 'Changed', 'Savings accountExample Bank', 'Top-up added · 5,000.5 RUB', 'You'],
+      ['13:10', 'Changed', 'Savings accountExample Bank', 'Top-up added · 5,000.5 RUB', 'You'],
     ]);
     await user.click(screen.getByRole('button', { name: 'Savings account' }));
     const drawer = screen.getByRole('dialog', { name: 'Savings account' });
@@ -394,8 +414,8 @@ describe('audit history screen (BR 14)', () => {
     ).toEqual(['Today', 'Yesterday']);
     const items = within(rows).getAllByRole('button');
     expect(items.map((item) => item.textContent)).toEqual([
-      'Buy BTCAmount: $30,000.00 → $31,000.00 +1 moreChanged12:30 · You',
-      'Buy BTCSide Buy · Quantity 0.02 BTCCreated18:00 · CSV import',
+      'Buy BTCAmount: $30,000.00 → $31,000.00 +1 moreChanged15:30 MSK · You',
+      'Buy BTCSide Buy · Quantity 0.02 BTCCreated21:00 MSK · CSV import',
     ]);
     await user.click(items[0]);
     expect(screen.getByRole('dialog', { name: 'Buy BTC' })).toBeInTheDocument();

@@ -6,6 +6,7 @@ import type {
   AuditField,
   AuditValue,
 } from '@api/audit-history.api';
+import { clockText, dayText, moscowDate } from '@utils/dates';
 import type { BadgeTone } from '@/ui/Badge';
 import { money, quantity } from '../portfolio/format';
 import { moment } from '../transactions/operation-format';
@@ -112,4 +113,16 @@ export function glyphOf(
     default:
       return 'chain';
   }
+}
+
+/** HH:MM in Moscow time (UTC+3 all year), the zone the app counts its days in. */
+export const moscowClock = (iso: string) => clockText(Date.parse(iso) + 3 * 3_600_000);
+
+/** The Moscow day a change is listed under: Today, Yesterday or "Oct 2, 2026". */
+export function moscowDayHeading(iso: string, now: string): string {
+  const day = moscowDate(iso);
+  const days = Math.round((Date.parse(moscowDate(now)) - Date.parse(day)) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return dayText(day);
 }
