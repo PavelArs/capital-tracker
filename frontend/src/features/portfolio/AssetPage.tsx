@@ -449,7 +449,7 @@ function AssetDetails({
           />
           <Stat label="Current value" value={amount(asset.value)} />
           <Stat
-            label="Average buy price"
+            label="Average cost"
             value={asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
           />
           {showReal ? (

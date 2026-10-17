@@ -802,7 +802,7 @@ describe('PV-UI Portfolio values every asset', () => {
       within(stats).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(stat('Amount')).toBe('1.2 BTC');
     expect(stat('Current value')).toBe('$96,000.00');
-    expect(stat('Average buy price')).toBe('$55,000.00');
+    expect(stat('Average cost')).toBe('$55,000.00');
     expect(stat('Cost basis')).toBe('$66,000.00');
     expect(stat('Unrealized P&L')).toBe('+$30,000.00+45.45%');
     expect(stat('Realized P&L')).toBe('$0.00');
@@ -2466,10 +2466,10 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await click('Asset');
     expect(order()).toEqual(['Bitcoin', 'Toncoin', 'US dollar']);
     expect(header('Asset')).toHaveAttribute('aria-sort', 'ascending');
-    await click('Avg buy price');
+    await click('Avg cost');
     expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
     expect(header('Asset')).not.toHaveAttribute('aria-sort');
-    await click('Avg buy price');
+    await click('Avg cost');
     expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
     // The chosen order holds when the search narrows the rows.
     await user.type(screen.getByRole('searchbox', { name: 'Search assets' }), 'coin');
