@@ -231,8 +231,11 @@ export class KrakenClient implements PriceProvider {
 // CoinGecko simple/price: { <id>: { usd: number, last_updated_at: seconds } }.
 function geckoPrice(value: unknown): string {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) invalid();
-  // Shortest round-trip text of the JSON number; exponent forms are not accepted.
-  return positiveDecimal(String(value));
+  // Shortest round-trip text of the JSON number; JS prints a price under 1e-6 as `1.2e-7`.
+  const [, digit, rest = '', zeros] = /^(\d)(?:\.(\d+))?e-(\d+)$/.exec(String(value)) ?? [];
+  return positiveDecimal(
+    zeros ? `0.${'0'.repeat(Number(zeros) - 1)}${digit}${rest}` : String(value),
+  );
 }
 
 export class CoinGeckoClient implements PriceProvider {
@@ -320,11 +323,15 @@ export class CoinGeckoClient implements PriceProvider {
       for (const contract of contracts) {
         const value = answered.get(platform === 'solana' ? contract : contract.toLowerCase());
         if (value === undefined) continue;
-        const entry = record(value);
-        prices.set(contract, {
-          price: geckoPrice(entry.usd),
-          observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
-        });
+        try {
+          const entry = record(value);
+          prices.set(contract, {
+            price: geckoPrice(entry.usd),
+            observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
+          });
+        } catch {
+          // One unreadable entry is not priced; it must not fail the batch it came with.
+        }
       }
       return { ok: true, prices };
     } catch {

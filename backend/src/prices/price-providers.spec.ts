@@ -363,13 +363,44 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
       await expect(
         new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed], now),
       ).resolves.toEqual({ ok: false, reason: 'rate_limited' });
-      handler = () => ({
-        status: 200,
-        body: { [mixed.toLowerCase()]: { usd: -1, last_updated_at: updated } },
-      });
+      handler = () => ({ status: 200, body: [] });
       await expect(
         new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed], now),
       ).resolves.toEqual({ ok: false, reason: 'invalid_response' });
+    });
+
+    it('TOKEN-MICRO-PRICE prices a token worth less than a millionth of a dollar as plain decimal text', async () => {
+      handler = () => ({
+        status: 200,
+        body: {
+          [mixed.toLowerCase()]: { usd: 1.2e-7, last_updated_at: updated },
+          [other]: { usd: 5e-10, last_updated_at: updated },
+        },
+      });
+      const answer = await new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed, other], now);
+      expect(answer).toEqual({
+        ok: true,
+        prices: new Map([
+          [mixed, { price: '0.00000012', observedAt: '2026-10-04T15:04:30.000Z' }],
+          [other, { price: '0.0000000005', observedAt: '2026-10-04T15:04:30.000Z' }],
+        ]),
+      });
+    });
+
+    it('TOKEN-MICRO-PRICE leaves one unreadable entry not priced instead of failing its batch', async () => {
+      handler = () => ({
+        status: 200,
+        body: {
+          [mixed.toLowerCase()]: { usd: -1, last_updated_at: updated },
+          [other]: { usd: 2, last_updated_at: updated },
+        },
+      });
+      await expect(
+        new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed, other], now),
+      ).resolves.toEqual({
+        ok: true,
+        prices: new Map([[other, { price: '2', observedAt: '2026-10-04T15:04:30.000Z' }]]),
+      });
     });
   });
 
@@ -430,7 +461,7 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
       [200, [], 'invalid_response'],
       [200, { bitcoin: { usd: -5, last_updated_at: updated } }, 'invalid_response'],
       [200, { bitcoin: { usd: '84950', last_updated_at: updated } }, 'invalid_response'],
-      [200, { bitcoin: { usd: 1e-7, last_updated_at: updated } }, 'invalid_response'],
+      [200, { bitcoin: { usd: 0, last_updated_at: updated } }, 'invalid_response'],
       [200, { bitcoin: { usd: 84950 } }, 'invalid_response'],
       [200, { bitcoin: { usd: 84950, last_updated_at: updated + 3600 } }, 'invalid_response'],
       [200, { bitcoin: { usd: 84950, last_updated_at: 1.5 } }, 'invalid_response'],
