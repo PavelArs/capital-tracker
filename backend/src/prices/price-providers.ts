@@ -59,6 +59,7 @@ export async function getJson(
   url: string,
   timeoutMs: number,
   headers: Record<string, string> = {},
+  reviver?: (key: string, value: unknown, context?: { source?: string }) => unknown,
 ): Promise<Fetched> {
   let response: { status: number; data: string };
   try {
@@ -79,7 +80,7 @@ export async function getJson(
   if (response.status === 429) return { ok: false, reason: 'rate_limited' };
   if (response.status !== 200) return { ok: false, reason: 'unavailable' };
   try {
-    return { ok: true, body: JSON.parse(response.data) };
+    return { ok: true, body: JSON.parse(response.data, reviver) };
   } catch {
     return { ok: false, reason: 'invalid_response' };
   }
@@ -229,10 +230,27 @@ export class KrakenClient implements PriceProvider {
 }
 
 // CoinGecko simple/price: { <id>: { usd: number, last_updated_at: seconds } }.
+// A `usd` JSON number keeps its own text: a double would round a price with more digits.
+class JsonNumberText {
+  constructor(readonly text: string) {}
+}
+function keepUsdText(key: string, value: unknown, context?: { source?: string }): unknown {
+  return key === 'usd' && typeof value === 'number'
+    ? new JsonNumberText(context?.source ?? '')
+    : value;
+}
 function geckoPrice(value: unknown): string {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) invalid();
-  // Shortest round-trip text of the JSON number; exponent forms are not accepted.
-  return positiveDecimal(String(value));
+  if (!(value instanceof JsonNumberText)) invalid();
+  // The decimal the number's text means, `1.2e-7` included, moved point by point, never rounded.
+  const [, whole, fraction = '', exponent = '0'] =
+    /^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d{1,3}))?$/.exec(value.text) ?? invalid();
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponent);
+  return positiveDecimal(
+    point <= 0
+      ? `0.${'0'.repeat(-point)}${digits}`
+      : `${digits.padEnd(point, '0').slice(0, point)}.${digits.slice(point) || '0'}`,
+  );
 }
 
 export class CoinGeckoClient implements PriceProvider {
@@ -258,6 +276,7 @@ export class CoinGeckoClient implements PriceProvider {
       `${this.baseUrl}/api/v3/simple/price?${query}`,
       this.timeoutMs,
       this.demoKey ? { 'x-cg-demo-api-key': this.demoKey } : {},
+      keepUsdText,
     );
     if (!fetched.ok) return fetched;
     const nowSeconds = Math.floor(now.getTime() / 1000);
@@ -287,14 +306,17 @@ export class CoinGeckoClient implements PriceProvider {
 
   /**
    * TOKEN-ANY-PRICE: the USD price of tokens by contract on one of CoinGecko's platforms. A
-   * token CoinGecko does not know is absent from the answer. An EVM chain's contract is matched
+   * token CoinGecko does not know is absent from the answer; one it returns with an unreadable
+   * quote maps to null (listed, not priced). An EVM chain's contract is matched
    * without regard to case, a Solana mint exactly.
    */
   async tokens(
     platform: string,
     contracts: readonly string[],
     now: Date,
-  ): Promise<{ ok: true; prices: Map<string, TokenQuote> } | { ok: false; reason: PriceFailure }> {
+  ): Promise<
+    { ok: true; prices: Map<string, TokenQuote | null> } | { ok: false; reason: PriceFailure }
+  > {
     const query = new URLSearchParams({
       contract_addresses: contracts.join(','),
       vs_currencies: 'usd',
@@ -305,6 +327,7 @@ export class CoinGeckoClient implements PriceProvider {
       `${this.baseUrl}/api/v3/simple/token_price/${platform}?${query}`,
       this.timeoutMs,
       this.demoKey ? { 'x-cg-demo-api-key': this.demoKey } : {},
+      keepUsdText,
     );
     if (!fetched.ok) return fetched;
     const nowSeconds = Math.floor(now.getTime() / 1000);
@@ -316,15 +339,22 @@ export class CoinGeckoClient implements PriceProvider {
           value,
         ]),
       );
-      const prices = new Map<string, TokenQuote>();
+      const prices = new Map<string, TokenQuote | null>();
       for (const contract of contracts) {
         const value = answered.get(platform === 'solana' ? contract : contract.toLowerCase());
         if (value === undefined) continue;
-        const entry = record(value);
-        prices.set(contract, {
-          price: geckoPrice(entry.usd),
-          observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
-        });
+        // Returned means listed, even when this quote is unreadable: null keeps that signal.
+        prices.set(contract, null);
+        try {
+          const entry = record(value);
+          prices.set(contract, {
+            price: geckoPrice(entry.usd),
+            observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
+          });
+        } catch (error) {
+          // One unreadable entry is not priced; it must not fail the batch it came with.
+          if (!(error instanceof InvalidResponse)) throw error;
+        }
       }
       return { ok: true, prices };
     } catch {
