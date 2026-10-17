@@ -148,7 +148,9 @@ describe('FX-CONVERT exact conversion between accounting currencies', () => {
     expect(
       new FxConverter({ USD: [], EUR: [] }, 'RUB').convert(atoms('1'), 'USD', '2026-01-01'),
     ).toBeNull();
-    expect(eur.ratesOn('2025-06-06')).toEqual([
+    // No euro rate yet, so the dollar rate converts nothing into euros; in rubles it does.
+    expect(eur.ratesOn('2025-06-06')).toEqual([]);
+    expect(new FxConverter(rates, 'RUB').ratesOn('2025-06-06')).toEqual([
       { currency: 'USD', date: '2025-06-06', rubPerUnit: '78.9' },
     ]);
   });
