@@ -130,7 +130,7 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   // The confirmation is checked only once the refusal is on screen, so its absence is not
   // read before the check has answered.
   await expect(refusal).toBeVisible();
-  await expect(page.getByRole('dialog', { name: 'Delete this transaction?' })).toHaveCount(0);
+  await expect(page.getByRole('alertdialog', { name: 'Delete this transaction?' })).toHaveCount(0);
   await expect(refusal).toHaveText(
     new RegExp(
       `Sell of 0\\.2 ${symbol} on Apr 1, 2025 in ${accountName} spends these ${symbol}\\. ` +
@@ -151,7 +151,7 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   const sale = page.getByRole('dialog', { name: `Sell · ${symbol}` });
   await sale.getByRole('button', { name: 'Delete' }).click();
   await page
-    .getByRole('dialog', { name: 'Delete this transaction?' })
+    .getByRole('alertdialog', { name: 'Delete this transaction?' })
     .getByRole('button', { name: 'Delete transaction' })
     .click();
   await expect(sale).toHaveCount(0);

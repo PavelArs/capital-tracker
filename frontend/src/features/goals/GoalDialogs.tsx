@@ -19,6 +19,7 @@ import {
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Chip, ChipGroup } from '@/ui/Chip';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { type FieldControl, Field as FormField } from '@/ui/Field';
 import { Affix, Input } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
@@ -92,7 +93,6 @@ function FormDialog({
   title,
   note,
   submit,
-  danger = false,
   problems = () => ({}),
   unreachable,
   onClose,
@@ -102,8 +102,6 @@ function FormDialog({
   title: string;
   note?: string;
   submit: string;
-  /** A destructive confirmation: the submit button is the danger one (goals-22). */
-  danger?: boolean;
   /** Every field's problem; each is shown under its field once the owner tried to save. */
   problems?: () => Problems;
   /** What a lost answer means for this change. */
@@ -164,7 +162,7 @@ function FormDialog({
           <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant={danger ? 'danger' : 'primary'} disabled={saving}>
+          <Button type="submit" disabled={saving}>
             {saving ? 'Saving…' : submit}
           </Button>
         </ModalFooter>
@@ -542,21 +540,21 @@ export function DeleteGoalDialog({
   onDeleted: () => void;
 }) {
   return (
-    <FormDialog
+    <ConfirmDialog
       title="Delete this goal?"
-      submit="Delete goal"
-      danger
-      unreachable="Could not reach the server. The goal may have been deleted; try again."
+      confirmLabel="Delete goal"
+      busyLabel="Deleting…"
+      failure={(error) =>
+        failure(error, 'Could not reach the server. The goal may have been deleted; try again.')
+      }
       onClose={onClose}
-      onSubmit={async () => {
+      onConfirm={async () => {
         await goalsApi.remove(goal.id);
         onDeleted();
       }}
     >
-      <p className="goal-delete-note">
-        {goal.name} and its plan are removed; this cannot be undone. Your portfolio and transactions
-        stay as they are.
-      </p>
-    </FormDialog>
+      {goal.name} and its plan are removed; this cannot be undone. Your portfolio and transactions
+      stay as they are.
+    </ConfirmDialog>
   );
 }

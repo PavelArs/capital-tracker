@@ -52,9 +52,12 @@ describe('ConfirmDialog', () => {
         Its history is removed.
       </ConfirmDialog>,
     );
+    // CONFIRM-CLOSE: the prototype's ✕ in the header; Cancel still takes the keyboard first.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.keyboard('{Escape}');
-    expect(close).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(3);
     expect(confirm).not.toHaveBeenCalled();
   });
 
@@ -79,6 +82,7 @@ describe('ConfirmDialog', () => {
     expect(busy).toHaveAttribute('aria-busy', 'true');
     expect(busy).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled();
     await user.keyboard('{Escape}');
     expect(close).not.toHaveBeenCalled();
     await act(async () => {

@@ -1196,7 +1196,8 @@ describe('TransactionsPage manual operations (M9)', () => {
     voidTrade.mockResolvedValue({} as TradeReceipt);
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
-    const confirm = screen.getByRole('dialog', { name: 'Delete this transaction?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this transaction?' });
+    expect(within(confirm).getByRole('button', { name: 'Cancel' })).toHaveFocus();
     expect(confirm).toHaveTextContent(
       'Buy of 0.00918359 BTC on Jun 13, 2025 in Bybit will be removed. Balances, cost basis and the portfolio history will be recalculated without it.',
     );
@@ -1250,7 +1251,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was deleted');
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Buy · BTC' })).toBeInTheDocument();
   });
 
@@ -1428,7 +1429,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(refusal).toHaveTextContent(
       'Sell of 0.005 BTC on Jul 1, 2025 in Bybit spends these BTC. Without this purchase Bybit would not hold enough. Delete or change that transaction first.',
     );
-    expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(check).toHaveBeenCalledWith(bybit.id, id(30));
     expect(voidTrade).not.toHaveBeenCalled();
     await user.click(within(refusal).getByRole('button', { name: 'OK' }));
@@ -1441,7 +1442,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     expect(
-      await screen.findByRole('dialog', { name: 'Delete this transaction?' }),
+      await screen.findByRole('alertdialog', { name: 'Delete this transaction?' }),
     ).toBeInTheDocument();
   });
 });

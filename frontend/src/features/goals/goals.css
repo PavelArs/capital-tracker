@@ -126,11 +126,6 @@
   width: 96px;
 }
 
-.goal-delete-note {
-  margin: 0;
-  color: var(--ink-2);
-}
-
 /* The sentence under the three cases' heading. */
 .goal-note {
   margin: 0 0 var(--sp-3);

@@ -295,7 +295,7 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     expect(within(card).queryByRole('button')).toBeNull();
     await user.click(within(card).getByRole('link', { name: 'Down payment A' }));
     await user.click(await screen.findByRole('button', { name: 'Delete goal' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete this goal?' });
     listed.mockResolvedValue(list([reserve]));
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
     const said = await screen.findByText('Goal deleted.');

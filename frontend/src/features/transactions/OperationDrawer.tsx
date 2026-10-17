@@ -545,7 +545,8 @@ export default function OperationDrawer({
   };
   const step = confirm?.step;
   useEffect(() => {
-    if (step) modal.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+    if (step)
+      modal.current?.querySelector<HTMLElement>('.ui-modal__foot button:not([disabled])')?.focus();
   }, [step]);
 
   const changeable = editable(operation) && operation.account ? operation.account : null;
@@ -964,7 +965,9 @@ export default function OperationDrawer({
         <Modal
           titleId="operation-confirm-title"
           size="narrow"
-          role={confirm.step === 'blocked' ? 'alertdialog' : 'dialog'}
+          // Both steps interrupt with an answer to give, as every confirmation (ConfirmDialog):
+          // Cancel (or OK when it cannot be deleted) takes the keyboard first.
+          role="alertdialog"
           describedBy="operation-confirm-text"
           onEscape={dismiss}
           overDrawer
@@ -972,6 +975,8 @@ export default function OperationDrawer({
         >
           <ModalHeader
             titleId="operation-confirm-title"
+            onClose={dismiss}
+            closeDisabled={confirm.step === 'deleting'}
             title={
               confirm.step === 'blocked'
                 ? `This ${purchase ? 'purchase' : 'transaction'} can't be deleted`

@@ -5,9 +5,10 @@ import Modal, { ModalBody, ModalFooter, ModalHeader } from './Modal';
 
 /**
  * The confirmation of a destructive or irreversible action (prototype confirm dialog): an
- * alertdialog that says exactly what will happen, Cancel focused first, and the action named
- * with a verb and an object ("Delete transaction", "Remove wallet"). A failure stays in the
- * dialog as an alert; the dialog closes only when the caller unmounts it after success.
+ * alertdialog that says exactly what will happen, a ✕ in its header, Cancel focused first, and
+ * the action named with a verb and an object ("Delete transaction", "Remove wallet"). A failure
+ * stays in the dialog as an alert; the dialog closes only when the caller unmounts it after
+ * success.
  */
 export function ConfirmDialog({
   title,
@@ -59,7 +60,7 @@ export function ConfirmDialog({
       onEscape={busy ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('[data-confirm-cancel]')}
     >
-      <ModalHeader titleId={titleId} title={title} />
+      <ModalHeader titleId={titleId} title={title} onClose={onClose} closeDisabled={busy} />
       <ModalBody>
         <div id={textId} className="ui-confirm__text">
           {children}

@@ -263,7 +263,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     show(dated);
     await screen.findByRole('heading', { name: 'Down payment A' });
     await user.click(screen.getByRole('button', { name: 'Delete goal' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete this goal?' });
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(dated.id));
     // goals-09: the list is told, so it can say so and take the keyboard.
@@ -430,13 +430,15 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     show(dated);
     await screen.findByRole('heading', { name: 'Down payment A' });
     await user.click(screen.getByRole('button', { name: 'Delete goal' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete this goal?' });
     expect(dialog).toHaveTextContent(
       'Down payment A and its plan are removed; this cannot be undone. Your portfolio and transactions stay as they are.',
     );
     expect(within(dialog).getByRole('button', { name: 'Delete goal' })).toHaveClass(
       'ui-btn--danger',
     );
+    // The shared confirmation (ConfirmDialog): Cancel takes the keyboard first.
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
   });
 
   it('goals-02 does not say nothing was saved when an edit gets no answer', async () => {
@@ -565,7 +567,7 @@ describe('GOAL-TERMS: changing and deleting a goal from its page', () => {
     show(flat);
     await screen.findByRole('heading', { name: 'Down payment A' });
     await user.click(screen.getByRole('button', { name: 'Delete goal' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete this goal?' });
     expect(dialog).toHaveTextContent('Down payment A and its plan are removed');
     expect(remove).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
