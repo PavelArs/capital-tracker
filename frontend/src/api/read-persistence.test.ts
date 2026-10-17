@@ -221,7 +221,7 @@ describe('answers that survive a reload', () => {
   });
 });
 
-describe('a reload does not ask again for what was just said', () => {
+describe('a reload paints what the browser kept and still asks the server again', () => {
   const portfolio = { currency: 'USD', assets: [] } as never;
 
   beforeEach(() => {
