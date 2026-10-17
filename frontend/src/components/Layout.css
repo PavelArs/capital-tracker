@@ -328,7 +328,6 @@ a.shell-sync:hover {
 
   .shell-nav__header,
   .shell-owner,
-  .shell-nav__in-more,
   .shell-nav__menu > .shell-sync {
     display: none;
   }
@@ -356,6 +355,11 @@ a.shell-sync:hover {
   .shell-nav__sections li {
     display: flex;
     min-width: 0;
+  }
+
+  /* The sections that live in the More sheet on a phone. */
+  .shell-nav__sections li.shell-nav__in-more {
+    display: none;
   }
 
   .shell-nav__more {
