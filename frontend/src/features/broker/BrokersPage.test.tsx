@@ -293,6 +293,35 @@ describe('BROKERS the Brokers page', () => {
     expect(within(tbank).getByTestId('broker-total')).toHaveTextContent(/^\$0\.00$/);
   });
 
+  it('BROKERS-GROUP keeps a connected account with hand-entered positions waiting for its history', async () => {
+    // Codex P1: what an account already holds does not mean its T-Bank history was imported.
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(tbankMain, 'Main broker', 'broker', waiting)],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      valuation([
+        asset(
+          7,
+          'SBER',
+          [{ accountId: tbankMain, accountName: 'Main broker', quantity: '100', value: '300' }],
+          { price: priced('3', '2026-10-01T09:00:00.000Z') },
+        ),
+      ]),
+    );
+    renderPage();
+    const tbank = await screen.findByRole('region', { name: 'T-Bank' });
+    const main = within(tbank).getByRole('group', { name: 'Main broker' });
+    expect(main).toHaveTextContent('Connected. The T-Bank history is not imported yet.');
+    expect(within(main).getByRole('link')).toHaveTextContent('SBER100 × $3.00$300.00');
+    expect(within(tbank).getByTestId('broker-total')).toHaveTextContent(
+      '$300.001 account waiting for the history import.',
+    );
+    expect(screen.getByRole('region', { name: 'Total at brokers' })).toHaveTextContent(
+      '1 account waiting for the history import.',
+    );
+  });
+
   it('BROKERS-GROUP shows "—", never zero, while nothing at a broker is valued yet', async () => {
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [
