@@ -7,6 +7,7 @@ import {
   type AuditQuery,
 } from '@api/audit-history.api';
 import { cachedReads } from '@api/cached-reads';
+import { clockText } from '@utils/dates';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
@@ -32,8 +33,7 @@ import {
   changeTones,
   entityLabels,
   glyphOf,
-  moscowClock,
-  moscowDayHeading,
+  localDayHeading,
   summary,
 } from './history-format';
 import '../shell/shell-page.css';
@@ -77,7 +77,7 @@ function Row({
       aria-current={current || undefined}
       onClick={onOpen}
     >
-      <td className="ui-num history-when">{moscowClock(event.at)}</td>
+      <td className="ui-num history-when">{clockText(event.at)}</td>
       <td>
         <ChangeBadge change={event.change} />
       </td>
@@ -123,7 +123,7 @@ function Item({
           title={event.title}
           detail={summary(event)}
           amount={changeLabels[event.change]}
-          value={`${moscowClock(event.at)} MSK · ${actorLabels[event.actor]}`}
+          value={`${clockText(event.at)} · ${actorLabels[event.actor]}`}
         />
       </button>
     </li>
@@ -224,7 +224,7 @@ export default function HistoryPage() {
   // One group per Moscow day of the change (the app's day), under a heading as in Transactions.
   const days: { heading: string; events: AuditEvent[] }[] = [];
   for (const event of events) {
-    const heading = moscowDayHeading(event.at, history?.at ?? event.at);
+    const heading = localDayHeading(event.at, history?.at ?? event.at);
     const last = days.at(-1);
     if (last?.heading === heading) last.events.push(event);
     else days.push({ heading, events: [event] });
@@ -362,7 +362,7 @@ export default function HistoryPage() {
                 <thead>
                   <tr>
                     <th scope="col" className="ui-num">
-                      Time, MSK
+                      Time
                     </th>
                     <th scope="col">Change</th>
                     <th scope="col">Transaction</th>
@@ -417,7 +417,7 @@ export default function HistoryPage() {
             {events.length} {events.length === 1 ? 'change' : 'changes'} shown, newest first. Every
             change is kept as a new version, so nothing is overwritten; deleting a transaction adds
             a version that removes it from your calculations. Blockchain transactions are never
-            deleted, only classified or hidden. Times are in UTC.
+            deleted, only classified or hidden. Times are in your local time.
           </p>
         </Card>
       )}

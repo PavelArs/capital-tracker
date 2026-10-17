@@ -1341,7 +1341,7 @@ describe('Dashboard design alignment: the number and what it carries', () => {
       connection.settled(token, false);
     });
     try {
-      expect(within(hero).getByText('As of 12:30 UTC')).toBeInTheDocument();
+      expect(within(hero).getByText('As of 17:30')).toBeInTheDocument();
     } finally {
       act(() => connection.reset());
     }
@@ -1358,7 +1358,7 @@ describe('Dashboard design alignment: the number and what it carries', () => {
     get.mockRejectedValueOnce(new Error('offline'));
     await user.click(screen.getByRole('tab', { name: '7D' }));
     await screen.findByRole('alert');
-    expect(within(hero).getByText('As of 12:30 UTC')).toBeInTheDocument();
+    expect(within(hero).getByText('As of 17:30')).toBeInTheDocument();
     cleanup();
     valued.mockImplementation(async (currency?: AccountingCurrency) =>
       valuation({ currency: currency ?? 'USD', stalePriceCount: 2 }),

@@ -80,7 +80,7 @@ export default function SyncJournal({ address, run }: Props) {
                 {badges[entry.state].label}
               </Badge>
               <time className="ui-muted wallets-small" dateTime={entry.at}>
-                {dayClockText(entry.at)} UTC
+                {dayClockText(entry.at)}
               </time>
               <span className="wallets-journal__text">{explain(entry, address)}</span>
             </li>

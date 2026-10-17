@@ -42,7 +42,7 @@ describe('STALE-STATE the page says when its figures are kept from before', () =
     render(<ConnectionBanner />);
     unanswered();
     expect(state()).toHaveTextContent(
-      "Couldn't refreshShowing what was loaded at 11:05 UTC. Figures may have changed since.",
+      "Couldn't refreshShowing what was loaded at 16:05. Figures may have changed since.",
     );
     const before = connection.get().attempt;
     await userEvent
@@ -55,7 +55,9 @@ describe('STALE-STATE the page says when its figures are kept from before', () =
     remember('portfolio:[]', {}, generationNow());
     render(<ConnectionBanner />);
     act(() => connection.setOffline(true));
-    expect(state()).toHaveTextContent(/^You're offlineShowing what was loaded at \d\d:\d\d UTC\./);
+    expect(state()).toHaveTextContent(
+      /^You're offlineShowing what was loaded at \d\d:\d\d\. Figures/,
+    );
   });
 
   it('STALE-STATE says the kept figures are being refreshed when a read is slow', () => {

@@ -63,7 +63,7 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
   if (sources !== null && (failed || showingKept(current))) {
     summary.tone = 'warn';
     summary.title = current.offline ? 'Offline' : "Couldn't refresh";
-    summary.detail = checkedAt ? `Status from ${clockText(checkedAt)} UTC` : '';
+    summary.detail = checkedAt ? `Status from ${clockText(checkedAt)}` : '';
   }
   return (
     <Link

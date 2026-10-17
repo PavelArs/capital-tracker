@@ -1,6 +1,7 @@
 import { type SecurityOverview, type SecuritySession, securityApi } from '@api/security.api';
 import { useAuth } from '@contexts/AuthContext';
 import { useToast } from '@contexts/ToastContext';
+import { dayClockText } from '@utils/dates';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import Badge from '@/ui/Badge';
@@ -15,14 +16,6 @@ import AuthenticatorDialog from './AuthenticatorDialog';
 import ChangePasswordDialog from './ChangePasswordDialog';
 import RecoveryCodesDialog from './RecoveryCodesDialog';
 import './security.css';
-
-const signedIn = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
 
 const deviceName = (session: SecuritySession) => session.device ?? 'Unknown device';
 
@@ -158,7 +151,7 @@ export default function SecuritySettings() {
                 <li key={session.id} className="ui-row">
                   <ListRowText
                     title={deviceName(session)}
-                    detail={`Signed in ${signedIn.format(new Date(session.signedInAt))} · ${activity(session.lastActiveAt)}`}
+                    detail={`Signed in ${dayClockText(session.signedInAt)} · ${activity(session.lastActiveAt)}`}
                     amount={
                       session.current ? (
                         <Badge tone="pos">This browser</Badge>

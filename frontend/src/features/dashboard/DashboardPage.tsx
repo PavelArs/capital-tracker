@@ -7,6 +7,7 @@ import {
   type RealProfit,
 } from '@api/portfolio-history.api';
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
+import { clockText } from '@utils/dates';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import NearestGoal from '../goals/NearestGoal';
@@ -235,7 +236,7 @@ function NetWorth({
         Total net worth · {currency}
         {/* The number carries its own data state: the banners above can scroll away. */}
         {refreshFailed ? (
-          <Badge tone="warn">As of {asOf(history.at)} UTC</Badge>
+          <Badge tone="warn">As of {clockText(history.at)}</Badge>
         ) : portfolio !== null && portfolio.stalePriceCount > 0 ? (
           <Badge tone="warn">Stale prices</Badge>
         ) : null}
@@ -288,16 +289,6 @@ function NetWorth({
     </section>
   );
 }
-
-const clock = new Intl.DateTimeFormat('en-US', {
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-  timeZone: 'UTC',
-});
-
-/** "13:05": the time of a snapshot, in UTC like the chart. */
-const asOf = (at: string) => clock.format(new Date(at));
 
 const isZero = (value: string | null) => value !== null && Number(value) === 0;
 

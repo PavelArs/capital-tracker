@@ -1,4 +1,5 @@
 import type { AuditEvent } from '@api/audit-history.api';
+import { momentText } from '@utils/dates';
 import { useRef } from 'react';
 import { AmountHero } from '@/ui/AmountHero';
 import Badge from '@/ui/Badge';
@@ -38,7 +39,7 @@ export default function HistoryDrawer({
       <div className="ui-drawer__body">
         <AmountHero
           badge={<Badge tone={changeTones[event.change]}>{changeLabels[event.change]}</Badge>}
-          amount={moment(event.at)}
+          amount={momentText(event.at)}
           detail={actorLabels[event.actor]}
         />
         <section aria-labelledby="history-changes">

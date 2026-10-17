@@ -13,7 +13,7 @@ import { Button } from '@/ui/Button';
 export default function ConnectionBanner() {
   const current = useConnection();
   const since = keptSince();
-  const at = since === null ? null : `${clockText(since)} UTC`;
+  const at = since === null ? null : clockText(since);
   const kept = at !== null && (current.offline || current.failing);
   return (
     // A polite live region without the status role, so a page's own status line stays the one

@@ -53,8 +53,8 @@ describe('W3 sync journal', () => {
     render(<SyncJournal address={wallet()} run={undefined} />);
     const rows = within(await screen.findByRole('list')).getAllByRole('listitem');
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toBe('FailedOct 10, 10:00 UTCEthereum data is gone.');
-    expect(rows[1].textContent).toBe('SyncedOct 10, 09:00 UTCStored 3 new transactions.');
+    expect(rows[0].textContent).toBe('FailedOct 10, 15:00Ethereum data is gone.');
+    expect(rows[1].textContent).toBe('SyncedOct 10, 14:00Stored 3 new transactions.');
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
   });
 
