@@ -143,7 +143,7 @@ export function useWallets() {
         if (synced?.sync.state === 'complete')
           toast.show({
             tone: 'success',
-            title: `${synced.label ?? networkOf(synced).name} is synced.`,
+            title: `${synced.label ?? networkOf(synced).name} is synced`,
           });
         // A list asked for while the history loaded may be older than the last page.
         void load(true);

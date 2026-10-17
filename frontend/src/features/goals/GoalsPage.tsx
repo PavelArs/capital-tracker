@@ -80,7 +80,7 @@ export default function GoalsPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is said and cleared.
   useEffect(() => {
     if (!arrivedDeleted.current) return;
-    toast.show({ tone: 'success', title: 'Goal deleted.' });
+    toast.show({ tone: 'success', title: 'Goal deleted' });
     setRefocus((count) => count + 1);
     navigate({ pathname: location.pathname }, { replace: true });
   }, []);

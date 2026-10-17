@@ -1849,7 +1849,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     // The word comes as a toast, announced politely (role=status).
     expect(
       within(screen.getByRole('region', { name: 'Messages' })).getByRole('status'),
-    ).toHaveTextContent('Asset added.');
+    ).toHaveTextContent('Asset added');
   });
 
   it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
@@ -2650,7 +2650,23 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       .spyOn(hiddenAssetsApi, 'hide')
       .mockResolvedValue(hiddenAsset(toncoin.instrumentId, 'TON'));
     const user = userEvent.setup();
-    renderAt(`/portfolio/${toncoin.instrumentId}`);
+    const Probe = () => {
+      const { pathname, hash } = useLocation();
+      return <p data-testid="where">{pathname + hash}</p>;
+    };
+    render(
+      <ToastProvider>
+        <MemoryRouter initialEntries={[`/portfolio/${toncoin.instrumentId}`]}>
+          <Routes>
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/portfolio/:assetId" element={<AssetPage />} />
+            <Route path="/preferences" element={<p>Settings</p>} />
+          </Routes>
+          <Probe />
+        </MemoryRouter>
+        <ToastViewport />
+      </ToastProvider>,
+    );
     await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
     expect(hide).not.toHaveBeenCalled();
     expect(hideAsset).not.toHaveBeenCalled();
@@ -2667,6 +2683,11 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     await waitFor(() => expect(hideAsset).toHaveBeenCalledWith(toncoin.instrumentId));
     // The asset is gone from the portfolio, so the owner lands on it.
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
+    // TOAST-HIDE: the toast opens Hidden assets in Settings, where the asset comes back.
+    const said = within(screen.getByRole('region', { name: 'Messages' }));
+    expect(said.getByText('TON hidden')).toBeInTheDocument();
+    await user.click(said.getByRole('button', { name: 'Open' }));
+    expect(screen.getByTestId('where')).toHaveTextContent('/preferences#settings-hidden-assets');
   });
 
   it('ASSET-HIDE hides an asset no wallet holds as a token by itself, wallets untouched', async () => {

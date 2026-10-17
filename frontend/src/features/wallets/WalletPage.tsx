@@ -455,9 +455,8 @@ export default function WalletPage() {
               toast.show({
                 tone: 'info',
                 title:
-                  address.accountId === accountId
-                    ? `Added to ${account.name}. Syncing transactions…`
-                    : 'Wallet added. Syncing transactions…',
+                  address.accountId === accountId ? `Added to ${account.name}` : 'Wallet added',
+                detail: 'Syncing transactions…',
               });
             replace(address);
             void load(true);
@@ -478,7 +477,7 @@ export default function WalletPage() {
             // wallets-21: a toast says what was saved; the keyboard goes back to Edit.
             toast.show({
               tone: 'success',
-              title: 'name' in changes ? 'Wallet renamed.' : 'Wallet saved.',
+              title: 'name' in changes ? 'Wallet renamed' : 'Wallet saved',
             });
             refresh();
           }}

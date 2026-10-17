@@ -174,7 +174,7 @@ export default function GoalPage() {
   useEffect(() => {
     if (!arrivedAdded.current || !goal) return;
     arrivedAdded.current = false;
-    said.current = toast.show({ tone: 'success', title: 'Goal added.', detail: verdict(goal) });
+    said.current = toast.show({ tone: 'success', title: 'Goal added', detail: verdict(goal) });
   }, [goal, toast]);
   const cases = useId();
   // A malformed id in the address names no goal either (goals-23).
@@ -349,7 +349,7 @@ export default function GoalPage() {
                 if (said.current !== null) toast.dismiss(said.current);
                 said.current = toast.show({
                   tone: 'success',
-                  title: 'Goal saved.',
+                  title: 'Goal saved',
                   detail: verdict(saved),
                 });
               }}

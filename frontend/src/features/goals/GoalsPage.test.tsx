@@ -298,12 +298,12 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     const dialog = await screen.findByRole('alertdialog', { name: 'Delete this goal?' });
     listed.mockResolvedValue(list([reserve]));
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
-    const said = await screen.findByText('Goal deleted.');
+    const said = await screen.findByText('Goal deleted');
     // The notice is in the polite status region of the Messages region, announced without taking the keyboard,
     // which goes to the page heading instead.
     expect(said.closest('[role="status"]')).not.toBeNull();
     expect(
-      within(screen.getByRole('region', { name: 'Messages' })).getByText('Goal deleted.'),
+      within(screen.getByRole('region', { name: 'Messages' })).getByText('Goal deleted'),
     ).toBeInTheDocument();
     const heading = await screen.findByRole('heading', { level: 1, name: 'Goals' });
     await waitFor(() => expect(heading).toHaveFocus());
@@ -314,7 +314,7 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
   it('goals-09 says a goal deleted on its page was deleted, once, with the keyboard on the page heading', async () => {
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([reserve]));
     open({ notice: 'deleted' });
-    const said = await screen.findByText('Goal deleted.');
+    const said = await screen.findByText('Goal deleted');
     expect(said.closest('[role="status"]')).not.toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: 'Goals' })).toHaveFocus();
   });

@@ -7,10 +7,12 @@ import {
 } from '@api/deposits.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
+import { ToastProvider } from '@contexts/ToastContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '../../components/Toast';
 import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
 import DepositPage from './DepositPage';
@@ -141,12 +143,15 @@ const phone = () =>
 
 function open(path: string) {
   render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/deposits" element={<DepositsPage />} />
-        <Route path="/deposits/:depositId" element={<DepositPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/deposits" element={<DepositsPage />} />
+          <Route path="/deposits/:depositId" element={<DepositPage />} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 
@@ -691,6 +696,10 @@ describe('DEP-DETAIL: one deposit', () => {
     );
     const checks = await screen.findByRole('region', { name: 'Checks against the bank' });
     expect(within(checks).getByText('+₽1.23')).toBeInTheDocument();
+    // TOAST-CHECK: the toast says what the check found, as the prototype's does.
+    expect(screen.getByRole('region', { name: 'Messages' })).toHaveTextContent(
+      'Balance check savedDiffers by +₽1.23',
+    );
   });
 
   it('shows a bank balance below the calculated one with a single minus', async () => {

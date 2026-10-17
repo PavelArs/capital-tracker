@@ -704,7 +704,7 @@ export default function PortfolioPage() {
   });
   // A new asset opens on its own page, and a toast says it was added (portfolio-06).
   const added = (asset: PortfolioAsset) => {
-    toast.show({ tone: 'success', title: 'Asset added.', detail: asset.name });
+    toast.show({ tone: 'success', title: 'Asset added', detail: asset.name });
     navigate(withCurrency(`/portfolio/${asset.id}`, asked));
   };
   const addButton = (primary: boolean) => (

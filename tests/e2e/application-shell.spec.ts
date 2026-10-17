@@ -195,11 +195,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     page
       .getByRole('region', { name: 'Messages' })
       .getByRole('status')
-      .filter({ hasText: 'Asset added.' }),
+      .filter({ hasText: 'Asset added' }),
   ).toBeVisible();
   // shell-16: the toast stands at the bottom right of a wide window, and above the tab bar on a
   // phone. The pointer rests on it, so it stays while the window changes.
-  const added = page.locator('.ui-toast').filter({ hasText: 'Asset added.' });
+  const added = page.locator('.ui-toast').filter({ hasText: 'Asset added' });
   await added.hover();
   const wide = await added.boundingBox();
   if (!wide) throw new Error('The toast has no box.');

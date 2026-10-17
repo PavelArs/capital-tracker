@@ -57,7 +57,7 @@ export default function HiddenAssets() {
       }
       await hiddenAssetsApi.show(asset.instrumentId);
       announceSyncChange();
-      toast.show({ tone: 'success', title: `${label(asset)} is shown again.` });
+      toast.show({ tone: 'success', title: `${label(asset)} is shown again` });
       setItems((current) =>
         current ? current.filter((item) => item.instrumentId !== asset.instrumentId) : current,
       );

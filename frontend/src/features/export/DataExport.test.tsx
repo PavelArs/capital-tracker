@@ -75,7 +75,7 @@ describe('Settings → Data (EXP-UI)', () => {
     expect(busy).toBeDisabled();
     finish({ blob, filename: 'capital-tracker-export-2026-10-08.zip' });
     expect(
-      await screen.findByText('Downloaded capital-tracker-export-2026-10-08.zip.'),
+      await screen.findByText('Downloaded capital-tracker-export-2026-10-08.zip'),
     ).toBeInTheDocument();
     expect(saved).toEqual([{ name: 'capital-tracker-export-2026-10-08.zip', blob }]);
     expect(within(card()).getByRole('button', { name: 'Export CSV' })).toBeEnabled();
@@ -90,7 +90,7 @@ describe('Settings → Data (EXP-UI)', () => {
     await userEvent.click(within(card()).getByRole('button', { name: 'Export backup' }));
     expect(download).toHaveBeenCalledWith('backup');
     expect(
-      await screen.findByText('Downloaded capital-tracker-backup-2026-10-08.json.'),
+      await screen.findByText('Downloaded capital-tracker-backup-2026-10-08.json'),
     ).toBeInTheDocument();
     expect(saved).toEqual([{ name: 'capital-tracker-backup-2026-10-08.json', blob }]);
   });
@@ -100,7 +100,7 @@ describe('Settings → Data (EXP-UI)', () => {
     renderExport();
     await userEvent.click(within(card()).getByRole('button', { name: 'Export backup' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not export your data; nothing was downloaded. Try again.',
+      'Could not export your dataNothing was downloaded. Try again.',
     );
     expect(saved).toEqual([]);
     expect(within(card()).getByRole('button', { name: 'Export backup' })).toBeEnabled();

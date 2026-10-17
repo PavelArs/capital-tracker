@@ -95,7 +95,7 @@ export default function WalletsPage() {
   const removed = (location.state as { removedWallet?: unknown } | null)?.removedWallet;
   useEffect(() => {
     if (typeof removed !== 'string') return;
-    toast.show({ tone: 'success', title: `${removed} was removed.` });
+    toast.show({ tone: 'success', title: `${removed} was removed` });
     setFocusHeading(true);
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [removed, toast, navigate, location.pathname, location.search]);
@@ -293,9 +293,8 @@ export default function WalletsPage() {
             if (created)
               toast.show({
                 tone: 'info',
-                title: wallet
-                  ? `Added to ${wallet.name}. Syncing transactions…`
-                  : 'Wallet added. Syncing transactions…',
+                title: wallet ? `Added to ${wallet.name}` : 'Wallet added',
+                detail: 'Syncing transactions…',
               });
             if (address.accountId && !wallet) {
               // A reload that fails leaves the saved address on the page rather than nothing.

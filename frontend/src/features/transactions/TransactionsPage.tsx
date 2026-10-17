@@ -734,7 +734,7 @@ export default function TransactionsPage() {
     // BYBIT-GAP-DELETE: the record is gone from the list.
     if (label === 'deleted') {
       setOpenId(null);
-      done('Record deleted.', 'The wallet shows the difference again.');
+      done('Record deleted', 'The wallet shows the difference again.');
       return;
     }
     const said =
@@ -1089,16 +1089,14 @@ export default function TransactionsPage() {
             setOpenId(null);
             setDialog({ editing: operation });
           }}
-          onDeleted={() => void changed('Transaction deleted.', opened)}
+          onDeleted={() => void changed('Transaction deleted', opened)}
         />
       )}
       {dialog && (
         <AddTransactionDialog
           editing={dialog.editing}
           onClose={() => setDialog(null)}
-          onSaved={() =>
-            void changed(dialog.editing ? 'Transaction updated.' : 'Transaction added.')
-          }
+          onSaved={() => void changed(dialog.editing ? 'Transaction updated' : 'Transaction added')}
         />
       )}
     </div>

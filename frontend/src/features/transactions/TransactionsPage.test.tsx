@@ -1281,7 +1281,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(await screen.findByRole('heading', { name: 'No transactions yet' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Transaction deleted.');
+    expect(screen.getByRole('status')).toHaveTextContent('Transaction deleted');
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 1, name: 'Transactions' })).toHaveFocus(),
     );
@@ -1379,7 +1379,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Transaction deleted.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Transaction deleted');
   });
 
   it('transactions-11 says a transaction was updated', async () => {
@@ -1407,7 +1407,11 @@ describe('TransactionsPage manual operations (M9)', () => {
     await within(edit).findByRole('group', { name: 'Asset' });
     await user.click(within(edit).getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(correct).toHaveBeenCalledTimes(1));
-    expect(await screen.findByRole('status')).toHaveTextContent('Transaction updated.');
+    // TOAST-DETAIL: the line under the title says what was saved, the amount as entered; the
+    // page's own repeat of the title keeps it.
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Transaction updatedBuy 0.00918359 BTC · Bybit',
+    );
   });
 
   it('transactions-23 OPS-DELETE-GUARD refuses at once, before asking, when the check names a later sale', async () => {

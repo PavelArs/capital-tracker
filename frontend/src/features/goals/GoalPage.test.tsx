@@ -416,12 +416,12 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     answers(dated);
     vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...dated, name: 'Flat' });
     show(dated, { notice: 'added' });
-    expect((await screen.findByText('Goal added.')).closest('[role="status"]')).not.toBeNull();
+    expect((await screen.findByText('Goal added')).closest('[role="status"]')).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'Edit goal' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
     await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    expect((await screen.findByText('Goal saved.')).closest('[role="status"]')).not.toBeNull();
-    expect(screen.queryByText('Goal added.')).toBeNull();
+    expect((await screen.findByText('Goal saved')).closest('[role="status"]')).not.toBeNull();
+    expect(screen.queryByText('Goal added')).toBeNull();
   });
 
   it('goals-22 asks before deleting, with a danger button and what stays', async () => {
@@ -557,7 +557,7 @@ describe('GOAL-TERMS: changing and deleting a goal from its page', () => {
     show(flat);
     const dialog = await edit(user);
     await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    expect((await screen.findByText('Goal saved.')).closest('[role="status"]')).not.toBeNull();
+    expect((await screen.findByText('Goal saved')).closest('[role="status"]')).not.toBeNull();
   });
 
   it('deletes a goal after asking', async () => {

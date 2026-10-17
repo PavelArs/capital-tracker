@@ -219,7 +219,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     page
       .getByRole('region', { name: 'Messages' })
       .getByRole('status')
-      .filter({ hasText: 'Asset added.' }),
+      .filter({ hasText: 'Asset added' }),
   ).toBeVisible();
   await main.getByRole('link', { name: 'Back to Portfolio' }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);

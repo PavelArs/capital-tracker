@@ -73,12 +73,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback((toast: ToastInput) => {
     const id = nextId++;
-    // The same title again replaces the one on screen, so it is not stacked twice.
-    setToasts((current) =>
-      [...current.filter((item) => item.title !== toast.title), { ...toast, id }].slice(
-        -MAX_TOASTS,
-      ),
-    );
+    // The same title again replaces the one on screen, so it is not stacked twice; a repeat
+    // without a detail line keeps the one already said (the dialog's "Buy 0.01 BTC · Bybit").
+    setToasts((current) => {
+      const said = current.find((item) => item.title === toast.title);
+      const detail = toast.detail ?? said?.detail;
+      return [
+        ...current.filter((item) => item.title !== toast.title),
+        { ...toast, ...(detail ? { detail } : {}), id },
+      ].slice(-MAX_TOASTS);
+    });
     return id;
   }, []);
 

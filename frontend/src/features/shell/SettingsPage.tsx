@@ -7,6 +7,7 @@ import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
 import { useToast } from '@contexts/ToastContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Button, ButtonLink } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
 import { Affix, Input } from '@/ui/inputs';
@@ -292,6 +293,13 @@ function Profile() {
 
 export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  // A link to one card (the hide toast's Open goes to Hidden assets) brings it into view.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash) return;
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    target?.scrollIntoView?.({ block: 'start' });
+  }, [hash]);
   return (
     <div className="shell-page">
       <PageHeader title="Settings" currencySwitch={false} />

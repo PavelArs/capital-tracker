@@ -2516,7 +2516,7 @@ describe('UI audit: Wallets', () => {
     ).toHaveFocus();
     finish(synced(wallet(1, {})));
     expect(
-      (await screen.findByText('Trust Wallet BTC is synced.')).closest('[role]'),
+      (await screen.findByText('Trust Wallet BTC is synced')).closest('[role]'),
     ).toHaveAttribute('role', 'status');
   });
 
@@ -2588,9 +2588,7 @@ describe('UI audit: Wallets', () => {
     await waitFor(() =>
       expect(within(ledgerCard).getByRole('link', { name: 'Ledger' })).toHaveFocus(),
     );
-    expect(
-      screen.getByText('Wallet added. Syncing transactions…').closest('[role]'),
-    ).toHaveAttribute('role', 'status');
+    expect(screen.getByText('Wallet added').closest('[role]')).toHaveAttribute('role', 'status');
   });
 
   it("wallets-07 still shows a new wallet's address when the page cannot reload after adding it", async () => {
@@ -2763,7 +2761,7 @@ describe('UI audit: Wallets', () => {
       pathname: '/wallets',
       state: { removedWallet: 'Old wallet' },
     });
-    const said = await screen.findByText('Old wallet was removed.');
+    const said = await screen.findByText('Old wallet was removed');
     expect(said.closest('[role]')).toHaveAttribute('role', 'status');
     // The row it was on is gone: the keyboard lands on the Wallets heading (plan 1.5).
     await waitFor(() =>

@@ -276,10 +276,19 @@ export default function DepositPage() {
   const missing = isAxiosError(error) && error.response?.status === 404;
   const failed = error !== null && !missing && deposit === null;
 
-  const saved = (next: DepositDetail, title: string) => {
+  const saved = (next: DepositDetail, title: string, detail?: string) => {
     replace(next);
     setDialog(null);
-    toast.show({ tone: 'success', title });
+    toast.show({ tone: 'success', title, ...(detail ? { detail } : {}) });
+  };
+  // What a saved check found: the bank and the app agree, or by how much they differ. Said only
+  // when that day has one check, so it is the one just saved.
+  const checkResult = (next: DepositDetail, checkedOn: string) => {
+    const rows = next.checks.filter((row) => row.checkedOn === checkedOn);
+    if (rows.length !== 1) return undefined;
+    return Number(rows[0].difference) === 0
+      ? 'The bank and the app agree'
+      : `Differs by ${money(rows[0].difference, next.currency, true)}`;
   };
   const back = withCurrency('/deposits', asked);
 
@@ -536,7 +545,9 @@ export default function DepositPage() {
               currency={own}
               capitalized={deposit.capitalized}
               onClose={() => setDialog(null)}
-              onSaved={(next) => saved(next, 'Check saved')}
+              onSaved={(next, checkedOn) =>
+                saved(next, 'Balance check saved', checkResult(next, checkedOn))
+              }
             />
           )}
           {dialog === 'rate' && (

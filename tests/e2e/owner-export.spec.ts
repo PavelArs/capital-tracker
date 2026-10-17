@@ -97,7 +97,7 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
     ),
   );
   await expect(
-    page.getByRole('status').getByText(`Downloaded ${archive.suggestedFilename()}.`),
+    page.getByRole('status').getByText(`Downloaded ${archive.suggestedFilename()}`),
   ).toBeVisible();
 
   // EXP-JSON: the same records with a format version, and no password, TOTP or session.
@@ -123,7 +123,7 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
   for (const marker of [owner.email, owner.password, session, hashToken(session), api.csrfToken])
     expect(text).not.toContain(marker);
   await expect(
-    page.getByRole('status').getByText(`Downloaded ${backup.suggestedFilename()}.`),
+    page.getByRole('status').getByText(`Downloaded ${backup.suggestedFilename()}`),
   ).toBeVisible();
 
   // At phone width the card fits without a horizontal scroll.

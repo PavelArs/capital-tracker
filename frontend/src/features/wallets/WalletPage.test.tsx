@@ -691,7 +691,7 @@ describe('UI audit: one wallet', () => {
     await user.clear(within(dialog).getByLabelText('Name'));
     await user.type(within(dialog).getByLabelText('Name'), 'Ledger');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
-    expect((await screen.findByText('Wallet renamed.')).closest('[role]')).toHaveAttribute(
+    expect((await screen.findByText('Wallet renamed')).closest('[role]')).toHaveAttribute(
       'role',
       'status',
     );
@@ -705,7 +705,7 @@ describe('UI audit: one wallet', () => {
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Remove Trust Wallet?' });
     await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
-    const said = await screen.findByText('Trust Wallet was removed.');
+    const said = await screen.findByText('Trust Wallet was removed');
     expect(said.closest('[role]')).toHaveAttribute('role', 'status');
     // The row it was on is gone: the keyboard lands on the Wallets heading (plan 1.5).
     await waitFor(() =>

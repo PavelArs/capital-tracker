@@ -615,7 +615,8 @@ export function CheckDialog({
   currency: DepositCurrency;
   capitalized: boolean;
   onClose: () => void;
-  onSaved: (deposit: DepositDetail) => void;
+  /** With the day of the check, so the page can say what it found. */
+  onSaved: (deposit: DepositDetail, checkedOn: string) => void;
 }) {
   const [date, setDate] = useState(today());
   const [balance, setBalance] = useState('');
@@ -636,7 +637,10 @@ export function CheckDialog({
       onClose={onClose}
       onSubmit={async () => {
         const entries = { checkedOn: date, bankBalance: balance.trim() };
-        onSaved(await depositsApi.addCheck(id, { requestId: attempt(entries), ...entries }));
+        onSaved(
+          await depositsApi.addCheck(id, { requestId: attempt(entries), ...entries }),
+          entries.checkedOn,
+        );
       }}
     >
       <div className="ui-field-row">

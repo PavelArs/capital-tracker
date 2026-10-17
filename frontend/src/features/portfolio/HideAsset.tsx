@@ -4,6 +4,7 @@ import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { useToast } from '@contexts/ToastContext';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/ui/Button';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
 
@@ -40,6 +41,7 @@ export default function HideAsset({
     () => cachedReads.wallets.last() ?? [],
   );
   const [asking, setAsking] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let live = true;
@@ -68,6 +70,7 @@ export default function HideAsset({
       tone: 'success',
       title: `${symbol ?? 'Asset'} hidden`,
       detail: 'Bring it back in Settings under Hidden assets.',
+      action: { label: 'Open', onClick: () => navigate('/preferences#settings-hidden-assets') },
     });
     onHidden();
   };

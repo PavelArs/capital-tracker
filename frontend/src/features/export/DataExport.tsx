@@ -45,11 +45,12 @@ export default function DataExport() {
     try {
       const { blob, filename } = await exportApi.download(what);
       save(blob, filename);
-      toast.show({ tone: 'success', title: `Downloaded ${filename}.` });
+      toast.show({ tone: 'success', title: `Downloaded ${filename}` });
     } catch {
       toast.show({
         tone: 'error',
-        title: 'Could not export your data; nothing was downloaded. Try again.',
+        title: 'Could not export your data',
+        detail: 'Nothing was downloaded. Try again.',
       });
     } finally {
       setState({ kind: 'idle' });

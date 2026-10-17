@@ -258,6 +258,7 @@ const giftKinds = [
   ['gift-received', 'Received'],
   ['gift-sent', 'Sent'],
 ] as const satisfies readonly (readonly [EntryKind, string])[];
+const kindNames = new Map<EntryKind, string>([...mainKinds, ...moreKinds, ['gift-sent', 'Gift']]);
 const isMoreKind = (kind: EntryKind) =>
   kind === 'reward' || kind === 'airdrop' || kind === 'fee' || kind.startsWith('gift');
 /** Which records a type is saved as: an edit keeps to the same kind of record. */
@@ -748,10 +749,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
         if (editing) await tradesApi.correct(accountId, editing.id.replace(/^trade:/, ''), saved);
         else await tradesApi.create(accountId, saved);
       }
-      // The same titles as the Transactions page's own word, so the toast is shown once.
+      // The same titles as the Transactions page's own word, so the toast is shown once; the
+      // line under it says what was saved, the amount as entered ("Buy 0.01 BTC · Bybit").
+      const where = transfer && receiver ? `${account.name} → ${receiver.name}` : account.name;
       toast.show({
         tone: 'success',
-        title: editing ? 'Transaction updated.' : 'Transaction added.',
+        title: editing ? 'Transaction updated' : 'Transaction added',
+        detail: `${kindNames.get(kind) ?? 'Transaction'} ${counted(entry.amount, symbol)} · ${where}`,
       });
       onSaved();
     } catch (caught) {
