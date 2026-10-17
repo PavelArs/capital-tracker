@@ -1337,6 +1337,23 @@ async function main() {
       );
       const daily = await requestsOf(() => prices.collect(new Date()));
       assert.deepEqual(geckoCalls(daily.urls), [['ethereum', `${fakeUsdt},${syn}`]]);
+      // A token CoinGecko returns with an unreadable quote is listed but unpriced, not spam.
+      await post('token-prices', {
+        ethereum: { [syn.toLowerCase()]: 0.25, [fakeUsdt.toLowerCase()]: -1 },
+      });
+      await db.query(
+        `UPDATE chain_tokens SET "priceCheckedAt" = now() - interval '25 hours' WHERE contract = $1`,
+        [fakeUsdt],
+      );
+      await prices.collect(new Date());
+      assert.deepEqual(await stateOf(), [
+        ['SYN', syn, true],
+        [fakeTicker, fakeUsdt, true],
+      ]);
+      assert.deepEqual(await latestMarketPrices(db.manager, [fakeTicker], new Date()), []);
+      await db.query('UPDATE chain_tokens SET "coingeckoId"=NULL WHERE contract=$1', [fakeUsdt]);
+      await require(`${dist}/wallet-addresses/chain-tokens.js`).loadChainTokens(db.manager);
+      await post('token-prices', { ethereum: { [syn.toLowerCase()]: 0.25 } });
       // Back to the copycat being left out by the app's own rule, as the stages below expect.
       await db.query(
         `UPDATE wallet_addresses SET "shownTokens" = array_remove("shownTokens", $2) WHERE id = $1`,

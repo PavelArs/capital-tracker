@@ -306,14 +306,17 @@ export class CoinGeckoClient implements PriceProvider {
 
   /**
    * TOKEN-ANY-PRICE: the USD price of tokens by contract on one of CoinGecko's platforms. A
-   * token CoinGecko does not know is absent from the answer. An EVM chain's contract is matched
+   * token CoinGecko does not know is absent from the answer; one it returns with an unreadable
+   * quote maps to null (listed, not priced). An EVM chain's contract is matched
    * without regard to case, a Solana mint exactly.
    */
   async tokens(
     platform: string,
     contracts: readonly string[],
     now: Date,
-  ): Promise<{ ok: true; prices: Map<string, TokenQuote> } | { ok: false; reason: PriceFailure }> {
+  ): Promise<
+    { ok: true; prices: Map<string, TokenQuote | null> } | { ok: false; reason: PriceFailure }
+  > {
     const query = new URLSearchParams({
       contract_addresses: contracts.join(','),
       vs_currencies: 'usd',
@@ -336,10 +339,12 @@ export class CoinGeckoClient implements PriceProvider {
           value,
         ]),
       );
-      const prices = new Map<string, TokenQuote>();
+      const prices = new Map<string, TokenQuote | null>();
       for (const contract of contracts) {
         const value = answered.get(platform === 'solana' ? contract : contract.toLowerCase());
         if (value === undefined) continue;
+        // Returned means listed, even when this quote is unreadable: null keeps that signal.
+        prices.set(contract, null);
         try {
           const entry = record(value);
           prices.set(contract, {

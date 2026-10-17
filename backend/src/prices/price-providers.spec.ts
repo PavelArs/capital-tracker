@@ -403,7 +403,7 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
       });
     });
 
-    it('TOKEN-MICRO-PRICE leaves one unreadable entry not priced instead of failing its batch', async () => {
+    it('TOKEN-MICRO-PRICE keeps a returned contract with an unreadable quote listed but unpriced, without failing its batch', async () => {
       handler = () => ({
         status: 200,
         body: {
@@ -415,7 +415,10 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
         new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed, other], now),
       ).resolves.toEqual({
         ok: true,
-        prices: new Map([[other, { price: '2', observedAt: '2026-10-04T15:04:30.000Z' }]]),
+        prices: new Map([
+          [mixed, null],
+          [other, { price: '2', observedAt: '2026-10-04T15:04:30.000Z' }],
+        ]),
       });
     });
   });

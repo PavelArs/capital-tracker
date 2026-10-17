@@ -232,7 +232,7 @@ export class PricesService {
       );
     if (due.length === 0) return 0;
     const quotes: Quote[] = [];
-    const priced: { network: string; contract: string }[] = [];
+    const listed: { network: string; contract: string }[] = [];
     const asked: { network: string; contract: string }[] = [];
     let failure: PriceFailure | null = null;
     for (const network of anyTokenNetworks) {
@@ -250,9 +250,10 @@ export class PricesService {
         }
         for (const token of batch) {
           asked.push(token);
+          if (!answer.prices.has(token.contract)) continue;
+          listed.push(token);
           const found = answer.prices.get(token.contract);
           if (!found) continue;
-          priced.push(token);
           quotes.push({
             asset: token.ticker,
             price: found.price,
@@ -270,7 +271,7 @@ export class PricesService {
       const stored = await this.insert(manager, quotes);
       // The contract itself marks a token CoinGecko lists: the lookup key that found it.
       for (const token of asked) {
-        const found = priced.some(
+        const found = listed.some(
           (item) => item.network === token.network && item.contract === token.contract,
         );
         await manager.query(
