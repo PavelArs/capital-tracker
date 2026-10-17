@@ -471,9 +471,7 @@ function Summary({
         </p>
       )}
       {!!portfolio.interestMissingDepositCount && (
-        <Banner tone="warn">
-          {accountsWithoutRate(portfolio.interestMissingDepositCount)}
-        </Banner>
+        <Banner tone="warn">{accountsWithoutRate(portfolio.interestMissingDepositCount)}</Banner>
       )}
       {portfolio.stalePriceCount > 0 && (
         <Banner tone="warn">

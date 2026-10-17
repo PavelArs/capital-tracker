@@ -291,6 +291,7 @@ export default function DepositPage() {
   const checkResult = (next: DepositDetail, checkedOn: string) => {
     const rows = next.checks.filter((row) => row.checkedOn === checkedOn);
     if (rows.length !== 1) return undefined;
+    if (rows[0].difference === null) return 'Not compared: the interest is missing';
     return Number(rows[0].difference) === 0
       ? 'The bank and the app agree'
       : `Differs by ${money(rows[0].difference, next.currency, true)}`;
@@ -502,7 +503,9 @@ export default function DepositPage() {
                 <KeyValueRow term="Interest">{interestText(deposit)}</KeyValueRow>
                 <KeyValueRow term="Term">{periodText(deposit)}</KeyValueRow>
                 {deposit.kind !== 'account' && (
-                  <KeyValueRow term="Closing early">{earlyCloseText[deposit.earlyClose]}</KeyValueRow>
+                  <KeyValueRow term="Closing early">
+                    {earlyCloseText[deposit.earlyClose]}
+                  </KeyValueRow>
                 )}
               </KeyValue>
             </Card>

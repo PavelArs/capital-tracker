@@ -586,7 +586,7 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
   it('says it once on the page, with no interest figures and no periods', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(unrated, { periods: [] }));
     open(`/deposits/${unrated.id}?currency=RUB`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Current C' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Current C' })).toBeInTheDocument();
     expect(screen.getByText(/No rate entered, so the interest is not counted/)).toBeInTheDocument();
     expect(screen.queryByText('Interest earned')).toBeNull();
     expect(screen.queryByText('Earned, not posted yet')).toBeNull();
@@ -633,11 +633,37 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
       detail(unrated, { periods: [], checks: [check], lastCheck: check }),
     );
     open(`/deposits/${unrated.id}?currency=RUB`);
-    await screen.findByRole('heading', { level: 1, name: 'Current C' });
+    await screen.findByRole('heading', { level: 2, name: 'Current C' });
     const checks = await screen.findByRole('region', { name: 'Checks against the bank' });
     expect(within(checks).getByText('Not compared')).toBeInTheDocument();
     expect(checks).not.toHaveTextContent(/₽0\.00/);
     expect(screen.queryByText('Matches')).toBeNull();
+  });
+
+  it('TOAST-CHECK does not say a saved check agrees with the app while the interest is missing', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(unrated, { periods: [] }));
+    const check = {
+      id: 'c1',
+      checkedOn: '2026-10-05',
+      bankBalance: '50123.00',
+      calculated: null,
+      difference: null,
+    };
+    vi.spyOn(depositsApi, 'addCheck').mockResolvedValue(
+      detail(unrated, { periods: [], checks: [check], lastCheck: check }),
+    );
+    open(`/deposits/${unrated.id}?currency=RUB`);
+    await user.click(await screen.findByRole('button', { name: 'Check balance' }));
+    const dialog = screen.getByRole('dialog', { name: 'Check against the bank' });
+    await user.clear(within(dialog).getByLabelText('Date'));
+    await user.type(within(dialog).getByLabelText('Date'), '2026-10-05');
+    await user.type(within(dialog).getByLabelText('Balance in the bank, RUB'), '50123');
+    await user.click(within(dialog).getByRole('button', { name: 'Save check' }));
+    const messages = await screen.findByRole('region', { name: 'Messages' });
+    await waitFor(() => expect(messages).toHaveTextContent('Balance check saved'));
+    expect(messages).toHaveTextContent('Not compared: the interest is missing');
+    expect(messages).not.toHaveTextContent('agree');
   });
 
   it('keeps the interest figures of an account once a rate is in force', async () => {
@@ -651,7 +677,7 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     };
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(rated));
     open(`/deposits/${rated.id}?currency=RUB`);
-    await screen.findByRole('heading', { level: 1, name: 'Current C' });
+    await screen.findByRole('heading', { level: 2, name: 'Current C' });
     expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
     expect(screen.queryByText(/No rate entered, so the interest is not counted/)).toBeNull();
   });
