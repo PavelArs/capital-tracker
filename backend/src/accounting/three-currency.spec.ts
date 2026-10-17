@@ -277,6 +277,11 @@ describe('CUR-RATE-STALE a rate over 15 days old values nothing today', () => {
     });
   });
 
+  it('lists only the rates the values used, never the stale one', () => {
+    const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
+    expect(rub.rates).toEqual([{ currency: 'EUR', date: '2026-10-04', rubPerUnit: '110' }]);
+  });
+
   it('still states a past purchase at the rate it reused over a gap of under 15 days', () => {
     const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
     expect(assetOf(rub, btc)).toMatchObject({ costBasis: '80000', missingRateQuantity: '0' });

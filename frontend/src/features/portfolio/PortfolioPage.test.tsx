@@ -3294,7 +3294,9 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
 
     await user.click(within(switcher).getByRole('radio', { name: 'RUB' }));
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('RUB'));
-    await screen.findByText(/No Bank of Russia rate is stored yet, so values in RUB/);
+    await screen.findByText(
+      /No Bank of Russia rate from the last 15 days is stored, so values in RUB/,
+    );
     expect(cells(rowOf('Bitcoin')).slice(2, 7)).toEqual([
       'No rateMarket price',
       '—',

@@ -73,5 +73,5 @@ export function ratesNote(portfolio: PortfolioValuation): string {
     .join(', ');
   return rates
     ? `Values are in ${portfolio.currency} from the latest stored prices and Bank of Russia rates: ${rates}. Costs and realized P&L use the rate of each operation's date.`
-    : `No Bank of Russia rate is stored yet, so values in ${portfolio.currency} cannot be shown.`;
+    : `No Bank of Russia rate from the last 15 days is stored, so values in ${portfolio.currency} cannot be shown.`;
 }

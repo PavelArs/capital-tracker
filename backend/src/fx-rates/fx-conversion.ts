@@ -97,10 +97,10 @@ export class FxConverter {
     return divide(amount * source, target);
   }
 
-  /** The effective rates used for one date, for display next to converted values. */
+  /** The rates `convert` uses on one date, for display next to converted values; stale ones are left out. */
   ratesOn(date: string): { currency: RatedCurrency; date: string; rubPerUnit: string }[] {
     return ratedCurrencies.flatMap((currency) => {
-      const rate = rateOn(this.rates[currency], date);
+      const rate = freshRateOn(this.rates[currency], date);
       return rate ? [{ currency, ...rate }] : [];
     });
   }
