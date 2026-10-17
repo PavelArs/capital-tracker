@@ -258,61 +258,6 @@
 }
 
 /* GOAL-CHART: the portfolio so far, the forecast fan to the deadline and the sum to reach. */
-.goal-chart-card {
-  display: grid;
-  gap: var(--sp-3);
-}
-
-.goal-chart__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 24px;
-}
-
-.goal-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-}
-
-.goal-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.goal-legend__line {
-  display: inline-block;
-  width: 16px;
-  height: 0;
-  border-top: 2px solid var(--accent);
-}
-
-.goal-legend__line--invested {
-  border-top-color: var(--ink-3);
-}
-
-.goal-legend__line--forecast {
-  border-top-style: dashed;
-}
-
-.goal-legend__line--target {
-  border-top: 2px dotted var(--pos);
-}
-
-.goal-legend__band {
-  display: inline-block;
-  width: 16px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--accent);
-  opacity: 0.2;
-}
-
 .goal-chart {
   position: relative;
   height: 290px;
@@ -425,10 +370,6 @@
   padding: 48px 0;
   color: var(--ink-2);
   text-align: center;
-}
-
-.goal-chart__note {
-  margin-top: 12px;
 }
 
 .goal-tip {

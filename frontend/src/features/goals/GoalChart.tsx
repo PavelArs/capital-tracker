@@ -1,6 +1,10 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal, ScenarioKey } from '@api/goals.api';
 import { type KeyboardEvent, useEffect, useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { Legend } from '@/ui/Legend';
 import {
   chartDateTicks,
   chartRightPad,
@@ -157,8 +161,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
 
   if (plotted.length === 0)
     return (
-      <section className="shell-card goal-chart-card" aria-label={label}>
-        <h2>Progress and forecast</h2>
+      <Card variant="chart" label={label}>
+        <CardHeader title="Progress and forecast" />
         <p className="goal-chart__empty" role="note">
           {historyError && history === null
             ? 'Could not load the portfolio history. Try again later.'
@@ -166,7 +170,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
               ? 'Loading the chart…'
               : `No portfolio figures in ${goal.currency} yet.`}
         </p>
-      </section>
+      </Card>
     );
 
   const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
@@ -301,35 +305,29 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     low && high ? `${rateText(low.returnPercent)}% to ${rateText(high.returnPercent)}%` : null;
 
   return (
-    <section className="shell-card goal-chart-card" aria-labelledby="goal-chart">
-      <div className="goal-chart__head">
-        <h2 id="goal-chart">Progress and forecast</h2>
-        <div className="goal-legend" aria-label="Chart legend">
-          <span>
-            <i className="goal-legend__line" aria-hidden="true" />
-            Portfolio
-          </span>
-          <span>
-            <i className="goal-legend__line goal-legend__line--invested" aria-hidden="true" />
-            Money put in
-          </span>
-          {band.length > 0 && base && (
-            <span>
-              <i className="goal-legend__line goal-legend__line--forecast" aria-hidden="true" />
-              Forecast at {rateText(base.returnPercent)}%
-            </span>
-          )}
-          {band.length > 0 && rangeText && (
-            <span>
-              <i className="goal-legend__band" aria-hidden="true" />
-              {rangeText}
-            </span>
-          )}
-          <span>
-            <i className="goal-legend__line goal-legend__line--target" aria-hidden="true" />
-            Sum to reach
-          </span>
-        </div>
+    <Card variant="chart" labelledBy="goal-chart">
+      <CardHeader id="goal-chart" title="Progress and forecast" sub={goal.currency} />
+      <div aria-label="Chart legend" role="group">
+        <Legend
+          items={[
+            { key: 'value', label: 'Portfolio', swatch: 'line', color: 'var(--accent)' },
+            { key: 'invested', label: 'Money put in', swatch: 'line', color: 'var(--ink-3)' },
+            ...(band.length > 0 && base
+              ? [
+                  {
+                    key: 'forecast',
+                    label: `Forecast at ${rateText(base.returnPercent)}%`,
+                    swatch: 'dash' as const,
+                    color: 'var(--accent)',
+                  },
+                ]
+              : []),
+            ...(band.length > 0 && rangeText
+              ? [{ key: 'band', label: rangeText, swatch: 'area' as const, color: 'var(--accent)' }]
+              : []),
+            { key: 'target', label: 'Sum to reach', swatch: 'dash', color: 'var(--pos)' },
+          ]}
+        />
       </div>
       <div
         ref={setBox}
@@ -528,46 +526,57 @@ export default function GoalChart({ goal }: { goal: Goal }) {
         )}
       </div>
       {(historyStale || forecastStale) && (
-        <div className="ui-banner ui-banner--warn goal-chart__note" role="alert">
-          <p>Could not refresh the chart. The figures below may be out of date.</p>
-          <button
-            type="button"
-            className="shell-button"
-            onClick={() => {
-              reloadHistory(true);
-              reloadForecast(true);
-            }}
-          >
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button
+              size="sm"
+              icon="refresh"
+              onClick={() => {
+                reloadHistory(true);
+                reloadForecast(true);
+              }}
+            >
+              Try again
+            </Button>
+          }
+        >
+          Could not refresh the chart. The figures below may be out of date.
+        </Banner>
       )}
       {historyError !== null && history === null && (
-        <div className="ui-banner ui-banner--warn goal-chart__note" role="alert">
-          <p>Could not load the portfolio history, so only the forecast is drawn.</p>
-          <button type="button" className="shell-button" onClick={() => reloadHistory()}>
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => reloadHistory()}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load the portfolio history, so only the forecast is drawn.
+        </Banner>
       )}
       {known && forecastError !== null && forecast === null && (
-        <div className="ui-banner ui-banner--warn goal-chart__note" role="alert">
-          <p>Could not load the forecast, so only the portfolio so far is drawn.</p>
-          <button type="button" className="shell-button" onClick={() => reloadForecast()}>
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => reloadForecast()}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load the forecast, so only the portfolio so far is drawn.
+        </Banner>
       )}
-      {staleNote && (
-        <p className="shell-note" role="note">
-          {staleNote}
-        </p>
-      )}
+      {staleNote && <Banner tone="warn">{staleNote}</Banner>}
       {!known && (
-        <p className="shell-note" role="note">
+        <Banner tone="info">
           The forecast needs every asset priced, so only the portfolio so far is drawn.
-        </p>
+        </Banner>
       )}
-    </section>
+    </Card>
   );
 }
