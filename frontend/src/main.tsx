@@ -14,10 +14,8 @@ import './ui/form.css';
 import './ui/table.css';
 import './ui/filters.css';
 import App from './App';
-import './utils/axiosConfig'; // Initialize axios interceptors
 import './i18n/config'; // Initialize i18n
 import ErrorBoundary from './components/ErrorBoundary';
-import reportWebVitals from './utils/reportWebVitals';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -26,5 +24,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </React.StrictMode>,
 );
-
-reportWebVitals();
