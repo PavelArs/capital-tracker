@@ -296,6 +296,23 @@ describe('cookie session API client', () => {
     expect(connection.get().failing).toBe(false);
   });
 
+  it('STALE-STATE keeps reads marked unanswered when a different read answers', async () => {
+    const { connection } = await import('./connection');
+    connection.reset();
+    setErrorHandler(vi.fn());
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/goals') throw rejected(config, 500);
+      return response(config, {});
+    };
+    await expect(apiClient.get('/goals')).rejects.toMatchObject({ response: { status: 500 } });
+    await apiClient.get('/sync-status');
+    // The goals shown are still the ones from before: only goals answering again clears it.
+    expect(connection.get().failing).toBe(true);
+    apiClient.defaults.adapter = async (config) => response(config, {});
+    await apiClient.get('/goals');
+    expect(connection.get().failing).toBe(false);
+  });
+
   it('leaves a refused goal request to the goal dialog', async () => {
     const onError = vi.fn();
     setErrorHandler(onError);

@@ -111,7 +111,7 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
-    connection.settled(response.config, true);
+    connection.settled(response.config, true, apiClient.getUri(response.config));
     // A change by the owner (or a sign-in or sign-out) makes every kept answer old.
     if (isUnsafeRequest(response.config) && !response.config.changesNothing) forgetReads();
     return response;
@@ -128,6 +128,7 @@ apiClient.interceptors.response.use(
       connection.settled(
         error.config,
         cancelled || worthRepeating(error) ? undefined : status !== undefined && status < 500,
+        apiClient.getUri(error.config),
       );
     }
     if (

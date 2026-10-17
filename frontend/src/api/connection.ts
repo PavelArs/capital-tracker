@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react';
 export interface Connection {
   /** The browser says it has no network. */
   offline: boolean;
-  /** The newest read got no answer, and none has answered since. */
+  /** A read got no answer, and the same read has not answered since. */
   failing: boolean;
   /** A read has been on its way for more than `SLOW_MS`. */
   slow: boolean;
@@ -30,6 +30,8 @@ const listeners = new Set<() => void>();
 // Reads on their way, each with the timer that marks it slow.
 const pending = new Map<object, ReturnType<typeof setTimeout>>();
 const slowReads = new Set<object>();
+// Reads that got no answer, by what they asked for, until that same read answers.
+const failedReads = new Set<unknown>();
 
 function update(next: Partial<Connection>): void {
   const merged = { ...state, ...next };
@@ -65,16 +67,16 @@ export const connection = {
   /**
    * A read settled: `answered` is true when the server gave an answer below 500, false when it
    * gave none or a 5xx, and left out when the read says nothing (cancelled, or sent again).
+   * `key` names what was read, so only the same read answering clears its failure.
    */
-  settled(token: object, answered?: boolean): void {
+  settled(token: object, answered?: boolean, key: unknown = token): void {
     if (!pending.has(token)) return;
     clearTimeout(pending.get(token));
     pending.delete(token);
     slowReads.delete(token);
-    update({
-      slow: slowReads.size > 0,
-      ...(answered === undefined ? {} : { failing: !answered }),
-    });
+    if (answered === true) failedReads.delete(key);
+    if (answered === false) failedReads.add(key);
+    update({ slow: slowReads.size > 0, failing: failedReads.size > 0 });
   },
   setOffline(offline: boolean): void {
     update({ offline });
@@ -88,6 +90,7 @@ export const connection = {
     for (const timer of pending.values()) clearTimeout(timer);
     pending.clear();
     slowReads.clear();
+    failedReads.clear();
     state = {
       offline: typeof navigator !== 'undefined' && navigator.onLine === false,
       failing: false,
