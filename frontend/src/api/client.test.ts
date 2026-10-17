@@ -313,6 +313,59 @@ describe('cookie session API client', () => {
     expect(connection.get().failing).toBe(false);
   });
 
+  it('STALE-STATE drops a failure whose page is gone, and keeps one the screen still reads', async () => {
+    const { connection, CARRY_MS } = await import('./connection');
+    connection.reset();
+    setErrorHandler(vi.fn());
+    vi.useFakeTimers();
+    try {
+      apiClient.defaults.adapter = async (config) => {
+        if (config.url === '/goals' || config.url === '/sync-status') throw rejected(config, 500);
+        return response(config, {});
+      };
+      await expect(apiClient.get('/goals')).rejects.toMatchObject({ response: { status: 500 } });
+      await expect(apiClient.get('/sync-status')).rejects.toMatchObject({
+        response: { status: 500 },
+      });
+      // The owner leaves the goals page; the shell's sync status is still on screen.
+      connection.pageChanged();
+      expect(connection.get().failing).toBe(true);
+      // The shell reads the sync status again, and it still gets no answer.
+      await expect(apiClient.get('/sync-status')).rejects.toMatchObject({
+        response: { status: 500 },
+      });
+      vi.advanceTimersByTime(CARRY_MS);
+      expect(connection.get().failing).toBe(true);
+      // Once the sync status answers, the goals read nobody asks for again no longer counts.
+      apiClient.defaults.adapter = async (config) => response(config, {});
+      await apiClient.get('/sync-status');
+      expect(connection.get().failing).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('STALE-STATE Retry drops a failure the page drawn again no longer reads', async () => {
+    const { connection, CARRY_MS } = await import('./connection');
+    connection.reset();
+    setErrorHandler(vi.fn());
+    vi.useFakeTimers();
+    try {
+      apiClient.defaults.adapter = async (config) => {
+        throw rejected(config, 500);
+      };
+      await expect(apiClient.get('/portfolio/history?period=1M')).rejects.toMatchObject({
+        response: { status: 500 },
+      });
+      connection.retry();
+      expect(connection.get().failing).toBe(true);
+      vi.advanceTimersByTime(CARRY_MS);
+      expect(connection.get().failing).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('leaves a refused goal request to the goal dialog', async () => {
     const onError = vi.fn();
     setErrorHandler(onError);

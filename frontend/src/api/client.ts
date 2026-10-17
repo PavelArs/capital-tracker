@@ -101,7 +101,7 @@ apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     config.headers.delete('Authorization');
     if (isUnsafeRequest(config)) config.headers.set('X-CSRF-Token', await getCsrfToken());
-    else connection.started(config);
+    else connection.started(config, apiClient.getUri(config));
     requestAuthentication.set(config, authenticationVersion);
     return config;
   },

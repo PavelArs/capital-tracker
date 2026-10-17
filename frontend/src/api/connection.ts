@@ -19,6 +19,11 @@ export interface Connection {
 
 // A read slower than this is said to be refreshing.
 export const SLOW_MS = 3_000;
+// A failure outlives its page only while its read is sent again within this long: the page now
+// on screen reads at once, and the shell's own reads poll every minute.
+// shortcut: a failed read of a page left is dropped up to this long after, not at once; upgrade
+// to failures owned by the reader that shows them if the banner must clear sooner.
+export const CARRY_MS = 65_000;
 
 let state: Connection = {
   offline: typeof navigator !== 'undefined' && navigator.onLine === false,
@@ -32,6 +37,9 @@ const pending = new Map<object, ReturnType<typeof setTimeout>>();
 const slowReads = new Set<object>();
 // Reads that got no answer, by what they asked for, until that same read answers.
 const failedReads = new Set<unknown>();
+// Failures from before the page changed, not sent again since, and the timer that drops them.
+const unconfirmed = new Set<unknown>();
+let carryTimer: ReturnType<typeof setTimeout> | undefined;
 
 function update(next: Partial<Connection>): void {
   const merged = { ...state, ...next };
@@ -54,8 +62,9 @@ export const connection = {
       listeners.delete(listener);
     };
   },
-  /** A read is sent; `token` names it until it settles. */
-  started(token: object): void {
+  /** A read is sent; `token` names it until it settles, `key` names what it reads. */
+  started(token: object, key: unknown = token): void {
+    unconfirmed.delete(key);
     pending.set(
       token,
       setTimeout(() => {
@@ -78,11 +87,26 @@ export const connection = {
     if (answered === false) failedReads.add(key);
     update({ slow: slowReads.size > 0, failing: failedReads.size > 0 });
   },
+  /**
+   * The page on screen changed (or Retry draws it again): a failure whose read is not sent again
+   * within `CARRY_MS` belonged to figures no longer shown, and stops counting.
+   */
+  pageChanged(): void {
+    for (const key of failedReads) unconfirmed.add(key);
+    clearTimeout(carryTimer);
+    if (unconfirmed.size === 0) return;
+    carryTimer = setTimeout(() => {
+      for (const key of unconfirmed) failedReads.delete(key);
+      unconfirmed.clear();
+      update({ failing: failedReads.size > 0 });
+    }, CARRY_MS);
+  },
   setOffline(offline: boolean): void {
     update({ offline });
   },
   /** Retry: the page is drawn again and reads again. */
   retry(): void {
+    connection.pageChanged();
     update({ attempt: state.attempt + 1 });
   },
   /** Tests: back to a fresh page. */
@@ -91,6 +115,8 @@ export const connection = {
     pending.clear();
     slowReads.clear();
     failedReads.clear();
+    unconfirmed.clear();
+    clearTimeout(carryTimer);
     state = {
       offline: typeof navigator !== 'undefined' && navigator.onLine === false,
       failing: false,

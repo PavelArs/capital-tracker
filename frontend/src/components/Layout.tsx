@@ -1,4 +1,4 @@
-import { useConnection } from '@api/connection';
+import { connection, useConnection } from '@api/connection';
 import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
@@ -89,6 +89,9 @@ export default function Layout() {
   useEffect(() => {
     document.title = pageTitle(pathname);
   }, [pathname]);
+  // A new page: the failed reads of the one left stop counting unless they are read again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per page shown.
+  useEffect(() => connection.pageChanged(), [pathname]);
   // Signed out, the tab names only the app again.
   useEffect(
     () => () => {

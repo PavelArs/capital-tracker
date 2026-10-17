@@ -217,6 +217,17 @@ describe('STALE-STATE Retry', () => {
   });
 });
 
+describe('STALE-STATE leaving a page', () => {
+  it('STALE-STATE leaving a page tells the connection, so the failed reads of the page left can be dropped', async () => {
+    const changed = vi.spyOn(connection, 'pageChanged');
+    await renderShell('/dashboard');
+    changed.mockClear();
+    fireEvent.click(screen.getAllByRole('link', { name: /Goals/ })[0]);
+    expect(await screen.findByText('Page')).toBeInTheDocument();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('shell-18 the logout error', () => {
   it('shell-18 says in English that the logout failed, whatever the browser language', async () => {
     const user = userEvent.setup();
