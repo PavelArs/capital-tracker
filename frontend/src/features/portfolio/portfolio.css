@@ -357,3 +357,61 @@ a.portfolio-asset__name:hover {
     font-size: var(--fs-xs);
   }
 }
+
+/* Class groups (prototype tr.grp / .mgrp): the class and its share, the subtotal on the right. */
+.portfolio-table tr.portfolio-group th {
+  padding-top: 18px;
+  padding-bottom: 6px;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.portfolio-table tbody tr.portfolio-group:hover th {
+  background: transparent;
+}
+
+@media (min-width: 1360px) {
+  .portfolio-table tr.portfolio-group th {
+    position: static;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+.portfolio-group__head,
+.portfolio-mgrp {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.portfolio-mgrp {
+  padding: 14px 0 4px;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.02em;
+}
+
+.portfolio-mgrp .portfolio-group__name {
+  margin: 0;
+  font: inherit;
+}
+
+.portfolio-group__share {
+  font-weight: 400;
+}
+
+.portfolio-group__total {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.portfolio-group__total .ui-sub {
+  display: block;
+  font-weight: 400;
+}

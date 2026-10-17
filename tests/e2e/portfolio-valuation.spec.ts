@@ -100,8 +100,10 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   const search = main.getByRole('searchbox', { name: 'Search assets' });
   await search.fill('pvui');
   await expect(main.getByRole('row', { name: new RegExp(`^${assetName}`) })).toHaveCount(1);
-  // Only the header row lacks the ticker while the search is on.
-  await expect(main.getByRole('row').filter({ hasNotText: 'PVUI' })).toHaveCount(1);
+  // Only the header row lacks the ticker while the search is on (the class heads are no assets).
+  await expect(
+    main.locator('tr:not(.portfolio-group)').filter({ hasNotText: 'PVUI' }),
+  ).toHaveCount(1);
   await search.fill('');
 
   const allocation = main.getByRole('region', { name: 'Allocation' });

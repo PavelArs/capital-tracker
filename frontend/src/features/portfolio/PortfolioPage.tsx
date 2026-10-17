@@ -7,7 +7,8 @@ import type {
   RealReading,
 } from '@api/portfolio-valuation.api';
 import { useToast } from '@contexts/ToastContext';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { sumDecimals } from '@utils/decimal';
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerDialog from '../broker/AddBrokerDialog';
@@ -64,6 +65,55 @@ const typeClass: Record<AssetType, AssetClassFilter> = {
 /** An asset's class: its accounts' class when they all are brokers or property, else its type's. */
 function assetClassOf(asset: AssetValuation, classes: AccountClasses): AssetClassFilter {
   return heldClass(asset.holdings, classes) ?? typeClass[asset.assetType];
+}
+
+// The rows are grouped by class in the chips' order, each group in the chosen sort.
+const classOrder = filters.slice(1).map(([value]) => value) as AssetClassFilter[];
+const classLabels = Object.fromEntries(filters) as Record<Filter, string>;
+
+/**
+ * A group's value: the exact sum of its rows' values, and how many held rows have none, so a
+ * missing value is never counted as zero. Null when no row has a value.
+ */
+export function groupSubtotal(rows: readonly AssetValuation[]): {
+  value: string | null;
+  missing: number;
+} {
+  const known = rows.flatMap((row) => (row.value === null ? [] : [row.value]));
+  return {
+    value: known.length > 0 ? sumDecimals(known) : null,
+    missing: rows.filter((row) => row.value === null && Number(row.quantity) !== 0).length,
+  };
+}
+
+/** A group's share of the portfolio, display-only; none while the group or the total is partial. */
+function groupShare(subtotal: ReturnType<typeof groupSubtotal>, total: string | null) {
+  if (subtotal.value === null || subtotal.missing > 0 || total === null) return null;
+  const whole = Number(total);
+  if (!(whole > 0)) return null;
+  const share = (Number(subtotal.value) / whole) * 100;
+  return share > 0 && share < 0.05 ? '<0.1%' : `${share.toFixed(1)}%`;
+}
+
+type GroupHead = ReturnType<typeof groupSubtotal> & {
+  key: AssetClassFilter;
+  label: string;
+  share: string | null;
+};
+type AssetGroup = { head: GroupHead; rows: AssetValuation[] };
+
+/** A group's name and share, and its subtotal on the right, marked when a value is missing. */
+function GroupHeadText({ head, currency }: { head: GroupHead; currency: AccountingCurrency }) {
+  return (
+    <>
+      <span className="portfolio-group__name">{head.label}</span>
+      {head.share !== null && <span className="portfolio-group__share">{head.share}</span>}
+      <span className="portfolio-group__total">
+        {money(head.value, currency)}
+        {head.missing > 0 && <span className="ui-sub">{head.missing} without a price</span>}
+      </span>
+    </>
+  );
 }
 
 export type SortKey =
@@ -440,7 +490,7 @@ function Summary({
 }
 
 function AssetsTable({
-  assets,
+  groups,
   currency,
   asked,
   now,
@@ -449,7 +499,7 @@ function AssetsTable({
   onSort,
   real,
 }: {
-  assets: AssetValuation[];
+  groups: AssetGroup[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   now: Date;
@@ -490,84 +540,93 @@ function AssetsTable({
             })}
           </tr>
         </thead>
-        <tbody>
-          {assets.map((asset) => (
-            <tr key={asset.instrumentId}>
-              <td>
-                <span className="portfolio-asset">
-                  <AssetIcon
-                    symbol={asset.symbol}
-                    name={asset.name}
-                    assetType={asset.assetType}
-                    assetClass={heldClass(asset.holdings, classes)}
-                    network={onlyChain(asset.symbol, chains)}
-                  />
-                  <span className="portfolio-asset__text">
-                    <Link
-                      className="portfolio-asset__name"
-                      to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
-                    >
-                      {asset.name}
-                    </Link>
-                    <span className="portfolio-asset__ticker" title={assetCaption(asset, chains)}>
-                      {assetCaption(asset, chains)}
+        {groups.map(({ head, rows }) => (
+          <tbody key={head.key}>
+            <tr className="portfolio-group">
+              <th scope="rowgroup" colSpan={sortColumns(real !== null).length}>
+                <span className="portfolio-group__head">
+                  <GroupHeadText head={head} currency={currency} />
+                </span>
+              </th>
+            </tr>
+            {rows.map((asset) => (
+              <tr key={asset.instrumentId}>
+                <td>
+                  <span className="portfolio-asset">
+                    <AssetIcon
+                      symbol={asset.symbol}
+                      name={asset.name}
+                      assetType={asset.assetType}
+                      assetClass={heldClass(asset.holdings, classes)}
+                      network={onlyChain(asset.symbol, chains)}
+                    />
+                    <span className="portfolio-asset__text">
+                      <Link
+                        className="portfolio-asset__name"
+                        to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+                      >
+                        {asset.name}
+                      </Link>
+                      <span className="portfolio-asset__ticker" title={assetCaption(asset, chains)}>
+                        {assetCaption(asset, chains)}
+                      </span>
                     </span>
                   </span>
-                </span>
-              </td>
-              <td className="ui-num">{quantity(asset.quantity)}</td>
-              <td className="ui-num">
-                {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
-                <span className="ui-sub">{priceNote(asset, now)}</span>
-              </td>
-              <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
-              <td className="ui-num">
-                <span className="portfolio-share">
-                  <span className="portfolio-share__bar" aria-hidden="true">
-                    <i
-                      style={{ width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%` }}
-                    />
+                </td>
+                <td className="ui-num">{quantity(asset.quantity)}</td>
+                <td className="ui-num">
+                  {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
+                  <span className="ui-sub">{priceNote(asset, now)}</span>
+                </td>
+                <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
+                <td className="ui-num">
+                  <span className="portfolio-share">
+                    <span className="portfolio-share__bar" aria-hidden="true">
+                      <i
+                        style={{ width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%` }}
+                      />
+                    </span>
+                    <span className="portfolio-share__text">
+                      {shareText(asset.allocationPercent)}
+                    </span>
                   </span>
-                  <span className="portfolio-share__text">
-                    {shareText(asset.allocationPercent)}
-                  </span>
-                </span>
-              </td>
-              <td className="ui-num">
-                {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
-              </td>
-              <td className="ui-num">
-                {real === null ? (
-                  <Signed
-                    value={shownProfit(asset).pnl}
-                    currency={currency}
-                    ratio={shownProfit(asset).ratio}
-                    inline
-                  />
-                ) : (
-                  <>
+                </td>
+                <td className="ui-num">
+                  {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
+                </td>
+                <td className="ui-num">
+                  {real === null ? (
                     <Signed
-                      value={realProfit(asset, real).pnl}
+                      value={shownProfit(asset).pnl}
                       currency={currency}
-                      ratio={realProfit(asset, real).ratio}
+                      ratio={shownProfit(asset).ratio}
                       inline
                     />
-                    {nominalLine(asset, currency) !== null && (
-                      <span className="ui-sub">{nominalLine(asset, currency)}</span>
-                    )}
-                  </>
-                )}
-              </td>
-              <td className="ui-num">
-                {asset.priceSource === 'manual' ? (
-                  <span className="ui-muted">Manual</span>
-                ) : (
-                  <Change value={asset.priceChange24hPercent} />
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
+                  ) : (
+                    <>
+                      <Signed
+                        value={realProfit(asset, real).pnl}
+                        currency={currency}
+                        ratio={realProfit(asset, real).ratio}
+                        inline
+                      />
+                      {nominalLine(asset, currency) !== null && (
+                        <span className="ui-sub">{nominalLine(asset, currency)}</span>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td className="ui-num">
+                  {asset.priceSource === 'manual' ? (
+                    <span className="ui-muted">Manual</span>
+                  ) : (
+                    <Change value={asset.priceChange24hPercent} />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
       </table>
     </div>
   );
@@ -610,46 +669,59 @@ function Profit({
 // Phones get two-line rows instead of the table: the whole row opens the asset, and the
 // columns that do not fit are on the asset page (design: tables on phones).
 function AssetsList({
-  assets,
+  groups,
   currency,
   asked,
   chains,
   real,
 }: {
-  assets: AssetValuation[];
+  groups: AssetGroup[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   chains: TokenChains;
   real: InflationBasis | null;
 }) {
   const classes = useAccountClasses();
-  return (
-    <ul className="ui-rows">
-      {assets.map((asset) => (
-        <li key={asset.instrumentId}>
-          <Link className={rowClass()} to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
-            <AssetIcon
-              symbol={asset.symbol}
-              name={asset.name}
-              assetType={asset.assetType}
-              assetClass={heldClass(asset.holdings, classes)}
-              network={onlyChain(asset.symbol, chains)}
-            />
-            <ListRowText
-              title={asset.name}
-              detail={withChains(
-                `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
-                asset.symbol,
-                chains,
-              )}
-              amount={money(asset.value, currency)}
-              value={<Profit asset={asset} currency={currency} real={real} />}
-            />
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
+  return groups.map(({ head, rows }) => (
+    <Fragment key={head.key}>
+      <div className="portfolio-mgrp">
+        <h3 className="portfolio-group__name">{head.label}</h3>
+        {head.share !== null && <span className="portfolio-group__share">{head.share}</span>}
+        <span className="portfolio-group__total">
+          {money(head.value, currency)}
+          {head.missing > 0 && <span className="ui-sub">{head.missing} without a price</span>}
+        </span>
+      </div>
+      <ul className="ui-rows">
+        {rows.map((asset) => (
+          <li key={asset.instrumentId}>
+            <Link
+              className={rowClass()}
+              to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+            >
+              <AssetIcon
+                symbol={asset.symbol}
+                name={asset.name}
+                assetType={asset.assetType}
+                assetClass={heldClass(asset.holdings, classes)}
+                network={onlyChain(asset.symbol, chains)}
+              />
+              <ListRowText
+                title={asset.name}
+                detail={withChains(
+                  `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
+                  asset.symbol,
+                  chains,
+                )}
+                amount={money(asset.value, currency)}
+                value={<Profit asset={asset} currency={currency} real={real} />}
+              />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Fragment>
+  ));
 }
 
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
@@ -714,7 +786,17 @@ export default function PortfolioPage() {
   // The table and the phone list share one order, Value largest first until another is chosen;
   // a phone shows only the orders its Sort by can name.
   const shown = phone ? phoneSort(sort) : sort;
-  const ordered = sortAssets(visible, shown, real);
+  const classOf = (asset: AssetValuation) => assetClassOf(asset, classes);
+  const sorted = sortAssets(visible, shown, real);
+  const ordered = classOrder.flatMap((key) => sorted.filter((asset) => classOf(asset) === key));
+  // A group's subtotal counts all its rows shown, not only the loaded page.
+  const heads = new Map(
+    classOrder.map((key): [AssetClassFilter, GroupHead] => {
+      const subtotal = groupSubtotal(visible.filter((asset) => classOf(asset) === key));
+      const share = groupShare(subtotal, portfolio?.totalValue ?? null);
+      return [key, { key, label: classLabels[key], share, ...subtotal }];
+    }),
+  );
   const paged = useInfinite(ordered, {
     resetKey: `${active}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
   });
@@ -733,6 +815,12 @@ export default function PortfolioPage() {
     </Button>
   );
   const now = new Date();
+  const groups = paged.rows.reduce<AssetGroup[]>((list, asset) => {
+    const last = list.at(-1);
+    if (last?.head.key === classOf(asset)) last.rows.push(asset);
+    else list.push({ head: heads.get(classOf(asset)) as GroupHead, rows: [asset] });
+    return list;
+  }, []);
 
   return (
     <div className="shell-page">
@@ -819,7 +907,7 @@ export default function PortfolioPage() {
                     </Select>
                   </label>
                   <AssetsList
-                    assets={paged.rows}
+                    groups={groups}
                     currency={portfolio.currency}
                     asked={asked}
                     chains={chains}
@@ -828,7 +916,7 @@ export default function PortfolioPage() {
                 </>
               ) : (
                 <AssetsTable
-                  assets={paged.rows}
+                  groups={groups}
                   currency={portfolio.currency}
                   asked={asked}
                   now={now}

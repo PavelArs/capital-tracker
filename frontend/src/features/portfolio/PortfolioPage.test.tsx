@@ -26,7 +26,13 @@ import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
 import AssetLotsCard from './AssetLots';
 import AssetPage from './AssetPage';
-import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
+import PortfolioPage, {
+  defaultSort,
+  groupSubtotal,
+  nextSort,
+  phoneSort,
+  sortAssets,
+} from './PortfolioPage';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -195,6 +201,12 @@ async function openAddAsset(user: ReturnType<typeof userEvent.setup>) {
   await user.click(within(picker).getByRole('button', { name: /^Something else/ }));
   await user.click(within(picker).getByRole('button', { name: 'Continue' }));
 }
+// The asset rows of the table, without the header and the class groups' head rows.
+const assetRows = () =>
+  screen
+    .getAllByRole('row')
+    .slice(1)
+    .filter((row) => !row.classList.contains('portfolio-group'));
 const rowOf = (name: string) => screen.getByRole('row', { name: new RegExp(`^${name}`) });
 const cells = (row: HTMLElement) =>
   within(row)
@@ -687,12 +699,12 @@ describe('PV-UI Portfolio values every asset', () => {
       ).toEqual(['All 5', 'Crypto 1', 'Cash 1', 'Broker 1', 'Real estate 1', 'Other 1']),
     );
     await user.click(within(chips).getByRole('button', { name: /^Broker/ }));
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    expect(assetRows()).toHaveLength(1);
     // Manual stays on the row as how it is priced.
     expect(cells(rowOf('Global equity fund'))[0]).toBe('Global equity fundGEQ · Manual · USD');
     await user.click(within(chips).getByRole('button', { name: /^Real estate/ }));
     expect(rowOf('Flat')).toBeInTheDocument();
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    expect(assetRows()).toHaveLength(1);
   });
 
   it('portfolio-19 names the assets table', async () => {
@@ -973,7 +985,12 @@ describe('Portfolio after inflation', () => {
             ...realBitcoin,
             real: { ...realBitcoin.real, official: read('99000', '-3000', '-3.03') },
           },
-          { ...realCash, real: { ...realCash.real, official: read('3900', '100', '2.56') } },
+          {
+            ...realCash,
+            // One class, so the order is not split by the class groups.
+            assetType: 'crypto',
+            real: { ...realCash.real, official: read('3900', '100', '2.56') },
+          },
         ],
         { real: withReal().real },
       ),
@@ -982,11 +999,7 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('row', { name: /^Bitcoin/ });
     await user.click(screen.getByRole('radio', { name: 'Real' }));
     await user.click(screen.getByRole('button', { name: 'Real P&L' }));
-    const order = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.textContent?.slice(0, 7));
+    const order = () => assetRows().map((row) => row.textContent?.slice(0, 7));
     expect(order()).toEqual(['US doll', 'Bitcoin']);
   });
 
@@ -1021,11 +1034,7 @@ describe('Portfolio after inflation', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Aaa/ });
     await user.click(screen.getByRole('button', { name: 'Real P&L' }));
-    const order = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.textContent?.slice(0, 3));
+    const order = () => assetRows().map((row) => row.textContent?.slice(0, 3));
     // The first click is largest first; the floats are equal, so only an exact compare puts Zzz first.
     expect(order()).toEqual(['Zzz', 'Aaa']);
   });
@@ -2064,10 +2073,10 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(cells(rowOf('Deposit')).slice(0, 2)).toEqual(['DepositManual · RUB', '150,000']);
 
     await user.click(screen.getByRole('button', { name: /^Other/ }));
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    expect(assetRows()).toHaveLength(1);
     expect(rowOf('Deposit')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
+    expect(assetRows()).toHaveLength(2);
   });
 
   it('adds cash at its amount and a coin at its cost, with no price for either', async () => {
@@ -2410,13 +2419,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const search = screen.getByRole('searchbox', { name: 'Search assets' });
     expect(search).toHaveAttribute('placeholder', 'Search assets');
-    const names = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.textContent?.split(' ')[0]);
+    const names = () => assetRows().map((row) => row.textContent?.split(' ')[0]);
     await user.type(search, 'BIT');
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    expect(assetRows()).toHaveLength(1);
     expect(rowOf('Bitcoin')).toBeInTheDocument();
     await user.clear(search);
     await user.type(search, 'usd');
@@ -2425,19 +2430,20 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
     expect(screen.getByText('No assets match "usd".')).toBeInTheDocument();
     await user.clear(search);
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
+    expect(assetRows()).toHaveLength(2);
   });
 
   it('SORT-HEADERS opens by value, largest first; a column name sorts by it and a second click turns it around', async () => {
-    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
+    // One class, so the order is not split by the class groups.
+    const sameClass = { ...cash, assetType: 'crypto' } as const;
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, sameClass, toncoin]),
+    );
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const order = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.querySelector('.portfolio-asset__name')?.textContent);
+      assetRows().map((row) => row.querySelector('.portfolio-asset__name')?.textContent);
     const header = (name: string) => screen.getByRole('columnheader', { name });
     const click = (name: string) => user.click(within(header(name)).getByRole('button', { name }));
     expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
@@ -2528,7 +2534,11 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       removeEventListener: () => undefined,
     }));
     try {
-      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
+      // One class, so the order is not split by the class groups.
+      const sameClass = { ...cash, assetType: 'crypto' } as const;
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio([bitcoin, sameClass, toncoin]),
+      );
       const user = userEvent.setup();
       renderAt('/portfolio');
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
@@ -3365,5 +3375,145 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
       '/portfolio?currency=EUR',
     );
     expect(screen.getByRole('region', { name: 'Holdings' })).toHaveTextContent('€920.00');
+  });
+});
+
+describe('PF-GROUPS the assets are grouped by class with exact subtotals', () => {
+  const dust = valued(6, 'Dogecoin', 'DOGE', crypto, {
+    quantity: '0.5',
+    price: { value: '0.1', observedAt: minutesAgo(5), source: 'kraken', status: 'fresh' },
+    missingPrice: null,
+    value: '0.05',
+    allocationPercent: '0.00',
+  });
+  const pennies = valued(
+    7,
+    'Gift card',
+    null,
+    { assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' },
+    {
+      quantity: '1',
+      price: { value: '0.01', observedAt: minutesAgo(5), source: 'manual', status: 'fresh' },
+      missingPrice: null,
+      value: '0.01',
+      allocationPercent: '0.00',
+    },
+  );
+  const complete = () =>
+    portfolio([cash, dust, bitcoin, pennies], {
+      totalValue: '100000.06',
+      pricedSubtotal: '100000.06',
+    });
+  const tableRows = () => screen.getAllByRole('row').slice(1);
+  const names = () =>
+    tableRows().map((row) =>
+      row.classList.contains('portfolio-group')
+        ? `# ${row.textContent}`
+        : (within(row).queryByRole('link')?.textContent ?? ''),
+    );
+
+  it('PF-GROUPS heads each class with its share and exact subtotal, largest value first within', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(names()).toEqual([
+      '# Crypto96.0%$96,000.05',
+      'Bitcoin',
+      'Dogecoin',
+      '# Cash4.0%$4,000.00',
+      'US dollar',
+      '# Other<0.1%$0.01',
+      'Gift card',
+    ]);
+    expect(screen.getAllByRole('rowheader').map((cell) => cell.getAttribute('scope'))).toEqual([
+      'rowgroup',
+      'rowgroup',
+      'rowgroup',
+    ]);
+  });
+
+  it('PF-GROUPS keeps the groups and sorts within them when another column is chosen', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(screen.getByRole('button', { name: 'Asset' }));
+    expect(names()).toEqual([
+      '# Crypto96.0%$96,000.05',
+      'Bitcoin',
+      'Dogecoin',
+      '# Cash4.0%$4,000.00',
+      'US dollar',
+      '# Other<0.1%$0.01',
+      'Gift card',
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Asset' }));
+    expect(names().slice(0, 3)).toEqual(['# Crypto96.0%$96,000.05', 'Dogecoin', 'Bitcoin']);
+  });
+
+  it('PF-GROUPS shows only the chosen class under a filter chip', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    await user.click(within(chips).getByRole('button', { name: /^Cash/ }));
+    expect(names()).toEqual(['# Cash4.0%$4,000.00', 'US dollar']);
+  });
+
+  it('PF-GROUP-INCOMPLETE never counts a missing value as zero and drops the share', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, cash, rubles], {
+        completeness: 'incomplete',
+        totalValue: null,
+        pricedSubtotal: '100000',
+        missingPriceCount: 1,
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(names()).toEqual([
+      '# Crypto$96,000.00',
+      'Bitcoin',
+      '# Cash$4,000.001 without a price',
+      'US dollar',
+      'Rubles',
+    ]);
+  });
+
+  it('PF-GROUPS heads the phone rows the same way', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+      renderAt('/portfolio');
+      await screen.findByRole('link', { name: /^Bitcoin/ });
+      const card = screen.getByRole('region', { name: 'Assets' });
+      expect(
+        within(card)
+          .getAllByRole('heading', { level: 3 })
+          .map((heading) => heading.parentElement?.textContent),
+      ).toEqual(['Crypto96.0%$96,000.05', 'Cash4.0%$4,000.00', 'Other<0.1%$0.01']);
+      expect(within(card).getAllByRole('listitem')).toHaveLength(4);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('PF-GROUP-EXACT adds the values as decimals and counts held rows without a value', () => {
+    expect(
+      groupSubtotal([
+        { ...bitcoin, value: '9007199254740993' },
+        { ...dust, value: '0.01' },
+      ]),
+    ).toEqual({ value: '9007199254740993.01', missing: 0 });
+    expect(groupSubtotal([rubles, { ...toncoin, value: null }])).toEqual({
+      value: null,
+      missing: 1,
+    });
   });
 });
