@@ -58,6 +58,13 @@ export interface AccountSummary {
   currentRevision: number;
   createdAt: string;
 }
+/**
+ * An account as the list shows it: for a broker account read with a token, the provider and
+ * whether its history has been imported; null for any other account.
+ */
+export interface ListedAccount extends AccountSummary {
+  connection: { provider: 'tbank'; imported: boolean } | null;
+}
 export interface Instrument {
   id: string;
   name: string;
@@ -281,11 +288,24 @@ export class AccountingService {
       ...options,
       ...(options.limit === undefined ? {} : { limit: queryNumber(options.limit) }),
     });
-    const rows: AccountRow[] = await this.source.query(
-      `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND "removedAt" IS NULL AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT $3`,
-      [owner, query.cursor ?? null, query.limit + 1],
-    );
-    const items = rows.slice(0, query.limit).map(accountView);
+    // BROKER-SETUP: which broker accounts read with a token, from their connection row, and
+    // whether a history import of the provider account connected now has been written into each.
+    // The token and the broker's own account number stay out of the list.
+    const rows: (AccountRow & { connection: 'tbank' | null; imported: boolean })[] =
+      await this.source.query(
+        `SELECT a.*, c.provider AS connection,
+        EXISTS (SELECT 1 FROM broker_imports i WHERE i."ownerId"=a."ownerId" AND i."accountId"=a.id
+          AND i.provider=c.provider AND i."brokerAccountId"=c."brokerAccountId") AS imported
+        FROM manual_accounts a
+        LEFT JOIN broker_connections c ON c."ownerId"=a."ownerId" AND c."accountId"=a.id
+        WHERE a."ownerId"=$1 AND a."removedAt" IS NULL AND ($2::uuid IS NULL OR a.id>$2::uuid)
+        ORDER BY a.id LIMIT $3`,
+        [owner, query.cursor ?? null, query.limit + 1],
+      );
+    const items: ListedAccount[] = rows.slice(0, query.limit).map((row) => ({
+      ...accountView(row),
+      connection: row.connection ? { provider: row.connection, imported: row.imported } : null,
+    }));
     return { items, nextCursor: rows.length > query.limit ? items[items.length - 1].id : null };
   }
 

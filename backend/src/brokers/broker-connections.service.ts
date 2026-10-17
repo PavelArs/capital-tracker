@@ -1,10 +1,12 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
   type TBankAccount,
@@ -56,13 +58,12 @@ export class BrokerConnectionsService {
     private readonly box: TBankTokenBox,
   ) {}
 
-  /** The open broker accounts a token reaches, once it is known to be unable to trade. */
   async check(ownerId: string, accountId: string, body: unknown) {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
     const input = parseCheck(body);
     await this.brokerAccount(this.source.manager, owner, account);
-    const open = await this.readOnlyAccounts(input.token);
+    const open = await this.reachableAccounts(input.token);
     return { accounts: open.map((item) => ({ id: item.id, name: item.name })) };
   }
 
@@ -70,7 +71,7 @@ export class BrokerConnectionsService {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
     const input = parseConnection(body);
-    const open = await this.readOnlyAccounts(input.token);
+    const open = await this.reachableAccounts(input.token);
     if (!open.some((item) => item.id === input.brokerAccountId))
       throw new UnprocessableEntityException(
         'This token does not reach that T-Bank account. Pick one of the accounts it lists.',
@@ -82,7 +83,18 @@ export class BrokerConnectionsService {
       throw new ServiceUnavailableException('The token cannot be stored on this server.');
     }
     await this.source.transaction('READ COMMITTED', async (manager) => {
+      // The same lock and check as BROKER-SETUP: one T-Bank account reads into one broker account,
+      // or its history would count twice.
+      await lockAccountingOwner(manager, owner);
       await this.brokerAccount(manager, owner, account, true);
+      const [elsewhere]: { accountId: string }[] = await manager.query(
+        `SELECT "accountId" FROM broker_connections
+          WHERE "ownerId" = $1 AND provider = 'tbank' AND "brokerAccountId" = $2
+            AND "accountId" <> $3`,
+        [owner, input.brokerAccountId, account],
+      );
+      if (elsewhere)
+        throw new ConflictException('A T-Bank account is already connected to another account');
       await manager.query(
         `INSERT INTO broker_connections ("ownerId", "accountId", provider, credentials, "tokenHint",
             "brokerAccountId")
@@ -216,7 +228,8 @@ export class BrokerConnectionsService {
     if (rows.length === 0) throw new NotFoundException('Broker account not found');
   }
 
-  private async readOnlyAccounts(token: string): Promise<TBankAccount[]> {
+  /** The open broker accounts a token reaches, once it is known to be unable to trade. */
+  async reachableAccounts(token: string): Promise<TBankAccount[]> {
     const result: TBankResult<TBankAccount[]> = await this.tbank.accounts(token);
     if (!result.ok) {
       if (result.reason === 'token_rejected')
