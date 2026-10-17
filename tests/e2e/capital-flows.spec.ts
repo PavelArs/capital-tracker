@@ -173,7 +173,7 @@ test('FLOW-SPLIT-UI: dashboard splits the change into market and net deposits wi
 
   const chart = main.getByRole('region', { name: 'Portfolio value over time' });
   await expect(chart.getByLabel('Chart legend')).toHaveText('Portfolio valueNet investedDeposit');
-  const plot = chart.getByRole('group');
+  const plot = chart.getByRole('group', { name: /^Portfolio value, / });
   await plot.focus();
   await page.keyboard.press('End');
   const tip = chart.getByRole('status');

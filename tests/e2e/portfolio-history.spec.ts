@@ -214,7 +214,7 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
 
   // ALL starts on Jan 1, 2025 and the keyboard reads each point with its date and value.
   const all = (await history('period=ALL&currency=USD')).points;
-  const plot = chart.getByRole('group');
+  const plot = chart.getByRole('group', { name: /^Portfolio value, / });
   await plot.focus();
   await page.keyboard.press('Home');
   const firstValued = all.find((point) => point.value !== null);
