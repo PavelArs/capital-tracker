@@ -112,21 +112,22 @@ const TBANK = 'T-Bank';
 const IIS = / · IIS$/;
 /** The broker a hand-entered account was added under: its name without " · IIS". */
 const typedBroker = (account: BrokerAccount) => account.name.replace(IIS, '').trim();
-const groupKey = (account: BrokerAccount) =>
-  (account.connected ? TBANK : typedBroker(account)).toLowerCase();
+/** An account read under its typed broker's card as that broker's IIS. */
+const isIisOf = (account: BrokerAccount, key: string) =>
+  !account.connected && IIS.test(account.name) && typedBroker(account).toLowerCase() === key;
 
 /**
- * The account's name inside its broker's card: "IIS" for a hand-entered account named
- * "<broker> · IIS", and a T-Bank account without the "T-Bank " its default name starts with.
+ * The account's name inside its broker's card (`key`): "IIS" for a hand-entered "<broker> · IIS"
+ * in <broker>'s card, and a T-Bank account without the "T-Bank " its default name starts with.
  */
-export function accountLabel(account: BrokerAccount): string {
+export function accountLabel(account: BrokerAccount, key: string): string {
   if (account.connected) {
     const rest = account.name.startsWith(`${TBANK} `)
       ? account.name.slice(TBANK.length).trim()
       : '';
     return rest || account.name;
   }
-  return IIS.test(account.name) ? 'IIS' : account.name;
+  return isIisOf(account, key) ? 'IIS' : account.name;
 }
 
 /**
@@ -134,6 +135,18 @@ export function accountLabel(account: BrokerAccount): string {
  * group under T-Bank whatever their names; the rest by the broker name typed, ignoring case.
  */
 export function brokerGroupsOf(accounts: readonly BrokerAccount[]): BrokerGroup[] {
+  // Only the name records an IIS, and a regular account may be typed "<broker> · IIS" too: such a
+  // name joins <broker> only when a regular account is named <broker>, and otherwise keeps its own.
+  const regular = new Set(
+    accounts
+      .filter((account) => !account.connected && !IIS.test(account.name))
+      .map((account) => account.name.trim().toLowerCase()),
+  );
+  const groupKey = (account: BrokerAccount) => {
+    if (account.connected) return TBANK.toLowerCase();
+    const broker = typedBroker(account).toLowerCase();
+    return regular.has(broker) ? broker : account.name.trim().toLowerCase();
+  };
   const groups = new Map<string, BrokerAccount[]>();
   for (const account of accounts) {
     const key = groupKey(account);
@@ -147,7 +160,7 @@ export function brokerGroupsOf(accounts: readonly BrokerAccount[]): BrokerGroup[
         key,
         name: members.some((account) => account.connected)
           ? TBANK
-          : typedBroker(typed ?? members[0]),
+          : (typed ?? members[0]).name.trim(),
         accounts: members,
         connected: members.filter((account) => account.connected).length,
         value: sumDecimals(valued.map((account) => account.value)),

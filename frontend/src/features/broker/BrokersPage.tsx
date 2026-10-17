@@ -84,12 +84,15 @@ function Position({
 
 function Account({
   account,
+  broker,
   portfolio,
 }: {
   account: BrokerAccount;
+  /** The key of the broker card it is shown in. */
+  broker: string;
   portfolio: PortfolioValuation;
 }) {
-  const label = accountLabel(account);
+  const label = accountLabel(account, broker);
   const missing = leftOut(account.unpriced, account.unrated);
   return (
     <div
@@ -152,7 +155,7 @@ function Broker({ group, portfolio }: { group: BrokerGroup; portfolio: Portfolio
           </div>
         </div>
         {group.accounts.map((account) => (
-          <Account key={account.id} account={account} portfolio={portfolio} />
+          <Account key={account.id} account={account} broker={group.key} portfolio={portfolio} />
         ))}
       </section>
     </Card>
