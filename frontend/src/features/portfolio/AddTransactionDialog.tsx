@@ -593,8 +593,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   // Price per unit and total follow each other: the field typed last decides. A total that
   // was typed (or recorded) is never recomputed from the shown, rounded price. The total is the
-  // saved cost, so it is filled only when amount x price is a whole cent; otherwise the owner types it.
-  const totalOf = (units: string, each: string) => exactProduct(units, each, 2) ?? '';
+  // saved cost, so it is the exact product within the server's 30 decimals; past that the owner types it.
+  const totalOf = (units: string, each: string) => exactProduct(units, each, 30) ?? '';
   const setAmount = (amount: string) => {
     const units = positive(amount);
     if (driver.current === 'total') {
