@@ -12,6 +12,11 @@ export interface AccountSummary {
   kind: WalletKind | null;
   /** Null for a wallet; absent from servers older than the class. */
   assetClass?: AccountClass | null;
+  /**
+   * BROKER-SETUP: the provider a broker account reads with a token ('tbank'), or null. Only the
+   * account list gives it; absent elsewhere and from older servers.
+   */
+  connection?: 'tbank' | null;
   currentRevision: number;
   createdAt: string;
 }

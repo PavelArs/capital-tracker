@@ -128,6 +128,12 @@ async function removal(db, service, owner) {
   const broker = await account(db, owner, 'broker');
   await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
   assert.equal((await service.read(owner, broker)).connected, true);
+  // BROKER-LIST-CONNECTION: the account list says which broker accounts read with a token.
+  const bare = await account(db, owner, 'broker');
+  const listed = (await new AccountingService(db).listAccounts(owner, { limit: 100 })).items;
+  assert.equal(listed.find((item) => item.id === broker).connection, 'tbank');
+  assert.equal(listed.find((item) => item.id === bare).connection, null);
+  await new AccountingService(db).removeAccount(owner, bare);
   await new AccountingService(db).removeAccount(owner, broker);
   assert.equal(
     (await db.query('SELECT count(*)::int AS n FROM broker_connections WHERE "accountId" = $1', [broker]))[0].n,
