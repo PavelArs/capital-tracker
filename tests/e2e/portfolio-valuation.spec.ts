@@ -126,7 +126,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   for (const [label, value] of [
     ['Amount', '1.2 PVUI'],
     ['Current value', '$96,000.00'],
-    ['Average buy price', '$55,000.00'],
+    ['Average cost', '$55,000.00'],
     ['Cost basis', '$66,000.00'],
     ['Unrealized P&L', '+$30,000.00+45.45%'],
     ['Realized P&L', '$0.00'],

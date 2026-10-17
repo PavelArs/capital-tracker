@@ -138,7 +138,7 @@ const sortColumns = (real: boolean): [SortKey, string][] => [
   ['price', 'Price'],
   ['value', 'Value'],
   ['allocation', 'Allocation'],
-  ['avgBuy', 'Avg buy price'],
+  ['avgBuy', 'Avg cost'],
   ['pnl', real ? 'Real P&L' : 'Unrealized P&L'],
   ['change', '24h'],
 ];
