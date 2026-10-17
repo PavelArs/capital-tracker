@@ -89,4 +89,15 @@ describe('BROKER-LIST-CONNECTION the account list says which broker accounts rea
       createdAt: '2026-10-01T00:00:00.000Z',
     });
   });
+
+  it('BROKER-LIST-CONNECTION counts only an import read from the T-Bank account connected now', async () => {
+    // Codex P1: reconnected to another T-Bank account, the old import is not that account's history.
+    // The rows are probed against PostgreSQL in tests/e2e/broker-connections-db.cjs.
+    const source = new DataSource({ type: 'postgres' });
+    const query = jest.spyOn(source, 'query').mockResolvedValue([]);
+    await new AccountingService(source).listAccounts(owner, { limit: 10 });
+    const sql = String(query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('i.provider=c.provider');
+    expect(sql).toContain('i."brokerAccountId"=c."brokerAccountId"');
+  });
 });
