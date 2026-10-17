@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
-import { createTotp, MfaCipher, recoveryHash } from './mfa-crypto';
+import { createTotp, MfaCipher, recoveryHash, SealedBox } from './mfa-crypto';
 
 describe('MFA-003-A / MFA-006-A factor cryptography', () => {
   let directory: string;
@@ -74,5 +74,24 @@ describe('MFA-003-A / MFA-006-A factor cryptography', () => {
     expect(recoveryHash(code.toUpperCase(), owner, version)).toBe(hash);
     expect(recoveryHash(code, version, version)).not.toBe(hash);
     expect(recoveryHash(code, owner, owner)).not.toBe(hash);
+  });
+  it("keeps sealed provider credentials apart: one box never opens another box's envelope", () => {
+    const box = (info: string, label: string) =>
+      new SealedBox<string>(
+        config(),
+        info,
+        label,
+        (value) => [value],
+        ([value]) => (typeof value === 'string' ? value : null),
+      );
+    const first = box('capital-tracker/first/v1', 'capital-tracker/first');
+    const sealed = first.seal('SyntheticValue0001', owner, version);
+    expect(first.open(sealed, owner, version)).toBe('SyntheticValue0001');
+    expect(
+      box('capital-tracker/second/v1', 'capital-tracker/first').open(sealed, owner, version),
+    ).toBeNull();
+    expect(
+      box('capital-tracker/first/v1', 'capital-tracker/second').open(sealed, owner, version),
+    ).toBeNull();
   });
 });

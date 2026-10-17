@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto';
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { ConfigService } from '@nestjs/config';
@@ -41,8 +41,8 @@ export function newRecoveryCodes(): string[] {
 
 /**
  * The server's 32-byte MFA key file and its identifier, checked as MfaCipher needs them: an
- * absolute, owner-only regular file that is not a link. A Bybit API key (M22) is sealed with a
- * key derived from the same file.
+ * absolute, owner-only regular file that is not a link. Provider credentials are sealed by a
+ * SealedBox with keys derived from the same file.
  */
 export function readMfaKey(config: ConfigService): { key: Buffer; keyId: string } {
   const file = config.get<string>('MFA_KEY_FILE');
@@ -116,6 +116,84 @@ export class MfaCipher {
       return secret;
     } catch {
       throw new Error('MFA secret could not be opened');
+    }
+  }
+}
+
+/**
+ * A provider credential stored encrypted and never shown again: AES-256-GCM under a key derived
+ * (HKDF-SHA256, `info`) from the server's MFA key file, so no new secret has to be provisioned.
+ * The envelope is bound to [label, keyId, owner, id]. `encode` validates the value (throwing when
+ * it is invalid) and `decode` returns null for anything it does not accept.
+ */
+export class SealedBox<T> {
+  private derived: { key: Buffer; keyId: string } | null = null;
+
+  constructor(
+    private readonly config: ConfigService,
+    private readonly info: string,
+    private readonly label: string,
+    private readonly encode: (value: T) => unknown[],
+    private readonly decode: (parts: unknown[]) => T | null,
+  ) {}
+
+  // Read on first use: a server without the MFA key cannot store a credential either.
+  private material() {
+    if (!this.derived) {
+      const { key, keyId } = readMfaKey(this.config);
+      const derived = Buffer.from(hkdfSync('sha256', key, Buffer.alloc(0), this.info, 32));
+      this.derived = { key: derived, keyId };
+    }
+    return this.derived;
+  }
+
+  private context(keyId: string, ownerId: string, id: string): Buffer {
+    return Buffer.from(JSON.stringify([this.label, keyId, ownerId, id]));
+  }
+
+  seal(value: T, ownerId: string, id: string): MfaEnvelope {
+    const plain = JSON.stringify(this.encode(value));
+    const { key, keyId } = this.material();
+    const nonce = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', key, nonce);
+    cipher.setAAD(this.context(keyId, ownerId, id));
+    const ciphertext = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    return {
+      v: 1,
+      keyId,
+      nonce: nonce.toString('base64'),
+      tag: cipher.getAuthTag().toString('base64'),
+      ciphertext: ciphertext.toString('base64'),
+    };
+  }
+
+  /** The stored value, or null when it cannot be opened (another server key, or tampering). */
+  open(envelope: unknown, ownerId: string, id: string): T | null {
+    try {
+      if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return null;
+      const value = envelope as MfaEnvelope;
+      const { key, keyId } = this.material();
+      if (value.v !== 1 || value.keyId !== keyId) return null;
+      const decode = (encoded: unknown, maximum: number) => {
+        if (typeof encoded !== 'string' || encoded.length > maximum) throw new Error();
+        const bytes = Buffer.from(encoded, 'base64');
+        if (bytes.toString('base64') !== encoded) throw new Error();
+        return bytes;
+      };
+      const nonce = decode(value.nonce, 16);
+      const tag = decode(value.tag, 24);
+      if (nonce.length !== 12 || tag.length !== 16) return null;
+      const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+      decipher.setAAD(this.context(keyId, ownerId, id));
+      decipher.setAuthTag(tag);
+      const plain = Buffer.concat([
+        decipher.update(decode(value.ciphertext, 512)),
+        decipher.final(),
+      ]).toString('utf8');
+      const parts = JSON.parse(plain) as unknown;
+      return Array.isArray(parts) ? this.decode(parts) : null;
+    } catch {
+      return null;
     }
   }
 }
