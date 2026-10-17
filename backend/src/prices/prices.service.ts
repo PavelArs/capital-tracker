@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
-import { trackJob } from '../observability/metrics';
+import { errorMessage, trackJob } from '../observability/metrics';
 import { type AnyTokenNetwork, anyTokenNetworks } from '../wallet-addresses/chain-assets';
 import { loadChainTokens } from '../wallet-addresses/chain-tokens';
 import { evmChain, isEvmNetwork } from '../wallet-addresses/evm-chains';
@@ -81,8 +81,8 @@ export class PricesService {
   async scheduledTick(): Promise<void> {
     try {
       await trackJob('prices', () => this.tick());
-    } catch {
-      this.logger.warn('Hourly price collection could not finish');
+    } catch (error) {
+      this.logger.warn(`Hourly price collection could not finish: ${errorMessage(error)}`);
     }
   }
 

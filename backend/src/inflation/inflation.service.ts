@@ -4,7 +4,7 @@ import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
 import { parseUuid } from '../accounting/input';
 import { type AccountingCurrency, accountingCurrencies } from '../fx-rates/fx-conversion';
-import { trackJob } from '../observability/metrics';
+import { errorMessage, trackJob } from '../observability/metrics';
 import {
   parseCurrency,
   parseFactorQuery,
@@ -124,8 +124,8 @@ export class InflationService {
   async scheduledTick(): Promise<void> {
     try {
       await trackJob('inflation', () => this.tick());
-    } catch {
-      this.logger.warn('Inflation collection could not finish');
+    } catch (error) {
+      this.logger.warn(`Inflation collection could not finish: ${errorMessage(error)}`);
     }
   }
 

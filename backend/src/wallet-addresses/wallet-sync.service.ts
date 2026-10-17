@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { ChainClassificationService } from '../accounting/chain-classification.service';
-import { recordWalletSync, startTimer, trackJob } from '../observability/metrics';
+import { errorMessage, recordWalletSync, startTimer, trackJob } from '../observability/metrics';
 import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
 import { isNetwork, networkNames } from './chain-assets';
 import {
@@ -56,8 +56,8 @@ export class WalletSyncService {
   async scheduledTick(): Promise<void> {
     try {
       await trackJob('wallets', () => this.tick());
-    } catch {
-      this.logger.warn('Background wallet sync could not finish');
+    } catch (error) {
+      this.logger.warn(`Background wallet sync could not finish: ${errorMessage(error)}`);
     }
   }
 
