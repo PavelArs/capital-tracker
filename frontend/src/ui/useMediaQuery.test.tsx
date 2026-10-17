@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useCompactScreen, useNarrowScreen } from './useMediaQuery';
+import { useCompactScreen, useNarrowScreen, useRowsLayout } from './useMediaQuery';
 
 /** A window `width` px wide that answers max-width queries the way a browser does. */
 const windowOf = (width: number) =>
@@ -21,6 +21,13 @@ describe('shell-16 breakpoints', () => {
     expect(renderHook(() => useCompactScreen()).result.current).toBe(false);
     windowOf(559);
     expect(renderHook(() => useCompactScreen()).result.current).toBe(true);
+  });
+
+  it('TABLE-ROWS a 900 px window keeps the wide tables, an 899 px one (a tablet) gets rows', () => {
+    windowOf(900);
+    expect(renderHook(() => useRowsLayout()).result.current).toBe(false);
+    windowOf(899);
+    expect(renderHook(() => useRowsLayout()).result.current).toBe(true);
   });
 
   it('shell-16 a 640 px window is not yet narrow, a 639 px one is', () => {

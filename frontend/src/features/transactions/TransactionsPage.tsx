@@ -11,7 +11,7 @@ import { Card } from '@/ui/Card';
 import { Chip, ChipGroup } from '@/ui/Chip';
 import { ErrorState } from '@/ui/ErrorState';
 import { Input, Select } from '@/ui/inputs';
-import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
@@ -479,7 +479,8 @@ export default function TransactionsPage() {
   // The question the list on screen answers, for a failed read to compare with.
   const shownFor = useRef(askKey(asked, period));
 
-  const narrow = useNarrowScreen();
+  // Rows instead of the table below 900 px, as on a phone (TABLE-ROWS).
+  const narrow = useRowsLayout();
 
   // A switched currency keeps the rows on screen until its values arrive.
   const load = useCallback(

@@ -9,7 +9,7 @@ import type {
 import { useToast } from '@contexts/ToastContext';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
@@ -648,7 +648,8 @@ export default function PortfolioPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AssetSort>(defaultSort);
-  const phone = useNarrowScreen();
+  // Rows instead of the table below 900 px, as on a phone (TABLE-ROWS).
+  const phone = useRowsLayout();
   const [view] = useValueView();
   const [basis] = useInflationBasis();
   // Under Real the profit column is the profit after inflation on the chosen basis. An answer

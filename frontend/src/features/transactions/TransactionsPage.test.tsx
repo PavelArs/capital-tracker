@@ -647,10 +647,29 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(bodyRows()).toHaveLength(6);
   });
 
+  it('TABLE-ROWS: a tablet (768 px) gets the two-line rows, not a table that cuts its Status column', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      // 768 px: below the rows width (900 px), above the narrow one (640 px).
+      matches: query === '(max-width: 899.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([outgoing, manual]));
+      renderPage();
+      expect(await screen.findByRole('list', { name: 'Transactions' })).toBeInTheDocument();
+      expect(screen.queryByRole('table')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('OPS-PHONE: below 640 px shows two-line rows under day headings instead of the table', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -703,7 +722,8 @@ describe('TransactionsPage (list-all-operations)', () => {
   it('OPS-FILTER-SHEET-COUNT: the sheet names no count while a new period is loading', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -732,7 +752,8 @@ describe('TransactionsPage (list-all-operations)', () => {
   it('OPS-FILTER-SHEET: on a phone the filters wait behind a Filters button in a sheet', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -1012,7 +1033,8 @@ describe('TransactionsPage (list-all-operations)', () => {
 
   it('transactions-22 a phone row keeps a short address whole', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -4388,7 +4410,8 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
 
   it('on the phone layout adds rows under the same day headings', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
