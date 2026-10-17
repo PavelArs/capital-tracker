@@ -2,7 +2,7 @@ import { canonicalDecimalToAtoms } from '../accounting/money';
 import { type FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import type { StatedFlow } from '../portfolio-snapshots/capital-flows';
 import { depositBalances, projectDeposit } from './deposit-interest';
-import { movementsOf, type Stored, termsOf } from './deposit-store';
+import { interestMissing, movementsOf, type Stored, termsOf } from './deposit-store';
 
 // DEP-VALUE: what the owner's deposits add to the whole portfolio. A deposit is worth its
 // computed balance at the Bank of Russia rate of the day; money put in or taken out by the
@@ -64,7 +64,10 @@ export function depositValueOn(
   return value === null ? null : value * ATOM_SCALE;
 }
 
-/** What every deposit is worth at one instant: the deposit and its value, null when unrated. */
+/**
+ * What every deposit is worth at one instant: the deposit and its value, null when unrated. An
+ * account with no rate entered is worth what was put in, and says its interest is not counted.
+ */
 export function depositValuesAt(holdings: readonly DepositHolding[], at: Date, fx: FxConverter) {
   const date = moscowDate(at);
   return holdings.map((holding) => ({
@@ -72,6 +75,7 @@ export function depositValuesAt(holdings: readonly DepositHolding[], at: Date, f
     name: holding.deposit.name,
     bank: holding.deposit.bank,
     value: depositValueOn(holding, date, fx),
+    interestMissing: interestMissing(holding),
   }));
 }
 

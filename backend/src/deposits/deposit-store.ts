@@ -1,8 +1,10 @@
 import type { EntityManager } from 'typeorm';
+import type { DepositKind } from './deposit-input';
 import type { DepositCurrency, DepositMovement, DepositTerms } from './deposit-interest';
 
 export interface DepositRow {
   id: string;
+  kind: DepositKind;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -39,10 +41,11 @@ export interface Stored {
   checks: CheckRow[];
 }
 
-const columns = `id, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+const columns = `id, kind, name, bank, currency, to_char("startDate", 'YYYY-MM-DD') AS "startDate",
   to_char("endDate", 'YYYY-MM-DD') AS "endDate", payout, capitalized, "dayBasis", "earlyClose"`;
 
 export const termsOf = (stored: Stored): DepositTerms => ({
+  kind: stored.deposit.kind,
   startDate: stored.deposit.startDate,
   endDate: stored.deposit.endDate,
   payout: stored.deposit.payout,
@@ -54,6 +57,18 @@ export const termsOf = (stored: Stored): DepositTerms => ({
     ratePercent: rate.ratePercent,
   })),
 });
+/**
+ * An account whose rates do not reach back to its opening day: the interest of the days before
+ * its first rate is unknown, not zero, so what it holds leaves that interest out (DEP-ACCOUNT).
+ * An explicit 0% rate from the opening day is a rate and clears it.
+ */
+export const interestMissing = (stored: Stored): boolean =>
+  stored.deposit.kind === 'account' &&
+  !stored.rates.some((rate) => rate.effectiveFrom <= stored.deposit.startDate);
+
+/** An account with no rate in force on the day: there is no interest to state for that day. */
+export const noRateInForceOn = (stored: Stored, date: string): boolean =>
+  stored.deposit.kind === 'account' && !stored.rates.some((rate) => rate.effectiveFrom <= date);
 export const movementsOf = (stored: Stored): DepositMovement[] =>
   stored.movements.map((row) => ({ date: row.occurredOn, kind: row.kind, amount: row.amount }));
 

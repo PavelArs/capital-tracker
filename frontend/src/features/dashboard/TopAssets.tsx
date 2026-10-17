@@ -11,7 +11,7 @@ import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
-import { dateText } from '../deposits/deposit-format';
+import { dateText, rateText } from '../deposits/deposit-format';
 import { Change } from '../portfolio/asset-parts';
 import { withCurrency } from '../portfolio/currency';
 import {
@@ -97,8 +97,9 @@ function DepositTerms({ id }: { id: string }) {
   const { data } = useCachedRead(cachedReads.deposits);
   const deposit = data?.items.find((item) => item.id === id);
   if (!deposit) return 'Bank deposit';
+  if (deposit.kind === 'account') return `${deposit.bank} · ${rateText(deposit)}`;
   const until = deposit.endDate ? `until ${dateText(deposit.endDate)}` : 'no end date';
-  return `${deposit.bank} · ${deposit.ratePercent}% · ${until}`;
+  return `${deposit.bank} · ${rateText(deposit)} · ${until}`;
 }
 
 function DepositIcon({ name }: { name: string }) {

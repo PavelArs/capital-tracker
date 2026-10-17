@@ -13,6 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
+import { accountsWithoutRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
 import { type AccountClasses, heldClass } from '../shell/asset-identity';
@@ -468,6 +469,11 @@ function Summary({
             Settings
           </Link>
         </p>
+      )}
+      {!!portfolio.interestMissingDepositCount && (
+        <Banner tone="warn">
+          {accountsWithoutRate(portfolio.interestMissingDepositCount)}
+        </Banner>
       )}
       {portfolio.stalePriceCount > 0 && (
         <Banner tone="warn">

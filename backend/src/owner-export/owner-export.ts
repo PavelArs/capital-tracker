@@ -111,6 +111,8 @@ export interface ExportDeposit {
   capitalized: boolean;
   dayBasis: string;
   earlyClose: string;
+  /** `term-deposit` or `account` (a savings or current account has no term). */
+  kind: string;
   createdAt: string;
 }
 /** The annual rate in percent from a date on. */
@@ -345,6 +347,7 @@ export function exportFiles(data: ExportData): ZipFile[] {
         ['capitalized', (row) => row.capitalized],
         ['day_basis', (row) => row.dayBasis],
         ['early_close', (row) => row.earlyClose],
+        ['kind', (row) => row.kind],
         ['created_at', (row) => row.createdAt],
       ],
       [...data.deposits].sort((a, b) => byText(a.startDate, b.startDate) || byCreation(a, b)),
