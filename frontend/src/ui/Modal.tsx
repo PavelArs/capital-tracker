@@ -1,7 +1,7 @@
 import CloseButton from '@features/shell/CloseButton';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { Steps } from './Steps';
-import { useDialogFocus } from './useDialogFocus';
+import { focusable, useDialogFocus } from './useDialogFocus';
 import './modal.css';
 
 interface Props {
@@ -11,7 +11,7 @@ interface Props {
   size?: 'narrow' | 'default' | 'wide';
   /** Escape closes the dialog when given; leave it out while a save is in flight. */
   onEscape?: (() => void) | undefined;
-  /** Where the keyboard starts; the first control by default. */
+  /** Where the keyboard starts; by default the first field, else the first control (`firstStop`). */
   initialFocus?: ((root: HTMLElement) => HTMLElement | null | undefined) | undefined;
   /** A dialog that interrupts with a mandatory answer. */
   role?: 'dialog' | 'alertdialog';
@@ -23,6 +23,23 @@ interface Props {
   /** The dialog box, for a dialog that moves the keyboard between its own steps. */
   boxRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
+}
+
+const fields =
+  'input:not([disabled]):not([type="radio"]):not([type="hidden"]), input[type="radio"]:checked:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+
+/**
+ * Where a dialog starts, unless it says otherwise (one rule for every dialog): its first field;
+ * without one, its first control that is not the ✕ (a choice, or the action).
+ */
+export function firstStop(root: HTMLElement): HTMLElement | null {
+  const field = root.querySelector<HTMLElement>(fields);
+  if (field) return field;
+  return (
+    [...root.querySelectorAll<HTMLElement>(focusable)].find(
+      (control) => !control.closest('.ui-modal__head'),
+    ) ?? null
+  );
 }
 
 // Open modals; the page behind them does not scroll while any is open.
@@ -54,7 +71,7 @@ export default function Modal({
 }: Props) {
   const own = useRef<HTMLDivElement>(null);
   const box = boxRef ?? own;
-  useDialogFocus(box, { onEscape, initialFocus });
+  useDialogFocus(box, { onEscape, initialFocus: initialFocus ?? firstStop });
   useScrollLock();
   const classes = ['ui-modal', size === 'default' ? '' : `ui-modal--${size}`, className ?? '']
     .filter(Boolean)

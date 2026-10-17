@@ -79,7 +79,12 @@ export default function EditWalletDialog({ accountId, name, kind, onClose, onSav
       }}
     >
       <form onSubmit={save} noValidate>
-        <ModalHeader titleId="edit-wallet" title="Edit wallet" />
+        <ModalHeader
+          titleId="edit-wallet"
+          title="Edit wallet"
+          onClose={onClose}
+          closeDisabled={saving}
+        />
         <ModalBody>
           <Field
             id="wallet-new-name"
@@ -121,7 +126,6 @@ export default function EditWalletDialog({ accountId, name, kind, onClose, onSav
           <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
           </Button>
-          <span className="ui-grow" />
           <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </Button>

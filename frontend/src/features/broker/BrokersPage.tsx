@@ -167,8 +167,9 @@ export default function BrokersPage() {
   const share = portfolio && brokerShare(total, portfolio);
   const unknown = portfolio && netWorthUnknown(portfolio);
   const missing = leftOut(unpriced, unrated);
-  const addButton = (primary: boolean) => (
-    <Button variant={primary ? 'primary' : 'secondary'} icon="plus" onClick={() => setAdding(true)}>
+  // The page's main action, primary as on every list page (PageIntro).
+  const addButton = (
+    <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
       Add broker account
     </Button>
   );
@@ -185,7 +186,7 @@ export default function BrokersPage() {
           id="brokers-empty"
           title="No broker account yet"
           icon={<Icon name="briefcase" />}
-          actions={addButton(true)}
+          actions={addButton}
         >
           Add a broker account with the stocks, bonds and funds it holds and its cash. Prices are
           entered by hand for now, with the price you see at your broker.
@@ -205,7 +206,7 @@ export default function BrokersPage() {
               Could not refresh your broker accounts; showing the last loaded figures.
             </Banner>
           )}
-          <PageIntro action={addButton(false)}>
+          <PageIntro action={addButton}>
             Positions are entered by hand for now, with the price you see at your broker. Update a
             price on the position's page.
           </PageIntro>

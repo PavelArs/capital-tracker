@@ -348,6 +348,9 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     const dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
     const field = within(dialog).getByLabelText('Name');
     expect(field).toHaveValue('Trust Wallet');
+    // DIALOG-CHROME: the ✕ in the head and Cancel beside Save at the right, as in every dialog.
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(dialog.querySelector('.ui-modal__foot .ui-grow')).toBeNull();
     await user.clear(field);
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Enter a name.');

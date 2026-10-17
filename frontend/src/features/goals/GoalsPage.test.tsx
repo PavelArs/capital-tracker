@@ -151,6 +151,16 @@ describe('GOAL-LIST: the goals and where the portfolio stands against them', () 
     expect(names).toEqual(['Down payment A', 'Reserve B']);
   });
 
+  it("GOAL-ADD-PLACE has Add goal as the page's primary action in its intro line, not in the top bar", async () => {
+    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));
+    open();
+    await screen.findByText('Down payment A');
+    const add = screen.getByRole('button', { name: 'Add goal' });
+    expect(add).toHaveClass('ui-btn--primary');
+    expect(add.closest('.ui-intro')).not.toBeNull();
+    expect(add.closest('header')).toBeNull();
+  });
+
   it('invites the first goal when there is none', async () => {
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([]));
     open();

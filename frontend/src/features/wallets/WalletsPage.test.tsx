@@ -415,6 +415,8 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
     const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    // DIALOG-CHROME: on the first step Cancel sits with Continue at the right, not apart.
+    expect(dialog.querySelector('.ui-modal__foot .ui-grow')).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull();
   });

@@ -596,7 +596,8 @@ export default function AddWalletDialog({
               Back
             </Button>
           )}
-          <span className="ui-grow" />
+          {/* Back stands apart at the left; Cancel sits with the main action, as in every dialog. */}
+          {step !== 1 && <span className="ui-grow" />}
           <Button type="submit" variant="primary" disabled={(step === 1 && !network) || saving}>
             {step === 3
               ? saving

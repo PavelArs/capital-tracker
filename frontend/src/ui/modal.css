@@ -138,9 +138,10 @@
   overscroll-behavior: contain;
 }
 
-/* Phones: a dialog is a full-screen sheet. Its head stays at the top, the footer with Save stays
-   above the home indicator (it is outside the scrolling body) and only the fields scroll. A
-   narrow dialog (a confirmation) is a sheet from the bottom instead, as tall as it needs. */
+/* Phones: a dialog is a sheet from the bottom, as tall as its content (one rule for every small
+   form and confirmation); a wide dialog (a form of many fields: Add transaction, Add wallet) is a
+   full-screen sheet. Either way the head stays at the top, the footer with Save stays above the
+   home indicator (it is outside the scrolling body) and only the fields scroll. */
 @media (max-width: 640px) {
   .ui-scrim:has(> .ui-modal) {
     place-items: end stretch;
@@ -155,7 +156,7 @@
     animation: ui-sheet-in var(--dur-3) var(--ease-out);
   }
 
-  .ui-modal:not(.ui-modal--narrow) {
+  .ui-modal--wide {
     height: 100vh;
     /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
     height: 100dvh;
@@ -222,8 +223,17 @@
     flex: 1 1 auto;
   }
 
-  /* A confirmation: a sheet from the bottom with rounded top corners, no hairlines, Cancel and
-     the confirming button side by side at equal width. */
+  /* A sheet from the bottom (every dialog but a wide one): rounded top corners, up to 92 % of the
+     screen and then its fields scroll. */
+  .ui-modal:not(.ui-modal--wide) {
+    max-height: 92vh;
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
+    max-height: 92dvh;
+    border-width: 1px 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+  }
+
+  /* A confirmation: no hairlines, Cancel and the confirming button side by side at equal width. */
   .ui-modal--narrow {
     max-height: 85vh;
     /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */

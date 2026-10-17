@@ -89,15 +89,16 @@ export default function GoalsPage() {
     Math.max(0, ...(list?.items ?? []).map((goal) => goal.progress.stalePrices ?? 0)),
   );
 
+  // The page's main action sits in its intro line, as on every list page (PageIntro).
   const add = (
-    <Button icon="plus" onClick={() => setAdding(true)}>
+    <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
       Add goal
     </Button>
   );
 
   return (
     <div className="shell-page" ref={page}>
-      <PageHeader title="Goals" actions={add} />
+      <PageHeader title="Goals" />
       {error && list === null ? (
         <ErrorState what="your goals" onRetry={() => reload()} />
       ) : list === null ? (
@@ -118,7 +119,7 @@ export default function GoalsPage() {
         </EmptyState>
       ) : (
         <>
-          <PageIntro>
+          <PageIntro action={add}>
             A goal is a sum to reach, with a date if you have one. Every goal is measured against
             your whole portfolio, in the currency the goal was set in.
           </PageIntro>
