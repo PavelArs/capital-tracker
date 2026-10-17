@@ -1449,7 +1449,10 @@ const server = http.createServer(async (request, response) => {
           !Array.isArray(value) &&
           Object.entries(value).every(
             ([key, item]) =>
-              /^[A-Za-z0-9]{20,64}$/.test(key) && typeof item === 'number' && item > 0,
+              // -1 is the one malformed quote the stub may serve, to prove the backend skips it.
+              /^[A-Za-z0-9]{20,64}$/.test(key) &&
+              typeof item === 'number' &&
+              (item > 0 || item === -1),
           ));
       if (
         !table(data.ethereum) ||
