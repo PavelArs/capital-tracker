@@ -13,6 +13,7 @@ import { newRequestId } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress, typeLabels } from './operation-format';
+import { ProposalCard, ProposalItem } from './ProposalCard';
 import { takeHandover } from './proposals-handover';
 
 const place = (item: DuplicateProposal) =>
@@ -100,31 +101,40 @@ export default function DuplicateProposals({
   };
 
   return (
-    <section className="shell-card transactions-proposals" aria-labelledby="duplicate-proposals">
-      <h2 id="duplicate-proposals">
-        {proposals.length === 1
+    <ProposalCard
+      id="duplicate-proposals"
+      title={
+        proposals.length === 1
           ? 'One possible duplicate'
-          : `${proposals.length} possible duplicates`}
-      </h2>
-      <p className="transactions-proposals__lead">
-        Something you added also appears as a transaction of a wallet in the same account, so it is
-        counted twice. Replace yours with the wallet's: the transaction keeps its exact time and
-        amount, and the price or purpose you entered moves over to it. Nothing changes until you do.
-      </p>
-      <ul className="transactions-proposals__list">
-        {paged.rows.map((item) => {
-          const key = keyOf(item);
-          const received = item.direction === 'in';
-          return (
-            <li key={key} className="transactions-proposal">
-              <div className="transactions-proposal__text">
-                <span>
-                  <strong>
-                    {quantity(item.transaction.quantity)} {item.coin}
-                  </strong>{' '}
-                  in {item.transaction.accountName}
-                </span>
-                <span className="portfolio-sub">
+          : `${proposals.length} possible duplicates`
+      }
+      lead="Something you added also appears as a transaction of a wallet in the same account, so it is counted twice. Replace yours with the wallet's: the transaction keeps its exact time and amount, and the price or purpose you entered moves over to it. Nothing changes until you do."
+      rule={
+        <>
+          Offered when the same coin moved the same way in the same account within{' '}
+          {found?.windowHours} hours, and the amounts differ by at most {found?.amountPercent}%.
+          Anything less certain stays as it is.
+        </>
+      }
+      more={paged.more && <LoadMore {...paged.more} label="proposals" />}
+    >
+      {paged.rows.map((item) => {
+        const key = keyOf(item);
+        const received = item.direction === 'in';
+        return (
+          <ProposalItem
+            key={key}
+            summary={
+              <span>
+                <strong>
+                  {quantity(item.transaction.quantity)} {item.coin}
+                </strong>{' '}
+                in {item.transaction.accountName}
+              </span>
+            }
+            details={
+              <>
+                <span className="ui-sub">
                   You added: {typeLabels[item.record.type]} {quantity(item.record.quantity)}{' '}
                   {item.coin}
                   {item.record.valueUsd === null
@@ -132,35 +142,22 @@ export default function DuplicateProposals({
                     : ` worth ${money(item.record.valueUsd, 'USD')}`}
                   , {moment(item.record.occurredAt)}
                 </span>
-                <span className="portfolio-sub">
+                <span className="ui-sub">
                   {place(item)} {received ? 'received' : 'sent'}{' '}
                   {quantity(item.transaction.quantity)} {item.coin},{' '}
                   {moment(item.transaction.occurredAt)}
                 </span>
-                {problem?.key === key && (
-                  <span className="transactions-proposal__error" role="alert">
-                    {problem.text}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                className="shell-button"
-                disabled={busy !== null}
-                onClick={() => void replace(item)}
-              >
-                {busy === key ? 'Replacing…' : "Replace with the wallet's"}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {paged.more && <LoadMore {...paged.more} label="proposals" />}
-      <p className="shell-note">
-        Offered when the same coin moved the same way in the same account within{' '}
-        {found?.windowHours} hours, and the amounts differ by at most {found?.amountPercent}%.
-        Anything less certain stays as it is.
-      </p>
-    </section>
+              </>
+            }
+            problem={problem?.key === key ? problem.text : null}
+            action="Replace with the wallet's"
+            busyLabel="Replacing…"
+            busy={busy === key}
+            locked={busy !== null}
+            onAct={() => void replace(item)}
+          />
+        );
+      })}
+    </ProposalCard>
   );
 }

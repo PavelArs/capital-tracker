@@ -1,0 +1,29 @@
+.ui-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.ui-steps__bars {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.ui-steps__bar {
+  display: inline-block;
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.ui-steps__bar--on {
+  background: var(--accent);
+}
+
+/* Under a dialog's title. */
+.ui-modal__steps {
+  padding: 6px 22px 0;
+}

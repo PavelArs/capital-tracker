@@ -6,15 +6,20 @@ import type { Operation } from '@api/operations.api';
 import { ownedTransfersApi } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type DependentOperation, tradesApi } from '@api/trades.api';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Chip, ChipGroup } from '@/ui/Chip';
+import { Field } from '@/ui/Field';
+import { Affix, Input, Select, Textarea } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { dayText } from '@/utils/dates';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
-import CloseButton from '../shell/CloseButton';
 import { hiddenTokenSymbols } from '../wallets/WalletParts';
 import { unitPrice } from './add-asset';
 import {
@@ -54,6 +59,7 @@ import {
 } from './add-transaction';
 import { useFocusFirstProblem } from './focus-problem';
 import { money, price, quantity } from './format';
+import './portfolio.css';
 
 export interface Account {
   id: string;
@@ -252,6 +258,7 @@ const giftKinds = [
   ['gift-received', 'Received'],
   ['gift-sent', 'Sent'],
 ] as const satisfies readonly (readonly [EntryKind, string])[];
+const kindNames = new Map<EntryKind, string>([...mainKinds, ...moreKinds, ['gift-sent', 'Gift']]);
 const isMoreKind = (kind: EntryKind) =>
   kind === 'reward' || kind === 'airdrop' || kind === 'fee' || kind.startsWith('gift');
 /** Which records a type is saved as: an edit keeps to the same kind of record. */
@@ -363,6 +370,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
   const { form, refused } = useFocusFirstProblem();
+  const toast = useToast();
   // The owner picked an account or an asset; a default that arrives later leaves them as they are.
   const accountTouched = useRef(false);
   const assetTouched = useRef(false);
@@ -741,6 +749,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
         if (editing) await tradesApi.correct(accountId, editing.id.replace(/^trade:/, ''), saved);
         else await tradesApi.create(accountId, saved);
       }
+      // The same titles as the Transactions page's own word, so the toast is shown once; the
+      // line under it says what was saved, the amount as entered ("Buy 0.01 BTC · Bybit").
+      const where = transfer && receiver ? `${account.name} → ${receiver.name}` : account.name;
+      toast.show({
+        tone: 'success',
+        title: editing ? 'Transaction updated' : 'Transaction added',
+        detail: `${kindNames.get(kind) ?? 'Transaction'} ${counted(entry.amount, symbol)} · ${where}`,
+      });
       onSaved();
     } catch (caught) {
       setError(failure(caught, accounts, symbol, occurredAt(shown)));
@@ -748,6 +764,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     }
   };
 
+  // The text a Field shows under its control once the problem is found (ids `${id}-<problem>`).
+  const problem = (name: EntryProblem, text = problemText[name]) => (found.has(name) ? text : null);
   const fieldError = (problem: EntryProblem, text = problemText[problem]) =>
     found.has(problem) && (
       <span className="ui-field__error" id={`${id}-${problem}-error`}>
@@ -774,11 +792,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       initialFocus={(root) => root.querySelector<HTMLElement>('input[type="radio"]:checked')}
     >
       <form ref={form} onSubmit={submit} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
-          <CloseButton onClick={onClose} disabled={saving} />
-        </div>
-        <div className="ui-modal__body">
+        <ModalHeader
+          titleId={`${id}-title`}
+          title={editing ? 'Edit transaction' : 'Add transaction'}
+          onClose={onClose}
+          closeDisabled={saving}
+        />
+        <ModalBody>
           <div className="ui-field">
             <span id={`${id}-type`} className="ui-field__label">
               Type
@@ -792,15 +812,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                 disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
                 onChange={choose}
               />
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
                 className="portfolio-types__more"
                 aria-expanded={moreShown}
                 aria-controls={`${id}-more-types`}
                 onClick={() => setMoreShown(!moreShown)}
               >
                 More <span aria-hidden="true">{moreShown ? '▴' : '▾'}</span>
-              </button>
+              </Button>
             </div>
             {moreShown && (
               <SegmentedControl
@@ -827,54 +848,58 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             )}
           </div>
           {loadFailed ? (
-            <p className="ui-banner ui-banner--neg" role="alert">
+            <Banner tone="neg">
               Could not load your assets and accounts. Close this window and try again.
-            </p>
+            </Banner>
           ) : !ready ? (
             <p className="ui-field__hint" role="status">
               Loading your assets and accounts…
             </p>
           ) : accounts.length === 0 || assets.length === 0 ? (
-            <p className="shell-note" role="status">
+            <Banner tone="info" role="status">
               {accounts.length === 0 ? (
                 <>
-                  Add a wallet first on the <Link to="/wallets">Wallets</Link> page, or an asset
-                  with a balance on the Portfolio page.
+                  Add a wallet first on the{' '}
+                  <Link className="ui-link" to="/wallets">
+                    Wallets
+                  </Link>{' '}
+                  page, or an asset with a balance on the Portfolio page.
                 </>
               ) : (
                 'Add an asset first on the Portfolio page, then record its trades.'
               )}
-            </p>
+            </Banner>
           ) : (
             <>
               <div className="ui-field">
                 <span id={`${id}-asset`} className="ui-field__label">
                   Asset
                 </span>
-                <div className="ui-chips" role="group" aria-labelledby={`${id}-asset`}>
+                <ChipGroup labelledBy={`${id}-asset`}>
                   {shownAssets.map((item) => (
-                    <button
+                    <Chip
                       key={item.id}
-                      type="button"
-                      className="ui-chip portfolio-asset-chip"
-                      aria-pressed={!other && entry.instrumentId === item.id}
+                      pressed={!other && entry.instrumentId === item.id}
+                      icon={
+                        <AssetIcon
+                          symbol={item.symbol}
+                          name={item.name}
+                          assetType={item.assetType}
+                          size="sm"
+                        />
+                      }
                       onClick={() => {
                         setOther(null);
                         update({ instrumentId: item.id });
                       }}
                     >
-                      <AssetIcon
-                        symbol={item.symbol}
-                        name={item.name}
-                        assetType={item.assetType}
-                        size="sm"
-                      />
                       {item.symbol ?? item.name}
-                    </button>
+                    </Chip>
                   ))}
                   {moreAssets.length > 0 && (
-                    <select
-                      className="ui-input portfolio-chip-select"
+                    <Select
+                      size="sm"
+                      className="portfolio-chip-select"
                       aria-label="More assets"
                       value=""
                       onChange={(event) => {
@@ -888,19 +913,17 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   )}
                   {!sell && !editing && (
-                    <button
-                      type="button"
-                      className="ui-chip portfolio-asset-chip"
-                      aria-pressed={other !== null}
+                    <Chip
+                      pressed={other !== null}
                       onClick={() => setOther(other ?? { ticker: '', name: '' })}
                     >
                       <span aria-hidden="true">+</span> Other asset
-                    </button>
+                    </Chip>
                   )}
-                </div>
+                </ChipGroup>
                 {other ? null : fieldError('instrument')}
               </div>
               {other && (
@@ -909,9 +932,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     <label className="ui-field__label" htmlFor={`${id}-ticker`}>
                       Ticker
                     </label>
-                    <input
+                    <Input
                       id={`${id}-ticker`}
-                      className="ui-input"
                       placeholder="e.g. TON"
                       autoComplete="off"
                       value={other.ticker}
@@ -921,20 +943,18 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     />
                     {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
                   </div>
-                  <div className="ui-field">
-                    <label className="ui-field__label" htmlFor={`${id}-name`}>
-                      Name (optional)
-                    </label>
-                    <input
-                      id={`${id}-name`}
-                      className="ui-input"
-                      placeholder={otherTicker || 'Toncoin'}
-                      autoComplete="off"
-                      maxLength={120}
-                      value={other.name}
-                      onChange={(event) => setOther({ ...other, name: event.target.value })}
-                    />
-                  </div>
+                  <Field id={`${id}-name`} label="Name (optional)">
+                    {(control) => (
+                      <Input
+                        {...control}
+                        placeholder={otherTicker || 'Toncoin'}
+                        autoComplete="off"
+                        maxLength={120}
+                        value={other.name}
+                        onChange={(event) => setOther({ ...other, name: event.target.value })}
+                      />
+                    )}
+                  </Field>
                 </div>
               )}
               <div className="ui-field-row">
@@ -942,11 +962,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   <label className="ui-field__label" htmlFor={`${id}-amount`}>
                     Amount
                   </label>
-                  <span className="ui-affix">
-                    <input
+                  <Affix suffix={symbol}>
+                    <Input
                       id={`${id}-amount`}
-                      className="ui-input"
-                      inputMode="decimal"
+                      numeric
                       placeholder="0.00"
                       value={entry.amount}
                       onChange={(event) => setAmount(event.target.value)}
@@ -955,8 +974,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
                         : invalid('amount'))}
                     />
-                    <span className="ui-affix__suffix">{symbol}</span>
-                  </span>
+                  </Affix>
                   {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
                     (sell && (
                       <Availability
@@ -971,22 +989,18 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       />
                     ))}
                 </div>
-                <div className="ui-field">
-                  <label className="ui-field__label" htmlFor={`${id}-date`}>
-                    Date
-                  </label>
-                  <input
-                    id={`${id}-date`}
-                    className="ui-input"
-                    type="date"
-                    max={today()}
-                    value={entry.date}
-                    onChange={(event) => update({ date: event.target.value })}
-                    onBlur={settle('date')}
-                    {...invalid('date')}
-                  />
-                  {fieldError('date')}
-                </div>
+                <Field id={`${id}-date`} label="Date" error={problem('date')}>
+                  {(control) => (
+                    <Input
+                      {...control}
+                      type="date"
+                      max={today()}
+                      value={entry.date}
+                      onChange={(event) => update({ date: event.target.value })}
+                      onBlur={settle('date')}
+                    />
+                  )}
+                </Field>
               </div>
               {priced && (
                 <>
@@ -995,17 +1009,15 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       <label className="ui-field__label" htmlFor={`${id}-unit`}>
                         Price per {unitSymbol}
                       </label>
-                      <span className="ui-affix">
-                        <input
+                      <Affix suffix={entry.currency}>
+                        <Input
                           id={`${id}-unit`}
-                          className="ui-input"
-                          inputMode="decimal"
+                          numeric
                           placeholder="0.00"
                           value={unit}
                           onChange={(event) => setUnitPrice(event.target.value)}
                         />
-                        <span className="ui-affix__suffix">{entry.currency}</span>
-                      </span>
+                      </Affix>
                       {marketPrice && (
                         <span className="ui-field__hint">
                           Market today{' '}
@@ -1015,7 +1027,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           ·{' '}
                           <button
                             type="button"
-                            className="portfolio-link"
+                            className="ui-link"
                             onClick={() => setUnitPrice(marketPrice)}
                           >
                             Use
@@ -1027,19 +1039,17 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       <label className="ui-field__label" htmlFor={`${id}-total`}>
                         {buy ? 'Total paid' : 'Total received'}
                       </label>
-                      <span className="ui-affix">
-                        <input
+                      <Affix suffix={entry.currency}>
+                        <Input
                           id={`${id}-total`}
-                          className="ui-input"
-                          inputMode="decimal"
+                          numeric
                           placeholder="0.00"
                           value={entry.total}
                           onChange={(event) => setTotal(event.target.value)}
                           onBlur={leave('total')}
                           {...invalid('total')}
                         />
-                        <span className="ui-affix__suffix">{entry.currency}</span>
-                      </span>
+                      </Affix>
                       {fieldError('total', buy ? 'Enter what you paid' : 'Enter what you received')}
                     </div>
                   </div>
@@ -1081,11 +1091,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       <label className="ui-field__label" htmlFor={`${id}-rate`}>
                         Exchange rate
                       </label>
-                      <span className="ui-affix ui-affix--wide">
-                        <input
+                      <Affix wide suffix={`${entry.currency} per 1 USD`}>
+                        <Input
                           id={`${id}-rate`}
-                          className="ui-input"
-                          inputMode="decimal"
+                          numeric
                           placeholder={rateLoading ? 'Loading…' : ''}
                           value={shown.rate}
                           onChange={(event) =>
@@ -1095,8 +1104,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           onBlur={leave('rate')}
                           {...invalid('rate')}
                         />
-                        <span className="ui-affix__suffix">{entry.currency} per 1 USD</span>
-                      </span>
+                      </Affix>
                       {fieldError('rate')}
                       <span className="ui-field__hint" id={`${id}-rate-hint`}>
                         {entry.rateEdited
@@ -1109,7 +1117,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         {entry.rateEdited && prefill && (
                           <button
                             type="button"
-                            className="portfolio-link"
+                            className="ui-link"
                             onClick={() => update({ rate: '', rateEdited: false })}
                           >
                             Use Bank of Russia rate {prefill}
@@ -1126,11 +1134,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   <label className="ui-field__label" htmlFor={`${id}-total`}>
                     Value{valueOptional(kind) ? ' (optional)' : ''}
                   </label>
-                  <span className="ui-affix">
-                    <input
+                  <Affix suffix="USD">
+                    <Input
                       id={`${id}-total`}
-                      className="ui-input"
-                      inputMode="decimal"
+                      numeric
                       placeholder={marketValue ?? '0.00'}
                       value={entry.total}
                       onChange={(event) => update({ total: event.target.value })}
@@ -1138,8 +1145,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       onBlur={leave('total')}
                       {...invalid('total')}
                     />
-                    <span className="ui-affix__suffix">USD</span>
-                  </span>
+                  </Affix>
                   {fieldError(
                     'total',
                     numberProblem(entry.total, 'Enter what it was worth on that date'),
@@ -1152,7 +1158,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         Market today {money(marketValue, 'USD')} ·{' '}
                         <button
                           type="button"
-                          className="portfolio-link"
+                          className="ui-link"
                           onClick={() => update({ total: marketValue })}
                         >
                           Use
@@ -1169,9 +1175,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       <label className="ui-field__label" htmlFor={`${id}-account`}>
                         From
                       </label>
-                      <select
+                      <Select
                         id={`${id}-account`}
-                        className="ui-input"
                         value={accountId}
                         disabled={Boolean(editing)}
                         onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
@@ -1181,15 +1186,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             {account.name}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                     <div className="ui-field">
                       <label className="ui-field__label" htmlFor={`${id}-to`}>
                         To
                       </label>
-                      <select
+                      <Select
                         id={`${id}-to`}
-                        className="ui-input"
                         value={toAccountId}
                         disabled={Boolean(editing)}
                         onChange={(event) => chooseAccount(setToAccountId)(event.target.value)}
@@ -1202,7 +1206,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             {account.name}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                       {tried && sameAccount && (
                         <span className="ui-field__error" id={`${id}-to-error`}>
                           Choose a different wallet
@@ -1221,9 +1225,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   <label className="ui-field__label" htmlFor={`${id}-account`}>
                     Wallet or account
                   </label>
-                  <select
+                  <Select
                     id={`${id}-account`}
-                    className="ui-input"
                     value={accountId}
                     disabled={Boolean(editing)}
                     onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
@@ -1233,11 +1236,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         {account.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
               <details
-                className="portfolio-more"
+                className="ui-more"
                 open={
                   Boolean(entry.time || entry.fee || (commented && entry.comment)) ||
                   found.has('time') ||
@@ -1249,90 +1252,73 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                   {`More options: ${['time', ...(priced || transfer ? ['fee'] : []), ...(commented ? ['comment'] : [])].join(', ')}`}
                 </summary>
                 <div className="ui-field-row">
-                  <div className="ui-field">
-                    <label className="ui-field__label" htmlFor={`${id}-time`}>
-                      Time, UTC (optional)
-                    </label>
-                    <input
-                      id={`${id}-time`}
-                      className="ui-input"
-                      type="time"
-                      value={entry.time}
-                      onChange={(event) => update({ time: event.target.value })}
-                      onBlur={settle('time')}
-                      {...invalid('time')}
-                    />
-                    {fieldError('time')}
-                  </div>
+                  <Field id={`${id}-time`} label="Time, UTC (optional)" error={problem('time')}>
+                    {(control) => (
+                      <Input
+                        {...control}
+                        type="time"
+                        value={entry.time}
+                        onChange={(event) => update({ time: event.target.value })}
+                        onBlur={settle('time')}
+                      />
+                    )}
+                  </Field>
                   {(priced || transfer) && (
-                    <div className="ui-field">
-                      <label className="ui-field__label" htmlFor={`${id}-fee`}>
-                        Fee (optional)
-                      </label>
-                      <span className="ui-affix">
-                        <input
-                          id={`${id}-fee`}
-                          className="ui-input"
-                          inputMode="decimal"
-                          placeholder="0.00"
-                          value={entry.fee}
-                          onChange={(event) => update({ fee: event.target.value })}
-                          onBlur={leave('fee')}
-                          {...invalid('fee')}
-                        />
-                        <span className="ui-affix__suffix">
-                          {transfer ? symbol : entry.currency}
-                        </span>
-                      </span>
-                      {fieldError('fee', numberProblem(entry.fee, problemText.fee))}
-                    </div>
+                    <Field
+                      id={`${id}-fee`}
+                      label="Fee (optional)"
+                      error={problem('fee', numberProblem(entry.fee, problemText.fee))}
+                    >
+                      {(control) => (
+                        <Affix suffix={transfer ? symbol : entry.currency}>
+                          <Input
+                            {...control}
+                            numeric
+                            placeholder="0.00"
+                            value={entry.fee}
+                            onChange={(event) => update({ fee: event.target.value })}
+                            onBlur={leave('fee')}
+                          />
+                        </Affix>
+                      )}
+                    </Field>
                   )}
                 </div>
                 {/* transactions-01: only where the command keeps the comment. */}
                 {commented && (
-                  <div className="ui-field">
-                    <label className="ui-field__label" htmlFor={`${id}-comment`}>
-                      Comment
-                    </label>
-                    <textarea
-                      id={`${id}-comment`}
-                      className="ui-input ui-textarea"
-                      placeholder="Optional"
-                      value={entry.comment}
-                      onChange={(event) => update({ comment: event.target.value })}
-                      onBlur={leave('comment')}
-                      {...invalid('comment')}
-                    />
-                    {fieldError('comment')}
-                  </div>
+                  <Field id={`${id}-comment`} label="Comment" error={problem('comment')}>
+                    {(control) => (
+                      <Textarea
+                        {...control}
+                        placeholder="Optional"
+                        value={entry.comment}
+                        onChange={(event) => update({ comment: event.target.value })}
+                        onBlur={leave('comment')}
+                      />
+                    )}
+                  </Field>
                 )}
               </details>
             </>
           )}
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <span className="ui-modal__summary">
-            {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
-            {valued(kind) &&
-              positive(entry.total) !== null &&
-              `Value ${money(positive(entry.total), 'USD')}`}
-          </span>
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={onClose}
-            disabled={saving}
-          >
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter
+          summary={
+            <>
+              {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
+              {valued(kind) &&
+                positive(entry.total) !== null &&
+                `Value ${money(positive(entry.total), 'USD')}`}
+            </>
+          }
+        >
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="shell-button shell-button--primary"
+            variant="primary"
             disabled={
               saving ||
               (priced && rateLoading) ||
@@ -1343,8 +1329,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             }
           >
             {editing ? 'Save changes' : 'Save transaction'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -1386,7 +1372,7 @@ function Availability({
       </span>
     );
   const useAll = (
-    <button type="button" className="portfolio-link" onClick={onUseAll}>
+    <button type="button" className="ui-link" onClick={onUseAll}>
       Use all
     </button>
   );

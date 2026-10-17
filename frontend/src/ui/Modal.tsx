@@ -1,5 +1,7 @@
+import CloseButton from '@features/shell/CloseButton';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
-import { useDialogFocus } from './useDialogFocus';
+import { Steps } from './Steps';
+import { focusable, useDialogFocus } from './useDialogFocus';
 import './modal.css';
 
 interface Props {
@@ -9,7 +11,7 @@ interface Props {
   size?: 'narrow' | 'default' | 'wide';
   /** Escape closes the dialog when given; leave it out while a save is in flight. */
   onEscape?: (() => void) | undefined;
-  /** Where the keyboard starts; the first control by default. */
+  /** Where the keyboard starts; by default the first field, else the first control (`firstStop`). */
   initialFocus?: ((root: HTMLElement) => HTMLElement | null | undefined) | undefined;
   /** A dialog that interrupts with a mandatory answer. */
   role?: 'dialog' | 'alertdialog';
@@ -21,6 +23,23 @@ interface Props {
   /** The dialog box, for a dialog that moves the keyboard between its own steps. */
   boxRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
+}
+
+const fields =
+  'input:not([disabled]):not([type="radio"]):not([type="hidden"]), input[type="radio"]:checked:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+
+/**
+ * Where a dialog starts, unless it says otherwise (one rule for every dialog): its first field;
+ * without one, its first control that is not the ✕ (a choice, or the action).
+ */
+export function firstStop(root: HTMLElement): HTMLElement | null {
+  const field = root.querySelector<HTMLElement>(fields);
+  if (field) return field;
+  return (
+    [...root.querySelectorAll<HTMLElement>(focusable)].find(
+      (control) => !control.closest('.ui-modal__head'),
+    ) ?? null
+  );
 }
 
 // Open modals; the page behind them does not scroll while any is open.
@@ -52,7 +71,7 @@ export default function Modal({
 }: Props) {
   const own = useRef<HTMLDivElement>(null);
   const box = boxRef ?? own;
-  useDialogFocus(box, { onEscape, initialFocus });
+  useDialogFocus(box, { onEscape, initialFocus: initialFocus ?? firstStop });
   useScrollLock();
   const classes = ['ui-modal', size === 'default' ? '' : `ui-modal--${size}`, className ?? '']
     .filter(Boolean)
@@ -69,6 +88,65 @@ export default function Modal({
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A dialog's head: the 20 px title (h2, id `titleId`), the ✕ when the dialog can be closed,
+ * the steps of a multi-step dialog under it and an optional intro line.
+ */
+export function ModalHeader({
+  titleId,
+  title,
+  onClose,
+  closeDisabled = false,
+  steps,
+  intro,
+}: {
+  titleId: string;
+  title: ReactNode;
+  /** The ✕; left out, the dialog has none (a required step). */
+  onClose?: () => void;
+  /** The ✕ waits while a save is in flight. */
+  closeDisabled?: boolean;
+  steps?: { current: number; total: number };
+  /** A line under the title: what the dialog does. */
+  intro?: ReactNode;
+}) {
+  return (
+    <>
+      <div className="ui-modal__head">
+        <h2 id={titleId}>{title}</h2>
+        {onClose && <CloseButton onClick={onClose} disabled={closeDisabled} />}
+        {intro && <div className="ui-modal__intro">{intro}</div>}
+      </div>
+      {steps && (
+        <div className="ui-modal__steps">
+          <Steps current={steps.current} total={steps.total} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The dialog's fields: a grid with 16 px between them; the part that scrolls in a tall dialog. */
+export function ModalBody({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div className={className ? `ui-modal__body ${className}` : 'ui-modal__body'}>{children}</div>
+  );
+}
+
+/**
+ * The dialog's buttons, at the right. `summary` is the muted line at the left that sums up what
+ * Save will do ("Cost $1,200 · counted as a new deposit"). Put `<span className="ui-grow" />`
+ * between a Back button and the main one to push them apart.
+ */
+export function ModalFooter({ summary, children }: { summary?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="ui-modal__foot">
+      {summary !== undefined && summary !== null && <p className="ui-modal__summary">{summary}</p>}
+      {children}
     </div>
   );
 }

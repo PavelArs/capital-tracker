@@ -15,16 +15,24 @@ import {
 import { forgetReads, hydrateReads, releaseReads, setReadStore } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { ToastProvider } from '@contexts/ToastContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '../../components/Toast';
 import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
 import AssetLotsCard from './AssetLots';
 import AssetPage from './AssetPage';
-import PortfolioPage, { defaultSort, nextSort, phoneSort, sortAssets } from './PortfolioPage';
+import PortfolioPage, {
+  defaultSort,
+  groupSubtotal,
+  nextSort,
+  phoneSort,
+  sortAssets,
+} from './PortfolioPage';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -191,7 +199,14 @@ async function openAddAsset(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'Add' }));
   const picker = screen.getByRole('dialog', { name: 'Add to portfolio' });
   await user.click(within(picker).getByRole('button', { name: /^Something else/ }));
+  await user.click(within(picker).getByRole('button', { name: 'Continue' }));
 }
+// The asset rows of the table, without the header and the class groups' head rows.
+const assetRows = () =>
+  screen
+    .getAllByRole('row')
+    .slice(1)
+    .filter((row) => !row.classList.contains('portfolio-group'));
 const rowOf = (name: string) => screen.getByRole('row', { name: new RegExp(`^${name}`) });
 const cells = (row: HTMLElement) =>
   within(row)
@@ -583,7 +598,7 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
-    expect(within(summary).getByRole('link', { name: 'bank deposits' })).toHaveClass('shell-link');
+    expect(within(summary).getByRole('link', { name: 'bank deposits' })).toHaveClass('ui-link');
   });
 
   it('portfolio-11 shows Manual instead of a 24h change for a hand-priced asset', async () => {
@@ -632,6 +647,64 @@ describe('PV-UI Portfolio values every asset', () => {
         .getAllByRole('button')
         .map((chip) => chip.textContent),
     ).toEqual(['All 2', 'Crypto 2']);
+  });
+
+  it('portfolio-16 filters by asset class: a broker fund and a flat sit under Broker and Real estate, not Manual', async () => {
+    const fund = valued(
+      6,
+      'Global equity fund',
+      'GEQ',
+      {
+        assetType: 'manual',
+        valuationCurrency: 'USD',
+        priceSource: 'manual',
+      },
+      { holdings: [{ accountId: id(201), accountName: 'QA Broker', quantity: '1', value: '0' }] },
+    );
+    const flat = valued(
+      7,
+      'Flat',
+      null,
+      {
+        assetType: 'manual',
+        valuationCurrency: 'RUB',
+        priceSource: 'manual',
+      },
+      { holdings: [{ accountId: id(202), accountName: 'Flat', quantity: '1', value: '0' }] },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, cash, fund, flat, deposit]),
+    );
+    const account = (n: number, name: string, assetClass: 'broker' | 'property') => ({
+      id: id(n),
+      name,
+      kind: null,
+      assetClass,
+      currentRevision: 0,
+      createdAt: '2025-01-01T00:00:00Z',
+    });
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(201, 'QA Broker', 'broker'), account(202, 'Flat', 'property')],
+      nextCursor: null,
+    });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    await waitFor(() =>
+      expect(
+        within(chips)
+          .getAllByRole('button')
+          .map((chip) => chip.textContent),
+      ).toEqual(['All 5', 'Crypto 1', 'Cash 1', 'Broker 1', 'Real estate 1', 'Other 1']),
+    );
+    await user.click(within(chips).getByRole('button', { name: /^Broker/ }));
+    expect(assetRows()).toHaveLength(1);
+    // Manual stays on the row as how it is priced.
+    expect(cells(rowOf('Global equity fund'))[0]).toBe('Global equity fundGEQ · Manual · USD');
+    await user.click(within(chips).getByRole('button', { name: /^Real estate/ }));
+    expect(rowOf('Flat')).toBeInTheDocument();
+    expect(assetRows()).toHaveLength(1);
   });
 
   it('portfolio-19 names the assets table', async () => {
@@ -715,7 +788,7 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(get).toHaveBeenCalledTimes(4);
     expect(rowOf('Bitcoin')).toBeInTheDocument();
     expect(screen.queryByRole('row', { name: /^US dollar/ })).toBeNull();
-    expect(screen.queryByText(/could not load your portfolio/i)).toBeNull();
+    expect(screen.queryByText(/couldn't load your portfolio/i)).toBeNull();
   });
 
   it('opens an asset with its numbers, price source and holdings', async () => {
@@ -723,7 +796,7 @@ describe('PV-UI Portfolio values every asset', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await user.click(await screen.findByRole('link', { name: 'Bitcoin' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Bitcoin' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Bitcoin' })).toBeInTheDocument();
     const stats = screen.getByRole('region', { name: 'Position' });
     const stat = (label: string) =>
       within(stats).getByText(label, { exact: true }).nextElementSibling?.textContent;
@@ -744,7 +817,7 @@ describe('PV-UI Portfolio values every asset', () => {
       'href',
       `/wallets/${id(101)}`,
     );
-    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
+    await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
   });
 
@@ -807,9 +880,9 @@ describe('PV-UI Portfolio values every asset', () => {
       .mockResolvedValue(portfolio([rubles]));
     const user = userEvent.setup();
     renderAt(`/portfolio/${rubles.instrumentId}`);
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load this asset/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load this asset/i);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Rubles' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Rubles' })).toBeInTheDocument();
     expect(screen.getByText('No rate')).toBeInTheDocument();
     expect(screen.getByText('No Bank of Russia rate stored to show it in USD')).toBeInTheDocument();
     expect(screen.getByText('Nothing held right now.')).toBeInTheDocument();
@@ -912,7 +985,12 @@ describe('Portfolio after inflation', () => {
             ...realBitcoin,
             real: { ...realBitcoin.real, official: read('99000', '-3000', '-3.03') },
           },
-          { ...realCash, real: { ...realCash.real, official: read('3900', '100', '2.56') } },
+          {
+            ...realCash,
+            // One class, so the order is not split by the class groups.
+            assetType: 'crypto',
+            real: { ...realCash.real, official: read('3900', '100', '2.56') },
+          },
         ],
         { real: withReal().real },
       ),
@@ -921,11 +999,7 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('row', { name: /^Bitcoin/ });
     await user.click(screen.getByRole('radio', { name: 'Real' }));
     await user.click(screen.getByRole('button', { name: 'Real P&L' }));
-    const order = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.textContent?.slice(0, 7));
+    const order = () => assetRows().map((row) => row.textContent?.slice(0, 7));
     expect(order()).toEqual(['US doll', 'Bitcoin']);
   });
 
@@ -960,11 +1034,7 @@ describe('Portfolio after inflation', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Aaa/ });
     await user.click(screen.getByRole('button', { name: 'Real P&L' }));
-    const order = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.textContent?.slice(0, 3));
+    const order = () => assetRows().map((row) => row.textContent?.slice(0, 3));
     // The first click is largest first; the floats are equal, so only an exact compare puts Zzz first.
     expect(order()).toEqual(['Zzz', 'Aaa']);
   });
@@ -1823,13 +1893,16 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const Probe = () => <p data-testid="where">{useLocation().pathname}</p>;
     const user = userEvent.setup();
     render(
-      <MemoryRouter initialEntries={['/portfolio']}>
-        <Routes>
-          <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/portfolio/:assetId" element={<AssetPage />} />
-        </Routes>
-        <Probe />
-      </MemoryRouter>,
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/portfolio']}>
+          <Routes>
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/portfolio/:assetId" element={<AssetPage />} />
+          </Routes>
+          <Probe />
+        </MemoryRouter>
+        <ToastViewport />
+      </ToastProvider>,
     );
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const dialog = await openDialog(user);
@@ -1839,8 +1912,11 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByTestId('where')).toHaveTextContent(`/portfolio/${deposit.instrumentId}`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
-    expect(screen.getByText('Asset added.')).toHaveAttribute('role', 'status');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
+    // The word comes as a toast, announced politely (role=status).
+    expect(
+      within(screen.getByRole('region', { name: 'Messages' })).getByRole('status'),
+    ).toHaveTextContent('Asset added');
   });
 
   it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
@@ -1871,35 +1947,47 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
         </Routes>
       </MemoryRouter>,
     );
+    // A tile is chosen first (aria-pressed), then Continue opens its form (step 1 of 2).
+    const pick = async (name: RegExp) => {
+      const dialog = screen.getByRole('dialog', { name: 'Add to portfolio' });
+      await user.click(within(dialog).getByRole('button', { name }));
+      expect(within(dialog).getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    };
     await user.click(await screen.findByRole('button', { name: 'Add' }));
     const picker = screen.getByRole('dialog', { name: 'Add to portfolio' });
     expect(
       within(picker)
         .getAllByRole('button')
         .map(
-          (button) => button.querySelector('b')?.textContent ?? button.getAttribute('aria-label'),
+          (button) =>
+            button.querySelector('b')?.textContent ??
+            button.getAttribute('aria-label') ??
+            button.textContent,
         ),
-    ).toEqual(['Close', 'Crypto', 'Bank', 'Broker', 'Real estate', 'Something else']);
+    ).toEqual([
+      'Close',
+      'Crypto',
+      'Bank',
+      'Broker',
+      'Real estate',
+      'Something else',
+      'Cancel',
+      'Continue',
+    ]);
+    expect(within(picker).getByRole('button', { name: 'Continue' })).toBeDisabled();
 
-    await user.click(within(picker).getByRole('button', { name: /^Real estate/ }));
+    await pick(/^Real estate/);
     expect(screen.getByRole('dialog', { name: 'Add property' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
-    await user.click(
-      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
-        name: /^Broker/,
-      }),
-    );
+    await pick(/^Broker/);
     expect(screen.getByRole('dialog', { name: 'Add broker account' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
-    await user.click(
-      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
-        name: /^Bank/,
-      }),
-    );
+    await pick(/^Bank/);
     expect(screen.queryByRole('dialog', { name: 'Add to portfolio' })).toBeNull();
     const deposit = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.keyboard('{Escape}');
@@ -1907,15 +1995,11 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus();
 
     await user.click(screen.getByRole('button', { name: 'Add' }));
-    await user.click(
-      within(screen.getByRole('dialog', { name: 'Add to portfolio' })).getByRole('button', {
-        name: /^Crypto/,
-      }),
-    );
+    await pick(/^Crypto/);
     expect(await screen.findByText('Wallets page, add wallet: true')).toBeInTheDocument();
   });
 
-  it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
+  it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by class', async () => {
     let assets = [bitcoin, toncoin];
     const get = vi
       .spyOn(portfolioValuationApi, 'get')
@@ -1982,17 +2066,17 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       assertReviewed: true,
     });
     // portfolio-06: the new asset opens on its own page; the list shows it on the way back.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(3);
     expect(cells(rowOf('Deposit')).slice(0, 2)).toEqual(['DepositManual · RUB', '150,000']);
 
-    await user.click(screen.getByRole('button', { name: /^Manual/ }));
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: /^Other/ }));
+    expect(assetRows()).toHaveLength(1);
     expect(rowOf('Deposit')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
+    expect(assetRows()).toHaveLength(2);
   });
 
   it('adds cash at its amount and a coin at its cost, with no price for either', async () => {
@@ -2040,7 +2124,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     });
 
     // portfolio-06: the new asset's page opened; the next one is added from the list again.
-    await user.click(await screen.findByRole('link', { name: '← Portfolio' }));
+    await user.click(await screen.findByRole('link', { name: 'Back to Portfolio' }));
     dialog = await openDialog(user);
     await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
     expect(within(dialog).getByLabelText('Amount (optional)')).toBeInTheDocument();
@@ -2140,7 +2224,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(setPrice).toHaveBeenCalledTimes(2);
     expect(setPrice.mock.calls[1][1].requestId).toBe(setPrice.mock.calls[0][1].requestId);
     // portfolio-06: the new asset opens on its own page.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);
   });
 
@@ -2164,8 +2248,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
     );
     // portfolio-06: the saved asset opens on its own page, and is in the list on the way back.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: '← Portfolio' }));
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
@@ -2288,7 +2372,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // portfolio-06: it opens on its own page, which no filter or search on the list can hide.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
   });
 
   it('keeps focus inside the dialog, returns it on close and cannot close mid-save', async () => {
@@ -2335,13 +2419,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const search = screen.getByRole('searchbox', { name: 'Search assets' });
     expect(search).toHaveAttribute('placeholder', 'Search assets');
-    const names = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.textContent?.split(' ')[0]);
+    const names = () => assetRows().map((row) => row.textContent?.split(' ')[0]);
     await user.type(search, 'BIT');
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    expect(assetRows()).toHaveLength(1);
     expect(rowOf('Bitcoin')).toBeInTheDocument();
     await user.clear(search);
     await user.type(search, 'usd');
@@ -2350,19 +2430,20 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
     expect(screen.getByText('No assets match "usd".')).toBeInTheDocument();
     await user.clear(search);
-    expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
+    expect(assetRows()).toHaveLength(2);
   });
 
   it('SORT-HEADERS opens by value, largest first; a column name sorts by it and a second click turns it around', async () => {
-    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
+    // One class, so the order is not split by the class groups.
+    const sameClass = { ...cash, assetType: 'crypto' } as const;
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, sameClass, toncoin]),
+    );
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const order = () =>
-      screen
-        .getAllByRole('row')
-        .slice(1)
-        .map((row) => row.querySelector('.portfolio-asset__name')?.textContent);
+      assetRows().map((row) => row.querySelector('.portfolio-asset__name')?.textContent);
     const header = (name: string) => screen.getByRole('columnheader', { name });
     const click = (name: string) => user.click(within(header(name)).getByRole('button', { name }));
     expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
@@ -2453,7 +2534,11 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       removeEventListener: () => undefined,
     }));
     try {
-      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
+      // One class, so the order is not split by the class groups.
+      const sameClass = { ...cash, assetType: 'crypto' } as const;
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio([bitcoin, sameClass, toncoin]),
+      );
       const user = userEvent.setup();
       renderAt('/portfolio');
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
@@ -2493,7 +2578,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load your portfolio/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load your portfolio/i);
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('No assets yet')).toBeInTheDocument();
@@ -2549,7 +2634,7 @@ describe('CACHE-UI coming back to a page shows the last answer at once', () => {
     expect(alerts.map((alert) => alert.textContent).join(' ')).toMatch(
       /could not refresh the values/i,
     );
-    expect(screen.getByRole('heading', { level: 1, name: /Bitcoin/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Bitcoin/ })).toBeInTheDocument();
   });
 
   it('does not paint another currency or anything older than a change by the owner', async () => {
@@ -2633,11 +2718,27 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       .spyOn(hiddenAssetsApi, 'hide')
       .mockResolvedValue(hiddenAsset(toncoin.instrumentId, 'TON'));
     const user = userEvent.setup();
-    renderAt(`/portfolio/${toncoin.instrumentId}`);
+    const Probe = () => {
+      const { pathname, hash } = useLocation();
+      return <p data-testid="where">{pathname + hash}</p>;
+    };
+    render(
+      <ToastProvider>
+        <MemoryRouter initialEntries={[`/portfolio/${toncoin.instrumentId}`]}>
+          <Routes>
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/portfolio/:assetId" element={<AssetPage />} />
+            <Route path="/preferences" element={<p>Settings</p>} />
+          </Routes>
+          <Probe />
+        </MemoryRouter>
+        <ToastViewport />
+      </ToastProvider>,
+    );
     await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
     expect(hide).not.toHaveBeenCalled();
     expect(hideAsset).not.toHaveBeenCalled();
-    const ask = screen.getByRole('region', { name: 'Hide this asset' });
+    const ask = screen.getByRole('alertdialog', { name: 'Hide this asset' });
     expect(ask).toHaveTextContent('It also leaves the wallet balances.');
     expect(ask).toHaveTextContent('Bring it back in Settings under Hidden assets.');
     await user.click(screen.getByRole('button', { name: 'Hide TON' }));
@@ -2650,6 +2751,11 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     await waitFor(() => expect(hideAsset).toHaveBeenCalledWith(toncoin.instrumentId));
     // The asset is gone from the portfolio, so the owner lands on it.
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
+    // TOAST-HIDE: the toast opens Hidden assets in Settings, where the asset comes back.
+    const said = within(screen.getByRole('region', { name: 'Messages' }));
+    expect(said.getByText('TON hidden')).toBeInTheDocument();
+    await user.click(said.getByRole('button', { name: 'Open' }));
+    expect(screen.getByTestId('where')).toHaveTextContent('/preferences#settings-hidden-assets');
   });
 
   it('ASSET-HIDE hides an asset no wallet holds as a token by itself, wallets untouched', async () => {
@@ -2662,7 +2768,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     const user = userEvent.setup();
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await user.click(await screen.findByRole('button', { name: 'Hide asset' }));
-    expect(screen.getByRole('region', { name: 'Hide this asset' })).not.toHaveTextContent(
+    expect(screen.getByRole('alertdialog', { name: 'Hide this asset' })).not.toHaveTextContent(
       'wallet balances',
     );
     await user.click(screen.getByRole('button', { name: 'Hide BTC' }));
@@ -3264,10 +3370,150 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
     expect(operationsApi.list).toHaveBeenCalledWith('EUR');
     expect(position).toHaveTextContent('Current value€920.00');
     expect(position).toHaveTextContent('Cost basis€828.00');
-    expect(screen.getByRole('link', { name: '← Portfolio' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Back to Portfolio' })).toHaveAttribute(
       'href',
       '/portfolio?currency=EUR',
     );
     expect(screen.getByRole('region', { name: 'Holdings' })).toHaveTextContent('€920.00');
+  });
+});
+
+describe('PF-GROUPS the assets are grouped by class with exact subtotals', () => {
+  const dust = valued(6, 'Dogecoin', 'DOGE', crypto, {
+    quantity: '0.5',
+    price: { value: '0.1', observedAt: minutesAgo(5), source: 'kraken', status: 'fresh' },
+    missingPrice: null,
+    value: '0.05',
+    allocationPercent: '0.00',
+  });
+  const pennies = valued(
+    7,
+    'Gift card',
+    null,
+    { assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' },
+    {
+      quantity: '1',
+      price: { value: '0.01', observedAt: minutesAgo(5), source: 'manual', status: 'fresh' },
+      missingPrice: null,
+      value: '0.01',
+      allocationPercent: '0.00',
+    },
+  );
+  const complete = () =>
+    portfolio([cash, dust, bitcoin, pennies], {
+      totalValue: '100000.06',
+      pricedSubtotal: '100000.06',
+    });
+  const tableRows = () => screen.getAllByRole('row').slice(1);
+  const names = () =>
+    tableRows().map((row) =>
+      row.classList.contains('portfolio-group')
+        ? `# ${row.textContent}`
+        : (within(row).queryByRole('link')?.textContent ?? ''),
+    );
+
+  it('PF-GROUPS heads each class with its share and exact subtotal, largest value first within', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(names()).toEqual([
+      '# Crypto96.0%$96,000.05',
+      'Bitcoin',
+      'Dogecoin',
+      '# Cash4.0%$4,000.00',
+      'US dollar',
+      '# Other<0.1%$0.01',
+      'Gift card',
+    ]);
+    expect(screen.getAllByRole('rowheader').map((cell) => cell.getAttribute('scope'))).toEqual([
+      'rowgroup',
+      'rowgroup',
+      'rowgroup',
+    ]);
+  });
+
+  it('PF-GROUPS keeps the groups and sorts within them when another column is chosen', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(screen.getByRole('button', { name: 'Asset' }));
+    expect(names()).toEqual([
+      '# Crypto96.0%$96,000.05',
+      'Bitcoin',
+      'Dogecoin',
+      '# Cash4.0%$4,000.00',
+      'US dollar',
+      '# Other<0.1%$0.01',
+      'Gift card',
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Asset' }));
+    expect(names().slice(0, 3)).toEqual(['# Crypto96.0%$96,000.05', 'Dogecoin', 'Bitcoin']);
+  });
+
+  it('PF-GROUPS shows only the chosen class under a filter chip', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    await user.click(within(chips).getByRole('button', { name: /^Cash/ }));
+    expect(names()).toEqual(['# Cash4.0%$4,000.00', 'US dollar']);
+  });
+
+  it('PF-GROUP-INCOMPLETE never counts a missing value as zero and drops the share', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, cash, rubles], {
+        completeness: 'incomplete',
+        totalValue: null,
+        pricedSubtotal: '100000',
+        missingPriceCount: 1,
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(names()).toEqual([
+      '# Crypto$96,000.00',
+      'Bitcoin',
+      '# Cash$4,000.001 without a price',
+      'US dollar',
+      'Rubles',
+    ]);
+  });
+
+  it('PF-GROUPS heads the phone rows the same way', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(complete());
+      renderAt('/portfolio');
+      await screen.findByRole('link', { name: /^Bitcoin/ });
+      const card = screen.getByRole('region', { name: 'Assets' });
+      expect(
+        within(card)
+          .getAllByRole('heading', { level: 3 })
+          .map((heading) => heading.parentElement?.textContent),
+      ).toEqual(['Crypto96.0%$96,000.05', 'Cash4.0%$4,000.00', 'Other<0.1%$0.01']);
+      expect(within(card).getAllByRole('listitem')).toHaveLength(4);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('PF-GROUP-EXACT adds the values as decimals and counts held rows without a value', () => {
+    expect(
+      groupSubtotal([
+        { ...bitcoin, value: '9007199254740993' },
+        { ...dust, value: '0.01' },
+      ]),
+    ).toEqual({ value: '9007199254740993.01', missing: 0 });
+    expect(groupSubtotal([rubles, { ...toncoin, value: null }])).toEqual({
+      value: null,
+      missing: 1,
+    });
   });
 });

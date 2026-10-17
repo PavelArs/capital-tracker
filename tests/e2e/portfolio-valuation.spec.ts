@@ -100,8 +100,10 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   const search = main.getByRole('searchbox', { name: 'Search assets' });
   await search.fill('pvui');
   await expect(main.getByRole('row', { name: new RegExp(`^${assetName}`) })).toHaveCount(1);
-  // Only the header row lacks the ticker while the search is on.
-  await expect(main.getByRole('row').filter({ hasNotText: 'PVUI' })).toHaveCount(1);
+  // Only the header row lacks the ticker while the search is on (the class heads are no assets).
+  await expect(
+    main.locator('tr:not(.portfolio-group)').filter({ hasNotText: 'PVUI' }),
+  ).toHaveCount(1);
   await search.fill('');
 
   const allocation = main.getByRole('region', { name: 'Allocation' });
@@ -119,7 +121,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
 
   await row.getByRole('link', { name: assetName, exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio/${created.id}`);
-  await expect(main.getByRole('heading', { level: 1, name: assetName })).toBeVisible();
+  await expect(main.getByRole('heading', { level: 2, name: assetName })).toBeVisible();
   const position = main.getByRole('region', { name: 'Position' });
   for (const [label, value] of [
     ['Amount', '1.2 PVUI'],
@@ -168,16 +170,15 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     `/wallets/${account.id}`,
   );
   await page.screenshot({ path: testInfo.outputPath('asset-1440-dark.png'), fullPage: true });
-  await main.getByRole('link', { name: '← Portfolio' }).click();
+  await main.getByRole('link', { name: 'Back to Portfolio' }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
 
   // ADD-ASSET-BALANCE: a deposit added with an amount and value holds that balance at once.
   const depositName = `PORTFOLIO-UI deposit ${suffix}`;
   await main.getByRole('button', { name: 'Add', exact: true }).first().click();
-  await page
-    .getByRole('dialog', { name: 'Add to portfolio' })
-    .getByRole('button', { name: /^Something else/ })
-    .click();
+  const addTo = page.getByRole('dialog', { name: 'Add to portfolio' });
+  await addTo.getByRole('button', { name: /^Something else/ }).click();
+  await addTo.getByRole('button', { name: 'Continue', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Add asset' });
   // The dialog loads every account's journal as it opens; the nightly twice lost the first click
   // on a kind while that was still running, so the kind is chosen once the accounts are in.
@@ -214,9 +215,15 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   // portfolio-06: the new asset opens on its own page, which says it was added.
   const depositId = ((await assetSaved.json()) as { id: string }).id;
   await expect(page).toHaveURL(`${origin}/portfolio/${depositId}`);
-  await expect(main.getByRole('heading', { level: 1, name: depositName })).toBeVisible();
-  await expect(main.getByRole('status').filter({ hasText: 'Asset added.' })).toBeVisible();
-  await main.getByRole('link', { name: '← Portfolio' }).click();
+  await expect(main.getByRole('heading', { level: 2, name: depositName })).toBeVisible();
+  // The notice is a toast in the Messages region, outside main.
+  await expect(
+    page
+      .getByRole('region', { name: 'Messages' })
+      .getByRole('status')
+      .filter({ hasText: 'Asset added' }),
+  ).toBeVisible();
+  await main.getByRole('link', { name: 'Back to Portfolio' }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
   const depositCells = main
     .getByRole('row', { name: new RegExp(`^${depositName}`) })

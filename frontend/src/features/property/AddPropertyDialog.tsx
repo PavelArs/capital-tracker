@@ -8,14 +8,17 @@ import {
 import { type TradeReceipt, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Affix, Input } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { purchasePrice, unitPrice } from '../portfolio/add-asset';
 import { numberProblem } from '../portfolio/add-transaction';
-import CloseButton from '../shell/CloseButton';
 import {
   MAX_PROPERTY_NAME,
   type PropertyEntry,
@@ -26,7 +29,6 @@ import {
   propertyProblems,
   purchaseTrade,
 } from './property';
-import './property.css';
 
 const currencies: ValuationCurrency[] = ['USD', 'EUR', 'RUB'];
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
@@ -113,15 +115,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
   const all = propertyProblems(entry, moscowDate(new Date()));
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const fieldError = (problem: PropertyProblem, value = '') =>
-    found.has(problem) && (
-      <span className="ui-field__error" id={`${id}-${problem}-error`}>
-        {numberProblem(value, problemText[problem])}
-      </span>
-    );
-  const invalid = (problem: PropertyProblem) =>
-    found.has(problem)
-      ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` }
-      : {};
+    found.has(problem) ? numberProblem(value, problemText[problem]) : null;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -211,15 +205,15 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
       initialFocus={() => first.current}
     >
       <form onSubmit={submit} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>Add property</h2>
-          <CloseButton onClick={finish} disabled={saving} />
-          <p className="shell-note">
-            An apartment, a house, land or parking, valued at your own estimate.
-          </p>
-        </div>
-        <div className="ui-modal__body">
-          <div className="ui-field property-kinds">
+        <ModalHeader
+          titleId={`${id}-title`}
+          title="Add property"
+          onClose={finish}
+          closeDisabled={saving}
+          intro="An apartment, a house, land or parking, valued at your own estimate."
+        />
+        <ModalBody>
+          <div className="ui-field">
             <span id={`${id}-kind`} className="ui-field__label">
               Kind
             </span>
@@ -228,29 +222,26 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
               labelledBy={`${id}-kind`}
               options={propertyKinds}
               value={entry.kind}
+              wrap
               disabled={locked || saving}
               onChange={(kind) => update({ kind })}
             />
           </div>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor={`${id}-name`}>
-              Name (optional)
-            </label>
-            <input
-              id={`${id}-name`}
-              ref={first}
-              className="ui-input"
-              maxLength={MAX_PROPERTY_NAME}
-              autoComplete="off"
-              placeholder={entry.kind}
-              value={entry.name}
-              disabled={locked || saving}
-              onChange={(event) => update({ name: event.target.value })}
-              onBlur={leave('name')}
-              {...invalid('name')}
-            />
-            {fieldError('name')}
-          </div>
+          <Field label="Name (optional)" error={fieldError('name')} id={`${id}-name`}>
+            {(control) => (
+              <Input
+                {...control}
+                ref={first}
+                maxLength={MAX_PROPERTY_NAME}
+                autoComplete="off"
+                placeholder={entry.kind}
+                value={entry.name}
+                disabled={locked || saving}
+                onChange={(event) => update({ name: event.target.value })}
+                onBlur={leave('name')}
+              />
+            )}
+          </Field>
           <div className="ui-field">
             <span id={`${id}-currency`} className="ui-field__label">
               Currency
@@ -265,113 +256,85 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
             />
           </div>
           <div className="ui-field-row">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-cost`}>
-                Purchase price
-              </label>
-              <span className="ui-affix">
-                <input
-                  id={`${id}-cost`}
-                  className="ui-input"
-                  inputMode="decimal"
-                  placeholder="0"
-                  value={entry.cost}
+            <Field label="Purchase price" error={fieldError('cost', entry.cost)} id={`${id}-cost`}>
+              {(control) => (
+                <Affix suffix={entry.currency}>
+                  <Input
+                    {...control}
+                    numeric
+                    placeholder="0"
+                    value={entry.cost}
+                    disabled={locked || saving}
+                    onChange={(event) => update({ cost: event.target.value })}
+                    onBlur={leave('cost')}
+                  />
+                </Affix>
+              )}
+            </Field>
+            <Field label="Bought on" error={fieldError('bought')} id={`${id}-bought`}>
+              {(control) => (
+                <Input
+                  {...control}
+                  type="date"
+                  max={moscowDate(new Date())}
+                  value={entry.bought}
                   disabled={locked || saving}
-                  onChange={(event) => update({ cost: event.target.value })}
-                  onBlur={leave('cost')}
-                  {...invalid('cost')}
+                  onChange={(event) => update({ bought: event.target.value })}
+                  onBlur={leave('bought')}
                 />
-                <span className="ui-affix__suffix">{entry.currency}</span>
-              </span>
-              {fieldError('cost', entry.cost)}
-            </div>
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-bought`}>
-                Bought on
-              </label>
-              <input
-                id={`${id}-bought`}
-                className="ui-input"
-                type="date"
-                max={moscowDate(new Date())}
-                value={entry.bought}
-                disabled={locked || saving}
-                onChange={(event) => update({ bought: event.target.value })}
-                onBlur={leave('bought')}
-                {...invalid('bought')}
-              />
-              {fieldError('bought')}
-            </div>
+              )}
+            </Field>
           </div>
           <div className="ui-field-row">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-estimate`}>
-                What it is worth now (optional)
-              </label>
-              <span className="ui-affix">
-                <input
-                  id={`${id}-estimate`}
-                  className="ui-input"
-                  inputMode="decimal"
-                  placeholder="Same as purchase"
-                  value={entry.estimate}
-                  disabled={locked || saving}
-                  onChange={(event) => update({ estimate: event.target.value })}
-                  onBlur={leave('estimate')}
-                  aria-describedby={found.has('estimate') ? undefined : `${id}-estimate-hint`}
-                  {...invalid('estimate')}
-                />
-                <span className="ui-affix__suffix">{entry.currency}</span>
-              </span>
-              {fieldError('estimate', entry.estimate) || (
-                <span className="ui-field__hint" id={`${id}-estimate-hint`}>
-                  Your estimate. Update it whenever you like.
-                </span>
+            <Field
+              label="What it is worth now (optional)"
+              hint="Your estimate. Update it whenever you like."
+              error={fieldError('estimate', entry.estimate)}
+              id={`${id}-estimate`}
+            >
+              {(control) => (
+                <Affix suffix={entry.currency}>
+                  <Input
+                    {...control}
+                    numeric
+                    placeholder="Same as purchase"
+                    value={entry.estimate}
+                    disabled={locked || saving}
+                    onChange={(event) => update({ estimate: event.target.value })}
+                    onBlur={leave('estimate')}
+                  />
+                </Affix>
               )}
-            </div>
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-share`}>
-                Your share
-              </label>
-              <span className="ui-affix">
-                <input
-                  id={`${id}-share`}
-                  className="ui-input"
-                  inputMode="decimal"
-                  value={entry.share}
-                  disabled={locked || saving}
-                  onChange={(event) => update({ share: event.target.value })}
-                  onBlur={leave('share')}
-                  {...invalid('share')}
-                />
-                <span className="ui-affix__suffix">%</span>
-              </span>
-              {fieldError('share', entry.share)}
-            </div>
+            </Field>
+            <Field label="Your share" error={fieldError('share', entry.share)} id={`${id}-share`}>
+              {(control) => (
+                <Affix suffix="%">
+                  <Input
+                    {...control}
+                    numeric
+                    value={entry.share}
+                    disabled={locked || saving}
+                    onChange={(event) => update({ share: event.target.value })}
+                    onBlur={leave('share')}
+                  />
+                </Affix>
+              )}
+            </Field>
           </div>
-          <p className="ui-modal__info" role="note">
+          <Banner tone="info">
             Your share of the purchase price counts as money put in on the day you bought it. Later
             estimates count as market movement.
-          </p>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={finish}
-            disabled={saving}
-          >
+          </Banner>
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" onClick={finish} disabled={saving}>
             {saved.current.asset ? 'Close' : 'Cancel'}
-          </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
             Add property
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );

@@ -3,7 +3,6 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { deriveCarryInAmounts } from '../accounting/fifo';
 import { parseUuid } from '../accounting/input';
 import { isTradePurpose } from '../accounting/trade-purpose';
-import { moscowDate } from '../fx-rates/fx-conversion';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { backupTables } from './backup-tables';
 import {
@@ -17,6 +16,7 @@ import {
   type ExportDepositRate,
   type ExportOperation,
   type ExportWallet,
+  exportFilename,
   exportFiles,
   rewardType,
   tradeType,
@@ -137,7 +137,7 @@ export class OwnerExportService {
       ...(await this.deposits(manager, owner)),
     }));
     return {
-      filename: `capital-tracker-export-${moscowDate(now)}.zip`,
+      filename: exportFilename('csv', now),
       contentType: 'application/zip',
       data: zipArchive(exportFiles(data), now),
     };
@@ -184,7 +184,7 @@ export class OwnerExportService {
       return read;
     });
     return {
-      filename: `capital-tracker-backup-${moscowDate(now)}.json`,
+      filename: exportFilename('backup', now),
       contentType: 'application/json',
       data: Buffer.from(backupDocument(now.toISOString(), tables), 'utf8'),
     };

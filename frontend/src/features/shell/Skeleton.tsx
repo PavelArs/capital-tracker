@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import '@/ui/skeleton.css';
 
 /** A grey block in the place of text, a number or a chart that has not arrived. */
 export function Bone({
@@ -27,7 +28,7 @@ function Stats({ count = 3 }: { count?: number }) {
       {Array.from({ length: count }, (_, index) => (
         // The placeholders never reorder.
         // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
-        <div className="shell-card shell-skeleton__stat" key={index}>
+        <div className="ui-card shell-skeleton__stat" key={index}>
           <Bone width={90} height={12} />
           <Bone width="70%" height={28} />
         </div>
@@ -38,7 +39,7 @@ function Stats({ count = 3 }: { count?: number }) {
 
 function Chart() {
   return (
-    <div className="shell-card shell-skeleton__card">
+    <div className="ui-card shell-skeleton__card">
       <div className="shell-skeleton__toolbar">
         <Bone width={200} height={16} />
         <Bone width="min(240px, 45%)" height={30} />
@@ -69,7 +70,7 @@ export function SkeletonRows({ rows = 6 }: { rows?: number }) {
 
 function Rows({ rows }: { rows?: number }) {
   return (
-    <div className="shell-card shell-skeleton__card">
+    <div className="ui-card shell-skeleton__card">
       <div className="shell-skeleton__toolbar">
         <Bone width={120} height={20} />
         <Bone width="min(280px, 45%)" height={30} />
@@ -84,8 +85,8 @@ function Cards({ count = 3 }: { count?: number }) {
     <div className="shell-skeleton__cards">
       {Array.from({ length: count }, (_, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
-        <div className="shell-card shell-skeleton__card" key={index}>
-          <div className="shell-skeleton__row">
+        <div className="ui-card shell-skeleton__card" key={index}>
+          <div className="shell-skeleton__row shell-skeleton__row--card">
             <Bone width={40} height={40} round />
             <div className="shell-skeleton__lines">
               <Bone width="50%" height={16} />

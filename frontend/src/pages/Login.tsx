@@ -1,15 +1,14 @@
 import { useAuth } from '@contexts/AuthContext';
-import AuthFrame, {
-  FieldError,
-  focusOnMount,
-  Notice,
-  useFocusAfterAnswer,
-} from '@features/password-reset/AuthFrame';
+import AuthFrame, { focusOnMount, useFocusAfterAnswer } from '@features/password-reset/AuthFrame';
 import PasswordField from '@features/password-reset/PasswordField';
 import { tooManyAttempts } from '@features/security/attempts';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Input } from '@/ui/inputs';
 
 type FactorKind = 'totp' | 'recovery';
 
@@ -60,6 +59,8 @@ export default function Login() {
     code?: string;
   }>({});
   const [failure, setFailure] = useState('');
+  // AUTH-INVALID: the server refused the email and password together; either may be wrong.
+  const [refused, setRefused] = useState(false);
   const [busy, setBusy] = useState(false);
   const { login, verifyFactor, restartPassword, mfaPending, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -96,6 +97,7 @@ export default function Login() {
     };
     setFieldErrors(errors);
     setFailure('');
+    setRefused(false);
     if (errors.email || errors.password) {
       focusAfterAnswer(errors.email ? 'login-email' : 'login-password');
       return;
@@ -109,6 +111,7 @@ export default function Login() {
       reset();
     } catch (error) {
       setFailure(passwordFailure(error));
+      setRefused(status(error) === 401);
       focusAfterAnswer('login-password');
     } finally {
       setBusy(false);
@@ -174,49 +177,54 @@ export default function Login() {
     return (
       <AuthFrame title="Sign in" onSubmit={submitPassword}>
         <p className="auth-sub">Only the owner account can sign in.</p>
-        {failure && <Notice tone="neg">{failure}</Notice>}
-        <div className="auth-field">
-          <label htmlFor="login-email">Email</label>
-          <input
-            className="ui-input"
-            id="login-email"
-            ref={focusOnMount}
-            type="email"
-            autoComplete="username"
-            placeholder="you@example.com"
-            maxLength={254}
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            aria-invalid={fieldErrors.email ? true : undefined}
-            aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
-            disabled={busy}
-            required
-          />
-          {fieldErrors.email && <FieldError id="login-email-error" message={fieldErrors.email} />}
-        </div>
+        {failure && (
+          <Banner tone="neg" id="login-failure">
+            {failure}
+          </Banner>
+        )}
+        <Field id="login-email" label="Email" error={fieldErrors.email} liveError>
+          {(control) => (
+            <Input
+              {...control}
+              {...(refused && !fieldErrors.email
+                ? { 'aria-invalid': true as const, 'aria-describedby': 'login-failure' }
+                : {})}
+              ref={focusOnMount}
+              type="email"
+              autoComplete="username"
+              placeholder="you@example.com"
+              maxLength={254}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={busy}
+              required
+            />
+          )}
+        </Field>
         <PasswordField
           id="login-password"
           label="Password"
           value={password}
           onChange={setPassword}
           error={fieldErrors.password}
+          refusedBy={refused ? 'login-failure' : undefined}
           disabled={busy}
           autoComplete="current-password"
           labelAside={
-            <Link className="auth-link" to="/password-reset">
+            <Link className="ui-link" to="/password-reset">
               Forgot password?
             </Link>
           }
         />
-        <button className="auth-btn auth-btn--primary" type="submit" disabled={busy}>
+        <Button type="submit" variant="primary" size="lg" block busy={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
-        </button>
+        </Button>
       </AuthFrame>
     );
   }
 
   const back = (
-    <button type="button" className="auth-link" onClick={startOver} disabled={busy}>
+    <button type="button" className="ui-link auth-link" onClick={startOver} disabled={busy}>
       Back to sign in
     </button>
   );
@@ -224,80 +232,86 @@ export default function Login() {
 
   if (kind === 'recovery') {
     return (
-      <AuthFrame icon="lock" title="Use a recovery code" onSubmit={submitFactor} footer={back}>
+      <AuthFrame icon="lock" title="Use a recovery code" onSubmit={submitFactor}>
         <p className="auth-sub">
           Each code works once. If you lost your phone, set up the authenticator again in Settings
           after signing in.
         </p>
-        {failure && <Notice tone="neg">{failure}</Notice>}
-        <div className="auth-field">
-          <label htmlFor="login-recovery">Recovery code</label>
-          <input
-            key="recovery"
-            ref={focusOnMount}
-            className="ui-input auth-mono"
-            id="login-recovery"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            placeholder="xxxxxxxx-xxxxxxxx-xxxxxxxx-xxxxxxxx"
-            maxLength={40}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            aria-invalid={codeError ? true : undefined}
-            aria-describedby={codeError ? 'login-recovery-error' : undefined}
-            disabled={busy}
-            required
-          />
-          {codeError && <FieldError id="login-recovery-error" message={codeError} />}
-        </div>
-        <button className="auth-btn auth-btn--primary" type="submit" disabled={busy}>
+        {failure && <Banner tone="neg">{failure}</Banner>}
+        <Field id="login-recovery" label="Recovery code" error={codeError} liveError>
+          {(control) => (
+            <Input
+              {...control}
+              key="recovery"
+              ref={focusOnMount}
+              mono
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="xxxxxxxx-xxxxxxxx-xxxxxxxx-xxxxxxxx"
+              maxLength={40}
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              disabled={busy}
+              required
+            />
+          )}
+        </Field>
+        <Button type="submit" variant="primary" size="lg" block busy={busy}>
           {busy ? 'Checking…' : 'Sign in'}
-        </button>
-        <button type="button" className="auth-link" onClick={() => reset('totp')} disabled={busy}>
+        </Button>
+        <button
+          type="button"
+          className="ui-link auth-link"
+          onClick={() => reset('totp')}
+          disabled={busy}
+        >
           Back to authenticator code
         </button>
+        {back}
       </AuthFrame>
     );
   }
 
   return (
-    <AuthFrame
-      icon="shield"
-      title="Two-factor authentication"
-      onSubmit={submitFactor}
-      footer={back}
-    >
+    <AuthFrame icon="shield" title="Two-factor authentication" onSubmit={submitFactor}>
       <p className="auth-sub">Enter the 6-digit code from your authenticator app.</p>
-      {failure && <Notice tone="neg">{failure}</Notice>}
-      <div className="auth-field">
-        <label className="auth-sr" htmlFor="login-totp">
-          Code from your authenticator app
-        </label>
-        <input
-          key="totp"
-          ref={focusOnMount}
-          className="ui-input auth-otp"
-          id="login-totp"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="······"
-          maxLength={6}
-          value={code}
-          onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-          aria-invalid={codeError ? true : undefined}
-          aria-describedby={codeError ? 'login-totp-error' : undefined}
-          disabled={busy}
-          required
-        />
-        {codeError && <FieldError id="login-totp-error" message={codeError} />}
-      </div>
-      <button className="auth-btn auth-btn--primary" type="submit" disabled={busy}>
+      {failure && <Banner tone="neg">{failure}</Banner>}
+      <Field
+        liveError
+        id="login-totp"
+        label={<span className="ui-sr">Code from your authenticator app</span>}
+        error={codeError}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            key="totp"
+            ref={focusOnMount}
+            className="auth-otp"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="······"
+            maxLength={6}
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            disabled={busy}
+            required
+          />
+        )}
+      </Field>
+      <Button type="submit" variant="primary" size="lg" block busy={busy}>
         {busy ? 'Checking…' : 'Verify'}
-      </button>
-      <button type="button" className="auth-link" onClick={() => reset('recovery')} disabled={busy}>
+      </Button>
+      <button
+        type="button"
+        className="ui-link auth-link"
+        onClick={() => reset('recovery')}
+        disabled={busy}
+      >
         Use a recovery code instead
       </button>
+      {back}
     </AuthFrame>
   );
 }

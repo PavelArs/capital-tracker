@@ -4,7 +4,9 @@ import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AuthFrame, { focusOnMount, Notice, useFocusAfterAnswer } from './AuthFrame';
+import { Banner } from '@/ui/Banner';
+import { Button, ButtonLink } from '@/ui/Button';
+import AuthFrame, { focusOnMount, useFocusAfterAnswer } from './AuthFrame';
 import PasswordField from './PasswordField';
 
 type Screen = 'checking' | ResetLinkState | 'done';
@@ -110,14 +112,14 @@ export default function ResetPasswordPage() {
   };
 
   const back = (
-    <Link className="auth-link" to="/login">
+    <Link className="ui-link auth-link" to="/login">
       Back to sign in
     </Link>
   );
   const newLink = (
-    <Link className="auth-btn auth-btn--primary" to="/password-reset">
+    <ButtonLink variant="primary" size="lg" block to="/password-reset">
       Send a new link
-    </Link>
+    </ButtonLink>
   );
 
   if (screen === 'checking') {
@@ -162,9 +164,9 @@ export default function ResetPasswordPage() {
         <p className="auth-sub">
           You were signed out on all devices. Sign in with the new password and your 2FA code.
         </p>
-        <Link className="auth-btn auth-btn--primary" to="/login">
+        <ButtonLink variant="primary" size="lg" block to="/login">
           Sign in
-        </Link>
+        </ButtonLink>
       </AuthFrame>
     );
   }
@@ -172,7 +174,7 @@ export default function ResetPasswordPage() {
   return (
     <AuthFrame icon="lock" title="Set a new password" onSubmit={handleSubmit}>
       <p className="auth-sub">Use at least 15 characters. A few random words work well.</p>
-      {failure && <Notice tone="neg">{failure}</Notice>}
+      {failure && <Banner tone="neg">{failure}</Banner>}
       <PasswordField
         id="reset-password"
         label="New password"
@@ -190,9 +192,9 @@ export default function ResetPasswordPage() {
         error={errors.confirmation}
         disabled={busy}
       />
-      <button className="auth-btn auth-btn--primary" type="submit" disabled={busy}>
+      <Button type="submit" variant="primary" size="lg" block busy={busy}>
         {busy ? 'Saving…' : 'Reset password'}
-      </button>
+      </Button>
     </AuthFrame>
   );
 }

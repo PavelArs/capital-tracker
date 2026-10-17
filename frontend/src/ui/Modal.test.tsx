@@ -1,8 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import Modal from './Modal';
+import Modal, { ModalBody, ModalHeader } from './Modal';
 
 afterEach(cleanup);
 
@@ -53,18 +53,34 @@ describe('Modal', () => {
     expect(locked()).toBe(false);
   });
 
-  it('names the dialog by its heading and starts on the first control', async () => {
+  it('MODAL-FOCUS names the dialog by its heading and starts on its first field', async () => {
     const user = userEvent.setup();
     render(<Page />);
     await user.click(screen.getByRole('button', { name: 'Open' }));
     expect(screen.getByRole('dialog', { name: 'Rename' })).toHaveAttribute('aria-modal', 'true');
-    expect(screen.getByRole('button', { name: 'First' })).toHaveFocus();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveFocus();
+  });
+
+  it('MODAL-FOCUS without a field starts on the first choice, never on the close button', () => {
+    render(
+      <Modal titleId="t">
+        <ModalHeader titleId="t" title="Add to portfolio" onClose={() => undefined} />
+        <ModalBody>
+          <button type="button" aria-pressed="false">
+            Crypto wallet
+          </button>
+        </ModalBody>
+      </Modal>,
+    );
+    expect(screen.getByRole('button', { name: /^Crypto wallet/ })).toHaveFocus();
   });
 
   it('keeps Tab and Shift+Tab inside, skipping disabled controls', async () => {
     const user = userEvent.setup();
     render(<Page />);
     await user.click(screen.getByRole('button', { name: 'Open' }));
+    // From the first control, Shift+Tab wraps to the last one.
+    act(() => screen.getByRole('button', { name: 'First' }).focus());
     await user.tab({ shift: true });
     expect(screen.getByRole('button', { name: 'Last' })).toHaveFocus();
     await user.tab();

@@ -3,6 +3,7 @@
 // Answers live in memory and, for the signed-in owner, also in the browser's own IndexedDB, so
 // they survive a reload. They are dropped when the owner changes something, a sync lands, or the
 // session ends, and never reach another owner.
+import { connection, showingKept } from './connection';
 import { indexedDbStore, type ReadStore } from './read-store';
 
 // An answer older than this is not shown any more: a skeleton is more honest than old numbers.
@@ -58,8 +59,11 @@ export function recall<T>(key: string): T | undefined {
  */
 export function recallRestored<T>(key: string, within: number): T | undefined {
   const entry = entries.get(key);
-  // An answer whose refresh failed is asked again: the server may answer now.
+  // An answer whose refresh failed is asked again: the server may answer now. Nor is a kept one
+  // reused while reads go unanswered or the browser is offline: the page asks, and says so
+  // when it gets no answer.
   if (!entry?.restored || entry.failed || Date.now() - entry.at >= within) return undefined;
+  if (showingKept(connection.get())) return undefined;
   return recall<T>(key);
 }
 
@@ -90,6 +94,17 @@ export function rememberFailure(key: string, startedIn: number): void {
 /** Whether the last refresh of the answer kept for a key failed. */
 export function refreshFailed(key: string): boolean {
   return recall(key) !== undefined && entries.get(key)?.failed === true;
+}
+
+/** When the oldest answer kept now was loaded (ms since epoch); null when nothing is kept. */
+export function keptSince(): number | null {
+  let oldest: number | null = null;
+  for (const key of entries.keys()) {
+    const entry = entries.get(key);
+    if (!entry || recall(key) === undefined) continue;
+    if (oldest === null || entry.at < oldest) oldest = entry.at;
+  }
+  return oldest;
 }
 
 /** Marks the start of a read, so an answer that lands after a drop is not kept. */

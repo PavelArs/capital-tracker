@@ -85,6 +85,21 @@ describe('RESET-REQUEST reset request screen', () => {
     expect(screen.getByText('Sign-in page')).toBeVisible();
   });
 
+  it('AUTH-STEP-FOCUS moves the keyboard to the heading of a step without a field', async () => {
+    const user = renderAt('/password-reset');
+    await user.type(screen.getByLabelText('Email'), 'owner@example.invalid');
+    await user.click(screen.getByRole('button', { name: 'Send reset link' }));
+    expect(await screen.findByRole('heading', { name: 'Check your email' })).toHaveFocus();
+    // The way back sits in the box on every auth step.
+    expect(
+      screen.getByRole('link', { name: 'Back to sign in' }).closest('.auth-box'),
+    ).not.toBeNull();
+    cleanup();
+    api.status.mockResolvedValueOnce('invalid');
+    renderAt(`/password-reset/new#token=${token}`);
+    expect(await screen.findByRole('heading', { name: 'This link no longer works' })).toHaveFocus();
+  });
+
   it('RESET-LIMIT says to wait when the server refuses more requests', async () => {
     api.request.mockRejectedValueOnce(refusal(429));
     const user = renderAt('/password-reset');

@@ -1,5 +1,5 @@
 import { type ReactNode, useId, useState } from 'react';
-import '../dashboard/dashboard.css';
+import '@/ui/chart.css';
 
 /** The ⓘ beside a chart's title: opens a note on how its numbers are made. */
 export default function AboutChart({ children }: { children: ReactNode }) {

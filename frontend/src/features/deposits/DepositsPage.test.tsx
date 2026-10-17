@@ -7,10 +7,12 @@ import {
 } from '@api/deposits.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { forgetReads } from '@api/read-cache';
+import { ToastProvider } from '@contexts/ToastContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '../../components/Toast';
 import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
 import DepositPage from './DepositPage';
@@ -141,12 +143,15 @@ const phone = () =>
 
 function open(path: string) {
   render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/deposits" element={<DepositsPage />} />
-        <Route path="/deposits/:depositId" element={<DepositPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/deposits" element={<DepositsPage />} />
+          <Route path="/deposits/:depositId" element={<DepositPage />} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 
@@ -196,7 +201,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   it('says so when the list cannot be loaded', async () => {
     vi.spyOn(depositsApi, 'list').mockRejectedValue(new Error('down'));
     open('/deposits');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the deposits');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your deposits");
   });
 
   it('adds a deposit from the dialog and opens it', async () => {
@@ -235,7 +240,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       ratePercent: '12',
       amount: '100000',
     });
-    expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Savings A' })).toBeInTheDocument();
   });
 
   it('classes-07 asks for the bank first, an optional name, the currency as a choice and the terms as the prototype words them', async () => {
@@ -460,7 +465,7 @@ describe('DEP-DETAIL: one deposit', () => {
   it('shows the computed figures, the periods, the movements and the terms', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open(`/deposits/${savings.id}?currency=RUB`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Savings A' })).toBeInTheDocument();
     expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽328.77');
     expect(screen.getByText('At the end of the term').parentElement).toHaveTextContent(
       '₽104,000.00',
@@ -484,7 +489,7 @@ describe('DEP-DETAIL: one deposit', () => {
       }),
     );
     open(`/deposits/${dollars.id}?currency=USD`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.queryByText('Interest to be paid out')).not.toBeInTheDocument();
   });
@@ -571,7 +576,7 @@ describe('DEP-DETAIL: one deposit', () => {
       ),
     );
     open(`/deposits/${dollars.id}?currency=USD`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.getByText('Interest to be paid out').parentElement).toHaveTextContent('$12.30');
   });
@@ -691,6 +696,10 @@ describe('DEP-DETAIL: one deposit', () => {
     );
     const checks = await screen.findByRole('region', { name: 'Checks against the bank' });
     expect(within(checks).getByText('+₽1.23')).toBeInTheDocument();
+    // TOAST-CHECK: the toast says what the check found, as the prototype's does.
+    expect(screen.getByRole('region', { name: 'Messages' })).toHaveTextContent(
+      'Balance check savedDiffers by +₽1.23',
+    );
   });
 
   it('shows a bank balance below the calculated one with a single minus', async () => {
@@ -716,11 +725,11 @@ describe('DEP-DETAIL: one deposit', () => {
     const remove = vi.spyOn(depositsApi, 'remove').mockResolvedValue();
     open(`/deposits/${savings.id}`);
     await user.click(await screen.findByRole('button', { name: 'Delete deposit' }));
-    const dialog = screen.getByRole('dialog', { name: 'Delete this deposit?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete this deposit?' });
     expect(dialog).toHaveTextContent('this cannot be undone');
     const confirm = within(dialog).getByRole('button', { name: 'Delete deposit' });
     // deposits-delete: the destructive confirmation is the danger button, as for goals.
-    expect(confirm).toHaveClass('shell-button--danger');
+    expect(confirm).toHaveClass('ui-btn--danger');
     expect(remove).not.toHaveBeenCalled();
     await user.click(confirm);
     await waitFor(() => expect(remove).toHaveBeenCalledWith(savings.id));
@@ -824,7 +833,7 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
   it('INFL-DEPOSIT-DETAIL-KEPT-ANSWER leaves out the column an older saved answer has no figures for', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     expect(screen.queryByRole('columnheader', { name: 'After inflation' })).toBeNull();
     expect(screen.queryByText(/inflation/)).toBeNull();
   });
@@ -874,7 +883,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
   it('draws the value and the money put in by month, nominal by default', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const legend = screen.getByLabelText('Chart legend');
     expect(within(legend).getByText('Value')).toBeInTheDocument();
     expect(within(legend).getByText('Money put in')).toBeInTheDocument();
@@ -886,7 +895,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
   it('reads each month with the arrow keys', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const user = userEvent.setup();
     const plot = await focusChart();
     await user.keyboard('{ArrowLeft}');
@@ -899,7 +908,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     setInflationBasis('official');
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const legend = screen.getByLabelText('Chart legend');
     expect(within(legend).getByText("Value in today's money")).toBeInTheDocument();
     expect(within(legend).getByText('Money put in, grown by inflation')).toBeInTheDocument();
@@ -943,7 +952,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     setInflationBasis('personal');
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const user = userEvent.setup();
     const plot = await focusChart();
     // Only the first month has an own-rate figure, so one step back lands on it.
@@ -1094,9 +1103,9 @@ describe('classes-20: the real rate on a deposit card', () => {
     const up = await screen.findByText('Real +2.84% a year after 8.90% inflation');
     const down = screen.getByText('Real -4.62% a year after 8.90% inflation');
     // The terms paragraph sets its own grey; the tint must sit on an element of its own.
-    expect(up).toHaveClass('portfolio-pos');
+    expect(up).toHaveClass('ui-pos');
     expect(up).not.toHaveClass('deposit-card__terms');
-    expect(down).toHaveClass('portfolio-neg');
+    expect(down).toHaveClass('ui-neg');
     expect(down).not.toHaveClass('deposit-card__terms');
   });
 });
@@ -1122,7 +1131,9 @@ describe('the deposit page', () => {
       }),
     );
     open(`/deposits/${savings.id}`);
-    const heading = await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    // The deposit is the page head (h2); the top bar names the section and holds the switch.
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const heading = screen.getByRole('heading', { level: 1, name: 'Banks' });
     const header = heading.closest('header') as HTMLElement;
     const values = within(header).getByRole('radiogroup', { name: 'Values' });
     await user.click(within(values).getByRole('radio', { name: 'Real' }));
@@ -1173,13 +1184,13 @@ describe('the deposit page', () => {
       }),
     );
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     expect(screen.queryAllByRole('table')).toHaveLength(0);
     const periods = screen.getByRole('list', { name: 'Interest by period' });
     expect(periods).toHaveTextContent('Jul 1, 2026 – Aug 1, 2026');
     expect(periods).toHaveTextContent('Payable');
     expect(periods).toHaveTextContent('₽1,019.18');
-    expect(within(periods).getByText('+₽52.01 after inflation')).toHaveClass('portfolio-pos');
+    expect(within(periods).getByText('+₽52.01 after inflation')).toHaveClass('ui-pos');
     const movements = screen.getByRole('list', { name: 'Movements' });
     expect(within(movements).getAllByRole('listitem')).toHaveLength(2);
     expect(movements).toHaveTextContent('To card');

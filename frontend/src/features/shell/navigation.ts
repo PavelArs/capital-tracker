@@ -19,9 +19,22 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/brokers', label: 'Brokers', icon: 'briefcase', held: 'broker' },
   { path: '/real-estate', label: 'Real estate', icon: 'home', held: 'property' },
   { path: '/goals', label: 'Goals', icon: 'target' },
+  { path: '/history', label: 'History', icon: 'clock' },
   // `/settings` was the legacy settings screen; it now redirects here (M20).
   { path: '/preferences', label: 'Settings', icon: 'settings' },
 ];
+
+/** The phone tab bar's sections; every other one is in the More sheet (polish §3). */
+export const tabSections: readonly string[] = [
+  '/dashboard',
+  '/portfolio',
+  '/transactions',
+  '/goals',
+];
+
+/** Whether `pathname` is the section at `path` or a page under it. */
+export const inSection = (pathname: string, path: string) =>
+  pathname === path || pathname.startsWith(`${path}/`);
 
 export const appTitle = 'Capital Tracker';
 
@@ -38,7 +51,7 @@ export function pageTitle(pathname: string): string {
   const name =
     shellSections.find((section) => section.path === pathname)?.label ??
     detailTitles.find(([prefix]) => pathname.startsWith(prefix))?.[1] ??
-    (pathname === '/history' ? 'History' : null);
+    null;
   return name ? `${name} · ${appTitle}` : appTitle;
 }
 

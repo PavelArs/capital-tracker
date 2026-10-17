@@ -151,8 +151,9 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   await next.getByRole('button', { name: 'Save' }).click();
   await expect(next).toHaveCount(0);
   // The wallet is done; other cases' transactions may still wait elsewhere.
+  // The result is a toast in the Messages region, outside main.
   await expect(
-    main.getByText(
+    page.getByRole('region', { name: 'Messages' }).getByText(
       /^(Hidden from calculations\. Nothing else to classify here\.|All transactions classified\. The last one was hidden\.)$/,
     ),
   ).toBeVisible();

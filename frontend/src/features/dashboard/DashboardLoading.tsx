@@ -1,4 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
+import { Card } from '@/ui/Card';
+import { Bone } from '../shell/Skeleton';
 import './dashboard.css';
 
 // Fixed keys for the grey rows: they never reorder.
@@ -10,7 +12,9 @@ export function AssetRowsLoading() {
   return (
     <div className="dashboard-loading__rows" aria-hidden="true">
       {ROWS.map((row) => (
-        <i key={row} className="dashboard-loading__block dashboard-loading__row" />
+        <div key={row} className="dashboard-loading__row">
+          <Bone height={32} />
+        </div>
       ))}
     </div>
   );
@@ -19,13 +23,15 @@ export function AssetRowsLoading() {
 /** A grey bar and rows where the allocation will appear. */
 export function AllocationLoading() {
   return (
-    <div className="shell-card dashboard-loading__allocation" aria-hidden="true">
-      <i className="dashboard-loading__block dashboard-loading__legend" />
-      <i className="dashboard-loading__block dashboard-loading__bar" />
-      {SLICES.map((slice) => (
-        <i key={slice} className="dashboard-loading__block dashboard-loading__slice" />
-      ))}
-    </div>
+    <Card as="div">
+      <div aria-hidden="true" className="dashboard-loading__allocation">
+        <Bone width={220} height={16} />
+        <Bone height={10} />
+        {SLICES.map((slice) => (
+          <Bone key={slice} height={22} />
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -44,22 +50,28 @@ export default function DashboardLoading() {
       aria-label="Loading your capital"
     >
       <div className="dashboard-loading__hero">
-        <i className="dashboard-loading__block dashboard-loading__label" />
-        <i className="dashboard-loading__block dashboard-loading__value" />
-        <i className="dashboard-loading__block dashboard-loading__delta" />
+        <Bone width={140} height={14} />
+        <Bone width="min(340px, 80%)" height={52} />
+        <Bone width="min(240px, 60%)" height={18} />
       </div>
-      {!hasNoGoal() && <i className="dashboard-loading__block dashboard-loading__goal" />}
-      <div className="shell-card dashboard-loading__card">
+      {!hasNoGoal() && (
+        <div className="dashboard-loading__goal">
+          <Bone height={76} />
+        </div>
+      )}
+      <Card as="div" className="dashboard-loading__card">
         <div className="dashboard-loading__toolbar">
-          <i className="dashboard-loading__block dashboard-loading__legend" />
-          <i className="dashboard-loading__block dashboard-loading__periods" />
+          <Bone width={220} height={16} />
+          <Bone width="min(260px, 45%)" height={30} />
         </div>
-        <i className="dashboard-loading__block dashboard-loading__chart" />
-      </div>
+        <div className="dashboard-loading__chart">
+          <Bone height={290} />
+        </div>
+      </Card>
       <div className="dashboard-bottom">
-        <div className="shell-card dashboard-loading__card">
+        <Card as="div" className="dashboard-loading__card">
           <AssetRowsLoading />
-        </div>
+        </Card>
         <AllocationLoading />
       </div>
     </section>

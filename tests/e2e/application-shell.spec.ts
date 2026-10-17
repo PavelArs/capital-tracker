@@ -106,6 +106,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     ['Wallets', '/wallets'],
     ['Banks', '/deposits'],
     ['Goals', '/goals'],
+    ['History', '/history'],
     ['Settings', '/preferences'],
   ] as const;
   for (const [index, [name, path]] of sections.entries()) {
@@ -157,10 +158,9 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   ).toBeVisible();
   await expect(portfolio.getByText(/not built yet/i)).toHaveCount(0);
   await portfolio.getByRole('button', { name: 'Add', exact: true }).first().click();
-  await page
-    .getByRole('dialog', { name: 'Add to portfolio' })
-    .getByRole('button', { name: /^Something else/ })
-    .click();
+  const addTo = page.getByRole('dialog', { name: 'Add to portfolio' });
+  await addTo.getByRole('button', { name: /^Something else/ }).click();
+  await addTo.getByRole('button', { name: 'Continue', exact: true }).click();
   const addAsset = page.getByRole('dialog', { name: 'Add asset' });
   // A coin may start without a balance whatever accounts the shared database holds.
   const depositName = `SHELL-UI coin ${randomUUID()}`;
@@ -188,10 +188,33 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   const assetId = ((await assetResponse.json()) as { id: string }).id;
   await expect(page).toHaveURL(`${origin}/portfolio/${assetId}`);
   await expect(
-    portfolio.getByRole('heading', { level: 1, name: depositName, exact: true }),
+    portfolio.getByRole('heading', { level: 2, name: depositName, exact: true }),
   ).toBeVisible();
-  await expect(portfolio.getByRole('status').filter({ hasText: 'Asset added.' })).toBeVisible();
-  await portfolio.getByRole('link', { name: '← Portfolio', exact: true }).click();
+  // The notice is a toast in the Messages region, outside main.
+  await expect(
+    page
+      .getByRole('region', { name: 'Messages' })
+      .getByRole('status')
+      .filter({ hasText: 'Asset added' }),
+  ).toBeVisible();
+  // shell-16: the toast stands at the bottom right of a wide window, and above the tab bar on a
+  // phone. The pointer rests on it, so it stays while the window changes.
+  const added = page.locator('.ui-toast').filter({ hasText: 'Asset added' });
+  await added.hover();
+  const wide = await added.boundingBox();
+  if (!wide) throw new Error('The toast has no box.');
+  expect(wide.x + wide.width).toBeGreaterThan(1440 - 40);
+  expect(wide.y + wide.height).toBeGreaterThan(1000 - 60);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tabBar = await nav.locator('#application-menu').boundingBox();
+  await expect
+    .poll(async () => {
+      const narrow = await added.boundingBox();
+      return !!narrow && !!tabBar && narrow.y + narrow.height <= tabBar.y && narrow.x >= 0;
+    })
+    .toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await portfolio.getByRole('link', { name: 'Back to Portfolio', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
   // The asset cell carries the type and value currency; a coin outside the market catalog
   // never bought shows amount 0 and no price yet (portfolio-valuation PV-5).
@@ -248,25 +271,33 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   for (const width of [360, 768]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(menuButton).toHaveCount(0);
-    await expect(nav.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
-    const accountLink = nav.getByRole('link', { name: 'Settings', exact: true });
+    // Polish §3: the tab bar holds Dashboard, Portfolio, Transactions, Goals and More, all
+    // inside the window; Settings lives in the More sheet, which says it is the page open.
+    const tabBar = await nav.locator('#application-menu').boundingBox();
+    if (!tabBar) throw new Error('The tab bar has no box.');
+    // It stands at the bottom of the window.
+    expect(Math.abs(tabBar.y + tabBar.height - 900)).toBeLessThanOrEqual(1);
+    for (const name of ['Dashboard', 'Portfolio', 'Goals']) {
+      const tab = await nav.getByRole('link', { name, exact: true }).boundingBox();
+      expect(tab && tab.x >= 0 && tab.x + tab.width <= width).toBe(true);
+    }
+    await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toBeHidden();
+    const more = nav.getByRole('button', { name: 'More, now on Settings', exact: true });
+    await expect(more).toHaveAttribute('aria-current', 'page');
+    const moreBox = await more.boundingBox();
+    expect(moreBox && moreBox.x + moreBox.width <= width).toBe(true);
+    await more.click();
+    const sheet = page.getByRole('dialog', { name: 'More', exact: true });
+    const accountLink = sheet.getByRole('link', { name: 'Settings', exact: true });
     await expect(accountLink).toHaveAttribute('aria-current', 'page');
-    await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    // The strip scrolls the current section into view instead of hiding it behind a menu.
-    const strip = await nav.locator('#application-menu').boundingBox();
-    await expect
-      .poll(async () => {
-        const link = await accountLink.boundingBox();
-        return (
-          !!strip &&
-          !!link &&
-          link.x >= strip.x - 1 &&
-          link.x + link.width <= strip.x + strip.width + 1
-        );
-      })
-      .toBe(true);
+    await expect(accountLink).toBeFocused();
+    await expect(sheet.getByRole('link', { name: 'History', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     await fitsViewport(page);
     await page.screenshot({ path: testInfo.outputPath(`menu-${width}.png`), fullPage: true });
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(more).toBeFocused();
   }
 
   for (const width of [1280, 1440]) {
@@ -335,7 +366,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await expect(html).toHaveAttribute('data-theme', 'light');
 
   await page.setViewportSize({ width: 360, height: 800 });
-  await nav.getByRole('button', { name: 'Log out', exact: true }).click();
+  await nav.getByRole('button', { name: /^More/ }).click();
+  await page
+    .getByRole('dialog', { name: 'More', exact: true })
+    .getByRole('button', { name: 'Log out', exact: true })
+    .click();
   await expect(page).toHaveURL(`${origin}/login`);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
   await expect(page.getByRole('navigation')).toHaveCount(0);

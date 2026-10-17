@@ -55,17 +55,19 @@
 
 .ui-input {
   width: 100%;
-  height: 40px;
+  height: var(--h-input);
   padding: 0 12px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-sm);
   outline: none;
   background-color: var(--sunken);
   color: var(--ink);
   font: inherit;
+  /* 16 px on phones and touch screens (tokens.css), so iOS Safari does not zoom in on focus. */
+  font-size: var(--fs-input);
   transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
+    border-color var(--dur-1),
+    box-shadow var(--dur-1);
 }
 
 .ui-input::placeholder {
@@ -78,16 +80,20 @@
 
 .ui-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--accent-soft);
 }
 
 .ui-input[aria-invalid="true"] {
   border-color: var(--neg);
-  box-shadow: 0 0 0 3px var(--neg-soft);
+  box-shadow:
+    0 0 0 1px var(--neg),
+    0 0 0 4px var(--neg-soft);
 }
 
 .ui-input:disabled {
-  border-color: var(--line-strong);
+  border-color: var(--line-control);
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -107,10 +113,17 @@ select.ui-input {
   cursor: pointer;
 }
 
-/* The smaller control of toolbars and filters: 36 px, small text. */
+/* The smaller control of toolbars and filters: a small button's height (32 px, 36 px on touch
+   screens), small text on a computer. */
 .ui-input--sm {
-  height: 36px;
+  height: var(--h-sm);
   font-size: var(--fs-sm);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-input--sm {
+    font-size: var(--fs-input);
+  }
 }
 
 @media (max-width: 559.98px) {
@@ -147,4 +160,88 @@ select.ui-input {
   font-size: var(--fs-sm);
   transform: translateY(-50%);
   pointer-events: none;
+}
+
+/* A label with something at its right end ("Forgot password?"). */
+.ui-field__label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+/* Addresses, keys and codes. */
+.ui-input--mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-input-mono);
+}
+
+/* Amounts: figures line up and read right to left like a column. */
+.ui-input.ui-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A password with its show/hide eye inside the field's right end. */
+.ui-pw {
+  position: relative;
+  display: block;
+}
+
+.ui-pw .ui-input {
+  padding-right: calc(var(--h-icon) + 8px);
+}
+
+/* The eye sits inside the field's right end, centred in its height on every screen. */
+.ui-pw .ui-ibtn {
+  position: absolute;
+  top: calc((var(--h-input) - var(--h-icon)) / 2);
+  right: calc((var(--h-input) - var(--h-icon)) / 2);
+}
+
+/* Revealed type-specific fields under a choice (prototype .subform). */
+.ui-subform {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  animation: ui-fade-in 0.2s ease-out;
+}
+
+/* "More options" that open in place (prototype details.more); keep the <details>. */
+.ui-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  list-style: none;
+  cursor: pointer;
+}
+
+.ui-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ui-more > summary:hover {
+  color: var(--ink);
+}
+
+.ui-more > summary .shell-icon {
+  width: 15px;
+  height: 15px;
+  transition: transform 0.12s;
+}
+
+.ui-more[open] > summary .shell-icon {
+  transform: rotate(90deg);
+}
+
+.ui-more > div {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
 }

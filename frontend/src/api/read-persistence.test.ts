@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cachedReads } from './cached-reads';
+import { connection } from './connection';
 import { operationsApi } from './operations.api';
 import { portfolioValuationApi } from './portfolio-valuation.api';
 import {
@@ -248,6 +249,30 @@ describe('a reload does not ask again for what was just said', () => {
     expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
     await expect(cachedReads.portfolio.load('EUR')).resolves.toBe(portfolio);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('STALE-STATE asks again for a kept answer while reads go unanswered or the browser is offline', async () => {
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({ fresh: true } as never);
+    await reloaded([{ key: 'portfolio:["EUR"]', at: Date.now() - 60_000, value: portfolio }]);
+    const token = {};
+    connection.started(token);
+    connection.settled(token, false);
+    try {
+      // Still painted, but not reused as if it were current: the page asks and can say so.
+      expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
+      await expect(cachedReads.portfolio.load('EUR')).resolves.toEqual({ fresh: true });
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      connection.reset();
+    }
+    await reloaded([{ key: 'portfolio:["USD"]', at: Date.now() - 60_000, value: portfolio }]);
+    connection.setOffline(true);
+    try {
+      await expect(cachedReads.portfolio.load('USD')).resolves.toEqual({ fresh: true });
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      connection.reset();
+    }
   });
 
   it('asks the server once the kept answer is five minutes old', async () => {

@@ -13,12 +13,8 @@
   color: var(--ink-2);
 }
 
-.ui-intro .shell-button {
-  margin-top: 0;
-}
-
 @media (max-width: 639.98px) {
-  .ui-intro .shell-button {
+  .ui-intro .ui-btn {
     width: 100%;
   }
 }

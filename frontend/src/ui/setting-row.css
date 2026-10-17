@@ -1,0 +1,43 @@
+/* Settings rows (prototype Settings row): the SettingRow component. */
+.ui-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.ui-setting:first-child,
+.ui-card-h + .ui-setting {
+  border-top: 0;
+}
+
+.ui-setting__text {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.ui-setting__title {
+  display: block;
+  font-weight: 600;
+}
+
+.ui-setting__desc,
+.ui-setting__status {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.ui-setting__status:empty {
+  display: none;
+}
+
+.ui-setting__control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}

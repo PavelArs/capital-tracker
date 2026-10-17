@@ -3,6 +3,7 @@ import {
   backupDocument,
   type ExportData,
   type ExportOperation,
+  exportFilename,
   exportFiles,
   rewardType,
   tradeType,
@@ -437,5 +438,24 @@ describe('owner data backup (EXP-JSON)', () => {
     const exact = '{"quantity":"0.000000000000000000000000000001"}';
     const text = backupDocument('2026-10-08T10:00:00.000Z', [{ name: 'x', rows: [exact] }]);
     expect(text).toContain(exact);
+  });
+});
+
+describe('EXP-FILE-DAY: the export file names carry the Moscow day', () => {
+  it('EXP-FILE-DAY names the files by the Moscow day, also between 21:00 and 24:00 UTC', () => {
+    // 21:10 UTC on 16 Oct is already 17 Oct in Moscow; 20:59 UTC is still 16 Oct.
+    expect(exportFilename('csv', new Date('2026-10-16T21:10:00.000Z'))).toBe(
+      'capital-tracker-export-2026-10-17.zip',
+    );
+    expect(exportFilename('backup', new Date('2026-10-16T21:10:00.000Z'))).toBe(
+      'capital-tracker-backup-2026-10-17.json',
+    );
+    expect(exportFilename('csv', new Date('2026-10-16T20:59:59.999Z'))).toBe(
+      'capital-tracker-export-2026-10-16.zip',
+    );
+    // A month end turns over at 21:00 UTC too.
+    expect(exportFilename('backup', new Date('2026-10-31T21:00:00.000Z'))).toBe(
+      'capital-tracker-backup-2026-11-01.json',
+    );
   });
 });

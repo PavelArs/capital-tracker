@@ -2,7 +2,13 @@ import { cachedReads } from '@api/cached-reads';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
-import { useEffect, useState } from 'react';
+import { useToast } from '@contexts/ToastContext';
+import { useCallback, useEffect, useState } from 'react';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { ErrorState } from '@/ui/ErrorState';
+import { SettingRow } from '@/ui/SettingRow';
+import { Bone } from '../shell/Skeleton';
 
 // ASSET-HIDE: Settings lists the assets hidden from their own pages and shows them again. A
 // token the owner hid in wallets goes back there as well, or it would stay out of the balances.
@@ -17,20 +23,23 @@ export default function HiddenAssets() {
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    cachedReads.hiddenAssets
+  const toast = useToast();
+  const load = useCallback(() => {
+    setLoadFailed(false);
+    return cachedReads.hiddenAssets
       .load()
       .then((loaded) => {
-        if (!live) return;
         setItems(loaded);
-        setLoadFailed(false);
+        return true;
       })
-      .catch(() => live && setLoadFailed(true));
-    return () => {
-      live = false;
-    };
+      .catch(() => {
+        setLoadFailed(true);
+        return false;
+      });
   }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const show = async (asset: HiddenAsset) => {
     setBusy(asset.instrumentId);
@@ -48,6 +57,7 @@ export default function HiddenAssets() {
       }
       await hiddenAssetsApi.show(asset.instrumentId);
       announceSyncChange();
+      toast.show({ tone: 'success', title: `${label(asset)} is shown again` });
       setItems((current) =>
         current ? current.filter((item) => item.instrumentId !== asset.instrumentId) : current,
       );
@@ -59,46 +69,46 @@ export default function HiddenAssets() {
   };
 
   return (
-    <section className="shell-card" aria-labelledby="settings-hidden-assets">
-      <h2 id="settings-hidden-assets">Hidden assets</h2>
+    <Card labelledBy="settings-hidden-assets">
+      <CardHeader id="settings-hidden-assets" title="Hidden assets" />
       {items === null ? (
-        <p
-          className="shell-setting__hint"
-          role={loadFailed ? 'alert' : undefined}
-          aria-busy={!loadFailed}
-        >
-          {loadFailed ? 'Could not load the hidden assets; try again later.' : 'Loading…'}
-        </p>
+        loadFailed ? (
+          <ErrorState what="the hidden assets" onRetry={() => void load()} />
+        ) : (
+          <p className="ui-sub" aria-busy="true">
+            <Bone width="60%" height={12} />
+          </p>
+        )
       ) : items.length === 0 ? (
-        <p className="shell-setting__hint">
+        <p className="ui-sub">
           Nothing is hidden. Hide an asset from its own page under Portfolio; it comes back here.
         </p>
       ) : (
         items.map((asset) => (
-          <div className="shell-setting" key={asset.instrumentId}>
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">{label(asset)}</span>
-              <p
-                className="shell-setting__hint"
-                role={failed === asset.instrumentId ? 'alert' : undefined}
-              >
+          <SettingRow
+            key={asset.instrumentId}
+            title={label(asset)}
+            description={
+              <span role={failed === asset.instrumentId ? 'alert' : undefined}>
                 {failed === asset.instrumentId
                   ? `Could not show ${label(asset)}. Nothing may have changed; try again.`
                   : `${asset.name} is out of the portfolio, its totals, history and filters.`}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={busy !== null}
-              aria-label={`Show ${label(asset)}`}
-              onClick={() => void show(asset)}
-            >
-              Show
-            </button>
-          </div>
+              </span>
+            }
+            control={
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy !== null}
+                aria-label={`Show ${label(asset)}`}
+                onClick={() => void show(asset)}
+              >
+                Show
+              </Button>
+            }
+          />
         ))
       )}
-    </section>
+    </Card>
   );
 }

@@ -1,203 +1,8 @@
-/* Bank deposits (DEP-LIST, DEP-DETAIL): cards for the list, figures and tables for one deposit. */
-.deposit-total {
-  display: grid;
-  gap: 4px;
-}
-
-.deposit-total__label,
-.deposit-stat__label {
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
-
-.deposit-total__reason {
-  display: block;
-  max-width: 32ch;
-}
-
-.deposit-total__value {
-  font-size: var(--fs-2xl, 28px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.deposit-total__note,
-.deposit-total__reason,
-.deposit-stat__hint {
+/* Bank deposits (DEP-LIST, DEP-DETAIL): the list by bank, the figures of one deposit. */
+.deposit-total__note {
+  margin: var(--sp-3) 0 0;
   color: var(--ink-3);
   font-size: var(--fs-xs);
-}
-
-.deposit-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--sp-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.deposit-card {
-  display: grid;
-  gap: var(--sp-3);
-  height: 100%;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  color: inherit;
-  text-decoration: none;
-}
-
-.deposit-card:hover {
-  border-color: var(--line-strong);
-}
-
-.deposit-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.deposit-card__head,
-.deposit-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.deposit-card__name {
-  display: block;
-  font-weight: 600;
-}
-
-.deposit-card__value,
-.deposit-head__value {
-  display: grid;
-  gap: 2px;
-}
-
-.deposit-head__value {
-  text-align: right;
-}
-
-.deposit-card__value strong,
-.deposit-head__value strong {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-}
-
-.deposit-card__value span,
-.deposit-head__value span {
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
-
-.deposit-card__terms {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-}
-
-.deposit-card__facts {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  font-size: var(--fs-sm);
-}
-
-.deposit-card__facts div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.deposit-card__facts dt {
-  color: var(--ink-3);
-}
-
-.deposit-card__facts dd {
-  margin: 0;
-  text-align: right;
-}
-
-.deposit-card__attention {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--warn, var(--ink-2));
-  font-size: var(--fs-sm);
-}
-
-.deposit-back {
-  margin: 0;
-  font-size: var(--fs-sm);
-}
-
-.deposit-head h2 {
-  margin: 6px 0 4px;
-}
-
-.deposit-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--sp-4);
-}
-
-.deposit-stat {
-  display: grid;
-  gap: 4px;
-}
-
-.deposit-stat__value {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
-
-.deposit-table__act {
-  width: 40px;
-  text-align: right;
-}
-
-.deposit-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3);
-}
-
-.deposit-more summary {
-  cursor: pointer;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-}
-
-.deposit-more[open] summary {
-  margin-bottom: var(--sp-3);
-}
-
-@media (max-width: 559.98px) {
-  .deposit-list {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* The capitalisation toggle sits beside "Interest comes", level with its field. */
-.deposit-toggle {
-  align-self: end;
-  min-height: 40px;
-}
-
-/* The list, bank by bank (classes-19): one card per bank holding its deposits. */
-.deposit-total__figures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3) 48px;
-}
-
-.deposit-total__figures > div {
-  display: grid;
-  gap: 4px;
 }
 
 .deposit-banks {
@@ -206,29 +11,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.deposit-bank {
-  display: grid;
-  gap: var(--sp-4);
-}
-
-.deposit-bank__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.deposit-bank__name {
-  margin: 0;
-  font-size: var(--fs-lg);
-}
-
-.deposit-bank__count {
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
 }
 
 .deposit-bank__total {
@@ -243,13 +25,95 @@
   font-weight: 600;
 }
 
-.deposit-bank__total span {
+.deposit-bank__reason {
   max-width: 32ch;
-  color: var(--warn, var(--ink-2));
+  color: var(--warn);
   font-size: var(--fs-xs);
 }
 
-/* The deposit page: the terms beside the interest by period where both fit (classes-21). */
+/* One deposit of a bank: a tile that opens its page. */
+.deposit-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deposit-card__link {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-lg);
+  color: inherit;
+  text-decoration: none;
+}
+
+.deposit-card__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.deposit-card {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-3);
+  height: 100%;
+}
+
+.deposit-card__link:hover .deposit-card {
+  border-color: var(--line-strong);
+}
+
+.deposit-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.deposit-card__name {
+  font-weight: 600;
+}
+
+.deposit-card__value {
+  display: grid;
+  gap: 2px;
+}
+
+.deposit-card__value strong {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.deposit-card__value span {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.deposit-card__terms {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+/* One deposit: its value at the right of the head, the terms beside the interest by period. */
+.deposit-head__value {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.deposit-head__value strong {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.deposit-head__value span {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
 .deposit-columns {
   display: grid;
   gap: var(--sp-4);
@@ -262,66 +126,30 @@
   }
 }
 
-.deposit-terms {
-  display: grid;
-  gap: 8px;
-  margin: var(--sp-3) 0 0;
-  font-size: var(--fs-sm);
-}
-
-.deposit-terms > div {
-  display: grid;
-  grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
-  gap: var(--sp-3);
-}
-
-.deposit-terms dt {
-  color: var(--ink-3);
-}
-
-.deposit-terms dd {
-  margin: 0;
-}
-
 .deposit-terms__rate {
   display: block;
 }
 
-.deposit-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
+.deposit-table__act {
+  width: var(--h-icon);
+  text-align: right;
 }
 
-.deposit-link:focus-visible {
-  border-radius: var(--r-sm);
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.deposit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
-/* Phone rows of the deposit page (classes-15) have no icon in front, so the text takes the room
-   the shared row rule keeps for one and the figures stay at the right edge. */
+/* The capitalisation toggle sits beside "Interest comes", level with its field. */
+.deposit-toggle {
+  align-self: end;
+  min-height: var(--h-input);
+}
+
+/* Phone rows of the deposit page have no icon in front, so the text takes the room the shared
+   row rule keeps for one and the figures stay at the right edge. */
 .deposit-rows .ui-row > .ui-row__main {
   flex: 1;
-}
-
-/* The destructive button of the delete confirmation, as the goal dialog has it. */
-.deposit-dialog .shell-button--danger {
-  border-color: transparent;
-  background: var(--neg);
-  color: var(--neg-ink);
-}
-
-.deposit-dialog .shell-button--danger:hover {
-  border-color: transparent;
-  filter: brightness(1.08);
-}
-
-.deposit-dialog .shell-button--danger:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
 }

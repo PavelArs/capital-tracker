@@ -1,6 +1,12 @@
 import { securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field as FormField } from '@/ui/Field';
+import { Input } from '@/ui/inputs';
+import { ModalBody, ModalFooter } from '@/ui/Modal';
+import { PasswordInput } from '@/ui/PasswordInput';
 import SecurityDialog from './SecurityDialog';
 
 const MIN_LENGTH = 15;
@@ -95,30 +101,27 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
     set: (value: string) => void,
     extra: { type?: string; autoComplete: string; hint?: string; otp?: boolean },
   ) => (
-    <div className="ui-field">
-      <label className="ui-field__label" htmlFor={id}>
-        {label}
-      </label>
-      <input
-        id={id}
-        className={extra.otp ? 'ui-input security-otp' : 'ui-input'}
-        type={extra.type ?? 'password'}
-        inputMode={extra.otp ? 'numeric' : undefined}
-        maxLength={extra.otp ? 7 : 1024}
-        autoComplete={extra.autoComplete}
-        value={value}
-        aria-invalid={problems[field] ? true : undefined}
-        aria-describedby={problems[field] ? `${id}-error` : undefined}
-        onChange={(event) => typed(field, set)(event.target.value)}
-        onBlur={blur(field)}
-      />
-      {extra.hint && !problems[field] && <p className="shell-note">{extra.hint}</p>}
-      {problems[field] && (
-        <p id={`${id}-error`} className="ui-banner ui-banner--neg" role="alert">
-          {problems[field]}
-        </p>
-      )}
-    </div>
+    <FormField id={id} label={label} hint={extra.hint} error={problems[field]} liveError>
+      {(control) => {
+        const shared = {
+          ...control,
+          autoComplete: extra.autoComplete,
+          value,
+          onChange: (event: ChangeEvent<HTMLInputElement>) => typed(field, set)(event.target.value),
+          onBlur: blur(field),
+        };
+        return extra.otp ? (
+          <Input {...shared} className="security-otp" inputMode="numeric" maxLength={7} />
+        ) : (
+          <PasswordInput
+            {...shared}
+            maxLength={1024}
+            showLabel={`Show ${label.toLowerCase()}`}
+            hideLabel={`Hide ${label.toLowerCase()}`}
+          />
+        );
+      }}
+    </FormField>
   );
 
   return (
@@ -130,7 +133,7 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
       busy={busy}
     >
       <form onSubmit={submit} noValidate>
-        <div className="ui-modal__body">
+        <ModalBody>
           <p className="security-dialog__text">
             Every other browser is signed out. This one stays signed in.
           </p>
@@ -156,25 +159,16 @@ export default function ChangePasswordDialog({ onChanged, onClose }: Props) {
               otp: true,
             },
           )}
-          {problems.form && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {problems.form}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={busy}
-            onClick={onClose}
-          >
+          {problems.form && <Banner tone="neg">{problems.form}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={busy}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy}>
             {busy ? 'Changing…' : 'Change password'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </SecurityDialog>
   );

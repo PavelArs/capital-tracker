@@ -6,3 +6,25 @@
     opacity: 0;
   }
 }
+
+/* Something runs right now (Syncing): a dot fades in and out. */
+@keyframes ui-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* A dialog, a popover or a toast pops in; a sheet rises from the bottom edge. */
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes ui-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+}

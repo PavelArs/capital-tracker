@@ -8,15 +8,13 @@ import type {
   AssetValuation,
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useTabs } from '@/ui/tabs';
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { dayText } from '@/utils/dates';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
-import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
@@ -52,7 +50,17 @@ import { adjustmentText } from './real-cost';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
+import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button, ButtonLink } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
+import { Legend } from '@/ui/Legend';
+import { ListRowText, rowClass } from '@/ui/ListRow';
+import { Crumb, PageHead } from '@/ui/PageHead';
+import { useSegmentedTabs } from '@/ui/SegmentedTabs';
+import { Stat, Stats } from '@/ui/Stats';
 
 /** Where the price came from and how fresh it is. */
 function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: Date): string {
@@ -116,15 +124,6 @@ export function purchasesOf(operations: readonly Operation[], instrumentId: stri
   );
 }
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="portfolio-stat">
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
 type OperationsState = OperationList | 'loading' | 'failed';
 
 // Position value against cost basis over a period, with purchase dots (ASSET-CHART).
@@ -140,6 +139,7 @@ function ValueChart({
   operations: OperationsState;
 }) {
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
+  const chartTitle = useId();
   const instrumentId = asset.instrumentId;
   const [history, setHistory] = useState<AssetHistory | null>(
     () => cachedReads.assetHistory.last(instrumentId, '1M', asked) ?? null,
@@ -163,36 +163,48 @@ function ValueChart({
     void load();
   }, [load]);
   // portfolio-19: the periods are tabs with arrow keys; the chart is the panel they control.
-  const tabs = useTabs(historyPeriods, period, setPeriod);
+  const { tabs, panelProps } = useSegmentedTabs({
+    label: 'Chart period',
+    options: historyPeriods,
+    value: period,
+    onChange: setPeriod,
+    size: 'sm',
+  });
   const purchases =
     typeof operations === 'object' ? purchasesOf(operations.operations, instrumentId) : [];
   const unit = asset.symbol ?? asset.name;
+  const costHidden = history !== null && costUnknown(history.points);
   return (
-    <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
+    <Card variant="chart" className="dashboard-chart-card" labelledBy={chartTitle}>
+      {/* The card is the region the chart's tests and readers find by this name. */}
+      <h2 id={chartTitle} className="ui-sr">
+        Position value over time
+      </h2>
       <div className="ui-toolbar">
         <div className="dashboard-chart-card__name">
-          <div className="dashboard-legend" aria-label="Chart legend">
-            <span>
-              <i className="dashboard-legend__line" aria-hidden="true" />
-              Position value
-            </span>
-            {history && costUnknown(history.points) ? (
-              <span>Cost basis unknown</span>
-            ) : (
-              <>
-                <span>
-                  <i
-                    className="dashboard-legend__line dashboard-legend__line--invested"
-                    aria-hidden="true"
-                  />
-                  Cost basis
-                </span>
-                <span>
-                  <i className="dashboard-legend__deposit" aria-hidden="true" />
-                  Purchase
-                </span>
-              </>
-            )}
+          <div aria-label="Chart legend" role="group">
+            <Legend
+              items={[
+                { key: 'value', label: 'Position value', swatch: 'line', color: 'var(--accent)' },
+                ...(costHidden
+                  ? []
+                  : ([
+                      {
+                        key: 'cost',
+                        label: 'Cost basis',
+                        swatch: 'dash',
+                        color: 'var(--ink-3)',
+                      },
+                      {
+                        key: 'purchase',
+                        label: 'Purchase',
+                        swatch: 'marker',
+                        color: 'var(--ink-2)',
+                      },
+                    ] as const)),
+              ]}
+            />
+            {costHidden && <span className="ui-sub">Cost basis unknown</span>}
           </div>
           <AboutChart>
             Value of what you held at stored prices and Bank of Russia rates in{' '}
@@ -200,22 +212,20 @@ function ValueChart({
             Times are UTC. Cost basis counts the coins with a known purchase price.
           </AboutChart>
         </div>
-        <div className="dashboard-periods" aria-label="Chart period" {...tabs.list}>
-          {historyPeriods.map((value) => (
-            <button key={value} type="button" {...tabs.tab(value)}>
-              {value}
-            </button>
-          ))}
-        </div>
+        {tabs}
       </div>
-      <div {...tabs.panel}>
+      <div {...panelProps}>
         {failed ? (
-          <div className="portfolio-state" role="alert">
-            <p>Could not load the chart. Your data is safe; try again.</p>
-            <button type="button" className="shell-button" onClick={() => void load()}>
-              Try again
-            </button>
-          </div>
+          <Banner
+            tone="neg"
+            action={
+              <Button size="sm" icon="refresh" onClick={() => void load()}>
+                Try again
+              </Button>
+            }
+          >
+            Could not load the chart. Your data is safe; try again.
+          </Banner>
         ) : history === null ? (
           <InlineSkeleton label="Loading the chart" chart />
         ) : (
@@ -230,7 +240,7 @@ function ValueChart({
           />
         )}
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -259,58 +269,65 @@ function AssetTransactions({
   const latest = own.slice(0, ASSET_TRANSACTIONS_SHOWN);
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
-    <section className="shell-card" aria-labelledby="asset-transactions">
-      <div className="ui-toolbar">
-        <h2 id="asset-transactions">Transactions</h2>
-        {typeof operations === 'object' && (
-          <span className="portfolio-sub">
-            {own.length > latest.length ? `Latest ${latest.length} of ${own.length}` : own.length}
-          </span>
-        )}
-      </div>
+    <Card labelledBy="asset-transactions">
+      <CardHeader
+        id="asset-transactions"
+        title="Transactions"
+        sub={
+          typeof operations === 'object'
+            ? own.length > latest.length
+              ? `Latest ${latest.length} of ${own.length}`
+              : own.length
+            : undefined
+        }
+      />
       {operations === 'failed' ? (
-        <div className="portfolio-state" role="alert">
-          <p>Could not load this asset's transactions.</p>
-          <button type="button" className="shell-button" onClick={onRetry}>
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetry}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load this asset's transactions.
+        </Banner>
       ) : operations === 'loading' ? (
         <InlineSkeleton label="Loading transactions" />
       ) : own.length === 0 ? (
-        <p className="portfolio-none">No transactions yet.</p>
+        <p className="ui-none">No transactions yet.</p>
       ) : (
         <>
-          <ul className="portfolio-holdings portfolio-operations">
+          <ul className="ui-rows portfolio-rows">
             {latest.map((operation) => (
-              <li key={operation.id}>
-                <span>
-                  {operation.status === 'needs-classification' ? (
-                    <span className="portfolio-pill">{statusLabels[operation.status]}</span>
-                  ) : (
-                    typeLabel(operation)
-                  )}
-                  <span className="portfolio-sub">
-                    {day(operation.occurredAt)} · {placeLabel(operation)}
-                  </span>
-                </span>
-                <span className="ui-num">
-                  {movedAmount(operation, key)}
-                  {operation.value !== null && typeof operations === 'object' && (
-                    <span className="portfolio-sub">
-                      {money(operation.value, operations.quoteCurrency)}
-                    </span>
-                  )}
-                </span>
+              <li key={operation.id} className={rowClass()}>
+                <ListRowText
+                  title={
+                    operation.status === 'needs-classification' ? (
+                      <Badge tone="warn" dot>
+                        {statusLabels[operation.status]}
+                      </Badge>
+                    ) : (
+                      typeLabel(operation)
+                    )
+                  }
+                  detail={`${day(operation.occurredAt)} · ${placeLabel(operation)}`}
+                  amount={movedAmount(operation, key)}
+                  value={
+                    operation.value !== null && typeof operations === 'object'
+                      ? money(operation.value, operations.quoteCurrency)
+                      : undefined
+                  }
+                />
               </li>
             ))}
           </ul>
-          <Link className="shell-button" to={all}>
+          <ButtonLink to={all} size="sm" className="portfolio-card-action">
             Open in Transactions
-          </Link>
+          </ButtonLink>
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -324,6 +341,7 @@ function AssetDetails({
   classed,
   onPriceSaved,
   now,
+  hide,
 }: {
   asset: AssetValuation;
   portfolio: PortfolioValuation;
@@ -336,8 +354,11 @@ function AssetDetails({
   classed: ReadonlySet<string> | null;
   onPriceSaved: () => void;
   now: Date;
+  /** Hide asset, at the end of the page head. */
+  hide: ReactNode;
 }) {
   const [pricing, setPricing] = useState(false);
+  const positionTitle = useId();
   const unit = asset.symbol ?? '';
   const currency = portfolio.currency;
   const chains = useTokenChains();
@@ -361,43 +382,46 @@ function AssetDetails({
   const emptyUnknown = empty && !sold;
   return (
     <>
-      <div className="portfolio-head">
-        <AssetIcon
-          symbol={asset.symbol}
-          name={asset.name}
-          assetType={asset.assetType}
-          assetClass={heldClass(asset.holdings, classes)}
-          network={onlyChain(asset.symbol, chains)}
-          size="lg"
-        />
-        <div className="portfolio-head__title">
-          <h2>{asset.name}</h2>
-          <span className="portfolio-sub">{assetCaption(asset, chains)}</span>
-        </div>
-        <div className="portfolio-head__price">
-          <b>{asset.price ? price(asset.price.value, currency) : missingLabel(asset)}</b>
-          {/* A hand price has no market move to show: the page offers Update price instead. */}
-          {asset.priceChange24hPercent !== null && asset.priceSource !== 'manual' && (
-            <span className="portfolio-head__change">
-              <Change value={asset.priceChange24hPercent} /> today
-            </span>
-          )}
-          <span
-            className={asset.price?.status === 'stale' ? 'portfolio-warn-text' : 'portfolio-sub'}
-          >
-            {priceDetail(asset, currency, now)}
-          </span>
-          {asset.priceSource === 'manual' && (
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              onClick={() => setPricing(true)}
+      <PageHead
+        icon={
+          <AssetIcon
+            symbol={asset.symbol}
+            name={asset.name}
+            assetType={asset.assetType}
+            assetClass={heldClass(asset.holdings, classes)}
+            network={onlyChain(asset.symbol, chains)}
+            size="lg"
+          />
+        }
+        title={asset.name}
+        subtitle={assetCaption(asset, chains)}
+        aside={
+          <>
+            <b className="ui-num portfolio-head__price">
+              {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
+            </b>
+            {/* A hand price has no market move to show: the page offers Update price instead. */}
+            {asset.priceChange24hPercent !== null && asset.priceSource !== 'manual' && (
+              <span className="portfolio-head__change">
+                <Change value={asset.priceChange24hPercent} /> today
+              </span>
+            )}
+            <span
+              className={
+                asset.price?.status === 'stale' ? 'ui-sub portfolio-head__stale' : 'ui-sub'
+              }
             >
-              Update price
-            </button>
-          )}
-        </div>
-      </div>
+              {priceDetail(asset, currency, now)}
+            </span>
+            {asset.priceSource === 'manual' && (
+              <Button size="sm" icon="edit" onClick={() => setPricing(true)}>
+                Update price
+              </Button>
+            )}
+          </>
+        }
+        actions={hide}
+      />
       {pricing && (
         <UpdatePriceDialog
           instrumentId={asset.instrumentId}
@@ -410,162 +434,194 @@ function AssetDetails({
           }}
         />
       )}
-      <section className="shell-card" aria-label="Position">
-        <dl className="portfolio-stats">
-          <Stat label="Amount">
-            {quantity(asset.quantity)} {unit}
-          </Stat>
-          <Stat label="Current value">{amount(asset.value)}</Stat>
-          <Stat label="Average buy price">
-            {asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
-          </Stat>
+      <Card labelledBy={positionTitle}>
+        <h2 id={positionTitle} className="ui-sr">
+          Position
+        </h2>
+        <Stats>
+          <Stat
+            label="Amount"
+            value={
+              <>
+                {quantity(asset.quantity)} {unit}
+              </>
+            }
+          />
+          <Stat label="Current value" value={amount(asset.value)} />
+          <Stat
+            label="Average buy price"
+            value={asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
+          />
           {showReal ? (
             <>
-              <Stat label="Cost in today's money">
-                {reading === null ? (
-                  sold ? (
-                    <>
-                      {amount('0')}
-                      <span className="portfolio-sub">
-                        Nothing held, so there is no real cost or profit
-                      </span>
-                    </>
-                  ) : emptyUnknown ? (
-                    <>
-                      {DASH}
-                      <span className="portfolio-sub">an account history starts later</span>
-                    </>
+              <Stat
+                label="Cost in today's money"
+                value={
+                  reading === null ? (
+                    sold ? (
+                      <>
+                        {amount('0')}
+                        <span className="ui-sub">
+                          Nothing held, so there is no real cost or profit
+                        </span>
+                      </>
+                    ) : emptyUnknown ? (
+                      <>
+                        {DASH}
+                        <span className="ui-sub">an account history starts later</span>
+                      </>
+                    ) : (
+                      <>
+                        {DASH}
+                        <span className="ui-sub">
+                          a purchase price, exchange rate or inflation figure is missing for some
+                          lots
+                        </span>
+                        {asset.costBasis !== null ? (
+                          <span className="ui-sub">{amount(asset.costBasis)} paid</span>
+                        ) : (
+                          Number(asset.knownCostQuantity) > 0 && (
+                            <span className="ui-sub">
+                              {amount(asset.knownCostSubtotal)} paid for the known part
+                            </span>
+                          )
+                        )}
+                      </>
+                    )
                   ) : (
                     <>
-                      {DASH}
-                      <span className="portfolio-sub">
-                        a purchase price, exchange rate or inflation figure is missing for some lots
-                      </span>
-                      {asset.costBasis !== null ? (
-                        <span className="portfolio-sub">{amount(asset.costBasis)} paid</span>
-                      ) : (
-                        Number(asset.knownCostQuantity) > 0 && (
-                          <span className="portfolio-sub">
-                            {amount(asset.knownCostSubtotal)} paid for the known part
-                          </span>
-                        )
+                      {amount(reading.costBasis)}
+                      {asset.costBasis !== null && (
+                        <span className="ui-sub">
+                          {amount(asset.costBasis)} paid{' '}
+                          {adjustmentText(reading.costBasis, asset.costBasis, amount)}
+                        </span>
                       )}
                     </>
                   )
-                ) : (
+                }
+              />
+              <Stat
+                label="Real P&L"
+                value={
                   <>
-                    {amount(reading.costBasis)}
-                    {asset.costBasis !== null && (
-                      <span className="portfolio-sub">
-                        {amount(asset.costBasis)} paid{' '}
-                        {adjustmentText(reading.costBasis, asset.costBasis, amount)}
+                    <Signed
+                      value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
+                      currency={currency}
+                      ratio={reading?.unrealizedReturnPercent ?? null}
+                    />
+                    {asset.unrealizedPnl !== null || sold ? (
+                      <span className="ui-sub">
+                        Nominal {money(sold ? '0' : asset.unrealizedPnl, currency, true)}
                       </span>
+                    ) : (
+                      asset.knownUnrealizedPnl !== null && (
+                        <span className="ui-sub">
+                          Nominal {money(asset.knownUnrealizedPnl, currency, true)} known
+                        </span>
+                      )
                     )}
                   </>
-                )}
-              </Stat>
-              <Stat label="Real P&L">
-                <Signed
-                  value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
-                  currency={currency}
-                  ratio={reading?.unrealizedReturnPercent ?? null}
-                />
-                {asset.unrealizedPnl !== null || sold ? (
-                  <span className="portfolio-sub">
-                    Nominal {money(sold ? '0' : asset.unrealizedPnl, currency, true)}
-                  </span>
-                ) : (
-                  asset.knownUnrealizedPnl !== null && (
-                    <span className="portfolio-sub">
-                      Nominal {money(asset.knownUnrealizedPnl, currency, true)} known
-                    </span>
-                  )
-                )}
-              </Stat>
+                }
+              />
             </>
           ) : (
             <>
-              <Stat label="Cost basis">
-                {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
-                {reading !== null && asset.costBasis !== null && (
-                  <span className="portfolio-sub">
-                    {amount(reading.costBasis)} in today&apos;s money
-                  </span>
-                )}
-              </Stat>
-              <Stat label="Unrealized P&L">
-                <Signed
-                  value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
-                  currency={currency}
-                  ratio={
-                    partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
-                  }
-                />
-                {reading?.unrealizedPnl != null && asset.unrealizedPnl !== null && (
-                  <span className="portfolio-sub">
-                    Real {money(reading.unrealizedPnl, currency, true)}
-                  </span>
-                )}
-              </Stat>
+              <Stat
+                label="Cost basis"
+                value={
+                  <>
+                    {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
+                    {reading !== null && asset.costBasis !== null && (
+                      <span className="ui-sub">
+                        {amount(reading.costBasis)} in today&apos;s money
+                      </span>
+                    )}
+                  </>
+                }
+              />
+              <Stat
+                label="Unrealized P&L"
+                value={
+                  <>
+                    <Signed
+                      value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
+                      currency={currency}
+                      ratio={
+                        partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
+                      }
+                    />
+                    {reading?.unrealizedPnl != null && asset.unrealizedPnl !== null && (
+                      <span className="ui-sub">
+                        Real {money(reading.unrealizedPnl, currency, true)}
+                      </span>
+                    )}
+                  </>
+                }
+              />
             </>
           )}
-          <Stat label="Realized P&L">
-            <Signed
-              value={
-                asset.realizedPnl === null && Number(asset.knownRealizedSubtotal) !== 0
-                  ? asset.knownRealizedSubtotal
-                  : asset.realizedPnl
-              }
-              currency={currency}
-            />
-          </Stat>
-        </dl>
+          <Stat
+            label="Realized P&L"
+            value={
+              <Signed
+                value={
+                  asset.realizedPnl === null && Number(asset.knownRealizedSubtotal) !== 0
+                    ? asset.knownRealizedSubtotal
+                    : asset.realizedPnl
+                }
+                currency={currency}
+              />
+            }
+          />
+        </Stats>
         {showReal && reading !== null && (
-          <p className="shell-note portfolio-real-note">
+          <p className="ui-sub portfolio-card-note">
             In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
-            <Link className="shell-link" to="/settings">
+            <Link className="ui-link" to="/settings">
               Settings
             </Link>
           </p>
         )}
         {portfolio.unavailableAccountCount > 0 && (
-          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+          <Banner tone="warn">
             {portfolio.unavailableAccountCount === 1
               ? '1 account whose history starts later is'
               : `${portfolio.unavailableAccountCount} accounts whose history starts later are`}{' '}
             left out of these figures.
-          </p>
+          </Banner>
         )}
         {unknown && (
-          <p className="ui-banner ui-banner--warn ui-banner--action portfolio-warn" role="note">
-            <Icon name="alert" className="shell-icon shell-icon--sm" />
-            <span>
-              {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
-              unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known cost:{' '}
-              {amount(asset.knownCostSubtotal)}.
-            </span>
-            <Link
-              className="shell-button"
-              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
-            >
-              Review transactions
-            </Link>
-          </p>
+          <Banner
+            tone="warn"
+            action={
+              <ButtonLink
+                size="sm"
+                to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
+              >
+                Review transactions
+              </ButtonLink>
+            }
+          >
+            {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
+            unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known cost:{' '}
+            {amount(asset.knownCostSubtotal)}.
+          </Banner>
         )}
         {missingRate && (
-          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+          <Banner tone="warn">
             {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
             rates, so its cost in {currency} is unknown. Known cost:{' '}
             {amount(asset.knownCostSubtotal)}.
-          </p>
+          </Banner>
         )}
         {asset.unknownRealizedCount > 0 && (
-          <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+          <Banner tone="warn">
             A sale used coins without a purchase price or a stored rate, so realized P&amp;L is
             unknown. Known part: {amount(asset.knownRealizedSubtotal, true)}.
-          </p>
+          </Banner>
         )}
-      </section>
+      </Card>
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
       {!sold && (
         <AssetLotsCard
@@ -575,47 +631,46 @@ function AssetDetails({
         />
       )}
       <div className="portfolio-split">
-        <section className="shell-card" aria-labelledby="asset-holdings">
-          <div className="ui-toolbar">
-            <h2 id="asset-holdings">Holdings</h2>
-            <span className="portfolio-sub">Where this balance sits</span>
-          </div>
+        <Card labelledBy="asset-holdings">
+          <CardHeader id="asset-holdings" title="Holdings" sub="Where this balance sits" />
           {asset.holdings.length === 0 ? (
-            <p className="portfolio-none">Nothing held right now.</p>
+            <p className="ui-none">Nothing held right now.</p>
           ) : (
-            <ul className="portfolio-holdings">
+            <ul className="ui-rows portfolio-rows">
               {asset.holdings.map((holding) => {
                 const kind = kinds[holding.accountId];
                 // A property account has no wallet page: it is shown by its own name only.
                 const wallet = classed !== null && !classed.has(holding.accountId);
+                // A wallet's whole row opens it (prototype .list-row); the link keeps the
+                // wallet's name as its own and stretches over the row.
                 return (
-                  <li key={holding.accountId}>
-                    <span className="portfolio-holding">
-                      {wallet ? (
-                        <Link
-                          className="shell-link"
-                          to={withCurrency(`/wallets/${holding.accountId}`, asked)}
-                        >
-                          {holding.accountName}
-                        </Link>
-                      ) : (
-                        <span>{holding.accountName}</span>
-                      )}
-                      {kind && <span className="portfolio-sub">{kindLabels[kind]}</span>}
-                    </span>
-                    <span className="ui-num">
-                      {quantity(holding.quantity)} {unit}
-                      <span className="portfolio-sub">{amount(holding.value)}</span>
-                    </span>
+                  <li
+                    key={holding.accountId}
+                    className={wallet ? `${rowClass()} portfolio-row--link` : rowClass()}
+                  >
+                    <ListRowText
+                      title={
+                        wallet ? (
+                          <Link to={withCurrency(`/wallets/${holding.accountId}`, asked)}>
+                            {holding.accountName}
+                          </Link>
+                        ) : (
+                          holding.accountName
+                        )
+                      }
+                      detail={kind ? kindLabels[kind] : undefined}
+                      amount={`${quantity(holding.quantity)} ${unit}`}
+                      value={amount(holding.value)}
+                    />
                   </li>
                 );
               })}
             </ul>
           )}
-          <p className="shell-note portfolio-note">
+          <p className="ui-sub portfolio-card-note">
             Price source: {sourceLabels[asset.priceSource]}. {ratesNote(portfolio)}
           </p>
-        </section>
+        </Card>
         <AssetTransactions asset={asset} operations={operations} onRetry={onRetryOperations} />
       </div>
     </>
@@ -633,18 +688,6 @@ export default function AssetPage() {
   );
   const [failed, setFailed] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  // portfolio-06: a new asset opens here, once, with word that it was added.
-  const location = useLocation();
-  const [added] = useState(() =>
-    (location.state as { added?: boolean } | null)?.added === true ? assetId : undefined,
-  );
-  // The word is said once: going back to this entry, or reloading it, does not say it again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only the arrival is cleared.
-  useEffect(() => {
-    if (added)
-      navigate({ pathname: location.pathname, search: location.search }, { replace: true });
-  }, []);
-
   // A refresh after a change (a saved price) keeps the page and its focus on screen: the change
   // dropped the kept answer, and a skeleton would take the Update price button away (portfolio-02).
   const load = useCallback(
@@ -714,39 +757,23 @@ export default function AssetPage() {
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
     <div className="shell-page">
-      <PageHeader title={asset?.name ?? 'Asset'} currency={portfolio?.currency} valueSwitch />
-      <div className="portfolio-crumbs">
-        <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
-          ← Portfolio
-        </Link>
-        {asset && (
-          <HideAsset
-            instrumentId={asset.instrumentId}
-            symbol={asset.symbol}
-            onHidden={() => navigate(withCurrency('/portfolio', asked))}
-          />
-        )}
-      </div>
-      {added === assetId && (
-        <p className="ui-banner ui-banner--pos" role="status">
-          Asset added.
-        </p>
-      )}
+      <PageHeader title="Portfolio" currency={portfolio?.currency} valueSwitch />
+      <Crumb to={withCurrency('/portfolio', asked)}>Portfolio</Crumb>
       {refreshFailed && !failed && portfolio !== null && (
-        <p className="ui-banner ui-banner--warn portfolio-warn" role="alert">
-          Could not refresh the values; showing the last loaded ones.{' '}
-          <button type="button" className="shell-button" onClick={() => void load(true)}>
-            Refresh
-          </button>
-        </p>
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => void load(true)}>
+              Refresh
+            </Button>
+          }
+        >
+          Could not refresh the values; showing the last loaded ones.
+        </Banner>
       )}
       {failed ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load this asset. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState what="this asset" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading asset" show={['stats', 'chart', 'rows']} />
       ) : asset ? (
@@ -760,6 +787,13 @@ export default function AssetPage() {
           classed={classed}
           onPriceSaved={() => void load(true)}
           now={new Date()}
+          hide={
+            <HideAsset
+              instrumentId={asset.instrumentId}
+              symbol={asset.symbol}
+              onHidden={() => navigate(withCurrency('/portfolio', asked))}
+            />
+          }
         />
       ) : (
         <EmptyState id="asset-missing" title="Asset not found">

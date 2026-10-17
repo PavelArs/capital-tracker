@@ -2,7 +2,11 @@ import { cachedReads } from '@api/cached-reads';
 import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
-import { useEffect, useId, useState } from 'react';
+import { useToast } from '@contexts/ToastContext';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/ui/Button';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
 
 // ASSET-HIDE: any asset can be removed from the portfolio from its own page. It leaves the
 // portfolio, its totals and history and the filters; its transactions stay in the list. A token
@@ -32,13 +36,12 @@ export default function HideAsset({
   symbol: string | null;
   onHidden: () => void;
 }) {
-  const id = useId();
+  const toast = useToast();
   const [wallets, setWallets] = useState<readonly WalletAddress[]>(
     () => cachedReads.wallets.last() ?? [],
   );
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let live = true;
@@ -55,65 +58,44 @@ export default function HideAsset({
   const holders = holdersOf(symbol, wallets);
   const name = symbol ?? 'this asset';
 
+  // A failure throws to the dialog, which says so and keeps the owner on the page.
   const hide = async () => {
-    setBusy(true);
-    setFailed(false);
-    try {
-      if (symbol)
-        for (const address of holders)
-          await walletAddressesApi.tokens(address.id, [symbol], 'hidden');
-      await hiddenAssetsApi.hide(instrumentId);
-      // The bell checks wallet balances against the portfolio again.
-      announceSyncChange();
-      onHidden();
-    } catch {
-      setFailed(true);
-      setBusy(false);
-    }
+    if (symbol)
+      for (const address of holders)
+        await walletAddressesApi.tokens(address.id, [symbol], 'hidden');
+    await hiddenAssetsApi.hide(instrumentId);
+    // The bell checks wallet balances against the portfolio again.
+    announceSyncChange();
+    toast.show({
+      tone: 'success',
+      title: `${symbol ?? 'Asset'} hidden`,
+      detail: 'Bring it back in Settings under Hidden assets.',
+      action: { label: 'Open', onClick: () => navigate('/preferences#settings-hidden-assets') },
+    });
+    onHidden();
   };
 
   return (
     <>
-      <button
-        type="button"
-        className="shell-button shell-button--secondary"
-        aria-expanded={asking}
-        aria-controls={id}
-        onClick={() => setAsking((current) => !current)}
-      >
+      <Button variant="ghost" size="sm" icon="eyeOff" onClick={() => setAsking(true)}>
         Hide asset
-      </button>
+      </Button>
       {asking && (
-        <section id={id} className="shell-card portfolio-confirm" aria-label="Hide this asset">
+        <ConfirmDialog
+          title="Hide this asset"
+          confirmLabel={`Hide ${name}`}
+          busyLabel="Hiding…"
+          tone="primary"
+          failure={`Could not hide ${name}. Nothing may have changed; try again.`}
+          onConfirm={hide}
+          onClose={() => setAsking(false)}
+        >
           <p>
             Hide {name}? It leaves the portfolio, the totals and the filters. Its transactions stay
             in the list.{holders.length > 0 && ' It also leaves the wallet balances.'} Bring it back
             in Settings under Hidden assets.
           </p>
-          {failed && (
-            <p className="portfolio-warn-text" role="alert">
-              Could not hide {name}. Nothing may have changed; try again.
-            </p>
-          )}
-          <div className="portfolio-confirm__actions">
-            <button
-              type="button"
-              className="shell-button"
-              disabled={busy}
-              onClick={() => void hide()}
-            >
-              Hide {name}
-            </button>
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              disabled={busy}
-              onClick={() => setAsking(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </section>
+        </ConfirmDialog>
       )}
     </>
   );

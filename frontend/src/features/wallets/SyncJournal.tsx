@@ -61,11 +61,11 @@ export default function SyncJournal({ address, run }: Props) {
   const paged = useInfinite(entries ?? []);
   return (
     <section aria-labelledby="address-sync-journal">
-      <h3 id="address-sync-journal" className="transactions-section">
+      <h3 id="address-sync-journal" className="ui-section-t">
         Sync history
       </h3>
       {!entries?.length ? (
-        <p className="wallets-muted">
+        <p className="ui-muted wallets-small">
           {entries === null
             ? 'Could not load the history.'
             : entries
@@ -73,14 +73,14 @@ export default function SyncJournal({ address, run }: Props) {
               : 'Loading…'}
         </p>
       ) : (
-        <ul className="wallets-journal">
+        <ul className="wallets-list wallets-journal">
           {paged.rows.map((entry) => (
             <li key={entry.at}>
               <Badge tone={badges[entry.state].tone} dot>
                 {badges[entry.state].label}
               </Badge>
-              <time className="wallets-muted" dateTime={entry.at}>
-                {dayClockText(entry.at)} UTC
+              <time className="ui-muted wallets-small" dateTime={entry.at}>
+                {dayClockText(entry.at)}
               </time>
               <span className="wallets-journal__text">{explain(entry, address)}</span>
             </li>

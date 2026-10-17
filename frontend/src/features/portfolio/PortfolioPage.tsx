@@ -6,14 +6,16 @@ import type {
   PortfolioValuation,
   RealReading,
 } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '@contexts/ToastContext';
+import { sumDecimals } from '@utils/decimal';
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
-import { heldClass } from '../shell/asset-identity';
+import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -25,23 +27,94 @@ import { useAccountClasses } from '../shell/useAccountClasses';
 import { useValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
-import Allocation from './Allocation';
-import { assetCaption, Change, Signed } from './asset-parts';
+import Allocation, { shareText } from './Allocation';
+import { assetCaption, Change, Signed, toneClass } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
-import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
+import { DASH, missingLabel, money, percent, price, priceNote, quantity } from './format';
 import { adjustmentText, compareDecimals } from './real-cost';
 import '../shell/shell-page.css';
 import './portfolio.css';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { Chip, ChipGroup } from '@/ui/Chip';
 import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
+import { Input, Select } from '@/ui/inputs';
 import { ListRowText, rowClass } from '@/ui/ListRow';
+import { Stat, Stats } from '@/ui/Stats';
 
-type Filter = 'all' | AssetType;
+// The filter is the asset's class (polish 12); Manual is how an asset is priced, so it stays on
+// the row and is no class of its own.
+type AssetClassFilter = 'crypto' | 'cash' | 'broker' | 'property' | 'other';
+type Filter = 'all' | AssetClassFilter;
 const filters: [Filter, string][] = [
   ['all', 'All'],
   ['crypto', 'Crypto'],
-  ['fiat', 'Cash'],
-  ['manual', 'Manual'],
+  ['cash', 'Cash'],
+  ['broker', 'Broker'],
+  ['property', 'Real estate'],
+  ['other', 'Other'],
 ];
+const typeClass: Record<AssetType, AssetClassFilter> = {
+  crypto: 'crypto',
+  fiat: 'cash',
+  manual: 'other',
+};
+
+/** An asset's class: its accounts' class when they all are brokers or property, else its type's. */
+function assetClassOf(asset: AssetValuation, classes: AccountClasses): AssetClassFilter {
+  return heldClass(asset.holdings, classes) ?? typeClass[asset.assetType];
+}
+
+// The rows are grouped by class in the chips' order, each group in the chosen sort.
+const classOrder = filters.slice(1).map(([value]) => value) as AssetClassFilter[];
+const classLabels = Object.fromEntries(filters) as Record<Filter, string>;
+
+/**
+ * A group's value: the exact sum of its rows' values, and how many held rows have none, so a
+ * missing value is never counted as zero. Null when no row has a value.
+ */
+export function groupSubtotal(rows: readonly AssetValuation[]): {
+  value: string | null;
+  missing: number;
+} {
+  const known = rows.flatMap((row) => (row.value === null ? [] : [row.value]));
+  return {
+    value: known.length > 0 ? sumDecimals(known) : null,
+    missing: rows.filter((row) => row.value === null && Number(row.quantity) !== 0).length,
+  };
+}
+
+/** A group's share of the portfolio, display-only; none while the group or the total is partial. */
+function groupShare(subtotal: ReturnType<typeof groupSubtotal>, total: string | null) {
+  if (subtotal.value === null || subtotal.missing > 0 || total === null) return null;
+  const whole = Number(total);
+  if (!(whole > 0)) return null;
+  const share = (Number(subtotal.value) / whole) * 100;
+  return share > 0 && share < 0.05 ? '<0.1%' : `${share.toFixed(1)}%`;
+}
+
+type GroupHead = ReturnType<typeof groupSubtotal> & {
+  key: AssetClassFilter;
+  label: string;
+  share: string | null;
+};
+type AssetGroup = { head: GroupHead; rows: AssetValuation[] };
+
+/** A group's name and share, and its subtotal on the right, marked when a value is missing. */
+function GroupHeadText({ head, currency }: { head: GroupHead; currency: AccountingCurrency }) {
+  return (
+    <>
+      <span className="portfolio-group__name">{head.label}</span>
+      {head.share !== null && <span className="portfolio-group__share">{head.share}</span>}
+      <span className="portfolio-group__total">
+        {money(head.value, currency)}
+        {head.missing > 0 && <span className="ui-sub">{head.missing} without a price</span>}
+      </span>
+    </>
+  );
+}
 
 export type SortKey =
   | 'name'
@@ -215,6 +288,7 @@ function Summary({
   real: boolean;
   basis: InflationBasis;
 }) {
+  const summaryTitle = useId();
   const reading: RealReading | null = portfolio.real?.[basis] ?? null;
   const unpriced = portfolio.missingPriceCount;
   const unrated = portfolio.unratedDepositCount;
@@ -242,7 +316,10 @@ function Summary({
     .filter((reason) => reason !== false)
     .join(', ');
   return (
-    <section className="shell-card portfolio-summary" aria-label="Portfolio summary">
+    <Card className="portfolio-summary" labelledBy={summaryTitle}>
+      <h2 id={summaryTitle} className="ui-sr">
+        Portfolio summary
+      </h2>
       {partial && (
         <span
           className="portfolio-info"
@@ -254,161 +331,166 @@ function Summary({
           <Icon name="info" className="shell-icon shell-icon--sm" />
         </span>
       )}
-      <dl>
-        <div>
-          <dt>Current value</dt>
-          <dd>
-            {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
-            {partialValue && missing !== '' && <span className="portfolio-sub">{missing}</span>}
-            {withDeposits && (
-              <span className="portfolio-sub">
-                {amount(portfolio.depositsValue)} in{' '}
-                <Link className="shell-link" to={withCurrency('/deposits', asked)}>
-                  bank deposits
-                </Link>
-              </span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{showReal ? "Cost in today's money" : 'Cost basis'}</dt>
-          <dd>
-            {showReal ? (
-              reading === null ? (
+      <Stats size="lg">
+        <Stat
+          lead
+          label="Current value"
+          value={
+            <>
+              {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
+              {partialValue && missing !== '' && <span className="ui-sub">{missing}</span>}
+              {withDeposits && (
+                <span className="ui-sub">
+                  {amount(portfolio.depositsValue)} in{' '}
+                  <Link className="ui-link" to={withCurrency('/deposits', asked)}>
+                    bank deposits
+                  </Link>
+                </span>
+              )}
+            </>
+          }
+        />
+        <Stat
+          label={showReal ? "Cost in today's money" : 'Cost basis'}
+          value={
+            <>
+              {showReal ? (
+                reading === null ? (
+                  <>
+                    {DASH}
+                    <span className="ui-sub">
+                      {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
+                    </span>
+                    {portfolio.costBasis !== null ? (
+                      <span className="ui-sub">{amount(portfolio.costBasis)} paid</span>
+                    ) : (
+                      portfolio.assets.some((asset) => Number(asset.knownCostQuantity) > 0) && (
+                        <span className="ui-sub">
+                          {amount(portfolio.knownCostSubtotal)} paid for the known part
+                        </span>
+                      )
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {amount(reading.costBasis)}
+                    {portfolio.costBasis !== null && (
+                      <span className="ui-sub">
+                        {amount(portfolio.costBasis)} paid{' '}
+                        {adjustmentText(reading.costBasis, portfolio.costBasis, amount)}
+                      </span>
+                    )}
+                  </>
+                )
+              ) : partialCost ? (
+                amount(portfolio.knownCostSubtotal)
+              ) : (
+                amount(portfolio.costBasis)
+              )}
+              {!showReal && reading !== null && portfolio.costBasis !== null && (
+                <span className="ui-sub">{amount(reading.costBasis)} in today&apos;s money</span>
+              )}
+              {!showReal && portfolio.costBasis === null && !partialCost && (
+                <span className="ui-sub">
+                  {amount(portfolio.knownCostSubtotal)} known,{' '}
+                  {portfolio.unknownCostCount > 0
+                    ? 'part has no purchase price'
+                    : portfolio.missingRateCount > 0
+                      ? 'part predates the stored rates'
+                      : NO_REAL_ACCOUNT}
+                </span>
+              )}
+              {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
+            </>
+          }
+        />
+        <Stat
+          label={showReal ? 'Real P&L' : 'Unrealized P&L'}
+          value={
+            <>
+              {showReal ? (
                 <>
-                  {DASH}
-                  <span className="portfolio-sub">
-                    {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
-                  </span>
-                  {portfolio.costBasis !== null ? (
-                    <span className="portfolio-sub">{amount(portfolio.costBasis)} paid</span>
+                  <Signed
+                    value={reading?.unrealizedPnl ?? null}
+                    currency={currency}
+                    ratio={reading?.unrealizedReturnPercent ?? null}
+                  />
+                  {portfolio.unrealizedPnl !== null ? (
+                    <span className="ui-sub">
+                      Nominal {money(portfolio.unrealizedPnl, currency, true)}
+                    </span>
                   ) : (
-                    portfolio.assets.some((asset) => Number(asset.knownCostQuantity) > 0) && (
-                      <span className="portfolio-sub">
-                        {amount(portfolio.knownCostSubtotal)} paid for the known part
+                    partialProfit && (
+                      <span className="ui-sub">
+                        Nominal {money(portfolio.knownUnrealizedPnl, currency, true)} known
                       </span>
                     )
                   )}
                 </>
+              ) : partialProfit ? (
+                <Signed
+                  value={portfolio.knownUnrealizedPnl}
+                  currency={currency}
+                  ratio={portfolio.knownUnrealizedReturnPercent}
+                />
               ) : (
                 <>
-                  {amount(reading.costBasis)}
-                  {portfolio.costBasis !== null && (
-                    <span className="portfolio-sub">
-                      {amount(portfolio.costBasis)} paid{' '}
-                      {adjustmentText(reading.costBasis, portfolio.costBasis, amount)}
+                  <Signed
+                    value={portfolio.unrealizedPnl}
+                    currency={currency}
+                    ratio={portfolio.unrealizedReturnPercent}
+                  />
+                  {reading?.unrealizedPnl != null && portfolio.unrealizedPnl !== null && (
+                    <span className="ui-sub">
+                      Real {money(reading.unrealizedPnl, currency, true)}
                     </span>
                   )}
                 </>
-              )
-            ) : partialCost ? (
-              amount(portfolio.knownCostSubtotal)
-            ) : (
-              amount(portfolio.costBasis)
-            )}
-            {!showReal && reading !== null && portfolio.costBasis !== null && (
-              <span className="portfolio-sub">
-                {amount(reading.costBasis)} in today&apos;s money
-              </span>
-            )}
-            {!showReal && portfolio.costBasis === null && !partialCost && (
-              <span className="portfolio-sub">
-                {amount(portfolio.knownCostSubtotal)} known,{' '}
-                {portfolio.unknownCostCount > 0
-                  ? 'part has no purchase price'
-                  : portfolio.missingRateCount > 0
-                    ? 'part predates the stored rates'
-                    : NO_REAL_ACCOUNT}
-              </span>
-            )}
-            {withDeposits && <span className="portfolio-sub">{NO_DEPOSITS}</span>}
-          </dd>
-        </div>
-        <div>
-          <dt>{showReal ? 'Real P&L' : 'Unrealized P&L'}</dt>
-          <dd>
-            {showReal ? (
-              <>
-                <Signed
-                  value={reading?.unrealizedPnl ?? null}
-                  currency={currency}
-                  ratio={reading?.unrealizedReturnPercent ?? null}
-                />
-                {portfolio.unrealizedPnl !== null ? (
-                  <span className="portfolio-sub">
-                    Nominal {money(portfolio.unrealizedPnl, currency, true)}
-                  </span>
-                ) : (
-                  partialProfit && (
-                    <span className="portfolio-sub">
-                      Nominal {money(portfolio.knownUnrealizedPnl, currency, true)} known
-                    </span>
-                  )
-                )}
-              </>
-            ) : partialProfit ? (
-              <Signed
-                value={portfolio.knownUnrealizedPnl}
-                currency={currency}
-                ratio={portfolio.knownUnrealizedReturnPercent}
-              />
-            ) : (
-              <>
-                <Signed
-                  value={portfolio.unrealizedPnl}
-                  currency={currency}
-                  ratio={portfolio.unrealizedReturnPercent}
-                />
-                {reading?.unrealizedPnl != null && portfolio.unrealizedPnl !== null && (
-                  <span className="portfolio-sub">
-                    Real {money(reading.unrealizedPnl, currency, true)}
-                  </span>
-                )}
-              </>
-            )}
-            {withDeposits && <span className="portfolio-sub">{NO_DEPOSITS}</span>}
-          </dd>
-        </div>
-        <div>
-          <dt>Realized P&amp;L</dt>
-          <dd>
+              )}
+              {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
+            </>
+          }
+        />
+        <Stat
+          label="Realized P&L"
+          value={
             <Signed
               value={partialRealized ? portfolio.knownRealizedSubtotal : portfolio.realizedPnl}
               currency={currency}
             />
-          </dd>
-        </div>
-      </dl>
+          }
+        />
+      </Stats>
       {showReal && reading !== null && (
-        <p className="shell-note portfolio-real-note">
+        <p className="ui-sub portfolio-card-note">
           In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
-          <Link className="shell-link" to="/settings">
+          <Link className="ui-link" to="/settings">
             Settings
           </Link>
         </p>
       )}
       {portfolio.stalePriceCount > 0 && (
-        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+        <Banner tone="warn">
           {portfolio.stalePriceCount === 1
             ? '1 price is older than 2 hours; the last stored price is used.'
             : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
-        </p>
+        </Banner>
       )}
       {portfolio.missingRateCount > 0 && (
-        <p className="ui-banner ui-banner--warn portfolio-warn" role="note">
+        <Banner tone="warn">
           {portfolio.missingRateCount === 1
             ? '1 asset has'
             : `${portfolio.missingRateCount} assets have`}{' '}
           operations dated before the stored Bank of Russia rates, so their cost or P&amp;L in{' '}
           {currency} is not shown.
-        </p>
+        </Banner>
       )}
-    </section>
+    </Card>
   );
 }
 
 function AssetsTable({
-  assets,
+  groups,
   currency,
   asked,
   now,
@@ -417,7 +499,7 @@ function AssetsTable({
   onSort,
   real,
 }: {
-  assets: AssetValuation[];
+  groups: AssetGroup[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   now: Date;
@@ -458,84 +540,93 @@ function AssetsTable({
             })}
           </tr>
         </thead>
-        <tbody>
-          {assets.map((asset) => (
-            <tr key={asset.instrumentId}>
-              <td>
-                <span className="portfolio-asset">
-                  <AssetIcon
-                    symbol={asset.symbol}
-                    name={asset.name}
-                    assetType={asset.assetType}
-                    assetClass={heldClass(asset.holdings, classes)}
-                    network={onlyChain(asset.symbol, chains)}
-                  />
-                  <span className="portfolio-asset__text">
-                    <Link
-                      className="portfolio-asset__name"
-                      to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
-                    >
-                      {asset.name}
-                    </Link>
-                    <span className="portfolio-asset__ticker" title={assetCaption(asset, chains)}>
-                      {assetCaption(asset, chains)}
+        {groups.map(({ head, rows }) => (
+          <tbody key={head.key}>
+            <tr className="portfolio-group">
+              <th scope="rowgroup" colSpan={sortColumns(real !== null).length}>
+                <span className="portfolio-group__head">
+                  <GroupHeadText head={head} currency={currency} />
+                </span>
+              </th>
+            </tr>
+            {rows.map((asset) => (
+              <tr key={asset.instrumentId}>
+                <td>
+                  <span className="portfolio-asset">
+                    <AssetIcon
+                      symbol={asset.symbol}
+                      name={asset.name}
+                      assetType={asset.assetType}
+                      assetClass={heldClass(asset.holdings, classes)}
+                      network={onlyChain(asset.symbol, chains)}
+                    />
+                    <span className="portfolio-asset__text">
+                      <Link
+                        className="portfolio-asset__name"
+                        to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+                      >
+                        {asset.name}
+                      </Link>
+                      <span className="portfolio-asset__ticker" title={assetCaption(asset, chains)}>
+                        {assetCaption(asset, chains)}
+                      </span>
                     </span>
                   </span>
-                </span>
-              </td>
-              <td className="ui-num">{quantity(asset.quantity)}</td>
-              <td className="ui-num">
-                {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
-                <span className="portfolio-sub">{priceNote(asset, now)}</span>
-              </td>
-              <td className="ui-num portfolio-strong">{money(asset.value, currency)}</td>
-              <td className="ui-num">
-                <span className="portfolio-share">
-                  <span className="portfolio-share__bar" aria-hidden="true">
-                    <i
-                      style={{ width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%` }}
-                    />
+                </td>
+                <td className="ui-num">{quantity(asset.quantity)}</td>
+                <td className="ui-num">
+                  {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
+                  <span className="ui-sub">{priceNote(asset, now)}</span>
+                </td>
+                <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
+                <td className="ui-num">
+                  <span className="portfolio-share">
+                    <span className="portfolio-share__bar" aria-hidden="true">
+                      <i
+                        style={{ width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%` }}
+                      />
+                    </span>
+                    <span className="portfolio-share__text">
+                      {shareText(asset.allocationPercent)}
+                    </span>
                   </span>
-                  <span className="portfolio-share__text">
-                    {percent(asset.allocationPercent, false)}
-                  </span>
-                </span>
-              </td>
-              <td className="ui-num">
-                {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
-              </td>
-              <td className="ui-num">
-                {real === null ? (
-                  <Signed
-                    value={shownProfit(asset).pnl}
-                    currency={currency}
-                    ratio={shownProfit(asset).ratio}
-                    inline
-                  />
-                ) : (
-                  <>
+                </td>
+                <td className="ui-num">
+                  {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
+                </td>
+                <td className="ui-num">
+                  {real === null ? (
                     <Signed
-                      value={realProfit(asset, real).pnl}
+                      value={shownProfit(asset).pnl}
                       currency={currency}
-                      ratio={realProfit(asset, real).ratio}
+                      ratio={shownProfit(asset).ratio}
                       inline
                     />
-                    {nominalLine(asset, currency) !== null && (
-                      <span className="portfolio-sub">{nominalLine(asset, currency)}</span>
-                    )}
-                  </>
-                )}
-              </td>
-              <td className="ui-num">
-                {asset.priceSource === 'manual' ? (
-                  <span className="portfolio-muted">Manual</span>
-                ) : (
-                  <Change value={asset.priceChange24hPercent} />
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
+                  ) : (
+                    <>
+                      <Signed
+                        value={realProfit(asset, real).pnl}
+                        currency={currency}
+                        ratio={realProfit(asset, real).ratio}
+                        inline
+                      />
+                      {nominalLine(asset, currency) !== null && (
+                        <span className="ui-sub">{nominalLine(asset, currency)}</span>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td className="ui-num">
+                  {asset.priceSource === 'manual' ? (
+                    <span className="ui-muted">Manual</span>
+                  ) : (
+                    <Change value={asset.priceChange24hPercent} />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
       </table>
     </div>
   );
@@ -562,13 +653,12 @@ function Profit({
     ) : (
       <>
         {DASH}
-        <span className="portfolio-sub">{nominal}</span>
+        <span className="ui-sub">{nominal}</span>
       </>
     );
   }
-  const sign = tone(pnl);
   return (
-    <span className={sign ? `portfolio-${sign}` : undefined}>
+    <span className={toneClass(pnl)}>
       {money(pnl, currency, true)}
       {real !== null && ' real'}
       {ratio !== null && ` · ${percent(ratio)}`}
@@ -579,46 +669,59 @@ function Profit({
 // Phones get two-line rows instead of the table: the whole row opens the asset, and the
 // columns that do not fit are on the asset page (design: tables on phones).
 function AssetsList({
-  assets,
+  groups,
   currency,
   asked,
   chains,
   real,
 }: {
-  assets: AssetValuation[];
+  groups: AssetGroup[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   chains: TokenChains;
   real: InflationBasis | null;
 }) {
   const classes = useAccountClasses();
-  return (
-    <ul className="ui-rows">
-      {assets.map((asset) => (
-        <li key={asset.instrumentId}>
-          <Link className={rowClass()} to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
-            <AssetIcon
-              symbol={asset.symbol}
-              name={asset.name}
-              assetType={asset.assetType}
-              assetClass={heldClass(asset.holdings, classes)}
-              network={onlyChain(asset.symbol, chains)}
-            />
-            <ListRowText
-              title={asset.name}
-              detail={withChains(
-                `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
-                asset.symbol,
-                chains,
-              )}
-              amount={money(asset.value, currency)}
-              value={<Profit asset={asset} currency={currency} real={real} />}
-            />
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
+  return groups.map(({ head, rows }) => (
+    <Fragment key={head.key}>
+      <div className="portfolio-mgrp">
+        <h3 className="portfolio-group__name">{head.label}</h3>
+        {head.share !== null && <span className="portfolio-group__share">{head.share}</span>}
+        <span className="portfolio-group__total">
+          {money(head.value, currency)}
+          {head.missing > 0 && <span className="ui-sub">{head.missing} without a price</span>}
+        </span>
+      </div>
+      <ul className="ui-rows">
+        {rows.map((asset) => (
+          <li key={asset.instrumentId}>
+            <Link
+              className={rowClass()}
+              to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+            >
+              <AssetIcon
+                symbol={asset.symbol}
+                name={asset.name}
+                assetType={asset.assetType}
+                assetClass={heldClass(asset.holdings, classes)}
+                network={onlyChain(asset.symbol, chains)}
+              />
+              <ListRowText
+                title={asset.name}
+                detail={withChains(
+                  `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
+                  asset.symbol,
+                  chains,
+                )}
+                amount={money(asset.value, currency)}
+                value={<Profit asset={asset} currency={currency} real={real} />}
+              />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Fragment>
+  ));
 }
 
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
@@ -632,7 +735,8 @@ export default function PortfolioPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AssetSort>(defaultSort);
-  const phone = useNarrowScreen();
+  // Rows instead of the table below 900 px, as on a phone (TABLE-ROWS).
+  const phone = useRowsLayout();
   const [view] = useValueView();
   const [basis] = useInflationBasis();
   // Under Real the profit column is the profit after inflation on the chosen basis. An answer
@@ -644,6 +748,7 @@ export default function PortfolioPage() {
   const [refreshFailed, setRefreshFailed] = useState(false);
   const chains = useTokenChains();
   const latest = useRef(0);
+  const toast = useToast();
 
   // Only the newest request may change the page; a quiet refresh keeps what is shown.
   const load = useCallback(
@@ -670,46 +775,58 @@ export default function PortfolioPage() {
   }, [load]);
 
   const assets = portfolio?.assets ?? [];
-  const count = (value: Filter) =>
-    value === 'all' ? assets.length : assets.filter((asset) => asset.assetType === value).length;
-  // A type with no assets gets no chip; a chosen type that no longer has any shows them all.
+  const classes = useAccountClasses();
+  const inFilter = (asset: AssetValuation, value: Filter) =>
+    value === 'all' || assetClassOf(asset, classes) === value;
+  const count = (value: Filter) => assets.filter((asset) => inFilter(asset, value)).length;
+  // A class with no assets gets no chip; a chosen class that no longer has any shows them all.
   const active: Filter = filter !== 'all' && count(filter) === 0 ? 'all' : filter;
-  const visible = assets.filter(
-    (asset) => (active === 'all' || asset.assetType === active) && matchesSearch(asset, search),
-  );
+  const visible = assets.filter((asset) => inFilter(asset, active) && matchesSearch(asset, search));
   // PAGES: twenty assets a page; the list is sorted first, so its pages follow the order.
   // The table and the phone list share one order, Value largest first until another is chosen;
   // a phone shows only the orders its Sort by can name.
   const shown = phone ? phoneSort(sort) : sort;
-  const ordered = sortAssets(visible, shown, real);
+  const classOf = (asset: AssetValuation) => assetClassOf(asset, classes);
+  const sorted = sortAssets(visible, shown, real);
+  const ordered = classOrder.flatMap((key) => sorted.filter((asset) => classOf(asset) === key));
+  // A group's subtotal counts all its rows shown, not only the loaded page.
+  const heads = new Map(
+    classOrder.map((key): [AssetClassFilter, GroupHead] => {
+      const subtotal = groupSubtotal(visible.filter((asset) => classOf(asset) === key));
+      const share = groupShare(subtotal, portfolio?.totalValue ?? null);
+      return [key, { key, label: classLabels[key], share, ...subtotal }];
+    }),
+  );
   const paged = useInfinite(ordered, {
     resetKey: `${active}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
   });
-  // A new asset opens on its own page, which says it was added (portfolio-06).
-  const added = (asset: PortfolioAsset) =>
-    navigate(withCurrency(`/portfolio/${asset.id}`, asked), { state: { added: true } });
+  // A new asset opens on its own page, and a toast says it was added (portfolio-06).
+  const added = (asset: PortfolioAsset) => {
+    toast.show({ tone: 'success', title: 'Asset added', detail: asset.name });
+    navigate(withCurrency(`/portfolio/${asset.id}`, asked));
+  };
   const addButton = (primary: boolean) => (
-    <button
-      type="button"
-      className={`shell-button${primary ? ' shell-button--primary' : ' shell-button--secondary'}`}
+    <Button
+      variant={primary ? 'primary' : 'secondary'}
+      icon="plus"
       onClick={() => setAdding('pick')}
     >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
       Add
-    </button>
+    </Button>
   );
   const now = new Date();
+  const groups = paged.rows.reduce<AssetGroup[]>((list, asset) => {
+    const last = list.at(-1);
+    if (last?.head.key === classOf(asset)) last.rows.push(asset);
+    else list.push({ head: heads.get(classOf(asset)) as GroupHead, rows: [asset] });
+    return list;
+  }, []);
 
   return (
     <div className="shell-page">
       <PageHeader title="Portfolio" currency={portfolio?.currency} valueSwitch />
       {failed ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load your portfolio. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState what="your portfolio" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
       ) : assets.length === 0 && !hasDeposits(portfolio) ? (
@@ -719,12 +836,17 @@ export default function PortfolioPage() {
       ) : (
         <>
           {refreshFailed && (
-            <p className="ui-banner ui-banner--warn portfolio-warn" role="alert">
-              Could not refresh the values; showing the last loaded ones.{' '}
-              <button type="button" className="shell-button" onClick={() => void load(true)}>
-                Refresh
-              </button>
-            </p>
+            <Banner
+              tone="warn"
+              role="alert"
+              action={
+                <Button size="sm" icon="refresh" onClick={() => void load(true)}>
+                  Refresh
+                </Button>
+              }
+            >
+              Could not refresh the values; showing the last loaded ones.
+            </Banner>
           )}
           <Summary portfolio={portfolio} asked={asked} real={real !== null} basis={basis} />
           {assets.length === 0 ? (
@@ -732,29 +854,31 @@ export default function PortfolioPage() {
               Add a wallet, a bank deposit, a coin or anything else you want to track.
             </EmptyState>
           ) : (
-            <section className="shell-card" aria-labelledby="portfolio-assets">
+            <Card labelledBy="portfolio-assets">
               <div className="ui-toolbar">
-                <h2 id="portfolio-assets">Assets</h2>
-                <div className="ui-chips" role="group" aria-label="Filter assets">
+                <h2 id="portfolio-assets" className="ui-sr">
+                  Assets
+                </h2>
+                <ChipGroup label="Filter assets">
                   {filters
                     .filter(([value]) => value === 'all' || count(value) > 0)
                     .map(([value, label]) => (
-                      <button
+                      <Chip
                         key={value}
-                        type="button"
-                        className="ui-chip"
-                        aria-pressed={active === value}
+                        pressed={active === value}
+                        count={count(value)}
+                        countTone="muted"
                         onClick={() => setFilter(value)}
                       >
                         {label}
-                        <span className="ui-chip__count"> {count(value)}</span>
-                      </button>
+                      </Chip>
                     ))}
-                </div>
+                </ChipGroup>
                 <div className="portfolio-tools">
-                  <input
+                  <Input
                     type="search"
-                    className="ui-input ui-input--sm ui-search"
+                    size="sm"
+                    className="ui-search"
                     placeholder="Search assets"
                     aria-label="Search assets"
                     value={search}
@@ -767,8 +891,8 @@ export default function PortfolioPage() {
                 <>
                   <label className="portfolio-sort">
                     Sort by
-                    <select
-                      className="ui-input ui-input--sm"
+                    <Select
+                      size="sm"
                       value={shown.key}
                       onChange={(event) => {
                         const key = event.target.value as SortKey;
@@ -780,10 +904,10 @@ export default function PortfolioPage() {
                           {label}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   <AssetsList
-                    assets={paged.rows}
+                    groups={groups}
                     currency={portfolio.currency}
                     asked={asked}
                     chains={chains}
@@ -792,7 +916,7 @@ export default function PortfolioPage() {
                 </>
               ) : (
                 <AssetsTable
-                  assets={paged.rows}
+                  groups={groups}
                   currency={portfolio.currency}
                   asked={asked}
                   now={now}
@@ -804,20 +928,20 @@ export default function PortfolioPage() {
               )}
               {paged.more && <LoadMore {...paged.more} label="assets" />}
               {visible.length === 0 && (
-                <p className="portfolio-none">
+                <p className="ui-none">
                   {search.trim()
                     ? `No assets match "${search.trim()}".`
-                    : 'No assets of this type.'}
+                    : 'No assets of this class.'}
                 </p>
               )}
-              <p className="shell-note portfolio-note">
+              <p className="ui-sub portfolio-card-note">
                 {ratesNote(portfolio)} Holdings come from your{' '}
-                <Link className="shell-link" to="/wallets">
+                <Link className="ui-link" to="/wallets">
                   wallets
                 </Link>{' '}
                 and the transactions you add.
               </p>
-            </section>
+            </Card>
           )}
           <Allocation portfolio={portfolio} />
         </>

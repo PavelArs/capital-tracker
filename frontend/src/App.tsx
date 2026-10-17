@@ -3,8 +3,9 @@ import BootShell, { BootPage } from '@components/BootShell';
 import Layout from '@components/Layout';
 import ToastViewport from '@components/Toast';
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
-import { ErrorProvider, useError } from '@contexts/ErrorContext';
+import { useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
+import { ToastProvider } from '@contexts/ToastContext';
 import DashboardPage from '@features/dashboard/DashboardPage';
 import { retiredPaths } from '@features/shell/navigation';
 import PageLoadBoundary from '@features/shell/PageLoadBoundary';
@@ -124,10 +125,11 @@ function AppContent() {
 
   return (
     <>
-      <ToastViewport />
       <Router>
         <AppRoutes />
       </Router>
+      {/* After the page in the document, so a toast is read after what caused it. */}
+      <ToastViewport />
     </>
   );
 }
@@ -135,11 +137,11 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <ErrorProvider>
+      <ToastProvider>
         <AuthProvider>
           <AppContent />
         </AuthProvider>
-      </ErrorProvider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

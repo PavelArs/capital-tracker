@@ -1,4 +1,5 @@
 import { cachedReads } from '@api/cached-reads';
+import { showingKept, useConnection } from '@api/connection';
 import {
   type HistoryPeriod,
   historyPeriods,
@@ -6,7 +7,8 @@ import {
   type RealProfit,
 } from '@api/portfolio-history.api';
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { clockText } from '@utils/dates';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import NearestGoal from '../goals/NearestGoal';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
@@ -25,10 +27,15 @@ import DashboardLoading, { AllocationLoading } from './DashboardLoading';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
 import './dashboard.css';
+import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button, ButtonLink } from '@/ui/Button';
+import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
-import { useTabs } from '@/ui/tabs';
+import { ErrorState } from '@/ui/ErrorState';
+import { Legend, type LegendItem } from '@/ui/Legend';
+import { useSegmentedTabs } from '@/ui/SegmentedTabs';
 
 const periodLabels: Record<HistoryPeriod, string> = {
   '24H': 'past 24 hours',
@@ -39,21 +46,34 @@ const periodLabels: Record<HistoryPeriod, string> = {
   ALL: 'since Jan 1, 2025',
 };
 
+const LEGEND: readonly LegendItem[] = [
+  { key: 'value', label: 'Portfolio value', swatch: 'line', color: 'var(--accent)' },
+  { key: 'invested', label: 'Net invested', swatch: 'line', color: 'var(--ink-3)' },
+  { key: 'deposit', label: 'Deposit', swatch: 'marker', color: 'var(--ink-2)' },
+];
+
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 // The selected period's change split into market movement and money added or taken out
 // (split-market-and-flows).
-function ChangeSplit({ history }: { history: PortfolioHistory }) {
+function ChangeSplit({
+  history,
+  portfolio,
+}: {
+  history: PortfolioHistory;
+  portfolio: PortfolioValuation | null;
+}) {
   const { currency, marketEffect, marketReturnPercent, netFlow } = history;
   // Only the market part is a gain or a loss; money added is neither.
   const market = tone(marketEffect);
+  const unknown = unknownCostCoins(portfolio);
   return (
     <div className="dashboard-split" aria-label="What changed">
       <span className="dashboard-split__period">{sentence(periodLabels[history.period])}</span>
       <span className="dashboard-split__item">
         <i className="dashboard-split__key dashboard-split__key--market" aria-hidden="true" />
         <span className="dashboard-split__label">Market</span>
-        <span className={market ? `portfolio-${market}` : undefined}>
+        <span className={market ? `ui-${market}` : undefined}>
           {money(marketEffect, currency, true)}
         </span>
         {marketReturnPercent !== null && <span>{percent(marketReturnPercent)}</span>}
@@ -63,13 +83,21 @@ function ChangeSplit({ history }: { history: PortfolioHistory }) {
         <span className="dashboard-split__label">Net deposits</span>
         <span>{money(netFlow, currency, true)}</span>
       </span>
+      {/* Coins without a purchase price leave the cost basis and the profit incomplete: said
+          in words here, not only in the note beside the profit. */}
+      {unknown !== null && (
+        <span className="dashboard-split__item dashboard-split__unknown">
+          <Icon name="info" className="shell-icon shell-icon--sm" />
+          {unknown} without purchase price
+        </span>
+      )}
     </div>
   );
 }
 
 // Coins with no purchase price leave cost basis, net invested and profit incomplete
 // (prototype: "0.0087 BTC without purchase price" beside Market and Net deposits).
-export function unknownCostNote(portfolio: PortfolioValuation | null): string | null {
+function unknownCostCoins(portfolio: PortfolioValuation | null): string | null {
   const coins = (portfolio?.assets ?? []).filter((asset) => Number(asset.unknownCostQuantity) > 0);
   if (coins.length === 0) return null;
   const shown = coins.slice(0, 2).map((asset) => {
@@ -77,20 +105,37 @@ export function unknownCostNote(portfolio: PortfolioValuation | null): string | 
     return `${quantity(asset.unknownCostQuantity)} ${unit}`;
   });
   const more = coins.length - shown.length;
-  return `${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''} without purchase price, so cost basis and profit are incomplete.`;
+  return `${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
+}
+
+export function unknownCostNote(portfolio: PortfolioValuation | null): string | null {
+  const coins = unknownCostCoins(portfolio);
+  return coins === null
+    ? null
+    : `${coins} without purchase price, so cost basis and profit are incomplete.`;
 }
 
 const INCOMPLETE_NOTE =
   'Incomplete: some assets had no price or rate in this period, so their value is not included. Add the missing prices on the Portfolio page.';
 
-// The prototype dims the cents of the big number: $42,738.84 with .84 muted.
-function Amount({ text }: { text: string }) {
+// The prototype dims the cents of the big number: $42,738.84 with .84 muted. A rouble figure
+// shows whole roubles with no cents (cut, never rounded up: a loss keeps its cents). The cut is
+// made on the exact decimal string, before money() rounds it to cents.
+function Amount({ value, currency }: { value: string; currency: AccountingCurrency }) {
+  if (currency === 'RUB') {
+    const [whole, fraction = ''] = value.split('.');
+    if (value.startsWith('-') && /[1-9]/.test(fraction)) return money(value, currency);
+    const shown = money(whole, currency);
+    return shown.slice(0, shown.lastIndexOf('.'));
+  }
+  const text = money(value, currency);
   const point = text.lastIndexOf('.');
   if (point < 0) return text;
+  const cents = text.slice(point);
   return (
     <>
       {text.slice(0, point)}
-      <span className="dashboard-hero__cents">{text.slice(point)}</span>
+      <span className="dashboard-hero__cents">{cents}</span>
     </>
   );
 }
@@ -129,7 +174,7 @@ function OtherReading({
       aria-label={view === 'real' ? 'Nominal profit or loss' : 'Profit or loss after inflation'}
     >
       <span className="dashboard-hero__period">{label}</span>
-      <span className={direction ? `portfolio-${direction}` : undefined}>
+      <span className={direction ? `ui-${direction}` : undefined}>
         {money(profit, currency, true)}
       </span>
       {percentText !== null && <span>{percent(percentText)}</span>}
@@ -155,10 +200,13 @@ function NetWorth({
   history,
   portfolio,
   asked,
+  refreshFailed,
 }: {
   history: PortfolioHistory;
   portfolio: PortfolioValuation | null;
   asked: AccountingCurrency | undefined;
+  /** The last refresh failed: the figure is the last one loaded. */
+  refreshFailed: boolean;
 }) {
   const { currency } = history;
   const [view] = useValueView();
@@ -177,7 +225,7 @@ function NetWorth({
   const info =
     note === '' ? null : (
       <span
-        className="portfolio-info portfolio-info--inline"
+        className="dashboard-hero__info"
         role="img"
         tabIndex={0}
         aria-label={note}
@@ -188,12 +236,20 @@ function NetWorth({
     );
   return (
     <section className="dashboard-hero" aria-label="Net worth">
-      <div className="dashboard-hero__label">Total net worth · {currency}</div>
-      <div className="dashboard-hero__value">
-        {history.value === null ? 'No rate' : <Amount text={money(history.value, currency)} />}
+      <div className="dashboard-hero__label">
+        Total net worth · {currency}
+        {/* The number carries its own data state: the banners above can scroll away. */}
+        {refreshFailed ? (
+          <Badge tone="warn">As of {clockText(history.at)}</Badge>
+        ) : portfolio !== null && portfolio.stalePriceCount > 0 ? (
+          <Badge tone="warn">Stale prices</Badge>
+        ) : null}
+      </div>
+      <div className="dashboard-hero__value" aria-live="polite">
+        {history.value === null ? 'No rate' : <Amount value={history.value} currency={currency} />}
       </div>
       <div
-        className={`dashboard-hero__delta${direction ? ` portfolio-${direction}` : ''}`}
+        className={`dashboard-hero__delta${direction ? ` ui-${direction}` : ''}`}
         aria-label={shownReal ? 'Real profit or loss to date' : 'Profit or loss to date'}
       >
         <span>
@@ -229,7 +285,7 @@ function NetWorth({
             <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
           </div>
         )}
-      <ChangeSplit history={history} />
+      <ChangeSplit history={history} portfolio={portfolio} />
     </section>
   );
 }
@@ -255,13 +311,10 @@ function Empty({ onAdd }: { onAdd: () => void }) {
       icon={<Icon name="wallets" />}
       actions={
         <>
-          <Link className="shell-button shell-button--primary" to="/wallets">
-            <Icon name="plus" className="shell-icon shell-icon--sm" />
+          <ButtonLink variant="primary" icon="plus" to="/wallets">
             Add wallet
-          </Link>
-          <button type="button" className="shell-button" onClick={onAdd}>
-            Add transaction
-          </button>
+          </ButtonLink>
+          <Button onClick={onAdd}>Add transaction</Button>
         </>
       }
     >
@@ -282,7 +335,14 @@ export default function DashboardPage() {
   );
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
-  const tabs = useTabs(historyPeriods, period, setPeriod);
+  const { tabs, panelProps } = useSegmentedTabs({
+    label: 'Chart period',
+    options: historyPeriods,
+    value: period,
+    onChange: setPeriod,
+    size: 'sm',
+  });
+  const chartTitle = useId();
   const [adding, setAdding] = useState(false);
   const latest = useRef(0);
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
@@ -291,6 +351,8 @@ export default function DashboardPage() {
   const [portfolioFailed, setPortfolioFailed] = useState(false);
   const latestPortfolio = useRef(0);
   const wallets = useAttention()?.wallets ?? null;
+  // Offline, or reads go unanswered: the figure may be one kept from before (STALE-STATE).
+  const current = useConnection();
 
   // Only the newest request may change the page; switching keeps the last chart visible.
   const load = useCallback(async () => {
@@ -340,20 +402,19 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" currency={shown?.currency} valueSwitch />
       {/* A failed later load keeps what is on screen and says so above it. */}
       {failed && shown !== null && (
-        <div className="ui-banner ui-banner--neg ui-banner--action" role="alert">
-          <span>Could not update your capital history. Showing the last loaded figures.</span>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        >
+          Could not update your capital history. Showing the last loaded figures.
+        </Banner>
       )}
       {failed && shown === null ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load your capital history. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState what="your capital history" onRetry={() => void load()} />
       ) : shown === null ? (
         <DashboardLoading />
       ) : isEmptyPortfolio(shown) ? (
@@ -364,18 +425,23 @@ export default function DashboardPage() {
       ) : (
         <>
           {portfolio !== null && portfolio.stalePriceCount > 0 && (
-            <p className="ui-banner ui-banner--warn dashboard-banner" role="note">
+            <Banner tone="warn">
               {portfolio.stalePriceCount === 1
                 ? '1 price is older than 2 hours; the last stored price is used.'
                 : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
-            </p>
+            </Banner>
           )}
-          <NetWorth history={shown} portfolio={portfolio} asked={asked} />
+          <NetWorth
+            history={shown}
+            portfolio={portfolio}
+            asked={asked}
+            refreshFailed={failed || showingKept(current)}
+          />
           <NearestGoal />
-          <section
-            className="shell-card dashboard-chart-card"
-            aria-label="Portfolio value over time"
-          >
+          <Card variant="chart" className="dashboard-chart-card" labelledBy={chartTitle}>
+            <span id={chartTitle} className="ui-sr">
+              Portfolio value over time
+            </span>
             <div className="ui-toolbar">
               <div className="dashboard-chart-card__title">
                 <div className="dashboard-chart-card__name">
@@ -386,33 +452,13 @@ export default function DashboardPage() {
                     money taken out; the gap to the value line is your profit or loss.
                   </AboutChart>
                 </div>
-                <div className="dashboard-legend" aria-label="Chart legend">
-                  <span>
-                    <i className="dashboard-legend__line" aria-hidden="true" />
-                    Portfolio value
-                  </span>
-                  <span>
-                    <i
-                      className="dashboard-legend__line dashboard-legend__line--invested"
-                      aria-hidden="true"
-                    />
-                    Net invested
-                  </span>
-                  <span>
-                    <i className="dashboard-legend__deposit" aria-hidden="true" />
-                    Deposit
-                  </span>
+                <div role="group" aria-label="Chart legend">
+                  <Legend items={LEGEND} />
                 </div>
               </div>
-              <div className="dashboard-periods" aria-label="Chart period" {...tabs.list}>
-                {historyPeriods.map((value) => (
-                  <button key={value} type="button" {...tabs.tab(value)}>
-                    {value}
-                  </button>
-                ))}
-              </div>
+              {tabs}
             </div>
-            <div {...tabs.panel}>
+            <div {...panelProps}>
               <HistoryChart
                 key={`${shown.period}:${shown.currency}:${shown.at}`}
                 points={shown.points}
@@ -421,7 +467,7 @@ export default function DashboardPage() {
                 label={chartLabel}
               />
             </div>
-          </section>
+          </Card>
           <div className="dashboard-bottom">
             <TopAssets
               chains={tokenChains(wallets)}

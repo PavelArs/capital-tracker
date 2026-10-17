@@ -1,6 +1,6 @@
 import { BrandMark, Icon, type IconName } from '@features/shell/icons';
 import { appTitle } from '@features/shell/navigation';
-import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
@@ -49,6 +49,16 @@ export default function AuthFrame({
   useEffect(() => {
     document.title = `${title} · ${appTitle}`;
   }, [title]);
+  // A step that opens without a field to type in ("Check your email", an expired link) puts the
+  // keyboard and the screen reader on its heading; a step with one has already focused it.
+  const heading = useRef<HTMLHeadingElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new step is what moves the keyboard.
+  useEffect(() => {
+    const active = document.activeElement;
+    const box = heading.current?.closest('.auth-box');
+    if (active && active !== document.body && box?.contains(active)) return;
+    heading.current?.focus({ preventScroll: true });
+  }, [title]);
   const body = (
     <>
       {icon && (
@@ -56,7 +66,9 @@ export default function AuthFrame({
           <Icon name={icon} />
         </div>
       )}
-      <h1 id="auth-heading">{title}</h1>
+      <h1 id="auth-heading" ref={heading} tabIndex={-1}>
+        {title}
+      </h1>
       {children}
     </>
   );
@@ -79,24 +91,5 @@ export default function AuthFrame({
         {footer && <p className="auth-foot">{footer}</p>}
       </div>
     </main>
-  );
-}
-
-export function FieldError({ id, message }: { id: string; message: string }) {
-  return (
-    <span className="auth-err" id={id} role="alert">
-      <Icon name="alert" />
-      {message}
-    </span>
-  );
-}
-
-export function Notice({ tone, children }: { tone: 'info' | 'neg' | 'pos'; children: ReactNode }) {
-  const icon: IconName = tone === 'info' ? 'info' : tone === 'neg' ? 'alert' : 'check';
-  return (
-    <div className={`auth-note auth-note--${tone}`} role={tone === 'neg' ? 'alert' : 'status'}>
-      <Icon name={icon} />
-      <span>{children}</span>
-    </div>
   );
 }

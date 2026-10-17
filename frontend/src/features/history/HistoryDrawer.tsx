@@ -1,13 +1,12 @@
 import type { AuditEvent } from '@api/audit-history.api';
+import { momentText } from '@utils/dates';
 import { useRef } from 'react';
+import { AmountHero } from '@/ui/AmountHero';
 import Badge from '@/ui/Badge';
-import Drawer from '@/ui/Drawer';
-import AssetIcon from '../shell/AssetIcon';
-import CloseButton from '../shell/CloseButton';
+import Drawer, { DrawerHeader } from '@/ui/Drawer';
+import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { moment } from '../transactions/operation-format';
-import { Glyph } from '../transactions/TypeIcon';
-import { actorLabels, changeLabels, changeTones, glyphOf, valueText } from './history-format';
-import '../transactions/transactions.css';
+import { actorLabels, changeLabels, changeTones, valueText } from './history-format';
 import './history.css';
 
 /** Side drawer of one stored version: when, who, and each value before and after. */
@@ -31,28 +30,20 @@ export default function HistoryDrawer({
   ];
   return (
     <Drawer titleId="history-title" onClose={onClose} initialFocus={() => closeButton.current}>
-      <div className="ui-drawer__head">
-        <h2 id="history-title">{event.title}</h2>
-        <CloseButton buttonRef={closeButton} onClick={onClose} />
-      </div>
+      <DrawerHeader
+        titleId="history-title"
+        title={event.title}
+        onClose={onClose}
+        closeRef={closeButton}
+      />
       <div className="ui-drawer__body">
-        <div className="transactions-hero">
-          <Badge tone={changeTones[event.change]}>{changeLabels[event.change]}</Badge>
-          <span className="history-hero">
-            {event.asset ? (
-              <AssetIcon symbol={event.asset} name={event.asset} />
-            ) : (
-              <span className="transactions-type-icon">
-                <Glyph name={glyphOf(event)} />
-              </span>
-            )}
-            <span className="transactions-hero__value">
-              {moment(event.at)} · {actorLabels[event.actor]}
-            </span>
-          </span>
-        </div>
+        <AmountHero
+          badge={<Badge tone={changeTones[event.change]}>{changeLabels[event.change]}</Badge>}
+          amount={momentText(event.at)}
+          detail={actorLabels[event.actor]}
+        />
         <section aria-labelledby="history-changes">
-          <h3 id="history-changes" className="transactions-section">
+          <h3 id="history-changes" className="history-section">
             {event.entity === 'deposit'
               ? 'What happened'
               : event.change === 'changed'
@@ -62,45 +53,41 @@ export default function HistoryDrawer({
                   : 'What was removed'}
           </h3>
           {event.fields.length === 0 ? (
-            <p className="transactions-info">
+            <p className="ui-sub">
               This version was written without a visible difference from the one before it.
             </p>
           ) : (
-            <dl className="history-fields">
+            <KeyValue>
               {event.fields.map((field) => (
-                <div key={field.label}>
-                  <dt>{field.label}</dt>
-                  <dd>
-                    {field.before && field.after ? (
-                      <>
-                        <span className="history-old">{valueText(field.before)}</span>
-                        <span className="history-arrow" aria-label="became">
-                          →
-                        </span>
-                        <span>{valueText(field.after)}</span>
-                      </>
-                    ) : field.after ? (
-                      <span>{valueText(field.after)}</span>
-                    ) : field.before ? (
+                <KeyValueRow key={field.label} term={field.label}>
+                  {field.before && field.after ? (
+                    <span className="history-change">
                       <span className="history-old">{valueText(field.before)}</span>
-                    ) : null}
-                  </dd>
-                </div>
+                      <span className="history-arrow" aria-label="became">
+                        →
+                      </span>
+                      <span>{valueText(field.after)}</span>
+                    </span>
+                  ) : field.after ? (
+                    <span>{valueText(field.after)}</span>
+                  ) : field.before ? (
+                    <span className="history-old">{valueText(field.before)}</span>
+                  ) : null}
+                </KeyValueRow>
               ))}
-            </dl>
+            </KeyValue>
           )}
         </section>
         <section aria-label="Details">
-          <dl className="transactions-facts">
+          <KeyValue>
             {facts.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
+              <KeyValueRow key={label} term={label}>
+                {value}
+              </KeyValueRow>
             ))}
-          </dl>
+          </KeyValue>
         </section>
-        <p className="transactions-info">
+        <p className="ui-sub">
           Every change is kept as a new version; earlier versions are never overwritten.
         </p>
       </div>

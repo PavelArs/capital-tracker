@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import { Link } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Card } from '@/ui/Card';
 import { Icon } from '../shell/icons';
 import { useCachedRead } from '../shell/useCachedRead';
 import { GoalBar, GoalFigures } from './GoalProgress';
@@ -16,9 +17,9 @@ export default function NearestGoal() {
   const goal = ordered(data.items).find((item) => item.status !== 'reached');
   if (!goal) return null;
   return (
-    <section className="shell-card goal-dash" aria-label="Nearest goal">
+    <Card className="goal-dash" label="Nearest goal">
       <div className="goal-dash__head">
-        <span className="goal-card__icon" aria-hidden="true">
+        <span className="goal-icon" aria-hidden="true">
           <Icon name="target" className="shell-icon shell-icon--sm" />
         </span>
         <div className="goal-card__title">
@@ -38,14 +39,14 @@ export default function NearestGoal() {
         </Badge>
         <span>{verdict(goal)}</span>
         <span className="goal-dash__links">
-          <Link to={`/goals/${goal.id}`} className="shell-link">
+          <Link to={`/goals/${goal.id}`} className="ui-link ui-link--target">
             Open goal
           </Link>
-          <Link to="/goals" className="shell-link">
+          <Link to="/goals" className="ui-link ui-link--target">
             All goals · {data.items.length}
           </Link>
         </span>
       </div>
-    </section>
+    </Card>
   );
 }

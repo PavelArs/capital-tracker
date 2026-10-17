@@ -14,9 +14,20 @@ import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-v
 import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import ToastViewport from '@components/Toast';
+import { ToastProvider } from '@contexts/ToastContext';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
+import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import {
   afterAll,
@@ -34,6 +45,24 @@ import { poolCandidates } from './ClassifyForm';
 import { handOver } from './proposals-handover';
 import TransactionsPage from './TransactionsPage';
 import TransferProposals from './TransferProposals';
+
+/** The page's own status line: the toasts' status region (Messages) is not part of the page. */
+function pageStatus(): HTMLElement {
+  const found = screen.getAllByRole('status').filter((node) => !node.closest('.ui-toasts'));
+  expect(found).toHaveLength(1);
+  return found[0] as HTMLElement;
+}
+
+// The app's toasts, as App.tsx mounts them: completed commands are said there.
+function WithToasts({ children }: { children: ReactNode }) {
+  return (
+    <ToastProvider>
+      {children}
+      <ToastViewport />
+    </ToastProvider>
+  );
+}
+const render = (ui: Parameters<typeof renderBare>[0]) => renderBare(ui, { wrapper: WithToasts });
 
 // Synthetic ids, names and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -618,10 +647,29 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(bodyRows()).toHaveLength(6);
   });
 
+  it('TABLE-ROWS: a tablet (768 px) gets the two-line rows, not a table that cuts its Status column', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      // 768 px: below the rows width (900 px), above the narrow one (640 px).
+      matches: query === '(max-width: 899.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([outgoing, manual]));
+      renderPage();
+      expect(await screen.findByRole('list', { name: 'Transactions' })).toBeInTheDocument();
+      expect(screen.queryByRole('table')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('OPS-PHONE: below 640 px shows two-line rows under day headings instead of the table', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -674,7 +722,8 @@ describe('TransactionsPage (list-all-operations)', () => {
   it('OPS-FILTER-SHEET-COUNT: the sheet names no count while a new period is loading', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -703,7 +752,8 @@ describe('TransactionsPage (list-all-operations)', () => {
   it('OPS-FILTER-SHEET: on a phone the filters wait behind a Filters button in a sheet', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -961,7 +1011,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(all);
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your transactions');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your transactions");
     expect(screen.queryByRole('table')).toBeNull();
     // Recording a transaction does not need the list, so the button stays.
     expect(screen.getByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
@@ -983,7 +1033,8 @@ describe('TransactionsPage (list-all-operations)', () => {
 
   it('transactions-22 a phone row keeps a short address whole', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
@@ -1006,9 +1057,7 @@ describe('TransactionsPage (list-all-operations)', () => {
         'Hidden · Bitcoin wallet bc1qsy…f3t4 · 08:00',
       ]);
       for (const row of rows)
-        expect(row.querySelector('.ui-row__detail .transactions-nowrap')?.textContent).toBe(
-          'bc1qsy…f3t4',
-        );
+        expect(row.querySelector('.ui-row__detail .ui-nowrap')?.textContent).toBe('bc1qsy…f3t4');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1169,7 +1218,8 @@ describe('TransactionsPage manual operations (M9)', () => {
     voidTrade.mockResolvedValue({} as TradeReceipt);
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
-    const confirm = screen.getByRole('dialog', { name: 'Delete this transaction?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this transaction?' });
+    expect(within(confirm).getByRole('button', { name: 'Cancel' })).toHaveFocus();
     expect(confirm).toHaveTextContent(
       'Buy of 0.00918359 BTC on Jun 13, 2025 in Bybit will be removed. Balances, cost basis and the portfolio history will be recalculated without it.',
     );
@@ -1223,7 +1273,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was deleted');
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Buy · BTC' })).toBeInTheDocument();
   });
 
@@ -1241,7 +1291,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     );
   });
 
-  it('transactions-03 deleting the last transaction gives the keyboard to the message saying so', async () => {
+  it('transactions-03 deleting the last transaction says so and gives the keyboard to the page heading', async () => {
     vi.spyOn(operationsApi, 'list')
       .mockResolvedValueOnce(list([commented]))
       .mockResolvedValueOnce(list([]));
@@ -1253,7 +1303,10 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(await screen.findByRole('heading', { name: 'No transactions yet' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('status')).toHaveFocus());
+    expect(screen.getByRole('status')).toHaveTextContent('Transaction deleted');
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Transactions' })).toHaveFocus(),
+    );
     expect(document.body).not.toHaveFocus();
   });
 
@@ -1269,7 +1322,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Could not refresh the list, so it may be out of date.');
-    expect(screen.queryByText(/Could not load your transactions/)).toBeNull();
+    expect(screen.queryByText(/Couldn't load your transactions/)).toBeNull();
     expect(bodyRows()).toHaveLength(2);
     await user.click(within(banner).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(1));
@@ -1348,7 +1401,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Transaction deleted.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Transaction deleted');
   });
 
   it('transactions-11 says a transaction was updated', async () => {
@@ -1376,7 +1429,11 @@ describe('TransactionsPage manual operations (M9)', () => {
     await within(edit).findByRole('group', { name: 'Asset' });
     await user.click(within(edit).getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(correct).toHaveBeenCalledTimes(1));
-    expect(await screen.findByRole('status')).toHaveTextContent('Transaction updated.');
+    // TOAST-DETAIL: the line under the title says what was saved, the amount as entered; the
+    // page's own repeat of the title keeps it.
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Transaction updatedBuy 0.00918359 BTC · Bybit',
+    );
   });
 
   it('transactions-23 OPS-DELETE-GUARD refuses at once, before asking, when the check names a later sale', async () => {
@@ -1398,7 +1455,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     expect(refusal).toHaveTextContent(
       'Sell of 0.005 BTC on Jul 1, 2025 in Bybit spends these BTC. Without this purchase Bybit would not hold enough. Delete or change that transaction first.',
     );
-    expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(check).toHaveBeenCalledWith(bybit.id, id(30));
     expect(voidTrade).not.toHaveBeenCalled();
     await user.click(within(refusal).getByRole('button', { name: 'OK' }));
@@ -1411,7 +1468,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     expect(
-      await screen.findByRole('dialog', { name: 'Delete this transaction?' }),
+      await screen.findByRole('alertdialog', { name: 'Delete this transaction?' }),
     ).toBeInTheDocument();
   });
 });
@@ -1987,9 +2044,12 @@ describe('link-own-transfers (M13)', () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
     const { drawer } = await openRow(0, 'Outgoing transaction · BTC');
     const question = within(drawer).getByRole('group', { name: 'What was this transaction?' });
-    const transfer = within(question).getByRole('button', { name: 'Transfer between my wallets' });
+    // The visible "Suggested" tag is read after the answer's words (ui/OptionTile).
+    const transfer = within(question).getByRole('button', {
+      name: 'Transfer between my wallets Suggested',
+    });
     expect(transfer).toHaveAttribute('aria-pressed', 'true');
-    expect(transfer).toHaveAccessibleDescription('Suggested');
+    expect(within(question).getAllByRole('button', { name: /Suggested$/ })).toEqual([transfer]);
     expect(
       within(question).getByRole('button', { name: 'Sell' }),
     ).not.toHaveAccessibleDescription();
@@ -2100,13 +2160,17 @@ describe('link-own-transfers (M13)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(1));
     await user.click(within(bodyRows()[0]).getByRole('button'));
     const drawer = screen.getByRole('dialog');
-    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     expect(remove).not.toHaveBeenCalled();
-    expect(within(drawer).getByText(/the difference shows again/)).toBeInTheDocument();
-    await user.click(within(drawer).getByText('Keep'));
-    expect(within(drawer).getByText('Delete', { selector: 'button' })).toBeInTheDocument();
-    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
-    await user.click(within(drawer).getByText('Delete record'));
+    const asking = screen.getByRole('alertdialog', { name: 'Delete this record?' });
+    expect(within(asking).getByText(/the difference shows again/)).toBeInTheDocument();
+    await user.click(within(asking).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete record' }),
+    );
     await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
     expect(remove.mock.calls[0][1]).toBe(`bybit-deposit-gap-${id(70)}`);
     expect(remove.mock.calls[0][2]).toEqual({ requestId: expect.any(String), expectedVersion: 0 });
@@ -2394,7 +2458,7 @@ describe('link-own-transfers (M13)', () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
     const { drawer } = await openRow(0, 'Outgoing transaction · BTC');
     expect(
-      within(drawer).getByRole('button', { name: 'Transfer between my wallets' }),
+      within(drawer).getByRole('button', { name: 'Transfer between my wallets Suggested' }),
     ).toHaveAttribute('aria-pressed', 'true');
     expect(within(drawer).getByLabelText('Sent to')).toHaveValue(bybit.id);
     // The suggestion is not a place: the row stays in its own wallet.
@@ -3311,7 +3375,7 @@ describe('swap in one transaction (SWAP-ONE-TX)', () => {
     expect(
       within(facts).getByText('Contract call', { exact: true }).nextElementSibling?.textContent,
     ).toBe('swapExactETHForTokens');
-    expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+    expect(within(drawer).getByRole('button', { name: 'Swap Suggested' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -4260,7 +4324,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
     expect(shownIds()).toEqual(idsOf(0, 20));
-    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 45 transactions');
+    expect(pageStatus()).toHaveTextContent('Showing 20 of 45 transactions');
     await reachEnd();
     expect(shownIds()).toEqual(idsOf(0, 40));
     // The day headings continue under the rows that were already there.
@@ -4310,7 +4374,7 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     expect(bodyRows()).toHaveLength(40);
     await user.click(screen.getByRole('button', { name: /^Manual/ }));
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
-    expect(screen.getByRole('status')).toHaveTextContent('Showing 20 of 40');
+    expect(pageStatus()).toHaveTextContent('Showing 20 of 40');
     await user.click(more());
     await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'buy');
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
@@ -4346,7 +4410,8 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
 
   it('on the phone layout adds rows under the same day headings', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639.98px)',
+      // A phone is below both the narrow (640 px) and the rows (900 px) widths.
+      matches: query === '(max-width: 639.98px)' || query === '(max-width: 899.98px)',
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,

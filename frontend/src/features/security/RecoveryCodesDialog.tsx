@@ -1,7 +1,12 @@
 import { securityApi } from '@api/security.api';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
-import { type FormEvent, type ReactNode, useRef, useState } from 'react';
-import { Icon } from '../shell/icons';
+import { type FormEvent, useRef, useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Input } from '@/ui/inputs';
+import { ModalBody, ModalFooter } from '@/ui/Modal';
 import { tooManyAttempts } from './attempts';
 import SecurityDialog from './SecurityDialog';
 
@@ -78,48 +83,42 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
       busy={busy}
     >
       <form onSubmit={generate} noValidate>
-        <div className="ui-modal__body">
+        <ModalBody>
           <p className="security-dialog__text">
             Your {unused} unused {unused === 1 ? 'code stops' : 'codes stop'} working as soon as the
             new ones are made. You see the new codes only once.
           </p>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor="security-totp">
-              Code from your authenticator app
-            </label>
-            <input
-              ref={field}
-              id="security-totp"
-              className="ui-input security-otp"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={7}
-              value={code}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? 'security-totp-error' : undefined}
-              onChange={(event) => setCode(event.target.value)}
-            />
-          </div>
+          <Field id="security-totp" label="Code from your authenticator app">
+            {(control) => (
+              <Input
+                {...control}
+                ref={field}
+                className="security-otp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={7}
+                value={code}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? 'security-totp-error' : undefined}
+                onChange={(event) => setCode(event.target.value)}
+              />
+            )}
+          </Field>
           {error && (
-            <p id="security-totp-error" className="ui-banner ui-banner--neg" role="alert">
+            <Banner id="security-totp-error" tone="neg">
               {error}
-            </p>
+            </Banner>
           )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={busy}
-            onClick={onClose}
-          >
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
-          </button>
+          </Button>
           {/* auth-02: aria-disabled, not disabled, so focus is not dropped while it checks. */}
-          <button type="submit" className="shell-button shell-button--primary" aria-disabled={busy}>
+          <Button type="submit" variant="primary" aria-disabled={busy}>
             {busy ? 'Generating…' : 'Generate new codes'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </SecurityDialog>
   );
@@ -130,17 +129,18 @@ interface ShownCodesProps {
   title: string;
   titleId: string;
   note: string;
-  /** A line above the note, such as the step of a longer flow. */
-  lead?: ReactNode;
+  /** The step of a longer flow, drawn under the heading. */
+  steps?: { current: number; total: number };
   size?: 'narrow' | 'default';
   onDone: () => void;
 }
 
 // Shown once: no Escape and no ✕, the owner confirms the codes are saved.
-export function ShownCodes({ codes, title, titleId, note, lead, size, onDone }: ShownCodesProps) {
+export function ShownCodes({ codes, title, titleId, note, steps, size, onDone }: ShownCodesProps) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const copy = async () => {
     try {
@@ -156,30 +156,26 @@ export function ShownCodes({ codes, title, titleId, note, lead, size, onDone }: 
       setError('Confirm that you saved the codes.');
       return;
     }
+    toast.show({ tone: 'success', title: 'New recovery codes are active' });
     onDone();
   };
 
   return (
-    <SecurityDialog title={title} titleId={titleId} size={size}>
-      <div className="ui-modal__body">
-        {lead}
-        <p className="security-note security-note--warn">
-          <Icon name="alert" className="shell-icon shell-icon--sm" />
-          {note}
-        </p>
+    <SecurityDialog title={title} titleId={titleId} size={size} steps={steps}>
+      <ModalBody>
+        <Banner tone="warn">{note}</Banner>
         <ul className="security-codes" aria-label="Recovery codes">
           {codes.map((value) => (
             <li key={value}>{value}</li>
           ))}
         </ul>
-        <button
-          type="button"
-          className="shell-button shell-button--secondary security-copy"
+        <Button
+          className="security-copy"
+          icon={copied ? 'check' : 'copy'}
           onClick={() => void copy()}
         >
-          <Icon name={copied ? 'check' : 'copy'} className="shell-icon shell-icon--sm" />
           {copied ? 'Copied' : 'Copy codes'}
-        </button>
+        </Button>
         <label className="security-check">
           <input
             type="checkbox"
@@ -191,17 +187,13 @@ export function ShownCodes({ codes, title, titleId, note, lead, size, onDone }: 
           />
           I have saved these codes
         </label>
-        {error && (
-          <p className="ui-banner ui-banner--neg" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-      <div className="ui-modal__foot">
-        <button type="button" className="shell-button shell-button--primary" onClick={done}>
+        {error && <Banner tone="neg">{error}</Banner>}
+      </ModalBody>
+      <ModalFooter>
+        <Button variant="primary" onClick={done}>
           Done
-        </button>
-      </div>
+        </Button>
+      </ModalFooter>
     </SecurityDialog>
   );
 }

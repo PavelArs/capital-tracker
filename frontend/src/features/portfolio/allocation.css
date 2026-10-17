@@ -1,0 +1,92 @@
+/* Allocation card (prototype .alloc): the stacked bar and one row per slice. Its own file, so the
+   Dashboard that shows the same card loads it without the rest of the Portfolio styles. */
+.portfolio-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  margin: var(--sp-1) 0 var(--sp-4);
+  overflow: hidden;
+  border-radius: var(--r-xs);
+}
+
+.portfolio-bar span {
+  min-width: 3px;
+  height: 100%;
+}
+
+.portfolio-bar span[data-tone="0"],
+.portfolio-swatch[data-tone="0"] {
+  background: var(--accent);
+}
+
+.portfolio-bar span[data-tone="1"],
+.portfolio-swatch[data-tone="1"] {
+  background: var(--c-p2);
+}
+
+.portfolio-bar span[data-tone="2"],
+.portfolio-swatch[data-tone="2"] {
+  background: var(--c-p4);
+}
+
+.portfolio-bar span[data-tone="3"],
+.portfolio-swatch[data-tone="3"] {
+  background: var(--c-p5);
+}
+
+.portfolio-bar span[data-tone="4"],
+.portfolio-swatch[data-tone="4"] {
+  background: var(--c-p1);
+}
+
+.portfolio-bar span[data-tone="5"],
+.portfolio-swatch[data-tone="5"] {
+  background: var(--c-p3);
+}
+
+.portfolio-slices {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portfolio-slices li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto 72px;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 9px var(--sp-1);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-sm);
+}
+
+.portfolio-slices li:first-child {
+  border-top: 0;
+}
+
+.portfolio-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.portfolio-slices__ticker {
+  color: var(--ink-3);
+}
+
+.portfolio-slices__value {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.portfolio-slices__percent {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.portfolio-allocation__note {
+  margin-top: var(--sp-4);
+}

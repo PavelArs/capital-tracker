@@ -2,7 +2,11 @@ import { passwordResetApi } from '@api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AuthFrame, { FieldError, focusOnMount, Notice, useFocusAfterAnswer } from './AuthFrame';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Input } from '@/ui/inputs';
+import AuthFrame, { focusOnMount, useFocusAfterAnswer } from './AuthFrame';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -62,7 +66,7 @@ export default function ForgotPasswordPage() {
   };
 
   const back = (
-    <Link className="auth-link" to="/login">
+    <Link className="ui-link auth-link" to="/login">
       Back to sign in
     </Link>
   );
@@ -75,21 +79,22 @@ export default function ForgotPasswordPage() {
           expires in 30 minutes.
         </p>
         {failure ? (
-          <Notice tone="neg">{failure}</Notice>
+          <Banner tone="neg">{failure}</Banner>
         ) : resent ? (
-          <Notice tone="pos">Sent again. Check your inbox and spam folder.</Notice>
+          <Banner tone="pos">Sent again. Check your inbox and spam folder.</Banner>
         ) : (
-          <Notice tone="info">Nothing after a few minutes? Check spam, or send it again.</Notice>
+          <Banner tone="info">Nothing after a few minutes? Check spam, or send it again.</Banner>
         )}
-        <button
+        <Button
           id="reset-resend"
-          type="button"
-          className="auth-btn auth-btn--secondary"
+          variant="secondary"
+          size="lg"
+          block
           onClick={handleResend}
-          disabled={busy}
+          busy={busy}
         >
           {busy ? 'Sending…' : 'Send again'}
-        </button>
+        </Button>
         {back}
       </AuthFrame>
     );
@@ -100,29 +105,26 @@ export default function ForgotPasswordPage() {
       <p className="auth-sub">
         Enter the email you sign in with. We'll send a link to set a new password.
       </p>
-      {failure && <Notice tone="neg">{failure}</Notice>}
-      <div className="auth-field">
-        <label htmlFor="reset-email">Email</label>
-        <input
-          className="ui-input"
-          id="reset-email"
-          ref={focusOnMount}
-          type="email"
-          autoComplete="username"
-          placeholder="you@example.com"
-          maxLength={254}
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          aria-invalid={fieldError ? true : undefined}
-          aria-describedby={fieldError ? 'reset-email-error' : undefined}
-          disabled={busy}
-          required
-        />
-        {fieldError && <FieldError id="reset-email-error" message={fieldError} />}
-      </div>
-      <button className="auth-btn auth-btn--primary" type="submit" disabled={busy}>
+      {failure && <Banner tone="neg">{failure}</Banner>}
+      <Field id="reset-email" label="Email" error={fieldError} liveError>
+        {(control) => (
+          <Input
+            {...control}
+            ref={focusOnMount}
+            type="email"
+            autoComplete="username"
+            placeholder="you@example.com"
+            maxLength={254}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={busy}
+            required
+          />
+        )}
+      </Field>
+      <Button type="submit" variant="primary" size="lg" block busy={busy}>
         {busy ? 'Sending…' : 'Send reset link'}
-      </button>
+      </Button>
       {back}
     </AuthFrame>
   );

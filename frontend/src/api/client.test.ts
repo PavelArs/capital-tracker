@@ -256,6 +256,116 @@ describe('cookie session API client', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it('STALE-STATE says the server did not answer instead of its raw text, and marks reads unanswered until one answers', async () => {
+    const { connection } = await import('./connection');
+    connection.reset();
+    const onError = vi.fn();
+    setErrorHandler(onError);
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError(
+        'Server error',
+        undefined,
+        config,
+        undefined,
+        response(config, { statusCode: 500, message: 'Internal server error' }, 500),
+      );
+    };
+    await expect(apiClient.get('/portfolio/history')).rejects.toMatchObject({
+      response: { status: 500 },
+    });
+    expect(onError).toHaveBeenCalledWith("The server didn't answer. Try again in a moment.");
+    expect(connection.get().failing).toBe(true);
+
+    // A refusal is an answer: the server is there.
+    apiClient.defaults.adapter = async (config) => {
+      throw rejected(config, 404);
+    };
+    await expect(apiClient.get('/portfolio/history')).rejects.toMatchObject({
+      response: { status: 404 },
+    });
+    expect(connection.get().failing).toBe(false);
+
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError('Network Error', undefined, config, {});
+    };
+    await expect(apiClient.get('/portfolio/history')).rejects.toBeInstanceOf(AxiosError);
+    expect(onError).toHaveBeenLastCalledWith('No connection. Check your network and try again.');
+    expect(connection.get().failing).toBe(true);
+    apiClient.defaults.adapter = async (config) => response(config, {});
+    await apiClient.get('/portfolio/history');
+    expect(connection.get().failing).toBe(false);
+  });
+
+  it('STALE-STATE keeps reads marked unanswered when a different read answers', async () => {
+    const { connection } = await import('./connection');
+    connection.reset();
+    setErrorHandler(vi.fn());
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/goals') throw rejected(config, 500);
+      return response(config, {});
+    };
+    await expect(apiClient.get('/goals')).rejects.toMatchObject({ response: { status: 500 } });
+    await apiClient.get('/sync-status');
+    // The goals shown are still the ones from before: only goals answering again clears it.
+    expect(connection.get().failing).toBe(true);
+    apiClient.defaults.adapter = async (config) => response(config, {});
+    await apiClient.get('/goals');
+    expect(connection.get().failing).toBe(false);
+  });
+
+  it('STALE-STATE drops a failure whose page is gone, and keeps one the screen still reads', async () => {
+    const { connection, CARRY_MS } = await import('./connection');
+    connection.reset();
+    setErrorHandler(vi.fn());
+    vi.useFakeTimers();
+    try {
+      apiClient.defaults.adapter = async (config) => {
+        if (config.url === '/goals' || config.url === '/sync-status') throw rejected(config, 500);
+        return response(config, {});
+      };
+      await expect(apiClient.get('/goals')).rejects.toMatchObject({ response: { status: 500 } });
+      await expect(apiClient.get('/sync-status')).rejects.toMatchObject({
+        response: { status: 500 },
+      });
+      // The owner leaves the goals page; the shell's sync status is still on screen.
+      connection.pageChanged();
+      expect(connection.get().failing).toBe(true);
+      // The shell reads the sync status again, and it still gets no answer.
+      await expect(apiClient.get('/sync-status')).rejects.toMatchObject({
+        response: { status: 500 },
+      });
+      vi.advanceTimersByTime(CARRY_MS);
+      expect(connection.get().failing).toBe(true);
+      // Once the sync status answers, the goals read nobody asks for again no longer counts.
+      apiClient.defaults.adapter = async (config) => response(config, {});
+      await apiClient.get('/sync-status');
+      expect(connection.get().failing).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('STALE-STATE Retry drops a failure the page drawn again no longer reads', async () => {
+    const { connection, CARRY_MS } = await import('./connection');
+    connection.reset();
+    setErrorHandler(vi.fn());
+    vi.useFakeTimers();
+    try {
+      apiClient.defaults.adapter = async (config) => {
+        throw rejected(config, 500);
+      };
+      await expect(apiClient.get('/portfolio/history?period=1M')).rejects.toMatchObject({
+        response: { status: 500 },
+      });
+      connection.retry();
+      expect(connection.get().failing).toBe(true);
+      vi.advanceTimersByTime(CARRY_MS);
+      expect(connection.get().failing).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('leaves a refused goal request to the goal dialog', async () => {
     const onError = vi.fn();
     setErrorHandler(onError);

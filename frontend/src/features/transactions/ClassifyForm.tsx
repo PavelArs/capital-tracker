@@ -4,10 +4,18 @@ import {
   type Operation,
   operationsApi,
 } from '@api/operations.api';
+import { Icon } from '@features/shell/icons';
 import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { DrawerFooter } from '@/ui/Drawer';
+import { Field } from '@/ui/Field';
+import { Affix, Input, Select, Textarea } from '@/ui/inputs';
+import { OptionGrid, OptionTile } from '@/ui/OptionTile';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { Toggle } from '@/ui/Toggle';
 import { newRequestId } from '../accounting/feedback';
 import {
   type Account,
@@ -809,14 +817,8 @@ export default function ClassifyForm({
   const leave = (problem: Problem) => () =>
     setBlurred((current) => (current.has(problem) ? current : new Set(current).add(problem)));
   const shows = (problem: Problem) => (tried || blurred.has(problem)) && found.has(problem);
-  const invalid = (problem: Problem) =>
-    shows(problem) ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` } : {};
-  const fieldError = (problem: Problem, text: string) =>
-    shows(problem) && (
-      <span className="ui-field__error" id={`${id}-${problem}-error`}>
-        {text}
-      </span>
-    );
+  // The field's error once it shows; its id is `${id}-${problem}-error` (Field).
+  const errorOf = (problem: Problem, text: string) => (shows(problem) ? text : null);
   const ready = draft.type !== null || draft.hidden;
   // XFER-MANUAL: the wallets a transfer can name, loaded once it is chosen.
   const [accounts, setAccounts] = useState<Account[] | null>(null);
@@ -897,21 +899,21 @@ export default function ClassifyForm({
   const other = draft.type === 'other';
   // Other asks only for a comment, so it shows up front rather than under "More options".
   const commentField = (
-    <div className="ui-field">
-      <label className="ui-field__label" htmlFor={`${id}-comment`}>
-        Comment
-      </label>
-      <textarea
-        id={`${id}-comment`}
-        className="ui-input ui-textarea"
-        placeholder="Optional"
-        value={draft.comment}
-        onChange={(event) => change({ comment: event.target.value })}
-        onBlur={leave('comment')}
-        {...invalid('comment')}
-      />
-      {fieldError('comment', `At most ${MAX_COMMENT_LENGTH} characters`)}
-    </div>
+    <Field
+      id={`${id}-comment`}
+      label="Comment"
+      error={errorOf('comment', `At most ${MAX_COMMENT_LENGTH} characters`)}
+    >
+      {(control) => (
+        <Textarea
+          {...control}
+          placeholder="Optional"
+          value={draft.comment}
+          onChange={(event) => change({ comment: event.target.value })}
+          onBlur={leave('comment')}
+        />
+      )}
+    </Field>
   );
   return (
     <form
@@ -923,71 +925,55 @@ export default function ClassifyForm({
       <div className="ui-drawer__body">
         {children}
         {!operation.account && (
-          <p
-            className="ui-banner ui-banner--warn portfolio-warn transactions-classify__warn"
-            role="note"
-          >
+          <Banner tone="warn">
             This address is not in a wallet yet. Choose its wallet first; until then the transaction
             can only be hidden. <Link to="/wallets">Open Wallets</Link>
-          </p>
+          </Banner>
         )}
         <section aria-labelledby={`${id}-question`}>
-          <h3 id={`${id}-question`} className="transactions-section">
+          <h3 id={`${id}-question`} className="ui-section-t">
             What was this transaction?
           </h3>
-          <div className="transactions-options" role="group" aria-labelledby={`${id}-question`}>
+          <OptionGrid labelledBy={`${id}-question`}>
             {choices(operation).map(([type, label]) => (
-              <button
+              <OptionTile
                 key={type}
-                type="button"
-                className={`transactions-option${type === 'transfer' ? ' transactions-option--wide' : ''}`}
-                aria-pressed={draft.type === type}
-                aria-describedby={type === suggestion ? `${id}-suggested` : undefined}
+                pressed={draft.type === type}
                 onClick={() => change({ type })}
-              >
-                <Glyph name={answerGlyph(operation, type)} />
-                {label}
-                {type === suggestion && (
-                  // The name stays the answer's words; the tag is its description.
-                  <span
-                    id={`${id}-suggested`}
-                    className="transactions-suggested"
-                    aria-hidden="true"
-                  >
-                    Suggested
-                  </span>
-                )}
-              </button>
+                icon={<Glyph name={answerGlyph(operation, type)} />}
+                title={label}
+                suggested={type === suggestion}
+                wide={type === 'transfer'}
+              />
             ))}
-          </div>
+          </OptionGrid>
         </section>
         {priced && (
-          <div className="transactions-subform">
+          <div className="ui-subform">
             <div className="ui-field-row">
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor={`${id}-amount`}>
-                  {draft.type === 'buy' ? 'You paid' : 'You received'}
-                </label>
-                <span className="ui-affix">
-                  <input
-                    id={`${id}-amount`}
-                    className="ui-input"
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={draft.amount}
-                    onChange={(event) => change({ amount: event.target.value })}
-                    onBlur={leave('amount')}
-                    {...invalid('amount')}
-                  />
-                  <span className="ui-affix__suffix">{draft.currency}</span>
-                </span>
-                {fieldError(
+              <Field
+                id={`${id}-amount`}
+                label={draft.type === 'buy' ? 'You paid' : 'You received'}
+                error={errorOf(
                   'amount',
                   draft.type === 'buy'
                     ? 'Enter the amount you paid'
                     : 'Enter the amount you received',
                 )}
-              </div>
+              >
+                {(control) => (
+                  <Affix suffix={draft.currency}>
+                    <Input
+                      {...control}
+                      numeric
+                      placeholder="0.00"
+                      value={draft.amount}
+                      onChange={(event) => change({ amount: event.target.value })}
+                      onBlur={leave('amount')}
+                    />
+                  </Affix>
+                )}
+              </Field>
               <div className="ui-field">
                 <span className="ui-field__label" id={`${id}-currency`}>
                   Currency
@@ -1002,29 +988,25 @@ export default function ClassifyForm({
               </div>
             </div>
             {rated ? (
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor={`${id}-rate`}>
-                  Exchange rate
-                </label>
-                <span className="ui-affix">
-                  <input
-                    id={`${id}-rate`}
-                    className="ui-input"
-                    inputMode="decimal"
-                    placeholder="Bank of Russia rate"
-                    value={draft.rate}
-                    onChange={(event) => change({ rate: event.target.value })}
-                    onBlur={leave('rate')}
-                    {...invalid('rate')}
-                  />
-                  <span className="ui-affix__suffix">{draft.currency} per 1 USD</span>
-                </span>
-                {fieldError('rate', 'Enter a rate above zero, or leave it empty') || (
-                  <span className="ui-field__hint">
-                    Empty means the Bank of Russia rate of {day(operation.occurredAt)}.
-                  </span>
+              <Field
+                id={`${id}-rate`}
+                label="Exchange rate"
+                error={errorOf('rate', 'Enter a rate above zero, or leave it empty')}
+                hint={`Empty means the Bank of Russia rate of ${day(operation.occurredAt)}.`}
+              >
+                {(control) => (
+                  <Affix suffix={`${draft.currency} per 1 USD`} wide>
+                    <Input
+                      {...control}
+                      numeric
+                      placeholder="Bank of Russia rate"
+                      value={draft.rate}
+                      onChange={(event) => change({ rate: event.target.value })}
+                      onBlur={leave('rate')}
+                    />
+                  </Affix>
                 )}
-              </div>
+              </Field>
             ) : (
               draft.currency !== 'USD' && (
                 <span className="ui-field__hint">{draft.currency} is counted 1:1 with USD.</span>
@@ -1033,61 +1015,58 @@ export default function ClassifyForm({
           </div>
         )}
         {transfer && (
-          <div className="transactions-subform">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-account`}>
-                {legDirection(operation) === 'out' ? 'Sent to' : 'Received from'}
-              </label>
-              <select
-                id={`${id}-account`}
-                className="ui-input"
-                value={draft.account}
-                onChange={(event) => change({ account: event.target.value, partner: '' })}
-                onBlur={leave('account')}
-                {...invalid('account')}
-              >
-                <option value="">{accounts ? 'Choose your wallet' : 'Loading wallets…'}</option>
-                {others.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-                {/* The saved or suggested wallet stays shown while the list loads. */}
-                {!accounts && known && <option value={known.id}>{known.name}</option>}
-              </select>
-              {fieldError('account', 'Choose the other wallet') ||
-                (accountsFailed && (
-                  <span className="ui-field__error">
-                    Could not load your wallets. Close this window and try again.
-                  </span>
-                ))}
-            </div>
-            {choosesAddress && (
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor={`${id}-partner`}>
-                  {legDirection(operation) === 'out' ? 'Received at' : 'Sent from'}
-                </label>
-                <select
-                  id={`${id}-partner`}
-                  className="ui-input"
-                  value={draft.partner}
-                  onChange={(event) => change({ partner: event.target.value })}
-                  onBlur={leave('partner')}
-                  {...invalid('partner')}
+          <div className="ui-subform">
+            <Field
+              id={`${id}-account`}
+              label={legDirection(operation) === 'out' ? 'Sent to' : 'Received from'}
+              error={
+                errorOf('account', 'Choose the other wallet') ??
+                (accountsFailed
+                  ? 'Could not load your wallets. Close this window and try again.'
+                  : null)
+              }
+            >
+              {(control) => (
+                <Select
+                  {...control}
+                  value={draft.account}
+                  onChange={(event) => change({ account: event.target.value, partner: '' })}
+                  onBlur={leave('account')}
                 >
-                  <option value="">Choose the address</option>
-                  {legs.map((leg) => (
-                    <option key={leg.wallet?.id} value={leg.wallet?.id}>
-                      {[leg.wallet && addressText(leg.wallet), signedAmount(leg)].join(' · ')}
+                  <option value="">{accounts ? 'Choose your wallet' : 'Loading wallets…'}</option>
+                  {others.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
                     </option>
                   ))}
-                </select>
-                {fieldError('partner', 'Choose the address of that wallet')}
-                <span className="ui-field__hint">
-                  Several addresses of that wallet took part in this transaction. Choose the one
-                  that {legDirection(operation) === 'out' ? 'received' : 'sent'} these coins.
-                </span>
-              </div>
+                  {/* The saved or suggested wallet stays shown while the list loads. */}
+                  {!accounts && known && <option value={known.id}>{known.name}</option>}
+                </Select>
+              )}
+            </Field>
+            {choosesAddress && (
+              <Field
+                id={`${id}-partner`}
+                label={legDirection(operation) === 'out' ? 'Received at' : 'Sent from'}
+                error={errorOf('partner', 'Choose the address of that wallet')}
+                hint={`Several addresses of that wallet took part in this transaction. Choose the one that ${legDirection(operation) === 'out' ? 'received' : 'sent'} these coins.`}
+              >
+                {(control) => (
+                  <Select
+                    {...control}
+                    value={draft.partner}
+                    onChange={(event) => change({ partner: event.target.value })}
+                    onBlur={leave('partner')}
+                  >
+                    <option value="">Choose the address</option>
+                    {legs.map((leg) => (
+                      <option key={leg.wallet?.id} value={leg.wallet?.id}>
+                        {[leg.wallet && addressText(leg.wallet), signedAmount(leg)].join(' · ')}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
             )}
             <span className="ui-field__hint">
               Transfers between your wallets don't change your capital. Only the network fee
@@ -1097,52 +1076,51 @@ export default function ClassifyForm({
           </div>
         )}
         {swap && (
-          <div className="transactions-subform">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-pair`}>
-                {legDirection(operation) === 'out' ? 'Received in exchange' : 'Paid with'}
-              </label>
-              <select
-                id={`${id}-pair`}
-                className="ui-input"
-                value={draft.pair}
-                onChange={(event) => change({ pair: event.target.value })}
-                onBlur={leave('pair')}
-                {...invalid('pair')}
-              >
-                <option value="">Choose the transaction</option>
-                {records.length > 0 || replaceable.length > 0 ? (
-                  <>
-                    <optgroup label="Your blockchain transactions">{options(pairs)}</optgroup>
-                    {records.length > 0 && (
-                      <optgroup label="Added by you or from CSV">{options(records)}</optgroup>
-                    )}
-                    {replaceable.length > 0 && (
-                      <optgroup label="Added by you, to be replaced by this swap">
-                        {options(replaceable)}
-                      </optgroup>
-                    )}
-                  </>
-                ) : (
-                  options(pairs)
-                )}
-              </select>
-              {fieldError('pair', 'Choose the transaction on the other side') || (
-                <span className="ui-field__hint">
-                  {replacing
-                    ? `The ${legDirection(operation) === 'out' ? 'purchase' : 'sale'} you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.`
-                    : recorded
-                      ? paidElsewhere
-                        ? `The coins move to ${paidElsewhere.name} just before that purchase and pay for it there. Nothing is counted twice.`
-                        : 'This transaction is that record: nothing new is added, and the coins are not counted twice.'
-                      : 'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.'}
-                </span>
+          <div className="ui-subform">
+            <Field
+              id={`${id}-pair`}
+              label={legDirection(operation) === 'out' ? 'Received in exchange' : 'Paid with'}
+              error={errorOf('pair', 'Choose the transaction on the other side')}
+              hint={
+                replacing
+                  ? `The ${legDirection(operation) === 'out' ? 'purchase' : 'sale'} you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.`
+                  : recorded
+                    ? paidElsewhere
+                      ? `The coins move to ${paidElsewhere.name} just before that purchase and pay for it there. Nothing is counted twice.`
+                      : 'This transaction is that record: nothing new is added, and the coins are not counted twice.'
+                    : 'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.'
+              }
+            >
+              {(control) => (
+                <Select
+                  {...control}
+                  value={draft.pair}
+                  onChange={(event) => change({ pair: event.target.value })}
+                  onBlur={leave('pair')}
+                >
+                  <option value="">Choose the transaction</option>
+                  {records.length > 0 || replaceable.length > 0 ? (
+                    <>
+                      <optgroup label="Your blockchain transactions">{options(pairs)}</optgroup>
+                      {records.length > 0 && (
+                        <optgroup label="Added by you or from CSV">{options(records)}</optgroup>
+                      )}
+                      {replaceable.length > 0 && (
+                        <optgroup label="Added by you, to be replaced by this swap">
+                          {options(replaceable)}
+                        </optgroup>
+                      )}
+                    </>
+                  ) : (
+                    options(pairs)
+                  )}
+                </Select>
               )}
-            </div>
+            </Field>
           </div>
         )}
         {poolDeposit && (
-          <div className="transactions-subform">
+          <div className="ui-subform">
             <span className="ui-field__hint">
               The coins stay yours while they are in the pool: they keep their purchase price and
               count in your balance. This is not a sale and not a withdrawal. Only the network fee
@@ -1152,42 +1130,37 @@ export default function ClassifyForm({
           </div>
         )}
         {poolWithdrawal && (
-          <div className="transactions-subform">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-deposit`}>
-                Returns the deposit
-              </label>
-              <select
-                id={`${id}-deposit`}
-                className="ui-input"
-                value={draft.deposit}
-                onChange={(event) => change({ deposit: event.target.value })}
-                onBlur={leave('deposit')}
-                {...invalid('deposit')}
-              >
-                <option value="">Choose the pool deposit</option>
-                {poolCandidates(operation, operations).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              {fieldError('deposit', 'Choose the pool deposit this withdrawal returns') || (
-                <span className="ui-field__hint">
-                  Your pool deposits of {legAsset(operation).symbol ?? 'this coin'} from this wallet
-                  made before it. Classify the deposit as Pool deposit first.
-                </span>
+          <div className="ui-subform">
+            <Field
+              id={`${id}-deposit`}
+              label="Returns the deposit"
+              error={errorOf('deposit', 'Choose the pool deposit this withdrawal returns')}
+              hint={`Your pool deposits of ${legAsset(operation).symbol ?? 'this coin'} from this wallet made before it. Classify the deposit as Pool deposit first.`}
+            >
+              {(control) => (
+                <Select
+                  {...control}
+                  value={draft.deposit}
+                  onChange={(event) => change({ deposit: event.target.value })}
+                  onBlur={leave('deposit')}
+                >
+                  <option value="">Choose the pool deposit</option>
+                  {poolCandidates(operation, operations).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
               )}
-            </div>
-            <label className="transactions-toggle">
-              <input
-                type="checkbox"
-                checked={draft.partial}
-                onChange={(event) => change({ partial: event.target.checked })}
-              />
+            </Field>
+            <Toggle
+              checked={draft.partial}
+              onChange={(partial) => change({ partial })}
+              describedBy={`${id}-partial-hint`}
+            >
               Part of the deposit
-            </label>
-            <span className="ui-field__hint">
+            </Toggle>
+            <span className="ui-field__hint" id={`${id}-partial-hint`}>
               {draft.partial
                 ? 'The rest is still in the pool: it stays in your balance with its purchase price. Classify the other parts in the order they happened.'
                 : 'The last or only withdrawal of this deposit: what is missing from it counts as impermanent loss.'}
@@ -1195,7 +1168,7 @@ export default function ClassifyForm({
           </div>
         )}
         {other && (
-          <div className="transactions-subform">
+          <div className="ui-subform">
             <span className="ui-field__hint">
               {legDirection(operation) === 'out'
                 ? 'The amount leaves your balance without a sale price and is not a withdrawal. Add a comment so you remember what it was.'
@@ -1205,83 +1178,72 @@ export default function ClassifyForm({
           </div>
         )}
         {draft.type && !priced && !transfer && !other && !poolDeposit && !recorded && (
-          <div className="transactions-subform">
-            <div className="ui-field">
-              <label className="ui-field__label" htmlFor={`${id}-value`}>
-                {poolWithdrawal ? 'Value of the gain' : 'Value at the time'}
-                {optional ? ' (optional)' : ''}
-              </label>
-              <span className="ui-affix">
-                <input
-                  id={`${id}-value`}
-                  className="ui-input"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={shownValue(draft)}
-                  onChange={(event) => change({ value: event.target.value, offered: false })}
-                  onBlur={leave('value')}
-                  {...invalid('value')}
-                />
-                <span className="ui-affix__suffix">USD</span>
-              </span>
-              {fieldError(
+          <div className="ui-subform">
+            <Field
+              id={`${id}-value`}
+              label={`${poolWithdrawal ? 'Value of the gain' : 'Value at the time'}${optional ? ' (optional)' : ''}`}
+              error={errorOf(
                 'value',
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
-              ) || (
-                <span className="ui-field__hint">
-                  {draft.offered && draft.suggested && shownValue(draft) === draft.suggested
-                    ? `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${day(operation.occurredAt)}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`
-                    : replacing
-                      ? 'Empty: the value of the record you added.'
-                      : swap || draft.type === 'fee'
-                        ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                        : poolWithdrawal
-                          ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                          : draft.type === 'expense' || operation.direction !== 'in'
-                            ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
-                            : optional
-                              ? 'Without a value the coins count in net worth, not in profit.'
-                              : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
-                </span>
               )}
-            </div>
+              hint={
+                draft.offered && draft.suggested && shownValue(draft) === draft.suggested
+                  ? `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${day(operation.occurredAt)}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`
+                  : replacing
+                    ? 'Empty: the value of the record you added.'
+                    : swap || draft.type === 'fee'
+                      ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                      : poolWithdrawal
+                        ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                        : draft.type === 'expense' || operation.direction !== 'in'
+                          ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
+                          : optional
+                            ? 'Without a value the coins count in net worth, not in profit.'
+                            : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`
+              }
+            >
+              {(control) => (
+                <Affix suffix="USD">
+                  <Input
+                    {...control}
+                    numeric
+                    placeholder="0.00"
+                    value={shownValue(draft)}
+                    onChange={(event) => change({ value: event.target.value, offered: false })}
+                    onBlur={leave('value')}
+                  />
+                </Affix>
+              )}
+            </Field>
           </div>
         )}
-        <details className="transactions-more">
-          <summary>More options</summary>
-          {!other && commentField}
-          <label className="transactions-toggle">
-            <input
-              type="checkbox"
-              checked={draft.hidden}
-              onChange={(event) => change({ hidden: event.target.checked })}
-            />
-            Hide from calculations
-          </label>
+        <details className="ui-more">
+          <summary>
+            <Icon name="chevron" className="shell-icon" />
+            More options
+          </summary>
+          <div>
+            {!other && commentField}
+            <Toggle checked={draft.hidden} onChange={(hidden) => change({ hidden })}>
+              Hide from calculations
+            </Toggle>
+          </div>
         </details>
-        {error && (
-          <p className="ui-banner ui-banner--neg" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Banner tone="neg">{error}</Banner>}
       </div>
-      <div className="ui-drawer__foot">
+      <DrawerFooter>
         <span className="transactions-left">{left} left to classify</span>
-        <span className="transactions-grow" />
+        <span className="ui-grow" />
         {onDeleted && (
           <RemoveCounted operation={operation} disabled={saving} onDeleted={onDeleted} />
         )}
-        <button type="button" className="shell-button shell-button--ghost" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel}>
           Later
-        </button>
-        <button
-          type="submit"
-          className="shell-button shell-button--primary"
-          disabled={!ready || saving}
-        >
+        </Button>
+        <Button type="submit" variant="primary" disabled={!ready} busy={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-      </div>
+        </Button>
+      </DrawerFooter>
     </form>
   );
 }

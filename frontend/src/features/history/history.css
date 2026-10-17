@@ -1,6 +1,11 @@
-/* Change history: the Transactions table and drawer patterns with their own columns. */
+/* Change history: a table of versions with its own columns, and a drawer of one version. */
 .history-table {
   min-width: 760px;
+  table-layout: fixed;
+}
+
+.history-table tbody tr[data-event] {
+  cursor: pointer;
 }
 
 .history-col--when {
@@ -23,6 +28,11 @@
   width: 14%;
 }
 
+.history-table th,
+.history-table td {
+  padding-inline: 8px;
+}
+
 .history-table td.history-when {
   color: var(--ink-3);
   text-align: left;
@@ -32,49 +42,140 @@
   text-align: left;
 }
 
-.history-more {
-  display: flex;
-  justify-content: center;
-  padding-top: var(--sp-4);
+.history-table td.history-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-/* A mark that is no asset (deposit, price) lines up with the 32 px asset icons on phones. */
-.ui-row > .transactions-type-icon {
-  width: 32px;
-  height: 32px;
+/* The day headings are rows of their own, never clickable. */
+.history-table tr.history-day {
+  cursor: default;
 }
 
-.history-hero {
+.history-table tr.history-day th {
+  padding: 18px 8px 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.02em;
+}
+
+.history-table tbody tr.history-day:hover th {
+  background: transparent;
+}
+
+.history-table tr.history-row--open td {
+  background: var(--raised);
+}
+
+.history-table tr.history-row--open td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.history-type {
   display: inline-flex;
   align-items: center;
   gap: 10px;
 }
 
-.history-fields {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  font-size: var(--fs-sm);
-}
-
-.history-fields div {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 14px;
-}
-
-.history-fields dt {
+.history-sub {
+  display: block;
   color: var(--ink-3);
+  font-size: var(--fs-xs);
 }
 
-.history-fields dd {
+.history-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-open:hover {
+  color: var(--accent);
+}
+
+.history-open:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A mark that is no asset (deposit, price): a square beside the asset icons. */
+.history-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+}
+
+.history-mark svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ui-row > .history-mark {
+  width: 32px;
+  height: 32px;
+}
+
+/* Phones: the changes of a day under a heading that stays at the top while the day scrolls. */
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-list__day > ul {
+  margin: 0;
+}
+
+.history-list__heading {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  margin: 0;
+  padding: 18px 8px 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.history-note {
+  margin: var(--sp-4) 0 0;
+}
+
+/* The drawer: each value before and after. */
+.history-section {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-md);
+}
+
+.history-change {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 8px;
-  min-width: 0;
-  margin: 0;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
 }
 
 .history-old {
@@ -84,11 +185,4 @@
 
 .history-arrow {
   color: var(--ink-3);
-}
-
-@media (max-width: 639.98px) {
-  .history-fields div {
-    grid-template-columns: 96px minmax(0, 1fr);
-    gap: 10px;
-  }
 }

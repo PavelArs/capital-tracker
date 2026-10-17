@@ -1,13 +1,15 @@
-/* One banner for notes, warnings and errors inside cards, dialogs and drawers. Features keep only their margins. */
+/* One banner for notes, warnings and errors on pages, in cards, dialogs and drawers (prototype
+   .note and .banner). Features keep only their margins. Loaded once from main.tsx. */
 .ui-banner {
   padding: 10px 12px;
   border-radius: var(--r-md);
   color: var(--ink);
   font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
 .ui-banner--info {
-  background: var(--accent-soft);
+  background: var(--info-soft);
 }
 
 .ui-banner--warn {
@@ -22,7 +24,74 @@
   background: var(--pos-soft);
 }
 
-/* Icon, text and a button on one line; the text takes the room. */
+.ui-banner--neutral {
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* The Banner component: icon, text, then an action at the end. */
+.ui-banner--row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ui-banner__icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+}
+
+.ui-banner--info .ui-banner__icon {
+  color: var(--info);
+}
+
+.ui-banner--warn .ui-banner__icon {
+  color: var(--warn);
+}
+
+.ui-banner--neg .ui-banner__icon {
+  color: var(--neg);
+}
+
+.ui-banner--pos .ui-banner__icon {
+  color: var(--pos);
+}
+
+.ui-banner--neutral .ui-banner__icon {
+  color: var(--ink-2);
+}
+
+.ui-banner__text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-banner__text > p {
+  margin: 0;
+}
+
+.ui-banner__text > p + p {
+  margin-top: 4px;
+}
+
+.ui-banner__title {
+  display: block;
+  font-weight: 600;
+}
+
+.ui-banner__action {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: center;
+}
+
+/* Icon, text and a button on one line; the text takes the room (raw markup of the features). */
 .ui-banner--action {
   display: flex;
   align-items: center;
@@ -35,12 +104,8 @@
 }
 
 .ui-banner--action .shell-icon,
-.ui-banner--action .shell-button {
+.ui-banner--action .ui-btn {
   flex: none;
-}
-
-.ui-banner--action .shell-button {
-  text-decoration: none;
 }
 
 .ui-banner--warn.ui-banner--action .shell-icon {
@@ -48,12 +113,14 @@
 }
 
 @media (max-width: 559.98px) {
-  .ui-banner--action {
+  .ui-banner--action,
+  .ui-banner--row {
     flex-wrap: wrap;
   }
 
   /* The text keeps at least 12rem beside the icon; a button that leaves less goes below it. */
-  .ui-banner--action > span {
+  .ui-banner--action > span,
+  .ui-banner--row > .ui-banner__text {
     flex: 1 1 12rem;
   }
 }

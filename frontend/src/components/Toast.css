@@ -1,92 +1,121 @@
-/* Pop-up errors (design system: Banner, error): neg-soft over the surface so the text stays
-   readable above any page, an alert icon so colour is never the only signal. */
-.toast-viewport {
+/* Toasts (prototype .toasts / .toast): raised, hairline, the shadow of overlays; the icon's
+   colour and shape say the tone, never the colour alone. Above sheets and drawers. */
+.ui-toasts {
   position: fixed;
-  top: var(--sp-4);
-  right: var(--sp-4);
-  z-index: 1200;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  width: min(420px, calc(100vw - 2 * var(--sp-4)));
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: var(--z-toast);
+  display: grid;
+  width: min(380px, calc(100vw - 32px));
   pointer-events: none;
 }
 
-.toast {
+/* The polite status region (success, info) and the alerts (warning, error); see Toast.tsx. */
+.ui-toasts__live {
+  display: grid;
+  gap: 8px;
+}
+
+.ui-toasts__live:not(:empty) + .ui-toasts__live:not(:empty) {
+  margin-top: 8px;
+}
+
+.ui-toast {
   display: flex;
   align-items: flex-start;
-  gap: var(--sp-3);
-  padding: 10px var(--sp-2) 10px 14px;
+  gap: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  background: linear-gradient(var(--neg-soft), var(--neg-soft)), var(--surface);
+  background: var(--raised);
+  box-shadow: var(--shadow);
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
-  line-height: 1.45;
-  box-shadow: var(--shadow-lg);
+  line-height: 1.4;
   pointer-events: auto;
-  animation: toast-in 0.18s ease-out;
+  animation: ui-toast-in var(--dur-2) var(--ease-out);
 }
 
-.toast__icon {
-  margin-top: 2px;
+.ui-toast__icon {
+  margin-top: 1px;
+}
+
+.ui-toast--success .ui-toast__icon {
+  color: var(--pos);
+}
+
+.ui-toast--info .ui-toast__icon {
+  color: var(--info);
+}
+
+.ui-toast--warning .ui-toast__icon {
+  color: var(--warn);
+}
+
+.ui-toast--error .ui-toast__icon {
   color: var(--neg);
 }
 
-.toast__message {
+.ui-toast__text {
   flex: 1;
   min-width: 0;
-  margin: 0;
-  padding-top: 3px;
   overflow-wrap: anywhere;
 }
 
-.toast__close {
-  display: grid;
+.ui-toast__text b {
+  display: block;
+  font-weight: 600;
+}
+
+.ui-toast__text small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.ui-toast__action {
   flex: none;
-  place-items: center;
+  align-self: center;
+}
+
+/* Dismiss: 28 px to hit (40 px on touch screens) in a compact toast; a quiet ✕, not the tone. */
+.ui-toast .ui-ibtn {
   width: 28px;
   height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
+  margin: -5px -8px -5px 0;
+  color: var(--ink-3);
 }
 
-.toast__close:hover {
-  background: var(--raised);
-  color: var(--ink);
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-toast .ui-ibtn {
+    width: 40px;
+    height: 40px;
+    margin: -11px -12px -11px -4px;
+  }
 }
 
-.toast__close:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-@keyframes toast-in {
+@keyframes ui-toast-in {
   from {
     opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: scale(0.97);
   }
 }
 
-@media (max-width: 639.98px) {
-  .toast-viewport {
-    right: var(--sp-3);
-    left: var(--sp-3);
+/* Phones and tablets: full width, above the bottom tab bar (Layout.css) and the home
+   indicator. While a dialog is open (useDialogFocus marks the body) the toasts move to the top,
+   so they never cover a sheet's buttons. */
+@media (max-width: 860px) {
+  .ui-toasts {
+    right: var(--sp-4);
+    left: var(--sp-4);
+    bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px));
     width: auto;
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    animation: none;
+  body.has-dialog .ui-toasts {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    bottom: auto;
   }
 }

@@ -1,6 +1,8 @@
-import { useId } from 'react';
-import Modal from '@/ui/Modal';
-import CloseButton from '../shell/CloseButton';
+import { useId, useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
+import { OptionGrid, OptionTile } from '@/ui/OptionTile';
 import { Icon, type IconName } from '../shell/icons';
 
 export type AddChoice = 'crypto' | 'bank' | 'broker' | 'property' | 'other';
@@ -47,34 +49,54 @@ export default function AddToPortfolioDialog({
   onChoose: (choice: AddChoice) => void;
 }) {
   const id = useId();
+  // Step 1 of 2 (prototype): a tile is chosen first, Continue opens that kind's own form.
+  const [chosen, setChosen] = useState<AddChoice | null>(null);
   return (
     <Modal titleId={`${id}-title`} size="wide" onEscape={onClose}>
-      <div className="ui-modal__head">
-        <h2 id={`${id}-title`}>Add to portfolio</h2>
-        <CloseButton onClick={onClose} />
-      </div>
-      <div className="ui-modal__body">
-        <p className="portfolio-add__lead">What do you want to add?</p>
-        <div className="portfolio-add">
-          {choices.map((choice) => (
-            <button
-              key={choice.key}
-              type="button"
-              className={`portfolio-add__choice portfolio-add__choice--${choice.key}`}
-              onClick={() => onChoose(choice.key)}
-            >
-              <span className="portfolio-add__icon" aria-hidden="true">
-                <Icon name={choice.icon} className="shell-icon shell-icon--sm" />
-              </span>
-              <b>{choice.title}</b>
-              <small>{choice.detail}</small>
-            </button>
-          ))}
-        </div>
-        <p className="portfolio-add__note">
-          Everything you add counts in one net worth, chart and allocation, in USD, EUR or RUB.
+      <ModalHeader
+        titleId={`${id}-title`}
+        title="Add to portfolio"
+        onClose={onClose}
+        steps={{ current: 1, total: 2 }}
+      />
+      <ModalBody>
+        <p id={`${id}-lead`} className="ui-soft portfolio-add__lead">
+          What do you want to add?
         </p>
-      </div>
+        <OptionGrid layout="tile" labelledBy={`${id}-lead`}>
+          {choices.map((choice, index) => (
+            <OptionTile
+              key={choice.key}
+              pressed={chosen === choice.key}
+              onClick={() => setChosen(choice.key)}
+              icon={
+                <span className={`portfolio-add__icon portfolio-add__icon--${choice.key}`}>
+                  <Icon name={choice.icon} className="shell-icon shell-icon--sm" />
+                </span>
+              }
+              title={choice.title}
+              description={choice.detail}
+              // The last tile takes the whole row when the count is odd.
+              wide={index === choices.length - 1 && choices.length % 2 === 1}
+            />
+          ))}
+        </OptionGrid>
+        <Banner tone="info" icon="portfolio" role="none">
+          Everything you add counts in one net worth, chart and allocation, in USD, EUR or RUB.
+        </Banner>
+      </ModalBody>
+      <ModalFooter>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          disabled={chosen === null}
+          onClick={() => chosen && onChoose(chosen)}
+        >
+          Continue
+        </Button>
+      </ModalFooter>
     </Modal>
   );
 }

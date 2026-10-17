@@ -216,7 +216,8 @@ describe('INFL-UI Settings → Inflation', () => {
     const dialog = screen.getByRole('dialog', { name: 'Enter a month' });
     await user.type(within(dialog).getByLabelText(/How much prices changed/), '40');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
-    expect(within(dialog).getByText(/between -5% and 20%/)).toBeInTheDocument();
+    // The refusal shows under the field and in the dialog's alert banner (same words).
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(/between -5% and 20%/);
     expect(save).not.toHaveBeenCalled();
   });
 
@@ -349,7 +350,7 @@ describe('INFL-UI Settings → Inflation', () => {
     vi.spyOn(inflationApi, 'overview').mockRejectedValue(new Error('offline'));
     render(<InflationSettings />);
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not load the inflation rates; try again later.',
+      "Couldn't load the inflation rates. Nothing you saved is lost.",
     );
   });
 
@@ -380,6 +381,9 @@ describe('INFL-UI Settings → Inflation', () => {
     expect(change).toHaveFocus();
     expect(change).toHaveAttribute('aria-invalid', 'true');
     expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Enter the change for one month, between -5% and 20%',
+    );
+    expect(change).toHaveAccessibleDescription(
       'Enter the change for one month, between -5% and 20%',
     );
     expect(save).not.toHaveBeenCalled();

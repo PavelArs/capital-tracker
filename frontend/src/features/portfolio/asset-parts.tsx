@@ -24,6 +24,12 @@ export function assetCaption(asset: AssetValuation, chains: TokenChains = new Ma
     .join(' · ');
 }
 
+/** The gain or loss colour of a figure (ui/base.css). */
+export function toneClass(value: string | null): string | undefined {
+  const sign = tone(value);
+  return sign ? `ui-${sign}` : undefined;
+}
+
 export function Signed({
   value,
   currency,
@@ -37,10 +43,10 @@ export function Signed({
   inline?: boolean;
 }) {
   return (
-    <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>
+    <span className={toneClass(value)}>
       {money(value, currency, true)}
       {ratio !== undefined && value !== null && ratio !== null && (
-        <span className={`portfolio-sub${inline ? ' portfolio-sub--inline' : ''}`}>
+        <span className={inline ? 'ui-sub portfolio-ratio--inline' : 'ui-sub'}>
           {percent(ratio)}
         </span>
       )}
@@ -50,7 +56,5 @@ export function Signed({
 
 /** A signed percentage in the gain or loss colour: "+2.10%", "-1.40%", or a dash. */
 export function Change({ value }: { value: string | null }) {
-  return (
-    <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>{percent(value)}</span>
-  );
+  return <span className={toneClass(value)}>{percent(value)}</span>;
 }

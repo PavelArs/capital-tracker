@@ -6,6 +6,7 @@ import {
   difference,
   enteredInput,
   enteredText,
+  exactDifference,
   flooredText,
   monthsFrom,
   monthYear,
@@ -358,5 +359,27 @@ describe('goals-35 prices older than 2 hours', () => {
     expect(staleText(0)).toBeNull();
     expect(staleText(1)).toBe('1 price is older than 2 hours; the last stored price is used.');
     expect(staleText(3)).toBe('3 prices are older than 2 hours; the last stored prices are used.');
+  });
+});
+
+describe('EXACT-DIFFERENCE: the difference of two decimal strings without a float', () => {
+  it('is exact where a float is not, and has no trailing zeros', () => {
+    // 0.3 - 0.1 is 0.19999999999999998 as floats.
+    expect(exactDifference('0.3', '0.1')).toBe('0.2');
+    expect(exactDifference('1000000.10', '0.05')).toBe('1000000.05');
+    expect(exactDifference('9007199254740993.01', '9007199254740992.00')).toBe('1.01');
+    expect(exactDifference('14.0000', '10.0000')).toBe('4');
+  });
+
+  it('keeps the sign, and a zero difference is plain 0', () => {
+    expect(exactDifference('1.5', '4')).toBe('-2.5');
+    expect(exactDifference('-1.5', '-4')).toBe('2.5');
+    expect(exactDifference('0.25', '0.25')).toBe('0');
+    expect(exactDifference('0', '0.001')).toBe('-0.001');
+  });
+
+  it('gives nothing for text that is not a plain decimal', () => {
+    expect(exactDifference('1e21', '1')).toBeNull();
+    expect(exactDifference('1', 'NaN')).toBeNull();
   });
 });

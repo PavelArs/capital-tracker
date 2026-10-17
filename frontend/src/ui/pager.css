@@ -17,10 +17,4 @@
 
 .ui-pager__button {
   flex: none;
-  margin-top: 0;
-}
-
-.ui-pager__button:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
 }

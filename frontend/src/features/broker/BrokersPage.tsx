@@ -3,9 +3,15 @@ import { cachedReads } from '@api/cached-reads';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useToast } from '@/contexts/ToastContext';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import PageIntro from '@/ui/PageIntro';
+import { Stat, Stats } from '@/ui/Stats';
 import { dayText } from '@/utils/dates';
 import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
@@ -83,7 +89,7 @@ function Account({
   const securities = account.positions.filter(({ asset }) => asset.assetType !== 'fiat').length;
   const missing = leftOut(account.unpriced, account.unrated);
   return (
-    <li className="shell-card broker-account">
+    <Card as="li" variant="flush" className="broker-account">
       <section aria-label={account.name}>
         <div className="broker-account__head">
           <span className="broker-account__icon" aria-hidden="true">
@@ -112,7 +118,7 @@ function Account({
           <p className="broker-account__empty">Holds nothing yet.</p>
         )}
       </section>
-    </li>
+    </Card>
   );
 }
 
@@ -127,6 +133,7 @@ export default function BrokersPage() {
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
   const latest = useRef(0);
+  const toast = useToast();
 
   // Only the newest request may change the page; a refresh keeps what is shown and says so
   // when it fails, as Real estate does.
@@ -160,27 +167,18 @@ export default function BrokersPage() {
   const share = portfolio && brokerShare(total, portfolio);
   const unknown = portfolio && netWorthUnknown(portfolio);
   const missing = leftOut(unpriced, unrated);
-  const addButton = (primary: boolean) => (
-    <button
-      type="button"
-      className={`shell-button ${primary ? 'shell-button--primary' : 'shell-button--secondary'}`}
-      onClick={() => setAdding(true)}
-    >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
+  // The page's main action, primary as on every list page (PageIntro).
+  const addButton = (
+    <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
       Add broker account
-    </button>
+    </Button>
   );
 
   return (
     <div className="shell-page">
       <PageHeader title="Brokers" currency={portfolio?.currency} />
       {failed && !brokers ? (
-        <section className="shell-card broker-state" role="alert">
-          <p>Could not load your broker accounts. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => load()}>
-            Try again
-          </button>
-        </section>
+        <ErrorState what="your broker accounts" onRetry={() => load()} />
       ) : brokers === null || portfolio === null ? (
         <PageSkeleton label="Loading broker accounts" show={['cards']} />
       ) : brokers.length === 0 ? (
@@ -188,7 +186,7 @@ export default function BrokersPage() {
           id="brokers-empty"
           title="No broker account yet"
           icon={<Icon name="briefcase" />}
-          actions={addButton(true)}
+          actions={addButton}
         >
           Add a broker account with the stocks, bonds and funds it holds and its cash. Prices are
           entered by hand for now, with the price you see at your broker.
@@ -196,35 +194,40 @@ export default function BrokersPage() {
       ) : (
         <>
           {failed && (
-            <p className="ui-banner ui-banner--warn" role="alert">
-              Could not refresh your broker accounts; showing the last loaded figures.{' '}
-              <button type="button" className="shell-button" onClick={() => load(true)}>
-                Refresh
-              </button>
-            </p>
+            <Banner
+              tone="warn"
+              role="alert"
+              action={
+                <Button size="sm" onClick={() => load(true)}>
+                  Try again
+                </Button>
+              }
+            >
+              Could not refresh your broker accounts; showing the last loaded figures.
+            </Banner>
           )}
-          <PageIntro action={addButton(false)}>
+          <PageIntro action={addButton}>
             Positions are entered by hand for now, with the price you see at your broker. Update a
             price on the position's page.
           </PageIntro>
-          <section className="shell-card broker-summary" aria-label="Total at brokers">
-            <div className="broker-summary__item">
-              <span className="broker-summary__label">At brokers</span>
-              <strong className="broker-summary__value">{money(total, portfolio.currency)}</strong>
-            </div>
-            <div className="broker-summary__item">
-              <span className="broker-summary__label">Share of net worth</span>
-              <strong className="broker-summary__value">
-                {share === null
-                  ? '—'
-                  : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`}
-              </strong>
-              {share === null && unknown && (
-                <span className="broker-summary__reason">{unknown}</span>
-              )}
-            </div>
-            {missing && <span className="broker-summary__note">{missing}</span>}
-          </section>
+          <Card labelledBy="broker-summary-title">
+            <h2 id="broker-summary-title" className="ui-sr">
+              Total at brokers
+            </h2>
+            <Stats size="lg">
+              <Stat lead label="At brokers" value={money(total, portfolio.currency)} />
+              <Stat
+                label="Share of net worth"
+                value={
+                  share === null
+                    ? '—'
+                    : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`
+                }
+                hint={share === null && unknown ? unknown : undefined}
+              />
+            </Stats>
+            {missing && <p className="ui-sub broker-summary__note">{missing}</p>}
+          </Card>
           <ul className="broker-accounts">
             {brokers.map((account) => (
               <Account key={account.id} account={account} portfolio={portfolio} />
@@ -235,9 +238,10 @@ export default function BrokersPage() {
       {adding && (
         <AddBrokerDialog
           onClose={() => setAdding(false)}
-          onAdded={() => {
+          onAdded={(name) => {
             setAdding(false);
             load(true);
+            if (name) toast.show({ tone: 'success', title: `${name} added` });
           }}
         />
       )}

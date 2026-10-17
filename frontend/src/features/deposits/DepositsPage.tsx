@@ -1,10 +1,17 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Deposit } from '@api/deposits.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { useToast } from '@contexts/ToastContext';
 import { useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
+import { ErrorState } from '@/ui/ErrorState';
+import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
+import { Stat, Stats } from '@/ui/Stats';
 import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { DASH } from '../portfolio/format';
@@ -28,10 +35,9 @@ import {
   toneClass,
 } from './deposit-format';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
 import './deposits.css';
 
-function Card({
+function DepositTile({
   deposit,
   asOf,
   shown,
@@ -49,26 +55,25 @@ function Card({
   const rate = realRateText(real);
   return (
     <li>
-      <Link className="deposit-card" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
-        <div className="deposit-card__head">
-          <span className="deposit-card__name">{deposit.name}</span>
-          <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
-        </div>
-        <div className="deposit-card__value">
-          <strong>{money(deposit.values[shown], shown)}</strong>
-          {!inOwn && <span>{money(deposit.balance, deposit.currency)}</span>}
-        </div>
-        <p className="deposit-card__terms">{termText(deposit)}</p>
-        {rate && (
-          <p className="deposit-card__terms">
-            <span className={toneClass(real?.ratePercent ?? null)}>{rate}</span>
-          </p>
-        )}
-        <dl className="deposit-card__facts">
-          {deposit.interestEarned !== undefined && (
-            <div>
-              <dt>Interest earned</dt>
-              <dd>
+      <Link className="deposit-card__link" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
+        <Card as="div" className="deposit-card">
+          <div className="deposit-card__head">
+            <span className="deposit-card__name">{deposit.name}</span>
+            <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
+          </div>
+          <div className="deposit-card__value">
+            <strong className="ui-num">{money(deposit.values[shown], shown)}</strong>
+            {!inOwn && <span className="ui-num">{money(deposit.balance, deposit.currency)}</span>}
+          </div>
+          <p className="deposit-card__terms">{termText(deposit)}</p>
+          {rate && (
+            <p className="deposit-card__terms">
+              <span className={toneClass(real?.ratePercent ?? null)}>{rate}</span>
+            </p>
+          )}
+          <KeyValue>
+            {deposit.interestEarned !== undefined && (
+              <KeyValueRow term="Interest earned">
                 {money(deposit.interestEarned, deposit.currency)}
                 {real?.gain != null && (
                   <span className={toneClass(real.gain)}>
@@ -76,42 +81,34 @@ function Card({
                     ({money(real.gain, deposit.currency, true)} after inflation)
                   </span>
                 )}
-              </dd>
-            </div>
-          )}
-          {deposit.nextPayout && (
-            <div>
-              <dt>Next interest</dt>
-              <dd>
+              </KeyValueRow>
+            )}
+            {deposit.nextPayout && (
+              <KeyValueRow term="Next interest">
                 {money(deposit.nextPayout.interest, deposit.currency)} on{' '}
                 {dateText(deposit.nextPayout.date)}
-              </dd>
-            </div>
-          )}
-          {deposit.atMaturity && (
-            <div>
-              <dt>At the end of the term</dt>
-              <dd>{money(deposit.atMaturity.balance, deposit.currency)}</dd>
-            </div>
-          )}
-          {check && (
-            <div>
-              <dt>Last check</dt>
-              <dd>
+              </KeyValueRow>
+            )}
+            {deposit.atMaturity && (
+              <KeyValueRow term="At the end of the term">
+                {money(deposit.atMaturity.balance, deposit.currency)}
+              </KeyValueRow>
+            )}
+            {check && (
+              <KeyValueRow term="Last check">
                 {dateText(check.checkedOn)},{' '}
                 {Number(check.difference) === 0
                   ? 'matches the bank'
                   : `differs by ${money(check.difference, deposit.currency)}`}
-              </dd>
-            </div>
+              </KeyValueRow>
+            )}
+          </KeyValue>
+          {note && (
+            <Banner tone="warn" role="none">
+              {note}
+            </Banner>
           )}
-        </dl>
-        {note && (
-          <p className="deposit-card__attention">
-            <Icon name="alert" className="shell-icon shell-icon--sm" />
-            {note}
-          </p>
-        )}
+        </Card>
       </Link>
     </li>
   );
@@ -151,30 +148,29 @@ function Bank({
   const total = values.length === 0 ? '0' : known.length > 0 ? sumDecimals(known) : null;
   return (
     <li>
-      <section className="shell-card deposit-bank" aria-labelledby={`${id}-bank`}>
-        <div className="deposit-bank__head">
-          <div>
-            <h2 id={`${id}-bank`} className="deposit-bank__name">
-              {bank}
-            </h2>
-            <span className="deposit-bank__count">{plural(deposits.length, 'deposit')}</span>
-          </div>
-          <div className="deposit-bank__total">
-            <strong>{money(total, shown)}</strong>
-            {missing > 0 && (
-              <span>
-                Incomplete: {plural(missing, 'deposit')} {missing === 1 ? 'has' : 'have'} no current
-                exchange rate to {shown}
-              </span>
-            )}
-          </div>
-        </div>
+      <Card labelledBy={`${id}-bank`}>
+        <CardHeader
+          id={`${id}-bank`}
+          title={bank}
+          sub={plural(deposits.length, 'deposit')}
+          actions={
+            <div className="deposit-bank__total">
+              <strong className="ui-num">{money(total, shown)}</strong>
+              {missing > 0 && (
+                <span className="deposit-bank__reason">
+                  Incomplete: {plural(missing, 'deposit')} {missing === 1 ? 'has' : 'have'} no
+                  current exchange rate to {shown}
+                </span>
+              )}
+            </div>
+          }
+        />
         <ul className="deposit-list">
           {deposits.map((deposit) => (
-            <Card key={deposit.id} deposit={deposit} asOf={asOf} shown={shown} />
+            <DepositTile key={deposit.id} deposit={deposit} asOf={asOf} shown={shown} />
           ))}
         </ul>
-      </section>
+      </Card>
     </li>
   );
 }
@@ -186,7 +182,9 @@ const shareFormat = new Intl.NumberFormat('en-US', {
 
 // DEP-LIST: every deposit with what it is worth today and what needs a look, bank by bank.
 export default function DepositsPage() {
-  const { data: list, error } = useCachedRead(cachedReads.deposits);
+  const { data: list, error, reload } = useCachedRead(cachedReads.deposits);
+  const summaryId = useId();
+  const toast = useToast();
   const [adding, setAdding] = useState(false);
   const [asked] = useAskedCurrency();
   const { main } = useMainCurrency();
@@ -207,20 +205,13 @@ export default function DepositsPage() {
       <PageHeader
         title="Banks"
         actions={
-          <button
-            type="button"
-            className="shell-button shell-button--secondary"
-            onClick={() => setAdding(true)}
-          >
-            <Icon name="plus" className="shell-icon shell-icon--sm" />
+          <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
             Add deposit
-          </button>
+          </Button>
         }
       />
       {error && list === null ? (
-        <p className="shell-note" role="alert">
-          Could not load the deposits. Try again later.
-        </p>
+        <ErrorState what="your deposits" onRetry={() => reload()} />
       ) : list === null ? (
         <PageSkeleton label="Loading deposits" show={['cards']} />
       ) : list.items.length === 0 ? (
@@ -229,13 +220,9 @@ export default function DepositsPage() {
           title="No deposits yet"
           icon={<Icon name="archive" />}
           actions={
-            <button
-              type="button"
-              className="shell-button shell-button--primary"
-              onClick={() => setAdding(true)}
-            >
+            <Button variant="primary" onClick={() => setAdding(true)}>
               Add deposit
-            </button>
+            </Button>
           }
         >
           Enter a bank deposit once, with its rate and term. The app counts the interest and what
@@ -243,29 +230,25 @@ export default function DepositsPage() {
         </EmptyState>
       ) : (
         <>
-          <section className="shell-card deposit-total" aria-label="Total in deposits">
-            <div className="deposit-total__figures">
-              <div>
-                <span className="deposit-total__label">In deposits</span>
-                <strong className="deposit-total__value">{money(total, shown)}</strong>
-              </div>
+          <Card labelledBy={`${summaryId}-title`}>
+            <h2 id={`${summaryId}-title`} className="ui-sr">
+              Total in deposits
+            </h2>
+            <Stats size="lg">
+              <Stat lead label="In deposits" value={money(total, shown)} />
               {(share !== null || (total !== null && unknown)) && (
-                <div>
-                  <span className="deposit-total__label">Share of net worth</span>
-                  <strong className="deposit-total__value">
-                    {share === null ? DASH : `${shareFormat.format(share)}%`}
-                  </strong>
-                  {share === null && unknown && (
-                    <span className="deposit-total__reason">{unknown}</span>
-                  )}
-                </div>
+                <Stat
+                  label="Share of net worth"
+                  value={share === null ? DASH : `${shareFormat.format(share)}%`}
+                  hint={share === null && unknown ? unknown : undefined}
+                />
               )}
-            </div>
-            <span className="deposit-total__note">
+            </Stats>
+            <p className="deposit-total__note">
               At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only
               while interest it earned is unpaid.
-            </span>
-          </section>
+            </p>
+          </Card>
           <ul className="deposit-banks">
             {byBank(list.items).map(([bank, deposits]) => (
               <Bank key={bank} bank={bank} deposits={deposits} asOf={list.asOf} shown={shown} />
@@ -277,7 +260,10 @@ export default function DepositsPage() {
         <AddDepositDialog
           banks={list?.items.map((deposit) => deposit.bank)}
           onClose={() => setAdding(false)}
-          onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
+          onSaved={(created) => {
+            toast.show({ tone: 'success', title: 'Deposit added' });
+            navigate(withCurrency(`/deposits/${created.id}`, asked));
+          }}
         />
       )}
     </div>

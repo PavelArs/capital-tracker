@@ -32,6 +32,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Moments show in the browser's zone: pin one that is neither UTC nor Moscow (UTC+5, no DST).
+    env: { TZ: 'Asia/Yekaterinburg' },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'html'],

@@ -153,5 +153,5 @@ export function realRateText(real: DepositReal | null): string | null {
 /** The colour of a signed figure: green above zero, red below it, none at zero or without one. */
 export const toneClass = (value: string | null): string | undefined => {
   const direction = tone(value);
-  return direction && `portfolio-${direction}`;
+  return direction && `ui-${direction}`;
 };

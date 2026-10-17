@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from './Button';
 import './pager.css';
 
 /** Rows on one page of a short list inside a card. */
@@ -77,25 +78,19 @@ export default function Pager({
 }) {
   return (
     <nav className="ui-pager" aria-label={`Pages of ${label}`}>
-      <button
-        type="button"
-        className="shell-button ui-pager__button"
-        disabled={page === 0}
-        onClick={() => onPage(page - 1)}
-      >
+      <Button className="ui-pager__button" disabled={page === 0} onClick={() => onPage(page - 1)}>
         Previous
-      </button>
+      </Button>
       <span className="ui-pager__count" role="status">
         {from}–{to} of {total} {label}
       </span>
-      <button
-        type="button"
-        className="shell-button ui-pager__button"
+      <Button
+        className="ui-pager__button"
         disabled={page >= pages - 1}
         onClick={() => onPage(page + 1)}
       >
         Next
-      </button>
+      </Button>
     </nav>
   );
 }

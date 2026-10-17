@@ -1,12 +1,15 @@
 import { accountingApi } from '@api/accounting.api';
+import { connection } from '@api/connection';
 import { operationsApi } from '@api/operations.api';
 import { portfolioValuationApi } from '@api/portfolio-valuation.api';
-import { forgetReads } from '@api/read-cache';
+import { forgetReads, generationNow, remember } from '@api/read-cache';
 import { syncStatusApi } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import PageHeader from '@features/shell/PageHeader';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createInstance } from 'i18next';
+import { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -104,51 +107,124 @@ describe('shell-02 the browser tab title', () => {
   });
 });
 
-describe('shell-05 the current section on the phone strip', () => {
-  const strip = () => document.getElementById('application-menu') as HTMLElement;
-  // jsdom lays nothing out: each link is 100 px wide, one after another, in a 300 px strip.
-  beforeEach(() => {
-    const scroll = new WeakMap<Element, number>();
-    const at = (element: HTMLElement) => {
-      const item = element.closest('li');
-      return item?.parentElement ? [...item.parentElement.children].indexOf(item) * 100 : 0;
-    };
-    const define = (name: string, get: (this: HTMLElement) => number) =>
-      vi.spyOn(HTMLElement.prototype, name as 'offsetLeft', 'get').mockImplementation(get);
-    define('offsetLeft', function () {
-      return at(this);
-    });
-    define('offsetWidth', () => 100);
-    define('clientWidth', () => 300);
-    define('scrollWidth', () => 900);
-    Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
-      configurable: true,
-      get(this: HTMLElement) {
-        return scroll.get(this) ?? 0;
-      },
-      set(this: HTMLElement, value: number) {
-        scroll.set(this, value);
-      },
-    });
-  });
-  afterEach(() => {
-    Reflect.deleteProperty(HTMLElement.prototype, 'scrollLeft');
+describe('shell-05 the phone tab bar and the More sheet', () => {
+  const tabs = () =>
+    [...(document.getElementById('application-menu')?.querySelectorAll('li') ?? [])]
+      .filter((item) => !item.classList.contains('shell-nav__in-more'))
+      .map((item) => item.textContent);
+
+  it('shell-05 keeps Dashboard, Portfolio, Transactions, Goals and More in the tab bar, and says when the page is in More', async () => {
+    await renderShell('/wallets/some-wallet');
+    expect(tabs()).toEqual(['Dashboard', 'Portfolio', 'Transactions', 'Goals', 'More']);
+    // Polish §3: More is current when the page lives in the sheet, and its name says which.
+    const more = screen.getByRole('button', { name: 'More, now on Wallets' });
+    expect(more).toHaveAttribute('aria-current', 'page');
+    expect(more).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    cleanup();
+    await renderShell('/goals');
+    expect(screen.getByRole('button', { name: 'More' })).not.toHaveAttribute('aria-current');
   });
 
-  it('shell-05 keeps Goals centred when Real estate arrives before it', async () => {
-    phone(true);
-    let answer: (value: { items: (typeof property)[]; nextCursor: null }) => void = () => undefined;
-    vi.mocked(accountingApi.listAccounts).mockReturnValue(
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
+  it('shell-05 More opens a sheet with the other sections, History, the sync state and Log out; Escape gives the keyboard back', async () => {
+    const user = userEvent.setup();
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [property],
+      nextCursor: null,
+    });
+    await renderShell('/preferences');
+    await screen.findAllByRole('link', { name: 'Real estate' });
+    const more = screen.getByRole('button', { name: 'More, now on Settings' });
+    await user.click(more);
+    const sheet = screen.getByRole('dialog', { name: 'More' });
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      within(sheet)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual([
+      ['Wallets', '/wallets'],
+      ['Banks', '/deposits'],
+      ['Real estate', '/real-estate'],
+      ['History', '/history'],
+      ['Settings', '/preferences'],
+      [expect.stringMatching(/./), '/wallets'],
+    ]);
+    // The keyboard starts on the page that is open.
+    expect(within(sheet).getByRole('link', { name: 'Settings' })).toHaveFocus();
+    expect(within(sheet).getByRole('button', { name: 'Log out' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'More' })).toBeNull();
+    expect(more).toHaveFocus();
+  });
+
+  it('shell-05 choosing a section in the sheet opens it and closes the sheet', async () => {
+    const user = userEvent.setup();
+    await renderShell('/dashboard');
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    const sheet = screen.getByRole('dialog', { name: 'More' });
+    await user.click(within(sheet).getByRole('link', { name: 'History' }));
+    expect(screen.queryByRole('dialog', { name: 'More' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'More, now on History' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
-    await renderShell('/goals');
-    // Goals is the sixth link: 500 px in, centred in a 300 px strip.
-    expect(strip().scrollLeft).toBe(400);
-    answer({ items: [property], nextCursor: null });
-    await screen.findByRole('link', { name: 'Real estate' });
-    await waitFor(() => expect(strip().scrollLeft).toBe(500));
+  });
+
+  it('shell-05 logs out from the sheet', async () => {
+    const user = userEvent.setup();
+    logout.mockResolvedValue(undefined);
+    await renderShell('/dashboard');
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'More' })).getByRole('button', { name: 'Log out' }),
+    );
+    expect(await screen.findByText('Sign in')).toBeInTheDocument();
+  });
+});
+
+describe('STALE-STATE Retry', () => {
+  it('STALE-STATE Retry above the page draws the page again, so it reads again', async () => {
+    const mounted = vi.fn();
+    function Page() {
+      useEffect(() => mounted(), []);
+      return <PageHeader title="Dashboard" currency="USD" />;
+    }
+    remember('portfolio:[]', {}, generationNow());
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/dashboard" element={<Page />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(mounted).toHaveBeenCalledTimes(1);
+    const token = {};
+    act(() => {
+      connection.started(token);
+      connection.settled(token, false);
+    });
+    try {
+      // A plain click: an earlier test's click that unmounted its own target leaves user-event's
+      // pointer state behind in this document.
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      expect(mounted).toHaveBeenCalledTimes(2);
+    } finally {
+      act(() => connection.reset());
+    }
+  });
+});
+
+describe('STALE-STATE leaving a page', () => {
+  it('STALE-STATE leaving a page tells the connection, so the failed reads of the page left can be dropped', async () => {
+    const changed = vi.spyOn(connection, 'pageChanged');
+    await renderShell('/dashboard');
+    changed.mockClear();
+    fireEvent.click(screen.getAllByRole('link', { name: /Goals/ })[0]);
+    expect(await screen.findByText('Page')).toBeInTheDocument();
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 });
 

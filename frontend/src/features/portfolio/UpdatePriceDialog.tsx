@@ -1,11 +1,15 @@
 import { manualPricesApi } from '@api/manual-prices.api';
 import type { ValuationCurrency } from '@api/portfolio-assets.api';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Affix, Input } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
-import CloseButton from '../shell/CloseButton';
 import { numberProblem, positive } from './add-transaction';
 import { useFocusFirstProblem } from './focus-problem';
 
@@ -60,6 +64,7 @@ export default function UpdatePriceDialog({
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const { form, refused } = useFocusFirstProblem();
+  const toast = useToast();
 
   const price = positive(value);
   const problem = price === null ? numberProblem(value, 'Enter a price greater than 0') : null;
@@ -93,6 +98,11 @@ export default function UpdatePriceDialog({
         currency,
         assertReviewed: true,
       });
+      toast.show({
+        tone: 'success',
+        title: 'Price updated',
+        detail: `${name} uses the new price from now on.`,
+      });
       onSaved();
     } catch (caught) {
       setError(failure(caught));
@@ -113,61 +123,43 @@ export default function UpdatePriceDialog({
       }}
     >
       <form ref={form} onSubmit={save} noValidate>
-        <div className="ui-modal__head">
-          <h2 id={`${id}-title`}>Update price</h2>
-          <CloseButton onClick={onClose} disabled={saving} />
-          <p className="shell-note">
-            {name} is valued by hand. The new price applies from now on; earlier days keep the price
-            they had.
-          </p>
-        </div>
-        <div className="ui-modal__body">
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor={`${id}-price`}>
-              Price of one unit, {currency}
-            </label>
-            <span className="ui-affix">
-              <input
-                ref={input}
-                id={`${id}-price`}
-                className="ui-input"
-                inputMode="decimal"
-                autoComplete="off"
-                value={value}
-                aria-invalid={shown ? true : undefined}
-                aria-describedby={shown ? `${id}-price-error` : undefined}
-                onChange={(event) => setValue(event.target.value)}
-                onBlur={() => setLeft(true)}
-              />
-              <span className="ui-affix__suffix" aria-hidden="true">
-                {currency}
-              </span>
-            </span>
-            {shown && (
-              <span className="ui-field__error" id={`${id}-price-error`}>
-                {problem}
-              </span>
-            )}
-          </div>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={saving}
-            onClick={onClose}
+        <ModalHeader
+          titleId={`${id}-title`}
+          title="Update price"
+          onClose={onClose}
+          closeDisabled={saving}
+          intro={`${name} is valued by hand. The new price applies from now on; earlier days keep the price they had.`}
+        />
+        <ModalBody>
+          <Field
+            id={`${id}-price`}
+            label={`Price of one unit, ${currency}`}
+            error={shown ? problem : null}
           >
+            {(control) => (
+              <Affix suffix={currency}>
+                <Input
+                  {...control}
+                  ref={input}
+                  numeric
+                  autoComplete="off"
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  onBlur={() => setLeft(true)}
+                />
+              </Affix>
+            )}
+          </Field>
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save price'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );

@@ -1,10 +1,17 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Operation, OperationList, OperationRange } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { useToast } from '@contexts/ToastContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
-import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { Banner } from '@/ui/Banner';
+import { Button, ButtonLink } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { Chip, ChipGroup } from '@/ui/Chip';
+import { ErrorState } from '@/ui/ErrorState';
+import { Input, Select } from '@/ui/inputs';
+import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
@@ -42,7 +49,6 @@ import { handOver } from './proposals-handover';
 import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
 import './transactions.css';
 import EmptyState from '@/ui/EmptyState';
 import FilterSheet from '@/ui/FilterSheet';
@@ -165,7 +171,7 @@ function ValueCell({
 }) {
   // What a purchase or sale paid in RUB or EUR actually cost, unless the list is in it.
   const paid = operation.paid && operation.paid.currency !== currency && (
-    <span className="portfolio-sub">
+    <span className="ui-sub">
       paid {quantity(operation.paid.gross)} {operation.paid.currency}
     </span>
   );
@@ -177,14 +183,12 @@ function ValueCell({
       </>
     );
   if (operation.estimatedValue !== null)
-    return (
-      <span className="transactions-muted">≈ {money(operation.estimatedValue, currency)}</span>
-    );
+    return <span className="ui-soft">≈ {money(operation.estimatedValue, currency)}</span>;
   if (operation.costBasis !== null)
     return (
       <>
         {money(operation.costBasis, currency)}
-        <span className="portfolio-sub">cost basis</span>
+        <span className="ui-sub">cost basis</span>
       </>
     );
   // Recorded in USD, but no Bank of Russia rate is stored for that date.
@@ -194,12 +198,12 @@ function ValueCell({
     operation.costBasisUsd !== null
   )
     return (
-      <span className="transactions-muted">
+      <span className="ui-soft">
         {DASH}
-        <span className="portfolio-sub">No rate</span>
+        <span className="ui-sub">No rate</span>
       </span>
     );
-  return <span className="transactions-muted">{DASH}</span>;
+  return <span className="ui-soft">{DASH}</span>;
 }
 
 // Fixed widths: a chip or filter that shows other rows never moves the columns.
@@ -221,7 +225,7 @@ function StatusCell({ operation }: { operation: Operation }) {
           {statusLabel(operation)}
         </span>
       )}
-      <span className="portfolio-sub transactions-source">
+      <span className="ui-sub transactions-source">
         {operation.source === 'chain' && <Glyph name="chain" />}
         {sourceLabel(operation)}
       </span>
@@ -271,7 +275,7 @@ function OperationRow({
             >
               {typeLabel(operation)}
             </button>
-            <span className="portfolio-sub">{rowTime(operation)}</span>
+            <span className="ui-sub">{rowTime(operation)}</span>
           </span>
         </span>
       </td>
@@ -293,7 +297,7 @@ function OperationRow({
       <td className="ui-num">
         {signedQuantity(operation)}
         {operation.counterAsset && operation.counterQuantity && (
-          <span className="portfolio-sub">
+          <span className="ui-sub">
             {amount(operation.counterQuantity, operation.counterAsset, '+')}
           </span>
         )}
@@ -305,7 +309,7 @@ function OperationRow({
         {operation.wallet && !operation.account ? (
           <>
             {networkName(operation.wallet)} wallet{' '}
-            <span className="transactions-nowrap">{shortAddress(operation.wallet.address)}</span>
+            <span className="ui-nowrap">{shortAddress(operation.wallet.address)}</span>
           </>
         ) : (
           placeLabel(operation)
@@ -375,7 +379,7 @@ function OperationItem({
                 {(operation.status === 'hidden' || operation.status === 'dust') &&
                   `${statusLabels[operation.status]} · `}
                 {place.lead}
-                {place.address && <span className="transactions-nowrap">{place.address}</span>}
+                {place.address && <span className="ui-nowrap">{place.address}</span>}
                 {at !== 'No time' && ` · ${at}`}
               </span>
             )
@@ -475,8 +479,8 @@ export default function TransactionsPage() {
   // The question the list on screen answers, for a failed read to compare with.
   const shownFor = useRef(askKey(asked, period));
 
-  const narrow = useNarrowScreen();
-  const listRef = useRef<HTMLElement>(null);
+  // Rows instead of the table below 900 px, as on a phone (TABLE-ROWS).
+  const narrow = useRowsLayout();
 
   // A switched currency keeps the rows on screen until its values arrive.
   const load = useCallback(
@@ -654,41 +658,43 @@ export default function TransactionsPage() {
     if (last?.heading === heading) last.operations.push(operation);
     else days.push({ heading, operations: [operation] });
   }
-  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const page = useRef<HTMLDivElement>(null);
+  // A completed command whose drawer or dialog closed says so in a toast (notification rules,
+  // contexts/ToastContext.tsx); what the drawer still shows stays in the drawer.
+  const toast = useToast();
+  const done = (title: string, detail?: string) => {
+    setNotice(null);
+    toast.show({ tone: 'success', title, ...(detail ? { detail } : {}) });
+  };
   // OPS-DELETE: an added, changed or deleted transaction keeps the rows on screen until the
-  // new list replaces them, so nothing jumps; a line says what was saved.
+  // new list replaces them, so nothing jumps; a toast says what was saved.
   const changed = async (message: string, deleted?: Operation) => {
     // A deleted row leaves the list: the keyboard goes to the row above it, else the one below,
-    // else to the line that says it was deleted.
+    // else to the page's heading.
     const at = deleted ? visible.findIndex((item) => item.id === deleted.id) : -1;
     const near = at < 0 ? [] : [visible[at - 1], visible[at + 1]].filter(Boolean);
     setDialog(null);
     setOpenId(null);
-    setNotice(message);
+    done(message);
     attention?.refresh();
     await load(asked, period, false);
     if (!deleted) return;
     window.requestAnimationFrame(() => {
       const row = near.map((item) => rowOf(item.id)).find(Boolean);
-      (row?.querySelector('button') ?? noticeRef.current)?.focus();
+      (row?.querySelector('button') ?? page.current?.querySelector<HTMLElement>('h1'))?.focus();
     });
   };
   const empty = operations.length === 0 && !period;
   const addButton = (
-    <button
-      type="button"
-      className="shell-button shell-button--primary"
-      onClick={() => setDialog({})}
-    >
-      <Icon name="plus" className="shell-icon shell-icon--sm" />
+    <Button variant="primary" icon="plus" onClick={() => setDialog({})}>
       Add transaction
-    </button>
+    </Button>
   );
   // CLS-NEXT: the open transaction is marked in the list and brought into view, so the one
   // opened after a classification can be found when the drawer closes.
   const rowOf = useCallback(
     (id: string) =>
-      [...(listRef.current?.querySelectorAll<HTMLElement>('[data-operation]') ?? [])].find(
+      [...(page.current?.querySelectorAll<HTMLElement>('[data-operation]') ?? [])].find(
         (row) => row.dataset.operation === id,
       ),
     [],
@@ -729,7 +735,7 @@ export default function TransactionsPage() {
     // BYBIT-GAP-DELETE: the record is gone from the list.
     if (label === 'deleted') {
       setOpenId(null);
-      setNotice('Record deleted. The wallet shows the difference again.');
+      done('Record deleted', 'The wallet shows the difference again.');
       return;
     }
     const said =
@@ -756,9 +762,9 @@ export default function TransactionsPage() {
       setOpenId(following.id);
       setNotice(`${said} Here is the next one.`);
     } else if (was.status === 'needs-classification') {
-      // The last one: back to the list, which now says so.
+      // The last one: back to the list, and a toast says so.
       setOpenId(null);
-      setNotice(
+      done(
         waiting.length > 0
           ? `${said} Nothing else to classify here.`
           : `All transactions classified. The last one was ${label === 'hidden' ? 'hidden' : `saved as ${label}`}.`,
@@ -770,7 +776,7 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="shell-page">
+    <div className="shell-page" ref={page}>
       {/* The header's switch sets ?currency=; the list reloads in that currency. */}
       <PageHeader title="Transactions" currency={list?.quoteCurrency} />
       {/* The dialog saves without the list, so the button is there while it loads or fails too;
@@ -781,57 +787,40 @@ export default function TransactionsPage() {
           their own; record the rest here.
         </PageIntro>
       )}
-      {notice && !opened && (
-        <p
-          ref={noticeRef}
-          className="ui-banner ui-banner--pos transactions-notice"
-          role="status"
-          tabIndex={-1}
-        >
-          {notice}
-        </p>
-      )}
       {stale && !failed && list !== null && (
-        <p className="ui-banner ui-banner--neg transactions-notice" role="alert">
+        // The rows on screen stay; the failed read is said at once (role alert), with a retry.
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => void load(asked, period, false)}>
+              Try again
+            </Button>
+          }
+        >
           {stale === 'refresh'
             ? 'Could not refresh the list, so it may be out of date.'
-            : `Could not load the transactions you asked for. The list still shows ${periodText(readRange)} in ${list.quoteCurrency}.`}{' '}
-          <button
-            type="button"
-            className="shell-link"
-            onClick={() => void load(asked, period, false)}
-          >
-            Try again
-          </button>
-        </p>
+            : `Could not load the transactions you asked for. The list still shows ${periodText(readRange)} in ${list.quoteCurrency}.`}
+        </Banner>
       )}
       {list !== null && !failed && (
         <>
           <DuplicateProposals
             onReplaced={(message) => {
-              setNotice(message);
+              done(message);
               void load(asked, period, false);
             }}
           />
           <TransferProposals
             onJoined={(message) => {
-              setNotice(message);
+              done(message);
               void load(asked, period, false);
             }}
           />
         </>
       )}
       {failed ? (
-        <section className="shell-card portfolio-state" role="alert">
-          <p>Could not load your transactions. Your data is safe; try again.</p>
-          <button
-            type="button"
-            className="shell-button"
-            onClick={() => void load(asked, period, true)}
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorState what="your transactions" onRetry={() => void load(asked, period, true)} />
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
       ) : empty ? (
@@ -841,9 +830,7 @@ export default function TransactionsPage() {
           actions={
             <>
               {addButton}
-              <Link className="shell-button" to="/wallets">
-                Open wallets
-              </Link>
+              <ButtonLink to="/wallets">Open wallets</ButtonLink>
             </>
           }
         >
@@ -851,9 +838,12 @@ export default function TransactionsPage() {
           here.
         </EmptyState>
       ) : (
-        <section className="shell-card" aria-label="All transactions" ref={listRef}>
+        <Card labelledBy="transactions-all" className="transactions-card">
+          <h2 id="transactions-all" className="ui-sr">
+            All transactions
+          </h2>
           <div className="ui-toolbar">
-            <div className="ui-chips" role="group" aria-label="Filter transactions">
+            <ChipGroup label="Filter transactions">
               {views.map(([key, label]) => {
                 // OPS-COUNTS: what the chip would show with the other filters as they are.
                 const count = operations.filter(
@@ -863,19 +853,19 @@ export default function TransactionsPage() {
                 if (key === 'dust' && count === 0 && list.dustThresholdUsd === null && view !== key)
                   return null;
                 return (
-                  <button
+                  <Chip
                     key={key}
-                    type="button"
-                    className={`ui-chip${key === 'needs-classification' && count > 0 ? ' transactions-chip--warn' : ''}`}
-                    aria-pressed={view === key}
+                    pressed={view === key}
+                    count={count}
+                    // Only rows that wait for the owner are counted in amber.
+                    countTone={key === 'needs-classification' && count > 0 ? 'warn' : 'muted'}
                     onClick={() => setView(key)}
                   >
                     {label}
-                    <span className="ui-chip__count"> {count}</span>
-                  </button>
+                  </Chip>
                 );
               })}
-            </div>
+            </ChipGroup>
             <FilterSheet
               active={[asset, place, kind, period].filter(Boolean).length}
               onReset={() =>
@@ -888,8 +878,9 @@ export default function TransactionsPage() {
                   : 'Show transactions'
               }
               search={
-                <input
-                  className="ui-input ui-input--sm ui-search"
+                <Input
+                  size="sm"
+                  className="ui-search"
                   type="search"
                   placeholder="Search asset, account, type"
                   aria-label="Search transactions"
@@ -900,8 +891,8 @@ export default function TransactionsPage() {
             >
               <label className="ui-filter">
                 <span>Asset</span>
-                <select
-                  className="ui-input ui-input--sm"
+                <Select
+                  size="sm"
                   value={asset}
                   onChange={(event) => update({ asset: event.target.value })}
                 >
@@ -911,12 +902,12 @@ export default function TransactionsPage() {
                       {label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="ui-filter">
                 <span>Account</span>
-                <select
-                  className="ui-input ui-input--sm"
+                <Select
+                  size="sm"
                   value={place}
                   onChange={(event) => update({ account: event.target.value })}
                 >
@@ -926,12 +917,12 @@ export default function TransactionsPage() {
                       {label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="ui-filter">
                 <span>Type</span>
-                <select
-                  className="ui-input ui-input--sm"
+                <Select
+                  size="sm"
                   value={kind}
                   onChange={(event) => update({ type: event.target.value })}
                 >
@@ -941,7 +932,7 @@ export default function TransactionsPage() {
                       {label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <PeriodFilter
                 period={period}
@@ -951,22 +942,28 @@ export default function TransactionsPage() {
             </FilterSheet>
           </div>
           {unknownCost && (
-            <p className="transactions-info">
+            <Banner
+              tone="info"
+              action={
+                <Button variant="link" onClick={() => update({ cost: '' })}>
+                  Show all of this asset
+                </Button>
+              }
+            >
               Incoming transactions without a purchase price, which leave the cost basis and profit
               of this asset incomplete. Open one and answer it as a purchase, income or a transfer
-              from your own wallet to give it a cost.{' '}
-              <button type="button" className="shell-link" onClick={() => update({ cost: '' })}>
-                Show all of this asset
-              </button>
-            </p>
+              from your own wallet to give it a cost.
+            </Banner>
           )}
           {view === 'dust' && (
-            <p className="transactions-info transactions-dust-note">
+            <Banner
+              tone="info"
+              action={<Link to="/preferences">Change the threshold in Settings</Link>}
+            >
               {list.dustThresholdUsd === null
                 ? 'No dust threshold is set, so incoming wallet transactions ask to be classified, except those of tokens no price source lists or that you hid.'
-                : `Incoming wallet transactions worth less than ${money(list.dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`}{' '}
-              <Link to="/preferences">Change the threshold in Settings</Link>
-            </p>
+                : `Incoming wallet transactions worth less than ${money(list.dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`}
+            </Banner>
           )}
           {visible.length === 0 &&
           view === 'needs-classification' &&
@@ -975,23 +972,26 @@ export default function TransactionsPage() {
           !kind &&
           !query &&
           !period ? (
-            <div className="ui-empty transactions-caught-up">
-              <span className="ui-empty__ill" aria-hidden="true">
-                <Icon name="check" className="shell-icon" />
-              </span>
-              <h2 className="ui-empty__title">All caught up</h2>
-              <p className="ui-empty__text">
-                Every transaction from your wallets is classified. New ones appear here after the
-                next sync.
-              </p>
-            </div>
+            <EmptyState
+              id="transactions-caught-up"
+              title="All caught up"
+              tone="pos"
+              icon={<Icon name="check" className="shell-icon" />}
+            >
+              Every transaction from your wallets is classified. New ones appear here after the next
+              sync.
+            </EmptyState>
           ) : visible.length === 0 ? (
-            <div className="portfolio-none transactions-none">
-              <p>No transactions match</p>
-              <button type="button" className="shell-button" onClick={clear}>
-                Clear filters
-              </button>
-            </div>
+            <EmptyState
+              id="transactions-none"
+              title="No transactions match"
+              compact
+              actions={
+                <Button size="sm" onClick={clear}>
+                  Clear filters
+                </Button>
+              }
+            />
           ) : narrow ? (
             <ol className="ui-rows transactions-list" aria-label="Transactions">
               {days.map((group) => (
@@ -1055,7 +1055,7 @@ export default function TransactionsPage() {
             </div>
           )}
           {paged.more && <LoadMore {...paged.more} label="transactions" />}
-          <p className="shell-note portfolio-note">
+          <Banner tone="info">
             {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
             {operations.length === 1 ? 'transaction' : 'transactions'}
             {period ? ' in the period' : ''}, newest first.{' '}
@@ -1064,8 +1064,8 @@ export default function TransactionsPage() {
               : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
             ; ≈ marks an estimate at the price stored for the transaction's time. Dates and times
             are in UTC.
-          </p>
-        </section>
+          </Banner>
+        </Card>
       )}
       {opened && (
         <OperationDrawer
@@ -1088,16 +1088,14 @@ export default function TransactionsPage() {
             setOpenId(null);
             setDialog({ editing: operation });
           }}
-          onDeleted={() => void changed('Transaction deleted.', opened)}
+          onDeleted={() => void changed('Transaction deleted', opened)}
         />
       )}
       {dialog && (
         <AddTransactionDialog
           editing={dialog.editing}
           onClose={() => setDialog(null)}
-          onSaved={() =>
-            void changed(dialog.editing ? 'Transaction updated.' : 'Transaction added.')
-          }
+          onSaved={() => void changed(dialog.editing ? 'Transaction updated' : 'Transaction added')}
         />
       )}
     </div>

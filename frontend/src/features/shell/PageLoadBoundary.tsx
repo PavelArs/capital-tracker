@@ -1,4 +1,7 @@
 import { Component, type ReactNode } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
 import { logger } from '../../utils/logger';
 import { forgetFailedPages } from './lazy-page';
 
@@ -39,22 +42,32 @@ export default class PageLoadBoundary extends Component<Props, State> {
   public render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <section className="shell-card portfolio-state" role="alert">
-        <p>This screen could not be loaded. Check your connection and try again.</p>
-        <button
-          type="button"
-          className="shell-button"
-          onClick={() => {
-            forgetFailedPages();
-            this.setState({ failed: false });
-          }}
+      <Card as="div">
+        <Banner
+          tone="neg"
+          role="alert"
+          action={
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="refresh"
+                onClick={() => {
+                  forgetFailedPages();
+                  this.setState({ failed: false });
+                }}
+              >
+                Try again
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
+                Reload the page
+              </Button>
+            </>
+          }
         >
-          Try again
-        </button>{' '}
-        <button type="button" className="shell-button" onClick={() => window.location.reload()}>
-          Reload the page
-        </button>
-      </section>
+          This screen could not be loaded. Check your connection and try again.
+        </Banner>
+      </Card>
     );
   }
 }

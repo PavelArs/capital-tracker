@@ -50,7 +50,8 @@ describe('BOOT-SHELL: the frame is drawn before the sign-in check answers', () =
       'href',
       '/transactions?currency=EUR',
     );
-    expect(document.querySelector('.shell-owner__bell')).not.toBeNull();
+    // The bell stands in the page's title bar (PageHeader), so its room is held there.
+    expect(document.querySelector('.shell-page__bar .shell-page__bell')).not.toBeNull();
   });
 
   it('lays out an asset page with its chart between the figures and the list', () => {

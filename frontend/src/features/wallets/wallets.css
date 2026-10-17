@@ -1,24 +1,24 @@
-/* Wallets page (prototype "wallets" cards, source rows, add-wallet steps and network tiles). */
-.wallets-soft {
-  margin: 0;
-  color: var(--ink-2);
+/* Wallets pages (prototype "wallets" cards and source rows, a wallet's page, the address drawer
+   and Add wallet). Shared looks come from ui/: Card, Banner, Button, KeyValue, OptionTile, Steps,
+   Stats and the base.css text utilities; this file keeps only the wallet layouts. */
+
+/* The side padding of an account card's head and rows (the card's own 22 px; 16 px on phones). */
+.wallets-card,
+.wallets-sources {
+  --wallets-x: 22px;
 }
 
-.wallets-muted {
-  color: var(--ink-3);
+/* Text sizes the shared utilities leave to the caller. */
+.wallets-small {
   font-size: var(--fs-xs);
 }
 
-.wallets-mono {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
+.wallets-text {
+  margin: 0;
 }
 
-.wallets-num {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.wallets-break {
+  overflow-wrap: anywhere;
 }
 
 .wallets-right {
@@ -26,29 +26,52 @@
   text-align: right;
 }
 
-.wallets-grow {
-  flex: 1;
-}
-
-.wallets-card {
-  padding: 0;
-  overflow: hidden;
-}
-
+/* ---------- Account card (prototype .wcard) ---------- */
 .wallets-card__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 14px;
-  padding: 18px 22px;
+  padding: 18px var(--wallets-x);
+}
+
+/* The whole head opens the wallet: the title link's area stretches over it. */
+.wallets-card__head--link {
+  position: relative;
+  transition: background var(--dur-1) ease-out;
+}
+
+.wallets-card__head--link:hover {
+  background: var(--raised);
+}
+
+.wallets-card__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wallets-card__link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+.wallets-card__link:focus-visible {
+  outline: none;
+}
+
+.wallets-card__head--link:has(.wallets-card__link:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .wallets-card__icon {
   display: grid;
+  flex: none;
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--raised);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--ink-2);
@@ -65,47 +88,10 @@
   min-width: 0;
 }
 
-.wallets-card__link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.wallets-card__link:hover {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-.wallets-card__toolbar {
-  padding: 18px 22px 4px;
-}
-
-.wallets-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* A wallet's summary card: the status sits left like the other figures. */
-.wallet-overview .wallets-status {
-  justify-content: flex-start;
-  min-height: 1.5em;
-}
-
-.wallet-overview > .wallets-message {
-  margin: 18px 0 0;
-}
-
-a.wallets-asset {
-  color: inherit;
-  text-decoration: none;
-}
-
-a.wallets-asset:hover {
-  color: var(--accent);
-}
-
-.wallets-asset .portfolio-sub {
-  display: block;
+.wallets-card__title h2 {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--fs-lg);
 }
 
 .wallets-card__title span,
@@ -121,11 +107,72 @@ a.wallets-asset:hover {
 
 .wallets-card__total strong {
   display: block;
-  font-size: var(--fs-xl);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xl);
 }
 
+.wallets-empty-row {
+  margin: 0;
+  padding: 13px var(--wallets-x) 18px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+/* A banner inside an account card or under a source row lines up with the rows. */
+.wallets-inset {
+  margin: 0 var(--wallets-x) var(--sp-3);
+}
+
+.wallets-card > .wallets-inset {
+  margin-top: var(--sp-3);
+}
+
+/* W5: the difference on one line; the sums and what to do about it are behind Details. */
+.wallets-diff {
+  min-width: 0;
+}
+
+.wallets-diff summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.wallets-diff summary::-webkit-details-marker {
+  display: none;
+}
+
+.wallets-diff__line {
+  min-width: 0;
+}
+
+.wallets-diff__more {
+  flex: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.wallets-diff[open] .wallets-diff__more::after {
+  content: " ▴";
+}
+
+.wallets-diff:not([open]) .wallets-diff__more::after {
+  content: " ▾";
+}
+
+.wallets-diff p {
+  margin: var(--sp-2) 0 0;
+}
+
+.wallets-diff .ui-btn {
+  margin-top: 10px;
+}
+
+/* ---------- Source rows (prototype .wsrc): five columns on a computer ---------- */
 .wallets-sources {
   margin: 0;
   padding: 0;
@@ -133,21 +180,18 @@ a.wallets-asset:hover {
 }
 
 .wallets-source {
-  border-top: 1px solid var(--line);
-}
-
-.wallets-source {
   --wallets-columns: minmax(150px, 1.1fr) minmax(150px, 1.3fr) minmax(110px, 1fr)
     minmax(90px, 0.8fr) minmax(170px, 1.2fr);
+  border-top: 1px solid var(--line);
 }
 
 .wallets-source__open {
   display: grid;
   grid-template-columns: var(--wallets-columns);
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-3);
   width: 100%;
-  padding: 13px 22px;
+  padding: 13px var(--wallets-x);
   border: 0;
   background: none;
   color: var(--ink);
@@ -160,22 +204,9 @@ a.wallets-asset:hover {
   min-width: 0;
 }
 
-/* Coins wrap as whole pieces; one piece wider than the column breaks inside itself. */
-.wallets-amounts .wallets-num {
-  display: inline-block;
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-/* SOL-STAKE-BALANCE: "14.5 SOL staked" on its own line under the balance it is part of. */
-.wallets-amounts__staked {
-  display: block;
-  font-size: var(--fs-xs);
-}
-
 button.wallets-source__open {
   cursor: pointer;
+  transition: background var(--dur-1) ease-out;
 }
 
 button.wallets-source__open:hover {
@@ -185,6 +216,38 @@ button.wallets-source__open:hover {
 button.wallets-source__open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+.wallets-place {
+  overflow-wrap: anywhere;
+}
+
+/* Coins wrap as whole pieces; one piece wider than the column breaks inside itself. */
+.wallets-amounts .ui-num {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* SOL-STAKE-BALANCE: "14.5 SOL staked" on its own line under the balance it is part of. */
+.wallets-amounts__staked {
+  display: block;
+  font-size: var(--fs-xs);
+}
+
+/* On a phone a wallet holding several assets lists one per line above its value. */
+.wallets-stack {
+  display: grid;
+  justify-items: end;
+}
+
+.wallets-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
 }
 
 /* W4: the copy button lies over the address column of the row, on the same grid. */
@@ -201,8 +264,8 @@ button.wallets-source__open:focus-visible {
   display: grid;
   grid-template-columns: var(--wallets-columns);
   align-items: center;
-  gap: 12px;
-  padding: 13px 22px;
+  gap: var(--sp-3);
+  padding: 13px var(--wallets-x);
   pointer-events: none;
 }
 
@@ -229,8 +292,9 @@ button.wallets-source__open:focus-visible {
   color: var(--ink-2);
 }
 
+/* Phones: the shared two-line row inside the card's edge. */
 .wallets-source .ui-row {
-  padding: 10px 16px;
+  padding: 10px var(--sp-4);
   border-bottom: 0;
 }
 
@@ -259,326 +323,113 @@ button.wallets-source__open:focus-visible {
 .wallets-icons {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
-.wallets-status {
+/* TOKEN-SHOW-MORE: the toggle under an address's coins, and how many tokens it hides. */
+.wallets-more {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: baseline;
+  gap: var(--sp-1) 14px;
+  padding: 0 var(--wallets-x) var(--sp-3);
+  font-size: var(--fs-sm);
 }
 
-.wallets-message {
+/* ---------- A wallet's page ---------- */
+.wallets-crumbs {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin: 0 22px 12px;
 }
 
-.wallets-message > span {
+/* The summary: the chain check spans the card under its figures. */
+.wallet-overview .wallets-status {
+  justify-content: flex-start;
+  min-height: 1.5em;
+}
+
+.wallet-overview > .ui-banner {
+  margin: 18px 0 0;
+}
+
+/* Assets and transactions side by side (prototype .two-col). */
+.wallets-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  align-items: start;
+  gap: var(--sp-4);
+}
+
+.wallets-holdings__open {
+  display: flex;
   flex: 1;
-  min-width: 200px;
-}
-
-.wallets-message .shell-button {
-  margin-top: 0;
-  height: 30px;
-  padding: 0 10px;
-  font-size: var(--fs-xs);
-}
-
-/* wallets-13: a source that needs the owner is an amber note with an alert icon. */
-.wallets-message__icon {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--warn);
-}
-
-/* wallets-02, 07, 21: what the owner just did, said once at the top of the page. */
-.wallets-notice {
-  margin: 0;
-}
-
-.wallets-notice:focus {
-  outline: none;
-}
-
-.wallets-notice:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* wallets-14: the API secret with its show/hide button inside the field's right edge. */
-.wallets-secret {
-  position: relative;
-}
-
-.wallets-secret .ui-input {
-  width: 100%;
-  padding-right: 44px;
-}
-
-.wallets-secret__toggle {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-
-.wallets-secret__toggle:hover {
-  background: var(--raised);
-  color: var(--ink);
-}
-
-.wallets-secret__toggle .shell-icon {
-  width: 16px;
-  height: 16px;
-}
-
-/* W5: the difference on one line; the sums and what to do about it are behind Details. */
-.wallets-diff {
-  flex: 1 1 100%;
-  min-width: 0;
-}
-
-.wallets-diff summary {
-  display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.wallets-diff summary::-webkit-details-marker {
-  display: none;
-}
-
-.wallets-diff__line {
+  gap: var(--sp-3);
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
 }
 
-.wallets-diff__more {
-  flex: none;
+a.wallets-holdings__open:hover,
+a.wallets-holdings__asset:hover {
   color: var(--accent);
-  font-weight: 500;
 }
 
-.wallets-diff[open] .wallets-diff__more::after {
-  content: " ▴";
+/* An asset of the wallet: its icon and name open the asset's page. */
+.wallets-holdings__asset {
+  flex: 1;
+  color: inherit;
+  text-decoration: none;
 }
 
-.wallets-diff:not([open]) .wallets-diff__more::after {
-  content: " ▾";
-}
-
-.wallets-diff > p {
-  margin: 8px 0 0;
-}
-
-.wallets-diff > .shell-button {
-  margin-top: 10px;
-}
-
-.ui-drawer .wallets-message {
-  margin: 0;
-}
-
-.wallets-card > .wallets-message.ui-banner--warn {
-  margin-top: 12px;
-}
-
-.wallets-empty-row {
-  margin: 0;
-  padding: 13px 22px 18px;
-  border-top: 1px solid var(--line);
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
-
-.wallets-note {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--accent-soft);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-
-/* The Bybit key steps: the list numbers sit inside the note, not past its left edge. */
-.wallets-howto {
+.wallets-holdings__main {
   display: grid;
-  gap: 4px;
-  padding-left: 32px;
-}
-
-.wallets-ok {
-  color: var(--pos);
-  font-size: var(--fs-xs);
-}
-
-/* Add wallet: step bar and network tiles. */
-.wallets-steps {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 22px 0;
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-}
-
-.wallets-steps i {
-  display: inline-block;
-  width: 22px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--line-strong);
-}
-
-.wallets-steps .wallets-steps__on {
-  background: var(--accent);
-}
-
-.wallets-steps span {
-  margin-left: 6px;
-}
-
-.wallets-networks__title {
-  margin: 0 0 -4px;
-  color: var(--ink-3);
-  font-weight: 600;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.wallets-networks {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.wallets-network {
-  display: grid;
-  align-content: start;
   justify-items: start;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  gap: 2px;
 }
 
-.wallets-network:hover:not(:disabled) {
-  border-color: var(--ink-3);
-  background: var(--raised);
+.wallets-holdings__side {
+  text-align: right;
 }
 
-.wallets-network[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.wallets-all {
+  display: inline-block;
+  margin-top: var(--sp-3);
 }
 
-.wallets-network:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.wallets-network small {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-  line-height: 1.35;
-}
-
-.wallets-summary {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 14px;
-  border-radius: var(--r-md);
-  background: var(--raised);
-  font-size: var(--fs-sm);
-}
-
-.wallets-summary div {
-  display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
-  gap: 14px;
-}
-
-.wallets-summary dt {
-  color: var(--ink-3);
-}
-
-.wallets-summary dd {
-  margin: 0;
-  min-width: 0;
-}
-
-/* Address drawer: wallet and name form, newest chain transactions. */
-.wallets-edit {
-  display: grid;
-  gap: var(--sp-3);
-}
-
-.wallets-edit__save {
-  justify-self: start;
-}
-
-/* WALLET-REMOVE: the confirmation under "Stop tracking" in the address drawer. */
-.wallets-confirm {
-  display: grid;
-  gap: var(--sp-3);
-  padding: 12px;
-  border-radius: var(--r-md);
-  background: var(--warn-soft);
-  font-size: var(--fs-sm);
-}
-
-.wallets-confirm p {
-  margin: 0;
-}
-
-.wallets-confirm__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-}
-
-.wallets-remove {
-  margin-top: var(--sp-2);
-}
-
-.wallets-journal {
+/* ---------- Lists in the drawer and the wallet's page: one row style ---------- */
+.wallets-list {
   margin: 0 0 10px;
   padding: 0;
   list-style: none;
   font-size: var(--fs-sm);
 }
 
-.wallets-journal li {
+.wallets-list > li {
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+.wallets-holdings {
+  margin: 0;
+}
+
+.wallets-holdings > li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 11px var(--sp-1);
+}
+
+.wallets-holdings > li:first-child {
+  border-top: 0;
+}
+
+.wallets-journal > li {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 4px 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
+  gap: var(--sp-1) var(--sp-3);
 }
 
 .wallets-journal time {
@@ -590,21 +441,126 @@ button.wallets-source__open:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.wallets-recent {
-  margin: 0 0 10px;
+.wallets-recent > li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+/* Drawer: a listed transaction opens in Transactions. */
+.wallets-recent__open {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.wallets-recent__open:hover {
+  color: var(--accent);
+}
+
+.wallets-recent__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) 14px;
+}
+
+/* TOKEN-HIDE: the other tokens of an address, and the hidden ones, in its drawer. */
+.wallets-tokens > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+}
+
+.wallets-tokens__name {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* SOL-STAKE-BALANCE: stake accounts in an address's drawer, two lines each at any width. */
+.wallets-stake {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-sm);
 }
 
-.wallets-recent li {
+.wallets-stake li {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
+  gap: 6px var(--sp-3);
+  padding: 10px var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 
+.wallets-stake__main,
+.wallets-stake__side {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wallets-stake__side {
+  justify-items: end;
+}
+
+.wallets-stake__note {
+  margin: 10px 0 0;
+  font-size: var(--fs-xs);
+}
+
+/* ---------- Address drawer ---------- */
+.wallets-hero .wallets-more {
+  padding: var(--sp-1) 0 0;
+}
+
+.wallets-edit {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.wallets-edit__save {
+  justify-self: start;
+}
+
+.wallets-remove {
+  margin-top: var(--sp-2);
+}
+
+/* ---------- Add wallet ---------- */
+.wallets-networks__title {
+  margin: 0 0 calc(-1 * var(--sp-1));
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The Bybit key steps: the list numbers sit inside the note, not past its left edge. */
+.wallets-howto {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding-left: 20px;
+}
+
+.wallets-ok {
+  color: var(--pos);
+  font-size: var(--fs-xs);
+}
+
+/* ---------- Narrower screens ---------- */
 @media (max-width: 1100px) {
   .wallets-source__open {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -625,144 +581,14 @@ button.wallets-source__open:focus-visible {
   }
 }
 
+/* Phones: an account card's head and rows run 16 px from its edges (polish notes). */
 @media (max-width: 639.98px) {
+  .wallets-card,
+  .wallets-sources {
+    --wallets-x: var(--sp-4);
+  }
+
   .wallets-card__head {
-    padding: 16px;
-  }
-
-  .wallets-message {
-    margin: 0 16px 12px;
-  }
-
-  .wallets-empty-row {
-    padding: 13px 16px 16px;
-  }
-}
-
-@media (max-width: 559.98px) {
-  .wallets-networks {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* On a phone a wallet holding several assets lists one per line above its value. */
-.wallets-stack {
-  display: grid;
-  justify-items: end;
-}
-
-/* SOL-STAKE-BALANCE: stake accounts in a Solana address's drawer, two lines each at any width. */
-.wallets-stake {
-  display: grid;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-sm);
-}
-
-.wallets-stake li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-}
-
-.wallets-stake__main,
-.wallets-stake__side {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.wallets-stake__side {
-  justify-items: end;
-}
-
-.wallets-stake__note {
-  margin: 10px 0 0;
-}
-
-/* TOKEN-SHOW-MORE: the toggle under an address's coins, and how many tokens it hides. */
-.wallets-more {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 14px;
-  padding: 0 22px 12px;
-  font-size: var(--fs-sm);
-}
-
-.wallets-more .portfolio-link {
-  padding: 0;
-}
-
-.transactions-hero .wallets-more {
-  padding: 4px 0 0;
-}
-
-/* TOKEN-HIDE: the other tokens of an address, and the hidden ones, in its drawer. */
-.wallets-tokens {
-  margin: 0 0 10px;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-sm);
-}
-
-.wallets-tokens li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-}
-
-.wallets-tokens__name {
-  display: grid;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 639.98px) {
-  .wallets-more {
-    padding: 0 16px 12px;
-  }
-}
-
-/* Drawer: a listed transaction opens in Transactions. */
-.wallets-recent li > .wallets-recent__open {
-  display: flex;
-  flex: 1;
-  justify-content: space-between;
-  gap: 12px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.wallets-recent li > .wallets-recent__open:hover {
-  color: var(--accent);
-}
-
-.wallets-recent__more {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 14px;
-}
-
-.wallets-recent__more .portfolio-link {
-  padding: 0;
-}
-
-/* Phones: the dialog is a sheet, so its steps sit under the head. */
-@media (max-width: 639.98px) {
-  .ui-modal--wide .wallets-steps {
-    flex: none;
-    padding: 12px 16px 0;
+    padding: var(--sp-4) var(--wallets-x);
   }
 }

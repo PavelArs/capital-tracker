@@ -1,43 +1,5 @@
-:root {
-  color-scheme: light;
-  /* Light theme (default) */
-  --bg-color: #ffffff;
-  --bg-secondary: #f3f4f2;
-  --bg-tertiary: #e9ece9;
-  --text-color: #252e35;
-  --text-secondary: #59656e;
-  --text-muted: #626d76;
-  --border-color: #cbd1d3;
-  --primary-color: #355778;
-  --primary-color-light: #eaf0f5;
-  --primary-color-dark: #2d5072;
-  --error-color: #e74c3c;
-  --success-color: #27ae60;
-  --warning-color: #f39c12;
-  --shadow: rgba(0, 0, 0, 0.1);
-  --shadow-hover: rgba(0, 0, 0, 0.15);
-}
-
-[data-theme="dark"] {
-  color-scheme: dark;
-  /* Dark theme */
-  --bg-color: #202930;
-  --bg-secondary: #172027;
-  --bg-tertiary: #2a353e;
-  --text-color: #e4e9ec;
-  --text-secondary: #b2bec7;
-  --text-muted: #a3b0ba;
-  --border-color: #46535e;
-  --primary-color: #41658b;
-  --primary-color-light: #2b3c4e;
-  --primary-color-dark: #acd1f4;
-  --error-color: #ff6b6b;
-  --success-color: #51cf66;
-  --warning-color: #ffd43b;
-  --shadow: rgba(0, 0, 0, 0.3);
-  --shadow-hover: rgba(0, 0, 0, 0.4);
-}
-
+/* The page itself: prototype typography and colours from the tokens (features/shell/tokens.css).
+   Components style their own controls; nothing here styles bare buttons, inputs or tables. */
 * {
   margin: 0;
   padding: 0;
@@ -54,125 +16,60 @@
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell",
-    "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--bg-secondary);
-  color: var(--text-color);
+  -webkit-tap-highlight-color: transparent;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+code,
+kbd,
+samp {
+  font-family: var(--font-mono);
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* Общие стили для форм */
-input,
-textarea,
-select {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
-  transition:
-    border-color 0.2s,
-    background-color 0.2s;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 600;
+  text-wrap: balance;
 }
 
-input:focus,
-textarea:focus,
-select:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px var(--primary-color-light);
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+li,
+td,
+th,
+dd {
+  overflow-wrap: break-word;
 }
 
-input,
-select {
-  min-height: 2.5rem;
+a {
+  color: var(--accent);
 }
 
-textarea {
-  min-height: 80px;
-  resize: vertical;
-}
-
-/* Общие стили для кнопок */
-button {
-  transition:
-    opacity 0.2s,
-    background-color 0.2s;
-}
-
-button:hover {
-  opacity: 0.9;
-}
-
-/* Общие стили для таблиц */
-table {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  border-collapse: collapse;
-}
-
-th {
-  background-color: var(--bg-tertiary);
-  color: var(--text-color);
-  border-bottom: 2px solid var(--border-color);
-}
-
-td {
-  border-bottom: 1px solid var(--border-color);
-}
-
-tr:hover {
-  background-color: var(--bg-secondary);
-}
-
-/* Общие стили для модальных окон */
-.modal-overlay {
-  background-color: rgba(0, 0, 0, 0.5);
-}
-
-.modal-content {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  box-shadow: 0 4px 6px var(--shadow);
-}
-
-/* Общие стили для карточек */
-.card,
-.page-header,
-.chart-container {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  box-shadow: 0 2px 4px var(--shadow);
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
-}
-
-/* Общие утилиты */
-.no-data {
-  color: var(--text-muted);
-  text-align: center;
-  padding: 2rem;
-  font-style: italic;
-  word-break: break-word;
-}
-
-.text-muted {
-  color: var(--text-muted);
-}
-
-/* Общие responsive стили */
 img,
 video,
 iframe {
@@ -180,82 +77,10 @@ iframe {
   height: auto;
 }
 
-/* Предотвращение переполнения текста */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  hyphens: auto;
-}
-
-p,
-span,
-div,
-li,
-td,
-th {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-}
-
-/* Улучшение скролла на мобильных */
-@media (max-width: 768px) {
-  * {
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  body {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  /* Улучшение читаемости на маленьких экранах */
-  p,
-  li,
-  span {
-    line-height: 1.6;
-  }
-
-  h1 {
-    font-size: clamp(1.5rem, 6vw, 2.5rem);
-  }
-
-  h2 {
-    font-size: clamp(1.25rem, 5vw, 2rem);
-  }
-
-  h3 {
-    font-size: clamp(1.1rem, 4vw, 1.5rem);
-  }
-}
-
-/* Улучшение для очень маленьких экранов */
-@media (max-width: 480px) {
-  body {
-    font-size: 14px;
-  }
-
-  h1 {
-    font-size: 1.5rem;
-  }
-
-  h2 {
-    font-size: 1.25rem;
-  }
-
-  h3 {
-    font-size: 1.1rem;
-  }
-}
-
-/* Keyboard focus stays visible across the shell and retained form controls. */
+/* Keyboard focus is always visible: the accent ring of the design system. */
 :focus-visible {
-  outline: 2px solid var(--primary-color-dark);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

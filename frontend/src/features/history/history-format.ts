@@ -6,6 +6,7 @@ import type {
   AuditField,
   AuditValue,
 } from '@api/audit-history.api';
+import { dayText, localDate } from '@utils/dates';
 import type { BadgeTone } from '@/ui/Badge';
 import { money, quantity } from '../portfolio/format';
 import { moment } from '../transactions/operation-format';
@@ -112,4 +113,16 @@ export function glyphOf(
     default:
       return 'chain';
   }
+}
+
+/**
+ * The local day a change was made, as its time is shown: Today, Yesterday or "Oct 2, 2026".
+ * A change is a moment, not an accounting day, so it is dated in the browser's zone.
+ */
+export function localDayHeading(iso: string, now: string): string {
+  const day = localDate(iso);
+  const days = Math.round((Date.parse(localDate(now)) - Date.parse(day)) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return dayText(day);
 }

@@ -5,9 +5,14 @@ import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
+import { useToast } from '@contexts/ToastContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { Button, ButtonLink } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { Affix, Input } from '@/ui/inputs';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { SettingRow } from '@/ui/SettingRow';
 import { dayText } from '@/utils/dates';
 import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
@@ -17,7 +22,6 @@ import InflationSettings from './InflationSettings';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
 import { Bone } from './Skeleton';
-import '../portfolio/portfolio.css';
 import './shell-page.css';
 
 const themeChoices = [
@@ -27,15 +31,11 @@ const themeChoices = [
 ] as const;
 
 /** The room a hint takes once it arrives, held empty so the cards below do not move. */
-function PendingHint({ id, long }: { id?: string; long?: boolean }) {
+function PendingHint({ id }: { id?: string }) {
   return (
-    <p
-      id={id}
-      className={`shell-setting__hint shell-setting__hint--pending${long ? ' shell-setting__hint--long' : ''}`}
-      aria-busy="true"
-    >
+    <span id={id} className="ui-sub" aria-busy="true">
       <Bone width="70%" height={12} />
-    </p>
+    </span>
   );
 }
 
@@ -67,6 +67,7 @@ function MainCurrency() {
     () => cachedReads.rates.last() ?? null,
   );
   const { setMain } = useMainCurrency();
+  const toast = useToast();
   const latest = useRef(0);
   useEffect(() => {
     let active = true;
@@ -101,6 +102,11 @@ function MainCurrency() {
       if (request !== latest.current) return;
       setSaved(previous);
       setState('save-failed');
+      toast.show({
+        tone: 'error',
+        title: 'Could not save the main currency',
+        detail: 'Nothing changed.',
+      });
     }
   };
   const hint =
@@ -111,35 +117,31 @@ function MainCurrency() {
         : state === 'saving'
           ? 'Saving…'
           : 'Portfolio values, cost and P&L are shown in it; the other two stay one click away.';
+  const failedState = state === 'failed' || state === 'save-failed';
   return (
-    <div className="shell-setting">
-      <div className="shell-setting__text shell-setting__text--grow">
-        <span id="settings-currency" className="shell-setting__label">
-          Main currency
-        </span>
-        <p
-          id="settings-currency-hint"
-          className="shell-setting__hint"
-          role={state === 'failed' || state === 'save-failed' ? 'alert' : undefined}
-        >
-          {hint}
-        </p>
-        {rates === null ? (
-          <PendingHint />
-        ) : (
-          <p className="shell-setting__hint">{ratesHint(rates)}</p>
-        )}
-      </div>
-      <SegmentedControl
-        name="main-currency"
-        labelledBy="settings-currency"
-        describedBy="settings-currency-hint"
-        options={accountingCurrencies}
-        value={saved}
-        disabled={saved === null}
-        onChange={(currency) => void choose(currency)}
-      />
-    </div>
+    <SettingRow
+      title="Main currency"
+      titleId="settings-currency"
+      description={
+        <>
+          <span id="settings-currency-hint" role={failedState ? 'alert' : undefined}>
+            {hint}
+          </span>
+          {rates === null ? <PendingHint /> : <span className="ui-sub">{ratesHint(rates)}</span>}
+        </>
+      }
+      control={
+        <SegmentedControl
+          name="main-currency"
+          labelledBy="settings-currency"
+          describedBy="settings-currency-hint"
+          options={accountingCurrencies}
+          value={saved}
+          disabled={saved === null}
+          onChange={(currency) => void choose(currency)}
+        />
+      }
+    />
   );
 }
 
@@ -155,6 +157,7 @@ function parseDust(text: string): string | null | undefined {
 
 /** CLS-DUST: incoming wallet transactions worth less than this skip "Needs classification". */
 function DustThreshold() {
+  const toast = useToast();
   const kept = cachedReads.settings.last();
   const [saved, setSaved] = useState<string | null | undefined>(kept?.dustThresholdUsd);
   const [text, setText] = useState(kept?.dustThresholdUsd ?? '');
@@ -189,10 +192,16 @@ function DustThreshold() {
       setSaved(settings.dustThresholdUsd);
       setText(settings.dustThresholdUsd ?? '');
       setState('saved');
+      toast.show({ tone: 'success', title: 'Dust threshold saved' });
       // The sidebar count and the dashboard re-read what needs classification.
       announceClassificationChange();
     } catch {
       setState('save-failed');
+      toast.show({
+        tone: 'error',
+        title: 'Could not save the dust threshold',
+        detail: 'Nothing changed.',
+      });
     }
   };
   const hint = {
@@ -212,55 +221,57 @@ function DustThreshold() {
     'save-failed': 'Could not save the dust threshold; nothing changed.',
   }[state];
   const alert = state === 'invalid' || state === 'failed' || state === 'save-failed';
+  const disabled = saved === undefined || state === 'saving';
   return (
-    <form className="shell-setting" onSubmit={(event) => void save(event)} noValidate>
-      <div className="shell-setting__text">
-        <label htmlFor="settings-dust" className="shell-setting__label">
-          Dust threshold
-        </label>
-        {state === 'loading' ? (
-          <PendingHint id="settings-dust-hint" long />
-        ) : (
-          <p
-            id="settings-dust-hint"
-            className="shell-setting__hint"
-            role={alert ? 'alert' : undefined}
-          >
-            {hint}
-          </p>
-        )}
-        <p className="shell-setting__hint">
-          They still count in your balances, so wallets stay in step with the blockchain.
-        </p>
-      </div>
-      <div className="shell-dust">
-        <span className="shell-dust__unit" aria-hidden="true">
-          $
-        </span>
-        <input
-          id="settings-dust"
-          className="ui-input"
-          type="text"
-          inputMode="decimal"
-          placeholder="Off"
-          autoComplete="off"
-          value={text}
-          disabled={saved === undefined || state === 'saving'}
-          aria-invalid={state === 'invalid' || undefined}
-          aria-describedby="settings-dust-hint"
-          onChange={(event) => {
-            setText(event.target.value);
-            if (state !== 'saving') setState('ready');
-          }}
-        />
-        <button
-          type="submit"
-          className="shell-button shell-button--secondary"
-          disabled={saved === undefined || state === 'saving' || text.trim() === (saved ?? '')}
-        >
-          Save
-        </button>
-      </div>
+    <form onSubmit={(event) => void save(event)} noValidate>
+      <SettingRow
+        title={<label htmlFor="settings-dust">Dust threshold</label>}
+        description={
+          <>
+            {state === 'loading' ? (
+              <PendingHint id="settings-dust-hint" />
+            ) : (
+              <span id="settings-dust-hint" role={alert ? 'alert' : undefined}>
+                {hint}
+              </span>
+            )}
+            <span className="ui-sub">
+              They still count in your balances, so wallets stay in step with the blockchain.
+            </span>
+          </>
+        }
+        control={
+          <>
+            <div style={{ width: '9.5rem' }}>
+              <Affix suffix="USD">
+                <Input
+                  id="settings-dust"
+                  numeric
+                  type="text"
+                  placeholder="Off"
+                  autoComplete="off"
+                  value={text}
+                  disabled={disabled}
+                  aria-invalid={state === 'invalid' || undefined}
+                  aria-describedby="settings-dust-hint"
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    if (state !== 'saving') setState('ready');
+                  }}
+                />
+              </Affix>
+            </div>
+            <Button
+              type="submit"
+              variant="secondary"
+              size="sm"
+              disabled={disabled || text.trim() === (saved ?? '')}
+            >
+              Save
+            </Button>
+          </>
+        }
+      />
     </form>
   );
 }
@@ -269,72 +280,75 @@ function DustThreshold() {
 function Profile() {
   const { user } = useAuth();
   return (
-    <section className="shell-card" aria-labelledby="settings-profile">
-      <h2 id="settings-profile">Profile</h2>
-      <div className="shell-setting">
-        <div className="shell-setting__text">
-          <span className="shell-setting__label">Email</span>
-          <p className="shell-setting__hint">Used to sign in and for password reset links.</p>
-        </div>
-        <span className="shell-setting__value">{user?.email ?? '—'}</span>
-      </div>
-    </section>
+    <Card labelledBy="settings-profile">
+      <CardHeader id="settings-profile" title="Profile" />
+      <SettingRow
+        title="Email"
+        description="Used to sign in and for password reset links."
+        control={<span className="ui-strong">{user?.email ?? '—'}</span>}
+      />
+    </Card>
   );
 }
 
 export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  // A link to one card (the hide toast's Open goes to Hidden assets) brings it into view.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash) return;
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    target?.scrollIntoView?.({ block: 'start' });
+  }, [hash]);
   return (
     <div className="shell-page">
-      <PageHeader title="Settings" />
-      <div className="shell-settings">
+      <PageHeader title="Settings" currencySwitch={false} />
+      <div className="settings-stack">
         <Profile />
         <SecuritySettings />
-        <section className="shell-card" aria-labelledby="settings-display">
-          <h2 id="settings-display">Display</h2>
+        <Card labelledBy="settings-display">
+          <CardHeader id="settings-display" title="Display" />
           <MainCurrency />
-          <div className="shell-setting">
-            <div className="shell-setting__text">
-              <span id="settings-theme" className="shell-setting__label">
-                Theme
-              </span>
-              <p id="settings-theme-hint" className="shell-setting__hint">
+          <SettingRow
+            title="Theme"
+            titleId="settings-theme"
+            description={
+              <span id="settings-theme-hint">
                 {theme === 'system'
                   ? `Follows your device, now ${resolvedTheme}`
                   : 'Saved in this browser'}
-              </p>
-            </div>
-            <SegmentedControl
-              name="theme"
-              labelledBy="settings-theme"
-              describedBy="settings-theme-hint"
-              options={themeChoices}
-              value={theme}
-              onChange={setTheme}
-            />
-          </div>
-        </section>
+              </span>
+            }
+            control={
+              <SegmentedControl
+                name="theme"
+                labelledBy="settings-theme"
+                describedBy="settings-theme-hint"
+                options={themeChoices}
+                value={theme}
+                onChange={setTheme}
+              />
+            }
+          />
+        </Card>
         <InflationSettings />
-        <section className="shell-card" aria-labelledby="settings-wallets">
-          <h2 id="settings-wallets">Wallets</h2>
+        <Card labelledBy="settings-wallets">
+          <CardHeader id="settings-wallets" title="Wallets" />
           <DustThreshold />
-        </section>
+        </Card>
         <HiddenAssets />
-        <section className="shell-card" aria-labelledby="settings-history">
-          <h2 id="settings-history">History</h2>
-          <div className="shell-setting">
-            <div className="shell-setting__text">
-              <span className="shell-setting__label">Change history</span>
-              <p className="shell-setting__hint">
-                Who changed what and when: every transaction you added, corrected or deleted, and
-                each answer to a blockchain transaction.
-              </p>
-            </div>
-            <Link className="shell-button shell-button--secondary" to="/history">
-              Open history
-            </Link>
-          </div>
-        </section>
+        <Card labelledBy="settings-history">
+          <CardHeader id="settings-history" title="History" />
+          <SettingRow
+            title="Change history"
+            description="Who changed what and when: every transaction you added, corrected or deleted, and each answer to a blockchain transaction."
+            control={
+              <ButtonLink variant="secondary" size="sm" to="/history">
+                Open history
+              </ButtonLink>
+            }
+          />
+        </Card>
         <DataExport />
       </div>
     </div>

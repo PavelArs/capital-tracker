@@ -1,6 +1,10 @@
 import { accountingApi, type WalletKind } from '@api/accounting.api';
 import { type FormEvent, useRef, useState } from 'react';
-import Modal from '@/ui/Modal';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Input, Select } from '@/ui/inputs';
+import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { requestFailure } from '@/utils/request-failure';
 import { kindLabels, walletKinds } from './wallets';
 
@@ -75,65 +79,57 @@ export default function EditWalletDialog({ accountId, name, kind, onClose, onSav
       }}
     >
       <form onSubmit={save} noValidate>
-        <div className="ui-modal__head">
-          <h2 id="edit-wallet">Edit wallet</h2>
-        </div>
-        <div className="ui-modal__body">
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor="wallet-new-name">
-              Name
-            </label>
-            <input
-              ref={input}
-              id="wallet-new-name"
-              className="ui-input"
-              maxLength={MAX_NAME}
-              value={value}
-              aria-invalid={error ? true : undefined}
-              onChange={(event) => setValue(event.target.value)}
-            />
-            <span className="ui-field__hint">
-              Transactions, addresses and balances stay as they are.
-            </span>
-          </div>
-          <div className="ui-field">
-            <label className="ui-field__label" htmlFor="wallet-kind">
-              How you hold it
-            </label>
-            <select
-              id="wallet-kind"
-              className="ui-input"
-              value={chosen}
-              onChange={(event) => setChosen(event.target.value as WalletKind | typeof NOT_CHOSEN)}
-            >
-              <option value={NOT_CHOSEN}>Not chosen</option>
-              {walletKinds.map((item) => (
-                <option key={item} value={item}>
-                  {kindLabels[item]}
-                </option>
-              ))}
-            </select>
-          </div>
-          {error && (
-            <p className="ui-banner ui-banner--neg" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="ui-modal__foot">
-          <button
-            type="button"
-            className="shell-button shell-button--ghost"
-            disabled={saving}
-            onClick={onClose}
+        <ModalHeader
+          titleId="edit-wallet"
+          title="Edit wallet"
+          onClose={onClose}
+          closeDisabled={saving}
+        />
+        <ModalBody>
+          <Field
+            id="wallet-new-name"
+            label="Name"
+            hint="Transactions, addresses and balances stay as they are."
           >
+            {(control) => (
+              <Input
+                {...control}
+                ref={input}
+                maxLength={MAX_NAME}
+                value={value}
+                aria-invalid={error ? true : undefined}
+                onChange={(event) => setValue(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field id="wallet-kind" label="How you hold it">
+            {(control) => (
+              <Select
+                {...control}
+                value={chosen}
+                onChange={(event) =>
+                  setChosen(event.target.value as WalletKind | typeof NOT_CHOSEN)
+                }
+              >
+                <option value={NOT_CHOSEN}>Not chosen</option>
+                {walletKinds.map((item) => (
+                  <option key={item} value={item}>
+                    {kindLabels[item]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {error && <Banner tone="neg">{error}</Banner>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             Cancel
-          </button>
-          <span className="wallets-grow" />
-          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );

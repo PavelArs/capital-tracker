@@ -88,8 +88,8 @@ describe('GOAL-DASH: the nearest goal on the dashboard', () => {
     show();
     const card = await screen.findByRole('region', { name: 'Nearest goal' });
     // The shared design-system link (accent colour, underline on hover), not the browser's default.
-    expect(within(card).getByRole('link', { name: 'Open goal' })).toHaveClass('shell-link');
-    expect(within(card).getByRole('link', { name: 'All goals · 1' })).toHaveClass('shell-link');
+    expect(within(card).getByRole('link', { name: 'Open goal' })).toHaveClass('ui-link');
+    expect(within(card).getByRole('link', { name: 'All goals · 1' })).toHaveClass('ui-link');
     expect(within(card).getByText('Behind')).toHaveClass('ui-badge', 'ui-badge--dot');
   });
 

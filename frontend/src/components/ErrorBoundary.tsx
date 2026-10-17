@@ -1,5 +1,7 @@
 import { Component, ErrorInfo, type ReactNode } from 'react';
+import { ErrorState } from '../ui/ErrorState';
 import { logger } from '../utils/logger';
+import './ErrorBoundary.css';
 
 interface Props {
   children: ReactNode;
@@ -10,6 +12,7 @@ interface State {
   hasError: boolean;
 }
 
+/** The last resort: the app failed while drawing. A card says so and offers a reload. */
 class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
@@ -27,10 +30,13 @@ class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         this.props.fallback || (
-          <div className="p-4 text-center">
-            <h1 className="text-2xl font-bold text-red-600">Something went wrong.</h1>
-            <p className="text-gray-600">Please try refreshing the page.</p>
-          </div>
+          <main className="ui-crash">
+            <h1 className="ui-crash__title">Something went wrong.</h1>
+            <ErrorState retryLabel="Reload the page" onRetry={() => window.location.reload()}>
+              The app stopped while drawing this screen. Your data is safe on the server; reload the
+              page to try again.
+            </ErrorState>
+          </main>
         )
       );
     }

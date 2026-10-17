@@ -26,5 +26,11 @@ export function useMediaQuery(query: string): boolean {
 /** Below 640 px a table no longer fits; phones get a list of two-line rows instead. */
 export const useNarrowScreen = () => useMediaQuery('(max-width: 639.98px)');
 
+/**
+ * Below 900 px the wide tables (Portfolio's eight columns, Transactions') no longer fit without
+ * cutting their last columns: tablets get the phone's two-line rows instead.
+ */
+export const useRowsLayout = () => useMediaQuery('(max-width: 899.98px)');
+
 /** The width where the page header stacks and the bell panel becomes a sheet (shell-page.css). */
 export const useCompactScreen = () => useMediaQuery('(max-width: 559.98px)');

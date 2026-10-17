@@ -1,14 +1,14 @@
 .ui-scrim {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--z-scrim);
   display: grid;
   place-items: center;
   padding: 24px 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(4, 6, 10, 0.62);
-  animation: ui-fade-in 0.15s ease-out;
+  background: var(--scrim);
+  animation: ui-fade-in var(--dur-1) ease-out;
 }
 
 /* The page behind an open dialog stays put; the reserved scrollbar gutter (index.css) keeps it
@@ -17,25 +17,21 @@
   overflow: hidden;
 }
 
-:root[data-theme="light"] .ui-scrim {
-  background: rgba(18, 23, 38, 0.35);
-}
-
-/* A confirmation opened from a drawer covers the drawer (z-index 81). */
+/* A confirmation opened from a drawer covers the drawer (--z-dialog). */
 .ui-scrim--over-drawer {
-  z-index: 90;
+  z-index: calc(var(--z-dialog) + 1);
 }
 
 .ui-modal {
   width: min(520px, 100%);
   border: 1px solid var(--line-strong);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
-  animation: ui-pop-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ui-pop-in var(--dur-2) var(--ease-out);
 }
 
 .ui-modal--narrow {
@@ -64,9 +60,14 @@
   font-weight: 600;
 }
 
-.ui-modal__head .shell-note {
+.ui-modal__intro {
   flex-basis: 100%;
   margin-top: 8px;
+}
+
+.ui-modal__intro {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
 }
 
 .ui-modal__info {
@@ -86,6 +87,8 @@
 
 .ui-modal__foot {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 22px 18px;
@@ -93,11 +96,18 @@
 }
 
 .ui-modal__summary {
-  margin-right: auto;
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0 auto 0 0;
   align-self: center;
   color: var(--ink-3);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Pushes the buttons after it to the right (Back … Continue). */
+.ui-grow {
+  flex: 1;
 }
 
 /* A wide dialog never grows past the window: the head and the footer with its main action stay
@@ -128,54 +138,130 @@
   overscroll-behavior: contain;
 }
 
-/* Phones: a dialog is a full-screen sheet, so the form's footer with Save stays in reach
-   and only the fields scroll. */
-@media (max-width: 639.98px) {
-  /* The sheet rises from the bottom edge instead of popping in the middle. */
-  .ui-modal--wide {
-    animation: ui-sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .ui-scrim:has(> .ui-modal--wide) {
-    place-items: stretch;
+/* Phones: a dialog is a sheet from the bottom, as tall as its content (one rule for every small
+   form and confirmation); a wide dialog (a form of many fields: Add transaction, Add wallet) is a
+   full-screen sheet. Either way the head stays at the top, the footer with Save stays above the
+   home indicator (it is outside the scrolling body) and only the fields scroll. */
+@media (max-width: 640px) {
+  .ui-scrim:has(> .ui-modal) {
+    place-items: end stretch;
     padding: 0;
     overflow: hidden;
   }
 
+  .ui-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    animation: ui-sheet-in var(--dur-3) var(--ease-out);
+  }
+
   .ui-modal--wide {
-    min-height: 0;
+    height: 100vh;
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
+    height: 100dvh;
     max-height: none;
+    padding-top: env(safe-area-inset-top, 0px);
     border: 0;
     border-radius: 0;
   }
 
-  .ui-modal--wide .ui-modal__head {
-    padding: 16px;
+  /* A dialog whose content is not split into head, body and foot still scrolls as a whole. */
+  .ui-modal:not(:has(.ui-modal__body)) {
+    overflow-y: auto;
+  }
+
+  .ui-modal > form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .ui-modal .ui-modal__head,
+  .ui-modal .ui-modal__steps,
+  .ui-modal .ui-modal__foot {
+    flex: none;
+  }
+
+  .ui-modal:not(.ui-modal--narrow) .ui-modal__head {
+    min-height: 56px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--line);
   }
 
-  .ui-modal--wide .ui-modal__body {
+  .ui-modal:not(.ui-modal--narrow) .ui-modal__head h2 {
+    font-size: 18px;
+  }
+
+  .ui-modal .ui-modal__body {
     flex: 1;
     align-content: start;
+    min-height: 0;
     padding: 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
-  .ui-modal--wide .ui-modal__foot {
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  .ui-modal .ui-modal__foot {
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* What Save will do reads above the buttons, across the sheet. */
+  .ui-modal .ui-modal__summary {
+    flex: 1 1 100%;
+    margin: 0;
+  }
+
+  .ui-modal .ui-modal__foot .ui-grow {
+    display: none;
+  }
+
+  /* The main action takes the room that is left. */
+  .ui-modal .ui-modal__foot > .ui-btn--primary,
+  .ui-modal .ui-modal__foot > .ui-btn--danger {
+    flex: 1 1 auto;
+  }
+
+  /* A sheet from the bottom (every dialog but a wide one): rounded top corners, up to 92 % of the
+     screen and then its fields scroll. */
+  .ui-modal:not(.ui-modal--wide) {
+    max-height: 92vh;
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
+    max-height: 92dvh;
+    border-width: 1px 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+  }
+
+  /* A confirmation: no hairlines, Cancel and the confirming button side by side at equal width. */
+  .ui-modal--narrow {
+    max-height: 85vh;
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
+    max-height: 85dvh;
+    border-width: 1px 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+  }
+
+  .ui-modal.ui-modal--narrow .ui-modal__head {
+    padding: 20px 16px 0;
+  }
+
+  .ui-modal--narrow .ui-modal__foot {
+    border-top: 0;
+  }
+
+  .ui-modal--narrow .ui-modal__foot > .ui-btn {
+    flex: 1 1 0;
   }
 }
 
-/* Entrances only; closing is immediate. Reduced motion switches every animation off (index.css). */
-@keyframes ui-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
+/* The consequence in a confirmation: the secondary ink, paragraphs spaced. */
+.ui-confirm__text {
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--ink-2);
 }
 
-@keyframes ui-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateY(24px);
-  }
+.ui-confirm__text p {
+  margin: 0;
 }

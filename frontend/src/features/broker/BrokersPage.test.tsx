@@ -201,7 +201,7 @@ describe('BROKERS the Brokers page', () => {
       'Could not refresh your broker accounts; showing the last loaded figures.',
     );
     expect(screen.getByRole('region', { name: 'Total at brokers' })).toHaveTextContent('$5,934.00');
-    await user.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
@@ -213,7 +213,7 @@ describe('BROKERS the Brokers page', () => {
     const user = userEvent.setup();
     renderPage();
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Could not load your broker accounts.');
+    expect(alert).toHaveTextContent("Couldn't load your broker accounts.");
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('region', { name: 'Sample Broker' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);

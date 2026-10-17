@@ -83,6 +83,13 @@ const paths = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="19" cy="12" r="1.5" />
+    </>
+  ),
   tag: (
     <>
       <path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
@@ -172,6 +179,14 @@ const paths = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  // Points right; a back link (Crumb) turns it round.
+  chevron: <path d="m9 18 6-6-6-6" />,
+  wifi: (
+    <>
+      <path d="M5 12.6a10 10 0 0 1 14 0M2 9a15 15 0 0 1 20 0M8.5 16.1a5 5 0 0 1 7 0" />
+      <path d="M12 20h.01" />
+    </>
+  ),
   eyeOff: (
     <path d="M10.7 5.1A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13 13 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20M9.9 9.9a3 3 0 0 0 4.2 4.2" />
   ),
@@ -187,9 +202,9 @@ export function Icon({ name, className = 'shell-icon' }: { name: IconName; class
   );
 }
 
-export function BrandMark() {
+export function BrandMark({ className = 'shell-brand__mark' }: { className?: string }) {
   return (
-    <svg className="shell-brand__mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+    <svg className={className} viewBox="0 0 26 26" aria-hidden="true" focusable="false">
       <rect x="2" y="14" width="5" height="10" rx="1.5" fill="var(--ink-3)" />
       <rect x="10.5" y="8" width="5" height="16" rx="1.5" fill="var(--ink-2)" />
       <rect x="19" y="2" width="5" height="22" rx="1.5" fill="var(--accent)" />

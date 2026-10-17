@@ -1,0 +1,155 @@
+/* Shared text utilities of the design system (prototype .num .mono .muted .soft .pos .neg .sr
+   .link .section-t .row2). Loaded once from main.tsx, before every feature stylesheet, so a
+   feature never copies them and never imports another feature's CSS for them. */
+
+/* Figures in columns line up: amounts, quantities, percentages. */
+.ui-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Addresses, hashes and keys only. */
+.ui-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: -0.01em;
+}
+
+.ui-muted {
+  color: var(--ink-3);
+}
+
+.ui-soft {
+  color: var(--ink-2);
+}
+
+.ui-pos {
+  color: var(--pos);
+}
+
+.ui-neg {
+  color: var(--neg);
+}
+
+.ui-strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ui-nowrap {
+  white-space: nowrap;
+}
+
+/* The second line inside a cell or a row: 12 px, muted, on a line of its own. */
+.ui-sub {
+  display: block;
+  color: var(--ink-3);
+  font-weight: 400;
+  font-size: var(--fs-xs);
+}
+
+/* Visually hidden, still read by screen readers. */
+.ui-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A link, or a button that reads as one: accent, no underline until hovered. */
+.ui-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  text-align: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ui-link:hover {
+  text-decoration: underline;
+}
+
+.ui-link:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.ui-link--muted {
+  color: var(--ink-3);
+}
+
+.ui-link--muted:hover {
+  color: var(--ink-2);
+}
+
+/* A link or link-button that stands on its own (not inside a sentence): a hit area of at least
+   24 px, 40 px on touch screens (WCAG 2.5.8), without changing how it looks. */
+.ui-link--target {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-link--target {
+    min-height: 40px;
+  }
+}
+
+/* The title of a section inside a card, a drawer or a dialog. */
+.ui-section-t {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+/* Two equal columns; one below 560 px. */
+.ui-row2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+
+@media (max-width: 559.98px) {
+  .ui-row2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* "Nothing matches": one muted, centred line inside a card. */
+.ui-none {
+  margin: 0;
+  padding: 28px 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* Icons (features/shell/icons.tsx): 18 px strokes; --sm is 15 px. */
+.shell-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shell-icon--sm {
+  width: 15px;
+  height: 15px;
+}

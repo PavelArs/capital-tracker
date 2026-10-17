@@ -1,12 +1,21 @@
 import { cachedReads } from '@api/cached-reads';
 import { type DepositDetail, depositsApi } from '@api/deposits.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card, CardHeader } from '@/ui/Card';
+import { ErrorState } from '@/ui/ErrorState';
+import { IconButton } from '@/ui/IconButton';
+import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { ListRowText, rowClass } from '@/ui/ListRow';
+import { Crumb, PageHead } from '@/ui/PageHead';
 import Pager, { usePages } from '@/ui/Pager';
+import { Stat, Stats } from '@/ui/Stats';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { basisText } from '../shell/basis-text';
@@ -36,20 +45,9 @@ import {
   toneClass,
 } from './deposit-format';
 import '../shell/shell-page.css';
-import '../portfolio/portfolio.css';
 import './deposits.css';
 
 type Dialog = 'movement' | 'check' | 'rate' | 'delete' | null;
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="shell-card deposit-stat">
-      <span className="deposit-stat__label">{label}</span>
-      <strong className="deposit-stat__value">{value}</strong>
-      {hint && <span className="deposit-stat__hint">{hint}</span>}
-    </div>
-  );
-}
 
 /** The interest posted so far, newest first, five periods a page: a daily deposit has many. */
 function InterestPeriods({
@@ -147,14 +145,11 @@ function Movements({
   const narrow = useNarrowScreen();
   const remove = (movement: DepositDetail['movements'][number]) =>
     movement.id !== opening && (
-      <button
-        type="button"
-        className="shell-close"
-        aria-label={`Remove the ${movementText[movement.kind].toLowerCase()} of ${dateText(movement.date)}`}
+      <IconButton
+        label={`Remove the ${movementText[movement.kind].toLowerCase()} of ${dateText(movement.date)}`}
+        icon="trash"
         onClick={() => onRemove(movement.id)}
-      >
-        <Icon name="trash" />
-      </button>
+      />
     );
   if (narrow)
     return (
@@ -267,7 +262,7 @@ function Checks({
 // DEP-DETAIL: one deposit with its computed interest, its movements and its checks.
 export default function DepositPage() {
   const { depositId = '' } = useParams();
-  const { data: deposit, error, replace } = useCachedRead(cachedReads.deposit, depositId);
+  const { data: deposit, error, replace, reload } = useCachedRead(cachedReads.deposit, depositId);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
   const [asked] = useAskedCurrency();
@@ -275,14 +270,25 @@ export default function DepositPage() {
   const [view] = useValueView();
   const { main } = useMainCurrency();
   const navigate = useNavigate();
+  const toast = useToast();
   const shown = asked ?? main ?? 'USD';
 
   const missing = isAxiosError(error) && error.response?.status === 404;
   const failed = error !== null && !missing && deposit === null;
 
-  const saved = (next: DepositDetail) => {
+  const saved = (next: DepositDetail, title: string, detail?: string) => {
     replace(next);
     setDialog(null);
+    toast.show({ tone: 'success', title, ...(detail ? { detail } : {}) });
+  };
+  // What a saved check found: the bank and the app agree, or by how much they differ. Said only
+  // when that day has one check, so it is the one just saved.
+  const checkResult = (next: DepositDetail, checkedOn: string) => {
+    const rows = next.checks.filter((row) => row.checkedOn === checkedOn);
+    if (rows.length !== 1) return undefined;
+    return Number(rows[0].difference) === 0
+      ? 'The bank and the app agree'
+      : `Differs by ${money(rows[0].difference, next.currency, true)}`;
   };
   const back = withCurrency('/deposits', asked);
 
@@ -290,6 +296,7 @@ export default function DepositPage() {
     setRemoveFailed(null);
     try {
       replace(await depositsApi.removeMovement(depositId, id));
+      toast.show({ tone: 'success', title: 'Movement removed' });
     } catch (error) {
       const message = isAxiosError(error) ? error.response?.data?.message : null;
       setRemoveFailed(typeof message === 'string' ? message : 'Could not remove it. Try again.');
@@ -299,10 +306,13 @@ export default function DepositPage() {
   if (missing)
     return (
       <div className="shell-page">
-        <PageHeader title="Deposit" />
-        <p className="shell-note" role="alert">
-          This deposit does not exist. <Link to={back}>Back to deposits</Link>
-        </p>
+        <PageHeader title="Banks" />
+        <ErrorState>
+          This deposit does not exist.{' '}
+          <Link className="ui-link" to={back}>
+            Back to deposits
+          </Link>
+        </ErrorState>
       </div>
     );
 
@@ -314,136 +324,127 @@ export default function DepositPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title={deposit ? deposit.name : 'Deposit'}
-        valueSwitch
-        actions={
-          deposit && (
-            <>
-              <button
-                type="button"
-                className="shell-button shell-button--secondary"
-                onClick={() => setDialog('movement')}
-              >
-                <Icon name="plus" className="shell-icon shell-icon--sm" />
-                Record movement
-              </button>
-              <button
-                type="button"
-                className="shell-button shell-button--secondary"
-                onClick={() => setDialog('check')}
-              >
-                <Icon name="check" className="shell-icon shell-icon--sm" />
-                Check balance
-              </button>
-            </>
-          )
-        }
-      />
-      <p className="deposit-back">
-        <Link to={back}>← Banks</Link>
-      </p>
+      <PageHeader title="Banks" valueSwitch />
+      <Crumb to={back}>Banks</Crumb>
       {failed ? (
-        <p className="shell-note" role="alert">
-          Could not load the deposit. Try again later.
-        </p>
+        <ErrorState what="this deposit" onRetry={() => reload()} />
       ) : deposit === null || own === undefined ? (
         <PageSkeleton label="Loading deposit" show={['cards']} />
       ) : (
         <>
-          <section className="shell-card deposit-head">
-            <div>
-              <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
-              <h2>{deposit.bank}</h2>
-              <p className="deposit-card__terms">{termText(deposit)}</p>
-              {rate && real && (
-                <p className="deposit-card__terms">
-                  <span className={toneClass(real.ratePercent)}>{rate}</span>
-                </p>
-              )}
-              <p className="deposit-card__terms">
-                Started {dateText(deposit.startDate)}
-                {deposit.closedOn ? `, closed ${dateText(deposit.closedOn)}` : ''}
-              </p>
-            </div>
-            <div className="deposit-head__value">
-              <strong>{money(deposit.values[shown], shown)}</strong>
-              {shown !== own && <span>{money(deposit.balance, own)}</span>}
-            </div>
-          </section>
+          <PageHead
+            icon={<Icon name="archive" />}
+            title={deposit.name}
+            subtitle={
+              <>
+                <span>{deposit.bank}</span>
+                {' · '}
+                <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>{' '}
+                <span>{termText(deposit)}</span>
+                {rate && real && (
+                  <>
+                    {' · '}
+                    <span className={toneClass(real.ratePercent)}>{rate}</span>
+                  </>
+                )}
+                {' · '}
+                <span>
+                  Started {dateText(deposit.startDate)}
+                  {deposit.closedOn ? `, closed ${dateText(deposit.closedOn)}` : ''}
+                </span>
+              </>
+            }
+            aside={
+              <div className="deposit-head__value">
+                <strong className="ui-num">{money(deposit.values[shown], shown)}</strong>
+                {shown !== own && <span className="ui-num">{money(deposit.balance, own)}</span>}
+              </div>
+            }
+            actions={
+              <>
+                <Button variant="ghost" icon="plus" onClick={() => setDialog('movement')}>
+                  Record movement
+                </Button>
+                <Button variant="secondary" icon="check" onClick={() => setDialog('check')}>
+                  Check balance
+                </Button>
+              </>
+            }
+          />
           {note && (
-            <p className="ui-banner ui-banner--warn ui-banner--action" role="status">
-              <Icon name="alert" className="shell-icon shell-icon--sm" />
-              <span>{note}</span>
-            </p>
+            <Banner tone="warn" role="status">
+              {note}
+            </Banner>
           )}
-          <div className="deposit-stats">
-            <Stat label="In the deposit" value={money(deposit.principal, own)} />
-            {deposit.interestEarned !== undefined && (
+          <Card>
+            <Stats>
+              <Stat label="In the deposit" value={money(deposit.principal, own)} />
+              {deposit.interestEarned !== undefined && (
+                <Stat
+                  label="Interest earned"
+                  value={money(deposit.interestEarned, own)}
+                  hint={
+                    real?.gain != null
+                      ? `${money(real.gain, own, true)} after ${own} inflation, ${basisText(basis, real, own)}`
+                      : `No ${own} inflation figures for the whole time yet`
+                  }
+                />
+              )}
               <Stat
-                label="Interest earned"
-                value={money(deposit.interestEarned, own)}
-                hint={
-                  real?.gain != null
-                    ? `${money(real.gain, own, true)} after ${own} inflation, ${basisText(basis, real, own)}`
-                    : `No ${own} inflation figures for the whole time yet`
-                }
+                label="Earned, not posted yet"
+                value={money(deposit.accrued, own)}
+                hint="Until the next interest date"
               />
-            )}
-            <Stat
-              label="Earned, not posted yet"
-              value={money(deposit.accrued, own)}
-              hint="Until the next interest date"
-            />
-            {deposit.capitalized && (
-              <Stat
-                label="Interest added so far"
-                value={money(capitalizedInterest(deposit.periods), own)}
-                hint="Already part of the deposit"
-              />
-            )}
-            {/* A capitalizing deposit closed early can still owe the interest it kept. */}
-            {(!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
-              <Stat
-                label="Interest to be paid out"
-                value={money(deposit.due, own)}
-                hint="Posted by the bank, not recorded as paid"
-              />
-            )}
-            {deposit.nextPayout && (
-              <Stat
-                label={
-                  deposit.nextPayout.treatment === 'capitalized' ? 'Next, added' : 'Next, paid'
-                }
-                value={money(deposit.nextPayout.interest, own)}
-                hint={dateText(deposit.nextPayout.date)}
-              />
-            )}
-            {deposit.atMaturity && (
-              <Stat
-                label="At the end of the term"
-                value={money(deposit.atMaturity.balance, own)}
-                hint={[
-                  `${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`,
-                  deposit.atMaturity.inTodaysMoney?.[basis] &&
-                    `≈ ${money(deposit.atMaturity.inTodaysMoney[basis].amount, own)} in today's money${
-                      deposit.atMaturity.inTodaysMoney[basis].estimated ? ' (estimated)' : ''
-                    }`,
-                ]
-                  .filter(Boolean)
-                  .join(', ')}
-              />
-            )}
-            {check && (
-              <Stat
-                label="Last check"
-                value={
-                  Number(check.difference) === 0 ? 'Matches' : money(check.difference, own, true)
-                }
-                hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`}
-              />
-            )}
-          </div>
+              {deposit.capitalized && (
+                <Stat
+                  label="Interest added so far"
+                  value={money(capitalizedInterest(deposit.periods), own)}
+                  hint="Already part of the deposit"
+                />
+              )}
+              {/* A capitalizing deposit closed early can still owe the interest it kept. */}
+              {(!deposit.capitalized || /[1-9]/.test(deposit.due)) && (
+                <Stat
+                  label="Interest to be paid out"
+                  value={money(deposit.due, own)}
+                  hint="Posted by the bank, not recorded as paid"
+                />
+              )}
+              {deposit.nextPayout && (
+                <Stat
+                  label={
+                    deposit.nextPayout.treatment === 'capitalized' ? 'Next, added' : 'Next, paid'
+                  }
+                  value={money(deposit.nextPayout.interest, own)}
+                  hint={dateText(deposit.nextPayout.date)}
+                />
+              )}
+              {deposit.atMaturity && (
+                <Stat
+                  label="At the end of the term"
+                  value={money(deposit.atMaturity.balance, own)}
+                  hint={[
+                    `${money(deposit.atMaturity.interest, own)} of interest by ${dateText(deposit.atMaturity.date)}`,
+                    deposit.atMaturity.inTodaysMoney?.[basis] &&
+                      `≈ ${money(deposit.atMaturity.inTodaysMoney[basis].amount, own)} in today's money${
+                        deposit.atMaturity.inTodaysMoney[basis].estimated ? ' (estimated)' : ''
+                      }`,
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
+                />
+              )}
+              {check && (
+                <Stat
+                  label="Last check"
+                  value={
+                    Number(check.difference) === 0 ? 'Matches' : money(check.difference, own, true)
+                  }
+                  hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`}
+                />
+              )}
+            </Stats>
+          </Card>
 
           {deposit.chart && deposit.chart.length > 0 && (
             <DepositChart
@@ -455,101 +456,77 @@ export default function DepositPage() {
           )}
 
           <div className="deposit-columns">
-            <section className="shell-card" aria-labelledby="deposit-terms">
-              <h2 id="deposit-terms">Terms</h2>
-              <dl className="deposit-terms">
-                <div>
-                  <dt>Bank</dt>
-                  <dd>{deposit.bank}</dd>
-                </div>
-                <div>
-                  <dt>Currency</dt>
-                  <dd>{own}</dd>
-                </div>
-                <div>
-                  <dt>Rate</dt>
-                  <dd>
-                    {deposit.rates.map((rate) => (
-                      <span key={rate.effectiveFrom} className="deposit-terms__rate">
-                        {rate.ratePercent}% a year from {dateText(rate.effectiveFrom)}
-                      </span>
-                    ))}
-                    <button
-                      type="button"
-                      className="deposit-link"
-                      aria-label="Change the rate"
-                      onClick={() => setDialog('rate')}
-                    >
-                      Change
-                    </button>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Interest</dt>
-                  <dd>{interestText(deposit)}</dd>
-                </div>
-                <div>
-                  <dt>Term</dt>
-                  <dd>{periodText(deposit)}</dd>
-                </div>
-                <div>
-                  <dt>Closing early</dt>
-                  <dd>{earlyCloseText[deposit.earlyClose]}</dd>
-                </div>
-              </dl>
-            </section>
+            <Card labelledBy="deposit-terms">
+              <CardHeader id="deposit-terms" title="Terms" />
+              <KeyValue>
+                <KeyValueRow term="Bank">{deposit.bank}</KeyValueRow>
+                <KeyValueRow term="Currency">{own}</KeyValueRow>
+                <KeyValueRow term="Rate">
+                  {deposit.rates.map((rate) => (
+                    <span key={rate.effectiveFrom} className="deposit-terms__rate">
+                      {rate.ratePercent}% a year from {dateText(rate.effectiveFrom)}
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    className="ui-link ui-link--target"
+                    aria-label="Change the rate"
+                    onClick={() => setDialog('rate')}
+                  >
+                    Change
+                  </button>
+                </KeyValueRow>
+                <KeyValueRow term="Interest">{interestText(deposit)}</KeyValueRow>
+                <KeyValueRow term="Term">{periodText(deposit)}</KeyValueRow>
+                <KeyValueRow term="Closing early">{earlyCloseText[deposit.earlyClose]}</KeyValueRow>
+              </KeyValue>
+            </Card>
 
-            <section className="shell-card" aria-labelledby="deposit-periods">
-              <h2 id="deposit-periods">Interest by period</h2>
+            <Card labelledBy="deposit-periods">
+              <CardHeader id="deposit-periods" title="Interest by period" />
               {deposit.periods.length === 0 ? (
-                <p className="shell-note">No interest has been posted yet.</p>
+                <p className="ui-muted">No interest has been posted yet.</p>
               ) : (
                 <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
               )}
               {Number(deposit.interestForfeited) > 0 && (
-                <p className="shell-note">
+                <Banner tone="info">
                   Closing the deposit early lost {money(deposit.interestForfeited, own)} of
                   interest.
-                </p>
+                </Banner>
               )}
-            </section>
+            </Card>
           </div>
 
-          <section className="shell-card" aria-labelledby="deposit-movements">
-            <h2 id="deposit-movements">Movements</h2>
-            {removeFailed && (
-              <p className="ui-banner ui-banner--neg" role="alert">
-                {removeFailed}
-              </p>
-            )}
+          <Card labelledBy="deposit-movements">
+            <CardHeader id="deposit-movements" title="Movements" />
+            {removeFailed && <Banner tone="neg">{removeFailed}</Banner>}
             <Movements
               movements={deposit.movements}
               currency={own}
               onRemove={(id) => void removeMovement(id)}
             />
-          </section>
+          </Card>
 
-          <section className="shell-card" aria-labelledby="deposit-checks">
-            <h2 id="deposit-checks">Checks against the bank</h2>
+          <Card labelledBy="deposit-checks">
+            <CardHeader id="deposit-checks" title="Checks against the bank" />
             {deposit.checks.length === 0 ? (
-              <p className="shell-note">
+              <p className="ui-muted">
                 Enter the balance the bank's app shows now and then. A difference means a missed
                 payout or a different rate.
               </p>
             ) : (
               <Checks checks={deposit.checks} currency={own} />
             )}
-          </section>
+          </Card>
 
           <div className="deposit-actions">
-            <button
-              type="button"
-              className="shell-button shell-button--ghost"
-              onClick={() => setDialog('delete')}
-            >
-              <Icon name="trash" className="shell-icon shell-icon--sm" />
+            <Button variant="ghost" destructive icon="trash" onClick={() => setDialog('delete')}>
               Delete deposit
-            </button>
+            </Button>
+            <span className="ui-sub">
+              Removes the deposit with its movements, balance checks and rate changes.
+            </span>
           </div>
 
           {dialog === 'movement' && (
@@ -557,7 +534,7 @@ export default function DepositPage() {
               id={deposit.id}
               currency={own}
               onClose={() => setDialog(null)}
-              onSaved={saved}
+              onSaved={(next) => saved(next, 'Movement recorded')}
             />
           )}
           {dialog === 'check' && (
@@ -566,18 +543,27 @@ export default function DepositPage() {
               currency={own}
               capitalized={deposit.capitalized}
               onClose={() => setDialog(null)}
-              onSaved={saved}
+              onSaved={(next, checkedOn) =>
+                saved(next, 'Balance check saved', checkResult(next, checkedOn))
+              }
             />
           )}
           {dialog === 'rate' && (
-            <RateDialog id={deposit.id} onClose={() => setDialog(null)} onSaved={saved} />
+            <RateDialog
+              id={deposit.id}
+              onClose={() => setDialog(null)}
+              onSaved={(next) => saved(next, 'Rate changed')}
+            />
           )}
           {dialog === 'delete' && (
             <DeleteDepositDialog
               id={deposit.id}
               name={deposit.name}
               onClose={() => setDialog(null)}
-              onDeleted={() => navigate(back)}
+              onDeleted={() => {
+                toast.show({ tone: 'success', title: 'Deposit deleted' });
+                navigate(back);
+              }}
             />
           )}
         </>

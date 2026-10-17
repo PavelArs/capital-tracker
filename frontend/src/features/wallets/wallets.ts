@@ -27,6 +27,20 @@ export function sum(values: readonly string[]): string {
   return decimal(values.reduce((total, value) => total + units(value), 0n));
 }
 
+/**
+ * A holding's share of a positive wallet total, to one decimal place, rounded half up from the
+ * exact quotient. A held share too small for one decimal reads "<0.1%", never "0.0%", which
+ * would say the wallet holds none of it (polish 23).
+ */
+export function holdingShare(value: string, total: string): string {
+  const part = units(value);
+  const magnitude = part < 0n ? -part : part;
+  // Twice the share in tenths of a percent, so that adding one and halving rounds half up.
+  const tenths = ((magnitude * 2000n) / units(total) + 1n) / 2n;
+  if (part > 0n && tenths === 0n) return '<0.1%';
+  return `${part < 0n && tenths > 0n ? '-' : ''}${tenths / 10n}.${tenths % 10n}%`;
+}
+
 /** A chain asset as the portfolio knows it: the crypto asset with that ticker. */
 export function isCoin(asset: { symbol: string | null; assetType: string }, symbol: string) {
   return asset.assetType === 'crypto' && asset.symbol?.toUpperCase() === symbol;

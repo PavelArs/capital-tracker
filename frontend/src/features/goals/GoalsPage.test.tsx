@@ -1,10 +1,13 @@
 import { type Goal, type GoalList, goalsApi } from '@api/goals.api';
 import { forgetReads } from '@api/read-cache';
+import { ToastProvider } from '@contexts/ToastContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError } from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ToastViewport from '@/components/Toast';
+import GoalPage from './GoalPage';
 import GoalsPage from './GoalsPage';
 
 // Synthetic goals and sums only.
@@ -81,12 +84,30 @@ function GoalOpened() {
 
 function open(state?: unknown) {
   render(
-    <MemoryRouter initialEntries={[{ pathname: '/goals', state }]}>
-      <Routes>
-        <Route path="/goals" element={<GoalsPage />} />
-        <Route path="/goals/:goalId" element={<GoalOpened />} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={[{ pathname: '/goals', state }]}>
+        <Routes>
+          <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/goals/:goalId" element={<GoalOpened />} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
+  );
+}
+
+/** The list with the real goal page behind each card, for a goal opened from the list. */
+function openWithPages() {
+  render(
+    <ToastProvider>
+      <MemoryRouter initialEntries={['/goals']}>
+        <Routes>
+          <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/goals/:goalId" element={<GoalPage />} />
+        </Routes>
+      </MemoryRouter>
+      <ToastViewport />
+    </ToastProvider>,
   );
 }
 
@@ -130,6 +151,16 @@ describe('GOAL-LIST: the goals and where the portfolio stands against them', () 
     expect(names).toEqual(['Down payment A', 'Reserve B']);
   });
 
+  it("GOAL-ADD-PLACE has Add goal as the page's primary action in its intro line, not in the top bar", async () => {
+    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));
+    open();
+    await screen.findByText('Down payment A');
+    const add = screen.getByRole('button', { name: 'Add goal' });
+    expect(add).toHaveClass('ui-btn--primary');
+    expect(add.closest('.ui-intro')).not.toBeNull();
+    expect(add.closest('header')).toBeNull();
+  });
+
   it('invites the first goal when there is none', async () => {
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([]));
     open();
@@ -139,7 +170,7 @@ describe('GOAL-LIST: the goals and where the portfolio stands against them', () 
   it('says so when the list cannot be loaded', async () => {
     vi.spyOn(goalsApi, 'list').mockRejectedValue(new Error('down'));
     open();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the goals');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your goals");
   });
 });
 
@@ -263,144 +294,39 @@ describe('GOAL-TERMS: adding, changing and deleting a goal', () => {
     expect(within(dialog).getByLabelText('Name')).toHaveValue('Goal');
   });
 
-  it('goals-20 changes a goal with its entries filled in as they were entered', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));
-    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...flat, name: 'Flat' });
-    open();
-    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
-    expect(within(dialog).getByLabelText('Name')).toHaveValue('Down payment A');
-    // goals-20: the sums as the owner entered them, without the padded cents.
-    expect(within(dialog).getByLabelText('Sum to reach')).toHaveValue('22000000');
-    expect(within(dialog).getByLabelText('Expected return, % a year')).toHaveValue('14');
-    expect(within(dialog).getByLabelText(/^You put in a month/)).toHaveValue('150000');
-    await user.clear(within(dialog).getByLabelText('Name'));
-    await user.type(within(dialog).getByLabelText('Name'), 'Flat');
-    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    await waitFor(() =>
-      expect(update).toHaveBeenCalledWith(flat.id, {
-        name: 'Flat',
-        currency: 'RUB',
-        targetAmount: '22000000',
-        deadline: '2028-12-01',
-        expectedReturnPercent: '14',
-        monthlyContribution: '150000',
-      }),
-    );
-  });
-
-  it.each([
-    ['10.0000', '10'],
-    ['100', '100'],
-    ['0.0000', '0'],
-  ])('fills a whole-number return of %s without losing digits', async (stored, shown) => {
-    const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(
-      list([{ ...flat, expectedReturnPercent: stored }]),
-    );
-    open();
-    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
-    expect(within(dialog).getByLabelText('Expected return, % a year')).toHaveValue(shown);
-  });
-
-  it('keeps a stored zero contribution when a goal is changed', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([{ ...flat, monthlyContribution: '0.00' }]));
-    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue(flat);
-    open();
-    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
-    expect(within(dialog).getByLabelText(/^You put in a month/)).toHaveValue('0');
-    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    await waitFor(() =>
-      expect(update).toHaveBeenCalledWith(
-        flat.id,
-        expect.objectContaining({ monthlyContribution: '0' }),
-      ),
-    );
-  });
-
-  it('goals-28 saves an overdue goal with its date kept, but asks for a later date when it is moved', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([{ ...flat, deadline: '2020-01-01' }]));
-    const update = vi.spyOn(goalsApi, 'update').mockResolvedValue(flat);
-    open();
-    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Edit' }));
-    let dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
-    await user.clear(within(dialog).getByLabelText(/^By/));
-    await user.type(within(dialog).getByLabelText(/^By/), '2020-02-01');
-    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    expect(within(dialog).getByLabelText(/^By/)).toHaveAccessibleDescription(
-      'Pick a date after today, or clear it',
-    );
-    expect(update).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    await user.click(within(card).getByRole('button', { name: 'Edit' }));
-    dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
-    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    await waitFor(() =>
-      expect(update).toHaveBeenCalledWith(
-        flat.id,
-        expect.objectContaining({ deadline: '2020-01-01' }),
-      ),
-    );
-  });
-
-  it('goals-08 says a goal changed from the list was saved', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));
-    vi.spyOn(goalsApi, 'update').mockResolvedValue({ ...flat, name: 'Flat' });
-    open();
-    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit goal' });
-    await user.click(within(dialog).getByRole('button', { name: 'Save goal' }));
-    expect(await screen.findByText('Goal saved.')).toHaveAttribute('role', 'status');
-  });
-
-  it('deletes a goal after asking', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat]));
-    const remove = vi.spyOn(goalsApi, 'remove').mockResolvedValue();
-    open();
-    const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Delete' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
-    expect(dialog).toHaveTextContent('Down payment A and its plan are removed');
-    expect(remove).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
-    await waitFor(() => expect(remove).toHaveBeenCalledWith(flat.id));
-  });
-
-  it('goals-09 says a goal from the list was deleted and puts the keyboard on that line', async () => {
+  it('goals-09 opens a goal from the list, deletes it there, and comes back saying so with the keyboard on the page heading', async () => {
     const user = userEvent.setup();
     const listed = vi.spyOn(goalsApi, 'list').mockResolvedValue(list([flat, reserve]));
+    vi.spyOn(goalsApi, 'get').mockResolvedValue(flat);
     vi.spyOn(goalsApi, 'remove').mockResolvedValue();
-    open();
+    openWithPages();
+    // The card carries no Edit or Delete of its own: the whole card opens the goal.
     const card = (await screen.findByText('Down payment A')).closest('li') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Delete' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this goal?' });
+    expect(within(card).queryByRole('button')).toBeNull();
+    await user.click(within(card).getByRole('link', { name: 'Down payment A' }));
+    await user.click(await screen.findByRole('button', { name: 'Delete goal' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete this goal?' });
     listed.mockResolvedValue(list([reserve]));
     await user.click(within(dialog).getByRole('button', { name: 'Delete goal' }));
-    const said = await screen.findByText('Goal deleted.');
-    expect(said).toHaveAttribute('role', 'status');
-    await waitFor(() => expect(said).toHaveFocus());
+    const said = await screen.findByText('Goal deleted');
+    // The notice is in the polite status region of the Messages region, announced without taking the keyboard,
+    // which goes to the page heading instead.
+    expect(said.closest('[role="status"]')).not.toBeNull();
+    expect(
+      within(screen.getByRole('region', { name: 'Messages' })).getByText('Goal deleted'),
+    ).toBeInTheDocument();
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Goals' });
+    await waitFor(() => expect(heading).toHaveFocus());
     await waitFor(() => expect(screen.queryByText('Down payment A')).toBeNull());
-    expect(said).toHaveFocus();
+    expect(heading).toHaveFocus();
   });
 
-  it('goals-09 says a goal deleted on its page was deleted, once, with the keyboard on it', async () => {
+  it('goals-09 says a goal deleted on its page was deleted, once, with the keyboard on the page heading', async () => {
     vi.spyOn(goalsApi, 'list').mockResolvedValue(list([reserve]));
     open({ notice: 'deleted' });
-    const said = await screen.findByText('Goal deleted.');
-    expect(said).toHaveAttribute('role', 'status');
-    expect(said).toHaveFocus();
+    const said = await screen.findByText('Goal deleted');
+    expect(said.closest('[role="status"]')).not.toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Goals' })).toHaveFocus();
   });
 
   it('goals-35 says when prices behind the figures are older than 2 hours', async () => {
@@ -435,7 +361,7 @@ describe('GOAL-PREVIEW: the plan in the dialog before the goal is saved', () => 
     expect(plan).toHaveTextContent(
       'Behind by ₽270,000 a month. Reaching it by Dec 2028 needs ₽420,000 a month; at ₽150,000 it takes until Aug 2032. A projection, not a promise.',
     );
-    expect(plan).toHaveClass('ui-banner--warn');
+    expect(plan.querySelector('.ui-banner--warn')).not.toBeNull();
     expect(within(dialog).getByText('Your portfolio now: ₽5,500,000')).toBeVisible();
     // Asked once the typing stopped, for the last terms, and never with the name.
     await waitFor(() =>

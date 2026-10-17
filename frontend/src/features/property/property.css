@@ -1,46 +1,4 @@
-/* Five kinds wrap onto a second line on a phone instead of widening the dialog. */
-.property-kinds .ui-seg {
-  flex-wrap: wrap;
-  align-self: flex-start;
-}
-
-/* A page that could not load: the reason and Try again on one line, as on Portfolio. */
-.property-state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3);
-  color: var(--ink-2);
-}
-
-.property-state p {
-  margin: 0;
-}
-
-/* Real estate (v8): the total, then one card per property, like the Deposits list. */
-.property-total {
-  display: grid;
-  gap: 4px;
-}
-
-.property-total__label,
-.property-card__share,
-.property-card__facts dt {
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
-
-.property-total__value {
-  font-size: var(--fs-2xl, 28px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.property-total__note {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-}
-
+/* Real estate (v8): the total, then one tile per property, like the Deposits list. */
 .property-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
@@ -50,26 +8,28 @@
   list-style: none;
 }
 
+.property-card__link {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-lg);
+  color: inherit;
+  text-decoration: none;
+}
+
+.property-card__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .property-card {
   display: grid;
   align-content: start;
   gap: var(--sp-3);
   height: 100%;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  color: inherit;
-  text-decoration: none;
 }
 
-.property-card:hover {
+.property-card__link:hover .property-card {
   border-color: var(--line-strong);
-}
-
-.property-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .property-card__name {
@@ -79,41 +39,16 @@
 
 .property-card__share {
   display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
 }
 
 .property-card__value {
-  font-size: var(--fs-xl, 22px);
+  font-size: var(--fs-xl);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.property-card__facts {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-}
-
-.property-card__facts div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.property-card__facts dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 .property-card__badge {
   margin-left: var(--sp-2);
   vertical-align: middle;
-}
-
-.property-card__gain--pos {
-  color: var(--pos);
-}
-
-.property-card__gain--neg {
-  color: var(--neg);
 }

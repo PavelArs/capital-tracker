@@ -113,7 +113,8 @@ const topup: AuditEvent = {
 };
 
 const page = (events: AuditEvent[], next: string | null = null): AuditHistory => ({
-  at: '2026-10-09T20:00:00.000Z',
+  // 23:00 on Oct 9 in the test zone (UTC+5), so every change below keeps its day there.
+  at: '2026-10-09T18:00:00.000Z',
   events,
   next,
 });
@@ -161,13 +162,56 @@ describe('audit history screen (BR 14)', () => {
         .map((cell) => cell.textContent),
     ).toEqual(['Today', 'Yesterday', 'Oct 7, 2026']);
     expect(bodyRows().map(cells)).toEqual([
-      ['12:30', 'Changed', 'Buy BTCBybit', 'Amount: $30,000.00 → $31,000.00 +1 more', 'You'],
-      ['09:15', 'Deleted', 'Sell BTCBybit', 'Quantity 0.25 BTC · Amount $15,000.00', 'You'],
-      ['18:00', 'Created', 'Buy BTCBybit', 'Side Buy · Quantity 0.02 BTC', 'CSV import'],
-      ['08:00', 'Created', 'Transfer BTCCold storage', 'Quantity 0.005 BTC', 'Automatic'],
+      // Local times in the test zone (UTC+5): 12:30, 09:15, 18:00 and 08:00 UTC.
+      ['17:30', 'Changed', 'Buy BTCBybit', 'Amount: $30,000.00 → $31,000.00 +1 more', 'You'],
+      ['14:15', 'Deleted', 'Sell BTCBybit', 'Quantity 0.25 BTC · Amount $15,000.00', 'You'],
+      ['23:00', 'Created', 'Buy BTCBybit', 'Side Buy · Quantity 0.02 BTC', 'CSV import'],
+      ['13:00', 'Created', 'Transfer BTCCold storage', 'Quantity 0.005 BTC', 'Automatic'],
     ]);
     expect(screen.getByText(/4 changes shown, newest first/)).toBeInTheDocument();
     expect(screen.getByText(/nothing is overwritten/)).toBeInTheDocument();
+  });
+
+  it('HIST-LOCAL-DAY: groups the changes by the local day they were made and shows local times, without a zone', async () => {
+    const late = { ...correction, id: 'trade:t1:000003', at: '2026-10-16T19:14:00.000Z' };
+    const before = { ...removal, id: 'trade:t2:000002', at: '2026-10-16T18:52:00.000Z' };
+    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue({
+      ...page([late, before]),
+      at: '2026-10-16T19:20:00.000Z',
+    });
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'History' });
+    // In the test zone (UTC+5) 19:14 UTC is already 17 Oct; 18:52 UTC is still 16 Oct, as it
+    // is in UTC and in Moscow.
+    expect(
+      within(table())
+        .getAllByRole('rowheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Today', 'Yesterday']);
+    expect(bodyRows().map((row) => cells(row)[0])).toEqual(['00:14', '23:52']);
+    expect(within(table()).getByRole('columnheader', { name: 'Time' })).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/MSK|UTC/);
+  });
+
+  it('HIST-LOCAL-DAY: the drawer shows the same local moment as the row it opens', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction]));
+    renderPage();
+    const row = await screen.findByRole('button', { name: 'Buy BTC' });
+    expect(cells(bodyRows()[0])[0]).toBe('17:30');
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Buy BTC' });
+    expect(within(drawer).getByText('Oct 9, 2026, 17:30')).toBeInTheDocument();
+  });
+
+  it('HIST-NO-SWITCH: shows recorded amounts as recorded, so it offers no currency or value switch', async () => {
+    vi.spyOn(auditHistoryApi, 'list').mockResolvedValue(page([correction]));
+    renderPage();
+    const heading = await screen.findByRole('heading', { level: 1, name: 'History' });
+    // Neither the switch nor the room held for it while the main currency loads.
+    expect(heading.closest('header')?.querySelector('.ui-seg')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Currency' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Values' })).toBeNull();
   });
 
   it('HIST-DRAWER: opening a row shows every value before and after, and Escape closes it', async () => {
@@ -207,7 +251,7 @@ describe('audit history screen (BR 14)', () => {
     renderPage();
     await screen.findByRole('button', { name: 'Savings account' });
     expect(bodyRows().map(cells)).toEqual([
-      ['10:10', 'Changed', 'Savings accountExample Bank', 'Top-up added · 5,000.5 RUB', 'You'],
+      ['15:10', 'Changed', 'Savings accountExample Bank', 'Top-up added · 5,000.5 RUB', 'You'],
     ]);
     await user.click(screen.getByRole('button', { name: 'Savings account' }));
     const drawer = screen.getByRole('dialog', { name: 'Savings account' });
@@ -349,7 +393,7 @@ describe('audit history screen (BR 14)', () => {
     // A change by the owner drops the stalled request, so the next visit asks again.
     forgetReads();
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the change history');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the change history");
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Nothing has changed yet')).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(3);
@@ -384,8 +428,8 @@ describe('audit history screen (BR 14)', () => {
     ).toEqual(['Today', 'Yesterday']);
     const items = within(rows).getAllByRole('button');
     expect(items.map((item) => item.textContent)).toEqual([
-      'Buy BTCAmount: $30,000.00 → $31,000.00 +1 moreChanged12:30 · You',
-      'Buy BTCSide Buy · Quantity 0.02 BTCCreated18:00 · CSV import',
+      'Buy BTCAmount: $30,000.00 → $31,000.00 +1 moreChanged17:30 · You',
+      'Buy BTCSide Buy · Quantity 0.02 BTCCreated23:00 · CSV import',
     ]);
     await user.click(items[0]);
     expect(screen.getByRole('dialog', { name: 'Buy BTC' })).toBeInTheDocument();

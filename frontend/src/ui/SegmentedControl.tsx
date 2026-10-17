@@ -16,6 +16,8 @@ export function SegmentedControl<T extends string>({
   id,
   disabled = false,
   isChecked,
+  size = 'md',
+  wrap = false,
 }: {
   name: string;
   options: readonly Segment<T>[];
@@ -28,11 +30,18 @@ export function SegmentedControl<T extends string>({
   disabled?: boolean | ((value: T) => boolean);
   /** When one segment stands for several values, says whether it is the chosen one. */
   isChecked?: (option: T) => boolean;
+  /** sm: the compact pill of toolbars and captions. */
+  size?: 'md' | 'sm';
+  /** Many choices wrap onto a second line. */
+  wrap?: boolean;
 }) {
+  const classes = ['ui-seg', size === 'sm' && 'ui-seg--sm', wrap && 'ui-seg--wrap']
+    .filter(Boolean)
+    .join(' ');
   return (
     <div
       id={id}
-      className="ui-seg"
+      className={classes}
       role="radiogroup"
       aria-label={label}
       aria-labelledby={labelledBy}

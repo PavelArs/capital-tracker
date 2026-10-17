@@ -1,6 +1,9 @@
 import type { DepositChartPoint } from '@api/deposits.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { Banner } from '@/ui/Banner';
+import { Card, CardHeader } from '@/ui/Card';
+import { Legend } from '@/ui/Legend';
 import {
   chartDateTicks,
   chartRightPad,
@@ -10,7 +13,7 @@ import {
 } from '../dashboard/HistoryChart';
 import type { InflationBasis } from '../shell/inflation-basis';
 import { dateText, money } from './deposit-format';
-import '../dashboard/dashboard.css';
+import '@/ui/chart.css';
 
 const HEIGHT = 260;
 const PAD = { left: 4, right: 64, top: 12, bottom: 28 };
@@ -94,13 +97,14 @@ export default function DepositChart({
 
   if (plotted.length === 0)
     return (
-      <section className="shell-card dashboard-chart-card" aria-label={label}>
-        <p className="dashboard-chart__empty" role="note">
+      <Card variant="chart" labelledBy="deposit-value-chart">
+        <CardHeader id="deposit-value-chart" title="Value over time" />
+        <p className="dashboard-chart__empty" role="note" aria-label={label}>
           {real
             ? 'Inflation figures do not reach the whole life of this deposit yet.'
             : `No figures for this deposit in ${currency}.`}
         </p>
-      </section>
+      </Card>
     );
 
   const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
@@ -194,24 +198,15 @@ export default function DepositChart({
     : 0;
 
   return (
-    <section className="shell-card dashboard-chart-card" aria-labelledby="deposit-value-chart">
-      <div className="ui-toolbar">
-        <div className="dashboard-chart-card__name">
-          <h2 id="deposit-value-chart">Value over time</h2>
-          <div className="dashboard-legend" aria-label="Chart legend">
-            <span>
-              <i className="dashboard-legend__line" aria-hidden="true" />
-              {legend.value}
-            </span>
-            <span>
-              <i
-                className="dashboard-legend__line dashboard-legend__line--invested"
-                aria-hidden="true"
-              />
-              {legend.paid}
-            </span>
-          </div>
-        </div>
+    <Card variant="chart" labelledBy="deposit-value-chart">
+      <CardHeader id="deposit-value-chart" title="Value over time" />
+      <div role="group" aria-label="Chart legend">
+        <Legend
+          items={[
+            { key: 'value', label: legend.value, swatch: 'line', color: 'var(--accent)' },
+            { key: 'paid', label: legend.paid, swatch: 'line', color: 'var(--ink-3)' },
+          ]}
+        />
       </div>
       <div
         ref={box}
@@ -318,10 +313,10 @@ export default function DepositChart({
         )}
       </div>
       {real && plotted.some((entry) => entry.estimated) && (
-        <p className="shell-note">
+        <Banner tone="info">
           Estimated after the latest published inflation month, or at your own rate.
-        </p>
+        </Banner>
       )}
-    </section>
+    </Card>
   );
 }

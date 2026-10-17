@@ -98,6 +98,13 @@ describe('Shared page header', () => {
     expect(window.localStorage.setItem).toHaveBeenCalledWith('value-view', 'real');
   });
 
+  it('has no currency or Nominal / Real switch on a page without amounts', () => {
+    renderAt('/history', <PageHeader title="History" currencySwitch={false} valueSwitch />);
+    expect(screen.getByRole('heading', { level: 1, name: 'History' })).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'Currency' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Values' })).toBeNull();
+  });
+
   it('prefers the asked currency, then the page data, then the main currency', async () => {
     renderAt('/portfolio?currency=USD', <PageHeader title="Portfolio" currency="RUB" />);
     expect(within(switcher()).getByRole('radio', { name: 'USD' })).toBeChecked();
@@ -106,7 +113,7 @@ describe('Shared page header', () => {
     expect(within(switcher()).getByRole('radio', { name: 'RUB' })).toBeChecked();
   });
 
-  it('follows a main currency saved in Settings at once', async () => {
+  it('SETTINGS-NO-SWITCH follows a main currency saved in Settings at once on a page with money; Settings itself has no switch', async () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'USD',
       dustThresholdUsd: null,
@@ -115,11 +122,24 @@ describe('Shared page header', () => {
       mainCurrency: 'RUB',
       dustThresholdUsd: null,
     });
-    renderAt('/preferences', <SettingsPage />);
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    // Settings shows no money, so it has neither switch (polish §3); the Portfolio header beside
+    // it is the page with money that follows the saved choice.
+    renderAt(
+      '/preferences',
+      <>
+        <SettingsPage />
+        <PageHeader title="Portfolio" />
+      </>,
+    );
+    const settings = screen.getByRole('heading', { level: 1, name: 'Settings' });
+    expect(settings.closest('header')?.querySelector('.ui-seg')).toBeNull();
     await waitFor(() =>
       expect(within(switcher()).getByRole('radio', { name: 'USD' })).toBeChecked(),
     );
+    expect(screen.getAllByRole('radiogroup', { name: 'Currency' })).toHaveLength(1);
+    expect(screen.queryByRole('radiogroup', { name: 'Values' })).toBeNull();
+    const portfolio = screen.getByRole('heading', { level: 1, name: 'Portfolio' });
+    expect(portfolio.closest('header')).toContainElement(switcher());
     const main = screen.getByRole('radiogroup', { name: 'Main currency' });
     await userEvent.click(within(main).getByRole('radio', { name: 'RUB' }));
     await waitFor(() =>

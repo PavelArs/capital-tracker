@@ -1,13 +1,9 @@
 .ui-drawer-scrim {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  background: rgba(4, 6, 10, 0.62);
-  animation: ui-fade-in 0.15s ease-out;
-}
-
-:root[data-theme="light"] .ui-drawer-scrim {
-  background: rgba(18, 23, 38, 0.35);
+  z-index: var(--z-scrim);
+  background: var(--scrim);
+  animation: ui-fade-in var(--dur-1) ease-out;
 }
 
 .ui-drawer {
@@ -15,7 +11,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 81;
+  z-index: var(--z-dialog);
   display: flex;
   flex-direction: column;
   width: min(460px, 100vw);
@@ -25,7 +21,7 @@
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
-  animation: ui-drawer-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ui-drawer-in var(--dur-3) var(--ease-out);
 }
 
 .ui-drawer__head {
@@ -60,17 +56,39 @@
   gap: 8px;
   /* Height of a one-line footer, so the buttons do not move when a label or a note changes. */
   min-height: 65px;
-  padding: 14px 20px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line);
 }
 
-.ui-drawer__foot .shell-button {
-  margin-top: 0;
+/* "Save" and "Saving…" take the same room in the Button component too. */
+.ui-drawer__foot .ui-btn--primary {
+  min-width: 96px;
 }
 
-/* "Save" and "Saving…" take the same room, so Later does not step aside while saving. */
-.ui-drawer__foot .shell-button--primary {
-  min-width: 96px;
+/* Phones: the drawer is the whole width already; a 56 px head, 16 px edges, and the main
+   action takes the room that is left above the home indicator. */
+@media (max-width: 640px) {
+  .ui-drawer {
+    padding-top: env(safe-area-inset-top, 0px);
+    border-left: 0;
+  }
+
+  .ui-drawer__head {
+    min-height: 56px;
+    padding: 10px 12px 10px 16px;
+  }
+
+  .ui-drawer__body {
+    padding: 16px;
+  }
+
+  .ui-drawer__foot {
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .ui-drawer__foot > .ui-btn--primary {
+    flex: 1 1 auto;
+  }
 }
 
 @keyframes ui-drawer-in {

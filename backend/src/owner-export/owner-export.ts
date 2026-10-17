@@ -1,5 +1,6 @@
 import type { RewardOperationInput } from '../accounting/operation-list';
 import type { TradePurpose } from '../accounting/trade-purpose';
+import { moscowDate } from '../fx-rates/fx-conversion';
 import { chainAsset, feeAsset, formatUnits } from '../wallet-addresses/chain-assets';
 import { type CsvCell, csvFile } from './csv';
 import type { ZipFile } from './zip';
@@ -400,6 +401,14 @@ export function exportFiles(data: ExportData): ZipFile[] {
       ),
     ),
   ];
+}
+
+/** The name of an export file, with the Moscow day it was made (the app's day, not UTC). */
+export function exportFilename(kind: 'csv' | 'backup', now: Date): string {
+  const day = moscowDate(now);
+  return kind === 'csv'
+    ? `capital-tracker-export-${day}.zip`
+    : `capital-tracker-backup-${day}.json`;
 }
 
 export const BACKUP_FORMAT = 'capital-tracker-backup';
