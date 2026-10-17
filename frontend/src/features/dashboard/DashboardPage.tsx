@@ -246,11 +246,7 @@ function NetWorth({
         ) : null}
       </div>
       <div className="dashboard-hero__value" aria-live="polite">
-        {history.value === null ? (
-          'No rate'
-        ) : (
-          <Amount value={history.value} currency={currency} />
-        )}
+        {history.value === null ? 'No rate' : <Amount value={history.value} currency={currency} />}
       </div>
       <div
         className={`dashboard-hero__delta${direction ? ` ui-${direction}` : ''}`}
