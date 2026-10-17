@@ -89,13 +89,16 @@ const shown = (flows: CapitalFlow[]) =>
   flows.map((flow) => [new Date(flow.at).toISOString(), flow.usd.toString(), flow.rateDate]);
 const units = (amount: number) => (BigInt(amount) * 10n ** 30n).toString();
 
-// 80 RUB per USD and 90 RUB per EUR from 2025-06-02; nothing earlier.
+// 80 RUB per USD (95 from 2025-09-01) and 100 RUB per EUR from 2025-06-02; nothing earlier.
 const rates: FxRates = {
   USD: [
     { date: '2025-06-02', rubPerUnit: '80' },
     { date: '2025-09-01', rubPerUnit: '95' },
   ],
-  EUR: [{ date: '2025-06-02', rubPerUnit: '100' }],
+  EUR: [
+    { date: '2025-06-02', rubPerUnit: '100' },
+    { date: '2025-09-01', rubPerUnit: '100' },
+  ],
 };
 
 describe('capital flows: market versus flows (split-market-and-flows)', () => {

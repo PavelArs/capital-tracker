@@ -15,12 +15,20 @@ type AssetRow = {
 };
 type Report = { currency: string; mainCurrency: string; assets: AssetRow[] };
 
+// Today's Moscow date: a value needs a rate at most 15 days old (CUR-RATE-STALE).
+const today = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+const todayText = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+}).format(new Date(today));
 const rates = [
   // Cost date: 80 RUB per USD, 100 RUB per EUR. Today: 92 and 100, so 0.92 EUR per USD.
   ['USD', '2025-01-01', '80'],
   ['EUR', '2025-01-01', '100'],
-  ['USD', '2026-01-01', '92'],
-  ['EUR', '2026-01-01', '100'],
+  ['USD', today, '92'],
+  ['EUR', today, '100'],
 ] as const;
 
 test('CURRENCY-UI: main currency EUR persists after logout and values come from Bank of Russia rates', async ({
@@ -42,7 +50,7 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
       ORDER BY "rateDate", currency) FROM fx_rates WHERE source = 'cbr'`),
     'Only this case stores rates in the acceptance database',
   ).toBe(
-    'EUR 2025-01-01 100.00, USD 2025-01-01 80.00, EUR 2026-01-01 100.00, USD 2026-01-01 92.00',
+    `EUR 2025-01-01 100.00, USD 2025-01-01 80.00, EUR ${today} 100.00, USD ${today} 92.00`,
   );
 
   const api = await tradeApi(page);
@@ -120,7 +128,7 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     await expect(currency.getByRole('radio', { name: 'USD' })).toBeChecked();
     await expect(
       main.getByText(
-        'Bank of Russia: 1 USD = 92.00 RUB (Jan 1, 2026), 1 EUR = 100.00 RUB (Jan 1, 2026).',
+        `Bank of Russia: 1 USD = 92.00 RUB (${todayText}), 1 EUR = 100.00 RUB (${todayText}).`,
       ),
     ).toBeVisible();
     const saved = page.waitForResponse(
@@ -153,7 +161,7 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
     await expect(cells.nth(5)).toHaveText('€640.00');
     await expect(cells.nth(6)).toHaveText('+€280.00+43.75%');
     await expect(
-      main.getByText(/1 USD = 92\.00 RUB \(Jan 1, 2026\), 1 EUR = 100\.00 RUB/),
+      main.getByText(`1 USD = 92.00 RUB (${todayText}), 1 EUR = 100.00 RUB`),
     ).toBeVisible();
     await page.screenshot({
       path: testInfo.outputPath('portfolio-eur-1440-dark.png'),

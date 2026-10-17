@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
@@ -131,6 +132,9 @@ const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revi
     `SELECT '${table}:' || coalesce(md5(string_agg(${row}, ',' ORDER BY ${row})), '') AS part
       FROM ${table} t WHERE t."ownerId"=$1`,
 ).join(' UNION ALL ')}) parts`;
+// Folded into the inputs revision, so a change to how a point is valued rebuilds every stored
+// snapshot once. Bump it with such a change. 2: a rate over 15 days old converts nothing.
+const VALUATION_RULE = '2';
 const INSERT_BATCH = 1000;
 // A burst of edits (a classification run, an import) is rebuilt once, this long after the last.
 const REFRESH_SOON_MS = 2_000;
@@ -171,7 +175,7 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
 }
 
 /** Portfolio value at one instant in every accounting currency at that day's rate. */
-function valuesAt(
+export function valuesAt(
   valuation: ValuationInputs,
   at: number,
   prices: PortfolioPrices,
@@ -194,13 +198,12 @@ function valuesAt(
       undefined,
       depositValuesAt(valuation.deposits, instant, fx),
     );
-    // Without a rate the value in that currency is unknown, not a smaller sum. Market prices are
-    // in dollars, so a held asset needs the dollar rate; a hand value in RUB or EUR may not, but
-    // asking for it anyway only leaves the point missing, never worth more. Deposits state their
-    // own rate, and one without it is counted as unrated.
-    const rated =
-      report.assets.every((asset) => asset.value === '0') ||
-      fx.available('USD', moscowDate(instant));
+    // Without a rate a held asset needs, the value in that currency is unknown, not a smaller sum;
+    // holdings in this currency need none. Deposits state their own rate, and one without it is
+    // counted as unrated.
+    const rated = !report.assets.some(
+      (asset) => asset.value === null && asset.missingPrice === 'no-rate',
+    );
     return {
       at,
       currency: fx.currency,
@@ -608,7 +611,8 @@ export class PortfolioSnapshotsService {
         FROM portfolio_snapshot_state WHERE "ownerId"=$1`,
       [owner],
     );
-    const [{ revision }]: { revision: string }[] = await manager.query(INPUTS_REVISION, [owner]);
+    const [read]: { revision: string }[] = await manager.query(INPUTS_REVISION, [owner]);
+    const revision = createHash('md5').update(`${VALUATION_RULE}|${read.revision}`).digest('hex');
     const [marks]: { prices: Date | null; rates: Date | null }[] = await manager.query(
       `SELECT (SELECT max("fetchedAt") FROM price_observations) AS prices,
         (SELECT max("fetchedAt") FROM fx_rates) AS rates`,

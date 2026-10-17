@@ -69,10 +69,14 @@ export class FxConverter {
     readonly currency: AccountingCurrency,
   ) {}
 
-  /** Rubles per unit at a Moscow date, as scale-30 atoms; RUB is exactly one. */
+  /**
+   * Rubles per unit at a Moscow date, as scale-30 atoms; RUB is exactly one. Null when the latest
+   * rate is over `MAX_RATE_AGE_DAYS` older than the date, so a stopped rate collection leaves a
+   * value missing instead of stating it at a weeks-old rate.
+   */
   private rubPer(currency: AccountingCurrency, date: string): bigint | null {
     if (currency === 'RUB') return ATOM_SCALE;
-    const rate = rateOn(this.rates[currency], date);
+    const rate = freshRateOn(this.rates[currency], date);
     return rate ? canonicalDecimalToAtoms(rate.rubPerUnit) : null;
   }
 
@@ -93,11 +97,25 @@ export class FxConverter {
     return divide(amount * source, target);
   }
 
-  /** The effective rates used for one date, for display next to converted values. */
+  /**
+   * The rates `convert` uses on one date, for display next to converted values: none when this
+   * currency has no fresh rate, since nothing then converts into it; stale ones are left out.
+   */
   ratesOn(date: string): { currency: RatedCurrency; date: string; rubPerUnit: string }[] {
+    if (this.rubPer(this.currency, date) === null) return [];
+    return ratedCurrencies.flatMap((currency) => {
+      const rate = freshRateOn(this.rates[currency], date);
+      return rate ? [{ currency, ...rate }] : [];
+    });
+  }
+
+  /** Currencies whose latest rate on a date is too old to convert with, and that rate's date. */
+  staleRatesOn(date: string): { currency: RatedCurrency; date: string }[] {
     return ratedCurrencies.flatMap((currency) => {
       const rate = rateOn(this.rates[currency], date);
-      return rate ? [{ currency, ...rate }] : [];
+      return rate && !freshRateOn(this.rates[currency], date)
+        ? [{ currency, date: rate.date }]
+        : [];
     });
   }
 }

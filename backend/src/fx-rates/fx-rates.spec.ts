@@ -83,6 +83,19 @@ describe('FX-HISTORY rates for early operations', () => {
     ]);
   });
 
+  it('asks again for a hole longer than the 15 days a value may wait for its rate', () => {
+    // 2019-03-01 to 2019-03-18: 17 days, past MAX_RATE_AGE_DAYS, so values in it have no fresh rate.
+    expect(
+      fxRequestRanges(
+        { first: '2008-12-02', last: '2025-06-10', gaps: [['2019-03-01', '2019-03-18']] },
+        '2025-06-11',
+      ),
+    ).toEqual([
+      ['2025-06-03', '2025-06-11'],
+      ['2019-03-02', '2019-03-17'],
+    ]);
+  });
+
   it('splits an unreadable range in a newer and an older half down to 45 days', () => {
     expect(fxSplitUnreadable('2016-11-27', '2020-11-25')).toEqual([
       ['2018-11-27', '2020-11-25'],
@@ -148,7 +161,9 @@ describe('FX-CONVERT exact conversion between accounting currencies', () => {
     expect(
       new FxConverter({ USD: [], EUR: [] }, 'RUB').convert(atoms('1'), 'USD', '2026-01-01'),
     ).toBeNull();
-    expect(eur.ratesOn('2025-06-06')).toEqual([
+    // No euro rate yet, so the dollar rate converts nothing into euros; in rubles it does.
+    expect(eur.ratesOn('2025-06-06')).toEqual([]);
+    expect(new FxConverter(rates, 'RUB').ratesOn('2025-06-06')).toEqual([
       { currency: 'USD', date: '2025-06-06', rubPerUnit: '78.9' },
     ]);
   });

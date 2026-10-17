@@ -8,6 +8,7 @@ import { CbrClient, type FxFailure } from './cbr-client';
 import {
   type FxRate,
   type FxRates,
+  MAX_RATE_AGE_DAYS,
   moscowDate,
   type RatedCurrency,
   ratedCurrencies,
@@ -31,9 +32,9 @@ const DAY_MS = 86_400_000;
 // One request per four years keeps an answer near 150 KB, well under the client's limit.
 const REQUEST_DAYS = 4 * 365;
 // The Bank of Russia sets a rate for every working day; its longest pause, the New Year
-// holidays, is under two weeks. A longer stretch without rates is a range a failed
-// request left out.
-const HOLE_DAYS = 20;
+// holidays, is under two weeks. A stretch longer than the age a value may wait for its rate
+// is a range a failed request left out, and leaving it would keep those values missing.
+const HOLE_DAYS = MAX_RATE_AGE_DAYS;
 // An unreadable answer for a longer range is asked for again in two halves, so a refused
 // part leaves out at most this many days, still a hole the next runs ask for again.
 const SPLIT_ABOVE_DAYS = 45;
