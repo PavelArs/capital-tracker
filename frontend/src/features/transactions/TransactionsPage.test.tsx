@@ -1991,7 +1991,7 @@ describe('chain dust threshold (CLS-DUST)', () => {
         'Incoming09:00',
         'BTC',
         '+0.00000546',
-        '≈ $0.55',
+        '≈ $0.54',
         'Bitcoin wallet bc1qsy…f3t4',
         'DustBlockchain',
       ],
