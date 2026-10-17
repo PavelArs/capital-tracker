@@ -83,6 +83,13 @@ const paths = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="19" cy="12" r="1.5" />
+    </>
+  ),
   tag: (
     <>
       <path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
@@ -195,9 +202,9 @@ export function Icon({ name, className = 'shell-icon' }: { name: IconName; class
   );
 }
 
-export function BrandMark() {
+export function BrandMark({ className = 'shell-brand__mark' }: { className?: string }) {
   return (
-    <svg className="shell-brand__mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+    <svg className={className} viewBox="0 0 26 26" aria-hidden="true" focusable="false">
       <rect x="2" y="14" width="5" height="10" rx="1.5" fill="var(--ink-3)" />
       <rect x="10.5" y="8" width="5" height="16" rx="1.5" fill="var(--ink-2)" />
       <rect x="19" y="2" width="5" height="22" rx="1.5" fill="var(--accent)" />

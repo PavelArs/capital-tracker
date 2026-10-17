@@ -2,9 +2,9 @@ import { accountingCurrencies } from '@api/portfolio-valuation.api';
 import DashboardLoading from '@features/dashboard/DashboardLoading';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
-import { retiredPaths, shellSections } from '@features/shell/navigation';
+import { retiredPaths, shellSections, tabSections } from '@features/shell/navigation';
 import { Bone, PageSkeleton } from '@features/shell/Skeleton';
-import { type ComponentProps, useEffect, useRef } from 'react';
+import { type ComponentProps, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { SegmentedPlaceholder } from '@/ui/SegmentedControl';
 import '@features/shell/shell-page.css';
@@ -79,10 +79,17 @@ export function BootPage() {
   return (
     <div className="shell-page shell-page--boot">
       <header className="shell-page__head">
-        <h1>
-          <Bone width={180} height={29} />
-        </h1>
-        <SegmentedPlaceholder labels={accountingCurrencies} />
+        <div className="shell-page__bar">
+          <BrandMark className="shell-page__mark" />
+          <h1>
+            <Bone width={180} height={29} />
+          </h1>
+          {/* The bell's room, so the title does not step aside when the page arrives. */}
+          <div className="shell-page__bell shell-page__bell--hold" />
+        </div>
+        <div className="shell-page__switches">
+          <SegmentedPlaceholder labels={accountingCurrencies} />
+        </div>
       </header>
       {here === '/dashboard' ? (
         // The Dashboard draws its own stand-in (a net-worth hero, then the chart).
@@ -103,7 +110,6 @@ export default function BootShell() {
   const { pathname } = useLocation();
   // The selected currency stays on the links, as in the navigation that replaces this one.
   const [asked] = useAskedCurrency();
-  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     markHandover(true);
     return () => markHandover(false);
@@ -111,14 +117,6 @@ export default function BootShell() {
 
   const here = landingPath(pathname);
 
-  // Phones show the sections as a strip: keep the current one in view, as Layout does.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
-  useEffect(() => {
-    const strip = menuRef.current;
-    const current = strip?.querySelector<HTMLElement>('a[aria-current="page"]');
-    if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
-    strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
-  }, [pathname]);
   return (
     <div className="shell">
       <nav className="shell-nav" aria-label="Main navigation">
@@ -128,12 +126,15 @@ export default function BootShell() {
             Capital
           </div>
         </div>
-        <div ref={menuRef} className="shell-nav__menu">
+        <div className="shell-nav__menu">
           <ul className="shell-nav__sections" data-nav-group="sections">
             {shellSections
               .filter((entry) => !entry.held || here.startsWith(entry.path))
               .map((entry) => (
-                <li key={entry.path}>
+                <li
+                  key={entry.path}
+                  className={tabSections.includes(entry.path) ? undefined : 'shell-nav__in-more'}
+                >
                   <Link
                     to={withCurrency(entry.path, asked)}
                     aria-current={
@@ -141,14 +142,31 @@ export default function BootShell() {
                     }
                   >
                     <Icon name={entry.icon} />
-                    {entry.label}
+                    <span className="shell-nav__label">{entry.label}</span>
                   </Link>
                 </li>
               ))}
+            <li className="shell-nav__more">
+              <button
+                type="button"
+                disabled
+                aria-current={
+                  shellSections.some(
+                    (entry) =>
+                      !tabSections.includes(entry.path) &&
+                      (here === entry.path || here.startsWith(`${entry.path}/`)),
+                  )
+                    ? 'page'
+                    : undefined
+                }
+              >
+                <Icon name="more" />
+                <span className="shell-nav__label">More</span>
+              </button>
+            </li>
           </ul>
         </div>
         <div className="shell-owner">
-          <div className="shell-owner__bell" />
           <span className="shell-owner__avatar" aria-hidden="true" />
           <span className="shell-owner__who">
             {/* No claim about who this is before the sign-in check has answered. */}

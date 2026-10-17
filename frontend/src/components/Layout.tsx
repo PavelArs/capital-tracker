@@ -2,10 +2,15 @@ import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { AttentionProvider } from '@features/shell/attention-context';
-import { BellSlotContext } from '@features/shell/bell-slot';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
-import { appTitle, pageTitle, shellSections } from '@features/shell/navigation';
+import {
+  appTitle,
+  inSection,
+  pageTitle,
+  shellSections,
+  tabSections,
+} from '@features/shell/navigation';
 import { prefetchSection, warmPages } from '@features/shell/prefetch';
 import SyncIndicator from '@features/shell/SyncIndicator';
 import { useHeldClasses } from '@features/shell/useHeldClasses';
@@ -13,7 +18,9 @@ import { useNeedsClassification } from '@features/transactions/useNeedsClassific
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Button } from '@/ui/Button';
 import { IconButton } from '@/ui/IconButton';
+import Modal, { ModalBody, ModalHeader } from '@/ui/Modal';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
@@ -68,12 +75,13 @@ export default function Layout() {
   const sections = shellSections.filter(
     (section) => !section.held || held.has(section.held) || pathname.startsWith(section.path),
   );
-  const menuRef = useRef<HTMLDivElement>(null);
+  // Phones: four sections in the tab bar, the rest in the More sheet (polish §3).
+  const moreSections = sections.filter((section) => !tabSections.includes(section.path));
+  const moreCurrent = moreSections.find((section) => inSection(pathname, section.path));
+  const [moreOpen, setMoreOpen] = useState(false);
   // The other screens' files are fetched in the background once this one has settled.
   useEffect(() => warmPages(), []);
   const mainRef = useRef<HTMLElement>(null);
-  // PHONE-BELL: where the page header draws the notifications bell on a phone.
-  const [bellSlot, setBellSlot] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     document.title = pageTitle(pathname);
@@ -85,23 +93,6 @@ export default function Layout() {
     },
     [],
   );
-
-  // Phones show the sections as a tab bar at the bottom that swipes sideways when they do not all
-  // fit: keep the current one in view, also after a turn of the device and when a held section
-  // arrives before it (shell-05).
-  const sectionPaths = sections.map((section) => section.path).join(' ');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the path and the listed sections decide where the current link is.
-  useEffect(() => {
-    const center = () => {
-      const strip = menuRef.current;
-      const current = strip?.querySelector<HTMLElement>('a[aria-current="page"]');
-      if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
-      strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
-    };
-    center();
-    window.addEventListener('resize', center);
-    return () => window.removeEventListener('resize', center);
-  }, [pathname, sectionPaths]);
 
   const handleLogout = useCallback(async () => {
     setIsLoggingOut(true);
@@ -119,11 +110,13 @@ export default function Layout() {
     }
   }, [logout, navigate, showError]);
 
-  // "/" puts the keyboard in the page's search (Portfolio, Transactions, History), unless the
-  // owner is typing somewhere or a dialog is open.
+  // Ctrl+K (Cmd+K on a Mac) puts the keyboard in the page's search (Portfolio, Transactions,
+  // History), unless the owner is typing somewhere or a dialog is open. Not a bare "/": a
+  // single-key shortcut fires on dictated or stray key presses (WCAG 2.1.4).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.toLowerCase() !== 'k' || !(event.ctrlKey || event.metaKey)) return;
+      if (event.altKey || event.shiftKey) return;
       if (document.body.classList.contains('has-dialog') || typing(event.target)) return;
       const search = mainRef.current?.querySelector<HTMLInputElement>(
         'input[type="search"], input.ui-search',
@@ -152,78 +145,140 @@ export default function Layout() {
   }, [pathname]);
 
   const email = user?.email ?? '';
+  const closeMore = () => setMoreOpen(false);
+  // A section chosen in the sheet closes it; the keyboard then goes to the new page's title.
+  const followFromMore = () => {
+    setMoreOpen(false);
+    followLink();
+  };
+  const sectionLink = (section: (typeof sections)[number], onClick: () => void) => (
+    <NavLink
+      to={withCurrency(section.path, asked)}
+      onClick={onClick}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse') prefetchSection(section.path, asked);
+      }}
+      onPointerDown={() => prefetchSection(section.path, asked)}
+      onFocus={() => prefetchSection(section.path, asked)}
+    >
+      <Icon name={section.icon} />
+      <span className="shell-nav__label">{section.label}</span>
+      {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
+        <span
+          className="shell-nav__count"
+          title={`${toClassify} to classify`}
+          aria-label={`${toClassify} to classify`}
+        >
+          {toClassify}
+        </span>
+      )}
+    </NavLink>
+  );
 
   return (
-    <BellSlotContext.Provider value={bellSlot}>
-      <div className="shell">
-        <a className="skip-link" href="#main-content">
-          Skip to content
-        </a>
-        <nav className="shell-nav" aria-label="Main navigation">
-          <div className="shell-nav__header">
-            <div className="shell-brand">
-              <BrandMark />
-              Capital
-            </div>
+    <div className="shell">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <nav className="shell-nav" aria-label="Main navigation">
+        <div className="shell-nav__header">
+          <div className="shell-brand">
+            <BrandMark />
+            Capital
           </div>
-          <div id="application-menu" ref={menuRef} className="shell-nav__menu">
-            <ul className="shell-nav__sections" data-nav-group="sections">
-              {sections.map((section) => (
-                <li key={section.path}>
-                  <NavLink
-                    to={withCurrency(section.path, asked)}
-                    onClick={followLink}
-                    onPointerEnter={(event) => {
-                      if (event.pointerType === 'mouse') prefetchSection(section.path, asked);
-                    }}
-                    onPointerDown={() => prefetchSection(section.path, asked)}
-                    onFocus={() => prefetchSection(section.path, asked)}
-                  >
-                    <Icon name={section.icon} />
-                    <span className="shell-nav__label">{section.label}</span>
-                    {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
-                      <span
-                        className="shell-nav__count"
-                        title={`${toClassify} to classify`}
-                        aria-label={`${toClassify} to classify`}
-                      >
-                        {toClassify}
-                      </span>
-                    )}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
-            <SyncIndicator onFollow={followLink} />
-          </div>
-          <div className="shell-owner">
-            <div className="shell-owner__bell" ref={setBellSlot} />
-            <span className="shell-owner__avatar" aria-hidden="true">
-              {email.charAt(0).toUpperCase()}
+        </div>
+        <div id="application-menu" className="shell-nav__menu">
+          <ul className="shell-nav__sections" data-nav-group="sections">
+            {sections.map((section) => (
+              <li
+                key={section.path}
+                className={tabSections.includes(section.path) ? undefined : 'shell-nav__in-more'}
+              >
+                {sectionLink(section, followLink)}
+              </li>
+            ))}
+            <li className="shell-nav__more">
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={moreOpen}
+                aria-current={moreCurrent ? 'page' : undefined}
+                aria-label={moreCurrent ? `More, now on ${moreCurrent.label}` : 'More'}
+                onClick={() => setMoreOpen(true)}
+              >
+                <Icon name="more" />
+                <span className="shell-nav__label">More</span>
+              </button>
+            </li>
+          </ul>
+          <SyncIndicator onFollow={followLink} />
+        </div>
+        <div className="shell-owner">
+          <span className="shell-owner__avatar" aria-hidden="true">
+            {email.charAt(0).toUpperCase()}
+          </span>
+          <span className="shell-owner__who">
+            <span className="shell-owner__name" title={email}>
+              Owner
             </span>
-            <span className="shell-owner__who">
-              <span className="shell-owner__name" title={email}>
-                Owner
-              </span>
-              <small>2FA on</small>
-            </span>
-            <IconButton
-              label="Log out"
-              icon="logout"
-              className="shell-owner__logout"
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-            />
-          </div>
-        </nav>
-        <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
-          <MainCurrencyProvider>
-            <AttentionProvider>
-              <Outlet />
-            </AttentionProvider>
-          </MainCurrencyProvider>
-        </main>
-      </div>
-    </BellSlotContext.Provider>
+            <small>2FA on</small>
+          </span>
+          <IconButton
+            label="Log out"
+            icon="logout"
+            className="shell-owner__logout"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+          />
+        </div>
+        {moreOpen && (
+          <Modal
+            titleId="shell-more-title"
+            size="narrow"
+            className="shell-more"
+            onEscape={closeMore}
+            initialFocus={(root) =>
+              root.querySelector<HTMLElement>('a[aria-current="page"]') ??
+              root.querySelector<HTMLElement>('a')
+            }
+          >
+            <ModalHeader titleId="shell-more-title" title="More" onClose={closeMore} />
+            <ModalBody>
+              <ul className="shell-more__list">
+                {moreSections.map((section) => (
+                  <li key={section.path}>{sectionLink(section, followFromMore)}</li>
+                ))}
+              </ul>
+              <SyncIndicator onFollow={followFromMore} />
+              <div className="shell-more__owner">
+                <span className="shell-owner__avatar" aria-hidden="true">
+                  {email.charAt(0).toUpperCase()}
+                </span>
+                <span className="shell-more__who">
+                  Owner
+                  <small>2FA on</small>
+                </span>
+                <Button
+                  variant="ghost"
+                  destructive
+                  icon="logout"
+                  onClick={() => void handleLogout()}
+                  disabled={isLoggingOut}
+                >
+                  Log out
+                </Button>
+              </div>
+            </ModalBody>
+          </Modal>
+        )}
+      </nav>
+      <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
+        <MainCurrencyProvider>
+          <AttentionProvider>
+            <Outlet />
+          </AttentionProvider>
+        </MainCurrencyProvider>
+      </main>
+    </div>
   );
 }

@@ -106,6 +106,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
     ['Wallets', '/wallets'],
     ['Banks', '/deposits'],
     ['Goals', '/goals'],
+    ['History', '/history'],
     ['Settings', '/preferences'],
   ] as const;
   for (const [index, [name, path]] of sections.entries()) {
@@ -270,25 +271,33 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   for (const width of [360, 768]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(menuButton).toHaveCount(0);
-    await expect(nav.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
-    const accountLink = nav.getByRole('link', { name: 'Settings', exact: true });
+    // Polish §3: the tab bar holds Dashboard, Portfolio, Transactions, Goals and More, all
+    // inside the window; Settings lives in the More sheet, which says it is the page open.
+    const tabBar = await nav.locator('#application-menu').boundingBox();
+    if (!tabBar) throw new Error('The tab bar has no box.');
+    // It stands at the bottom of the window.
+    expect(Math.abs(tabBar.y + tabBar.height - 900)).toBeLessThanOrEqual(1);
+    for (const name of ['Dashboard', 'Portfolio', 'Goals']) {
+      const tab = await nav.getByRole('link', { name, exact: true }).boundingBox();
+      expect(tab && tab.x >= 0 && tab.x + tab.width <= width).toBe(true);
+    }
+    await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toBeHidden();
+    const more = nav.getByRole('button', { name: 'More, now on Settings', exact: true });
+    await expect(more).toHaveAttribute('aria-current', 'page');
+    const moreBox = await more.boundingBox();
+    expect(moreBox && moreBox.x + moreBox.width <= width).toBe(true);
+    await more.click();
+    const sheet = page.getByRole('dialog', { name: 'More', exact: true });
+    const accountLink = sheet.getByRole('link', { name: 'Settings', exact: true });
     await expect(accountLink).toHaveAttribute('aria-current', 'page');
-    await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    // The strip scrolls the current section into view instead of hiding it behind a menu.
-    const strip = await nav.locator('#application-menu').boundingBox();
-    await expect
-      .poll(async () => {
-        const link = await accountLink.boundingBox();
-        return (
-          !!strip &&
-          !!link &&
-          link.x >= strip.x - 1 &&
-          link.x + link.width <= strip.x + strip.width + 1
-        );
-      })
-      .toBe(true);
+    await expect(accountLink).toBeFocused();
+    await expect(sheet.getByRole('link', { name: 'History', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     await fitsViewport(page);
     await page.screenshot({ path: testInfo.outputPath(`menu-${width}.png`), fullPage: true });
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(more).toBeFocused();
   }
 
   for (const width of [1280, 1440]) {
@@ -357,7 +366,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await expect(html).toHaveAttribute('data-theme', 'light');
 
   await page.setViewportSize({ width: 360, height: 800 });
-  await nav.getByRole('button', { name: 'Log out', exact: true }).click();
+  await nav.getByRole('button', { name: /^More/ }).click();
+  await page
+    .getByRole('dialog', { name: 'More', exact: true })
+    .getByRole('button', { name: 'Log out', exact: true })
+    .click();
   await expect(page).toHaveURL(`${origin}/login`);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
   await expect(page.getByRole('navigation')).toHaveCount(0);

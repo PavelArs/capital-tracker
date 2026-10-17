@@ -226,9 +226,68 @@ a.shell-sync:hover {
   cursor: wait;
 }
 
-/* Phones: the notifications bell stands left of the avatar, the prototype's flat 34 px icon button. */
-.shell-owner__bell {
+/* The phone tab bar's More button; on a wide screen every section is in the sidebar. */
+.shell-nav__more {
   display: none;
+}
+
+/* The More sheet (phones): the remaining sections as 48 px rows, the sync state and the owner
+   with Log out. */
+.shell-more__list a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.shell-more__list a:not([aria-current="page"]) .shell-icon {
+  color: var(--ink-3);
+}
+
+.shell-more__list a:hover {
+  background: var(--raised);
+}
+
+.shell-more__list a[aria-current="page"] .shell-icon {
+  color: var(--accent);
+}
+
+.shell-more__list .shell-nav__label {
+  flex: 1;
+}
+
+.shell-more__list .shell-nav__count {
+  margin-left: 0;
+}
+
+.shell-more .shell-sync {
+  display: flex;
+  margin-top: 0;
+}
+
+.shell-more__owner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 0;
+}
+
+.shell-more__who {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.25;
+}
+
+.shell-more__who small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
 }
 
 .shell-main {
@@ -249,133 +308,126 @@ a.shell-sync:hover {
   outline: none;
 }
 
-/* Phones and tablets (prototype v3): a slim sticky bar at the top with the brand, the bell and the
-   owner, and a tab bar at the bottom with every section, one tap away (M31: no menu button). The
-   tab bar swipes sideways when the sections do not all fit; the current one stays in view. */
+/* Phones and tablets (polish §3): the page's own title bar is the sticky top bar (PageHeader),
+   and a tab bar at the bottom holds Dashboard, Portfolio, Transactions, Goals and More; the More
+   sheet holds the other sections, the sync state and Log out. M31: no menu button. */
 @media (max-width: 860px) {
   .shell {
     display: block;
   }
 
-  /* The top bar. It holds the tab bar too, which is fixed to the bottom of the window; nothing
-     here may create a containing block for it (no transform, filter or backdrop-filter on the
-     bar itself: the blur sits on a pseudo-element). */
+  /* Only the tab bar of the navigation is on screen; it is fixed to the bottom of the window, so
+     nothing here may create a containing block for it (no transform or filter). */
   .shell-nav {
-    position: sticky;
-    top: 0;
-    z-index: var(--z-nav);
-    display: flex;
-    flex-direction: row;
-    align-items: center;
+    position: static;
+    display: block;
     height: auto;
-    min-height: var(--appbar-h);
-    padding-top: env(safe-area-inset-top, 0px);
     border-right: 0;
-    border-bottom: 1px solid var(--line);
     background: transparent;
   }
 
-  .shell-nav::before {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: color-mix(in srgb, var(--bg) 90%, transparent);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    content: "";
-  }
-
-  .shell-nav__header {
-    flex: 1;
-    min-width: 0;
-    padding: 0 16px;
-  }
-
-  .shell-brand__mark {
-    width: 22px;
-    height: 22px;
-  }
-
-  .shell-owner {
-    padding: 0 8px 0 0;
-    border-top: 0;
-  }
-
-  .shell-owner__who {
+  .shell-nav__header,
+  .shell-owner,
+  .shell-nav__in-more,
+  .shell-nav__menu > .shell-sync {
     display: none;
   }
 
-  /* The tab bar. */
+  /* The tab bar: five equal columns. */
   .shell-nav__menu {
     position: fixed;
     right: 0;
     bottom: 0;
     left: 0;
     z-index: var(--z-nav);
-    flex-direction: row;
-    align-items: stretch;
-    gap: 0;
-    padding: 0 0 env(safe-area-inset-bottom, 0px);
-    overflow-x: auto;
-    overflow-y: hidden;
+    display: block;
+    padding: 0 4px env(safe-area-inset-bottom, 0px);
+    overflow: visible;
     border-top: 1px solid var(--line-strong);
     background: var(--surface);
-    scrollbar-width: none;
-    overscroll-behavior-x: contain;
-  }
-
-  .shell-nav__menu::-webkit-scrollbar {
-    display: none;
   }
 
   .shell-nav .shell-nav__sections {
-    display: flex;
-    flex: 1 0 auto;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0;
   }
 
   .shell-nav__sections li {
     display: flex;
-    flex: 1 0 68px;
+    min-width: 0;
   }
 
-  .shell-nav__sections a {
+  .shell-nav__more {
+    display: flex;
+  }
+
+  .shell-nav__sections a,
+  .shell-nav__more button {
     position: relative;
+    display: flex;
     flex: 1;
     flex-direction: column;
+    align-items: center;
     justify-content: center;
     gap: 3px;
+    min-width: 0;
     height: var(--tabbar-h);
-    padding: 0 6px;
+    padding: 0 2px;
+    border: 0;
     border-radius: 0;
+    background: transparent;
     color: var(--ink-3);
+    font: inherit;
     font-size: 11px;
+    font-weight: 500;
     line-height: 1.2;
-    white-space: nowrap;
+    cursor: pointer;
     touch-action: manipulation;
   }
 
-  .shell-nav__sections a .shell-icon {
+  .shell-nav__sections .shell-nav__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-nav__sections .shell-icon {
     width: 18px;
     height: 18px;
   }
 
-  .shell-nav__sections a:hover {
+  .shell-nav__sections a:hover,
+  .shell-nav__more button:hover {
     background: transparent;
+    color: var(--ink);
   }
 
-  .shell-nav .shell-nav__sections a[aria-current="page"] {
+  .shell-nav__sections a:focus-visible,
+  .shell-nav__more button:focus-visible {
+    outline-offset: -3px;
+    border-radius: var(--r-md);
+  }
+
+  .shell-nav .shell-nav__sections a[aria-current="page"],
+  .shell-nav__more button[aria-current="page"] {
     background: transparent;
     color: var(--ink);
     font-weight: 600;
   }
 
+  .shell-nav__more button[aria-current="page"] .shell-icon {
+    color: var(--accent);
+  }
+
   /* The current tab: a 2 px accent bar along its top edge. */
-  .shell-nav__sections a[aria-current="page"]::before {
+  .shell-nav__sections a[aria-current="page"]::before,
+  .shell-nav__more button[aria-current="page"]::before {
     position: absolute;
     top: 0;
-    right: 14px;
-    left: 14px;
+    right: 28%;
+    left: 28%;
     height: 2px;
     border-radius: 0 0 2px 2px;
     background: var(--accent);
@@ -383,37 +435,23 @@ a.shell-sync:hover {
   }
 
   /* The count rides on the icon's corner, a solid amber pill. */
-  .shell-nav__count {
+  .shell-nav__sections .shell-nav__count {
     position: absolute;
-    top: 6px;
-    left: calc(50% + 4px);
+    top: 5px;
+    left: calc(50% + 6px);
     min-width: 16px;
     margin: 0;
-    padding: 1px 5px;
+    padding: 1px 4px;
     background: var(--warn);
     color: var(--warn-ink);
+    font-size: 10px;
     line-height: 1.2;
     text-align: center;
-  }
-
-  /* The dashboard and Wallets already say what needs attention. */
-  .shell-sync {
-    display: none;
   }
 
   .shell-main {
     padding: var(--sp-4) var(--sp-4)
       calc(var(--tabbar-h) + var(--sp-6) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-/* Phones: the page header draws the notifications bell here, left of the avatar. The room is
-   held while a page loads, so the avatar does not step aside. */
-@media (max-width: 559.98px) {
-  .shell-owner__bell {
-    display: block;
-    min-width: var(--h-icon);
-    height: var(--h-icon);
   }
 }
 

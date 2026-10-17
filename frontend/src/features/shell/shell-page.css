@@ -43,12 +43,27 @@
   letter-spacing: -0.01em;
 }
 
-/* Top bar of every page (PageHeader): title, then currency and "Add transaction". */
+/* Top bar of every page (PageHeader): title, the page's actions, the switches, then the bell. On
+   a wide screen the title bar and the switches are plain items of this one row. */
 .shell-page__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3);
+}
+
+.shell-page__bar,
+.shell-page__switches,
+.shell-page__actions {
+  display: contents;
+}
+
+.shell-page__mark {
+  display: none;
+}
+
+.shell-page__bell {
+  order: 1;
 }
 
 .shell-page__head h1 {
@@ -58,27 +73,59 @@
   overflow-wrap: anywhere;
 }
 
-/* Page-specific actions: inline with the title row on wide screens. */
-.shell-page__actions {
-  display: contents;
-}
-
-/* Phones: the title on a row of its own (the bell sits in the top bar next to the owner),
-   then the currency and "Add transaction" on one row, then the page's own actions on a row
-   of their own. */
-@media (max-width: 559.98px) {
-  .shell-page__head h1 {
-    order: -2;
-    flex: 1 1 100%;
-    min-width: 0;
+/* Phones and tablets (polish §3): the title row is a slim sticky title bar (mark, title, bell);
+   the switches and the page's actions follow in rows of their own that scroll away. */
+@media (max-width: 860px) {
+  .shell-page__head {
+    display: contents;
   }
 
+  .shell-page__bar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-nav);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: var(--appbar-h);
+    margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) 0;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* The blur sits on a pseudo-element: a backdrop-filter on the bar would hold the bell's fixed
+     sheet inside it. */
+  .shell-page__bar::before {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    content: "";
+  }
+
+  .shell-page__mark {
+    display: block;
+    flex: none;
+    width: 22px;
+    height: 22px;
+  }
+
+  .shell-page .shell-page__bar h1 {
+    flex: 1;
+    margin: 0;
+    overflow: hidden;
+    font-size: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-page__switches,
   .shell-page__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--sp-2);
-    order: 1;
-    width: 100%;
   }
 }
 
@@ -258,4 +305,10 @@
   display: grid;
   gap: var(--sp-5);
   max-width: 780px;
+}
+
+/* BootShell holds the bell's room while the sign-in check is on its way. */
+.shell-page__bell--hold {
+  width: var(--h-icon);
+  height: var(--h-icon);
 }

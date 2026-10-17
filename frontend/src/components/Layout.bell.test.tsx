@@ -52,17 +52,14 @@ afterEach(() => {
 });
 
 describe('ATTN-BELL on a phone', () => {
-  it('stands in the top bar next to the owner, not in the page header', async () => {
+  it('stands in the title bar with the page title (polish §3), once', async () => {
     phone(true);
     renderShell();
     const bell = await screen.findByRole('button', { name: /^Notifications/ });
     expect(screen.getAllByRole('button', { name: /^Notifications/ })).toHaveLength(1);
-    const bar = screen.getByRole('navigation', { name: 'Main navigation' });
-    expect(bar).toContainElement(bell);
-    expect(bell.closest('.shell-owner__bell')?.nextElementSibling).toHaveTextContent('O');
-    expect(
-      within(screen.getByRole('banner')).queryByRole('button', { name: /^Notifications/ }),
-    ).toBeNull();
+    const title = screen.getByRole('heading', { level: 1, name: 'Dashboard' });
+    expect(title.closest('.shell-page__bar')).toContainElement(bell);
+    expect(screen.getByRole('navigation', { name: 'Main navigation' })).not.toContainElement(bell);
   });
 
   it('can be closed with its ✕ and with a tap on the dimmed page', async () => {

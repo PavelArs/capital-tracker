@@ -85,16 +85,16 @@ describe('SHELL-FOCUS after choosing a section', () => {
   });
 });
 
-describe('SHELL-SLASH the search shortcut', () => {
-  it('SHELL-SLASH "/" puts the keyboard in the page search, not while typing elsewhere', async () => {
+describe('SHELL-SEARCH-KEY the search shortcut', () => {
+  // WCAG 2.1.4: no single-character shortcut. "/" is an ordinary key (a speech user may dictate
+  // it, a key press on a button may carry it); Ctrl+K or Cmd+K is the shortcut.
+  it('SHELL-SEARCH-KEY a bare "/" moves nothing, wherever the keyboard is', async () => {
     const user = userEvent.setup();
     renderShell('/portfolio');
     const search = await screen.findByRole('searchbox', { name: 'Search assets' });
     act(() => (document.activeElement as HTMLElement | null)?.blur());
     await user.keyboard('/');
-    expect(search).toHaveFocus();
-    expect(search).toHaveValue('');
-
+    expect(search).not.toHaveFocus();
     const note = screen.getByRole('textbox', { name: 'Note' });
     await user.click(note);
     await user.keyboard('/');
@@ -102,14 +102,32 @@ describe('SHELL-SLASH the search shortcut', () => {
     expect(note).toHaveValue('/');
   });
 
-  it('SHELL-SLASH "/" does nothing while a dialog is open', async () => {
+  it('SHELL-SEARCH-KEY Ctrl+K or Cmd+K puts the keyboard in the page search, not while typing elsewhere', async () => {
+    const user = userEvent.setup();
+    renderShell('/portfolio');
+    const search = await screen.findByRole('searchbox', { name: 'Search assets' });
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    await user.keyboard('{Control>}k{/Control}');
+    expect(search).toHaveFocus();
+    expect(search).toHaveValue('');
+    act(() => search.blur());
+    await user.keyboard('{Meta>}k{/Meta}');
+    expect(search).toHaveFocus();
+
+    const note = screen.getByRole('textbox', { name: 'Note' });
+    await user.click(note);
+    await user.keyboard('{Control>}k{/Control}');
+    expect(note).toHaveFocus();
+  });
+
+  it('SHELL-SEARCH-KEY does nothing while a dialog is open', async () => {
     const user = userEvent.setup();
     renderShell('/portfolio');
     const search = await screen.findByRole('searchbox', { name: 'Search assets' });
     act(() => (document.activeElement as HTMLElement | null)?.blur());
     document.body.classList.add('has-dialog');
     try {
-      await user.keyboard('/');
+      await user.keyboard('{Control>}k{/Control}');
       expect(search).not.toHaveFocus();
     } finally {
       document.body.classList.remove('has-dialog');

@@ -47,11 +47,16 @@ describe('SHELL-002 navigation presentation', () => {
     expect(target?.getAttribute('tabindex')).toBe('-1');
   });
 
-  it('always shows the sections (no menu button) and keeps an English logout', async () => {
+  it('always shows the sections (no menu button; More opens the rest on a phone) and keeps an English logout', async () => {
     const document = await markup();
     const buttons = [...document.querySelectorAll('nav button')];
     expect(buttons.some((button) => button.textContent === 'Menu')).toBe(false);
-    expect(document.querySelector('[aria-expanded]')).toBeNull();
+    // M31 / polish §3: the one button that opens anything is the phone tab bar's More.
+    expect(
+      [...document.querySelectorAll('[aria-expanded]')].map((node) =>
+        node.getAttribute('aria-label'),
+      ),
+    ).toEqual(['More']);
     expect(
       document.getElementById('application-menu')?.querySelectorAll('a').length,
     ).toBeGreaterThan(4);
@@ -74,6 +79,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       ['Wallets', '/wallets'],
       ['Banks', '/deposits'],
       ['Goals', '/goals'],
+      ['History', '/history'],
       ['Settings', '/preferences'],
     ]);
   });
@@ -91,6 +97,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Banks',
       'Real estate',
       'Goals',
+      'History',
       'Settings',
     ]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
@@ -123,6 +130,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Banks',
       'Brokers',
       'Goals',
+      'History',
       'Settings',
     ]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
@@ -153,6 +161,7 @@ describe('SHELL-001 the sections, no Legacy group', () => {
       'Brokers',
       'Real estate',
       'Goals',
+      'History',
       'Settings',
     ]);
   });
