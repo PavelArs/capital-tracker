@@ -329,8 +329,9 @@ export class CoinGeckoClient implements PriceProvider {
             price: geckoPrice(entry.usd),
             observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
           });
-        } catch {
+        } catch (error) {
           // One unreadable entry is not priced; it must not fail the batch it came with.
+          if (!(error instanceof InvalidResponse)) throw error;
         }
       }
       return { ok: true, prices };
