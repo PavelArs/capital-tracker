@@ -142,14 +142,16 @@ const renderPage = () =>
 const tbankMain = id(21);
 const tbankNew = id(22);
 const tbankIis = id(23);
-// Two T-Bank accounts read with a token: one already holds positions, one waits for its import.
+const waiting = { provider: 'tbank' as const, imported: false };
+const imported = { provider: 'tbank' as const, imported: true };
+// Two T-Bank accounts read with a token: one imported with positions, one waits for its import.
 const withTBank = () => {
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       account(broker, 'Sample Broker', 'broker'),
       account(iis, 'Sample Broker · IIS', 'broker'),
-      account(tbankMain, 'Main broker', 'broker', 'tbank'),
-      account(tbankNew, 'T-Bank Brokerage', 'broker', 'tbank'),
+      account(tbankMain, 'Main broker', 'broker', imported),
+      account(tbankNew, 'T-Bank Brokerage', 'broker', waiting),
       account(wallet, 'Home safe', null),
     ],
     nextCursor: null,
@@ -247,7 +249,7 @@ describe('BROKERS the Brokers page', () => {
     const waiting = within(tbank).getByRole('group', { name: 'Brokerage' });
     expect(within(waiting).getByTestId('account-total')).toHaveTextContent(/^—$/);
     expect(waiting).toHaveTextContent(
-      'Connected. Positions and cash arrive with the history import, which runs in the background.',
+      'Connected. Positions and cash arrive with the history import.',
     );
     expect(within(tbank).getByTestId('broker-total')).toHaveTextContent(
       '$300.001 account waiting for the history import.',
@@ -260,11 +262,25 @@ describe('BROKERS the Brokers page', () => {
     );
   });
 
+  it('BROKERS-GROUP does not call an imported account that holds nothing "waiting"', async () => {
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(tbankIis, 'T-Bank IIS', 'broker', imported)],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    renderPage();
+    const tbank = await screen.findByRole('region', { name: 'T-Bank' });
+    const iisGroup = within(tbank).getByRole('group', { name: 'IIS' });
+    expect(iisGroup).toHaveTextContent('Holds nothing yet.');
+    expect(iisGroup).not.toHaveTextContent('history import');
+    expect(within(tbank).getByTestId('broker-total')).toHaveTextContent(/^\$0\.00$/);
+  });
+
   it('BROKERS-GROUP shows "—", never zero, while nothing at a broker is valued yet', async () => {
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [
-        account(tbankNew, 'T-Bank Brokerage', 'broker', 'tbank'),
-        account(tbankIis, 'T-Bank IIS', 'broker', 'tbank'),
+        account(tbankNew, 'T-Bank Brokerage', 'broker', waiting),
+        account(tbankIis, 'T-Bank IIS', 'broker', waiting),
       ],
       nextCursor: null,
     });
@@ -327,9 +343,9 @@ describe('BROKERS the Brokers page', () => {
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [
         account(broker, 'Sample Broker', 'broker'),
-        account(tbankMain, 'Main broker', 'broker', 'tbank'),
-        account(tbankNew, 'T-Bank Brokerage', 'broker', 'tbank'),
-        account(tbankIis, 'T-Bank IIS', 'broker', 'tbank'),
+        account(tbankMain, 'Main broker', 'broker', imported),
+        account(tbankNew, 'T-Bank Brokerage', 'broker', waiting),
+        account(tbankIis, 'T-Bank IIS', 'broker', waiting),
       ],
       nextCursor: null,
     });

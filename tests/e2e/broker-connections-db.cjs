@@ -131,7 +131,10 @@ async function removal(db, service, owner) {
   // BROKER-LIST-CONNECTION: the account list says which broker accounts read with a token.
   const bare = await account(db, owner, 'broker');
   const listed = (await new AccountingService(db).listAccounts(owner, { limit: 100 })).items;
-  assert.equal(listed.find((item) => item.id === broker).connection, 'tbank');
+  assert.deepEqual(listed.find((item) => item.id === broker).connection, {
+    provider: 'tbank',
+    imported: false,
+  });
   assert.equal(listed.find((item) => item.id === bare).connection, null);
   await new AccountingService(db).removeAccount(owner, bare);
   await new AccountingService(db).removeAccount(owner, broker);
@@ -485,8 +488,16 @@ async function importing(db, service, imports, owner, other) {
   assert.equal(await count('account_trade_journals', `WHERE "accountId" = '${broker}'`), 0);
 
   const requestId = randomUUID();
+  const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
+  const listedConnection = async () =>
+    (await new AccountingService(db).listAccounts(owner, { limit: 100 })).items.find(
+      (item) => item.id === broker,
+    ).connection;
+  assert.deepEqual(await listedConnection(), { provider: 'tbank', imported: false });
   const first = await imports.import(owner, broker, { requestId, previewHash: preview.previewHash });
   assert.equal(first.created, true);
+  // BROKER-LIST-CONNECTION: once its history is written, the account no longer waits for it.
+  assert.deepEqual(await listedConnection(), { provider: 'tbank', imported: true });
   assert.deepEqual(
     [first.value.trades, first.value.rewards, first.value.firstJournalRevision, first.value.lastJournalRevision],
     [5, 1, 1, 6],

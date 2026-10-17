@@ -89,9 +89,17 @@ export default function AddBrokerAccountDialog({ onClose, onAdded }: Props) {
     target?.focus();
   }, [step]);
 
+  // What was typed in the positions editor before going back counts as half-filled too.
+  const drafted =
+    !!draft &&
+    (!!draft.broker.trim() ||
+      !!draft.cash.trim() ||
+      draft.positions.some((position) =>
+        [position.ticker, position.quantity, position.price].some((part) => part.trim()),
+      ));
   const close = () => {
     if (busy) return;
-    if (broker === 'tbank' && (trimmed || step === 'accounts')) setDiscarding(true);
+    if (drafted || (broker === 'tbank' && (trimmed || step === 'accounts'))) setDiscarding(true);
     else onClose();
   };
 
@@ -116,6 +124,8 @@ export default function AddBrokerAccountDialog({ onClose, onAdded }: Props) {
       }
       setAccounts(found);
       setPicks(next);
+      // A connect that failed before is answered again from this check.
+      setError(null);
       setStep('accounts');
     } catch (caught) {
       setTokenError(failure(caught, 'check'));
@@ -188,9 +198,9 @@ export default function AddBrokerAccountDialog({ onClose, onAdded }: Props) {
           setStep('choose');
         }}
         onClose={onClose}
-        onAdded={(name) => {
+        onAdded={(name, account) => {
           if (name) toast.show({ tone: 'success', title: `${name} added` });
-          onAdded();
+          onAdded(account);
         }}
       />
     );

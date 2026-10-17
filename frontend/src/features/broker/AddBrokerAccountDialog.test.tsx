@@ -99,6 +99,19 @@ describe('BROKER-ADD-FLOW one Add broker account dialog: choose the broker first
     expect(within(dialog()).getByLabelText('Broker')).toHaveValue('Sample Broker');
   });
 
+  it('BROKER-ADD-FLOW asks before discarding positions typed before going back to the choice', async () => {
+    const user = userEvent.setup();
+    open();
+    await choose(user, /^Another broker/);
+    await user.type(within(dialog()).getByLabelText('Broker'), 'Sample Broker');
+    await user.click(within(dialog()).getByRole('button', { name: 'Back' }));
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    const confirm = screen.getByRole('alertdialog', { name: 'Discard this broker account?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('BROKER-ADD-FLOW asks before discarding a half-filled positions editor', async () => {
     const user = userEvent.setup();
     open();
@@ -204,6 +217,22 @@ describe('BROKER-SETUP connecting T-Bank with one token, inside Add broker accou
     expect(onAdded).toHaveBeenCalledWith(madeId(1));
     expect(connect.mock.calls[1][1][0].requestId).toBe(connect.mock.calls[0][1][0].requestId);
     expect(connect.mock.calls[2][1][0].requestId).toBe(connect.mock.calls[0][1][0].requestId);
+  });
+
+  it('BROKER-SETUP drops an old connect error once the token is checked again', async () => {
+    vi.spyOn(brokersApi, 'tbankAccounts').mockResolvedValue([option('2000000001', 'Brokerage')]);
+    vi.spyOn(brokersApi, 'connectTBank').mockRejectedValueOnce(refused(503));
+    const user = userEvent.setup();
+    open();
+    await paste(user);
+    await user.click(await within(dialog()).findByRole('button', { name: 'Connect 1 account' }));
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent(
+      'T-Bank could not be reached',
+    );
+    await user.click(within(dialog()).getByRole('button', { name: 'Back' }));
+    await user.click(within(dialog()).getByRole('button', { name: 'Continue' }));
+    expect(await within(dialog()).findByText('Step 3 of 3')).toBeInTheDocument();
+    expect(within(dialog()).queryByRole('alert')).toBeNull();
   });
 
   it('BROKER-SETUP says what the server said when T-Bank refuses the token, and keeps it', async () => {

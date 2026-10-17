@@ -81,9 +81,9 @@ interface Props {
   onClose: () => void;
   /**
    * Something was saved: the account, with what it holds or part of it. `name` is given only
-   * when everything the form asked for was saved.
+   * when everything the form asked for was saved; `account` is the account made.
    */
-  onAdded: (name?: string) => void;
+  onAdded: (name?: string, account?: string) => void;
   /** Where this form sits in Add broker account, after the broker was chosen. */
   steps?: { current: number; total: number };
   /** Back to choosing the broker, with what is typed so far; offered while nothing is saved. */
@@ -259,7 +259,7 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
       return;
     }
     if (bare) onClose();
-    else onAdded();
+    else onAdded(undefined, done.accountId ?? undefined);
   };
   const accountRequest = () => ({
     requestId: requests.current.account,
@@ -422,7 +422,7 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
         return;
       }
     }
-    onAdded(entry.broker.trim());
+    onAdded(entry.broker.trim(), saved.current.accountId ?? undefined);
   };
 
   return (

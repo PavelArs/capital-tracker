@@ -108,8 +108,7 @@ function Account({
       </div>
       {account.pending ? (
         <Banner tone="info" icon="clock" role="none">
-          Connected. Positions and cash arrive with the history import, which runs in the
-          background.
+          Connected. Positions and cash arrive with the history import.
         </Banner>
       ) : account.positions.length ? (
         <ul className="ui-rows">
@@ -242,8 +241,8 @@ export default function BrokersPage() {
           icon={<Icon name="briefcase" />}
           actions={addButton}
         >
-          Add a broker account with the stocks, bonds and funds it holds and its cash. Prices are
-          entered by hand for now, with the price you see at your broker.
+          Connect T-Bank with a read-only token, or add an account at another broker with the
+          stocks, bonds and funds it holds and its cash, at the prices you see there.
         </EmptyState>
       ) : (
         <>
@@ -261,8 +260,8 @@ export default function BrokersPage() {
             </Banner>
           )}
           <PageIntro action={addButton}>
-            Positions are entered by hand for now, with the price you see at your broker. Update a
-            price on the position's page.
+            T-Bank accounts read with a read-only token. At another broker, positions are entered by
+            hand with the price you see there; update a price on the position's page.
           </PageIntro>
           <Card labelledBy="broker-summary-title">
             <h2 id="broker-summary-title" className="ui-sr">
