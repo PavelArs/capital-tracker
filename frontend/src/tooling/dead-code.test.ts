@@ -15,11 +15,24 @@ function sources(dir: string): string[] {
   });
 }
 
+/** Whether the code imports the package itself or one of its subpaths, never a longer name. */
+const isImported = (code: string, name: string) =>
+  new RegExp(`['"]${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}(/[^'"]*)?['"]`).test(code);
+
 describe('FRONTEND-NO-DEAD-CODE: nothing unused ships or is configured', () => {
   it('every runtime dependency is imported by the app', () => {
     const code = sources(path.join(root, 'src')).join('\n');
-    const unused = Object.keys(pkg.dependencies).filter((name) => !code.includes(`'${name}`));
+    const unused = Object.keys(pkg.dependencies).filter((name) => !isImported(code, name));
     expect(unused).toEqual([]);
+  });
+
+  it('counts a package only by its own name or subpath, not a longer name it prefixes', () => {
+    const code =
+      'import { createRoot } from \'react-dom/client\';\nimport x from "i18next-browser-languagedetector";';
+    expect(isImported(code, 'react-dom')).toBe(true);
+    expect(isImported(code, 'react')).toBe(false);
+    expect(isImported(code, 'i18next')).toBe(false);
+    expect(isImported(code, 'i18next-browser-languagedetector')).toBe(true);
   });
 
   it('no script needs the @vitest/ui package that is not installed', () => {
