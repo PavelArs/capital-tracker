@@ -25,7 +25,7 @@ import { Affix, Input } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
-import { newRequestId } from '../accounting/feedback';
+import { useAttempt } from '../accounting/feedback';
 import {
   addMonths,
   bannerTone,
@@ -50,19 +50,6 @@ const PRESETS: readonly (readonly [string, string])[] = [
   ['8', 'Base'],
   ['12', 'Bold'],
 ];
-
-/**
- * The id of this attempt. A retry of the same entries after a lost answer keeps it, so the
- * server records the goal once; changed entries are a new attempt with a new id.
- */
-function useAttempt() {
-  const last = useRef<{ key: string; id: string } | null>(null);
-  return (entries: unknown) => {
-    const key = JSON.stringify(entries);
-    if (last.current?.key !== key) last.current = { key, id: newRequestId() };
-    return last.current.id;
-  };
-}
 
 /**
  * The server's own words for a refusal it explained, else a general line. Without an answer the
