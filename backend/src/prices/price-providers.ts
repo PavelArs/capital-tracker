@@ -59,6 +59,7 @@ export async function getJson(
   url: string,
   timeoutMs: number,
   headers: Record<string, string> = {},
+  reviver?: (key: string, value: unknown, context?: { source?: string }) => unknown,
 ): Promise<Fetched> {
   let response: { status: number; data: string };
   try {
@@ -79,7 +80,7 @@ export async function getJson(
   if (response.status === 429) return { ok: false, reason: 'rate_limited' };
   if (response.status !== 200) return { ok: false, reason: 'unavailable' };
   try {
-    return { ok: true, body: JSON.parse(response.data) };
+    return { ok: true, body: JSON.parse(response.data, reviver) };
   } catch {
     return { ok: false, reason: 'invalid_response' };
   }
@@ -229,12 +230,26 @@ export class KrakenClient implements PriceProvider {
 }
 
 // CoinGecko simple/price: { <id>: { usd: number, last_updated_at: seconds } }.
+// A `usd` JSON number keeps its own text: a double would round a price with more digits.
+class JsonNumberText {
+  constructor(readonly text: string) {}
+}
+function keepUsdText(key: string, value: unknown, context?: { source?: string }): unknown {
+  return key === 'usd' && typeof value === 'number'
+    ? new JsonNumberText(context?.source ?? '')
+    : value;
+}
 function geckoPrice(value: unknown): string {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) invalid();
-  // Shortest round-trip text of the JSON number; JS prints a price under 1e-6 as `1.2e-7`.
-  const [, digit, rest = '', zeros] = /^(\d)(?:\.(\d+))?e-(\d+)$/.exec(String(value)) ?? [];
+  if (!(value instanceof JsonNumberText)) invalid();
+  // The decimal the number's text means, `1.2e-7` included, moved point by point, never rounded.
+  const [, whole, fraction = '', exponent = '0'] =
+    /^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d{1,3}))?$/.exec(value.text) ?? invalid();
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponent);
   return positiveDecimal(
-    zeros ? `0.${'0'.repeat(Number(zeros) - 1)}${digit}${rest}` : String(value),
+    point <= 0
+      ? `0.${'0'.repeat(-point)}${digits}`
+      : `${digits.padEnd(point, '0').slice(0, point)}.${digits.slice(point) || '0'}`,
   );
 }
 
@@ -261,6 +276,7 @@ export class CoinGeckoClient implements PriceProvider {
       `${this.baseUrl}/api/v3/simple/price?${query}`,
       this.timeoutMs,
       this.demoKey ? { 'x-cg-demo-api-key': this.demoKey } : {},
+      keepUsdText,
     );
     if (!fetched.ok) return fetched;
     const nowSeconds = Math.floor(now.getTime() / 1000);
@@ -308,6 +324,7 @@ export class CoinGeckoClient implements PriceProvider {
       `${this.baseUrl}/api/v3/simple/token_price/${platform}?${query}`,
       this.timeoutMs,
       this.demoKey ? { 'x-cg-demo-api-key': this.demoKey } : {},
+      keepUsdText,
     );
     if (!fetched.ok) return fetched;
     const nowSeconds = Math.floor(now.getTime() / 1000);

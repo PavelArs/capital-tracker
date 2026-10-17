@@ -387,6 +387,22 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
       });
     });
 
+    it('TOKEN-MICRO-PRICE keeps every digit the provider sent, beyond what a double holds', async () => {
+      // Raw text: a JS object literal would already round these numbers to doubles.
+      handler = () => ({
+        status: 200,
+        body: `{"${mixed.toLowerCase()}":{"usd":1.234567890123456789e-7,"last_updated_at":${updated}},"${other}":{"usd":0.12345678901234567891,"last_updated_at":${updated}}}`,
+      });
+      const answer = await new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed, other], now);
+      expect(answer).toEqual({
+        ok: true,
+        prices: new Map([
+          [mixed, { price: '0.0000001234567890123456789', observedAt: '2026-10-04T15:04:30.000Z' }],
+          [other, { price: '0.12345678901234567891', observedAt: '2026-10-04T15:04:30.000Z' }],
+        ]),
+      });
+    });
+
     it('TOKEN-MICRO-PRICE leaves one unreadable entry not priced instead of failing its batch', async () => {
       handler = () => ({
         status: 200,
@@ -446,6 +462,15 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
         precision: 'full',
       });
       expect(requests[0].headers['x-cg-demo-api-key']).toBeUndefined();
+    });
+
+    it('keeps every digit of a price the provider sent, beyond what a double holds', async () => {
+      handler = () => ({
+        status: 200,
+        body: `{"bitcoin":{"usd":84950.123456789012345678,"last_updated_at":${updated}}}`,
+      });
+      const answer = await new CoinGeckoClient({ baseUrl }).latest([asset('BTC')], now);
+      expect(answer).toMatchObject({ ok: true, quotes: [{ price: '84950.123456789012345678' }] });
     });
 
     it('sends the free Demo key only when configured', async () => {
