@@ -181,7 +181,9 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   await accountFilter.selectOption({ label: walletLabel });
   await expect(rows).toHaveCount(1);
   const receipt = cells(rows.nth(0));
-  await expect(table.getByRole('rowheader')).toHaveText(['Nov 14, 2023']);
+  // 22:13 UTC on 14 November is 01:13 on 15 November in Moscow: listed under the Moscow day
+  // the period counts, with its time in UTC.
+  await expect(table.getByRole('rowheader')).toHaveText(['Nov 15, 2023']);
   await expect(receipt.nth(0)).toHaveText('Incoming22:13');
   await expect(receipt.nth(1)).toHaveText('BTC');
   await expect(receipt.nth(2)).toHaveText('+0.001');

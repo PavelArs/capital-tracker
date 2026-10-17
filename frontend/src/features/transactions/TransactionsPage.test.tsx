@@ -445,13 +445,33 @@ describe('TransactionsPage (list-all-operations)', () => {
       list([
         at('2026-10-04T09:15:00.000Z', 1),
         at('2026-10-04T08:00:00.000Z', 2),
-        at('2026-10-03T23:59:00.000Z', 3),
+        // 23:59 on 3 October in Moscow, the last minute of yesterday.
+        at('2026-10-03T20:59:00.000Z', 3),
         at('2026-09-30T00:00:00.000Z', 4),
       ]),
     );
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(4));
     expect(dayHeadings()).toEqual(['Today', 'Yesterday', 'Sep 30, 2026']);
+  });
+
+  it('OPS-DAYS: a transaction at 21:30 UTC on 31 December is listed under 1 January, the Moscow day the period counts', async () => {
+    const at = (iso: string, n: number) =>
+      operation({ id: `trade:${id(80 + n)}`, occurredAt: iso, valueUsd: '10', feeUsd: '0' });
+    const operations = [at('2026-12-31T21:30:00.000Z', 1), at('2026-12-31T20:30:00.000Z', 2)];
+    const read = vi
+      .spyOn(operationsApi, 'list')
+      .mockResolvedValue({ ...list(operations), at: '2027-01-05T09:00:00.000Z' });
+    renderPage('/transactions?from=2027-01-01&to=2027-01-01');
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(read).toHaveBeenLastCalledWith(undefined, { from: '2027-01-01', to: '2027-01-01' });
+    expect(dayHeadings()).toEqual(['Jan 1, 2027', 'Dec 31, 2026']);
+    cleanup();
+    // At 21:30 UTC on 31 December it is already 1 January in Moscow: that row is today's.
+    read.mockResolvedValue({ ...list(operations), at: '2026-12-31T21:45:00.000Z' });
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(dayHeadings()).toEqual(['Today', 'Yesterday']);
   });
 
   it('OPS-PAID: a purchase paid in RUB shows what was paid under its value', async () => {

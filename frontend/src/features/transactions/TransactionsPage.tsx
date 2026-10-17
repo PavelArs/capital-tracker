@@ -651,7 +651,7 @@ export default function TransactionsPage() {
     replaceParams(new URLSearchParams(asked ? { currency: asked } : {}));
   };
   const currency = list?.quoteCurrency ?? 'USD';
-  // One group per UTC day, under a heading as in the prototype.
+  // One group per Moscow day, the day the period filter counts, under a heading as in the prototype.
   const days: { heading: string; operations: Operation[] }[] = [];
   for (const operation of paged.rows) {
     const heading = dayHeading(operation.occurredAt, list?.at ?? operation.occurredAt);
@@ -1063,8 +1063,8 @@ export default function TransactionsPage() {
             {currency === 'USD'
               ? 'Values are in USD as recorded'
               : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
-            ; ≈ marks an estimate at the price stored for the transaction's time. Dates and times
-            are in UTC.
+            ; ≈ marks an estimate at the price stored for the transaction's time. Days are Moscow
+            days, as the period counts them; times are in UTC.
           </Banner>
         </Card>
       )}

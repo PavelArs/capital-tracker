@@ -1,5 +1,5 @@
 import type { Operation, OperationAsset, OperationType } from '@api/operations.api';
-import { dayText, utcClockText } from '@/utils/dates';
+import { dayText, moscowDate, utcClockText } from '@/utils/dates';
 import { DASH, quantity } from '../portfolio/format';
 import { isEvm } from '../shell/evm-networks';
 
@@ -265,7 +265,7 @@ export function placeLabel(operation: Operation): string {
   return lead + address;
 }
 
-/** Dates and times are shown in UTC, as stored. */
+/** Dates and times are shown in UTC, as stored; only the list's day headings are Moscow days. */
 export function day(iso: string): string {
   return dayText(iso);
 }
@@ -281,14 +281,13 @@ export function rowTime(operation: Operation): string {
   return utcClockText(at);
 }
 
-/** The UTC day a row is listed under: Today, Yesterday or "Oct 2, 2026". */
+/** The Moscow day a row is listed under, the day the period filter counts: Today, Yesterday or "Oct 2, 2026". */
 export function dayHeading(iso: string, now: string): string {
-  const days = Math.round(
-    (Date.parse(now.slice(0, 10)) - Date.parse(iso.slice(0, 10))) / 86_400_000,
-  );
+  const date = moscowDate(iso);
+  const days = Math.round((Date.parse(moscowDate(now)) - Date.parse(date)) / 86_400_000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
-  return day(iso);
+  return dayText(date);
 }
 
 export function moment(iso: string): string {
