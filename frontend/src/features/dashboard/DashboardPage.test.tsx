@@ -1187,7 +1187,8 @@ describe('Dashboard UI audit', () => {
         .getAllByRole('cell')
         .map((cell) => cell.textContent);
     expect(cells('Painting').slice(1, 3)).toEqual(['—', 'Manual']);
-    expect(cells('Euro').slice(1, 3)).toEqual(['$1.09', 'Fixed']);
+    // 1.086957 is shown rounded down, never above the real price.
+    expect(cells('Euro').slice(1, 3)).toEqual(['$1.08', 'Fixed']);
     expect(cells('Bitcoin').slice(1, 3)).toEqual(['$2,100.00', '+1.25%']);
   });
 

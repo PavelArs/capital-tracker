@@ -18,6 +18,7 @@ import { Affix, Input, Select, Textarea } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { dayText } from '@/utils/dates';
+import { exactProduct } from '@/utils/decimal';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import { hiddenTokenSymbols } from '../wallets/WalletParts';
@@ -591,7 +592,9 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   };
 
   // Price per unit and total follow each other: the field typed last decides. A total that
-  // was typed (or recorded) is never recomputed from the shown, rounded price.
+  // was typed (or recorded) is never recomputed from the shown, rounded price. The total is the
+  // saved cost, so it is the exact product within the server's 30 decimals; past that the owner types it.
+  const totalOf = (units: string, each: string) => exactProduct(units, each, 30) ?? '';
   const setAmount = (amount: string) => {
     const units = positive(amount);
     if (driver.current === 'total') {
@@ -601,17 +604,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       return;
     }
     const each = positive(unit);
-    update({
-      amount,
-      ...(units && each ? { total: trimmed(Number(units) * Number(each), 2) } : {}),
-    });
+    update({ amount, ...(units && each ? { total: totalOf(units, each) } : {}) });
   };
   const setUnitPrice = (value: string) => {
     driver.current = 'unit';
     setUnit(value);
     const units = positive(entry.amount);
     const each = positive(value);
-    if (units && each) update({ total: trimmed(Number(units) * Number(each), 2) });
+    if (units && each) update({ total: totalOf(units, each) });
   };
   const setTotal = (total: string) => {
     driver.current = 'total';

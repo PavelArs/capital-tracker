@@ -1,12 +1,15 @@
 import type { PriceSource } from '@api/portfolio-assets.api';
 import type { AccountingCurrency, AssetValuation } from '@api/portfolio-valuation.api';
 
-// Display only: exact decimal strings are rounded here and nowhere else (PV-5).
+// Display only: exact decimal strings are rounded here and nowhere else (PV-5), and always down,
+// so a figure is never shown above the real one and a loss never smaller. The sign is added apart.
 const number = (value: string, minimum: number, maximum: number) =>
   new Intl.NumberFormat('en-US', {
     minimumFractionDigits: minimum,
     maximumFractionDigits: maximum,
-  }).format(Math.abs(Number(value)));
+    roundingMode: 'floor',
+    signDisplay: 'never',
+  }).format(value as Intl.StringNumericLiteral);
 
 /**
  * The sign of a figure as shown: one that rounds to zero at the digits shown ("0.00") has none,

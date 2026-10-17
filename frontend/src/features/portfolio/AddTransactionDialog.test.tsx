@@ -1027,6 +1027,29 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.getByLabelText('Total paid')).toHaveValue('4');
   });
 
+  // The total is sent as the cost: it is filled with the exact product of amount and price, past the
+  // cent too, so the owner sees it and can edit it.
+  it('fills the total with the exact product of amount and price, sub-cent places included', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '3');
+    await user.type(view.getByLabelText('Price per BTC'), '1.11');
+    expect(view.getByLabelText('Total paid')).toHaveValue('3.33');
+    await user.type(view.getByLabelText('Price per BTC'), '5');
+    expect(view.getByLabelText('Total paid')).toHaveValue('3.345');
+    await user.clear(view.getByLabelText('Amount'));
+    await user.type(view.getByLabelText('Amount'), '1000');
+    await user.clear(view.getByLabelText('Price per BTC'));
+    await user.type(view.getByLabelText('Price per BTC'), '0.000012');
+    expect(view.getByLabelText('Total paid')).toHaveValue('0.012');
+    await user.clear(view.getByLabelText('Amount'));
+    await user.type(view.getByLabelText('Amount'), '0.00918359');
+    await user.clear(view.getByLabelText('Price per BTC'));
+    await user.type(view.getByLabelText('Price per BTC'), '85053.34');
+    expect(view.getByLabelText('Total paid')).toHaveValue('781.0950026906');
+  });
+
   it('X3 adds a coin that is not among the assets together with its first buy', async () => {
     const user = userEvent.setup();
     const created = { ...asset(5, 'Toncoin', 'TON', 'crypto'), priceSource: 'manual' as const };
