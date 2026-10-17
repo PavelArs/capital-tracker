@@ -282,6 +282,14 @@ describe('CUR-RATE-STALE a rate over 15 days old values nothing today', () => {
     expect(rub.rates).toEqual([{ currency: 'EUR', date: '2026-10-04', rubPerUnit: '110' }]);
   });
 
+  it('lists no rate when the report currency rate is stale, since nothing converts into it', () => {
+    // Here the euro stopped on 2026-09-18 while the dollar is fresh: no dollar amount reaches euros.
+    const staleEuro: FxRates = { USD: rates.EUR, EUR: rates.USD };
+    const eur = view('EUR', staleEuro, accounts(), [btc, rubles], { BTC: '110000' });
+    expect(assetOf(eur, btc)).toMatchObject({ value: null, missingPrice: 'no-rate' });
+    expect(eur.rates).toEqual([]);
+  });
+
   it('still states a past purchase at the rate it reused over a gap of under 15 days', () => {
     const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
     expect(assetOf(rub, btc)).toMatchObject({ costBasis: '80000', missingRateQuantity: '0' });
