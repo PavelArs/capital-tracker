@@ -1301,6 +1301,23 @@ describe('classes-19: deposits grouped by bank', () => {
     );
   });
 
+  it('DEP-ACCOUNT-SHARE gives no share of a net worth that is a floor for want of an account rate', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...netWorth('5550150.70'),
+      completeness: 'incomplete',
+      interestMissingDepositCount: 2,
+    });
+    open('/deposits?currency=RUB');
+    const summary = await screen.findByRole('region', { name: 'Total in deposits' });
+    const share = (await within(summary).findByText('Share of net worth'))
+      .parentElement as HTMLElement;
+    expect(share).toHaveTextContent(
+      'Share of net worth—Net worth is a floor: 2 accounts without an interest rate.',
+    );
+    expect(summary).not.toHaveTextContent('%');
+  });
+
   it('deposits-bank-total a bank whose deposits are all closed and settled holds 0.00, not a dash', async () => {
     const closed = (deposit: Deposit): Deposit => ({
       ...deposit,

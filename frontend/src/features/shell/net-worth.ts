@@ -8,6 +8,11 @@ const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '
  */
 export function netWorthUnknown(portfolio: PortfolioValuation): string | null {
   if (portfolio.totalValue !== null) {
+    // A net worth that is a floor for want of an account's interest overstates every share of it.
+    const floor = portfolio.interestMissingDepositCount ?? 0;
+    if (floor > 0) {
+      return `Net worth is a floor: ${plural(floor, 'account')} without an interest rate.`;
+    }
     const worth = Number(portfolio.totalValue);
     if (worth > 0) return null;
     return worth < 0 ? 'Net worth is below zero.' : 'Net worth is zero.';

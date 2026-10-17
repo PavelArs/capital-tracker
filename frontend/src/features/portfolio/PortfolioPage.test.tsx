@@ -768,6 +768,21 @@ describe('PV-UI Portfolio values every asset', () => {
     );
   });
 
+  it('DEP-ACCOUNT-SHARE says the allocation leaves out the interest of accounts without a rate', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], {
+        completeness: 'incomplete',
+        interestMissingDepositCount: 2,
+        allocation: { ...portfolio([]).allocation, complete: false },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(screen.getByRole('region', { name: 'Allocation' })).toHaveTextContent(
+      'Interest on accounts without a rate is not included.',
+    );
+  });
+
   it('keeps the loaded portfolio when a later refresh fails and ignores a stale reply', async () => {
     // Adding an asset now opens its page (portfolio-06), so the list is asked again when the
     // currency changes: the ruble answer hangs, the euro one answers first, then the late reply.
@@ -3500,6 +3515,17 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
       'US dollar',
       'Rubles',
     ]);
+  });
+
+  it('DEP-ACCOUNT-SHARE drops the class share while the net worth is a floor for want of an account rate', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...complete(),
+      completeness: 'incomplete',
+      interestMissingDepositCount: 1,
+    });
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(names().slice(0, 2)).toEqual(['# Crypto$96,000.05', 'Bitcoin']);
   });
 
   it('PF-GROUPS heads the phone rows the same way', async () => {

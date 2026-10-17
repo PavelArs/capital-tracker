@@ -680,6 +680,9 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
       bank(1, 'First Bank', worth(15_000)),
     ]);
     expect(without.interestMissingDepositCount).toBe(0);
+    expect(without.allocation.complete).toBe(true);
+    // The shares are worked out against that floor, so they carry the same "incomplete" mark.
+    expect(result.allocation.complete).toBe(false);
   });
 
   it('keeps a deposit that is worth nothing out of the allocation', () => {

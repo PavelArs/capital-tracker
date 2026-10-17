@@ -175,6 +175,8 @@ export default function Allocation({
             'Accounts whose history starts later are not included.'}
           {portfolio.unratedDepositCount > 0 &&
             `${portfolio.missingPriceCount + portfolio.unavailableAccountCount > 0 ? ' ' : ''}Deposits without a current exchange rate are not included.`}
+          {!!portfolio.interestMissingDepositCount &&
+            `${portfolio.missingPriceCount + portfolio.unavailableAccountCount + portfolio.unratedDepositCount > 0 ? ' ' : ''}Interest on accounts without a rate is not included.`}
         </Banner>
       )}
     </Card>

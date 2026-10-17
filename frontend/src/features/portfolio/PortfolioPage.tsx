@@ -797,7 +797,9 @@ export default function PortfolioPage() {
   const heads = new Map(
     classOrder.map((key): [AssetClassFilter, GroupHead] => {
       const subtotal = groupSubtotal(visible.filter((asset) => classOf(asset) === key));
-      const share = groupShare(subtotal, portfolio?.totalValue ?? null);
+      // A net worth that is a floor for want of an account's interest overstates every share.
+      const floor = (portfolio?.interestMissingDepositCount ?? 0) > 0;
+      const share = groupShare(subtotal, floor ? null : (portfolio?.totalValue ?? null));
       return [key, { key, label: classLabels[key], share, ...subtotal }];
     }),
   );

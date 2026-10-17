@@ -765,7 +765,7 @@ export function projectPortfolio(
       };
     }),
     allocation: {
-      complete,
+      complete: complete && interestMissingDepositCount === 0,
       byAsset: slices(byAsset, subtotal),
       byType: slices(byType, subtotal),
       byAccount: slices(byAccount, subtotal),
