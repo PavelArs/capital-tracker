@@ -17,7 +17,6 @@ import {
   useContext,
   useEffect,
   useId,
-  useRef,
   useState,
 } from 'react';
 import { Banner } from '@/ui/Banner';
@@ -30,7 +29,7 @@ import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Toggle } from '@/ui/Toggle';
 import { requestFailure } from '@/utils/request-failure';
-import { newRequestId } from '../accounting/feedback';
+import { useAttempt } from '../accounting/feedback';
 import { useFocusFirstProblem } from '../portfolio/focus-problem';
 import { Icon } from '../shell/icons';
 import { dateText, earlyCloseText, money, movementText, today } from './deposit-format';
@@ -64,19 +63,6 @@ const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean
 
 /** The problems shown in a form: none until the owner first tries to save it. */
 const ShownProblems = createContext<Problems>({});
-
-/**
- * The id of this attempt. A retry of the same entries after a lost answer keeps it, so the
- * server records it once; changed entries are a new attempt with a new id.
- */
-function useAttempt() {
-  const last = useRef<{ key: string; id: string } | null>(null);
-  return (entries: unknown) => {
-    const key = JSON.stringify(entries);
-    if (last.current?.key !== key) last.current = { key, id: newRequestId() };
-    return last.current.id;
-  };
-}
 
 /** The server's own words for a refusal it explained, else a general line. */
 const failure = (error: unknown) =>

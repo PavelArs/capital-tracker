@@ -1271,10 +1271,56 @@ describe('TransactionsPage manual operations (M9)', () => {
     const { user, drawer } = await openBuy();
     await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was deleted');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. The transaction may have been deleted; reload the page to check.',
+    );
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('alertdialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Buy · BTC' })).toBeInTheDocument();
+  });
+
+  // The first void was saved but its answer was lost, so the journal has moved on since.
+  const journalAfter = (revision: () => number) =>
+    vi.spyOn(tradesApi, 'state').mockImplementation(async () => ({
+      accountId: bybit.id,
+      eligible: false,
+      ineligibilityReason: 'already-initialized',
+      journal: { journalRevision: revision() } as JournalState['journal'],
+    }));
+
+  it('OPS-DELETE a retry after a lost answer sends the same void again', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
+    journalAfter(() => (voidTrade.mock.calls.length > 0 ? 6 : 5));
+    voidTrade
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue({} as TradeReceipt);
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('may have been deleted');
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() => expect(voidTrade).toHaveBeenCalledTimes(2));
+    expect(voidTrade.mock.calls[0][2].expectedJournalRevision).toBe(5);
+    expect(voidTrade.mock.calls[1]).toEqual(voidTrade.mock.calls[0]);
+  });
+
+  it('OPS-DELETE a refused void is sent again as a new request at the current revision', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(history);
+    journalAfter(() => (voidTrade.mock.calls.length > 0 ? 6 : 5));
+    voidTrade
+      .mockRejectedValueOnce(conflict({ message: 'The journal changed' }))
+      .mockResolvedValue({} as TradeReceipt);
+    const { user, drawer } = await openBuy();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('changed elsewhere');
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() => expect(voidTrade).toHaveBeenCalledTimes(2));
+    expect(voidTrade.mock.calls[1][2]).toEqual({
+      requestId: expect.any(String),
+      expectedJournalRevision: 6,
+    });
+    expect(voidTrade.mock.calls[1][2].requestId).not.toBe(voidTrade.mock.calls[0][2].requestId);
   });
 
   it('transactions-03 a deleted transaction gives the keyboard to the row above it', async () => {
@@ -1878,6 +1924,24 @@ describe('classify-chain-transactions (M12)', () => {
     expect(bodyRows()).toHaveLength(1);
   });
 
+  it('CLS-HIDE a retry after a lost answer sends the same change again', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([bought]));
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Buy · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Later' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Hide from calculations' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. It may have been saved; reload the page to check.',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Hide from calculations' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    expect(classify.mock.calls[1]).toEqual(classify.mock.calls[0]);
+  });
+
   it('says what to do when the wallet has no account or the server refuses', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([{ ...toClassify, account: null }]));
     const classify = vi
@@ -2175,6 +2239,45 @@ describe('link-own-transfers (M13)', () => {
     expect(remove.mock.calls[0][1]).toBe(`bybit-deposit-gap-${id(70)}`);
     expect(remove.mock.calls[0][2]).toEqual({ requestId: expect.any(String), expectedVersion: 0 });
     expect(await screen.findByText(/Record deleted/)).toBeInTheDocument();
+  });
+
+  it('BYBIT-GAP-DELETE a retry after a lost answer sends the same deletion again', async () => {
+    const counted = chainOperation(7, {
+      type: null,
+      occurredAt: '2025-06-24T08:00:00.000Z',
+      quantity: '3',
+      estimatedValueUsd: null,
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: `bybit-deposit-gap-${id(70)}`,
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'in',
+      },
+      status: 'needs-classification',
+      classification: null,
+    });
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([counted]))
+      .mockResolvedValue(list([]));
+    const remove = vi
+      .spyOn(operationsApi, 'removeCounted')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue();
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    const asking = screen.getByRole('alertdialog', { name: 'Delete this record?' });
+    await user.click(within(asking).getByRole('button', { name: 'Delete record' }));
+    expect(await within(asking).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. The record may have been deleted; reload the page to check.',
+    );
+    await user.click(within(asking).getByRole('button', { name: 'Delete record' }));
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
+    expect(remove.mock.calls[1]).toEqual(remove.mock.calls[0]);
   });
 
   it('a Bybit record the exchange made cannot be deleted', async () => {
@@ -4027,6 +4130,54 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     );
   });
 
+  it('XFER-PROPOSED a retry after a lost answer joins with the same request', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal]));
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. It may have been saved; reload the page to check.',
+    );
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    expect(classify.mock.calls[1]).toEqual(classify.mock.calls[0]);
+  });
+
+  it('XFER-PROPOSED a retry keeps its request after another pair also lost its answer', async () => {
+    const user = userEvent.setup();
+    const other = { ...proposal, outgoing: leg(3, 'Exchange', '2026-10-02T10:00:00.000Z') };
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal, other]));
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: '2 possible transfers between your accounts',
+    });
+    const join = (index: number) =>
+      user.click(within(card).getAllByRole('button', { name: 'Join as one transfer' })[index]);
+    await join(0);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    await join(1);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    await join(0);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(3));
+    expect(classify.mock.calls[0][1]).toBe(proposal.outgoing.txid);
+    expect(classify.mock.calls[1][1]).toBe(other.outgoing.txid);
+    expect(classify.mock.calls[2]).toEqual(classify.mock.calls[0]);
+  });
+
   it('says why a pair could not be joined and keeps the offer', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
@@ -4219,6 +4370,25 @@ describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', 
     await waitFor(() =>
       expect(screen.queryByRole('region', { name: /possible duplicate/ })).toBeNull(),
     );
+  });
+
+  it('CLS-DUPLICATE a retry after a lost answer replaces with the same request', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue(found([proposal]));
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. It may have been saved; reload the page to check.',
+    );
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    expect(classify.mock.calls[1]).toEqual(classify.mock.calls[0]);
   });
 
   it('says why it could not be replaced and keeps the offer', async () => {

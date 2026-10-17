@@ -14,7 +14,7 @@ import { Button } from '@/ui/Button';
 import Drawer, { DrawerFooter, DrawerHeader } from '@/ui/Drawer';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
-import { newRequestId } from '../accounting/feedback';
+import { newRequestId, useAttempt } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
@@ -597,7 +597,11 @@ export default function OperationDrawer({
   };
 
   // Deleting voids the operation: its history keeps every version, the void included
-  // (OPS-DELETE).
+  // (OPS-DELETE). A retry after a lost answer or a server error sends the same command again,
+  // with its request id and the revisions read the first time, so the server records it once.
+  const deletion = useRef<{ key: string; requestId: string; from: number; to: number } | null>(
+    null,
+  );
   const remove = async () => {
     if (!changeable) return;
     setConfirm({ step: 'deleting' });
@@ -605,42 +609,46 @@ export default function OperationDrawer({
       (await tradesApi.state(accountId)).journal?.journalRevision ?? 0;
     const [kind, id] = [operation.kind, operation.id.slice(operation.id.indexOf(':') + 1)];
     const expectedVersion = operation.version ?? 0;
+    const key = `${operation.id}:${expectedVersion}`;
     try {
-      if (kind === 'transfer') {
+      if (deletion.current?.key !== key) {
         const [from, to] = await Promise.all([
           revision(changeable.id),
-          revision(operation.counterAccount?.id ?? changeable.id),
+          kind === 'transfer' ? revision(operation.counterAccount?.id ?? changeable.id) : 0,
         ]);
+        deletion.current = { key, requestId: newRequestId(), from, to };
+      }
+      const { requestId, from, to } = deletion.current;
+      if (kind === 'transfer')
         await ownedTransfersApi.void(id, {
-          requestId: newRequestId(),
+          requestId,
           expectedVersion,
           expectedFromJournalRevision: from,
           expectedToJournalRevision: to,
         });
-      } else if (kind === 'reward')
+      else if (kind === 'reward')
         await assetRewardsApi.void(changeable.id, id, {
-          requestId: newRequestId(),
-          expectedJournalRevision: await revision(changeable.id),
+          requestId,
+          expectedJournalRevision: from,
           expectedVersion,
         });
       else
-        await tradesApi.void(changeable.id, tradeId, {
-          requestId: newRequestId(),
-          expectedJournalRevision: await revision(changeable.id),
-        });
+        await tradesApi.void(changeable.id, tradeId, { requestId, expectedJournalRevision: from });
       onDeleted?.();
     } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      // A definite refusal deleted nothing: the next try is a new command at the current revisions.
+      if (status !== undefined && status < 500) deletion.current = null;
       const dependent = dependentOf(error);
       if (dependent) {
         setConfirm(blocked(dependent));
         return;
       }
-      const status = isAxiosError(error) ? error.response?.status : undefined;
       setConfirm({
         step: 'ask',
         error:
           status === undefined
-            ? 'Could not reach the server. Nothing was deleted; try again.'
+            ? 'Could not reach the server. The transaction may have been deleted; reload the page to check.'
             : status === 409
               ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
               : 'Could not delete the transaction. Try again.',
@@ -652,18 +660,23 @@ export default function OperationDrawer({
   const counted = Boolean(chain?.chain && isCountedGap(chain.chain.txid));
 
   // CLS-HIDE: hiding keeps the answer, so including the row again restores it.
+  const hideAttempt = useAttempt();
   const toggleHidden = async () => {
     if (!chain?.wallet || !chain.chain) return;
     setToggling({ busy: true, error: null });
     const saved = chain.classification;
+    const change = {
+      expectedVersion: saved?.version ?? 0,
+      hidden: chain.status !== 'hidden',
+      classification: saved?.value ?? null,
+      ...(saved?.comment ? { comment: saved.comment } : {}),
+    };
     try {
       await operationsApi.classify(chain.wallet, chain.chain.txid, {
-        requestId: newRequestId(),
-        expectedVersion: saved?.version ?? 0,
-        hidden: chain.status !== 'hidden',
-        classification: saved?.value ?? null,
-        ...(saved?.comment ? { comment: saved.comment } : {}),
+        requestId: hideAttempt([chain.wallet.id, chain.chain.txid, change]),
+        ...change,
       });
+      hideAttempt.done([chain.wallet.id, chain.chain.txid, change]);
       announceClassificationChange();
       onClassified?.(chain.status === 'hidden' ? 'included' : 'hidden');
     } catch (error) {
@@ -679,7 +692,7 @@ export default function OperationDrawer({
                   POOL_DEPOSIT_NAMED
               ? 'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.'
               : status === undefined
-                ? 'Could not reach the server. Nothing was saved; try again.'
+                ? 'Could not reach the server. It may have been saved; reload the page to check.'
                 : status === 409
                   ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
                   : 'Could not save. Try again.',

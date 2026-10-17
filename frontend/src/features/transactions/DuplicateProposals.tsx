@@ -9,7 +9,7 @@ import {
 import { SYNC_CHANGED } from '@api/sync-status.api';
 import { useCallback, useEffect, useState } from 'react';
 import { requestFailure } from '@/utils/request-failure';
-import { newRequestId } from '../accounting/feedback';
+import { useAttempt } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress, typeLabels } from './operation-format';
@@ -31,7 +31,7 @@ const refused = (message: string | undefined) =>
 
 const failure = (error: unknown) =>
   requestFailure(error, {
-    unreachable: 'Could not reach the server. Nothing was saved; try again.',
+    unreachable: 'Could not reach the server. It may have been saved; reload the page to check.',
     status: { 409: refused, 422: refused },
     fallback: 'Could not replace it. Nothing was saved; try again.',
   });
@@ -51,6 +51,8 @@ export default function DuplicateProposals({
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ key: string; text: string } | null>(null);
+  // A retry of one answer after a lost reply keeps its request id, so it is recorded once.
+  const attempt = useAttempt();
 
   const load = useCallback(async () => {
     try {
@@ -80,15 +82,19 @@ export default function DuplicateProposals({
     const key = keyOf(item);
     setBusy(key);
     setProblem(null);
+    const answer = {
+      expectedVersion: item.transaction.version,
+      hidden: false,
+      classification: item.classification,
+      ...(item.comment === null ? {} : { comment: item.comment }),
+      replaces: { kind: item.record.kind, id: item.record.id, version: item.record.version },
+    };
     try {
       await operationsApi.classify({ id: item.transaction.addressId }, item.transaction.txid, {
-        requestId: newRequestId(),
-        expectedVersion: item.transaction.version,
-        hidden: false,
-        classification: item.classification,
-        ...(item.comment === null ? {} : { comment: item.comment }),
-        replaces: { kind: item.record.kind, id: item.record.id, version: item.record.version },
+        requestId: attempt([key, answer]),
+        ...answer,
       });
+      attempt.done([key, answer]);
       announceClassificationChange();
       onReplaced(
         `Replaced your record with the wallet's: ${quantity(item.transaction.quantity)} ${item.coin} in ${item.transaction.accountName}.`,

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { Button } from '@/ui/Button';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { requestFailure } from '@/utils/request-failure';
-import { newRequestId } from '../accounting/feedback';
+import { useAttempt } from '../accounting/feedback';
 import { isCountedGap } from './operation-format';
 
 interface Props {
@@ -17,7 +17,8 @@ interface Props {
 
 const failure = (error: unknown) =>
   requestFailure(error, {
-    unreachable: 'Could not reach the server. Nothing was deleted; try again.',
+    unreachable:
+      'Could not reach the server. The record may have been deleted; reload the page to check.',
     status: {
       409: 'This record was changed elsewhere. Close this window, reload and try again.',
       422: 'This record has an answer. Change it to "Needs classification" first, then delete it.',
@@ -32,14 +33,16 @@ const failure = (error: unknown) =>
  */
 export default function RemoveCounted({ operation, disabled = false, onDeleted }: Props) {
   const [asking, setAsking] = useState(false);
+  const attempt = useAttempt();
   if (!operation.chain || !operation.wallet || !isCountedGap(operation.chain.txid)) return null;
   const { wallet } = operation;
   const { txid } = operation.chain;
   // A failure stays in the confirmation; the drawer closes when the record is gone.
   const remove = async () => {
+    const removal = { expectedVersion: operation.classification?.version ?? 0 };
     await operationsApi.removeCounted(wallet, txid, {
-      requestId: newRequestId(),
-      expectedVersion: operation.classification?.version ?? 0,
+      requestId: attempt([wallet.id, txid, removal]),
+      ...removal,
     });
     onDeleted();
   };
