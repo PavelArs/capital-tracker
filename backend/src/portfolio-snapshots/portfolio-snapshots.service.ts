@@ -171,7 +171,7 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
 }
 
 /** Portfolio value at one instant in every accounting currency at that day's rate. */
-function valuesAt(
+export function valuesAt(
   valuation: ValuationInputs,
   at: number,
   prices: PortfolioPrices,
@@ -194,13 +194,12 @@ function valuesAt(
       undefined,
       depositValuesAt(valuation.deposits, instant, fx),
     );
-    // Without a rate the value in that currency is unknown, not a smaller sum. Market prices are
-    // in dollars, so a held asset needs the dollar rate; a hand value in RUB or EUR may not, but
-    // asking for it anyway only leaves the point missing, never worth more. Deposits state their
-    // own rate, and one without it is counted as unrated.
-    const rated =
-      report.assets.every((asset) => asset.value === '0') ||
-      fx.available('USD', moscowDate(instant));
+    // Without a rate a held asset needs, the value in that currency is unknown, not a smaller sum;
+    // holdings in this currency need none. Deposits state their own rate, and one without it is
+    // counted as unrated.
+    const rated = !report.assets.some(
+      (asset) => asset.value === null && asset.missingPrice === 'no-rate',
+    );
     return {
       at,
       currency: fx.currency,
