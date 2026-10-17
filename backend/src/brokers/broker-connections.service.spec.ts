@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
@@ -28,9 +29,14 @@ function build(
   stored = false,
   positions: TBankResult<unknown[]> = { ok: true, value: [] },
   operations: TBankResult<TBankOperation[]> = { ok: true, value: [] },
+  elsewhere = false,
 ) {
   const writes: unknown[][] = [];
+  const locks: unknown[] = [];
   const query = async (sql: string, parameters: unknown[] = []) => {
+    if (sql.includes('pg_advisory_xact_lock')) locks.push(parameters[0]);
+    if (sql.includes('"accountId" <>'))
+      return elsewhere ? [{ accountId: 'c0e1f7c2-0a53-4a0f-8d3a-6b8f2a0d9e03' }] : [];
     if (sql.includes('FROM manual_accounts')) return found ? [{ id: account }] : [];
     if (sql.includes('SELECT credentials'))
       return stored ? [{ credentials: { v: 1 }, brokerAccountId: mine.id }] : [];
@@ -44,7 +50,8 @@ function build(
   const source = {
     manager: { query },
     query,
-    transaction: async (_level: string, work: (manager: unknown) => unknown) => work({ query }),
+    transaction: async (_level: string, work: (manager: unknown) => unknown) =>
+      work({ query, queryRunner: { isTransactionActive: true } }),
   };
   const portfolios: string[] = [];
   const histories: string[] = [];
@@ -70,6 +77,7 @@ function build(
       box as unknown as TBankTokenBox,
     ),
     writes,
+    locks,
     portfolios,
     histories,
   };
@@ -160,6 +168,16 @@ describe('broker connections service', () => {
     ]);
     expect(JSON.stringify(shown)).not.toContain(token);
     expect(shown).toMatchObject({ connected: true, provider: 'tbank', tokenHint: '0001' });
+  });
+
+  it('BROKER-SETUP refuses, under the owner lock, a T-Bank account another broker account reads', async () => {
+    // Codex P1: the direct connect keeps the same one-account-per-T-Bank-account rule as setup.
+    const { service, writes, locks } = build(ok(mine), true, false, undefined, undefined, true);
+    await expect(
+      service.connect(owner, account, { token, brokerAccountId: mine.id }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(locks).toEqual([owner]);
+    expect(writes).toEqual([]);
   });
 
   it('refuses a broker account the token does not list, and stores nothing', async () => {

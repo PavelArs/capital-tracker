@@ -1,10 +1,12 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseCheck, parseConnection, parseUuid } from './broker-connection-input';
 import {
   type TBankAccount,
@@ -81,7 +83,18 @@ export class BrokerConnectionsService {
       throw new ServiceUnavailableException('The token cannot be stored on this server.');
     }
     await this.source.transaction('READ COMMITTED', async (manager) => {
+      // The same lock and check as BROKER-SETUP: one T-Bank account reads into one broker account,
+      // or its history would count twice.
+      await lockAccountingOwner(manager, owner);
       await this.brokerAccount(manager, owner, account, true);
+      const [elsewhere]: { accountId: string }[] = await manager.query(
+        `SELECT "accountId" FROM broker_connections
+          WHERE "ownerId" = $1 AND provider = 'tbank' AND "brokerAccountId" = $2
+            AND "accountId" <> $3`,
+        [owner, input.brokerAccountId, account],
+      );
+      if (elsewhere)
+        throw new ConflictException('A T-Bank account is already connected to another account');
       await manager.query(
         `INSERT INTO broker_connections ("ownerId", "accountId", provider, credentials, "tokenHint",
             "brokerAccountId")
