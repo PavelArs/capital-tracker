@@ -187,7 +187,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   const assetId = ((await assetResponse.json()) as { id: string }).id;
   await expect(page).toHaveURL(`${origin}/portfolio/${assetId}`);
   await expect(
-    portfolio.getByRole('heading', { level: 1, name: depositName, exact: true }),
+    portfolio.getByRole('heading', { level: 2, name: depositName, exact: true }),
   ).toBeVisible();
   // The notice is a toast in the Messages region, outside main.
   await expect(

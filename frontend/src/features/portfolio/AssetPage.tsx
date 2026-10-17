@@ -757,7 +757,7 @@ export default function AssetPage() {
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
     <div className="shell-page">
-      <PageHeader title={asset?.name ?? 'Asset'} currency={portfolio?.currency} valueSwitch />
+      <PageHeader title="Portfolio" currency={portfolio?.currency} valueSwitch />
       <Crumb to={withCurrency('/portfolio', asked)}>Portfolio</Crumb>
       {refreshFailed && !failed && portfolio !== null && (
         <Banner

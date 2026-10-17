@@ -294,7 +294,7 @@ export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   return (
     <div className="shell-page">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" currencySwitch={false} />
       <div className="settings-stack">
         <Profile />
         <SecuritySettings />

@@ -119,7 +119,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
 
   await row.getByRole('link', { name: assetName, exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio/${created.id}`);
-  await expect(main.getByRole('heading', { level: 1, name: assetName })).toBeVisible();
+  await expect(main.getByRole('heading', { level: 2, name: assetName })).toBeVisible();
   const position = main.getByRole('region', { name: 'Position' });
   for (const [label, value] of [
     ['Amount', '1.2 PVUI'],
@@ -213,7 +213,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   // portfolio-06: the new asset opens on its own page, which says it was added.
   const depositId = ((await assetSaved.json()) as { id: string }).id;
   await expect(page).toHaveURL(`${origin}/portfolio/${depositId}`);
-  await expect(main.getByRole('heading', { level: 1, name: depositName })).toBeVisible();
+  await expect(main.getByRole('heading', { level: 2, name: depositName })).toBeVisible();
   // The notice is a toast in the Messages region, outside main.
   await expect(
     page

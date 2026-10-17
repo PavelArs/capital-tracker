@@ -726,7 +726,7 @@ describe('PV-UI Portfolio values every asset', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await user.click(await screen.findByRole('link', { name: 'Bitcoin' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Bitcoin' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Bitcoin' })).toBeInTheDocument();
     const stats = screen.getByRole('region', { name: 'Position' });
     const stat = (label: string) =>
       within(stats).getByText(label, { exact: true }).nextElementSibling?.textContent;
@@ -812,7 +812,7 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt(`/portfolio/${rubles.instrumentId}`);
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load this asset/i);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Rubles' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Rubles' })).toBeInTheDocument();
     expect(screen.getByText('No rate')).toBeInTheDocument();
     expect(screen.getByText('No Bank of Russia rate stored to show it in USD')).toBeInTheDocument();
     expect(screen.getByText('Nothing held right now.')).toBeInTheDocument();
@@ -1845,7 +1845,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByTestId('where')).toHaveTextContent(`/portfolio/${deposit.instrumentId}`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
     // The word comes as a toast, announced politely (role=status).
     expect(
       within(screen.getByRole('region', { name: 'Messages' })).getByRole('status'),
@@ -1999,7 +1999,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       assertReviewed: true,
     });
     // portfolio-06: the new asset opens on its own page; the list shows it on the way back.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(3);
@@ -2157,7 +2157,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(setPrice).toHaveBeenCalledTimes(2);
     expect(setPrice.mock.calls[1][1].requestId).toBe(setPrice.mock.calls[0][1].requestId);
     // portfolio-06: the new asset opens on its own page.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);
   });
 
@@ -2181,7 +2181,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
     );
     // portfolio-06: the saved asset opens on its own page, and is in the list on the way back.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Back to Portfolio' }));
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
@@ -2305,7 +2305,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // portfolio-06: it opens on its own page, which no filter or search on the list can hide.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Deposit' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deposit' })).toBeInTheDocument();
   });
 
   it('keeps focus inside the dialog, returns it on close and cannot close mid-save', async () => {
@@ -2566,7 +2566,7 @@ describe('CACHE-UI coming back to a page shows the last answer at once', () => {
     expect(alerts.map((alert) => alert.textContent).join(' ')).toMatch(
       /could not refresh the values/i,
     );
-    expect(screen.getByRole('heading', { level: 1, name: /Bitcoin/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Bitcoin/ })).toBeInTheDocument();
   });
 
   it('does not paint another currency or anything older than a change by the owner', async () => {

@@ -269,7 +269,7 @@ export default function WalletPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title={account?.name ?? 'Wallet'} currency={portfolio?.currency} />
+      <PageHeader title="Wallets" currency={portfolio?.currency} />
       <div className="wallets-crumbs">
         <Crumb to={withCurrency('/wallets', asked)}>Wallets</Crumb>
       </div>

@@ -297,7 +297,7 @@ export default function DepositPage() {
   if (missing)
     return (
       <div className="shell-page">
-        <PageHeader title="Deposit" />
+        <PageHeader title="Banks" />
         <ErrorState>
           This deposit does not exist.{' '}
           <Link className="ui-link" to={back}>
@@ -315,7 +315,7 @@ export default function DepositPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title={deposit ? deposit.name : 'Deposit'} valueSwitch />
+      <PageHeader title="Banks" valueSwitch />
       <Crumb to={back}>Banks</Crumb>
       {failed ? (
         <ErrorState onRetry={() => reload()}>
@@ -327,9 +327,11 @@ export default function DepositPage() {
         <>
           <PageHead
             icon={<Icon name="archive" />}
-            title={deposit.bank}
+            title={deposit.name}
             subtitle={
               <>
+                <span>{deposit.bank}</span>
+                {' · '}
                 <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>{' '}
                 <span>{termText(deposit)}</span>
                 {rate && real && (

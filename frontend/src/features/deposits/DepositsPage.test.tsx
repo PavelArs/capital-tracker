@@ -235,7 +235,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       ratePercent: '12',
       amount: '100000',
     });
-    expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Savings A' })).toBeInTheDocument();
   });
 
   it('classes-07 asks for the bank first, an optional name, the currency as a choice and the terms as the prototype words them', async () => {
@@ -460,7 +460,7 @@ describe('DEP-DETAIL: one deposit', () => {
   it('shows the computed figures, the periods, the movements and the terms', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open(`/deposits/${savings.id}?currency=RUB`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Savings A' })).toBeInTheDocument();
     expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽328.77');
     expect(screen.getByText('At the end of the term').parentElement).toHaveTextContent(
       '₽104,000.00',
@@ -484,7 +484,7 @@ describe('DEP-DETAIL: one deposit', () => {
       }),
     );
     open(`/deposits/${dollars.id}?currency=USD`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.queryByText('Interest to be paid out')).not.toBeInTheDocument();
   });
@@ -571,7 +571,7 @@ describe('DEP-DETAIL: one deposit', () => {
       ),
     );
     open(`/deposits/${dollars.id}?currency=USD`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Dollar B' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.getByText('Interest to be paid out').parentElement).toHaveTextContent('$12.30');
   });
@@ -824,7 +824,7 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
   it('INFL-DEPOSIT-DETAIL-KEPT-ANSWER leaves out the column an older saved answer has no figures for', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     expect(screen.queryByRole('columnheader', { name: 'After inflation' })).toBeNull();
     expect(screen.queryByText(/inflation/)).toBeNull();
   });
@@ -874,7 +874,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
   it('draws the value and the money put in by month, nominal by default', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const legend = screen.getByLabelText('Chart legend');
     expect(within(legend).getByText('Value')).toBeInTheDocument();
     expect(within(legend).getByText('Money put in')).toBeInTheDocument();
@@ -886,7 +886,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
   it('reads each month with the arrow keys', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const user = userEvent.setup();
     const plot = await focusChart();
     await user.keyboard('{ArrowLeft}');
@@ -899,7 +899,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     setInflationBasis('official');
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const legend = screen.getByLabelText('Chart legend');
     expect(within(legend).getByText("Value in today's money")).toBeInTheDocument();
     expect(within(legend).getByText('Money put in, grown by inflation')).toBeInTheDocument();
@@ -943,7 +943,7 @@ describe('INFL-DEPOSIT-CHART: the value of a deposit over its life', () => {
     setInflationBasis('personal');
     vi.spyOn(depositsApi, 'get').mockResolvedValue(withChart());
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     const user = userEvent.setup();
     const plot = await focusChart();
     // Only the first month has an own-rate figure, so one step back lands on it.
@@ -1122,7 +1122,9 @@ describe('the deposit page', () => {
       }),
     );
     open(`/deposits/${savings.id}`);
-    const heading = await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    // The deposit is the page head (h2); the top bar names the section and holds the switch.
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const heading = screen.getByRole('heading', { level: 1, name: 'Banks' });
     const header = heading.closest('header') as HTMLElement;
     const values = within(header).getByRole('radiogroup', { name: 'Values' });
     await user.click(within(values).getByRole('radio', { name: 'Real' }));
@@ -1173,7 +1175,7 @@ describe('the deposit page', () => {
       }),
     );
     open(`/deposits/${savings.id}`);
-    await screen.findByRole('heading', { level: 1, name: 'Savings A' });
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     expect(screen.queryAllByRole('table')).toHaveLength(0);
     const periods = screen.getByRole('list', { name: 'Interest by period' });
     expect(periods).toHaveTextContent('Jul 1, 2026 – Aug 1, 2026');
