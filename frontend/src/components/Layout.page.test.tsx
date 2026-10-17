@@ -6,7 +6,7 @@ import { forgetReads, generationNow, remember } from '@api/read-cache';
 import { syncStatusApi } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
 import PageHeader from '@features/shell/PageHeader';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createInstance } from 'i18next';
 import { useEffect } from 'react';
@@ -190,7 +190,6 @@ describe('STALE-STATE Retry', () => {
       useEffect(() => mounted(), []);
       return <PageHeader title="Dashboard" currency="USD" />;
     }
-    const user = userEvent.setup();
     remember('portfolio:[]', {}, generationNow());
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
@@ -208,7 +207,9 @@ describe('STALE-STATE Retry', () => {
       connection.settled(token, false);
     });
     try {
-      await user.click(screen.getByRole('button', { name: 'Retry' }));
+      // A plain click: an earlier test's click that unmounted its own target leaves user-event's
+      // pointer state behind in this document.
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
       expect(mounted).toHaveBeenCalledTimes(2);
     } finally {
       act(() => connection.reset());
