@@ -258,6 +258,8 @@ const PARTIAL_NOTE =
   'Coins without a price or without a purchase price are left out: current value counts the priced assets, cost basis and P&L the coins whose purchase price is known. Open an asset to see what is missing.';
 const PARTIAL_NOTE_REAL =
   'Coins without a price are left out: current value counts the priced assets. Open an asset to see what is missing.';
+const PARTIAL_REALIZED =
+  'Realized P&L counts only the sales whose purchase price is known. Open an asset to see what is missing.';
 
 // Bank deposits are part of the value even when no asset is held.
 const hasDeposits = (portfolio: PortfolioValuation) =>
@@ -298,6 +300,13 @@ function Summary({
   const partialRealized =
     portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
   const partial = partialValue || partialCost || partialProfit || partialRealized;
+  // Realized P&L is shown in both readings, so its note stays under Real.
+  const partialShown = showReal ? partialValue || partialRealized : partial;
+  const partialText = !showReal
+    ? PARTIAL_NOTE
+    : [partialValue && PARTIAL_NOTE_REAL, partialRealized && PARTIAL_REALIZED]
+        .filter((text) => text !== false)
+        .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;
   const missing = [
     unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
@@ -312,13 +321,13 @@ function Summary({
       <h2 id={summaryTitle} className="ui-sr">
         Portfolio summary
       </h2>
-      {(showReal ? partialValue : partial) && (
+      {partialShown && (
         <span
           className="portfolio-info"
           role="img"
           tabIndex={0}
-          aria-label={showReal ? PARTIAL_NOTE_REAL : PARTIAL_NOTE}
-          data-tip={showReal ? PARTIAL_NOTE_REAL : PARTIAL_NOTE}
+          aria-label={partialText}
+          data-tip={partialText}
         >
           <Icon name="info" className="shell-icon shell-icon--sm" />
         </span>

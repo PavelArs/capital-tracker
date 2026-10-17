@@ -1062,6 +1062,17 @@ describe('Portfolio after inflation', () => {
     expect(note).toMatch(/current value/);
     expect(note).not.toMatch(/cost basis|purchase price|P&L/);
   });
+  it('PF-ONE-REAL-PARTIAL-REALIZED keeps a note under Real when only the realized result is partial', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({ realizedPnl: null, knownRealizedSubtotal: '-250.50', unknownRealizedCount: 1 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const note = within(summary()).getByRole('img').getAttribute('aria-label');
+    expect(note).toMatch(/realized/i);
+    expect(note).not.toMatch(/cost basis|current value/);
+  });
   it('PF-ONE-REAL-UNKNOWN-PARTIAL leaves the known nominal cost and profit out under Real', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
