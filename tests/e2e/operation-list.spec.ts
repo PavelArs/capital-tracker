@@ -102,7 +102,7 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   ]);
   expect(listed.needsClassificationCount).toBeGreaterThanOrEqual(1);
   expect((await api.send('GET', '/operations?asset=BTC')).status()).toBe(400);
-  // OPS-PERIOD: from and to are UTC days, both included, and bad days are refused.
+  // OPS-PERIOD: from and to are Moscow days, both included, and bad days are refused.
   const inPeriod = async (query: string) =>
     (
       (await api.result('GET', `/operations${query}`, 200)) as { operations: ListedOperation[] }

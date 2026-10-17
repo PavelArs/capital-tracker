@@ -2,6 +2,7 @@ import { cachedReads } from '@api/cached-reads';
 import type { Operation, OperationList, OperationRange } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useToast } from '@contexts/ToastContext';
+import { moscowDate } from '@utils/dates';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
@@ -936,7 +937,7 @@ export default function TransactionsPage() {
               </label>
               <PeriodFilter
                 period={period}
-                today={new Date().toISOString().slice(0, 10)}
+                today={moscowDate(Date.now())}
                 onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
               />
             </FilterSheet>

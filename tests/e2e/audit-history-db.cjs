@@ -462,13 +462,14 @@ async function filters(db, s, f, { total, history }) {
     [['Buy BTC', 'created']],
   );
   assert.equal((await only({ actor: 'automatic' })).length, 3);
-  // The seed may straddle midnight UTC: the days of the oldest and newest event hold everything.
-  const days = [history.events.at(-1), history.events[0]].map((event) => event.at.slice(0, 10));
+  // Days are Moscow days (UTC+3). The seed may straddle midnight: the days of the oldest and
+  // newest event hold everything.
+  const moscowDay = (at) => new Date(Date.parse(at) + 3 * 3_600_000).toISOString().slice(0, 10);
+  const days = [history.events.at(-1), history.events[0]].map((event) => moscowDay(event.at));
   assert.equal((await only({ from: days[0], to: days[1] })).length, total);
-  const newest = history.events[0].at.slice(0, 10);
-  assert.ok(
-    (await only({ from: newest, to: newest })).every((event) => event.at.startsWith(newest)),
-  );
+  const newest = moscowDay(history.events[0].at);
+  const ofNewest = await only({ from: newest, to: newest });
+  assert.ok(ofNewest.length > 0 && ofNewest.every((event) => moscowDay(event.at) === newest));
   assert.equal((await only({ from: '2999-01-01' })).length, 0);
   assert.equal((await only({ to: '2000-01-01' })).length, 0);
   const combined = await only({ entity: 'trade', change: 'changed' });

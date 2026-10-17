@@ -166,7 +166,7 @@ export interface Operation {
   feeValue: string | null;
 }
 
-/** UTC days, YYYY-MM-DD; an absent end is open. */
+/** Moscow days, YYYY-MM-DD; an absent end is open. */
 export interface OperationRange {
   from?: string;
   to?: string;
@@ -316,7 +316,7 @@ export const announceClassificationChange = () =>
 export const operationsApi = {
   /**
    * Without a currency the owner's main currency is used. OPS-PERIOD: `range` keeps the
-   * transactions of the UTC days from and to (YYYY-MM-DD), both included; an end may be left out.
+   * transactions of the Moscow days from and to (YYYY-MM-DD), both included; an end may be left out.
    */
   list: async (currency?: AccountingCurrency, range?: OperationRange): Promise<OperationList> => {
     const params = { ...(currency && { currency }), ...range };

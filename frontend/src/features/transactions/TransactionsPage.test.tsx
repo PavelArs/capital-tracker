@@ -647,6 +647,28 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(bodyRows()).toHaveLength(6);
   });
 
+  it('OPS-PERIOD: the presets count from the Moscow day, which at 21:30 UTC on 31 December is already 1 January', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-12-31T21:30:00.000Z'));
+    try {
+      const user = userEvent.setup();
+      const read = vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+      renderPage('/transactions');
+      await waitFor(() => expect(bodyRows()).toHaveLength(6));
+      const period = screen.getByRole('combobox', { name: 'Period' });
+      await user.selectOptions(period, 'Last year');
+      await waitFor(() =>
+        expect(read).toHaveBeenLastCalledWith(undefined, { from: '2026-01-01', to: '2026-12-31' }),
+      );
+      await user.selectOptions(period, 'This month');
+      await waitFor(() => expect(read).toHaveBeenLastCalledWith(undefined, { from: '2027-01-01' }));
+      await user.selectOptions(period, 'Last 7 days');
+      await waitFor(() => expect(read).toHaveBeenLastCalledWith(undefined, { from: '2026-12-26' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('TABLE-ROWS: a tablet (768 px) gets the two-line rows, not a table that cuts its Status column', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       // 768 px: below the rows width (900 px), above the narrow one (640 px).

@@ -1,6 +1,6 @@
 import type { OperationRange } from '@api/operations.api';
 
-/** OPS-PERIOD: the period of the Transactions list, UTC days (YYYY-MM-DD) in the address. */
+/** OPS-PERIOD: the period of the Transactions list, Moscow days (YYYY-MM-DD) in the address. */
 export const calendarDay = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isCalendarDay(value: string | null): value is string {

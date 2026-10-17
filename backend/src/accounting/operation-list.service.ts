@@ -197,7 +197,7 @@ function parseDay(value: unknown): string {
 
 /**
  * `currency` (USD, EUR or RUB; without it the main currency is used) and, OPS-PERIOD, `from`
- * and `to`: UTC days (YYYY-MM-DD), both included, either may be left out.
+ * and `to`: Moscow days (YYYY-MM-DD), both included, either may be left out.
  */
 function parseQuery(query: unknown): ListQuery {
   if (!query || typeof query !== 'object' || Array.isArray(query))

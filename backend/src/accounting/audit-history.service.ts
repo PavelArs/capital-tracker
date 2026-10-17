@@ -151,9 +151,13 @@ export class AuditHistoryService {
     if (filter.change) conditions.push(`change = ${add(filter.change)}`);
     if (filter.actor) conditions.push(`actor = ${add(filter.actor)}`);
     if (filter.from)
-      conditions.push(`("createdAt" AT TIME ZONE 'UTC')::date >= ${add(filter.from)}::date`);
+      conditions.push(
+        `("createdAt" AT TIME ZONE 'Europe/Moscow')::date >= ${add(filter.from)}::date`,
+      );
     if (filter.to)
-      conditions.push(`("createdAt" AT TIME ZONE 'UTC')::date <= ${add(filter.to)}::date`);
+      conditions.push(
+        `("createdAt" AT TIME ZONE 'Europe/Moscow')::date <= ${add(filter.to)}::date`,
+      );
     if (filter.before) {
       const at = add(filter.before.at);
       const key = add(filter.before.key);

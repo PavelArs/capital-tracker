@@ -8,7 +8,7 @@ const CUSTOM = 'custom';
 
 /**
  * OPS-PERIOD: which days the list shows. A preset or a custom range; none is the whole history.
- * Dates are UTC days, as the list's own dates are.
+ * Dates are Moscow days, the days the server counts by.
  */
 export default function PeriodFilter({
   period,
@@ -16,7 +16,7 @@ export default function PeriodFilter({
   onChange,
 }: {
   period: OperationRange | undefined;
-  /** The current UTC day, YYYY-MM-DD. */
+  /** The current Moscow day, YYYY-MM-DD. */
   today: string;
   onChange: (period: OperationRange | undefined) => void;
 }) {

@@ -357,7 +357,7 @@ export interface AuditFilter {
   entity: AuditEntity | null;
   change: AuditChange | null;
   actor: AuditActor | null;
-  /** Inclusive UTC days of the change, "YYYY-MM-DD". */
+  /** Inclusive Moscow days of the change, "YYYY-MM-DD". */
   from: string | null;
   to: string | null;
   limit: number;

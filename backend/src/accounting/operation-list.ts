@@ -777,14 +777,14 @@ function oneTransactionSwap(
 }
 
 /** Every known operation, newest first; raw chain rows stay unclassified (OPS-1..3). */
-/** OPS-PERIOD: UTC calendar days (YYYY-MM-DD), both ends included; an absent end is open. */
+/** OPS-PERIOD: Moscow calendar days (YYYY-MM-DD), both ends included; an absent end is open. */
 export interface OperationRange {
   from?: string;
   to?: string;
 }
 
 const inRange = (occurredAt: string, range: OperationRange) => {
-  const day = occurredAt.slice(0, 10);
+  const day = moscowDate(occurredAt);
   return (!range.from || day >= range.from) && (!range.to || day <= range.to);
 };
 

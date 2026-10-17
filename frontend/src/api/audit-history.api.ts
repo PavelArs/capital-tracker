@@ -58,7 +58,7 @@ export interface AuditQuery {
   entity?: AuditEntity;
   change?: AuditChange;
   actor?: AuditActor;
-  /** Inclusive UTC days, "YYYY-MM-DD". */
+  /** Inclusive Moscow days, "YYYY-MM-DD". */
   from?: string;
   to?: string;
   /** Changes per page (1 to 200); the server's own page when absent. */
