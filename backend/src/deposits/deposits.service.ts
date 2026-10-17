@@ -45,7 +45,6 @@ import {
   periodsAfterInflation,
 } from './deposit-real';
 import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
-import { ratesAreFresh } from './deposit-valuation';
 
 const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
 
@@ -438,12 +437,8 @@ export class DepositsService {
     const atoms = canonicalDecimalToAtoms(amount);
     return Object.fromEntries(
       accountingCurrencies.map((target) => {
-        const converter = converters.get(target);
-        // A stopped rate collection must not state a value at a weeks-old rate as today's.
-        const converted =
-          converter && (currency === target || ratesAreFresh(converter, [currency, target], date))
-            ? converter.convert(atoms, currency, date)
-            : null;
+        // Null without a fresh rate: a stopped rate collection never states a weeks-old value.
+        const converted = converters.get(target)?.convert(atoms, currency, date) ?? null;
         return [target, converted === null ? null : centsText(converted)];
       }),
     ) as Record<AccountingCurrency, string | null>;

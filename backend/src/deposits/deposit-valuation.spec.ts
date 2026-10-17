@@ -5,7 +5,6 @@ import {
   depositValueOn,
   depositValuesAt,
   primeDepositBalances,
-  ratesAreFresh,
 } from './deposit-valuation';
 
 // Synthetic deposits and rates only: 80 RUB per USD from 2026-01-01 and 100 RUB per EUR, 110
@@ -196,10 +195,10 @@ describe('primeDepositBalances', () => {
   });
 });
 
-describe('ratesAreFresh', () => {
+describe('the converter a deposit is stated with', () => {
   it('needs a rate at most fifteen days old for each foreign currency', () => {
-    expect(ratesAreFresh(fx('RUB'), ['EUR', 'RUB'], '2026-02-25')).toBe(true);
-    expect(ratesAreFresh(fx('RUB'), ['EUR', 'RUB'], '2026-02-26')).toBe(false);
-    expect(ratesAreFresh(fx('RUB'), ['RUB'], '2030-01-01')).toBe(true);
+    expect(fx('RUB').available('EUR', '2026-02-25')).toBe(true);
+    expect(fx('RUB').available('EUR', '2026-02-26')).toBe(false);
+    expect(fx('RUB').available('RUB', '2030-01-01')).toBe(true);
   });
 });

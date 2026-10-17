@@ -199,7 +199,11 @@ describe('CUR-NO-RATE no stored rate is never zero', () => {
 
   it('marks cost from before the first stored rate as missing, not zero', () => {
     const rates: FxRates = {
-      USD: [{ date: '2025-01-01', rubPerUnit: '100' }],
+      USD: [
+        { date: '2025-01-01', rubPerUnit: '100' },
+        { date: '2025-02-01', rubPerUnit: '100' },
+        { date: '2026-10-04', rubPerUnit: '100' },
+      ],
       EUR: [{ date: '2025-01-01', rubPerUnit: '105' }],
     };
     const carried: FifoCarryInInput = {
@@ -234,6 +238,48 @@ describe('CUR-NO-RATE no stored rate is never zero', () => {
       costBasis: '80000',
       missingRateCount: 0,
     });
+  });
+});
+
+describe('CUR-RATE-STALE a rate over 15 days old values nothing today', () => {
+  // The dollar rate stopped coming on 2026-09-18, 16 days before today; past days still have one.
+  const rates: FxRates = {
+    USD: [
+      { date: '2025-06-02', rubPerUnit: '80' },
+      { date: '2026-09-18', rubPerUnit: '95' },
+    ],
+    EUR: [
+      { date: '2025-06-02', rubPerUnit: '100' },
+      { date: '2026-10-04', rubPerUnit: '110' },
+    ],
+  };
+  const accounts = () => [
+    account([
+      // Eleven days after the last rate, as over the New Year holidays: still that rate.
+      trade(btc, 'buy', '2025-06-13T09:00:00.000Z', '0.01', '1000'),
+      trade(rubles, 'buy', '2025-06-02T10:00:00.000Z', '5000', '60'),
+    ]),
+  ];
+
+  it('leaves the RUB value missing and the total incomplete', () => {
+    const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
+    expect(assetOf(rub, btc)).toMatchObject({
+      price: null,
+      missingPrice: 'no-rate',
+      value: null,
+      unrealizedPnl: null,
+    });
+    expect(rub).toMatchObject({
+      completeness: 'incomplete',
+      totalValue: null,
+      pricedSubtotal: '5000',
+      missingPriceCount: 1,
+    });
+  });
+
+  it('still states a past purchase at the rate it reused over a gap of under 15 days', () => {
+    const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
+    expect(assetOf(rub, btc)).toMatchObject({ costBasis: '80000', missingRateQuantity: '0' });
   });
 });
 

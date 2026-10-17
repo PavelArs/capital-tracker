@@ -69,10 +69,14 @@ export class FxConverter {
     readonly currency: AccountingCurrency,
   ) {}
 
-  /** Rubles per unit at a Moscow date, as scale-30 atoms; RUB is exactly one. */
+  /**
+   * Rubles per unit at a Moscow date, as scale-30 atoms; RUB is exactly one. Null when the latest
+   * rate is over `MAX_RATE_AGE_DAYS` older than the date, so a stopped rate collection leaves a
+   * value missing instead of stating it at a weeks-old rate.
+   */
   private rubPer(currency: AccountingCurrency, date: string): bigint | null {
     if (currency === 'RUB') return ATOM_SCALE;
-    const rate = rateOn(this.rates[currency], date);
+    const rate = freshRateOn(this.rates[currency], date);
     return rate ? canonicalDecimalToAtoms(rate.rubPerUnit) : null;
   }
 
