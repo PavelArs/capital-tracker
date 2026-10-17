@@ -458,6 +458,8 @@ async function history(db, service, owner, other) {
   await plain.addMovement(owner, made.id, retry);
   await plain.addMovement(owner, made.id, retry);
   await service.addRate(owner, made.id, { effectiveFrom: '2026-09-01', ratePercent: '10' });
+  // DEP-RATE-RETRY: the same rate sent again, after a lost answer, is not a second change.
+  await service.addRate(owner, made.id, { effectiveFrom: '2026-09-01', ratePercent: '10.0' });
   await service.addCheck(owner, made.id, { checkedOn: '2026-09-02', bankBalance: '101234.56' });
   const gone = topup.movements.find((movement) => movement.amount === '500.25');
   await service.removeMovement(owner, made.id, gone.id);
