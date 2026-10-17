@@ -99,7 +99,7 @@ export default function GoalsPage() {
     <div className="shell-page" ref={page}>
       <PageHeader title="Goals" actions={add} />
       {error && list === null ? (
-        <ErrorState onRetry={() => reload()}>Could not load the goals. Try again later.</ErrorState>
+        <ErrorState what="your goals" onRetry={() => reload()} />
       ) : list === null ? (
         <PageSkeleton label="Loading goals" show={['cards']} />
       ) : list.items.length === 0 ? (

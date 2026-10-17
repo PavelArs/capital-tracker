@@ -87,7 +87,7 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     vi.mocked(securityApi.get).mockRejectedValueOnce(failure(500));
     render(<SecuritySettings />);
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not load your security settings.',
+      "Couldn't load your security settings.",
     );
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await within(region()).findByText(/7 of 10 unused/)).toBeInTheDocument();

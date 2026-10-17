@@ -152,9 +152,7 @@ export default function RealEstatePage() {
     <div className="shell-page">
       <PageHeader title="Real estate" currency={portfolio?.currency} />
       {failed && !properties ? (
-        <ErrorState onRetry={() => load()}>
-          Could not load your real estate. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="your real estate" onRetry={() => load()} />
       ) : properties === null || portfolio === null ? (
         <PageSkeleton label="Loading real estate" show={['cards']} />
       ) : properties.length === 0 ? (

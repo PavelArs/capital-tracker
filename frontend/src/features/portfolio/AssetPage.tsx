@@ -773,9 +773,7 @@ export default function AssetPage() {
         </Banner>
       )}
       {failed ? (
-        <ErrorState onRetry={() => void load()}>
-          Could not load this asset. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="this asset" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading asset" show={['stats', 'chart', 'rows']} />
       ) : asset ? (

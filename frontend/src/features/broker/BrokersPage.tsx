@@ -177,9 +177,7 @@ export default function BrokersPage() {
     <div className="shell-page">
       <PageHeader title="Brokers" currency={portfolio?.currency} />
       {failed && !brokers ? (
-        <ErrorState onRetry={() => load()}>
-          Could not load your broker accounts. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="your broker accounts" onRetry={() => load()} />
       ) : brokers === null || portfolio === null ? (
         <PageSkeleton label="Loading broker accounts" show={['cards']} />
       ) : brokers.length === 0 ? (

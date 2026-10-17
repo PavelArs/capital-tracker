@@ -379,7 +379,7 @@ describe('audit history screen (BR 14)', () => {
     // A change by the owner drops the stalled request, so the next visit asks again.
     forgetReads();
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the change history');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the change history");
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Nothing has changed yet')).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(3);

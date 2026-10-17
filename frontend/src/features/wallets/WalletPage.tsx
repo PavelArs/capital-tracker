@@ -274,9 +274,7 @@ export default function WalletPage() {
         <Crumb to={withCurrency('/wallets', asked)}>Wallets</Crumb>
       </div>
       {failed ? (
-        <ErrorState onRetry={() => void load()}>
-          Could not load this wallet. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="this wallet" onRetry={() => void load()} />
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
       ) : !account ? (

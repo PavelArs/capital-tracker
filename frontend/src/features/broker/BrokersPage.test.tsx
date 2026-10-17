@@ -213,7 +213,7 @@ describe('BROKERS the Brokers page', () => {
     const user = userEvent.setup();
     renderPage();
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Could not load your broker accounts.');
+    expect(alert).toHaveTextContent("Couldn't load your broker accounts.");
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('region', { name: 'Sample Broker' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);

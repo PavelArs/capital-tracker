@@ -211,9 +211,7 @@ export default function DepositsPage() {
         }
       />
       {error && list === null ? (
-        <ErrorState onRetry={() => reload()}>
-          Could not load the deposits. Try again later.
-        </ErrorState>
+        <ErrorState what="your deposits" onRetry={() => reload()} />
       ) : list === null ? (
         <PageSkeleton label="Loading deposits" show={['cards']} />
       ) : list.items.length === 0 ? (

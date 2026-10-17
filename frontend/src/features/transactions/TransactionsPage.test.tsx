@@ -990,7 +990,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(all);
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your transactions');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your transactions");
     expect(screen.queryByRole('table')).toBeNull();
     // Recording a transaction does not need the list, so the button stays.
     expect(screen.getByRole('button', { name: 'Add transaction' })).toBeInTheDocument();
@@ -1300,7 +1300,7 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Could not refresh the list, so it may be out of date.');
-    expect(screen.queryByText(/Could not load your transactions/)).toBeNull();
+    expect(screen.queryByText(/Couldn't load your transactions/)).toBeNull();
     expect(bodyRows()).toHaveLength(2);
     await user.click(within(banner).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(1));

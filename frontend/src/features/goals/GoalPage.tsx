@@ -210,7 +210,7 @@ export default function GoalPage() {
       <PageHeader title="Goals" />
       <Crumb to="/goals">Goals</Crumb>
       {error && goal === null ? (
-        <ErrorState onRetry={() => reload()}>Could not load the goal. Try again later.</ErrorState>
+        <ErrorState what="this goal" onRetry={() => reload()} />
       ) : goal === null ? (
         <PageSkeleton label="Loading goal" show={['cards']} />
       ) : (

@@ -718,7 +718,7 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(get).toHaveBeenCalledTimes(4);
     expect(rowOf('Bitcoin')).toBeInTheDocument();
     expect(screen.queryByRole('row', { name: /^US dollar/ })).toBeNull();
-    expect(screen.queryByText(/could not load your portfolio/i)).toBeNull();
+    expect(screen.queryByText(/couldn't load your portfolio/i)).toBeNull();
   });
 
   it('opens an asset with its numbers, price source and holdings', async () => {
@@ -810,7 +810,7 @@ describe('PV-UI Portfolio values every asset', () => {
       .mockResolvedValue(portfolio([rubles]));
     const user = userEvent.setup();
     renderAt(`/portfolio/${rubles.instrumentId}`);
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load this asset/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load this asset/i);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('heading', { level: 2, name: 'Rubles' })).toBeInTheDocument();
     expect(screen.getByText('No rate')).toBeInTheDocument();
@@ -2510,7 +2510,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load your portfolio/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load your portfolio/i);
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('No assets yet')).toBeInTheDocument();

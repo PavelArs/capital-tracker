@@ -201,7 +201,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   it('says so when the list cannot be loaded', async () => {
     vi.spyOn(depositsApi, 'list').mockRejectedValue(new Error('down'));
     open('/deposits');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the deposits');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your deposits");
   });
 
   it('adds a deposit from the dialog and opens it', async () => {

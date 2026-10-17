@@ -722,9 +722,7 @@ export default function PortfolioPage() {
     <div className="shell-page">
       <PageHeader title="Portfolio" currency={portfolio?.currency} valueSwitch />
       {failed ? (
-        <ErrorState onRetry={() => void load()}>
-          Could not load your portfolio. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="your portfolio" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
       ) : assets.length === 0 && !hasDeposits(portfolio) ? (

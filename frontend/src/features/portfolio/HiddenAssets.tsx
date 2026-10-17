@@ -73,9 +73,7 @@ export default function HiddenAssets() {
       <CardHeader id="settings-hidden-assets" title="Hidden assets" />
       {items === null ? (
         loadFailed ? (
-          <ErrorState onRetry={() => void load()}>
-            Could not load the hidden assets; try again later.
-          </ErrorState>
+          <ErrorState what="the hidden assets" onRetry={() => void load()} />
         ) : (
           <p className="ui-sub" aria-busy="true">
             <Bone width="60%" height={12} />

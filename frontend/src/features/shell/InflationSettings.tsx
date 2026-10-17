@@ -455,9 +455,7 @@ export default function InflationSettings() {
       />
       {overview === null ? (
         loadFailed ? (
-          <ErrorState onRetry={retry}>
-            Could not load the inflation rates; try again later.
-          </ErrorState>
+          <ErrorState what="the inflation rates" onRetry={retry} />
         ) : (
           <p className="ui-sub" aria-busy="true">
             <Bone width="60%" height={12} />

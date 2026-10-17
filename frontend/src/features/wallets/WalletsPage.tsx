@@ -169,9 +169,7 @@ export default function WalletsPage() {
     <div ref={page} className="shell-page">
       <PageHeader title="Wallets" currency={portfolio?.currency} />
       {failed ? (
-        <ErrorState onRetry={() => void load()}>
-          Could not load your wallets. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="your wallets" onRetry={() => void load()} />
       ) : portfolio === null || addresses === null ? (
         <PageSkeleton label="Loading wallets" show={['cards']} />
       ) : cards.length === 0 && list.length === 0 ? (

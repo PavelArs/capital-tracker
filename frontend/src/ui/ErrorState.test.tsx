@@ -32,4 +32,10 @@ describe('ErrorState', () => {
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByRole('alert')).toHaveTextContent('Prices failed.');
   });
+  it('ERROR-COPY says what could not load in the one pattern, and that nothing saved is lost', () => {
+    render(<ErrorState what="your portfolio" onRetry={() => undefined} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Couldn't load your portfolio. Nothing you saved is lost.",
+    );
+  });
 });

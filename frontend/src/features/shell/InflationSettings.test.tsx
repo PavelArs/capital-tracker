@@ -350,7 +350,7 @@ describe('INFL-UI Settings → Inflation', () => {
     vi.spyOn(inflationApi, 'overview').mockRejectedValue(new Error('offline'));
     render(<InflationSettings />);
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not load the inflation rates; try again later.',
+      "Couldn't load the inflation rates. Nothing you saved is lost.",
     );
   });
 

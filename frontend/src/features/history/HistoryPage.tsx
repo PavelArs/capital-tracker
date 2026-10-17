@@ -242,9 +242,7 @@ export default function HistoryPage() {
         }
       />
       {failed === 'load' && history === null ? (
-        <ErrorState onRetry={() => void load()}>
-          Could not load the change history. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="the change history" onRetry={() => void load()} />
       ) : history === null ? (
         <PageSkeleton label="Loading the change history" show={['rows']} rows={8} />
       ) : events.length === 0 && !filtered ? (

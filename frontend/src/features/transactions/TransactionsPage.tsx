@@ -819,9 +819,7 @@ export default function TransactionsPage() {
         </>
       )}
       {failed ? (
-        <ErrorState onRetry={() => void load(asked, period, true)}>
-          Could not load your transactions. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="your transactions" onRetry={() => void load(asked, period, true)} />
       ) : list === null ? (
         <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
       ) : empty ? (

@@ -83,7 +83,7 @@ export default function SecuritySettings() {
     <Card labelledBy="settings-security">
       <CardHeader id="settings-security" title="Security" />
       {failed ? (
-        <ErrorState onRetry={load}>Could not load your security settings.</ErrorState>
+        <ErrorState what="your security settings" onRetry={load} />
       ) : (
         <>
           <SettingRow

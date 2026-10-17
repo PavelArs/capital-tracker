@@ -423,9 +423,7 @@ export default function DashboardPage() {
         </Banner>
       )}
       {failed && shown === null ? (
-        <ErrorState onRetry={() => void load()}>
-          Could not load your capital history. Your data is safe; try again.
-        </ErrorState>
+        <ErrorState what="your capital history" onRetry={() => void load()} />
       ) : shown === null ? (
         <DashboardLoading />
       ) : isEmptyPortfolio(shown) ? (

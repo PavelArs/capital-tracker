@@ -327,9 +327,7 @@ export default function DepositPage() {
       <PageHeader title="Banks" valueSwitch />
       <Crumb to={back}>Banks</Crumb>
       {failed ? (
-        <ErrorState onRetry={() => reload()}>
-          Could not load the deposit. Try again later.
-        </ErrorState>
+        <ErrorState what="this deposit" onRetry={() => reload()} />
       ) : deposit === null || own === undefined ? (
         <PageSkeleton label="Loading deposit" show={['cards']} />
       ) : (

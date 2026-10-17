@@ -160,7 +160,7 @@ describe('GOAL-LIST: the goals and where the portfolio stands against them', () 
   it('says so when the list cannot be loaded', async () => {
     vi.spyOn(goalsApi, 'list').mockRejectedValue(new Error('down'));
     open();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the goals');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your goals");
   });
 });
 

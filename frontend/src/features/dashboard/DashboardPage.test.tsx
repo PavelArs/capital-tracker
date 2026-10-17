@@ -710,7 +710,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     get.mockRejectedValueOnce(new Error('offline'));
     renderPage();
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Could not load your capital history');
+    expect(alert).toHaveTextContent("Couldn't load your capital history");
     expect(document.body.textContent).not.toMatch(/\$0\.00/);
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('region', { name: 'Net worth' })).toBeInTheDocument();

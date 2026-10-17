@@ -261,7 +261,7 @@ describe('PROPERTY-LIST Real estate', () => {
     const user = userEvent.setup();
     renderPage();
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Could not load your real estate.');
+    expect(alert).toHaveTextContent("Couldn't load your real estate.");
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('list')).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);

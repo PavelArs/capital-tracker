@@ -253,7 +253,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
   it('shows the real failure instead of a missing goal when the read fails', async () => {
     vi.spyOn(goalsApi, 'get').mockRejectedValue(new Error('offline'));
     show(dated);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the goal');
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load this goal");
   });
 
   it('deletes the goal and goes back to the list', async () => {
