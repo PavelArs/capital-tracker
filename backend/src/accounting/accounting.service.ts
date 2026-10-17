@@ -289,13 +289,13 @@ export class AccountingService {
       ...(options.limit === undefined ? {} : { limit: queryNumber(options.limit) }),
     });
     // BROKER-SETUP: which broker accounts read with a token, from their connection row, and
-    // whether a history import has been written into each. The token and the broker's own
-    // account number stay out of the list.
+    // whether a history import of the provider account connected now has been written into each.
+    // The token and the broker's own account number stay out of the list.
     const rows: (AccountRow & { connection: 'tbank' | null; imported: boolean })[] =
       await this.source.query(
         `SELECT a.*, c.provider AS connection,
-        EXISTS (SELECT 1 FROM broker_imports i WHERE i."ownerId"=a."ownerId" AND i."accountId"=a.id)
-          AS imported
+        EXISTS (SELECT 1 FROM broker_imports i WHERE i."ownerId"=a."ownerId" AND i."accountId"=a.id
+          AND i.provider=c.provider AND i."brokerAccountId"=c."brokerAccountId") AS imported
         FROM manual_accounts a
         LEFT JOIN broker_connections c ON c."ownerId"=a."ownerId" AND c."accountId"=a.id
         WHERE a."ownerId"=$1 AND a."removedAt" IS NULL AND ($2::uuid IS NULL OR a.id>$2::uuid)

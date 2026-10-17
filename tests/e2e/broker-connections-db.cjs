@@ -453,7 +453,7 @@ function operation(id, type, payment, over = {}) {
 }
 const share = (over) => ({ instrumentUid: shareUid, instrumentType: 'share', ticker: 'SYNTHA', ...over });
 
-async function importing(db, service, imports, owner, other) {
+async function importing(db, service, imports, tbank, owner, other) {
   stage = 'BROKER-SYNC: a synthetic T-Bank history previewed and written into an empty account';
   const { TradeService } = require('/app/backend/dist/accounting/trade.service.js');
   const trades = new TradeService(db);
@@ -513,6 +513,18 @@ async function importing(db, service, imports, owner, other) {
   assert.equal(first.created, true);
   // BROKER-LIST-CONNECTION: once its history is written, the account no longer waits for it.
   assert.deepEqual(await listedConnection(), { provider: 'tbank', imported: true });
+  // The import is the history of the T-Bank account it was read from: reconnected to another,
+  // the account waits for that one's history, and back again it is imported.
+  const otherTBank = { ...brokerAccount, id: '2000000199', name: 'Synthetic other' };
+  tbank.listed = [brokerAccount, otherTBank];
+  try {
+    await service.connect(owner, broker, { token, brokerAccountId: otherTBank.id });
+    assert.deepEqual(await listedConnection(), { provider: 'tbank', imported: false });
+    await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+    assert.deepEqual(await listedConnection(), { provider: 'tbank', imported: true });
+  } finally {
+    tbank.listed = [brokerAccount];
+  }
   assert.deepEqual(
     [first.value.trades, first.value.rewards, first.value.firstJournalRevision, first.value.lastJournalRevision],
     [5, 1, 1, 6],
@@ -858,7 +870,7 @@ async function main() {
     const instrument = await heldPreview(db, service, imports, owner.id);
     await voidedTransferPreview(db, service, imports, owner.id, instrument);
     await rewardRoomPreview(db, service, imports, owner.id, instrument);
-    await importing(db, service, imports, owner.id, other.id);
+    await importing(db, service, imports, tbank, owner.id, other.id);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });
