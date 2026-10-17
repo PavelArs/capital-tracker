@@ -1,7 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cachedReads } from './cached-reads';
-import { connection } from './connection';
 import { operationsApi } from './operations.api';
 import { portfolioValuationApi } from './portfolio-valuation.api';
 import {
@@ -222,7 +221,7 @@ describe('answers that survive a reload', () => {
   });
 });
 
-describe('a reload does not ask again for what was just said', () => {
+describe('a reload paints what the browser kept and still asks the server again', () => {
   const portfolio = { currency: 'USD', assets: [] } as never;
 
   beforeEach(() => {
@@ -243,46 +242,23 @@ describe('a reload does not ask again for what was just said', () => {
     await hydrateReads(OWNER);
   }
 
-  it('paints the kept answer and uses it as it is for five minutes', async () => {
+  it('RELOAD-REFRESH paints the kept answer and still asks the server, so another session’s change shows', async () => {
     const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({ fresh: true } as never);
     await reloaded([{ key: 'portfolio:["EUR"]', at: Date.now() - 60_000, value: portfolio }]);
-    expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
-    await expect(cachedReads.portfolio.load('EUR')).resolves.toBe(portfolio);
-    expect(get).not.toHaveBeenCalled();
-  });
-
-  it('STALE-STATE asks again for a kept answer while reads go unanswered or the browser is offline', async () => {
-    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({ fresh: true } as never);
-    await reloaded([{ key: 'portfolio:["EUR"]', at: Date.now() - 60_000, value: portfolio }]);
-    const token = {};
-    connection.started(token);
-    connection.settled(token, false);
-    try {
-      // Still painted, but not reused as if it were current: the page asks and can say so.
-      expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
-      await expect(cachedReads.portfolio.load('EUR')).resolves.toEqual({ fresh: true });
-      expect(get).toHaveBeenCalledTimes(1);
-    } finally {
-      connection.reset();
-    }
-    await reloaded([{ key: 'portfolio:["USD"]', at: Date.now() - 60_000, value: portfolio }]);
-    connection.setOffline(true);
-    try {
-      await expect(cachedReads.portfolio.load('USD')).resolves.toEqual({ fresh: true });
-      expect(get).toHaveBeenCalledTimes(2);
-    } finally {
-      connection.reset();
-    }
-  });
-
-  it('asks the server once the kept answer is five minutes old', async () => {
-    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({ fresh: true } as never);
-    await reloaded([{ key: 'portfolio:["EUR"]', at: Date.now() - 4 * 60_000, value: portfolio }]);
-    vi.advanceTimersByTime(2 * 60_000);
-    // Still painted, since it is under fifteen minutes old, but loaded again.
     expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
     await expect(cachedReads.portfolio.load('EUR')).resolves.toEqual({ fresh: true });
     expect(get).toHaveBeenCalledTimes(1);
+    expect(cachedReads.portfolio.last('EUR')).toEqual({ fresh: true });
+  });
+
+  it('STALE-STATE marks a kept answer as possibly out of date when asking again after a reload fails', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
+    await reloaded([{ key: 'portfolio:["EUR"]', at: Date.now() - 60_000, value: portfolio }]);
+    expect(cachedReads.portfolio.failed('EUR')).toBe(false);
+    await expect(cachedReads.portfolio.load('EUR')).rejects.toThrow('offline');
+    // Still painted, and the page can say the figures may be out of date.
+    expect(cachedReads.portfolio.last('EUR')).toBe(portfolio);
+    expect(cachedReads.portfolio.failed('EUR')).toBe(true);
   });
 
   it('keeps asking for an answer fetched since the reload: the page always loads', async () => {

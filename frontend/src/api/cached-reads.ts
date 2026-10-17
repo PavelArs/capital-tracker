@@ -19,7 +19,6 @@ import {
   forgetReads,
   generationNow,
   recall,
-  recallRestored,
   refreshFailed,
   remember,
   rememberFailure,
@@ -27,10 +26,6 @@ import {
 import { SYNC_CHANGED, type SyncSource, syncStatusApi } from './sync-status.api';
 import { type WalletAddress, walletAddressesApi } from './wallet-addresses.api';
 
-// How long after a reload the answers the browser kept are used without asking again. Prices and
-// wallets sync about hourly, and every change the owner makes drops the cache, so a few minutes
-// cost nothing in accuracy.
-const REUSE_MS = 5 * 60_000;
 // How long a page opened right after a prefetch takes that answer instead of asking again.
 const PREFETCH_USE_MS = 30_000;
 
@@ -43,11 +38,7 @@ const inFlight = new Map<string, { generation: number; promise: Promise<unknown>
  * what it shows meanwhile. Loads asked while an identical one is on its way (the shell and a
  * page both need the sync status, say) wait for that one answer instead of sending another.
  */
-function cachedRead<A extends unknown[], T>(
-  name: string,
-  read: (...args: A) => Promise<T>,
-  reuseFor = REUSE_MS,
-) {
+function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => Promise<T>) {
   // load() and load(undefined) ask the same question.
   const key = (args: A) => {
     const asked = [...args];
@@ -72,10 +63,6 @@ function cachedRead<A extends unknown[], T>(
         if (warm !== undefined && !inFlight.has(id)) return Promise.resolve(warm);
       }
     }
-    // A reload does not ask the server again for what it said minutes ago; a change or a sync
-    // empties the cache, so nothing stale is reused.
-    const reused = reuseFor > 0 ? recallRestored<T>(id, reuseFor) : undefined;
-    if (reused !== undefined) return Promise.resolve(reused);
     const startedIn = generationNow();
     const shared = inFlight.get(id);
     // An answer to a question asked before a change is not shared with one asked after it.
@@ -194,13 +181,8 @@ export const cachedReads = {
     'duplicate-proposals',
     (): Promise<DuplicateProposals> => operationsApi.duplicateProposals(),
   ),
-  // The sidebar's count and sync status are polled and always asked again.
-  toClassify: cachedRead(
-    'to-classify',
-    (): Promise<number> => operationsApi.needsClassification(),
-    0,
-  ),
-  sources: cachedRead('sources', readSources, 0),
+  toClassify: cachedRead('to-classify', (): Promise<number> => operationsApi.needsClassification()),
+  sources: cachedRead('sources', readSources),
   hiddenAssets: cachedRead('hidden-assets', (): Promise<HiddenAsset[]> => hiddenAssetsApi.list()),
   wallets: cachedRead('wallets', (): Promise<WalletAddress[]> => walletAddressesApi.list()),
   settings: cachedRead('settings', (): Promise<OwnerSettings> => ownerSettingsApi.get()),

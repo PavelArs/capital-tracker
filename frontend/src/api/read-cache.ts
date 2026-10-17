@@ -1,9 +1,8 @@
-// The last answer of each read, kept so a page the owner comes back to can paint it at once
-// (stale-while-revalidate) and a reload does not ask the server again for what it just said.
+// The last answer of each read, kept so a page the owner comes back to, or a page after a reload,
+// can paint it at once (stale-while-revalidate); the page still asks the server every time.
 // Answers live in memory and, for the signed-in owner, also in the browser's own IndexedDB, so
 // they survive a reload. They are dropped when the owner changes something, a sync lands, or the
 // session ends, and never reach another owner.
-import { connection, showingKept } from './connection';
 import { indexedDbStore, type ReadStore } from './read-store';
 
 // An answer older than this is not shown any more: a skeleton is more honest than old numbers.
@@ -11,13 +10,9 @@ const MAX_AGE_MS = 15 * 60_000;
 // Reading the browser's store must never hold the app back.
 const HYDRATE_TIMEOUT_MS = 2_000;
 
-// `restored`: kept by the browser from before a reload and not asked again since.
 // `failed`: the last time it was asked again, the server did not answer, so the page warns that
 // the figures may be out of date. Kept in the browser too, so the warning survives a reload.
-const entries = new Map<
-  string,
-  { value: unknown; at: number; restored: boolean; failed: boolean }
->();
+const entries = new Map<string, { value: unknown; at: number; failed: boolean }>();
 let generation = 0;
 let owner: string | null = null;
 let store: ReadStore | null | undefined;
@@ -52,26 +47,11 @@ export function recall<T>(key: string): T | undefined {
   return entry.value as T;
 }
 
-/**
- * An answer the browser kept from before a reload, while it is younger than `within`
- * milliseconds: the page uses it as it is instead of asking the server again. An answer
- * fetched since the reload is never reused this way; the page always loads.
- */
-export function recallRestored<T>(key: string, within: number): T | undefined {
-  const entry = entries.get(key);
-  // An answer whose refresh failed is asked again: the server may answer now. Nor is a kept one
-  // reused while reads go unanswered or the browser is offline: the page asks, and says so
-  // when it gets no answer.
-  if (!entry?.restored || entry.failed || Date.now() - entry.at >= within) return undefined;
-  if (showingKept(connection.get())) return undefined;
-  return recall<T>(key);
-}
-
 /** Remembers an answer unless the cache was dropped while the read was on its way. */
 export function remember(key: string, value: unknown, startedIn: number): void {
   if (startedIn !== generation) return;
   const at = Date.now();
-  entries.set(key, { value, at, restored: false, failed: false });
+  entries.set(key, { value, at, failed: false });
   const who = owner;
   if (who) enqueue((target) => target.save({ key, owner: who, at, value }));
 }
@@ -142,12 +122,7 @@ export async function hydrateReads(ownerId: string): Promise<void> {
     const now = Date.now();
     for (const row of rows) {
       if (now - row.at <= MAX_AGE_MS && !entries.has(row.key))
-        entries.set(row.key, {
-          value: row.value,
-          at: row.at,
-          restored: true,
-          failed: row.failed === true,
-        });
+        entries.set(row.key, { value: row.value, at: row.at, failed: row.failed === true });
     }
   } catch {
     // Nothing kept, or the browser would not say: the pages ask the server as usual.

@@ -92,8 +92,8 @@ filters, the chip counts and the classification flow need the whole list.
 
 The last answer of each read is kept in memory for the session and, for the signed-in owner, in
 the browser's IndexedDB (`api/read-cache.ts`, `api/read-store.ts`). After a reload the pages
-paint those answers at once, and an answer fetched less than five minutes ago is used as it is
-without asking the server. Anything older than fifteen minutes is dropped. Every change the
+paint those answers at once and still ask the server, so a change made in another session shows
+as soon as it answers. Anything older than fifteen minutes is dropped. Every change the
 owner makes, a classification, a sync, a background sync that finished since the last status
 read, a sign-in, a sign-out or a refused session empties it, in memory and in the browser. An
 answer kept for another owner is never used and is deleted. Where the browser has no IndexedDB
