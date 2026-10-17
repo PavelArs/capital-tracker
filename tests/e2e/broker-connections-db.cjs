@@ -51,6 +51,15 @@ async function account(db, owner, assetClass) {
   );
   return id;
 }
+// One T-Bank account reads into one broker account, so each probe takes it over from the last.
+async function takeOver(db, service, owner, broker) {
+  const holders = await db.query(
+    `SELECT "accountId" FROM broker_connections WHERE "ownerId" = $1 AND "brokerAccountId" = $2`,
+    [owner, brokerAccount.id],
+  );
+  for (const { accountId } of holders) await service.disconnect(owner, accountId);
+  return service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+}
 
 async function connection(db, service, owner, other) {
   stage = 'synthetic broker account connected, read back, replaced and disconnected';
@@ -126,7 +135,7 @@ async function removal(db, service, owner) {
   stage = 'removing an empty broker account scrubs its token';
   const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
   const broker = await account(db, owner, 'broker');
-  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, broker);
   assert.equal((await service.read(owner, broker)).connected, true);
   // BROKER-LIST-CONNECTION: the account list says which broker accounts read with a token.
   const bare = await account(db, owner, 'broker');
@@ -238,6 +247,12 @@ async function setup(db, service, setupService, tbank, owner, other) {
       409,
     );
     assert.equal(await count('manual_accounts'), accountsBefore + 2, 'A refused request makes nothing');
+    // The direct connect keeps the same rule: a T-Bank account read by one broker account is
+    // refused for another.
+    const spare = await account(db, owner, 'broker');
+    await rejected(() => service.connect(owner, spare, { token, brokerAccountId: regular.id }), 409);
+    assert.equal(await count('broker_connections', `WHERE "accountId" = '${spare}'`), 0);
+    assert.equal(await count('broker_connections', `WHERE "brokerAccountId" = '${regular.id}'`), 1);
     await rejected(
       () =>
         setupService.connect(owner, {
@@ -291,7 +306,7 @@ async function heldPreview(db, service, imports, owner) {
   const { AccountingService } = require('/app/backend/dist/accounting/accounting.service.js');
   const accounting = new AccountingService(db);
   const broker = await account(db, owner, 'broker');
-  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, broker);
   assert.equal((await imports.preview(owner, broker)).accountHasEntries, false);
   const instrument = (
     await accounting.createInstrument(owner, { requestId: randomUUID(), name: 'Synthetic share' })
@@ -318,7 +333,7 @@ async function voidedTransferPreview(db, service, imports, owner, instrument) {
   const { OwnedTransferService } = require('/app/backend/dist/accounting/owned-transfer.service.js');
   const sender = await account(db, owner, null);
   const broker = await account(db, owner, 'broker');
-  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, broker);
   await new TradeService(db).create(owner, sender, {
     requestId: randomUUID(),
     expectedJournalRevision: 0,
@@ -365,7 +380,7 @@ async function rewardRoomPreview(db, service, imports, owner, instrument) {
   const { AssetRewardService } = require('/app/backend/dist/accounting/asset-reward.service.js');
   const broker = await account(db, owner, 'broker');
   const elsewhere = await account(db, owner, null);
-  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, broker);
   // 1000 synthetic dividends: exactly what one account's reward journal keeps.
   for (let index = 0; index < 1000; index += 1)
     history.push({
@@ -448,7 +463,7 @@ async function importing(db, service, imports, owner, other) {
   const count = async (table, where = '') =>
     (await db.query(`SELECT count(*)::int AS n FROM ${table} ${where}`))[0].n;
   const broker = await account(db, owner, 'broker');
-  await service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, broker);
   history = [
     operation('100000001', 'INPUT', '10000'),
     operation('100000002', 'BUY', '-5000', share({
@@ -583,7 +598,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC: a second account reuses the linked instrument';
   const second = await account(db, owner, 'broker');
-  await service.connect(owner, second, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, second);
   history = [
     operation('200000001', 'INPUT', '1000'),
     operation('200000002', 'BUY', '-500', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' })),
@@ -596,7 +611,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC: a history that cannot be written is refused whole';
   const third = await account(db, owner, 'broker');
-  await service.connect(owner, third, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, third);
   history = [
     operation('300000001', 'INPUT', '100', { occurredAt: '2020-01-01T10:00:00Z' }),
     operation('300000002', 'SELL', '100', {
@@ -629,7 +644,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC: one T-Bank account is never written twice, into any account';
   const fourth = await account(db, owner, 'broker');
-  await service.connect(owner, fourth, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, fourth);
   history = firstHistory;
   const twice = await imports.preview(owner, fourth);
   assert.equal(twice.accountHasEntries, false);
@@ -657,7 +672,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC-FX: dollars bought on the exchange are cash, gold an asset, a split order two entries';
   const fifth = await account(db, owner, 'broker');
-  await service.connect(owner, fifth, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, fifth);
   const dollarsUid = '10000000-0000-4000-8000-0000000000d1';
   const goldUid = '10000000-0000-4000-8000-0000000000f1';
   const fx = (ticker, uid, over) => ({ instrumentUid: uid, instrumentType: 'currency', ticker, ...over });
@@ -732,7 +747,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC-HASH: a rate stored after the preview does not let its hash write the history';
   const sixth = await account(db, owner, 'broker');
-  await service.connect(owner, sixth, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, sixth);
   history = [operation('600000001', 'INPUT', '100', { occurredAt: '2019-12-20T10:00:00Z' })];
   const unrated = await imports.preview(owner, sixth);
   assert.deepEqual(unrated.problems.map((problem) => problem.reason), ['no-rate']);
@@ -750,7 +765,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC-REWARD-CAP: a history with more rewards than the journal keeps is previewed, not failed';
   const seventh = await account(db, owner, 'broker');
-  await service.connect(owner, seventh, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, seventh);
   history = Array.from({ length: 1001 }, (_, index) =>
     operation(`7${String(index).padStart(8, '0')}`, 'DIVIDEND', '1', share({
       occurredAt: `2024-03-${String(1 + (index % 28)).padStart(2, '0')}T09:00:00Z`,
@@ -765,7 +780,7 @@ async function importing(db, service, imports, owner, other) {
 
   stage = 'BROKER-SYNC-FUNDING: a sale in the same instant pays for the buy it funds, though the buy comes first in the plan';
   const eighth = await account(db, owner, 'broker');
-  await service.connect(owner, eighth, { token, brokerAccountId: brokerAccount.id });
+  await takeOver(db, service, owner, eighth);
   history = [
     operation('800000001', 'INPUT', '100', { occurredAt: '2024-03-01T10:00:00Z' }),
     operation('800000002', 'BUY', '-100', share({ occurredAt: '2024-03-02T10:00:00Z', quantity: '1', price: '100' })),
