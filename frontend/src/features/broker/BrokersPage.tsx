@@ -2,8 +2,7 @@ import type { AccountSummary } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useToast } from '@/contexts/ToastContext';
+import { Link, useLocation } from 'react-router-dom';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
@@ -23,11 +22,15 @@ import { netWorthUnknown } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useAccountClasses } from '../shell/useAccountClasses';
-import AddBrokerDialog from './AddBrokerDialog';
+import AddBrokerAccountDialog from './AddBrokerAccountDialog';
 import {
+  accountLabel,
   type BrokerAccount,
+  type BrokerGroup,
   type BrokerPosition,
   brokerAccountsOf,
+  brokerGaps,
+  brokerGroupsOf,
   brokerShare,
   leftOut,
   plural,
@@ -86,37 +89,72 @@ function Account({
   account: BrokerAccount;
   portfolio: PortfolioValuation;
 }) {
-  const securities = account.positions.filter(({ asset }) => asset.assetType !== 'fiat').length;
+  const label = accountLabel(account);
   const missing = leftOut(account.unpriced, account.unrated);
   return (
+    <div
+      className="broker-group"
+      role="group"
+      aria-label={label}
+      data-account={account.id}
+      tabIndex={-1}
+    >
+      <div className="broker-group__head">
+        <b>{label}</b>
+        <span className="broker-group__total" data-testid="account-total">
+          {account.valued ? money(account.value, portfolio.currency) : '—'}
+          {missing && <small>{missing}</small>}
+        </span>
+      </div>
+      {account.pending ? (
+        <Banner tone="info" icon="clock" role="none">
+          Connected. Positions and cash arrive with the history import, which runs in the
+          background.
+        </Banner>
+      ) : account.positions.length ? (
+        <ul className="ui-rows">
+          {account.positions.map((position) => (
+            <Position key={position.asset.instrumentId} position={position} portfolio={portfolio} />
+          ))}
+        </ul>
+      ) : (
+        <p className="broker-account__empty">Holds nothing yet.</p>
+      )}
+    </div>
+  );
+}
+
+const via = (group: BrokerGroup) =>
+  group.connected === 0
+    ? 'tracked manually'
+    : group.connected === group.accounts.length
+      ? 'synced via token'
+      : `${group.connected} synced via token`;
+
+// BROKERS-GROUP: one card per broker; its total leaves out what has no value and says so.
+function Broker({ group, portfolio }: { group: BrokerGroup; portfolio: PortfolioValuation }) {
+  const waiting = !group.valued && group.pending === group.accounts.length;
+  const missing = waiting ? null : brokerGaps(group.unpriced, group.unrated, group.pending);
+  return (
     <Card as="li" variant="flush" className="broker-account">
-      <section aria-label={account.name}>
+      <section aria-label={group.name}>
         <div className="broker-account__head">
           <span className="broker-account__icon" aria-hidden="true">
             <Icon name="briefcase" />
           </span>
           <div className="broker-account__title">
-            <b>{account.name}</b>
-            <small>{plural(securities, 'position')}</small>
+            <b>{group.name}</b>
+            <small>{`${plural(group.accounts.length, 'account')} · ${via(group)}`}</small>
           </div>
-          <div className="broker-account__total">
-            <b>{money(account.value, portfolio.currency)}</b>
+          <div className="broker-account__total" data-testid="broker-total">
+            <b>{group.valued ? money(group.value, portfolio.currency) : '—'}</b>
+            {waiting && <small>Waiting for the history import</small>}
             {missing && <small>{missing}</small>}
           </div>
         </div>
-        {account.positions.length ? (
-          <ul className="ui-rows">
-            {account.positions.map((position) => (
-              <Position
-                key={position.asset.instrumentId}
-                position={position}
-                portfolio={portfolio}
-              />
-            ))}
-          </ul>
-        ) : (
-          <p className="broker-account__empty">Holds nothing yet.</p>
-        )}
+        {group.accounts.map((account) => (
+          <Account key={account.id} account={account} portfolio={portfolio} />
+        ))}
       </section>
     </Card>
   );
@@ -133,7 +171,12 @@ export default function BrokersPage() {
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
   const latest = useRef(0);
-  const toast = useToast();
+  const location = useLocation();
+  // A newly added account, brought into view once it is drawn.
+  const [focus, setFocus] = useState<string | null>(
+    () => (location.state as { focusAccount?: string } | null)?.focusAccount ?? null,
+  );
+  const list = useRef<HTMLUListElement>(null);
 
   // Only the newest request may change the page; a refresh keeps what is shown and says so
   // when it fails, as Real estate does.
@@ -161,12 +204,23 @@ export default function BrokersPage() {
   }, [load]);
 
   const brokers = portfolio && accounts ? brokerAccountsOf(portfolio, accounts) : null;
-  const total = sumDecimals(brokers?.map((account) => account.value) ?? []);
-  const unpriced = brokers?.reduce((sum, account) => sum + account.unpriced, 0) ?? 0;
-  const unrated = brokers?.reduce((sum, account) => sum + account.unrated, 0) ?? 0;
-  const share = portfolio && brokerShare(total, portfolio);
+  const groups = brokerGroupsOf(brokers ?? []);
+  const valued = groups.filter((group) => group.valued);
+  const total = sumDecimals(valued.map((group) => group.value));
+  const sum = (part: 'unpriced' | 'unrated' | 'pending') =>
+    groups.reduce((count, group) => count + group[part], 0);
+  // Nothing valued yet is "—", never zero, and no share is worked out from it.
+  const share = portfolio && valued.length > 0 ? brokerShare(total, portfolio) : null;
   const unknown = portfolio && netWorthUnknown(portfolio);
-  const missing = leftOut(unpriced, unrated);
+  const missing = brokerGaps(sum('unpriced'), sum('unrated'), sum('pending'));
+
+  useEffect(() => {
+    if (!focus) return;
+    const target = list.current?.querySelector<HTMLElement>(`[data-account="${focus}"]`);
+    if (!target) return;
+    target.focus();
+    setFocus(null);
+  });
   // The page's main action, primary as on every list page (PageIntro).
   const addButton = (
     <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
@@ -215,7 +269,12 @@ export default function BrokersPage() {
               Total at brokers
             </h2>
             <Stats size="lg">
-              <Stat lead label="At brokers" value={money(total, portfolio.currency)} />
+              <Stat
+                lead
+                label="At brokers"
+                value={valued.length > 0 ? money(total, portfolio.currency) : '—'}
+                hint={`${plural(groups.length, 'broker')} · ${plural(brokers.length, 'account')}`}
+              />
               <Stat
                 label="Share of net worth"
                 value={
@@ -228,20 +287,20 @@ export default function BrokersPage() {
             </Stats>
             {missing && <p className="ui-sub broker-summary__note">{missing}</p>}
           </Card>
-          <ul className="broker-accounts">
-            {brokers.map((account) => (
-              <Account key={account.id} account={account} portfolio={portfolio} />
+          <ul className="broker-accounts" ref={list}>
+            {groups.map((group) => (
+              <Broker key={group.key} group={group} portfolio={portfolio} />
             ))}
           </ul>
         </>
       )}
       {adding && (
-        <AddBrokerDialog
+        <AddBrokerAccountDialog
           onClose={() => setAdding(false)}
-          onAdded={(name) => {
+          onAdded={(account) => {
             setAdding(false);
+            setFocus(account ?? null);
             load(true);
-            if (name) toast.show({ tone: 'success', title: `${name} added` });
           }}
         />
       )}
