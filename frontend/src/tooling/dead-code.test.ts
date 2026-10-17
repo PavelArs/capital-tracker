@@ -16,8 +16,17 @@ function sources(dir: string): string[] {
 }
 
 /** Whether the code imports the package itself or one of its subpaths, never a longer name. */
-const isImported = (code: string, name: string) =>
-  new RegExp(`['"]${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}(/[^'"]*)?['"]`).test(code);
+const isImported = (code: string, name: string) => {
+  // Only import specifiers count: a comment or a string constant naming a package does not.
+  const bare = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+  const spec = `['"]${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}(/[^'"]*)?['"]`;
+  return [
+    `\\b(?:import|export)\\b[^;'"]*?\\bfrom\\s*${spec}`,
+    `\\bimport\\s*${spec}`,
+    `\\bimport\\s*\\(\\s*${spec}`,
+    `@import\\s+(?:url\\(\\s*)?${spec}`,
+  ].some((form) => new RegExp(form).test(bare));
+};
 
 describe('FRONTEND-NO-DEAD-CODE: nothing unused ships or is configured', () => {
   it('every runtime dependency is imported by the app', () => {
@@ -33,6 +42,19 @@ describe('FRONTEND-NO-DEAD-CODE: nothing unused ships or is configured', () => {
     expect(isImported(code, 'react')).toBe(false);
     expect(isImported(code, 'i18next')).toBe(false);
     expect(isImported(code, 'i18next-browser-languagedetector')).toBe(true);
+  });
+
+  it('counts only import specifiers, not a comment or a string constant naming a package', () => {
+    expect(isImported("import axios from 'axios';", 'axios')).toBe(true);
+    expect(isImported("import 'axios';", 'axios')).toBe(true);
+    expect(isImported("export { a } from 'axios';", 'axios')).toBe(true);
+    expect(isImported("const m = await import('axios');", 'axios')).toBe(true);
+    expect(isImported("import {\n  a,\n} from 'axios';", 'axios')).toBe(true);
+    expect(isImported("@import 'axios/x.css';", 'axios')).toBe(true);
+    expect(isImported("// import axios from 'axios';\nconst packageName = 'axios';", 'axios')).toBe(
+      false,
+    );
+    expect(isImported('/* import \'axios\' */ const n = "axios";', 'axios')).toBe(false);
   });
 
   it('no script needs the @vitest/ui package that is not installed', () => {
