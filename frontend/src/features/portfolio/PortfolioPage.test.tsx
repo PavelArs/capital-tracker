@@ -2837,6 +2837,21 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     ).toBeInTheDocument();
   });
 
+  it('OPS-DAYS: a 21:30 UTC transaction shows the next Moscow day on the asset page', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2027-01-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      dustThresholdUsd: null,
+      operations: [operation(21, { quantity: '0.2', occurredAt: '2026-12-31T21:30:00.000Z' })],
+    });
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const transactions = await screen.findByRole('region', { name: /^Transactions/ });
+    expect(await within(transactions).findByText(/Jan 1, 2027/)).toBeInTheDocument();
+    expect(transactions).not.toHaveTextContent('Dec 31, 2026');
+  });
+
   it('ASSET-NO-COST leaves the cost line out and offers the transactions when no purchase price is known', async () => {
     const unpriced = {
       ...bitcoin,

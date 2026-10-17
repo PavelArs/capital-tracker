@@ -265,9 +265,12 @@ export function placeLabel(operation: Operation): string {
   return lead + address;
 }
 
-/** Dates and times are shown in UTC, as stored; only the list's day headings are Moscow days. */
+/**
+ * The Moscow day an operation is shown under, the day the period filter counts: every date next to
+ * an operation comes from here. Its clock time stays UTC, labelled as such.
+ */
 export function day(iso: string): string {
-  return dayText(iso);
+  return dayText(moscowDate(iso));
 }
 
 export function time(iso: string): string {

@@ -474,6 +474,30 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(dayHeadings()).toEqual(['Today', 'Yesterday']);
   });
 
+  it('OPS-DAYS: the drawer shows the Moscow day the row is listed under', async () => {
+    const user = userEvent.setup();
+    const late = operation({
+      id: `trade:${id(95)}`,
+      occurredAt: '2026-12-31T21:30:00.000Z',
+      valueUsd: '10',
+      feeUsd: '0',
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue({
+      ...list([late]),
+      at: '2027-01-05T09:00:00.000Z',
+    });
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(dayHeadings()).toEqual(['Jan 1, 2027']);
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Buy' }));
+    const drawer = screen.getByRole('dialog', { name: 'Buy · BTC' });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(
+      within(facts).getByText('Date', { exact: true }).nextElementSibling?.textContent,
+    ).toMatch(/^Jan 1, 2027, /);
+    expect(drawer.textContent).not.toContain('Dec 31, 2026');
+  });
+
   it('OPS-PAID: a purchase paid in RUB shows what was paid under its value', async () => {
     const paid = operation({
       ...imported,

@@ -331,6 +331,14 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     expect(within(rows[2]).getByRole('link')).toHaveTextContent('Buy');
   });
 
+  it('OPS-DAYS: a 21:30 UTC transaction shows the next Moscow day', async () => {
+    setup({ items: [operation(1, { occurredAt: '2026-12-31T21:30:00.000Z' })] });
+    const transactions = await screen.findByRole('region', { name: /^Transactions/ });
+    const row = await within(transactions).findByRole('listitem');
+    expect(row).toHaveTextContent('Jan 1, 2027');
+    expect(row).not.toHaveTextContent('Dec 31, 2026');
+  });
+
   it('renames the wallet and shows the new name', async () => {
     const user = userEvent.setup();
     setup();
