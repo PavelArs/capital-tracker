@@ -25,11 +25,6 @@ export const authApi = {
     setCsrfToken(null);
   },
 
-  getProfile: async (): Promise<User> => {
-    const response = await apiClient.get<User>('/auth/me');
-    return response.data;
-  },
-
   getCurrentUser: async (): Promise<User> => {
     const response = await apiClient.get<User>('/auth/me');
     return response.data;
