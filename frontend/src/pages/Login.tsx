@@ -59,6 +59,8 @@ export default function Login() {
     code?: string;
   }>({});
   const [failure, setFailure] = useState('');
+  // AUTH-INVALID: the server refused the email and password together; either may be wrong.
+  const [refused, setRefused] = useState(false);
   const [busy, setBusy] = useState(false);
   const { login, verifyFactor, restartPassword, mfaPending, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -95,6 +97,7 @@ export default function Login() {
     };
     setFieldErrors(errors);
     setFailure('');
+    setRefused(false);
     if (errors.email || errors.password) {
       focusAfterAnswer(errors.email ? 'login-email' : 'login-password');
       return;
@@ -108,6 +111,7 @@ export default function Login() {
       reset();
     } catch (error) {
       setFailure(passwordFailure(error));
+      setRefused(status(error) === 401);
       focusAfterAnswer('login-password');
     } finally {
       setBusy(false);
@@ -173,11 +177,18 @@ export default function Login() {
     return (
       <AuthFrame title="Sign in" onSubmit={submitPassword}>
         <p className="auth-sub">Only the owner account can sign in.</p>
-        {failure && <Banner tone="neg">{failure}</Banner>}
+        {failure && (
+          <Banner tone="neg" id="login-failure">
+            {failure}
+          </Banner>
+        )}
         <Field id="login-email" label="Email" error={fieldErrors.email} liveError>
           {(control) => (
             <Input
               {...control}
+              {...(refused && !fieldErrors.email
+                ? { 'aria-invalid': true as const, 'aria-describedby': 'login-failure' }
+                : {})}
               ref={focusOnMount}
               type="email"
               autoComplete="username"
@@ -196,6 +207,7 @@ export default function Login() {
           value={password}
           onChange={setPassword}
           error={fieldErrors.password}
+          refusedBy={refused ? 'login-failure' : undefined}
           disabled={busy}
           autoComplete="current-password"
           labelAside={
@@ -220,7 +232,7 @@ export default function Login() {
 
   if (kind === 'recovery') {
     return (
-      <AuthFrame icon="lock" title="Use a recovery code" onSubmit={submitFactor} footer={back}>
+      <AuthFrame icon="lock" title="Use a recovery code" onSubmit={submitFactor}>
         <p className="auth-sub">
           Each code works once. If you lost your phone, set up the authenticator again in Settings
           after signing in.
@@ -256,17 +268,13 @@ export default function Login() {
         >
           Back to authenticator code
         </button>
+        {back}
       </AuthFrame>
     );
   }
 
   return (
-    <AuthFrame
-      icon="shield"
-      title="Two-factor authentication"
-      onSubmit={submitFactor}
-      footer={back}
-    >
+    <AuthFrame icon="shield" title="Two-factor authentication" onSubmit={submitFactor}>
       <p className="auth-sub">Enter the 6-digit code from your authenticator app.</p>
       {failure && <Banner tone="neg">{failure}</Banner>}
       <Field
@@ -303,6 +311,7 @@ export default function Login() {
       >
         Use a recovery code instead
       </button>
+      {back}
     </AuthFrame>
   );
 }

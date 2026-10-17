@@ -290,7 +290,14 @@ export default function AddWalletDialog({
       <form ref={form} onSubmit={next} noValidate>
         <ModalHeader
           titleId="add-wallet"
-          title="Add wallet"
+          // From a wallet's page: the address joins that wallet (its name is preset in step 3).
+          title={
+            opened
+              ? initialNetwork === 'bybit'
+                ? 'Connect Bybit API'
+                : `Add an address to ${opened.name}`
+              : 'Add wallet'
+          }
           onClose={onClose}
           closeDisabled={saving}
           steps={{ current: step, total: 3 }}

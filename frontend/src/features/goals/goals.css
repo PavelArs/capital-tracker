@@ -33,7 +33,9 @@
   outline-offset: 2px;
 }
 
-.goal-card__name:focus-visible {
+/* On a goal card the ring is the card's; elsewhere (the dashboard's Nearest goal) the link keeps
+   the shared ring. */
+.goal-card .goal-card__name:focus-visible {
   outline: none;
 }
 

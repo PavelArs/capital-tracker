@@ -345,7 +345,7 @@ export default function TopAssets({
         id={heading}
         title="Top assets"
         actions={
-          <Link className="ui-link" to={withCurrency('/portfolio', asked)}>
+          <Link className="ui-link ui-link--target" to={withCurrency('/portfolio', asked)}>
             All assets
           </Link>
         }

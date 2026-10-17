@@ -565,7 +565,8 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     setup();
     await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
     await user.click(screen.getByRole('button', { name: 'Add address' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    // From a wallet's page the dialog names the wallet the address joins.
+    const dialog = screen.getByRole('dialog', { name: 'Add an address to Trust Wallet' });
     await user.click(within(dialog).getByRole('button', { name: /^Bitcoin/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     await user.type(
@@ -582,7 +583,8 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     setup({ coldClass: 'property' });
     await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
     await user.click(screen.getByRole('button', { name: 'Add address' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    // From a wallet's page the dialog names the wallet the address joins.
+    const dialog = screen.getByRole('dialog', { name: 'Add an address to Trust Wallet' });
     await user.click(within(dialog).getByRole('button', { name: /^Bitcoin/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     await user.type(
@@ -628,7 +630,11 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     const summary = screen.getByRole('region', { name: 'Summary' });
     expect(within(summary).getByText('None')).toBeInTheDocument();
     expect(within(summary).getByText('Tracked by hand')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add a wallet address' })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Add a wallet address' }));
+    // The dialog says the address joins this wallet, not a new one.
+    expect(
+      screen.getByRole('dialog', { name: 'Add an address to Cold storage' }),
+    ).toBeInTheDocument();
   });
 
   it('says when the wallet does not exist', async () => {
@@ -714,7 +720,7 @@ describe('UI audit: one wallet', () => {
     setup({ account: cold, valuation });
     await screen.findByRole('heading', { level: 2, name: 'Bybit' });
     await user.click(screen.getByRole('button', { name: 'Connect Bybit API' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const dialog = screen.getByRole('dialog', { name: 'Connect Bybit API' });
     expect(within(dialog).getByText('Step 2 of 3')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('API key')).toBeInTheDocument();
   });

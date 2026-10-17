@@ -167,6 +167,10 @@ describe('Owner second-factor login (prototype Sign-in)', () => {
     const user = await renderLogin();
     await submitPassword(user);
     await user.type(await screen.findByLabelText('Code from your authenticator app'), '012345');
+    // The way back sits in the box, as on every auth step.
+    expect(
+      screen.getByRole('button', { name: 'Back to sign in' }).closest('.auth-box'),
+    ).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'Back to sign in' }));
 
     expect(screen.getByLabelText('Password')).toHaveValue('');
@@ -209,6 +213,14 @@ describe('Owner second-factor login (prototype Sign-in)', () => {
       'Email or password is incorrect. Check both and try again.',
     );
     expect(screen.queryByText('Internal secret marker')).not.toBeInTheDocument();
+    // AUTH-INVALID: either may be wrong, so both fields say so, pointing at the explanation.
+    for (const label of ['Email', 'Password']) {
+      const field = screen.getByLabelText(label, { selector: 'input' });
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field).toHaveAccessibleDescription(
+        'Email or password is incorrect. Check both and try again.',
+      );
+    }
     expect(api.login).toHaveBeenCalledExactlyOnceWith({
       email: owner.email,
       password: 'Synthetic-password-42!',

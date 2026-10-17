@@ -2645,7 +2645,7 @@ describe('UI audit: Wallets', () => {
       within(card('Trust Wallet')).queryByRole('button', { name: 'Connect Bybit API' }),
     ).toBeNull();
     await user.click(within(bybitCard).getByRole('button', { name: 'Connect Bybit API' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const dialog = screen.getByRole('dialog', { name: 'Connect Bybit API' });
     expect(within(dialog).getByText('Step 2 of 3')).toBeInTheDocument();
     await user.type(within(dialog).getByLabelText('API key'), keyApi);
     await user.type(within(dialog).getByLabelText('API secret'), keySecret);
@@ -2686,7 +2686,7 @@ describe('UI audit: Wallets', () => {
     );
     expect(within(hardware).queryByRole('button', { name: 'Connect Bybit API' })).toBeNull();
     await user.click(within(unset).getByRole('button', { name: 'Connect Bybit API' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const dialog = screen.getByRole('dialog', { name: 'Connect Bybit API' });
     await user.type(within(dialog).getByLabelText('API key'), keyApi);
     await user.type(within(dialog).getByLabelText('API secret'), keySecret);
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));

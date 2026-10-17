@@ -462,7 +462,7 @@ export default function DepositPage() {
                   ))}
                   <button
                     type="button"
-                    className="ui-link"
+                    className="ui-link ui-link--target"
                     aria-label="Change the rate"
                     onClick={() => setDialog('rate')}
                   >

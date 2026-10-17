@@ -91,6 +91,20 @@
   color: var(--ink-2);
 }
 
+/* A link or link-button that stands on its own (not inside a sentence): a hit area of at least
+   24 px, 40 px on touch screens (WCAG 2.5.8), without changing how it looks. */
+.ui-link--target {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-link--target {
+    min-height: 40px;
+  }
+}
+
 /* The title of a section inside a card, a drawer or a dialog. */
 .ui-section-t {
   display: flex;

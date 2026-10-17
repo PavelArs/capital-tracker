@@ -39,10 +39,10 @@ export default function NearestGoal() {
         </Badge>
         <span>{verdict(goal)}</span>
         <span className="goal-dash__links">
-          <Link to={`/goals/${goal.id}`} className="ui-link">
+          <Link to={`/goals/${goal.id}`} className="ui-link ui-link--target">
             Open goal
           </Link>
-          <Link to="/goals" className="ui-link">
+          <Link to="/goals" className="ui-link ui-link--target">
             All goals · {data.items.length}
           </Link>
         </span>
