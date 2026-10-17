@@ -2,6 +2,7 @@ import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-va
 import type { ReactNode } from 'react';
 import { SegmentedControl, SegmentedPlaceholder } from '@/ui/SegmentedControl';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
+import ConnectionBanner from './ConnectionBanner';
 import { BrandMark } from './icons';
 import { useMainCurrency } from './main-currency';
 import NotificationsBell from './NotificationsBell';
@@ -59,6 +60,8 @@ export default function PageHeader({
           {valueSwitch && <ValueViewSwitch />}
         </div>
       )}
+      {/* Offline, or the server stopped answering: the figures below are kept from before. */}
+      <ConnectionBanner />
     </header>
   );
 }

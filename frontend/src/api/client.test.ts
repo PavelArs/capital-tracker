@@ -256,6 +256,46 @@ describe('cookie session API client', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it('STALE-STATE says the server did not answer instead of its raw text, and marks reads unanswered until one answers', async () => {
+    const { connection } = await import('./connection');
+    connection.reset();
+    const onError = vi.fn();
+    setErrorHandler(onError);
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError(
+        'Server error',
+        undefined,
+        config,
+        undefined,
+        response(config, { statusCode: 500, message: 'Internal server error' }, 500),
+      );
+    };
+    await expect(apiClient.get('/portfolio/history')).rejects.toMatchObject({
+      response: { status: 500 },
+    });
+    expect(onError).toHaveBeenCalledWith("The server didn't answer. Try again in a moment.");
+    expect(connection.get().failing).toBe(true);
+
+    // A refusal is an answer: the server is there.
+    apiClient.defaults.adapter = async (config) => {
+      throw rejected(config, 404);
+    };
+    await expect(apiClient.get('/portfolio/history')).rejects.toMatchObject({
+      response: { status: 404 },
+    });
+    expect(connection.get().failing).toBe(false);
+
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError('Network Error', undefined, config, {});
+    };
+    await expect(apiClient.get('/portfolio/history')).rejects.toBeInstanceOf(AxiosError);
+    expect(onError).toHaveBeenLastCalledWith('No connection. Check your network and try again.');
+    expect(connection.get().failing).toBe(true);
+    apiClient.defaults.adapter = async (config) => response(config, {});
+    await apiClient.get('/portfolio/history');
+    expect(connection.get().failing).toBe(false);
+  });
+
   it('leaves a refused goal request to the goal dialog', async () => {
     const onError = vi.fn();
     setErrorHandler(onError);

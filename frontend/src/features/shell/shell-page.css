@@ -307,6 +307,20 @@
   max-width: 780px;
 }
 
+/* ConnectionBanner: a row of its own under the title row; an empty live region takes no room. */
+.shell-page__state {
+  flex: 1 1 100%;
+  order: 2;
+}
+
+.shell-page__state:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 /* BootShell holds the bell's room while the sign-in check is on its way. */
 .shell-page__bell--hold {
   width: var(--h-icon);

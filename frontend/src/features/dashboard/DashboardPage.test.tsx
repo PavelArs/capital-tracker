@@ -1,6 +1,8 @@
 import { type AccountSummary, accountingApi } from '@api/accounting.api';
+import { connection } from '@api/connection';
 import { type Deposit, depositsApi } from '@api/deposits.api';
 import { type Goal, goalsApi } from '@api/goals.api';
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { operationsApi } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
@@ -16,7 +18,7 @@ import {
 } from '@api/portfolio-valuation.api';
 import { type SyncSource, syncStatusApi } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -275,6 +277,8 @@ const account = (
 });
 
 beforeEach(() => {
+  // Answered, so no read goes to a server that is not there (the stale banner would say so).
+  vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
   toClassify.mockReset();
   toClassify.mockResolvedValue(0);
   valued.mockReset();
@@ -1325,6 +1329,23 @@ describe('Dashboard design alignment: the number and what it carries', () => {
     renderPage();
     const value = heroValue(await screen.findByRole('region', { name: 'Net worth' }));
     expect(value).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('STALE-STATE flags the number itself while reads go unanswered, even when it was kept from before', async () => {
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(hero).queryByText(/^As of/)).toBeNull();
+    const token = {};
+    act(() => {
+      connection.started(token);
+      connection.settled(token, false);
+    });
+    try {
+      expect(within(hero).getByText('As of 12:30 UTC')).toBeInTheDocument();
+    } finally {
+      act(() => connection.reset());
+    }
+    expect(within(hero).queryByText(/^As of/)).toBeNull();
   });
 
   it('DASH-STATE-BADGE flags the number itself when a refresh failed or prices are old', async () => {

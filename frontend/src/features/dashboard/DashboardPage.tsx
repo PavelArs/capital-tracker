@@ -1,4 +1,5 @@
 import { cachedReads } from '@api/cached-reads';
+import { showingKept, useConnection } from '@api/connection';
 import {
   type HistoryPeriod,
   historyPeriods,
@@ -359,6 +360,8 @@ export default function DashboardPage() {
   const [portfolioFailed, setPortfolioFailed] = useState(false);
   const latestPortfolio = useRef(0);
   const wallets = useAttention()?.wallets ?? null;
+  // Offline, or reads go unanswered: the figure may be one kept from before (STALE-STATE).
+  const current = useConnection();
 
   // Only the newest request may change the page; switching keeps the last chart visible.
   const load = useCallback(async () => {
@@ -439,7 +442,12 @@ export default function DashboardPage() {
                 : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
             </Banner>
           )}
-          <NetWorth history={shown} portfolio={portfolio} asked={asked} refreshFailed={failed} />
+          <NetWorth
+            history={shown}
+            portfolio={portfolio}
+            asked={asked}
+            refreshFailed={failed || showingKept(current)}
+          />
           <NearestGoal />
           <Card variant="chart" className="dashboard-chart-card" labelledBy={chartTitle}>
             <span id={chartTitle} className="ui-sr">

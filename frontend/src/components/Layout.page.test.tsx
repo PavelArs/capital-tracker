@@ -1,12 +1,15 @@
 import { accountingApi } from '@api/accounting.api';
+import { connection } from '@api/connection';
 import { operationsApi } from '@api/operations.api';
 import { portfolioValuationApi } from '@api/portfolio-valuation.api';
-import { forgetReads } from '@api/read-cache';
+import { forgetReads, generationNow, remember } from '@api/read-cache';
 import { syncStatusApi } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import PageHeader from '@features/shell/PageHeader';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createInstance } from 'i18next';
+import { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -177,6 +180,39 @@ describe('shell-05 the phone tab bar and the More sheet', () => {
       within(screen.getByRole('dialog', { name: 'More' })).getByRole('button', { name: 'Log out' }),
     );
     expect(await screen.findByText('Sign in')).toBeInTheDocument();
+  });
+});
+
+describe('STALE-STATE Retry', () => {
+  it('STALE-STATE Retry above the page draws the page again, so it reads again', async () => {
+    const mounted = vi.fn();
+    function Page() {
+      useEffect(() => mounted(), []);
+      return <PageHeader title="Dashboard" currency="USD" />;
+    }
+    const user = userEvent.setup();
+    remember('portfolio:[]', {}, generationNow());
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/dashboard" element={<Page />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(mounted).toHaveBeenCalledTimes(1);
+    const token = {};
+    act(() => {
+      connection.started(token);
+      connection.settled(token, false);
+    });
+    try {
+      await user.click(screen.getByRole('button', { name: 'Retry' }));
+      expect(mounted).toHaveBeenCalledTimes(2);
+    } finally {
+      act(() => connection.reset());
+    }
   });
 });
 

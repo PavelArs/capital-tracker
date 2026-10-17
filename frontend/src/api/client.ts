@@ -1,5 +1,6 @@
 import type { ApiError } from '@shared/types';
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { connection } from './connection';
 import { forgetReads } from './read-cache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -100,6 +101,7 @@ apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     config.headers.delete('Authorization');
     if (isUnsafeRequest(config)) config.headers.set('X-CSRF-Token', await getCsrfToken());
+    else connection.started(config);
     requestAuthentication.set(config, authenticationVersion);
     return config;
   },
@@ -109,6 +111,7 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
+    connection.settled(response.config, true);
     // A change by the owner (or a sign-in or sign-out) makes every kept answer old.
     if (isUnsafeRequest(response.config) && !response.config.changesNothing) forgetReads();
     return response;
@@ -118,6 +121,15 @@ apiClient.interceptors.response.use(
     // POST that only reads changed nothing either way, and a request the page cancelled (a
     // preview superseded by the next keystroke) is not a change that went missing.
     const cancelled = axios.isCancel(error) || error.code === 'ERR_CANCELED';
+    // A read the server did not answer (no answer, or a 5xx) means what is shown may be kept
+    // from before; one it answered, even with a refusal, means it is reachable.
+    if (error.config) {
+      const status = error.response?.status;
+      connection.settled(
+        error.config,
+        cancelled || worthRepeating(error) ? undefined : status !== undefined && status < 500,
+      );
+    }
     if (
       !error.response &&
       !cancelled &&
@@ -169,7 +181,10 @@ apiClient.interceptors.response.use(
       if (status >= 400 && errorHandler && !pageHandlesError && !anonymousProfile) {
         let errorMessage = 'An error occurred';
 
-        if (data?.message) {
+        // A server error's own text ("Internal server error") tells the owner nothing.
+        if (status >= 500) {
+          errorMessage = "The server didn't answer. Try again in a moment.";
+        } else if (data?.message) {
           errorMessage = data.message;
         } else if (typeof data === 'string') {
           errorMessage = data;
@@ -190,9 +205,6 @@ apiClient.interceptors.response.use(
             case 429:
               errorMessage = 'Too many requests. Please try again later.';
               break;
-            case 500:
-              errorMessage = 'Internal server error';
-              break;
             default:
               errorMessage = `Error ${status}: ${error.response.statusText || 'Unknown error'}`;
           }
@@ -202,7 +214,7 @@ apiClient.interceptors.response.use(
       }
     } else if (error.request) {
       if (errorHandler && !pageHandlesError) {
-        errorHandler('Network error. Please check your connection.');
+        errorHandler('No connection. Check your network and try again.');
       }
     } else {
       if (errorHandler && !pageHandlesError) {

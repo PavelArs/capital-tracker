@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import { connection } from '@api/connection';
 import { forgetReads } from '@api/read-cache';
 import { beforeEach, vi } from 'vitest';
 
@@ -21,5 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Every test starts as a fresh visit: nothing kept from an earlier one.
   forgetReads();
+  // ...and the server has answered every read so far.
+  connection.reset();
   window.sessionStorage.clear();
 });

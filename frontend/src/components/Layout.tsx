@@ -1,3 +1,4 @@
+import { useConnection } from '@api/connection';
 import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
@@ -16,7 +17,7 @@ import SyncIndicator from '@features/shell/SyncIndicator';
 import { useHeldClasses } from '@features/shell/useHeldClasses';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/ui/Button';
 import { IconButton } from '@/ui/IconButton';
@@ -79,6 +80,8 @@ export default function Layout() {
   const moreSections = sections.filter((section) => !tabSections.includes(section.path));
   const moreCurrent = moreSections.find((section) => inSection(pathname, section.path));
   const [moreOpen, setMoreOpen] = useState(false);
+  // Retry in the stale banner (ConnectionBanner) draws the page again, which reads again.
+  const { attempt } = useConnection();
   // The other screens' files are fetched in the background once this one has settled.
   useEffect(() => warmPages(), []);
   const mainRef = useRef<HTMLElement>(null);
@@ -275,7 +278,9 @@ export default function Layout() {
       <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
         <MainCurrencyProvider>
           <AttentionProvider>
-            <Outlet />
+            <Fragment key={attempt}>
+              <Outlet />
+            </Fragment>
           </AttentionProvider>
         </MainCurrencyProvider>
       </main>

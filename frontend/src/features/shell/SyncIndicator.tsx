@@ -1,5 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
+import { showingKept, useConnection } from '@api/connection';
 import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
+import { clockText } from '@utils/dates';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { needAttention } from './attention';
@@ -14,12 +16,16 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
   const [sources, setSources] = useState<SyncSource[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  // When the status shown was read: kept after a failed refresh, and said so.
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const attention = useAttention();
+  const current = useConnection();
 
   const load = useCallback(async () => {
     try {
       setSources(await cachedReads.sources.load());
       setFailed(false);
+      setCheckedAt(new Date());
     } catch {
       setFailed(true);
     } finally {
@@ -52,6 +58,12 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
     summary.tone = 'warn';
     summary.title = needAttention(items.length);
     summary.problems = items.map((item) => item.title);
+  }
+  // The status shown is kept from before: never "All synced" while it cannot be checked.
+  if (sources !== null && (failed || showingKept(current))) {
+    summary.tone = 'warn';
+    summary.title = current.offline ? 'Offline' : "Couldn't refresh";
+    summary.detail = checkedAt ? `Status from ${clockText(checkedAt)} UTC` : '';
   }
   return (
     <Link
