@@ -1318,6 +1318,13 @@ describe('Dashboard design alignment: the number and what it carries', () => {
     expect(value?.querySelector('.dashboard-hero__cents')).toBeNull();
   });
 
+  it('DASH-RUB-WHOLE cuts the exact amount, so a fraction that rounds to a whole rouble is not shown as one', async () => {
+    rub({ value: '115000.999' });
+    renderPage('/dashboard?currency=RUB');
+    const value = heroValue(await screen.findByRole('region', { name: 'Net worth' }));
+    expect(value).toHaveTextContent(/^₽115,000$/);
+  });
+
   it('DASH-RUB-WHOLE keeps the cents of a negative rouble figure, which a cut would flatter', async () => {
     rub({ value: '-1250.40' });
     renderPage('/dashboard?currency=RUB');
