@@ -237,6 +237,23 @@ describe('BROKERS the Brokers page', () => {
     );
   });
 
+  it('BROKERS-GROUP keeps a regular account typed "<broker> · IIS" under its own name', async () => {
+    // Codex P1: only the name records an IIS, so alone this may be a regular account typed so.
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(id(14), 'Other Broker · IIS', 'broker')],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    renderPage();
+    const other = await screen.findByRole('region', { name: 'Other Broker · IIS' });
+    expect(
+      within(other)
+        .getAllByRole('group')
+        .map((group) => group.getAttribute('aria-label')),
+    ).toEqual(['Other Broker · IIS']);
+    expect(screen.queryByRole('region', { name: 'Other Broker' })).toBeNull();
+  });
+
   it('BROKERS-GROUP puts every T-Bank account read with a token under one T-Bank card', async () => {
     withTBank();
     renderPage();
