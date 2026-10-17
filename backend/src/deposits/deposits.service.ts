@@ -320,16 +320,20 @@ export class DepositsService {
         throw new UnprocessableEntityException('The deposit was closed before that date');
       if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
         throw new ConflictException('A recorded movement depends on the earlier rate');
-      await manager.query(
+      // A retry of the same rate (a lost answer) writes nothing, so it adds no History event.
+      const changed: unknown[] = await manager.query(
         `INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent")
          VALUES ($1,$2,$3,$4)
-         ON CONFLICT ("depositId", "effectiveFrom") DO UPDATE SET "ratePercent" = EXCLUDED."ratePercent"`,
+         ON CONFLICT ("depositId", "effectiveFrom") DO UPDATE SET "ratePercent" = EXCLUDED."ratePercent"
+           WHERE bank_deposit_rates."ratePercent" <> EXCLUDED."ratePercent"
+         RETURNING 1`,
         [owner, depositId, input.effectiveFrom, input.ratePercent],
       );
-      await recordDepositEvent(manager, owner, depositId, 'rate-added', {
-        occurredOn: input.effectiveFrom,
-        ratePercent: input.ratePercent,
-      });
+      if (changed.length > 0)
+        await recordDepositEvent(manager, owner, depositId, 'rate-added', {
+          occurredOn: input.effectiveFrom,
+          ratePercent: input.ratePercent,
+        });
     });
     return this.get(owner, depositId, undefined);
   }

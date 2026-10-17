@@ -21,6 +21,7 @@ const database = 'capital_tracker_owner_export_e2e';
 const coverageFrom = '2025-01-01T00:00:00.000Z';
 const modulePath = '/app/backend/dist/owner-export/owner-export.service.js';
 const now = new Date('2026-10-08T10:15:30.000Z');
+const lateEvening = new Date('2026-10-17T22:30:00.000Z');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const txid = (n) => sha256(`ct-owner-export:${n}`);
 const walletAddress = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
@@ -453,6 +454,11 @@ async function csvArchive(db, s, f, made) {
   const before = await fingerprint(db);
   const download = await s.exports.archive(f.owner, now);
   assert.equal(download.filename, 'capital-tracker-export-2026-10-08.zip');
+  assert.equal(
+    (await s.exports.archive(f.owner, lateEvening)).filename,
+    'capital-tracker-export-2026-10-18.zip',
+    'EXP-DAY: named by the Moscow day, already the next one at 22:30 UTC',
+  );
   assert.equal(download.contentType, 'application/zip');
   const files = unzip(download.data);
   assert.deepEqual(
@@ -641,6 +647,11 @@ async function jsonBackup(db, s, f, made) {
   const before = await fingerprint(db);
   const download = await s.exports.backup(f.owner, now);
   assert.equal(download.filename, 'capital-tracker-backup-2026-10-08.json');
+  assert.equal(
+    (await s.exports.backup(f.owner, lateEvening)).filename,
+    'capital-tracker-backup-2026-10-18.json',
+    'EXP-DAY: named by the Moscow day, already the next one at 22:30 UTC',
+  );
   assert.equal(download.contentType, 'application/json');
   const text = download.data.toString('utf8');
   const backup = JSON.parse(text);

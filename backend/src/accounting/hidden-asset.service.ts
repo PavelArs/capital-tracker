@@ -43,11 +43,10 @@ export class HiddenAssetService {
       `WITH asset AS (SELECT id, name, symbol FROM accounting_instruments
           WHERE "ownerId"=$1 AND id=$2),
         made AS (INSERT INTO hidden_assets ("ownerId", "instrumentId")
-          SELECT $1, id FROM asset ON CONFLICT DO NOTHING RETURNING "instrumentId", "hiddenAt")
-        SELECT a.id AS "instrumentId", a.name, a.symbol,
-          coalesce((SELECT "hiddenAt" FROM made),
-            (SELECT "hiddenAt" FROM hidden_assets WHERE "ownerId"=$1 AND "instrumentId"=$2)) AS "hiddenAt"
-        FROM asset a`,
+          SELECT $1, id FROM asset
+          ON CONFLICT ("ownerId", "instrumentId") DO UPDATE SET "hiddenAt"=hidden_assets."hiddenAt"
+          RETURNING "hiddenAt")
+        SELECT a.id AS "instrumentId", a.name, a.symbol, m."hiddenAt" FROM asset a, made m`,
       [owner, id],
     );
     if (rows.length === 0) throw new NotFoundException('Asset not found');

@@ -25,10 +25,17 @@ export async function latestMarketPrices(
 ): Promise<LatestMarketPrice[]> {
   if (codes.length === 0) return [];
   const rows: LatestRow[] = await manager.query(
-    `SELECT DISTINCT ON (asset) asset, price::text AS price, "observedAt", source
-     FROM price_observations
-     WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND "observedAt" <= $3
-     ORDER BY asset, "observedAt" DESC, kind DESC, source`,
+    // One index lookup per code (price_observations_latest), not every row of each asset.
+    `SELECT p.asset, p.price, p."observedAt", p.source
+     FROM (SELECT DISTINCT unnest($1::text[]) AS asset) c
+     CROSS JOIN LATERAL (
+       SELECT asset, price::text AS price, "observedAt", source
+       FROM price_observations
+       WHERE asset = c.asset AND "quoteCurrency" = $2 AND "observedAt" <= $3
+       ORDER BY "observedAt" DESC, kind DESC, source
+       LIMIT 1
+     ) p
+     ORDER BY p.asset`,
     [codes, QUOTE_CURRENCY, at],
   );
   return rows.map((row) => ({

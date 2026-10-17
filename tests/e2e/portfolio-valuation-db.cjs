@@ -485,6 +485,43 @@ async function hiddenAssets(db, s, f) {
   await rejected(() => s.hidden.show(other, second), 404);
   await rejected(() => s.hidden.hide(fourth, 'not-an-id'), 400);
 
+  // ASSET-HIDE-RACE: a hide that waits for another tab's hide of the same asset still answers.
+  const racer = new Client({
+    host: settings.DB_HOST,
+    port: 5432,
+    user: settings.DB_USERNAME,
+    password: settings.DB_PASSWORD,
+    database,
+  });
+  await racer.connect();
+  try {
+    await racer.query('BEGIN');
+    const [{ hiddenAt }] = (
+      await racer.query(
+        'INSERT INTO hidden_assets ("ownerId", "instrumentId") VALUES ($1, $2) RETURNING "hiddenAt"',
+        [fourth, first],
+      )
+    ).rows;
+    const waiting = s.hidden.hide(fourth, first);
+    waiting.catch(() => {});
+    let blocked = 0;
+    for (let tries = 0; blocked === 0 && tries < 200; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      blocked = (await racer.query('SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted'))
+        .rows[0].n;
+    }
+    assert.equal(blocked, 1, 'The second hide waits for the first');
+    await racer.query('COMMIT');
+    assert.equal(
+      (await waiting).hiddenAt,
+      hiddenAt.toISOString(),
+      'The waiting hide answers with the time of the hide that won',
+    );
+  } finally {
+    await racer.end();
+  }
+  await s.hidden.show(fourth, first);
+
   assert.deepEqual(await s.hidden.show(fourth, second), { instrumentId: second, hidden: false });
   assert.deepEqual(await s.hidden.show(fourth, second), { instrumentId: second, hidden: false });
   assert.equal((await read(s, fourth)).totalValue, '230', 'Showing the asset brings it back');
