@@ -135,18 +135,10 @@ export function accountLabel(account: BrokerAccount, key: string): string {
  * group under T-Bank whatever their names; the rest by the broker name typed, ignoring case.
  */
 export function brokerGroupsOf(accounts: readonly BrokerAccount[]): BrokerGroup[] {
-  // Only the name records an IIS, and a regular account may be typed "<broker> · IIS" too: such a
-  // name joins <broker> only when a regular account is named <broker>, and otherwise keeps its own.
-  const regular = new Set(
-    accounts
-      .filter((account) => !account.connected && !IIS.test(account.name))
-      .map((account) => account.name.trim().toLowerCase()),
-  );
-  const groupKey = (account: BrokerAccount) => {
-    if (account.connected) return TBANK.toLowerCase();
-    const broker = typedBroker(account).toLowerCase();
-    return regular.has(broker) ? broker : account.name.trim().toLowerCase();
-  };
+  // Only the name records an IIS: the dialog names one "<broker> · IIS", so such a name is read as
+  // <broker>'s IIS, alone or not. A regular account typed so by hand looks the same and joins too.
+  const groupKey = (account: BrokerAccount) =>
+    (account.connected ? TBANK : typedBroker(account)).toLowerCase();
   const groups = new Map<string, BrokerAccount[]>();
   for (const account of accounts) {
     const key = groupKey(account);
@@ -160,7 +152,7 @@ export function brokerGroupsOf(accounts: readonly BrokerAccount[]): BrokerGroup[
         key,
         name: members.some((account) => account.connected)
           ? TBANK
-          : (typed ?? members[0]).name.trim(),
+          : typedBroker(typed ?? members[0]),
         accounts: members,
         connected: members.filter((account) => account.connected).length,
         value: sumDecimals(valued.map((account) => account.value)),

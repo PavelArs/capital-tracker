@@ -237,21 +237,22 @@ describe('BROKERS the Brokers page', () => {
     );
   });
 
-  it('BROKERS-GROUP keeps a regular account typed "<broker> · IIS" under its own name', async () => {
-    // Codex P1: only the name records an IIS, so alone this may be a regular account typed so.
+  it('BROKERS-GROUP puts a lone "<broker> · IIS" under <broker> as its IIS', async () => {
+    // Codex P1: the dialog names an IIS "<broker> · IIS", and no account type is stored apart from
+    // the name, so a lone IIS still belongs to its broker.
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [account(id(14), 'Other Broker · IIS', 'broker')],
       nextCursor: null,
     });
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
     renderPage();
-    const other = await screen.findByRole('region', { name: 'Other Broker · IIS' });
+    const other = await screen.findByRole('region', { name: 'Other Broker' });
     expect(
       within(other)
         .getAllByRole('group')
         .map((group) => group.getAttribute('aria-label')),
-    ).toEqual(['Other Broker · IIS']);
-    expect(screen.queryByRole('region', { name: 'Other Broker' })).toBeNull();
+    ).toEqual(['IIS']);
+    expect(screen.queryByRole('region', { name: 'Other Broker · IIS' })).toBeNull();
   });
 
   it('BROKERS-GROUP puts every T-Bank account read with a token under one T-Bank card', async () => {
