@@ -109,18 +109,21 @@ function Account({
           {missing && <small>{missing}</small>}
         </span>
       </div>
-      {account.pending ? (
+      {account.pending && (
         <Banner tone="info" icon="clock" role="none">
-          Connected. Positions and cash arrive with the history import.
+          {account.positions.length
+            ? 'Connected. The T-Bank history is not imported yet.'
+            : 'Connected. Positions and cash arrive with the history import.'}
         </Banner>
-      ) : account.positions.length ? (
+      )}
+      {account.positions.length ? (
         <ul className="ui-rows">
           {account.positions.map((position) => (
             <Position key={position.asset.instrumentId} position={position} portfolio={portfolio} />
           ))}
         </ul>
       ) : (
-        <p className="broker-account__empty">Holds nothing yet.</p>
+        !account.pending && <p className="broker-account__empty">Holds nothing yet.</p>
       )}
     </div>
   );

@@ -14,7 +14,7 @@ export interface BrokerAccount {
   name: string;
   /** BROKER-SETUP: read with a T-Bank token. */
   connected: boolean;
-  /** Read with a token, no history imported yet and nothing held: positions arrive with it. */
+  /** Read with a token and its T-Bank history not imported yet, even when it holds positions. */
   pending: boolean;
   /** Something in it has a value; otherwise its total is shown as "—", never as zero. */
   valued: boolean;
@@ -49,8 +49,8 @@ export function brokerAccountsOf(
       );
       const cash = (position: BrokerPosition) => position.asset.assetType === 'fiat';
       const connected = account.connection?.provider === 'tbank';
-      // Waiting only while no history import was written and nothing is held.
-      const pending = connected && !account.connection?.imported && positions.length === 0;
+      // Waiting until the history of the T-Bank account it reads is imported, whatever it holds.
+      const pending = connected && !account.connection?.imported;
       return {
         id: account.id,
         name: account.name,
@@ -104,7 +104,7 @@ export interface BrokerGroup {
   valued: boolean;
   unpriced: number;
   unrated: number;
-  /** Accounts still waiting for the history import, left out of the value. */
+  /** Accounts still waiting for the history import; only what they already hold is valued. */
   pending: number;
 }
 
