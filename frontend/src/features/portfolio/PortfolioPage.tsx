@@ -11,7 +11,7 @@ import { sumDecimals } from '@utils/decimal';
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
-import AddBrokerDialog from '../broker/AddBrokerDialog';
+import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
@@ -958,9 +958,11 @@ export default function PortfolioPage() {
       )}
       {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
       {adding === 'broker' && (
-        <AddBrokerDialog
+        <AddBrokerAccountDialog
           onClose={() => setAdding(null)}
-          onAdded={() => navigate(withCurrency('/brokers', asked))}
+          onAdded={(account) =>
+            navigate(withCurrency('/brokers', asked), { state: { focusAccount: account } })
+          }
         />
       )}
       {adding === 'property' && (

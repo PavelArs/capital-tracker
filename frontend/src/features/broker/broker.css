@@ -132,3 +132,136 @@
     padding-left: 16px;
   }
 }
+
+/* BROKERS-GROUP: one card per broker, a group per account inside it. */
+.broker-account__total small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.broker-group {
+  border-top: 1px solid var(--line);
+}
+
+.broker-group:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.broker-group__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 12px 22px 8px;
+}
+
+.broker-group__head b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.broker-group__total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.broker-group__total small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.broker-group .ui-rows {
+  border-top: 0;
+}
+
+.broker-group .ui-banner {
+  margin: 0 22px 14px;
+}
+
+.broker-group .broker-account__empty {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (max-width: 559.98px) {
+  .broker-group__head {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .broker-group .ui-banner {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+}
+
+/* BROKER-ADD-FLOW: the broker tiles, the token steps and the accounts a token reaches. */
+.broker-tile-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+}
+
+.broker-tile-icon--tbank {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.broker-howto {
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+
+.broker-picks {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.broker-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.broker-pick__check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.broker-pick__check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.broker-pick__check small {
+  color: var(--ink-3);
+}
+
+.broker-pick--off .broker-pick__check {
+  color: var(--ink-3);
+}
+
+@media (max-width: 559.98px) {
+  .broker-pick {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

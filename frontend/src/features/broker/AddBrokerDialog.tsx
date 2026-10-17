@@ -14,6 +14,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { Field } from '@/ui/Field';
 import { Affix, Input } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
@@ -80,9 +81,15 @@ interface Props {
   onClose: () => void;
   /**
    * Something was saved: the account, with what it holds or part of it. `name` is given only
-   * when everything the form asked for was saved.
+   * when everything the form asked for was saved; `account` is the account made.
    */
-  onAdded: (name?: string) => void;
+  onAdded: (name?: string, account?: string) => void;
+  /** Where this form sits in Add broker account, after the broker was chosen. */
+  steps?: { current: number; total: number };
+  /** Back to choosing the broker, with what is typed so far; offered while nothing is saved. */
+  onBack?: (entry: BrokerEntry) => void;
+  /** What was typed before going back. */
+  initialEntry?: BrokerEntry;
 }
 
 /** One holding as it is saved: the asset, the buy that gives it a balance, then its price. */
@@ -118,14 +125,18 @@ interface Holding {
 // "Add broker account" from the accepted mockups (v8): the broker, what the account holds at the
 // price seen there now, and its cash. Each position becomes an asset priced by hand; everything
 // held counts as money put in today, so the gain starts from here.
-export default function AddBrokerDialog({ onClose, onAdded }: Props) {
-  const [entry, setEntry] = useState<BrokerEntry>(() => ({
-    broker: '',
-    account: 'Regular',
-    currency: 'RUB',
-    positions: [blankPosition()],
-    cash: '',
-  }));
+export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initialEntry }: Props) {
+  const [entry, setEntry] = useState<BrokerEntry>(
+    () =>
+      initialEntry ?? {
+        broker: '',
+        account: 'Regular',
+        currency: 'RUB',
+        positions: [blankPosition()],
+        cash: '',
+      },
+  );
+  const [discarding, setDiscarding] = useState(false);
   const [tried, setTried] = useState(false);
   const [left, setLeft] = useState<ReadonlySet<BrokerProblem>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +259,7 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
       return;
     }
     if (bare) onClose();
-    else onAdded();
+    else onAdded(undefined, done.accountId ?? undefined);
   };
   const accountRequest = () => ({
     requestId: requests.current.account,
@@ -274,6 +285,19 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
     (['ticker', 'quantity', 'price'] as const).some((field) => found.has(`${field}-${index}`)),
   );
   const disabled = locked || saving;
+  // Nothing is saved before the form locks: closing it then only drops what is typed, so a
+  // half-filled form asks first. Once something may be saved, closing settles it as before.
+  const typed =
+    !!entry.broker.trim() ||
+    !!entry.cash.trim() ||
+    entry.positions.some(
+      (position) => !!(position.ticker.trim() || position.quantity.trim() || position.price.trim()),
+    );
+  const close = () => {
+    if (saving) return;
+    if (!locked && typed) setDiscarding(true);
+    else finish();
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -398,189 +422,227 @@ export default function AddBrokerDialog({ onClose, onAdded }: Props) {
         return;
       }
     }
-    onAdded(entry.broker.trim());
+    onAdded(entry.broker.trim(), saved.current.accountId ?? undefined);
   };
 
   return (
-    <Modal
-      titleId={`${id}-title`}
-      size="wide"
-      onEscape={saving ? undefined : finish}
-      initialFocus={() => first.current}
-    >
-      <form onSubmit={submit} noValidate>
-        <ModalHeader
-          titleId={`${id}-title`}
-          title="Add broker account"
-          onClose={finish}
-          closeDisabled={saving}
-        />
-        <ModalBody>
-          <Field
-            id={`${id}-broker`}
-            label="Broker"
-            error={found.has('broker') ? 'Enter the broker, on one line' : null}
-          >
-            {(control) => (
-              <Input
-                {...control}
-                ref={first}
-                maxLength={MAX_BROKER_NAME}
-                autoComplete="off"
-                placeholder="e.g. Sample Broker"
-                value={entry.broker}
-                disabled={disabled}
-                onChange={(event) => update({ broker: event.target.value })}
-                onBlur={leave('broker')}
-              />
-            )}
-          </Field>
-          <div className="ui-field broker-account-type">
-            <span id={`${id}-account`} className="ui-field__label">
-              Account
-            </span>
-            <SegmentedControl
-              name={`${id}-account`}
-              labelledBy={`${id}-account`}
-              options={brokerAccountTypes.map((value) => [value, accountTypes[value]] as const)}
-              value={entry.account}
-              disabled={disabled}
-              onChange={(account) => update({ account })}
-            />
-          </div>
-          <div className="ui-field">
-            <span id={`${id}-currency`} className="ui-field__label">
-              Currency of the prices
-            </span>
-            <SegmentedControl
-              name={`${id}-currency`}
-              labelledBy={`${id}-currency`}
-              options={currencies}
-              value={entry.currency}
-              disabled={disabled}
-              onChange={(currency) => update({ currency })}
-            />
-          </div>
-          <fieldset className="ui-field broker-positions">
-            <legend className="ui-field__label">What it holds</legend>
-            <div className="broker-positions__grid">
-              <span className="broker-positions__head" aria-hidden="true">
-                Ticker or name
-              </span>
-              <span className="broker-positions__head" aria-hidden="true">
-                Quantity
-              </span>
-              <span className="broker-positions__head" aria-hidden="true">
-                Price now, {entry.currency}
-              </span>
-              {entry.positions.map((position, index) => {
-                const field = (name: PositionField) => `${name}-${index}` as const;
-                const row = index + 1;
-                return (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: rows are only ever added at the end.
-                  <div key={index} className="broker-positions__row">
-                    <Input
-                      aria-label={`Ticker or name ${row}`}
-                      maxLength={MAX_TICKER}
-                      autoComplete="off"
-                      placeholder="VWRA"
-                      value={position.ticker}
-                      disabled={disabled}
-                      onChange={(event) => updatePosition(index, { ticker: event.target.value })}
-                      onBlur={leave(field('ticker'))}
-                      {...invalid(field('ticker'), `${id}-positions-error`)}
-                    />
-                    <Input
-                      aria-label={`Quantity ${row}`}
-                      numeric
-                      placeholder="0"
-                      value={position.quantity}
-                      disabled={disabled}
-                      onChange={(event) => updatePosition(index, { quantity: event.target.value })}
-                      onBlur={leave(field('quantity'))}
-                      {...invalid(field('quantity'), `${id}-positions-error`)}
-                    />
-                    <Input
-                      aria-label={`Price ${row}`}
-                      numeric
-                      placeholder="0"
-                      value={position.price}
-                      disabled={disabled}
-                      onChange={(event) => updatePosition(index, { price: event.target.value })}
-                      onBlur={leave(field('price'))}
-                      {...invalid(field('price'), `${id}-positions-error`)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            {entry.positions.length < MAX_POSITIONS && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="plus"
-                className="broker-positions__add"
-                disabled={disabled}
-                onClick={() => update({ positions: [...entry.positions, blankPosition()] })}
-              >
-                Add position
-              </Button>
-            )}
-            {positionProblem ? (
-              <span className="ui-field__error" id={`${id}-positions-error`}>
-                {entry.positions.some((position) =>
-                  [position.quantity, position.price].some(ambiguousComma),
-                )
-                  ? numberProblem('1,000', '')
-                  : 'Fill in the ticker, the quantity and the price of each position, or clear the row'}
-              </span>
-            ) : (
-              found.has('holdings') && (
-                <span className="ui-field__error" role="alert">
-                  Add a position or the cash at the broker
-                </span>
-              )
-            )}
-          </fieldset>
-          <Field
-            id={`${id}-cash`}
-            label="Cash at the broker (optional)"
-            error={
-              found.has('cash')
-                ? numberProblem(entry.cash, 'Enter an amount greater than 0, or leave it empty')
-                : null
-            }
-          >
-            {(control) => (
-              <Affix suffix={entry.currency}>
+    <>
+      <Modal
+        titleId={`${id}-title`}
+        size="wide"
+        onEscape={saving ? undefined : close}
+        initialFocus={() => first.current}
+      >
+        <form onSubmit={submit} noValidate>
+          <ModalHeader
+            titleId={`${id}-title`}
+            title="Add broker account"
+            onClose={close}
+            closeDisabled={saving}
+            steps={steps}
+          />
+          <ModalBody>
+            <Field
+              id={`${id}-broker`}
+              label="Broker"
+              error={found.has('broker') ? 'Enter the broker, on one line' : null}
+            >
+              {(control) => (
                 <Input
                   {...control}
-                  numeric
-                  placeholder="0"
-                  value={entry.cash}
+                  ref={first}
+                  maxLength={MAX_BROKER_NAME}
+                  autoComplete="off"
+                  placeholder="e.g. Sample Broker"
+                  value={entry.broker}
                   disabled={disabled}
-                  onChange={(event) => update({ cash: event.target.value })}
-                  onBlur={leave('cash')}
+                  onChange={(event) => update({ broker: event.target.value })}
+                  onBlur={leave('broker')}
                 />
-              </Affix>
+              )}
+            </Field>
+            <div className="ui-field broker-account-type">
+              <span id={`${id}-account`} className="ui-field__label">
+                Account
+              </span>
+              <SegmentedControl
+                name={`${id}-account`}
+                labelledBy={`${id}-account`}
+                options={brokerAccountTypes.map((value) => [value, accountTypes[value]] as const)}
+                value={entry.account}
+                disabled={disabled}
+                onChange={(account) => update({ account })}
+              />
+            </div>
+            <div className="ui-field">
+              <span id={`${id}-currency`} className="ui-field__label">
+                Currency of the prices
+              </span>
+              <SegmentedControl
+                name={`${id}-currency`}
+                labelledBy={`${id}-currency`}
+                options={currencies}
+                value={entry.currency}
+                disabled={disabled}
+                onChange={(currency) => update({ currency })}
+              />
+            </div>
+            <fieldset className="ui-field broker-positions">
+              <legend className="ui-field__label">What it holds</legend>
+              <div className="broker-positions__grid">
+                <span className="broker-positions__head" aria-hidden="true">
+                  Ticker or name
+                </span>
+                <span className="broker-positions__head" aria-hidden="true">
+                  Quantity
+                </span>
+                <span className="broker-positions__head" aria-hidden="true">
+                  Price now, {entry.currency}
+                </span>
+                {entry.positions.map((position, index) => {
+                  const field = (name: PositionField) => `${name}-${index}` as const;
+                  const row = index + 1;
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: rows are only ever added at the end.
+                    <div key={index} className="broker-positions__row">
+                      <Input
+                        aria-label={`Ticker or name ${row}`}
+                        maxLength={MAX_TICKER}
+                        autoComplete="off"
+                        placeholder="VWRA"
+                        value={position.ticker}
+                        disabled={disabled}
+                        onChange={(event) => updatePosition(index, { ticker: event.target.value })}
+                        onBlur={leave(field('ticker'))}
+                        {...invalid(field('ticker'), `${id}-positions-error`)}
+                      />
+                      <Input
+                        aria-label={`Quantity ${row}`}
+                        numeric
+                        placeholder="0"
+                        value={position.quantity}
+                        disabled={disabled}
+                        onChange={(event) =>
+                          updatePosition(index, { quantity: event.target.value })
+                        }
+                        onBlur={leave(field('quantity'))}
+                        {...invalid(field('quantity'), `${id}-positions-error`)}
+                      />
+                      <Input
+                        aria-label={`Price ${row}`}
+                        numeric
+                        placeholder="0"
+                        value={position.price}
+                        disabled={disabled}
+                        onChange={(event) => updatePosition(index, { price: event.target.value })}
+                        onBlur={leave(field('price'))}
+                        {...invalid(field('price'), `${id}-positions-error`)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {entry.positions.length < MAX_POSITIONS && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="plus"
+                  className="broker-positions__add"
+                  disabled={disabled}
+                  onClick={() => update({ positions: [...entry.positions, blankPosition()] })}
+                >
+                  Add position
+                </Button>
+              )}
+              {positionProblem ? (
+                <span className="ui-field__error" id={`${id}-positions-error`}>
+                  {entry.positions.some((position) =>
+                    [position.quantity, position.price].some(ambiguousComma),
+                  )
+                    ? numberProblem('1,000', '')
+                    : 'Fill in the ticker, the quantity and the price of each position, or clear the row'}
+                </span>
+              ) : (
+                found.has('holdings') && (
+                  <span className="ui-field__error" role="alert">
+                    Add a position or the cash at the broker
+                  </span>
+                )
+              )}
+            </fieldset>
+            <Field
+              id={`${id}-cash`}
+              label="Cash at the broker (optional)"
+              error={
+                found.has('cash')
+                  ? numberProblem(entry.cash, 'Enter an amount greater than 0, or leave it empty')
+                  : null
+              }
+            >
+              {(control) => (
+                <Affix suffix={entry.currency}>
+                  <Input
+                    {...control}
+                    numeric
+                    placeholder="0"
+                    value={entry.cash}
+                    disabled={disabled}
+                    onChange={(event) => update({ cash: event.target.value })}
+                    onBlur={leave('cash')}
+                  />
+                </Affix>
+              )}
+            </Field>
+            <Banner tone="info">
+              Prices for stocks and funds aren't loaded yet: update them on the position's page.
+              Adding the account counts as money put in.
+            </Banner>
+            {error && <Banner tone="neg">{error}</Banner>}
+          </ModalBody>
+          <ModalFooter>
+            {onBack && !locked ? (
+              <>
+                <Button variant="ghost" onClick={() => onBack(entry)} disabled={saving}>
+                  Back
+                </Button>
+                <span className="ui-grow" />
+              </>
+            ) : (
+              <Button variant="ghost" onClick={close} disabled={saving}>
+                {saved.current.holdings.some((holding) => holding.receipt) ? 'Close' : 'Cancel'}
+              </Button>
             )}
-          </Field>
-          <Banner tone="info">
-            Prices for stocks and funds aren't loaded yet: update them on the position's page.
-            Adding the account counts as money put in.
-          </Banner>
-          {error && <Banner tone="neg">{error}</Banner>}
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" onClick={finish} disabled={saving}>
-            {saved.current.holdings.some((holding) => holding.receipt) ? 'Close' : 'Cancel'}
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving || closing}>
-            Add account
-          </Button>
-        </ModalFooter>
-      </form>
-    </Modal>
+            <Button type="submit" variant="primary" disabled={saving || closing}>
+              Add account
+            </Button>
+          </ModalFooter>
+        </form>
+      </Modal>
+      {discarding && (
+        <DiscardBrokerAccount onKeep={() => setDiscarding(false)} onDiscard={onClose} />
+      )}
+    </>
+  );
+}
+
+/** BROKER-ADD-FLOW: closing a half-filled Add broker account asks first. */
+export function DiscardBrokerAccount({
+  onKeep,
+  onDiscard,
+}: {
+  onKeep: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      title="Discard this broker account?"
+      confirmLabel="Discard"
+      failure="Try again."
+      onConfirm={async () => onDiscard()}
+      onClose={onKeep}
+    >
+      What you entered will be lost.
+    </ConfirmDialog>
   );
 }
 
