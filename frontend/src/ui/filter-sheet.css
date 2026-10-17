@@ -7,7 +7,8 @@
 
 .ui-filter-bar .ui-search {
   flex: 1;
-  width: auto;
+  /* Not the input's own width: that would widen the card's grid track past a phone. */
+  width: 0;
   min-width: 0;
 }
 
