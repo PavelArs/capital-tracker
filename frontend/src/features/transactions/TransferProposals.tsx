@@ -91,6 +91,7 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
         requestId: attempt([key, answer]),
         ...answer,
       });
+      attempt.done([key, answer]);
       announceClassificationChange();
       onJoined(
         `Joined as one transfer: ${quantity(item.arrived)} ${item.coin} from ${item.outgoing.accountName} to ${item.incoming.accountName}.`,

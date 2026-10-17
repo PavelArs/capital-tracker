@@ -94,6 +94,7 @@ export default function DuplicateProposals({
         requestId: attempt([key, answer]),
         ...answer,
       });
+      attempt.done([key, answer]);
       announceClassificationChange();
       onReplaced(
         `Replaced your record with the wallet's: ${quantity(item.transaction.quantity)} ${item.coin} in ${item.transaction.accountName}.`,

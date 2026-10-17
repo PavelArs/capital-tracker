@@ -5,14 +5,18 @@ export function newRequestId(): string {
 }
 
 /**
- * The id of this attempt. A retry of the same entries after a lost answer keeps it, so the
- * server records it once; changed entries are a new attempt with a new id.
+ * The id of an attempt. Each pending command keeps its id until `done`, so a retry after a lost
+ * answer is recorded once even when another command failed in between; changed entries are a new
+ * attempt with a new id. A component that unmounts on success needs no `done`.
  */
 export function useAttempt() {
-  const last = useRef<{ key: string; id: string } | null>(null);
-  return (entries: unknown) => {
+  const ids = useRef(new Map<string, string>());
+  const attempt = (entries: unknown) => {
     const key = JSON.stringify(entries);
-    if (last.current?.key !== key) last.current = { key, id: newRequestId() };
-    return last.current.id;
+    const id = ids.current.get(key) ?? newRequestId();
+    ids.current.set(key, id);
+    return id;
   };
+  attempt.done = (entries: unknown) => ids.current.delete(JSON.stringify(entries));
+  return attempt;
 }

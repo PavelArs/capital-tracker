@@ -4151,6 +4151,33 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(classify.mock.calls[1]).toEqual(classify.mock.calls[0]);
   });
 
+  it('XFER-PROPOSED a retry keeps its request after another pair also lost its answer', async () => {
+    const user = userEvent.setup();
+    const other = { ...proposal, outgoing: leg(3, 'Exchange', '2026-10-02T10:00:00.000Z') };
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal, other]));
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: '2 possible transfers between your accounts',
+    });
+    const join = (index: number) =>
+      user.click(within(card).getAllByRole('button', { name: 'Join as one transfer' })[index]);
+    await join(0);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    await join(1);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    await join(0);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(3));
+    expect(classify.mock.calls[0][1]).toBe(proposal.outgoing.txid);
+    expect(classify.mock.calls[1][1]).toBe(other.outgoing.txid);
+    expect(classify.mock.calls[2]).toEqual(classify.mock.calls[0]);
+  });
+
   it('says why a pair could not be joined and keeps the offer', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);

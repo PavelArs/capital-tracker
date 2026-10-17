@@ -676,6 +676,7 @@ export default function OperationDrawer({
         requestId: hideAttempt([chain.wallet.id, chain.chain.txid, change]),
         ...change,
       });
+      hideAttempt.done([chain.wallet.id, chain.chain.txid, change]);
       announceClassificationChange();
       onClassified?.(chain.status === 'hidden' ? 'included' : 'hidden');
     } catch (error) {
