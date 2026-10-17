@@ -108,4 +108,14 @@ export class FxConverter {
       return rate ? [{ currency, ...rate }] : [];
     });
   }
+
+  /** Currencies whose latest rate on a date is too old to convert with, and that rate's date. */
+  staleRatesOn(date: string): { currency: RatedCurrency; date: string }[] {
+    return ratedCurrencies.flatMap((currency) => {
+      const rate = rateOn(this.rates[currency], date);
+      return rate && !freshRateOn(this.rates[currency], date)
+        ? [{ currency, date: rate.date }]
+        : [];
+    });
+  }
 }

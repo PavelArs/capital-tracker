@@ -182,6 +182,7 @@ async function wholePortfolio(db, s, f) {
       'currency',
       'mainCurrency',
       'rates',
+      'staleRates',
       'completeness',
       'totalValue',
       'pricedSubtotal',
@@ -209,8 +210,14 @@ async function wholePortfolio(db, s, f) {
   );
   // No Bank of Russia rate is stored here: USD is the default main currency and needs none.
   assert.deepEqual(
-    [report.currency, report.mainCurrency, report.rates, report.missingRateCount],
-    ['USD', 'USD', [], 0],
+    [
+      report.currency,
+      report.mainCurrency,
+      report.rates,
+      report.staleRates,
+      report.missingRateCount,
+    ],
+    ['USD', 'USD', [], [], 0],
   );
   assert.equal(report.at, now.toISOString());
   assert.equal(report.completeness, 'complete');

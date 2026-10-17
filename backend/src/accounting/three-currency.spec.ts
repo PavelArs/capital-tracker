@@ -290,6 +290,17 @@ describe('CUR-RATE-STALE a rate over 15 days old values nothing today', () => {
     expect(eur.rates).toEqual([]);
   });
 
+  it('names each currency whose latest rate is too old, with that rate date', () => {
+    const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
+    expect(rub.staleRates).toEqual([{ currency: 'USD', date: '2026-09-18' }]);
+    const staleEuro: FxRates = { USD: rates.EUR, EUR: rates.USD };
+    const eur = view('EUR', staleEuro, accounts(), [btc, rubles], { BTC: '110000' });
+    expect(eur.staleRates).toEqual([{ currency: 'EUR', date: '2026-09-18' }]);
+    // A currency with no stored rate at all is missing, not stale.
+    const none = view('RUB', { USD: [], EUR: rates.EUR }, accounts(), [btc, rubles], {});
+    expect(none.staleRates).toEqual([]);
+  });
+
   it('still states a past purchase at the rate it reused over a gap of under 15 days', () => {
     const rub = view('RUB', rates, accounts(), [btc, rubles], { BTC: '110000' });
     expect(assetOf(rub, btc)).toMatchObject({ costBasis: '80000', missingRateQuantity: '0' });

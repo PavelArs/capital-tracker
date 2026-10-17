@@ -714,6 +714,7 @@ export function projectPortfolio(
     at: at.toISOString(),
     currency: fx.currency as AccountingCurrency,
     rates: fx.ratesOn(today),
+    staleRates: fx.staleRatesOn(today),
     completeness: complete ? ('complete' as const) : ('incomplete' as const),
     totalValue: complete ? formatProduct(subtotal) : null,
     pricedSubtotal: formatProduct(subtotal),

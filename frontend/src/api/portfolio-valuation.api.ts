@@ -120,6 +120,8 @@ export interface PortfolioValuation {
   currency: AccountingCurrency;
   mainCurrency: AccountingCurrency;
   rates: FxRate[];
+  /** Currencies whose latest stored rate is over 15 days old, with its date; absent in an older saved answer. */
+  staleRates?: { currency: FxRate['currency']; date: string }[];
   completeness: 'complete' | 'incomplete';
   totalValue: string | null;
   pricedSubtotal: string;
