@@ -201,6 +201,8 @@ describe('BROKER-ADD Add broker account', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
 
     expect(onAdded).toHaveBeenCalledTimes(1);
+    // BROKER-ADD-FLOW: the new account is named, so Brokers can bring it into view.
+    expect(onAdded).toHaveBeenCalledWith('Sample Broker', id(2));
     expect(createAccount).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Sample Broker · IIS', assetClass: 'broker' }),
     );
@@ -589,7 +591,7 @@ describe('BROKER-ADD Add broker account', () => {
       within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
     );
     expect(removeAccount).not.toHaveBeenCalled();
-    expect(onAdded).toHaveBeenCalled();
+    expect(onAdded).toHaveBeenCalledWith(undefined, id(2));
   });
 
   it('removes an account whose creation answer was lost when closed', async () => {

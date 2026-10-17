@@ -50,9 +50,9 @@ describe('OPEN-004 raw accounting boundary before persistence', () => {
 });
 
 describe('BROKER-LIST-CONNECTION the account list says which broker accounts read with a token', () => {
-  it('gives the provider of a connected account and null for any other, with no token', async () => {
+  it('gives the provider of a connected account, whether its history is imported, and null for any other, with no token', async () => {
     const source = new DataSource({ type: 'postgres' });
-    const row = (id: string, connection: string | null) => ({
+    const row = (id: string, connection: string | null, imported: boolean | null) => ({
       id,
       ownerId: owner,
       name: 'Synthetic broker',
@@ -62,25 +62,29 @@ describe('BROKER-LIST-CONNECTION the account list says which broker accounts rea
       createdAt: new Date('2026-10-01T00:00:00.000Z'),
       canonicalPayload: 'synthetic',
       connection,
+      imported,
     });
     const query = jest
       .spyOn(source, 'query')
       .mockResolvedValue([
-        row('11111111-1111-4111-8111-111111111111', 'tbank'),
-        row('22222222-2222-4222-8222-222222222222', null),
+        row('11111111-1111-4111-8111-111111111111', 'tbank', false),
+        row('22222222-2222-4222-8222-222222222222', null, null),
+        row('33333333-3333-4333-8333-333333333333', 'tbank', true),
       ]);
     const { items } = await new AccountingService(source).listAccounts(owner, { limit: 10 });
     expect(String(query.mock.calls[0][0])).toContain('LEFT JOIN broker_connections');
+    expect(String(query.mock.calls[0][0])).toContain('FROM broker_imports');
     expect(items.map((item) => (item as { connection?: unknown }).connection)).toEqual([
-      'tbank',
+      { provider: 'tbank', imported: false },
       null,
+      { provider: 'tbank', imported: true },
     ]);
     expect(items[0]).toEqual({
       id: '11111111-1111-4111-8111-111111111111',
       name: 'Synthetic broker',
       kind: null,
       assetClass: 'broker',
-      connection: 'tbank',
+      connection: { provider: 'tbank', imported: false },
       currentRevision: 1,
       createdAt: '2026-10-01T00:00:00.000Z',
     });
