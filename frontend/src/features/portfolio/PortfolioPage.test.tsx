@@ -637,6 +637,64 @@ describe('PV-UI Portfolio values every asset', () => {
     ).toEqual(['All 2', 'Crypto 2']);
   });
 
+  it('portfolio-16 filters by asset class: a broker fund and a flat sit under Broker and Real estate, not Manual', async () => {
+    const fund = valued(
+      6,
+      'Global equity fund',
+      'GEQ',
+      {
+        assetType: 'manual',
+        valuationCurrency: 'USD',
+        priceSource: 'manual',
+      },
+      { holdings: [{ accountId: id(201), accountName: 'QA Broker', quantity: '1', value: '0' }] },
+    );
+    const flat = valued(
+      7,
+      'Flat',
+      null,
+      {
+        assetType: 'manual',
+        valuationCurrency: 'RUB',
+        priceSource: 'manual',
+      },
+      { holdings: [{ accountId: id(202), accountName: 'Flat', quantity: '1', value: '0' }] },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, cash, fund, flat, deposit]),
+    );
+    const account = (n: number, name: string, assetClass: 'broker' | 'property') => ({
+      id: id(n),
+      name,
+      kind: null,
+      assetClass,
+      currentRevision: 0,
+      createdAt: '2025-01-01T00:00:00Z',
+    });
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(201, 'QA Broker', 'broker'), account(202, 'Flat', 'property')],
+      nextCursor: null,
+    });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    await waitFor(() =>
+      expect(
+        within(chips)
+          .getAllByRole('button')
+          .map((chip) => chip.textContent),
+      ).toEqual(['All 5', 'Crypto 1', 'Cash 1', 'Broker 1', 'Real estate 1', 'Other 1']),
+    );
+    await user.click(within(chips).getByRole('button', { name: /^Broker/ }));
+    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    // Manual stays on the row as how it is priced.
+    expect(cells(rowOf('Global equity fund'))[0]).toBe('Global equity fundGEQ · Manual · USD');
+    await user.click(within(chips).getByRole('button', { name: /^Real estate/ }));
+    expect(rowOf('Flat')).toBeInTheDocument();
+    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+  });
+
   it('portfolio-19 names the assets table', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     renderAt('/portfolio');
@@ -1932,7 +1990,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(await screen.findByText('Wallets page, add wallet: true')).toBeInTheDocument();
   });
 
-  it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
+  it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by class', async () => {
     let assets = [bitcoin, toncoin];
     const get = vi
       .spyOn(portfolioValuationApi, 'get')
@@ -2005,7 +2063,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(get).toHaveBeenCalledTimes(3);
     expect(cells(rowOf('Deposit')).slice(0, 2)).toEqual(['DepositManual · RUB', '150,000']);
 
-    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    await user.click(screen.getByRole('button', { name: /^Other/ }));
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
     expect(rowOf('Deposit')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));

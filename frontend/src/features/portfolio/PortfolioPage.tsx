@@ -14,7 +14,7 @@ import AddBrokerDialog from '../broker/AddBrokerDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
-import { heldClass } from '../shell/asset-identity';
+import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
 import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
@@ -43,13 +43,28 @@ import { Input, Select } from '@/ui/inputs';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { Stat, Stats } from '@/ui/Stats';
 
-type Filter = 'all' | AssetType;
+// The filter is the asset's class (polish 12); Manual is how an asset is priced, so it stays on
+// the row and is no class of its own.
+type AssetClassFilter = 'crypto' | 'cash' | 'broker' | 'property' | 'other';
+type Filter = 'all' | AssetClassFilter;
 const filters: [Filter, string][] = [
   ['all', 'All'],
   ['crypto', 'Crypto'],
-  ['fiat', 'Cash'],
-  ['manual', 'Manual'],
+  ['cash', 'Cash'],
+  ['broker', 'Broker'],
+  ['property', 'Real estate'],
+  ['other', 'Other'],
 ];
+const typeClass: Record<AssetType, AssetClassFilter> = {
+  crypto: 'crypto',
+  fiat: 'cash',
+  manual: 'other',
+};
+
+/** An asset's class: its accounts' class when they all are brokers or property, else its type's. */
+function assetClassOf(asset: AssetValuation, classes: AccountClasses): AssetClassFilter {
+  return heldClass(asset.holdings, classes) ?? typeClass[asset.assetType];
+}
 
 export type SortKey =
   | 'name'
@@ -688,13 +703,13 @@ export default function PortfolioPage() {
   }, [load]);
 
   const assets = portfolio?.assets ?? [];
-  const count = (value: Filter) =>
-    value === 'all' ? assets.length : assets.filter((asset) => asset.assetType === value).length;
-  // A type with no assets gets no chip; a chosen type that no longer has any shows them all.
+  const classes = useAccountClasses();
+  const inFilter = (asset: AssetValuation, value: Filter) =>
+    value === 'all' || assetClassOf(asset, classes) === value;
+  const count = (value: Filter) => assets.filter((asset) => inFilter(asset, value)).length;
+  // A class with no assets gets no chip; a chosen class that no longer has any shows them all.
   const active: Filter = filter !== 'all' && count(filter) === 0 ? 'all' : filter;
-  const visible = assets.filter(
-    (asset) => (active === 'all' || asset.assetType === active) && matchesSearch(asset, search),
-  );
+  const visible = assets.filter((asset) => inFilter(asset, active) && matchesSearch(asset, search));
   // PAGES: twenty assets a page; the list is sorted first, so its pages follow the order.
   // The table and the phone list share one order, Value largest first until another is chosen;
   // a phone shows only the orders its Sort by can name.
@@ -828,7 +843,7 @@ export default function PortfolioPage() {
                 <p className="ui-none">
                   {search.trim()
                     ? `No assets match "${search.trim()}".`
-                    : 'No assets of this type.'}
+                    : 'No assets of this class.'}
                 </p>
               )}
               <p className="ui-sub portfolio-card-note">
