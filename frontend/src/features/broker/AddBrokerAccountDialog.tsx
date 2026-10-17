@@ -53,13 +53,15 @@ interface Props {
   onClose: () => void;
   /** Accounts were added; `focus` names one of them, for the Brokers page to bring into view. */
   onAdded: (focus?: string) => void;
+  /** Opens the history import for an account just connected. */
+  onImport?: (account: { accountId: string; name: string }) => void;
 }
 
 // BROKER-ADD-FLOW: the one "Add broker account" dialog, shaped like Add wallet. Step 1 chooses the
 // broker: T-Bank reads its accounts with one read-only token (BROKER-SETUP), and any other broker
 // opens the positions editor. The token is held only in this dialog until it is sent, and goes
 // with it; the server keeps it encrypted.
-export default function AddBrokerAccountDialog({ onClose, onAdded }: Props) {
+export default function AddBrokerAccountDialog({ onClose, onAdded, onImport }: Props) {
   const id = useId();
   const toast = useToast();
   const [step, setStep] = useState<Step>('choose');
@@ -161,13 +163,21 @@ export default function AddBrokerAccountDialog({ onClose, onAdded }: Props) {
       );
       // The token is not needed any more: drop it with the dialog.
       setToken('');
+      const [only] = connections.length === 1 ? connections : [];
       toast.show({
         tone: 'success',
-        title:
-          connections.length === 1
-            ? `${connections[0].name} added`
-            : `${connections.length} T-Bank accounts connected`,
-        detail: 'Positions arrive with the history import.',
+        title: only ? `${only.name} added` : `${connections.length} T-Bank accounts connected`,
+        detail: only
+          ? 'Positions arrive with the history import.'
+          : "Import each account's history from its card.",
+        ...(only && onImport
+          ? {
+              action: {
+                label: 'Import history now',
+                onClick: () => onImport({ accountId: only.accountId, name: only.name }),
+              },
+            }
+          : {}),
       });
       onAdded(connections[0]?.accountId);
     } catch (caught) {

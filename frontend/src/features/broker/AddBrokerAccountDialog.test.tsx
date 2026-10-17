@@ -191,6 +191,25 @@ describe('BROKER-SETUP connecting T-Bank with one token, inside Add broker accou
     expect(await screen.findByRole('status')).toHaveTextContent('T-Bank Brokerage added');
   });
 
+  it('BROKER-IMPORT-UI offers to import the history of the one account just connected', async () => {
+    vi.spyOn(brokersApi, 'tbankAccounts').mockResolvedValue([option('2000000001', 'Brokerage')]);
+    vi.spyOn(brokersApi, 'connectTBank').mockResolvedValue([
+      made(1, 'T-Bank Brokerage', '2000000001'),
+    ]);
+    const onImport = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ToastProvider>
+        <AddBrokerAccountDialog onClose={onClose} onAdded={onAdded} onImport={onImport} />
+        <ToastViewport />
+      </ToastProvider>,
+    );
+    await paste(user);
+    await user.click(await within(dialog()).findByRole('button', { name: 'Connect 1 account' }));
+    await user.click(await screen.findByRole('button', { name: 'Import history now' }));
+    expect(onImport).toHaveBeenCalledWith({ accountId: madeId(1), name: 'T-Bank Brokerage' });
+  });
+
   it('BROKER-SETUP retries a failed connect with the same request id, and Back keeps the error and the token', async () => {
     vi.spyOn(brokersApi, 'tbankAccounts').mockResolvedValue([option('2000000001', 'Brokerage')]);
     const connect = vi

@@ -35,6 +35,7 @@ import {
   leftOut,
   plural,
 } from './brokers';
+import ImportHistoryDialog from './ImportHistoryDialog';
 import '../shell/shell-page.css';
 import './broker.css';
 
@@ -82,15 +83,20 @@ function Position({
   );
 }
 
+/** A connected account whose history to import: the Import history dialog. */
+type Importing = { accountId: string; name: string };
+
 function Account({
   account,
   broker,
   portfolio,
+  onImport,
 }: {
   account: BrokerAccount;
   /** The key of the broker card it is shown in. */
   broker: string;
   portfolio: PortfolioValuation;
+  onImport: (account: Importing) => void;
 }) {
   const label = accountLabel(account, broker);
   const missing = leftOut(account.unpriced, account.unrated);
@@ -110,7 +116,19 @@ function Account({
         </span>
       </div>
       {account.pending && (
-        <Banner tone="info" icon="clock" role="none">
+        <Banner
+          tone="info"
+          icon="clock"
+          role="none"
+          action={
+            <Button
+              size="sm"
+              onClick={() => onImport({ accountId: account.id, name: account.name })}
+            >
+              Import history
+            </Button>
+          }
+        >
           {account.positions.length
             ? 'Connected. The T-Bank history is not imported yet.'
             : 'Connected. Positions and cash arrive with the history import.'}
@@ -137,7 +155,15 @@ const via = (group: BrokerGroup) =>
       : `${group.connected} synced via token`;
 
 // BROKERS-GROUP: one card per broker; its total leaves out what has no value and says so.
-function Broker({ group, portfolio }: { group: BrokerGroup; portfolio: PortfolioValuation }) {
+function Broker({
+  group,
+  portfolio,
+  onImport,
+}: {
+  group: BrokerGroup;
+  portfolio: PortfolioValuation;
+  onImport: (account: Importing) => void;
+}) {
   const waiting = !group.valued && group.pending === group.accounts.length;
   const missing = waiting ? null : brokerGaps(group.unpriced, group.unrated, group.pending);
   return (
@@ -158,7 +184,13 @@ function Broker({ group, portfolio }: { group: BrokerGroup; portfolio: Portfolio
           </div>
         </div>
         {group.accounts.map((account) => (
-          <Account key={account.id} account={account} broker={group.key} portfolio={portfolio} />
+          <Account
+            key={account.id}
+            account={account}
+            broker={group.key}
+            portfolio={portfolio}
+            onImport={onImport}
+          />
         ))}
       </section>
     </Card>
@@ -175,6 +207,7 @@ export default function BrokersPage() {
   );
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState<Importing | null>(null);
   const latest = useRef(0);
   const location = useLocation();
   // A newly added account, brought into view once it is drawn.
@@ -294,7 +327,7 @@ export default function BrokersPage() {
           </Card>
           <ul className="broker-accounts" ref={list}>
             {groups.map((group) => (
-              <Broker key={group.key} group={group} portfolio={portfolio} />
+              <Broker key={group.key} group={group} portfolio={portfolio} onImport={setImporting} />
             ))}
           </ul>
         </>
@@ -305,6 +338,19 @@ export default function BrokersPage() {
           onAdded={(account) => {
             setAdding(false);
             setFocus(account ?? null);
+            load(true);
+          }}
+          onImport={setImporting}
+        />
+      )}
+      {importing && (
+        <ImportHistoryDialog
+          accountId={importing.accountId}
+          name={importing.name}
+          onClose={() => setImporting(null)}
+          onImported={() => {
+            setImporting(null);
+            setFocus(importing.accountId);
             load(true);
           }}
         />

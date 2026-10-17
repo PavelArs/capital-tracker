@@ -411,6 +411,81 @@ describe('BROKERS the Brokers page', () => {
     );
   });
 
+  it("BROKER-IMPORT-UI imports a waiting account's history from its card, and shows its positions after the reload", async () => {
+    withTBank();
+    const preview = vi.spyOn(brokersApi, 'importPreview').mockResolvedValue({
+      grouping: 'operation',
+      entries: [
+        {
+          record: 'trade',
+          action: 'buy',
+          occurredAt: '2026-03-02T10:00:00.000Z',
+          ticker: 'SMPL',
+          quantity: '10',
+          amount: '1000',
+          fee: '0',
+          currency: 'rub',
+          operationIds: ['op-1'],
+        },
+      ],
+      skipped: [],
+      trades: 1,
+      rewards: 0,
+      fitsTradeLimit: true,
+      fitsRewardLimit: true,
+      accountHasEntries: false,
+      problems: [],
+      canImport: true,
+      previewHash: 'b'.repeat(64),
+    });
+    const write = vi.spyOn(brokersApi, 'importHistory').mockImplementation(async () => {
+      // What the server holds after the import: the account is imported and holds the share.
+      vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+        items: [account(tbankNew, 'T-Bank Brokerage', 'broker', imported)],
+        nextCursor: null,
+      });
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        valuation([
+          asset(
+            8,
+            'SMPL',
+            [{ accountId: tbankNew, accountName: 'T-Bank Brokerage', quantity: '10', value: '12' }],
+            { price: priced('1.2', '2026-10-01T09:00:00.000Z') },
+          ),
+        ]),
+      );
+      return {
+        importId: id(99),
+        accountId: tbankNew,
+        requestId: id(98),
+        trades: 1,
+        rewards: 0,
+        createdAt: '2026-10-17T10:00:00.000Z',
+      };
+    });
+    const user = userEvent.setup();
+    renderPage();
+    const tbank = await screen.findByRole('region', { name: 'T-Bank' });
+    // An imported account offers no import.
+    expect(
+      within(within(tbank).getByRole('group', { name: 'Main broker' })).queryByRole('button', {
+        name: 'Import history',
+      }),
+    ).toBeNull();
+    const pending = within(tbank).getByRole('group', { name: 'Brokerage' });
+    await user.click(within(pending).getByRole('button', { name: 'Import history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import history' });
+    expect(preview).toHaveBeenCalledWith(tbankNew);
+    await user.click(await within(dialog).findByRole('button', { name: 'Import 1 entry' }));
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(write).toHaveBeenCalledTimes(1);
+    const after = await screen.findByRole('link', { name: /SMPL/ });
+    expect(after).toHaveTextContent('SMPL10 × $1.20$12.00');
+    const group = screen.getByRole('group', { name: 'Brokerage' });
+    expect(group).not.toHaveTextContent('history import');
+    expect(within(group).queryByRole('button', { name: 'Import history' })).toBeNull();
+  });
+
   it('says so when a refresh fails and keeps the last loaded figures', async () => {
     const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
     await cachedReads.portfolio.load(undefined);
