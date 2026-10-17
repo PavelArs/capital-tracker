@@ -20,11 +20,6 @@ npm install react react-dom react-router-dom
 npm install axios
 ```
 
-#### Charts:
-```bash
-npm install chart.js react-chartjs-2
-```
-
 #### Date utilities:
 ```bash
 npm install date-fns

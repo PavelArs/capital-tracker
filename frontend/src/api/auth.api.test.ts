@@ -61,20 +61,8 @@ describe('authApi', () => {
     });
   });
 
-  describe('getProfile', () => {
-    it('should fetch user profile', async () => {
-      const mockUser = { id: '1', email: 'test@example.com' };
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockUser });
-
-      const result = await authApi.getProfile();
-
-      expect(apiClient.get).toHaveBeenCalledWith('/auth/me');
-      expect(result).toEqual(mockUser);
-    });
-  });
-
   describe('getCurrentUser', () => {
-    it('should fetch current user (alias for getProfile)', async () => {
+    it('should fetch the current user', async () => {
       const mockUser = { id: '1', email: 'test@example.com' };
       vi.mocked(apiClient.get).mockResolvedValue({ data: mockUser });
 
