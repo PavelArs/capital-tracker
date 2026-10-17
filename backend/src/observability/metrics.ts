@@ -135,6 +135,10 @@ export function httpMetrics(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
+/** What a log line may say of a failure: the message, never a response body. */
+export const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : 'unknown';
+
 /**
  * Runs one scheduled tick and counts it. The outcome is the result's own `outcome` word
  * ("collected", "busy", "disabled" ...) or "error" when the tick throws; the error is rethrown.

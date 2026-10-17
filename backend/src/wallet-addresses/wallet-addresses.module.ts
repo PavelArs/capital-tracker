@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { AccountingModule } from '../accounting/accounting.module';
 import { BitcoinSyncAdapter } from './bitcoin-sync.adapter';
@@ -8,6 +9,7 @@ import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import { BybitSyncAdapter } from './bybit-sync.adapter';
 import { CHAIN_SYNC_ADAPTERS, type ChainSyncAdapter } from './chain-sync';
+import { ChainTokenRefreshInterceptor } from './chain-token-refresh.interceptor';
 import { ChainTokenLoader } from './chain-tokens';
 import { EsploraClient } from './esplora-client';
 import { EtherscanClient } from './etherscan-client';
@@ -29,6 +31,7 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
   controllers: [WalletAddressController],
   providers: [
     ChainTokenLoader,
+    { provide: APP_INTERCEPTOR, useClass: ChainTokenRefreshInterceptor },
     WalletAddressService,
     WalletSyncService,
     BitcoinSyncAdapter,

@@ -253,6 +253,12 @@ export function isBybitCoin(code: string): boolean {
   return /^[A-Z0-9]{2,8}$/.test(code) && !fiat.includes(code);
 }
 
+export class UnknownChainAssetError extends Error {
+  constructor() {
+    super('Unknown chain asset');
+  }
+}
+
 /** The asset a stored leg moves; an unknown pair is a programming error, never guessed. */
 export function chainAsset(network: string, token: string | null): ChainAsset {
   const found =
@@ -261,7 +267,7 @@ export function chainAsset(network: string, token: string | null): ChainAsset {
   if (found) return found;
   // Any other coin of a Bybit account is named by its ticker.
   if (network === 'bybit' && token !== null && isBybitCoin(token)) return bybitCoin(token, token);
-  throw new Error('Unknown chain asset');
+  throw new UnknownChainAssetError();
 }
 
 /** Whether the network names its coin in every leg: an exchange account has no coin of its own. */

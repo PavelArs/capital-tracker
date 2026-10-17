@@ -27,7 +27,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readEffectiveChanges, readPersonalRate } from '../inflation/inflation.service';
 import { buildSeries, officialFactor, personalFactor } from '../inflation/inflation-math';
-import { trackJob } from '../observability/metrics';
+import { errorMessage, trackJob } from '../observability/metrics';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import {
@@ -333,8 +333,8 @@ export class PortfolioSnapshotsService {
   async scheduledTick(): Promise<void> {
     try {
       await trackJob('snapshots', () => this.tick());
-    } catch {
-      this.logger.warn('Portfolio snapshots could not be refreshed');
+    } catch (error) {
+      this.logger.warn(`Portfolio snapshots could not be refreshed: ${errorMessage(error)}`);
     }
   }
 
