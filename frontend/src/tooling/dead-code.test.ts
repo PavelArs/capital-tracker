@@ -28,8 +28,10 @@ const isImported = (code: string, name: string) => {
   ].some((form) => new RegExp(form).test(bare));
 };
 
-describe('FRONTEND-NO-DEAD-CODE: nothing unused ships or is configured', () => {
-  it('every runtime dependency is imported by the app', () => {
+describe('FRONTEND-NO-DEAD-CODE: no dependency or setup is left without a use in src', () => {
+  // Whole-module reachability from main.tsx (an unused file importing a dependency) is not
+  // checked here; this gate only proves no runtime dependency is left without an import in src.
+  it('every runtime dependency is imported somewhere in src', () => {
     const code = sources(path.join(root, 'src')).join('\n');
     const unused = Object.keys(pkg.dependencies).filter((name) => !isImported(code, name));
     expect(unused).toEqual([]);
