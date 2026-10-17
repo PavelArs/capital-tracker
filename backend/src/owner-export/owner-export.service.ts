@@ -3,6 +3,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { deriveCarryInAmounts } from '../accounting/fifo';
 import { parseUuid } from '../accounting/input';
 import { isTradePurpose } from '../accounting/trade-purpose';
+import { moscowDate } from '../fx-rates/fx-conversion';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { backupTables } from './backup-tables';
 import {
@@ -31,7 +32,6 @@ export interface ExportDownload {
 type Row = Record<string, unknown>;
 const text = (value: unknown) => (value === null || value === undefined ? null : String(value));
 const iso = (value: unknown) => (value as Date).toISOString();
-const day = (at: Date) => at.toISOString().slice(0, 10);
 const exact = (column: string) => `trim_scale(${column})::text`;
 
 /** The last version that is not a void: what a voided entry said before it left the books. */
@@ -137,7 +137,7 @@ export class OwnerExportService {
       ...(await this.deposits(manager, owner)),
     }));
     return {
-      filename: `capital-tracker-export-${day(now)}.zip`,
+      filename: `capital-tracker-export-${moscowDate(now)}.zip`,
       contentType: 'application/zip',
       data: zipArchive(exportFiles(data), now),
     };
@@ -184,7 +184,7 @@ export class OwnerExportService {
       return read;
     });
     return {
-      filename: `capital-tracker-backup-${day(now)}.json`,
+      filename: `capital-tracker-backup-${moscowDate(now)}.json`,
       contentType: 'application/json',
       data: Buffer.from(backupDocument(now.toISOString(), tables), 'utf8'),
     };
