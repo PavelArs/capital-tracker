@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
@@ -131,6 +132,9 @@ const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revi
     `SELECT '${table}:' || coalesce(md5(string_agg(${row}, ',' ORDER BY ${row})), '') AS part
       FROM ${table} t WHERE t."ownerId"=$1`,
 ).join(' UNION ALL ')}) parts`;
+// Folded into the inputs revision, so a change to how a point is valued rebuilds every stored
+// snapshot once. Bump it with such a change. 2: a rate over 15 days old converts nothing.
+const VALUATION_RULE = '2';
 const INSERT_BATCH = 1000;
 // A burst of edits (a classification run, an import) is rebuilt once, this long after the last.
 const REFRESH_SOON_MS = 2_000;
@@ -607,7 +611,8 @@ export class PortfolioSnapshotsService {
         FROM portfolio_snapshot_state WHERE "ownerId"=$1`,
       [owner],
     );
-    const [{ revision }]: { revision: string }[] = await manager.query(INPUTS_REVISION, [owner]);
+    const [read]: { revision: string }[] = await manager.query(INPUTS_REVISION, [owner]);
+    const revision = createHash('md5').update(`${VALUATION_RULE}|${read.revision}`).digest('hex');
     const [marks]: { prices: Date | null; rates: Date | null }[] = await manager.query(
       `SELECT (SELECT max("fetchedAt") FROM price_observations) AS prices,
         (SELECT max("fetchedAt") FROM fx_rates) AS rates`,
