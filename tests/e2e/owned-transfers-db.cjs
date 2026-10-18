@@ -270,6 +270,7 @@ async function populatedUpgrade() {
     );
     const old = await fingerprint(prior, ['migrations'], true);
     assert.match(migrate(previousDatabase), /Migrations applied: 52/);
+    assert.deepEqual(await prior.query('SELECT * FROM retired_commands'), []);
     assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 71);
     assert.equal(
       await fingerprint(
@@ -324,6 +325,7 @@ async function populatedUpgrade() {
           'broker_imported_operations',
           'account_capital_returns',
           'account_capital_return_versions',
+          'retired_commands',
           'inflation_months',
           'inflation_manual_months',
           'inflation_personal_rates',
