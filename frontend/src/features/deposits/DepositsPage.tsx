@@ -22,12 +22,15 @@ import { netWorthUnknown } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
+import { useValueView } from '../shell/value-view';
 import { AddDepositDialog } from './DepositDialogs';
 import {
   accountsWithoutRate,
   attention,
   dateText,
   money,
+  NO_REAL_GAIN,
+  noRealEndReason,
   realOf,
   realRateText,
   statusText,
@@ -49,11 +52,14 @@ function DepositTile({
 }) {
   const [asked] = useAskedCurrency();
   const [basis] = useInflationBasis();
+  const [view] = useValueView();
+  // One reading at a time; an answer saved before real figures existed stays nominal.
+  const showReal = view === 'real' && deposit.real !== undefined;
   const note = attention(deposit, asOf);
   const check = deposit.lastCheck;
   const inOwn = shown === deposit.currency;
   const real = realOf(deposit, basis);
-  const rate = realRateText(real);
+  const rate = showReal ? realRateText(real) : null;
   return (
     <li>
       <Link className="deposit-card__link" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
@@ -80,28 +86,45 @@ function DepositTile({
                   : 'Not counted before the first rate'}
               </KeyValueRow>
             )}
-            {deposit.interestEarned != null && (
-              <KeyValueRow term="Interest earned">
-                {money(deposit.interestEarned, deposit.currency)}
-                {real?.gain != null && (
-                  <span className={toneClass(real.gain)}>
-                    {' '}
-                    ({money(real.gain, deposit.currency, true)} after inflation)
+            {deposit.interestEarned != null &&
+              (showReal ? (
+                <KeyValueRow term="Interest after inflation">
+                  <span className={toneClass(real?.gain ?? null)}>
+                    {real?.gain != null ? money(real.gain, deposit.currency, true) : DASH}
                   </span>
-                )}
-              </KeyValueRow>
-            )}
+                  {real?.gain != null && real.estimated && ESTIMATED}
+                  {real?.gain == null && <span className="ui-sub"> {NO_REAL_GAIN}</span>}
+                </KeyValueRow>
+              ) : (
+                <KeyValueRow term="Interest earned">
+                  {money(deposit.interestEarned, deposit.currency)}
+                </KeyValueRow>
+              ))}
             {deposit.nextPayout && (
               <KeyValueRow term="Next interest">
                 {money(deposit.nextPayout.interest, deposit.currency)} on{' '}
                 {dateText(deposit.nextPayout.date)}
               </KeyValueRow>
             )}
-            {deposit.atMaturity && (
-              <KeyValueRow term="At the end of the term">
-                {money(deposit.atMaturity.balance, deposit.currency)}
-              </KeyValueRow>
-            )}
+            {deposit.atMaturity &&
+              (showReal ? (
+                <KeyValueRow term="At the end, in today's money">
+                  {deposit.atMaturity.inTodaysMoney?.[basis]
+                    ? money(deposit.atMaturity.inTodaysMoney[basis].amount, deposit.currency)
+                    : DASH}
+                  {deposit.atMaturity.inTodaysMoney?.[basis]?.estimated && ESTIMATED}
+                  {!deposit.atMaturity.inTodaysMoney?.[basis] && (
+                    <span className="ui-sub">
+                      {' '}
+                      {noRealEndReason(deposit.atMaturity.date, asOf)}
+                    </span>
+                  )}
+                </KeyValueRow>
+              ) : (
+                <KeyValueRow term="At the end of the term">
+                  {money(deposit.atMaturity.balance, deposit.currency)}
+                </KeyValueRow>
+              ))}
             {check && (
               <KeyValueRow term="Last check">
                 {dateText(check.checkedOn)},{' '}
@@ -123,6 +146,8 @@ function DepositTile({
     </li>
   );
 }
+
+const ESTIMATED = ' (estimated)';
 
 const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;
 
@@ -214,6 +239,7 @@ export default function DepositsPage() {
     <div className="shell-page">
       <PageHeader
         title="Banks"
+        valueSwitch
         actions={
           <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
             Add deposit
