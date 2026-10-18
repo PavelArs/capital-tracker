@@ -512,8 +512,8 @@ export function AddDepositDialog({
           suffix="%"
           hint={
             isAccount
-              ? 'The rate the bank pays now, if it pays one. A change can be added later.'
-              : 'The rate the bank pays now. A change can be added later.'
+              ? 'The rate from the opening date. Leave it blank if unknown. Add later changes with the date each took effect.'
+              : 'The rate from the opening date. Add later changes with the date each took effect.'
           }
         />
       </div>

@@ -247,6 +247,25 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Savings A' })).toBeInTheDocument();
   });
 
+  it.each(['term-deposit', 'account'] as const)(
+    "DEP-OPENING-RATE asks for the opening rate of a %s rather than applying today's rate to past days",
+    async (kind) => {
+      const user = userEvent.setup();
+      vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+      open('/deposits');
+      await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+      if (kind === 'account')
+        await user.click(screen.getByRole('radio', { name: 'Savings or current account' }));
+      const dialog = screen.getByRole('dialog');
+      const rate = within(dialog).getByLabelText(/^Rate, % a year/);
+      expect(rate).toHaveAccessibleDescription(/rate from the opening date/i);
+      expect(rate).toHaveAccessibleDescription(/date each took effect/i);
+      expect(rate).not.toHaveAccessibleDescription(/pays now/i);
+      if (kind === 'account')
+        expect(rate).toHaveAccessibleDescription(/Leave it blank if unknown/i);
+    },
+  );
+
   it('DEP-ACCOUNT adds a savings or current account with no end date and no rate, sent as the owner entered it', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
