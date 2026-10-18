@@ -509,6 +509,9 @@ export class DepositsService {
     const noRate = noRateInForceOn(stored, asOf);
     // Missing capitalized interest would itself earn interest in every later period.
     const incompleteInterest = noRate || (interestMissing && terms.capitalized);
+    const periodStart = now.periods.at(-1)?.to ?? terms.startDate;
+    const incompleteAccrual =
+      incompleteInterest || (interestMissing && periodStart < (firstRateDay(stored) ?? asOf));
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
       reading && !noRate
         ? depositReal(
@@ -541,15 +544,16 @@ export class DepositsService {
       closedOn: now.closedOn,
       principal: now.principal,
       interestMissing,
-      accrued: incompleteInterest ? null : now.accrued,
-      due: incompleteInterest ? null : now.due,
+      accrued: incompleteAccrual ? null : now.accrued,
+      due: interestMissing || noRate ? null : now.due,
       balance: now.balance,
       // Everything the deposit has earned, posted or not, less what was forfeited.
-      interestEarned: incompleteInterest
-        ? null
-        : centsText(
-            canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
-          ),
+      interestEarned:
+        interestMissing || noRate
+          ? null
+          : centsText(
+              canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
+            ),
       real: {
         official: afterInflation(readings?.official),
         personal: afterInflation(readings?.personal),
@@ -624,8 +628,10 @@ export class DepositsService {
       movementsOf(stored),
       periods.map((period) => period.from),
     );
-    const official = readings && periodsAfterInflation(periods, held, readings.official);
-    const personal = readings && periodsAfterInflation(periods, held, readings.personal);
+    const official =
+      readings && !missing ? periodsAfterInflation(periods, held, readings.official) : undefined;
+    const personal =
+      readings && !missing ? periodsAfterInflation(periods, held, readings.personal) : undefined;
     // The value by month from the start, each movement day and the day asked.
     const dates = chartDates(
       terms.startDate,
@@ -665,8 +671,17 @@ export class DepositsService {
           personal: personal?.[index] ?? null,
         },
       })),
-      interestPosted: missing && terms.capitalized ? null : projection.interestPosted,
-      interestPaidOut: projection.interestPaidOut,
+      interestPosted: missing ? null : projection.interestPosted,
+      // Payouts are entered facts, even when unknown interest makes replayed due a lower bound.
+      interestPaidOut: centsText(
+        movementsOf(stored).reduce(
+          (sum, movement) =>
+            movement.date <= asOf && movement.kind === 'interest-payout'
+              ? sum + canonicalDecimalToAtoms(movement.amount)
+              : sum,
+          0n,
+        ),
+      ),
       interestForfeited: projection.interestForfeited,
       checks: stored.checks
         .filter((check) => check.checkedOn <= asOf)

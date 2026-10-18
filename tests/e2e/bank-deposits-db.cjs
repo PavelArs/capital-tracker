@@ -336,6 +336,35 @@ async function account(db, service, owner) {
   const coveredPeriod = await service.get(owner, paidOut.id, '2026-09-01');
   assert.notEqual(coveredPeriod.nextPayout, null, 'A noncapitalizing covered period does not depend on unknown earlier interest');
   assert.ok(coveredPeriod.periods.some((period) => period.from === '2026-08-01'));
+  assert.deepEqual([coveredPeriod.due, coveredPeriod.interestEarned, coveredPeriod.interestPosted],
+    [null, null, null], 'Cumulative noncapitalizing interest still spans the opening-rate gap');
+  assert.equal(coveredPeriod.accrued, '0.00', 'A fully covered current period can state its accrual');
+  for (const payout of ['monthly', 'daily']) {
+    const gap = await service.create(owner, { ...terms, name: `Partial noncapitalizing ${payout}`, capitalized: false, payout });
+    await service.addRate(owner, gap.id, { effectiveFrom: '2026-07-15', ratePercent: '6' });
+    const current = await service.get(owner, gap.id, '2026-07-20');
+    assert.deepEqual([current.due, current.interestEarned, current.interestPosted], [null, null, null],
+      'A later rate cannot make cumulative totals complete');
+    if (payout === 'monthly') {
+      assert.equal(current.accrued, null, 'The current monthly period still includes uncovered days');
+      assert.equal(current.nextPayout, null, 'The current monthly payout still includes uncovered days');
+    } else {
+      assert.equal(current.accrued, '0.00', 'Daily posting starts a covered current period');
+      assert.notEqual(current.nextPayout, null, 'A fully covered daily forecast is independent');
+    }
+    const after = await service.get(owner, gap.id, '2026-08-02');
+    assert.notEqual(after.accrued, null, 'A later fully covered current period is independent');
+    assert.notEqual(after.nextPayout, null, 'A later fully covered payout is independent');
+  }
+  await db.query(`INSERT INTO inflation_personal_rates ("ownerId", currency, "annualPercent") VALUES ($1, 'RUB', 10)`, [owner]);
+  const independent = await service.get(owner, paidOut.id, '2026-09-01');
+  const enteredPayout = await service.addMovement(owner, paidOut.id, {
+    date: '2026-07-20', kind: 'interest-payout', amount: '1000.00',
+  });
+  assert.deepEqual([enteredPayout.interestPaidOut, independent.periods.map(period => period.afterInflation.personal)],
+    ['1000.00', independent.periods.map(() => null)],
+    'Entered payouts stay exact, but real period gains depend on the unknown opening interest');
+  await db.query(`DELETE FROM inflation_personal_rates WHERE "ownerId"=$1 AND currency='RUB'`, [owner]);
   // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
   const unrated = await service.get(owner, made.id, '2026-07-15');
   assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');

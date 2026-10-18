@@ -521,6 +521,12 @@ export default function DepositPage() {
               ) : (
                 <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
               )}
+              {deposit.interestMissing && deposit.periods.length > 0 && (
+                <p className="ui-muted">
+                  Only periods covered by a rate are listed. After-inflation figures are unavailable
+                  while earlier interest is missing.
+                </p>
+              )}
               {Number(deposit.interestForfeited) > 0 && (
                 <Banner tone="info">
                   Closing the deposit early lost {money(deposit.interestForfeited, own)} of

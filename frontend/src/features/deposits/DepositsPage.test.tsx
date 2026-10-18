@@ -674,18 +674,29 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
       capitalized: false,
       ratePercent: '6',
       accrued: '12.34',
-      due: '0.00',
-      interestEarned: '12.34',
+      due: null,
+      interestEarned: null,
       nextPayout: { date: '2026-11-01', interest: '25.00', treatment: 'payable' },
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([later]), interestMissingCount: 1 });
     open('/deposits?currency=RUB');
     const card = await screen.findByRole('link', { name: /Current C/ });
     expect(card).toHaveTextContent('Not counted before the first rate');
-    expect(card).toHaveTextContent('Interest earned');
+    expect(card).not.toHaveTextContent('Interest earned');
     cleanup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(
-      detail(later, { rates: [{ effectiveFrom: '2026-08-01', ratePercent: '6' }] }),
+      detail(later, {
+        rates: [{ effectiveFrom: '2026-08-01', ratePercent: '6' }],
+        periods: [
+          {
+            from: '2026-08-01',
+            to: '2026-09-01',
+            interest: '25.00',
+            treatment: 'payable',
+            afterInflation: { official: null, personal: null },
+          },
+        ],
+      }),
     );
     open(`/deposits/${later.id}?currency=RUB`);
     expect(
@@ -694,6 +705,9 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
+    expect(
+      screen.getByText(/After-inflation figures are unavailable while earlier interest is missing/),
+    ).toBeInTheDocument();
   });
 
   it('does not compare a bank check with a balance that leaves the interest out', async () => {
@@ -754,6 +768,11 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     open(`/deposits/${rated.id}?currency=RUB`);
     await screen.findByRole('heading', { level: 2, name: 'Current C' });
     expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
+    expect(
+      screen.queryByText(
+        /After-inflation figures are unavailable while earlier interest is missing/,
+      ),
+    ).toBeNull();
     expect(screen.queryByText(/No rate entered, so the interest is not counted/)).toBeNull();
   });
 });
