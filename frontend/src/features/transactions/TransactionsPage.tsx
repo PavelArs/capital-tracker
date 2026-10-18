@@ -29,9 +29,11 @@ import {
   assetKey,
   day,
   dayHeading,
+  derivedRounding,
   networkName,
   placeLabel,
   placeParts,
+  rounding,
   rowTime,
   shortAddress,
   signedQuantity,
@@ -179,12 +181,16 @@ function ValueCell({
   if (operation.value !== null)
     return (
       <>
-        {money(operation.value, currency)}
+        {money(operation.value, currency, false, rounding(operation, currency))}
         {paid}
       </>
     );
   if (operation.estimatedValue !== null)
-    return <span className="ui-soft">≈ {money(operation.estimatedValue, currency)}</span>;
+    return (
+      <span className="ui-soft">
+        ≈ {money(operation.estimatedValue, currency, false, derivedRounding(operation))}
+      </span>
+    );
   if (operation.costBasis !== null)
     return (
       <>
@@ -325,10 +331,11 @@ function OperationRow({
 function phoneValue(operation: Operation, currency: AccountingCurrency): string {
   if (operation.value !== null) {
     const paid = operation.paid && operation.paid.currency !== currency && operation.paid;
-    const shown = money(operation.value, currency);
+    const shown = money(operation.value, currency, false, rounding(operation, currency));
     return paid ? `${shown} · ${quantity(paid.gross)} ${paid.currency}` : shown;
   }
-  if (operation.estimatedValue !== null) return `≈ ${money(operation.estimatedValue, currency)}`;
+  if (operation.estimatedValue !== null)
+    return `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))}`;
   if (operation.costBasis !== null) return `${money(operation.costBasis, currency)} cost basis`;
   if (
     operation.valueUsd !== null ||

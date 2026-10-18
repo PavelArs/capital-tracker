@@ -1,6 +1,7 @@
 import type { Operation, OperationAsset, OperationType } from '@api/operations.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { dayText, utcClockText } from '@/utils/dates';
-import { DASH, quantity } from '../portfolio/format';
+import { DASH, quantity, type Rounding } from '../portfolio/format';
 import { isEvm } from '../shell/evm-networks';
 
 // Display only: the list keeps exact decimal strings; rounding happens here (OPS-4).
@@ -305,3 +306,24 @@ export function operationMoment(operation: Operation): string {
 }
 
 export { DASH };
+
+/**
+ * A value shown in the currency it was paid in is the amount the owner entered, kopecks and
+ * all; converted holdings round down and costs round up.
+ */
+export function rounding(
+  operation: Operation,
+  currency: AccountingCurrency,
+  converted: 'down' | 'up' = derivedRounding(operation),
+): Rounding {
+  return operation.paid?.currency === currency ? 'exact' : converted;
+}
+
+/** Estimates and converted values never inherit entered payment precision. */
+export function derivedRounding(operation: Operation): 'down' | 'up' {
+  return operation.type === 'fee' ||
+    operation.type === 'expense' ||
+    (operation.type === 'gift' && operation.direction === 'out')
+    ? 'up'
+    : 'down';
+}

@@ -12,7 +12,7 @@ type DepositPeriod = DepositDetail['periods'][number];
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import type { BadgeTone } from '@/ui/Badge';
 import { dayText, moscowDate } from '@/utils/dates';
-import { currencySymbols, DASH, percent, tone } from '../portfolio/format';
+import { DASH, percent, type Rounding, rubles, tone, withSymbol } from '../portfolio/format';
 import type { InflationBasis } from '../shell/inflation-basis';
 
 const DAY_MS = 86_400_000;
@@ -117,16 +117,23 @@ export function attention(deposit: Deposit, asOf: string): string | null {
 /**
  * Money from an exact decimal string with two decimals, grouped by thousands without going
  * through a floating-point number: a balance can hold more digits than a double keeps exactly.
+ * Rubles are whole, rounded as `rounding` says.
  */
-export function money(value: string | null, currency: AccountingCurrency, signed = false): string {
+export function money(
+  value: string | null,
+  currency: AccountingCurrency,
+  signed = false,
+  rounding: Rounding = 'down',
+): string {
   if (value === null) return DASH;
+  if (currency === 'RUB') return rubles(value, signed, rounding) ?? DASH;
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
   if (!match) return DASH;
   const cents = (match[3] ?? '').padEnd(2, '0').slice(0, 2);
   const whole = match[2].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+$)/g, ',');
   const zero = /^0+$/.test(match[2] + cents);
   const mark = match[1] && !zero ? '-' : signed && !zero ? '+' : '';
-  return `${mark}${currencySymbols[currency]}${whole}.${cents}`;
+  return withSymbol(mark, `${whole}.${cents}`, currency);
 }
 
 /**

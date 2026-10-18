@@ -1611,6 +1611,49 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     );
   });
 
+  it.each([
+    [false, false, 'RUB', true, '₽123.45'],
+    [false, false, 'USD', false, '₽123'],
+    [true, false, 'RUB', true, '₽123.45'],
+    [true, false, 'USD', false, '₽123'],
+    [true, true, 'RUB', true, '₽123.45'],
+    [true, true, 'USD', false, '₽123'],
+    [false, false, 'RUB', false, '₽123'],
+    [true, false, 'RUB', false, '₽123'],
+    [true, true, 'RUB', false, '₽123'],
+    [false, false, 'RUB', undefined, '₽123'],
+  ] as const)(
+    'RUB-WHOLE-LOTS preserves native kopecks (phone %s, missing inflation %s, paid %s)',
+    async (phone, missing, paidCurrency, paidExact, shown) => {
+      if (phone)
+        vi.stubGlobal('matchMedia', (query: string) => ({
+          matches: true,
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        }));
+      const purchase = lot({
+        paid: '123.45',
+        paidCurrency,
+        paidExact,
+        ...(missing ? { real: { official: null, personal: null } } : {}),
+      });
+      vi.spyOn(portfolioValuationApi, 'lots').mockResolvedValue({
+        ...answer([purchase]),
+        currency: 'RUB',
+      });
+      renderAt(`/portfolio/${bitcoin.instrumentId}?currency=RUB`);
+      const region = await card();
+      if (phone)
+        expect(region).toHaveTextContent(
+          `paid ${shown}${paidCurrency === 'USD' ? (missing ? '' : ' →') : ''}`,
+        );
+      else expect(cells(bodyRows(region)[0])[2]).toBe(shown);
+      if (paidCurrency === 'USD' || paidExact !== true)
+        expect(region).not.toHaveTextContent('₽123.45');
+    },
+  );
+
   it('LOTS-ROWS lists each purchase newest first with what it cost in today money', async () => {
     withLots([lot(), older]);
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
@@ -2849,6 +2892,42 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     feeValue: '0',
     ...changes,
   });
+  it.each(['RUB', 'USD'] as const)(
+    'RUB-WHOLE-ASSET keeps only native %s transaction kopecks',
+    async (paidCurrency) => {
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio([bitcoin], { currency: 'RUB', mainCurrency: 'RUB' }),
+      );
+      vi.spyOn(operationsApi, 'list').mockResolvedValue({
+        at: '2026-10-05T12:00:00Z',
+        quoteCurrency: 'RUB',
+        needsClassificationCount: 0,
+        dustThresholdUsd: null,
+        operations: [
+          operation(1, {
+            value: '83000.75',
+            paid:
+              paidCurrency === 'RUB'
+                ? {
+                    currency: 'RUB',
+                    gross: '83000.75',
+                    fee: '0',
+                    rateDate: '2026-09-01',
+                    perUsd: '103.7509375',
+                    rateSource: 'owner',
+                  }
+                : null,
+          }),
+        ],
+      });
+      renderAt(`/portfolio/${bitcoin.instrumentId}?currency=RUB`);
+      const region = await screen.findByRole('region', { name: /^Transactions/ });
+      expect(
+        await within(region).findByText(paidCurrency === 'RUB' ? '₽83,000.75' : '₽83,000'),
+      ).toBeInTheDocument();
+    },
+  );
+
   const point = (at: string, value: string | null, cost: string, quantity = '1') => ({
     at,
     quantity,
@@ -3460,7 +3539,7 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
       '—',
     ]);
     expect(screen.getByRole('region', { name: 'Portfolio summary' })).toHaveTextContent(
-      'Cost basis—₽0.00 known, part predates the stored rates',
+      'Cost basis—₽0 known, part predates the stored rates',
     );
     expect(
       screen.getByText(/1 asset has operations dated before the stored Bank of Russia rates/),

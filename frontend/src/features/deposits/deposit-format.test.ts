@@ -109,7 +109,7 @@ describe('today', () => {
 
 describe('money', () => {
   it('writes exact decimals beyond what a floating-point number keeps', () => {
-    expect(money('100999999999998.99', 'RUB')).toBe('₽100,999,999,999,998.99');
+    expect(money('100999999999998.99', 'RUB')).toBe('₽100,999,999,999,998');
     expect(money('1234.5', 'USD')).toBe('$1,234.50');
     expect(money('0.00', 'EUR', true)).toBe('€0.00');
     expect(money('1.23', 'EUR', true)).toBe('+€1.23');

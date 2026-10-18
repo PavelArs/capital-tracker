@@ -473,6 +473,116 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(cellTexts(bodyRows()[1])[3]).toBe('$1,000.00');
   });
 
+  it.each([false, true])(
+    'RUB-LOSS-VALUE keeps fee values consistent across list and drawer: native=%s',
+    async (native) => {
+      const user = userEvent.setup();
+      const fee = operation({
+        ...manual,
+        type: 'fee',
+        direction: 'out',
+        quantity: '1.25',
+        asset: { instrumentId: id(73), symbol: 'USD', name: 'US dollar' },
+        valueUsd: '1.25',
+        value: '98.76',
+        feeUsd: '1.25',
+        feeValue: '98.76',
+        paid: native
+          ? {
+              currency: 'RUB',
+              gross: '98.76',
+              fee: '98.76',
+              rateDate: '2025-06-14',
+              perUsd: '79.008',
+              rateSource: 'owner',
+            }
+          : null,
+      });
+      vi.spyOn(operationsApi, 'list').mockResolvedValue({ ...list([fee]), quoteCurrency: 'RUB' });
+      renderPage('/transactions?currency=RUB');
+      await waitFor(() => expect(bodyRows()).toHaveLength(1));
+      const shown = native ? '₽98.76' : '₽99';
+      expect(cellTexts(bodyRows()[0])[3]).toBe(shown);
+      await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Fee' }));
+      const drawer = screen.getByRole('dialog');
+      const facts = within(drawer).getByRole('region', { name: 'Details' });
+      expect(
+        within(facts).getByText('Value', { exact: true }).nextElementSibling,
+      ).toHaveTextContent(shown);
+      expect(within(facts).getByText('Fee', { exact: true }).nextElementSibling).toHaveTextContent(
+        shown,
+      );
+      expect(within(drawer).getAllByText(shown).length).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  it('RUB-LOSS-ESTIMATE rounds a linked chain fee up in the list and drawer', async () => {
+    const user = userEvent.setup();
+    const fee = chainOperation(74, {
+      type: 'fee',
+      direction: 'out',
+      status: 'recorded',
+      estimatedValueUsd: '1.25',
+      estimatedValue: '98.76',
+      classification: {
+        version: 1,
+        hidden: false,
+        comment: null,
+        automatic: false,
+        value: { type: 'recorded', operation: { kind: 'trade', id: id(74) } },
+      },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue({ ...list([fee]), quoteCurrency: 'RUB' });
+    renderPage('/transactions?currency=RUB');
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(cellTexts(bodyRows()[0])[3]).toBe('≈ ₽99');
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Fee' }));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getAllByText(/≈ ₽99/).length).toBeGreaterThanOrEqual(2);
+    expect(within(drawer).queryByText(/≈ ₽98/)).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])(
+    'RUB-FEE rounds converted fees up and keeps native fees exact: native=%s',
+    async (native) => {
+      const user = userEvent.setup();
+      const fee = operation({
+        ...manual,
+        feeUsd: '1.25',
+        feeValue: '98.76',
+        value: '83000',
+        paid: native
+          ? {
+              currency: 'RUB',
+              gross: '83000',
+              fee: '98.76',
+              rateDate: '2025-06-14',
+              perUsd: '79.0076',
+              rateSource: 'bank-of-russia',
+            }
+          : null,
+      });
+      vi.spyOn(operationsApi, 'list').mockResolvedValue({ ...list([fee]), quoteCurrency: 'RUB' });
+      renderPage('/transactions?currency=RUB');
+      await waitFor(() => expect(bodyRows()).toHaveLength(1));
+      await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Buy' }));
+      const facts = within(screen.getByRole('dialog')).getByRole('region', { name: 'Details' });
+      expect(within(facts).getByText('Fee', { exact: true }).nextElementSibling).toHaveTextContent(
+        native ? '₽98.76' : '₽99',
+      );
+    },
+  );
+
+  it('RUB-NETWORK-FEE rounds a converted network fee up', async () => {
+    const user = userEvent.setup();
+    const fee = chainOperation(3, { fee: { asset: btc, quantity: '0.00001', value: '98.76' } });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue({ ...list([fee]), quoteCurrency: 'RUB' });
+    renderPage('/transactions?currency=RUB');
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('0.00001 BTC · ≈ ₽99');
+  });
+
   it('OPS-CURRENCY: switches the list to EUR or RUB and keeps the filters', async () => {
     const user = userEvent.setup();
     const paid = operation({
@@ -510,20 +620,20 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(cellTexts(bodyRows()[0])[3]).toBe('—No rate'));
     expect(screen.getByRole('radio', { name: 'RUB' })).toBeChecked();
     // The Manual filter stays; the paid line is not repeated in its own currency.
-    expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual(['—No rate', '₽80,000.00']);
+    expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual(['—No rate', '₽80,000']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual([
-      '≈ ₽74,109.50',
+      '≈ ₽74,109',
       '—No rate',
-      '₽83,000.00',
-      '₽80,000.00',
+      '₽83,000',
+      '₽80,000',
     ]);
     await user.click(within(bodyRows()[2]).getByRole('button', { name: 'Buy' }));
     const drawer = screen.getByRole('dialog', { name: 'Buy · BTC' });
     const facts = within(drawer).getByRole('region', { name: 'Details' });
     const fact = (label: string) =>
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
-    expect(fact('Value')).toBe('₽83,000.00');
+    expect(fact('Value')).toBe('₽83,000');
     expect(fact('Price')).toBe('₽8,300,000.00 per BTC');
     expect(fact('Fee')).toBe('₽98.76');
   });

@@ -33,6 +33,14 @@ function keyed(lots: readonly LotAfterInflation[]): [string, LotAfterInflation][
 const readingOf = (lot: LotAfterInflation, basis: InflationBasis): LotReading | null =>
   lot.real[basis];
 
+const paidText = (lot: LotAfterInflation, currency: AccountingCurrency) =>
+  money(
+    lot.paid,
+    currency,
+    false,
+    lot.paidExact === true && lot.paidCurrency === currency ? 'exact' : 'down',
+  );
+
 /**
  * The basis line over the table: the money the readings are in and what they rest on, said once
  * for the whole card.
@@ -122,7 +130,7 @@ function LotsTable({
                   <span className="ui-sub">{lot.accountName}</span>
                 </td>
                 <td className="ui-num">{quantity(lot.quantity)}</td>
-                <td className="ui-num">{money(lot.paid, currency)}</td>
+                <td className="ui-num">{paidText(lot, currency)}</td>
                 <td className="ui-num">
                   {reading === null ? DASH : percent(reading.inflationPercent)}
                 </td>
@@ -160,8 +168,8 @@ function LotsList({
           lot.paid === null
             ? ''
             : reading === null
-              ? ` · paid ${money(lot.paid, currency)}`
-              : ` · paid ${money(lot.paid, currency)} → ${money(reading.costBasis, currency)} (${percent(reading.inflationPercent)})`;
+              ? ` · paid ${paidText(lot, currency)}`
+              : ` · paid ${paidText(lot, currency)} → ${money(reading.costBasis, currency)} (${percent(reading.inflationPercent)})`;
         return (
           <li key={key} className={`${rowClass()} portfolio-lot`}>
             <ListRowText

@@ -1,12 +1,14 @@
 import type { Operation } from '@api/operations.api';
 import { describe, expect, it } from 'vitest';
 import {
+  derivedRounding,
   exchangeRecord,
   explorerUrl,
   hashOf,
   operationMoment,
   placeLabel,
   placeParts,
+  rounding,
   sourceLabel,
   statusLabel,
   transactionHash,
@@ -190,4 +192,26 @@ describe('transactions-22 the place of a row and its address', () => {
       expect(placeLabel(operation)).toBe(parts.lead + parts.address);
     }
   });
+});
+
+describe('RUB-LOSS-VALUE', () => {
+  it.each(['fee', 'expense', 'gift'] as const)(
+    'rounds converted outgoing %s values up and native values exactly',
+    (type) => {
+      const operation = { type, direction: 'out', paid: null } as Operation;
+      expect(rounding(operation, 'RUB')).toBe('up');
+      expect(
+        rounding({ ...operation, paid: { currency: 'RUB' } as Operation['paid'] }, 'RUB'),
+      ).toBe('exact');
+      expect(
+        derivedRounding({ ...operation, paid: { currency: 'RUB' } as Operation['paid'] }),
+      ).toBe('up');
+    },
+  );
+  it.each(['buy', 'sell', 'income', 'withdrawal'] as const)(
+    'keeps converted %s values rounded down',
+    (type) => {
+      expect(rounding({ type, direction: 'out', paid: null } as Operation, 'RUB')).toBe('down');
+    },
+  );
 });

@@ -1,4 +1,4 @@
-import { type FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import { type AccountingCurrency, type FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import type { InflationFactor } from '../inflation/inflation-math';
 import { personalReading } from '../portfolio-snapshots/real-profit';
 import {
@@ -161,6 +161,10 @@ export interface LotAfterInflation {
   quantity: string;
   /** What it cost at its day's rate; null without a cost or a rate. */
   paid: string | null;
+  /** Original payment currency; `paid` itself is in the report currency. */
+  paidCurrency: AccountingCurrency;
+  /** The full entered payment in the report currency, never a prorated lot cost. */
+  paidExact: boolean;
   /** The lot's quantity at today's price; null without a price. */
   value: string | null;
   nominalPnl: string | null;
@@ -212,6 +216,11 @@ export function lotsAfterInflation(input: {
         acquiredAt: lot.acquiredAt,
         quantity: lot.quantity,
         paid: paid === null ? null : formatAtoms(paid),
+        paidCurrency: lot.native?.currency ?? 'USD',
+        paidExact:
+          lot.native?.entered === true &&
+          lot.native.currency === fx.currency &&
+          paid === canonicalDecimalToAtoms(lot.native.amount),
         value: value === null ? null : formatProduct(value),
         nominalPnl:
           value === null || paid === null ? null : formatSignedProduct(value - paid * ATOM_SCALE),
