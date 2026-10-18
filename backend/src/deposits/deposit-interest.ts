@@ -405,6 +405,7 @@ export function firstImpossibleMovement(
  * with its interest. The same replay as a saved deposit, with the opening top-up only.
  */
 export function previewDeposit(terms: DepositTerms, amount: string) {
+  if (terms.rates.length === 0) return { atMaturity: null, firstPayout: null };
   const opening: DepositMovement[] = [{ date: terms.startDate, kind: 'topup', amount }];
   const end = terms.endDate === null ? null : projectDeposit(terms, opening, terms.endDate);
   return {

@@ -150,6 +150,27 @@ describe('DEP-PREVIEW: what a deposit would earn, before it is added', () => {
     expect(touched).toEqual([]);
   });
 
+  it.each(['monthly', 'daily'])(
+    'DEP-ACCOUNT-PREVIEW keeps unknown %s interest missing and explicit zero known',
+    async (payout) => {
+      const account = { ...terms, kind: 'account', endDate: null, payout, ratePercent: null };
+      const missing = await preview(account);
+      expect(missing.status).toBe(200);
+      expect(await missing.json()).toEqual({ atMaturity: null, firstPayout: null });
+      const zero = await preview({ ...account, ratePercent: '0' });
+      expect(zero.status).toBe(200);
+      expect(await zero.json()).toEqual({
+        atMaturity: null,
+        firstPayout: {
+          date: payout === 'monthly' ? '2026-02-01' : '2026-01-02',
+          interest: '0.00',
+          treatment: 'payable',
+        },
+      });
+      expect(touched).toEqual([]);
+    },
+  );
+
   it('DEP-PREVIEW-SESSION needs a signed-in owner like every other route', async () => {
     expect((await preview(terms, '')).status).toBe(401);
     expect(touched).toEqual([]);
