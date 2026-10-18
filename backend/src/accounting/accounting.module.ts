@@ -6,6 +6,8 @@ import { AssetRewardService } from './asset-reward.service';
 import { AssetSwapService } from './asset-swap.service';
 import { AuditHistoryController } from './audit-history.controller';
 import { AuditHistoryService } from './audit-history.service';
+import { CapitalReturnController } from './capital-return.controller';
+import { CapitalReturnService } from './capital-return.service';
 import { CarryInService } from './carry-in.service';
 import { ChainClassificationController } from './chain-classification.controller';
 import { ChainClassificationService } from './chain-classification.service';
@@ -33,6 +35,7 @@ import { ValuationHistoryService } from './valuation-history.service';
 @Module({
   controllers: [
     AccountingController,
+    CapitalReturnController,
     TradeController,
     PortfolioFlowController,
     ManualPriceController,
@@ -47,6 +50,7 @@ import { ValuationHistoryService } from './valuation-history.service';
   ],
   providers: [
     AccountingService,
+    CapitalReturnService,
     TradeService,
     CsvImportService,
     CarryInService,

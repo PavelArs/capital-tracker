@@ -26,6 +26,7 @@ export const changeTones: Record<AuditChange, BadgeTone> = {
 export const actorLabels: Record<AuditActor, string> = {
   owner: 'You',
   csv: 'CSV import',
+  broker: 'Broker import',
   automatic: 'Automatic',
 };
 
@@ -34,6 +35,7 @@ export const entityLabels: Record<AuditEntity, string> = {
   transfer: 'Transfers',
   swap: 'Swaps',
   reward: 'Rewards',
+  'capital-return': 'Capital returns',
   flow: 'Deposits and withdrawals',
   price: 'Manual prices',
   classification: 'Blockchain answers',
@@ -105,6 +107,8 @@ export function glyphOf(
       return 'move';
     case 'reward':
       return 'reward';
+    case 'capital-return':
+      return 'in';
     case 'flow':
       return event.title === 'Withdrawal' ? 'out' : 'in';
     case 'price':

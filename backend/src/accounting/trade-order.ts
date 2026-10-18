@@ -4,7 +4,7 @@ const MAX_ORDER = 2147483647;
 
 /**
  * The order that places a trade after every event already recorded at `occurredAt`
- * in the account (trades, rewards, swaps and transfers touching it), or null when
+ * in the account (trades, rewards, swaps, capital returns and transfers touching it), or null when
  * it would exceed the integer bound. The corrected trade itself is not counted.
  */
 export function automaticOrder(
@@ -21,6 +21,7 @@ export function automaticOrder(
   for (const trade of account.trades) if (trade.tradeId !== excludeTradeId) occupy(trade);
   for (const reward of account.rewards ?? []) occupy(reward);
   for (const swap of account.swaps ?? []) occupy(swap);
+  for (const capitalReturn of account.capitalReturns ?? []) occupy(capitalReturn);
   for (const transfer of transfers)
     if (transfer.fromAccountId === account.accountId || transfer.toAccountId === account.accountId)
       occupy(transfer);

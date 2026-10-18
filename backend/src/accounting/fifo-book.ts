@@ -1,6 +1,13 @@
 import type { FifoReward, RewardSummary } from './asset-reward-types';
 import { swapAtoms } from './asset-swap-fifo';
 import type { FifoSwap, SwapAllocation, SwapSummary } from './asset-swap-types';
+import type {
+  CapitalReturnAllocation,
+  CapitalReturnAllocationItem,
+  CapitalReturnSummary,
+  FifoCapitalReturn,
+  ReturnedPart,
+} from './capital-return-types';
 import { CostTally } from './cost-evidence';
 import type { CarryInFifoResult, FifoCarryInInput, FifoTrade } from './fifo';
 import {
@@ -13,6 +20,7 @@ import {
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type {
   AccountFifoResult,
+  CapitalReturnSaleMatch,
   LotOrigin,
   ReceivedSaleMatch,
   RewardSaleMatch,
@@ -21,14 +29,31 @@ import type {
   TransferArrival,
   TransferFeeSummary,
 } from './owned-transfer-types';
+import type { PaidCurrency } from './paid-currency';
 import { settlementLeg } from './trade-settlement';
 
 type Source =
   | { kind: 'trade'; trade: FifoTrade }
   | { kind: 'carry-in'; lot: FifoCarryInInput; carriedCostUsd: string }
   | { kind: 'reward'; reward: FifoReward }
-  | { kind: 'swap'; swap: FifoSwap };
+  | { kind: 'swap'; swap: FifoSwap }
+  | { kind: 'capital-return'; capitalReturn: FifoCapitalReturn };
 
+/** What one capital return took off a fragment's cost, in the fragment's own quantity range. */
+interface ReturnSlice {
+  capitalReturnId: string;
+  version: number;
+  occurredAt: string;
+  currency: PaidCurrency | null;
+  usd: LotInterval;
+  native: LotInterval | null;
+}
+
+/**
+ * `interval` is the fragment's place in its original lot and never moves: it orders fragments
+ * and names the origin. `cost` holds what the units cost now, rebased by every capital return,
+ * and covers the same quantity as `interval`; `returns` say what the returns took.
+ */
 export interface BookFragment {
   source: Source;
   origin: LotOrigin;
@@ -37,12 +62,88 @@ export interface BookFragment {
   instrumentName: string;
   instrumentSymbol: string | null;
   interval: LotInterval;
+  cost: LotInterval;
+  /** What the units were paid in RUB or EUR, still held after the returns; null when in USD. */
+  paidCost: PaidCost | null;
+  returns: readonly ReturnSlice[];
+}
+
+interface PaidCost {
+  currency: PaidCurrency;
+  cost: LotInterval;
 }
 
 export interface BookPortion {
   fragment: BookFragment;
   interval: LotInterval;
   cost: bigint | null;
+  costInterval: LotInterval;
+  paidCost: PaidCost | null;
+  returns: readonly ReturnSlice[];
+}
+
+type Returned = { returned: ReturnedPart[] } | Record<string, never>;
+
+/** The part of its cost the returns took off the taken units, for the lot or match. */
+export function portionReturned(portion: { returns: readonly ReturnSlice[] }): Returned {
+  return returnedParts(portion.returns);
+}
+
+function returnedParts(returns: readonly ReturnSlice[]): Returned {
+  const parts: ReturnedPart[] = [];
+  for (const slice of returns) {
+    const usd = intervalCost(slice.usd);
+    const native = slice.native === null ? null : intervalCost(slice.native);
+    if (usd === null || (usd === 0n && !native)) continue;
+    parts.push({
+      capitalReturnId: slice.capitalReturnId,
+      version: slice.version,
+      occurredAt: slice.occurredAt,
+      usd: formatAtoms(usd),
+      ...(slice.currency !== null && native !== null
+        ? { native: { currency: slice.currency, amount: formatAtoms(native) } }
+        : {}),
+    });
+  }
+  return parts.length ? { returned: parts } : {};
+}
+
+/** A fresh fragment: its cost is its place in the original lot until a return lowers it. */
+function fragmentOf(
+  fields: Omit<BookFragment, 'cost' | 'returns' | 'paidCost'>,
+  paidCost: PaidCost | null = null,
+): BookFragment {
+  return { ...fields, cost: fields.interval, paidCost, returns: [] };
+}
+
+/** Take the first `quantity` units of a fragment, with their cost and what returns took. */
+function takeFromFragment(fragment: BookFragment, quantity: bigint): BookPortion {
+  const place = takePrefix(fragment.interval, quantity);
+  const cost = takePrefix(fragment.cost, quantity);
+  const paid = fragment.paidCost && {
+    currency: fragment.paidCost.currency,
+    ...takePrefix(fragment.paidCost.cost, quantity),
+  };
+  const taken: ReturnSlice[] = [];
+  const kept: ReturnSlice[] = [];
+  for (const slice of fragment.returns) {
+    const usd = takePrefix(slice.usd, quantity);
+    const native = slice.native === null ? null : takePrefix(slice.native, quantity);
+    taken.push({ ...slice, usd: usd.taken, native: native?.taken ?? null });
+    kept.push({ ...slice, usd: usd.remainder, native: native?.remainder ?? null });
+  }
+  fragment.interval = place.remainder;
+  fragment.cost = cost.remainder;
+  if (paid) fragment.paidCost = { currency: paid.currency, cost: paid.remainder };
+  fragment.returns = kept;
+  return {
+    fragment,
+    interval: place.taken,
+    cost: intervalCost(cost.taken),
+    costInterval: cost.taken,
+    paidCost: paid ? { currency: paid.currency, cost: paid.taken } : null,
+    returns: taken,
+  };
 }
 
 export interface BookLimits {
@@ -62,7 +163,9 @@ function identity(origin: LotOrigin): string {
       ? origin.lotId
       : origin.kind === 'reward'
         ? origin.rewardId
-        : origin.swapId;
+        : origin.kind === 'swap'
+          ? origin.swapId
+          : origin.capitalReturnId;
 }
 
 /** Priority after a fragment arrives; its original cost coordinates are never rebased. */
@@ -121,6 +224,7 @@ function swapItem(kind: 'principal' | 'fee', portion: BookPortion): TransferAllo
     intervalStart: formatAtoms(portion.interval.start),
     intervalEnd: formatAtoms(portion.interval.end),
     arrival: portion.fragment.arrival,
+    ...portionReturned(portion),
   };
 }
 
@@ -162,6 +266,12 @@ export class FifoBook {
   private readonly swapFeeBasis = new CostTally();
   private swapKnownRealized = 0n;
   private swapUnknownRealizedCount = 0;
+  private hasCapitalReturnIdentity = false;
+  private capitalReturnCount = 0;
+  private capitalReturnAmount = 0n;
+  private readonly capitalReturnApplied = new CostTally();
+  private readonly capitalReturnRealized = new CostTally();
+  private capitalReturnUnknownCost = 0;
   private participant = false;
 
   constructor(
@@ -185,25 +295,27 @@ export class FifoBook {
       throw new FifoHistoryError();
     const interval = lotInterval(quantity, cost, quantity - carried);
     const carriedCostUsd = formatAtoms(intervalCost(interval));
-    this.append({
-      source: { kind: 'carry-in', lot, carriedCostUsd },
-      origin: {
-        accountId: this.accountId,
-        kind: 'carry-in',
-        lotId: lot.lotId,
-        openingRevision: lot.openingRevision,
-        ordinal: lot.ordinal,
-        acquiredAt: lot.acquiredAt,
-        orderWithinTimestamp: lot.orderWithinTimestamp,
-        originalQuantity: lot.originalQuantity,
-        originalCostUsd: lot.originalCostUsd,
-      },
-      arrival: null,
-      instrumentId: lot.instrumentId,
-      instrumentName: lot.instrumentName,
-      instrumentSymbol: lot.instrumentSymbol,
-      interval,
-    });
+    this.append(
+      fragmentOf({
+        source: { kind: 'carry-in', lot, carriedCostUsd },
+        origin: {
+          accountId: this.accountId,
+          kind: 'carry-in',
+          lotId: lot.lotId,
+          openingRevision: lot.openingRevision,
+          ordinal: lot.ordinal,
+          acquiredAt: lot.acquiredAt,
+          orderWithinTimestamp: lot.orderWithinTimestamp,
+          originalQuantity: lot.originalQuantity,
+          originalCostUsd: lot.originalCostUsd,
+        },
+        arrival: null,
+        instrumentId: lot.instrumentId,
+        instrumentName: lot.instrumentName,
+        instrumentSymbol: lot.instrumentSymbol,
+        interval,
+      }),
+    );
   }
 
   markRewardIdentity(): void {
@@ -212,6 +324,148 @@ export class FifoBook {
 
   markSwapIdentity(): void {
     this.hasSwapIdentity = true;
+  }
+
+  markCapitalReturnIdentity(): void {
+    this.hasCapitalReturnIdentity = true;
+  }
+
+  /**
+   * Part of what the held units cost came back as cash. Every fragment of the asset takes a
+   * share by its units, to the last atom; a share above a fragment's remaining cost is realized
+   * at once and leaves its cost at zero. A fragment of unknown cost stays unknown (missing is
+   * not zero), and so does the result of the return.
+   */
+  applyCapitalReturn(capitalReturn: FifoCapitalReturn): CapitalReturnAllocation {
+    this.occupy(capitalReturn.occurredAt, capitalReturn.orderWithinTimestamp);
+    const amount = canonicalDecimalToAtoms(capitalReturn.amount);
+    const amountUsd = canonicalDecimalToAtoms(capitalReturn.amountUsd);
+    const currency = capitalReturn.paidCurrency;
+    if (
+      amount <= 0n ||
+      amountUsd <= 0n ||
+      capitalReturn.cashInstrumentId === capitalReturn.instrumentId
+    )
+      throw new FifoHistoryError();
+    const queue = this.queues.get(capitalReturn.instrumentId) ?? [];
+    let total = 0n;
+    for (const fragment of queue) total += fragment.interval.end - fragment.interval.start;
+    if (total <= 0n) throw new FifoHistoryError();
+
+    const items: CapitalReturnAllocationItem[] = [];
+    const applied = new CostTally();
+    let realized = 0n;
+    let realizedNative = 0n;
+    let unknown = 0;
+    let before = 0n;
+    for (const fragment of queue) {
+      const length = fragment.interval.end - fragment.interval.start;
+      const after = before + length;
+      const share = (amountUsd * after) / total - (amountUsd * before) / total;
+      const nativeShare =
+        currency === null ? 0n : (amount * after) / total - (amount * before) / total;
+      before = after;
+      const cost = intervalCost(fragment.cost);
+      if (cost === null) {
+        unknown++;
+        applied.add(null);
+        items.push({
+          instrumentId: fragment.instrumentId,
+          quantity: formatAtoms(length),
+          appliedUsd: null,
+          excessUsd: null,
+        });
+        continue;
+      }
+      const taken = share < cost ? share : cost;
+      const excess = share - taken;
+      // Paid in the currency the return comes in, the units' cost in it is lowered by the paid
+      // amount itself, not by what the dollar figure implies: rates moved between the two days.
+      const paidCost =
+        currency !== null && fragment.paidCost?.currency === currency
+          ? intervalCost(fragment.paidCost.cost)
+          : null;
+      const nativeTaken =
+        paidCost !== null
+          ? nativeShare < paidCost
+            ? nativeShare
+            : paidCost
+          : share === 0n
+            ? 0n
+            : (nativeShare * taken) / share;
+      realized += excess;
+      realizedNative += nativeShare - nativeTaken;
+      applied.add(taken);
+      items.push({
+        instrumentId: fragment.instrumentId,
+        quantity: formatAtoms(length),
+        appliedUsd: formatAtoms(taken),
+        excessUsd: formatAtoms(excess),
+      });
+      if (taken === 0n && nativeTaken === 0n) continue;
+      this.limits.match?.();
+      fragment.cost = lotInterval(length, cost - taken);
+      if (paidCost !== null && fragment.paidCost)
+        fragment.paidCost = {
+          currency: fragment.paidCost.currency,
+          cost: lotInterval(length, paidCost - nativeTaken),
+        };
+      fragment.returns = [
+        ...fragment.returns,
+        {
+          capitalReturnId: capitalReturn.capitalReturnId,
+          version: capitalReturn.version,
+          occurredAt: capitalReturn.occurredAt,
+          currency,
+          usd: lotInterval(length, taken),
+          native: currency === null ? null : lotInterval(length, nativeTaken),
+        },
+      ];
+    }
+
+    this.append(
+      fragmentOf({
+        source: { kind: 'capital-return', capitalReturn },
+        origin: {
+          accountId: this.accountId,
+          kind: 'capital-return',
+          capitalReturnId: capitalReturn.capitalReturnId,
+          version: capitalReturn.version,
+          acquiredAt: capitalReturn.occurredAt,
+          orderWithinTimestamp: capitalReturn.orderWithinTimestamp,
+          originalQuantity: capitalReturn.amount,
+          originalCostUsd: capitalReturn.amountUsd,
+          paidCurrency: currency,
+        },
+        arrival: null,
+        instrumentId: capitalReturn.cashInstrumentId,
+        instrumentName: capitalReturn.cashInstrumentName,
+        instrumentSymbol: capitalReturn.cashInstrumentSymbol,
+        interval: lotInterval(amount, amountUsd),
+      }),
+    );
+
+    this.hasCapitalReturnIdentity = true;
+    this.capitalReturnCount++;
+    this.capitalReturnAmount += amountUsd;
+    this.capitalReturnUnknownCost += unknown;
+    this.capitalReturnApplied.add(unknown > 0 ? null : applied.known);
+    this.capitalReturnRealized.add(unknown > 0 ? null : realized);
+    if (unknown > 0) this.unknownRealizedCount++;
+    else this.knownRealized += realized;
+    return {
+      capitalReturnId: capitalReturn.capitalReturnId,
+      version: capitalReturn.version,
+      instrumentId: capitalReturn.instrumentId,
+      occurredAt: capitalReturn.occurredAt,
+      amountUsd: capitalReturn.amountUsd,
+      appliedUsd: unknown > 0 ? null : formatAtoms(applied.known),
+      realizedUsd: unknown > 0 ? null : formatAtoms(realized),
+      realizedNative:
+        unknown > 0 || currency === null ? null : { currency, amount: formatAtoms(realizedNative) },
+      unknownCostCount: unknown,
+      items,
+    };
   }
 
   applyReward(reward: FifoReward): void {
@@ -225,25 +479,27 @@ export class FifoBook {
       reward.incomeValueUsd === null ? null : canonicalDecimalToAtoms(reward.incomeValueUsd);
     if (quantity <= 0n || (basis !== null && basis < 0n) || (income !== null && income < 0n))
       throw new FifoHistoryError();
-    this.append({
-      source: { kind: 'reward', reward },
-      origin: {
-        accountId: this.accountId,
-        kind: 'reward',
-        rewardId: reward.rewardId,
-        version: reward.version,
-        category: reward.category,
-        acquiredAt: reward.occurredAt,
-        orderWithinTimestamp: reward.orderWithinTimestamp,
-        originalQuantity: reward.quantity,
-        originalCostUsd: reward.acquisitionBasisUsd,
-      },
-      arrival: null,
-      instrumentId: reward.instrumentId,
-      instrumentName: reward.instrumentName,
-      instrumentSymbol: reward.instrumentSymbol,
-      interval: lotInterval(quantity, basis),
-    });
+    this.append(
+      fragmentOf({
+        source: { kind: 'reward', reward },
+        origin: {
+          accountId: this.accountId,
+          kind: 'reward',
+          rewardId: reward.rewardId,
+          version: reward.version,
+          category: reward.category,
+          acquiredAt: reward.occurredAt,
+          orderWithinTimestamp: reward.orderWithinTimestamp,
+          originalQuantity: reward.quantity,
+          originalCostUsd: reward.acquisitionBasisUsd,
+        },
+        arrival: null,
+        instrumentId: reward.instrumentId,
+        instrumentName: reward.instrumentName,
+        instrumentSymbol: reward.instrumentSymbol,
+        interval: lotInterval(quantity, basis),
+      }),
+    );
     this.hasRewardIdentity = true;
     this.rewardCount++;
     this.rewardBasis.add(basis);
@@ -263,7 +519,7 @@ export class FifoBook {
       feePortions = this.consume(swap.feeInstrumentId, fee);
     }
 
-    const fragment: BookFragment = {
+    const fragment: BookFragment = fragmentOf({
       source: { kind: 'swap', swap },
       origin: {
         accountId: this.accountId,
@@ -280,12 +536,10 @@ export class FifoBook {
       instrumentName: swap.incomingInstrumentName,
       instrumentSymbol: swap.incomingInstrumentSymbol,
       interval: lotInterval(incoming, consideration),
-    };
+    });
     if (swap.feeSource === 'incoming') {
       this.limits.match?.();
-      const { taken, remainder } = takePrefix(fragment.interval, fee);
-      feePortions = [{ fragment, interval: taken, cost: intervalCost(taken) }];
-      fragment.interval = remainder;
+      feePortions = [takeFromFragment(fragment, fee)];
     }
     if (fragment.interval.start < fragment.interval.end) this.append(fragment);
 
@@ -356,24 +610,42 @@ export class FifoBook {
   }
 
   private buy(trade: FifoTrade, cost: bigint): void {
-    this.append({
-      source: { kind: 'trade', trade },
-      origin: {
-        accountId: this.accountId,
-        kind: 'trade',
-        tradeId: trade.tradeId,
-        version: trade.version,
-        acquiredAt: trade.occurredAt,
-        orderWithinTimestamp: trade.orderWithinTimestamp,
-        originalQuantity: trade.quantity,
-        originalCostUsd: formatAtoms(cost),
-      },
-      arrival: null,
-      instrumentId: trade.instrumentId,
-      instrumentName: trade.instrumentName,
-      instrumentSymbol: trade.instrumentSymbol,
-      interval: lotInterval(canonicalDecimalToAtoms(trade.quantity), cost),
-    });
+    const quantity = canonicalDecimalToAtoms(trade.quantity);
+    // A buy paid in RUB or EUR keeps what it cost in that currency, so a return paid in it is
+    // taken off in rubles or euros too, whatever the rate did between the two days.
+    const paid =
+      trade.side === 'buy' && trade.paid
+        ? {
+            currency: trade.paid.currency,
+            cost: lotInterval(
+              quantity,
+              canonicalDecimalToAtoms(trade.paid.gross) + canonicalDecimalToAtoms(trade.paid.fee),
+            ),
+          }
+        : null;
+    this.append(
+      fragmentOf(
+        {
+          source: { kind: 'trade', trade },
+          origin: {
+            accountId: this.accountId,
+            kind: 'trade',
+            tradeId: trade.tradeId,
+            version: trade.version,
+            acquiredAt: trade.occurredAt,
+            orderWithinTimestamp: trade.orderWithinTimestamp,
+            originalQuantity: trade.quantity,
+            originalCostUsd: formatAtoms(cost),
+          },
+          arrival: null,
+          instrumentId: trade.instrumentId,
+          instrumentName: trade.instrumentName,
+          instrumentSymbol: trade.instrumentSymbol,
+          interval: lotInterval(canonicalDecimalToAtoms(trade.quantity), cost),
+        },
+        paid,
+      ),
+    );
   }
 
   private sell(trade: FifoTrade): void {
@@ -390,6 +662,7 @@ export class FifoBook {
         sellVersion: trade.version,
         quantity: formatAtoms(interval.end - interval.start),
         costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
+        ...portionReturned(portion),
       };
       if (fragment.arrival) {
         const match: ReceivedSaleMatch = {
@@ -428,11 +701,20 @@ export class FifoBook {
           intervalEnd: formatAtoms(interval.end),
         };
         this.matches.push(match);
-      } else {
+      } else if (fragment.source.kind === 'swap') {
         const match: SwapSaleMatch = {
           ...common,
           sourceKind: 'swap',
           origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
+          intervalStart: formatAtoms(interval.start),
+          intervalEnd: formatAtoms(interval.end),
+        };
+        this.matches.push(match);
+      } else {
+        const match: CapitalReturnSaleMatch = {
+          ...common,
+          sourceKind: 'capital-return',
+          origin: fragment.origin as Extract<LotOrigin, { kind: 'capital-return' }>,
           intervalStart: formatAtoms(interval.start),
           intervalEnd: formatAtoms(interval.end),
         };
@@ -479,11 +761,9 @@ export class FifoBook {
       const available = fragment.interval.end - fragment.interval.start;
       const matched = remaining < available ? remaining : available;
       this.limits.match?.();
-      const { taken, remainder } = takePrefix(fragment.interval, matched);
-      fragment.interval = remainder;
-      portions.push({ fragment, interval: taken, cost: intervalCost(taken) });
+      portions.push(takeFromFragment(fragment, matched));
       remaining -= matched;
-      if (remainder.start === remainder.end) {
+      if (fragment.interval.start === fragment.interval.end) {
         queue.shift();
         this.held.delete(fragment);
         this.limits.removeFragment?.();
@@ -504,6 +784,9 @@ export class FifoBook {
         instrumentName: portion.fragment.instrumentName,
         instrumentSymbol: portion.fragment.instrumentSymbol,
         interval: portion.interval,
+        cost: portion.costInterval,
+        paidCost: portion.paidCost,
+        returns: portion.returns,
       };
       const queue = this.queues.get(fragment.instrumentId) ?? [];
       if (!sortedInThisReceive.has(fragment.instrumentId)) {
@@ -556,11 +839,13 @@ export class FifoBook {
     for (const fragment of this.held) {
       const interval = fragment.interval;
       const remainingQuantity = formatAtoms(interval.end - interval.start);
-      const cost = intervalCost(interval);
+      const cost = intervalCost(fragment.cost);
       const remainingCostUsd = cost === null ? null : formatAtoms(cost);
       remainingCost.add(cost);
+      const returned = returnedParts(fragment.returns);
       if (fragment.arrival) {
         lots.push({
+          ...returned,
           sourceKind: 'transfer',
           instrumentId: fragment.instrumentId,
           instrumentName: fragment.instrumentName,
@@ -576,6 +861,7 @@ export class FifoBook {
         const trade = fragment.source.trade;
         if (cost === null || interval.originalCost === null) throw new FifoHistoryError();
         lots.push({
+          ...returned,
           buyTradeId: trade.tradeId,
           buyVersion: trade.version,
           instrumentId: trade.instrumentId,
@@ -591,6 +877,7 @@ export class FifoBook {
       } else if (fragment.source.kind === 'carry-in') {
         if (cost === null) throw new FifoHistoryError();
         lots.push({
+          ...returned,
           sourceKind: 'carry-in',
           ...fragment.source.lot,
           carriedCostUsd: fragment.source.carriedCostUsd,
@@ -599,6 +886,7 @@ export class FifoBook {
         });
       } else if (fragment.source.kind === 'reward') {
         lots.push({
+          ...returned,
           sourceKind: 'reward',
           instrumentId: fragment.instrumentId,
           instrumentName: fragment.instrumentName,
@@ -609,13 +897,27 @@ export class FifoBook {
           remainingQuantity,
           remainingCostUsd,
         });
-      } else {
+      } else if (fragment.source.kind === 'swap') {
         lots.push({
+          ...returned,
           sourceKind: 'swap',
           instrumentId: fragment.instrumentId,
           instrumentName: fragment.instrumentName,
           instrumentSymbol: fragment.instrumentSymbol,
           origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
+          intervalStart: formatAtoms(interval.start),
+          intervalEnd: formatAtoms(interval.end),
+          remainingQuantity,
+          remainingCostUsd,
+        });
+      } else {
+        lots.push({
+          ...returned,
+          sourceKind: 'capital-return',
+          instrumentId: fragment.instrumentId,
+          instrumentName: fragment.instrumentName,
+          instrumentSymbol: fragment.instrumentSymbol,
+          origin: fragment.origin as Extract<LotOrigin, { kind: 'capital-return' }>,
           intervalStart: formatAtoms(interval.start),
           intervalEnd: formatAtoms(interval.end),
           remainingQuantity,
@@ -701,6 +1003,16 @@ export class FifoBook {
       };
       result.rewardSummary = rewardSummary;
     }
+    if (this.hasCapitalReturnIdentity) {
+      const capitalReturnSummary: CapitalReturnSummary = {
+        activeCount: this.capitalReturnCount,
+        amountUsd: formatAtoms(this.capitalReturnAmount),
+        appliedUsd: this.capitalReturnApplied.value,
+        realizedUsd: this.capitalReturnRealized.value,
+        unknownCostCount: this.capitalReturnUnknownCost,
+      };
+      result.capitalReturnSummary = capitalReturnSummary;
+    }
     if (this.hasSwapIdentity) {
       const swapSummary: SwapSummary = {
         activeCount: this.swapCount,
@@ -725,7 +1037,12 @@ export class FifoBook {
 
   /** The legacy wrapper never receives a fragment and keeps its exact DTO type. */
   projectLegacy(): CarryInFifoResult {
-    if (this.participant || this.hasRewardIdentity || this.hasSwapIdentity)
+    if (
+      this.participant ||
+      this.hasRewardIdentity ||
+      this.hasSwapIdentity ||
+      this.hasCapitalReturnIdentity
+    )
       throw new FifoHistoryError();
     return this.project() as CarryInFifoResult;
   }

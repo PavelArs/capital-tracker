@@ -10,6 +10,7 @@ export const typeLabels: Record<OperationType, string> = {
   transfer: 'Transfer',
   swap: 'Swap',
   reward: 'Reward',
+  'capital-return': 'Capital return',
   'staking-reward': 'Staking reward',
   stake: 'Stake',
   unstake: 'Unstake',
@@ -34,6 +35,7 @@ const directionLabels: Record<Operation['direction'], string> = {
 export const sourceLabels: Record<Operation['source'], string> = {
   manual: 'Manual',
   csv: 'CSV',
+  broker: 'Broker',
   chain: 'Blockchain',
 };
 export const statusLabels: Record<Operation['status'], string> = {

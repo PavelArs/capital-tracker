@@ -57,6 +57,8 @@ const walletTables = [
   'broker_instrument_links',
   'broker_imports',
   'broker_imported_operations',
+  'account_capital_returns',
+  'account_capital_return_versions',
   'inflation_months',
   'inflation_manual_months',
   'inflation_personal_rates',
@@ -184,6 +186,7 @@ const migrationNames = [
   'AddManualPriceCurrency1797400000000',
   'AddBrokerImports1797500000000',
   'AddDepositKind1797600000000',
+  'AddCapitalReturns1797700000000',
 ];
 
 function connection(database) {
@@ -357,7 +360,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly sixty-nine migrations',
+      'Exactly seventy migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1423,8 +1426,8 @@ function sessionDeviceAddition(kind, row) {
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
 // HideAssets1796400000000, AddBankDeposits1796500000000, AddInflation1796700000000 and
-// AddDepositEvents1797100000000, AddSavingsGoals1797200000000, AddBrokerConnections1797300000000
-// and AddBrokerImports1797500000000 add only tables;
+// AddDepositEvents1797100000000, AddSavingsGoals1797200000000, AddBrokerConnections1797300000000,
+// AddBrokerImports1797500000000 and AddCapitalReturns1797700000000 add only tables;
 // AddManualPriceCurrency1797400000000 adds one quoteCurrency column (text, NOT NULL, default 'USD')
 // and its USD, EUR and RUB check to manual_usd_price_versions;
 // DailyDepositInterest1796800000000 only widens a check of a table they add;
@@ -1440,6 +1443,36 @@ function walletKindAddition(kind, row) {
     kind === 'constraints' &&
     row.relname === 'manual_accounts' &&
     ['manual_accounts_kind_check', 'manual_accounts_assetClass_check'].includes(row.conname)
+  );
+}
+// AddCapitalReturns1797700000000 lets an import count capital returns: broker_imports gains a
+// capitalReturns column and check, broker_imported_operations a capitalReturnId column and key,
+// and the two checks that count an import's entries are replaced by named ones that count them.
+function capitalReturnAddition(kind, row) {
+  if (kind === 'columns')
+    return (
+      (row.table_name === 'broker_imports' && row.column_name === 'capitalReturns') ||
+      (row.table_name === 'broker_imported_operations' && row.column_name === 'capitalReturnId')
+    );
+  return (
+    kind === 'constraints' &&
+    [
+      ['broker_imports', 'broker_imports_capitalReturns_check'],
+      // PostgreSQL 18 lists NOT NULL as pg_constraint rows.
+      ['broker_imports', 'broker_imports_capitalReturns_not_null'],
+      ['broker_imports', 'broker_imports_revisions'],
+      ['broker_imported_operations', 'broker_imported_operations_capital_return'],
+      ['broker_imported_operations', 'broker_imported_operations_one_entry'],
+    ].some(([table, name]) => row.relname === table && row.conname === name)
+  );
+}
+function replacedEntryCheck(kind, row) {
+  return (
+    kind === 'constraints' &&
+    [
+      ['broker_imports', 'broker_imports_check'],
+      ['broker_imported_operations', 'broker_imported_operations_check'],
+    ].some(([table, name]) => row.relname === table && row.conname === name)
   );
 }
 function manualPriceCurrencyAddition(kind, row) {
@@ -2498,6 +2531,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797400000000',
           '1797500000000',
           '1797600000000',
+          '1797700000000',
         ][index - 11],
       );
     }
@@ -2509,7 +2543,9 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     ]) {
       const prior = keptBefore[kind].filter(
         (row) =>
-          !(previousCount < 16 && replacedOriginCheck(kind, row)) && !replacedScopeCheck(kind, row),
+          !(previousCount < 16 && replacedOriginCheck(kind, row)) &&
+          !replacedScopeCheck(kind, row) &&
+          !replacedEntryCheck(kind, row),
       );
       const retained = after[kind].filter(
         (row) =>
@@ -2521,6 +2557,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           !walletKindAddition(kind, row) &&
           !manualPriceCurrencyAddition(kind, row) &&
           !depositKindAddition(kind, row) &&
+          !capitalReturnAddition(kind, row) &&
           !replacedScopeCheck(kind, row),
       );
       assert.deepEqual(

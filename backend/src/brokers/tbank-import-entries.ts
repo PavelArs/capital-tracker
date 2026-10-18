@@ -1,12 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import type { FifoReward } from '../accounting/asset-reward-types';
+import type { CapitalReturnRate } from '../accounting/capital-return.store';
+import type { FifoCapitalReturn } from '../accounting/capital-return-types';
 import type { FifoTrade } from '../accounting/fifo';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import { derivePaidAmounts } from '../accounting/paid-currency';
 import type { FxRates } from '../fx-rates/fx-conversion';
 import type { PlanEntry } from './tbank-import-plan';
 
-// BROKER-SYNC: the trades and rewards a T-Bank import plan writes to an empty account, as
+// BROKER-SYNC: the trades, rewards and capital returns a T-Bank import plan writes to an empty account, as
 // the owner would have entered them by hand. Securities are settled with the account's cash in
 // the trade's currency (M9): money paid in is cash bought from outside, a buy spends that cash
 // first, a sale keeps its proceeds as cash, and taxes and fees spend cash for nothing. Income is
@@ -28,8 +30,23 @@ export interface ImportInstruments {
 
 /** One journal entry and the plan entry it was made from; ids are `import-<index>`. */
 export type JournalEntry =
-  | { source: PlanEntry; trade: FifoTrade; reward?: undefined }
-  | { source: PlanEntry; reward: FifoReward; trade?: undefined };
+  | { source: PlanEntry; trade: FifoTrade; reward?: undefined; capitalReturn?: undefined }
+  | { source: PlanEntry; reward: FifoReward; trade?: undefined; capitalReturn?: undefined }
+  | {
+      source: PlanEntry;
+      capitalReturn: FifoCapitalReturn;
+      /** The rate the USD worth of a return paid in rubles or euros was derived at. */
+      rate: CapitalReturnRate | null;
+      trade?: undefined;
+      reward?: undefined;
+    };
+
+/** The record an entry becomes, whichever kind it is. */
+export const recordOf = (entry: JournalEntry) =>
+  (entry.trade ?? entry.reward ?? entry.capitalReturn) as
+    | FifoTrade
+    | FifoReward
+    | FifoCapitalReturn;
 
 /**
  * A plan entry that cannot be written: no Bank of Russia rate is stored for its date, or its
@@ -90,6 +107,34 @@ export function journalEntries(
     orderAt.set(occurredAt, orderWithinTimestamp + 1);
     const id = `import-${entries.length}`;
     const at = { occurredAt, orderWithinTimestamp };
+    if (source.record === 'capital-return') {
+      // The bond's cost drops by the returned amount, and the cash comes in as a lot of its own,
+      // with its USD worth at the date it came in (CUR-PAID-RUB for rubles and euros).
+      const security = instruments.securities.get(source.instrumentUid);
+      if (!security) throw new Error('The plan holds an instrument without an owner instrument');
+      const paid = 'paid' in priced ? priced.paid : null;
+      entries.push({
+        source,
+        rate: paid
+          ? { rateDate: paid.rateDate, perUsd: paid.perUsd, rateSource: paid.rateSource }
+          : null,
+        capitalReturn: {
+          capitalReturnId: id,
+          version: 1,
+          instrumentId: security.id,
+          instrumentName: security.name,
+          instrumentSymbol: security.symbol,
+          cashInstrumentId: cash.id,
+          cashInstrumentName: cash.name,
+          cashInstrumentSymbol: cash.symbol,
+          ...at,
+          amount: source.amount,
+          amountUsd: priced.grossUsd,
+          paidCurrency: paid?.currency ?? null,
+        },
+      });
+      continue;
+    }
     if (source.record === 'reward') {
       entries.push({
         source,

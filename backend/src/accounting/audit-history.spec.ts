@@ -48,6 +48,27 @@ describe('trimDecimal', () => {
 });
 
 describe('auditFields', () => {
+  it('BROKER-CAPRET-AUDIT: lists what came back and the asset whose cost it lowered', () => {
+    const fields = auditFields(
+      row({
+        entity: 'capital-return',
+        snapshot: {
+          asset: 'RUB',
+          returned: 'SYNTH',
+          amount: '250.000000000000000000000000000000',
+          amountUsd: '3.000000000000000000000000000000',
+          occurredAt: '2026-10-01T00:00:00.000Z',
+        },
+      }),
+    );
+    expect(fields.map((field) => [field.label, field.after?.value, field.after?.unit])).toEqual([
+      ['Came back', '250', 'RUB'],
+      ['Lowered the cost of', 'SYNTH', null],
+      ['Value', '3', null],
+      ['Date', '2026-10-01T00:00:00.000Z', null],
+    ]);
+  });
+
   it('lists everything a created version holds, without the values it does not have', () => {
     const fields = auditFields(row({ snapshot: buy }));
     expect(fields.map((field) => field.label)).toEqual([
@@ -347,6 +368,7 @@ describe('projectEvent', () => {
     expect(title('transfer', { asset: 'ETH' })).toBe('Transfer ETH');
     expect(title('swap', { gaveAsset: 'USDT', gotAsset: 'BTC' })).toBe('Swap USDT → BTC');
     expect(title('reward', { asset: 'SOL' })).toBe('Reward SOL');
+    expect(title('capital-return', { returned: 'SYNTH' })).toBe('Capital return SYNTH');
     expect(title('flow', { direction: 'contribution' })).toBe('Deposit');
     expect(title('flow', { direction: 'withdrawal' })).toBe('Withdrawal');
     expect(title('price', { asset: 'XYZ' })).toBe('Manual price XYZ');

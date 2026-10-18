@@ -65,6 +65,7 @@ const views: [View, string][] = [
   ['chain', 'Blockchain'],
   ['manual', 'Manual'],
   ['csv', 'CSV'],
+  ['broker', 'Broker'],
 ];
 const isStatusView = (value: string | null): value is StatusView =>
   value === 'needs-classification' || value === 'hidden' || value === 'dust';

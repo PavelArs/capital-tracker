@@ -3,6 +3,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { deriveCarryInAmounts } from '../accounting/fifo';
 import { parseUuid } from '../accounting/input';
 import { isTradePurpose } from '../accounting/trade-purpose';
+import { importedByBroker } from '../brokers/broker-provenance';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { backupTables } from './backup-tables';
 import {
@@ -114,7 +115,8 @@ const carriedCost = (row: Row) =>
     String(row.originalCostUsd),
     String(row.quantity),
   ).carriedCostUsd;
-const chainOr = (row: Row, other: 'manual' | 'csv') => (row.chainTxid ? 'chain' : other);
+const chainOr = (row: Row, other: 'manual' | 'csv') =>
+  row.broker ? 'broker' : row.chainTxid ? 'chain' : other;
 /** A fee in an asset; a zero fee is no fee. */
 const fee = (row: Row) =>
   row.feeQuantity === null || row.feeQuantity === '0'
@@ -260,7 +262,7 @@ export class OwnerExportService {
           si.name AS "settlementName", ${exact('s.quantity')} AS "settlementQuantity", u.purpose,
           EXISTS (SELECT 1 FROM account_csv_import_rows r WHERE r."ownerId"=h."ownerId"
             AND r."accountId"=h."accountId" AND r."tradeId"=h.id) AS csv,
-          ${producedBy('tradeId')} AS "chainTxid", ${tokenNetwork('tradeId')} AS "assetNetwork"
+          ${importedByBroker('tradeId')} AS broker, ${producedBy('tradeId')} AS "chainTxid", ${tokenNetwork('tradeId')} AS "assetNetwork"
         FROM account_trades h
         ${lastContent('account_trade_versions', 'tradeId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
@@ -315,10 +317,26 @@ export class OwnerExportService {
           v.category, ${exact('v.quantity')} AS quantity,
           ${exact('v."incomeValueUsd"')} AS "incomeValueUsd",
           ${exact('v."acquisitionBasisUsd"')} AS "acquisitionBasisUsd",
-          ${producedBy('rewardId')} AS "chainTxid", ${tokenNetwork('rewardId')} AS "assetNetwork"
+          ${importedByBroker('rewardId')} AS broker, ${producedBy('rewardId')} AS "chainTxid", ${tokenNetwork('rewardId')} AS "assetNetwork"
         FROM account_rewards h
         ${lastContent('account_reward_versions', 'rewardId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
+        JOIN manual_accounts a ON a."ownerId"=h."ownerId" AND a.id=h."accountId"
+        WHERE h."ownerId"=$1`,
+      [owner],
+    );
+    // BROKER-CAPRET: the cash that came back; the asset whose cost it lowered is the counter asset.
+    const capitalReturns: Row[] = await manager.query(
+      `SELECT ${entry}, h."accountId", a.name AS "accountName", c.symbol, c.name AS "assetName",
+          ${exact('v.amount')} AS quantity, i.symbol AS "counterSymbol", i.name AS "counterName",
+          ${exact('v."amountUsd"')} AS "amountUsd", v."paidCurrency",
+          ${exact('v."perUsd"')} AS "paidPerUsd", v."rateDate"::text AS "paidRateDate",
+          v."rateSource" AS "paidRateSource", NULL AS "chainTxid",
+          ${importedByBroker('capitalReturnId')} AS broker
+        FROM account_capital_returns h
+        ${lastContent('account_capital_return_versions', 'capitalReturnId')}
+        JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
+        JOIN accounting_instruments c ON c."ownerId"=h."ownerId" AND c.id=v."cashInstrumentId"
         JOIN manual_accounts a ON a."ownerId"=h."ownerId" AND a.id=h."accountId"
         WHERE h."ownerId"=$1`,
       [owner],
@@ -408,6 +426,22 @@ export class OwnerExportService {
           source: chainOr(row, 'manual'),
           valueUsd: text(row.incomeValueUsd),
           costBasisUsd: text(row.acquisitionBasisUsd),
+        }),
+      ),
+      ...capitalReturns.map(
+        (row): ExportOperation => ({
+          ...base(row, 'capital-return'),
+          type: 'capital-return',
+          direction: 'in',
+          source: chainOr(row, 'manual'),
+          counterAsset: text(row.counterSymbol ?? row.counterName),
+          valueUsd: text(row.amountUsd),
+          paidCurrency: text(row.paidCurrency),
+          paidAmount: row.paidCurrency === null ? null : text(row.quantity),
+          paidFee: row.paidCurrency === null ? null : '0',
+          paidPerUsd: text(row.paidPerUsd),
+          paidRateDate: text(row.paidRateDate),
+          paidRateSource: text(row.paidRateSource),
         }),
       ),
       ...openings.map(

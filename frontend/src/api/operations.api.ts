@@ -9,6 +9,7 @@ export type OperationType =
   | 'transfer'
   | 'swap'
   | 'reward'
+  | 'capital-return'
   | 'staking-reward'
   | 'stake'
   | 'unstake'
@@ -60,7 +61,7 @@ export interface OperationWallet {
 
 export interface Operation {
   id: string;
-  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'opening' | 'flow' | 'chain';
+  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'capital-return' | 'opening' | 'flow' | 'chain';
   /** Null for a blockchain transaction nobody has classified yet. */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';
@@ -138,7 +139,7 @@ export interface Operation {
    * receipt worth less than the dust threshold; it counts but does not ask to be classified.
    */
   status: 'recorded' | 'needs-classification' | 'hidden' | 'dust';
-  source: 'manual' | 'csv' | 'chain';
+  source: 'manual' | 'csv' | 'chain' | 'broker';
   /** Blockchain only: the owner's current answer, to change it; null before the first. */
   classification: {
     version: number;
@@ -314,6 +315,16 @@ export const announceClassificationChange = () =>
   window.dispatchEvent(new Event(CLASSIFICATION_CHANGED));
 
 export const operationsApi = {
+  voidCapitalReturn: async (
+    accountId: string,
+    returnId: string,
+    input: { requestId: string; expectedJournalRevision: number },
+  ): Promise<void> => {
+    await apiClient.post(
+      `/accounting/accounts/${encodeURIComponent(accountId)}/capital-returns/${encodeURIComponent(returnId)}/voids`,
+      input,
+    );
+  },
   /**
    * Without a currency the owner's main currency is used. OPS-PERIOD: `range` keeps the
    * transactions of the UTC days from and to (YYYY-MM-DD), both included; an end may be left out.

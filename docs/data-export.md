@@ -33,7 +33,7 @@ number) is written with a leading `'`.
 
 `operations.csv` holds active **and voided** entries. `status` is `active` or `voided`; a
 voided entry shows what it said before it was deleted. `source` is `manual`, `csv` (imported
-from a CSV file) or `chain` (produced by classifying a blockchain transaction, whose txid is
+from a CSV file), `broker` (imported from a broker) or `chain` (produced by classifying a blockchain transaction, whose txid is
 in `chain_txid`). `id` matches the Transactions list (`trade:<uuid>`, `transfer:<uuid>`, …), and
 `chain-transactions.csv` links to it in `operation_id`; both transactions of a blockchain
 swap (CLS-SWAP) link to the one `swap:<uuid>`, whose `chain_txid` is the receipt. A pool

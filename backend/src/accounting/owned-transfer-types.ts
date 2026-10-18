@@ -1,6 +1,12 @@
 import type { FifoReward, RewardCategory, RewardSummary } from './asset-reward-types';
 import type { FifoSwap, SwapAllocation, SwapSummary } from './asset-swap-types';
 import type {
+  CapitalReturnAllocation,
+  CapitalReturnSummary,
+  FifoCapitalReturn,
+  ReturnedPart,
+} from './capital-return-types';
+import type {
   CarryInFifoResult,
   CarryInLot,
   CarryInMatch,
@@ -11,6 +17,7 @@ import type {
   FifoSummary,
   FifoTrade,
 } from './fifo';
+import type { PaidCurrency } from './paid-currency';
 
 export interface BasisCoverage {
   knownSubtotalUsd: string;
@@ -43,6 +50,7 @@ export interface OwnedAccountInput {
   initialLots: readonly FifoCarryInInput[];
   rewards?: readonly FifoReward[];
   swaps?: readonly FifoSwap[];
+  capitalReturns?: readonly FifoCapitalReturn[];
 }
 
 /** Current-effective movement; immutable version history is resolved by the store. */
@@ -101,6 +109,18 @@ export type LotOrigin =
       orderWithinTimestamp: number;
       originalQuantity: string;
       originalCostUsd: string | null;
+    }
+  | {
+      accountId: string;
+      kind: 'capital-return';
+      capitalReturnId: string;
+      version: number;
+      acquiredAt: string;
+      orderWithinTimestamp: number;
+      originalQuantity: string;
+      originalCostUsd: string;
+      /** The currency the cash was paid in, whose units are exact (CUR-PAID-RUB). */
+      paidCurrency: PaidCurrency | null;
     };
 
 export interface TransferArrival {
@@ -117,6 +137,7 @@ export interface TransferAllocationItem {
   intervalStart: string;
   intervalEnd: string;
   arrival: TransferArrival | null;
+  returned?: ReturnedPart[];
 }
 
 export interface TransferAllocation {
@@ -173,6 +194,29 @@ export interface SwapSaleMatch {
   costUsd: string | null;
 }
 
+export interface CapitalReturnLot {
+  sourceKind: 'capital-return';
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  origin: Extract<LotOrigin, { kind: 'capital-return' }>;
+  intervalStart: string;
+  intervalEnd: string;
+  remainingQuantity: string;
+  remainingCostUsd: string | null;
+}
+
+export interface CapitalReturnSaleMatch {
+  sourceKind: 'capital-return';
+  sellTradeId: string;
+  sellVersion: number;
+  origin: Extract<LotOrigin, { kind: 'capital-return' }>;
+  intervalStart: string;
+  intervalEnd: string;
+  quantity: string;
+  costUsd: string | null;
+}
+
 export interface ReceivedLot {
   sourceKind: 'transfer';
   instrumentId: string;
@@ -220,15 +264,27 @@ export interface AccountFifoResult
   extends Omit<CarryInFifoResult, 'summary' | 'realizations' | 'lots' | 'matches'> {
   summary: ConnectedFifoSummary;
   realizations: ConnectedFifoRealization[];
-  lots: (FifoLot | CarryInLot | RewardLot | SwapLot | ReceivedLot)[];
-  matches: (FifoMatch | CarryInMatch | RewardSaleMatch | SwapSaleMatch | ReceivedSaleMatch)[];
+  lots: Returned<FifoLot | CarryInLot | RewardLot | SwapLot | CapitalReturnLot | ReceivedLot>[];
+  matches: Returned<
+    | FifoMatch
+    | CarryInMatch
+    | RewardSaleMatch
+    | SwapSaleMatch
+    | CapitalReturnSaleMatch
+    | ReceivedSaleMatch
+  >[];
   transferSummary?: TransferSummary;
   rewardSummary?: RewardSummary;
   swapSummary?: SwapSummary;
+  capitalReturnSummary?: CapitalReturnSummary;
 }
+
+/** A lot or match whose cost a capital return lowered also names what each return took. */
+export type Returned<T> = T & { returned?: ReturnedPart[] };
 
 export interface OwnedProjection {
   accounts: ReadonlyMap<string, AccountFifoResult>;
   allocations: ReadonlyMap<string, TransferAllocation>;
   swapAllocations: ReadonlyMap<string, SwapAllocation>;
+  capitalReturnAllocations: ReadonlyMap<string, CapitalReturnAllocation>;
 }
