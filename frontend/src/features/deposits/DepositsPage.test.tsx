@@ -564,6 +564,35 @@ const unrated: Deposit = {
 };
 
 describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, not as 0.00', () => {
+  it.each([null, '6'])(
+    'DEP-ACCOUNT-PERIODS explains hidden periods when the current rate is %s',
+    async (ratePercent) => {
+      vi.spyOn(depositsApi, 'get').mockResolvedValue(
+        detail(
+          { ...unrated, ratePercent },
+          {
+            periods: [],
+            rates: ratePercent === null ? [] : [{ effectiveFrom: '2026-10-01', ratePercent }],
+          },
+        ),
+      );
+      open(`/deposits/${unrated.id}?currency=RUB`);
+      const periods = await screen.findByRole('region', { name: 'Interest by period' });
+      expect(periods).toHaveTextContent(
+        'Interest periods are unavailable for days with no rate entered.',
+      );
+      expect(periods).not.toHaveTextContent('No interest has been posted yet.');
+    },
+  );
+
+  it('DEP-ACCOUNT-PERIODS keeps the unposted message when the rate history is complete', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings, { periods: [] }));
+    open(`/deposits/${savings.id}?currency=RUB`);
+    const periods = await screen.findByRole('region', { name: 'Interest by period' });
+    expect(periods).toHaveTextContent('No interest has been posted yet.');
+    expect(periods).not.toHaveTextContent('no rate entered');
+  });
+
   it('says on its card that the interest is not counted, and what the list total leaves out', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue({
       ...list([unrated]),

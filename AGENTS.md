@@ -69,6 +69,7 @@ pnpm verify:baseline                          # lint + build + test, both packag
 
 - Missing is not zero. A missing price, cost, quantity or history shows as missing, and any total that depends on it is marked incomplete or estimated, with the reason. Keep "estimated" and stale-data flags.
 - Money is exact wherever it is stored, returned or computed into a result: decimal strings over the API, PostgreSQL `numeric`, BigInt atoms in the backend (`backend/src/accounting/money.ts`). In the backend, never use `Number()`, `parseFloat` or a float tolerance on an amount. In the frontend, keep API amounts as strings; `Number()` is acceptable only for chart coordinates, sorting, comparisons with zero and totals marked display-only. Format amounts with `frontend/src/features/portfolio/format.ts`.
+- Savings-goal projections (`backend/src/goals/goal-forecast.ts`, the goal cases and the goal chart) are float estimates of compound growth at a constant return, by owner decision (2026-10-15). They stay out of stored money, come back as plain decimal strings, and are labelled as projections.
 - Never show a figure better than the real one. Round what the owner has down and what is still missing up. Show entered amounts as entered.
 - Days are Moscow calendar dates (`moscowDate`, `backend/src/fx-rates/fx-conversion.ts`), not UTC or browser dates. Test 21:00–24:00 UTC and month ends.
 - A label claims only what the data supports. An effective rate is not "official", and a reward is not a purchase.

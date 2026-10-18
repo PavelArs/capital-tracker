@@ -513,7 +513,11 @@ export default function DepositPage() {
             <Card labelledBy="deposit-periods">
               <CardHeader id="deposit-periods" title="Interest by period" />
               {deposit.periods.length === 0 ? (
-                <p className="ui-muted">No interest has been posted yet.</p>
+                <p className="ui-muted">
+                  {deposit.interestMissing
+                    ? 'Interest periods are unavailable for days with no rate entered.'
+                    : 'No interest has been posted yet.'}
+                </p>
               ) : (
                 <InterestPeriods periods={deposit.periods} currency={own} basis={basis} />
               )}

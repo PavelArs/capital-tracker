@@ -53,13 +53,24 @@ export interface GoalScenario {
   projectedIn10Years: string | null;
 }
 
+/**
+ * A whole number of cents as a plain decimal string, also past 1e21 where `toFixed` turns to
+ * exponent form; null when the maths left the range of a number.
+ */
+function centsText(hundredths: number): string | null {
+  if (!Number.isFinite(hundredths)) return null;
+  const atoms = BigInt(hundredths);
+  const digits = (atoms < 0n ? -atoms : atoms).toString().padStart(3, '0');
+  return `${atoms < 0n ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
 // A projection is an estimate in plain numbers, rounded never in the owner's favour: what is still
 // needed (a contribution, a gap) up to the cent, what the plan is expected to have down. A float's
 // noise is not a cent. Null when the maths left the range of a number.
 const required = (value: number) =>
-  Number.isFinite(value) ? (Math.ceil(value * 100 - 1e-6) / 100).toFixed(2) : null;
-const expected = (value: number) =>
-  Number.isFinite(value) ? (Math.floor(value * 100 + 1e-6) / 100).toFixed(2) : null;
+  Number.isFinite(value) ? centsText(Math.ceil(value * 100 - 1e-6)) : null;
+export const expected = (value: number) =>
+  Number.isFinite(value) ? centsText(Math.floor(value * 100 + 1e-6)) : null;
 const percent = (value: number) => value.toFixed(4).replace(/\.?0+$/, '');
 
 /** Signed decimal text of any scale, exactly: `units` parts of `unit`. */

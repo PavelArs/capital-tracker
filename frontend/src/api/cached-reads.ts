@@ -3,7 +3,7 @@ import { type AssetHistory, assetHistoryApi } from './asset-history.api';
 import { type AuditHistory, auditHistoryApi } from './audit-history.api';
 import { type DepositDetail, type DepositList, depositsApi } from './deposits.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
-import { type Goal, type GoalList, goalsApi } from './goals.api';
+import { type Goal, type GoalForecast, type GoalList, goalsApi } from './goals.api';
 import { type HiddenAsset, hiddenAssetsApi } from './hidden-assets.api';
 import {
   CLASSIFICATION_CHANGED,
@@ -191,6 +191,11 @@ export const cachedReads = {
   deposit: cachedRead('deposit', (id: string): Promise<DepositDetail> => depositsApi.get(id)),
   goals: cachedRead('goals', (): Promise<GoalList> => goalsApi.list()),
   goal: cachedRead('goal', (id: string): Promise<Goal> => goalsApi.get(id)),
+  // The goal's terms are part of the key, so an edit reads the forecast for the new terms.
+  goalForecast: cachedRead(
+    'goal-forecast',
+    (id: string, _terms: string): Promise<GoalForecast> => goalsApi.forecast(id),
+  ),
   /** One page of the change history for a filter: the newest, or the one older than `before`. */
   audit: cachedRead(
     'audit',
