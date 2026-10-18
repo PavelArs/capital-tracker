@@ -368,7 +368,7 @@ export function firstImpossibleMovement(
 ): number {
   // Missing is not zero: while an account's rates do not reach back to its opening day, the money
   // and interest the replay holds are lower bounds (DEP-ACCOUNT), so they are not a maximum for
-  // a withdrawal or a payout. The replay itself never takes out more than it holds.
+  // a withdrawal when capitalized, or a payout otherwise. The replay only takes what it holds.
   const lowerBounds =
     terms.kind === 'account' && !terms.rates.some((rate) => rate.effectiveFrom <= terms.startDate);
   for (const [index, movement] of movements.entries()) {
@@ -385,12 +385,13 @@ export function firstImpossibleMovement(
     const before = projectDeposit(terms, movements.slice(0, index), movement.date);
     const amount = canonicalDecimalToAtoms(movement.amount);
     if (movement.kind === 'interest-payout') {
-      if (!lowerBounds && amount > canonicalDecimalToAtoms(before.due)) return index;
+      if ((!lowerBounds || terms.capitalized) && amount > canonicalDecimalToAtoms(before.due))
+        return index;
     } else if (before.closedOn !== null) {
       return index;
     } else if (
       movement.kind === 'withdrawal' &&
-      !lowerBounds &&
+      (!lowerBounds || !terms.capitalized) &&
       amount > canonicalDecimalToAtoms(before.principal)
     ) {
       return index;

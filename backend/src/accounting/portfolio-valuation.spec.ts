@@ -691,6 +691,8 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
     const without = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
       bank(1, 'First Bank', worth(15_000)),
     ]);
+    expect(assetOf(result, btc).allocationPercent).toBeNull();
+    expect(assetOf(without, btc).allocationPercent).toBe('84.21');
     expect(without.interestMissingDepositCount).toBe(0);
     expect(without.allocation.complete).toBe(true);
     // The shares are worked out against that floor, so they carry the same "incomplete" mark.

@@ -638,15 +638,16 @@ export class DepositsService {
       asOf,
       movementsOf(stored).map((movement) => movement.date),
     );
-    const chart = readings
-      ? depositChart(
-          dates,
-          depositBalances(terms, movementsOf(stored), dates),
-          movementsOf(stored),
-          asOf,
-          readings,
-        )
-      : [];
+    const chart =
+      readings && !missing
+        ? depositChart(
+            dates,
+            depositBalances(terms, movementsOf(stored), dates),
+            movementsOf(stored),
+            asOf,
+            readings,
+          )
+        : [];
     return {
       ...this.view(stored, asOf, converters, readings),
       asOf,

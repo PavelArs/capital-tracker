@@ -355,6 +355,24 @@ describe('interest paid out after the term or the closure', () => {
 });
 
 describe('firstImpossibleMovement of an account with missing interest', () => {
+  it.each([
+    [true, 'withdrawal', -1],
+    [false, 'interest-payout', -1],
+    [false, 'withdrawal', 1],
+    [true, 'interest-payout', 1],
+  ] as const)(
+    'DEP-ACCOUNT-BOUNDS capitalized=%s %s validates its own balance',
+    (capitalized, kind, expected) => {
+      const account = terms({ kind: 'account', endDate: null, capitalized, rates: [] });
+      expect(
+        firstImpossibleMovement(account, [
+          topup('2026-01-01', '1000'),
+          { date: '2026-01-02', kind, amount: '1001' },
+        ]),
+      ).toBe(expected);
+    },
+  );
+
   const account = (rates: DepositTerms['rates']) =>
     terms({ kind: 'account', endDate: null, capitalized: true, rates });
   const held = [topup('2026-01-01', '1000')];

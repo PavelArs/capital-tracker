@@ -761,7 +761,9 @@ export function projectPortfolio(
       return {
         ...asset,
         allocationPercent:
-          allocation && subtotal > 0n ? formatPercent(allocation.value, subtotal) : null,
+          allocation && subtotal > 0n && interestMissingDepositCount === 0
+            ? formatPercent(allocation.value, subtotal)
+            : null,
       };
     }),
     allocation: {

@@ -306,6 +306,7 @@ async function account(db, service, owner) {
     'Unknown capitalized interest leaves all later interest projections unknown');
   assert.deepEqual(rated.periods, [], 'Later capitalized periods depend on the unknown earlier principal');
   assert.equal(rated.interestPosted, null);
+  assert.deepEqual(rated.chart, [], 'A lower-bound balance must not be charted as an exact value');
   assert.equal((await service.list(owner, '2026-09-01')).interestMissingCount, 1);
   // The periods that contain a day before the first rate are not listed, and a check against the
   // bank states no calculated balance and no difference: both would be a guess.
@@ -387,6 +388,12 @@ async function account(db, service, owner) {
   });
   assert.equal(bigger.status, 'active');
   assert.equal(bigger.balance, '0.00');
+  await rejected(() => service.addMovement(owner, floor.id, {
+    date: '2026-07-11', kind: 'interest-payout', amount: '1.00',
+  }), 422);
+  await rejected(() => service.addMovement(owner, paidOut.id, {
+    date: '2026-07-11', kind: 'withdrawal', amount: '100000.01',
+  }), 422);
   const sure = await service.create(owner, { ...terms, name: 'Current G', amount: '1000.00' });
   await service.addRate(owner, sure.id, { effectiveFrom: '2026-07-01', ratePercent: '6' });
   await rejected(
