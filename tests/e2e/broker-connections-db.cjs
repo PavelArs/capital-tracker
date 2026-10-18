@@ -22,7 +22,7 @@ const settings = {
 };
 const database = 'capital_tracker_broker_connections_e2e';
 const servicePath = '/app/backend/dist/brokers/broker-connections.service.js';
-const MIGRATIONS = 69;
+const MIGRATIONS = 70;
 const token = 't.SyntheticToken000000000000000001';
 const replacement = 't.SyntheticToken000000000000000002';
 const brokerAccount = { id: '2000000001', name: 'Synthetic', open: true, access: 'read_only' };
@@ -59,6 +59,25 @@ async function takeOver(db, service, owner, broker) {
   );
   for (const { accountId } of holders) await service.disconnect(owner, accountId);
   return service.connect(owner, broker, { token, brokerAccountId: brokerAccount.id });
+}
+
+async function operationsCsv(db, owner) {
+  const { OwnerExportService } = require('/app/backend/dist/owner-export/owner-export.service.js');
+  const { inflateRawSync } = require('node:zlib');
+  const archive = (await new OwnerExportService(db).archive(owner)).data;
+  const end = archive.length - 22;
+  let at = archive.readUInt32LE(end + 16);
+  for (let index = 0; index < archive.readUInt16LE(end + 10); index++) {
+    const nameLength = archive.readUInt16LE(at + 28);
+    const name = archive.subarray(at + 46, at + 46 + nameLength).toString('utf8');
+    if (name === 'operations.csv') {
+      const local = archive.readUInt32LE(at + 42);
+      const start = local + 30 + archive.readUInt16LE(local + 26) + archive.readUInt16LE(local + 28);
+      return inflateRawSync(archive.subarray(start, start + archive.readUInt32LE(at + 20))).toString('utf8');
+    }
+    at += 46 + nameLength + archive.readUInt16LE(at + 30) + archive.readUInt16LE(at + 32);
+  }
+  assert.fail('Missing operations.csv');
 }
 
 async function connection(db, service, owner, other) {
@@ -454,6 +473,7 @@ function operation(id, type, payment, over = {}) {
 const share = (over) => ({ instrumentUid: shareUid, instrumentType: 'share', ticker: 'SYNTHA', ...over });
 
 async function importing(db, service, imports, tbank, owner, other) {
+  const { OperationListService } = require('/app/backend/dist/accounting/operation-list.service.js');
   stage = 'BROKER-SYNC: a synthetic T-Bank history previewed and written into an empty account';
   const { TradeService } = require('/app/backend/dist/accounting/trade.service.js');
   const trades = new TradeService(db);
@@ -559,6 +579,18 @@ async function importing(db, service, imports, tbank, owner, other) {
   // 10000 in, 5015 on the buy, 90 dividend, 12 tax, 2393 kept from the sale, 1000 out.
   assert.equal((await trades.available(owner, broker, { instrumentId: rub.id, at })).quantity, '6456');
   assert.equal((await trades.available(owner, broker, { instrumentId: linked.id, at })).quantity, '6');
+  const importedRows = (await new OperationListService(db).read(owner, {})).operations.filter(
+    (item) => item.account?.id === broker,
+  );
+  assert.ok(importedRows.some((item) => item.kind === 'trade'));
+  assert.ok(importedRows.some((item) => item.kind === 'reward'));
+  assert.ok(importedRows.every((item) => item.source === 'broker'), 'Trades and rewards retain broker provenance');
+  const exported = await operationsCsv(db, owner);
+  for (const item of importedRows) assert.ok(exported.includes(`${item.id},${item.kind},${item.type},${item.direction},active,broker,`));
+  const { AuditHistoryService } = require('/app/backend/dist/accounting/audit-history.service.js');
+  const importedHistory = (await new AuditHistoryService(db).read(owner, { actor: 'broker', limit: '100' })).events;
+  assert.ok(importedHistory.some((item) => item.entity === 'trade' && item.version === 1));
+  assert.ok(importedHistory.some((item) => item.entity === 'reward' && item.version === 1));
   const [buy] = await db.query(
     `SELECT v."occurredAt", p.gross, p.fee, p."rateSource", s.quantity AS settled
       FROM account_trade_versions v
@@ -805,6 +837,136 @@ async function importing(db, service, imports, tbank, owner, other) {
   await imports.import(owner, eighth, { requestId: randomUUID(), previewHash: funded.previewHash });
   assert.equal(await count('broker_imports', `WHERE "accountId" = '${eighth}'`), 1);
   console.log('PASS BROKER-SYNC-FUNDING');
+
+  stage = 'BROKER-CAPRET: a bond paid back in part lowers its cost and brings cash in, once';
+  const bondUid = '10000000-0000-4000-8000-0000000000c3';
+  const bond = (over) => ({
+    instrumentUid: bondUid,
+    instrumentType: 'bond',
+    ticker: 'SYNTHBOND',
+    ...over,
+  });
+  const ninth = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, ninth);
+  history = [
+    operation('900000001', 'INPUT', '10000', { occurredAt: '2024-03-01T07:00:00Z' }),
+    operation('900000002', 'BUY', '-9000', bond({ occurredAt: '2024-03-01T08:00:00Z', quantity: '10' })),
+    operation('900000003', 'BOND_REPAYMENT', '2000', bond({ occurredAt: '2024-03-15T07:00:00Z' })),
+    operation('900000004', 'BOND_REPAYMENT_FULL', '7500', bond({ occurredAt: '2024-03-20T07:00:00Z' })),
+  ];
+  const returns = await imports.preview(owner, ninth);
+  assert.deepEqual(returns.problems, []);
+  assert.deepEqual(
+    returns.entries.map((entry) => [entry.record, entry.action, entry.amount]),
+    [
+      ['trade', 'deposit', '10000'],
+      ['trade', 'buy', '9000'],
+      ['capital-return', 'return', '2000'],
+      ['trade', 'sell', '7500'],
+    ],
+  );
+  assert.deepEqual([returns.trades, returns.rewards, returns.capitalReturns], [3, 0, 1]);
+  assert.equal(returns.canImport, true);
+  const returnRequest = randomUUID();
+  const returned = await imports.import(owner, ninth, { requestId: returnRequest, previewHash: returns.previewHash });
+  assert.deepEqual(
+    [returned.value.trades, returned.value.rewards, returned.value.capitalReturns, returned.value.lastJournalRevision],
+    [3, 0, 1, 4],
+  );
+  assert.deepEqual(
+    await imports.import(owner, ninth, { requestId: returnRequest, previewHash: returns.previewHash }),
+    { created: false, value: returned.value },
+    'A repeated request returns its receipt and writes no second return',
+  );
+  assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
+  const [heldReturn] = await db.query(
+    `SELECT v.kind, v.version, v."journalRevision", v.amount, v."amountUsd", v."paidCurrency",
+        v."rateDate"::text AS "rateDate", v."perUsd", v."rateSource", v."occurredAt"
+      FROM account_capital_return_versions v WHERE v."accountId" = $1`,
+    [ninth],
+  );
+  const trim = (value) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
+  assert.deepEqual(
+    [heldReturn.kind, heldReturn.version, heldReturn.journalRevision, trim(heldReturn.amount), heldReturn.paidCurrency],
+    ['create', 1, 3, '2000', 'RUB'],
+  );
+  assert.deepEqual(
+    [heldReturn.rateDate, trim(heldReturn.perUsd), heldReturn.rateSource, heldReturn.occurredAt.toISOString()],
+    ['2024-03-15', '90', 'bank-of-russia', '2024-03-15T07:00:00.000Z'],
+  );
+  assert.equal(trim(heldReturn.amountUsd), '22.222222222222222222222222222222'.replace(/0+$/, ''));
+  const [byReturn] = await db.query(
+    `SELECT o."operationId", i."capitalReturns" FROM broker_imported_operations o
+      JOIN broker_imports i ON i.id = o."importId"
+      WHERE o."accountId" = $1 AND o."capitalReturnId" IS NOT NULL`,
+    [ninth],
+  );
+  assert.deepEqual([byReturn.operationId, byReturn.capitalReturns], ['900000003', 1]);
+  const [rubCash] = await db.query(
+    `SELECT id FROM accounting_instruments WHERE "ownerId" = $1 AND "assetType" = 'fiat' AND symbol = 'RUB'`,
+    [owner],
+  );
+  const bonds = await db.query(
+    `SELECT i.id FROM broker_instrument_links l JOIN accounting_instruments i ON i.id = l."instrumentId"
+      WHERE l."ownerId" = $1 AND l."providerInstrumentId" = $2`,
+    [owner, bondUid],
+  );
+  const atEnd = '2024-04-01T00:00:00.000Z';
+  // 10000 in, 9000 on the bond, 2000 came back, 7500 on its full repayment.
+  assert.equal((await trades.available(owner, ninth, { instrumentId: rubCash.id, at: atEnd })).quantity, '10500');
+  assert.equal((await trades.available(owner, ninth, { instrumentId: bonds[0].id, at: atEnd })).quantity, '0');
+  const listed = (await new OperationListService(db).read(owner, {})).operations.filter(
+    (item) => item.kind === 'capital-return',
+  );
+  assert.deepEqual(
+    listed.map((item) => [item.type, item.direction, trim(item.quantity), item.counterAsset.symbol, item.account.id]),
+    [['capital-return', 'in', '2000', 'SYNTHBOND', ninth]],
+  );
+  assert.equal(listed[0].paid.currency, 'RUB');
+  assert.equal(listed[0].source, 'broker', 'The capital return came from a broker import');
+  assert.ok((await operationsCsv(db, owner)).includes(`${listed[0].id},capital-return,capital-return,in,active,broker,`));
+  const returnHistory = (await new AuditHistoryService(db).read(owner, { entity: 'capital-return' })).events;
+  assert.equal(returnHistory.find((item) => item.entityId === listed[0].id.slice('capital-return:'.length)).actor, 'broker');
+  await rejected(() => new AccountingService(db).removeAccount(owner, ninth), 409);
+  assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
+  console.log('PASS BROKER-CAPRET');
+
+  stage = 'BROKER-CAPRET-VOID: one owner command removes a return without erasing its history';
+  const { CapitalReturnService } = require('/app/backend/dist/accounting/capital-return.service.js');
+  const capitalReturns = new CapitalReturnService(db);
+  const returnId = listed[0].id.slice('capital-return:'.length);
+  const command = { requestId: randomUUID(), expectedJournalRevision: 4 };
+  await rejected(() => capitalReturns.void(other, ninth, returnId, command), 404);
+  await rejected(() => capitalReturns.void(owner, fifth, returnId, command), 404);
+  await rejected(() => capitalReturns.void(owner, ninth, returnId, { ...command, expectedJournalRevision: 3 }), 409);
+  await rejected(() => capitalReturns.void(owner, ninth, returnId, { ...command, unexpected: true }), 400);
+  const spent = await trades.create(owner, ninth, {
+    requestId: randomUUID(), expectedJournalRevision: 4,
+    instrumentId: rubCash.id, side: 'sell', purpose: 'expense',
+    occurredAt: '2024-03-25T00:00:00.000Z', quantity: '10000', grossUsd: '100', feeUsd: '0',
+  });
+  await rejected(() => capitalReturns.void(owner, ninth, returnId, { ...command, expectedJournalRevision: 5 }), 409);
+  assert.equal(await count('account_capital_return_versions', `WHERE "accountId" = '${ninth}'`), 1,
+    'A dependent cash expense refuses the void and rolls back its version');
+  await trades.void(owner, ninth, spent.value.trade.tradeId, {
+    requestId: randomUUID(), expectedJournalRevision: 5,
+  });
+  const finalCommand = { ...command, expectedJournalRevision: 6 };
+  const removed = await capitalReturns.void(owner, ninth, returnId, finalCommand);
+  assert.equal(removed.created, true);
+  assert.deepEqual([removed.value.capitalReturn.kind, removed.value.capitalReturn.version, removed.value.journalRevision], ['void', 2, 7]);
+  assert.deepEqual(await capitalReturns.void(owner, ninth, returnId, finalCommand), { created: false, value: removed.value });
+  await rejected(() => capitalReturns.void(owner, ninth, returnId, { ...finalCommand, expectedJournalRevision: 7 }), 409);
+  await rejected(() => capitalReturns.void(owner, ninth, returnId, { requestId: randomUUID(), expectedJournalRevision: 7 }), 409);
+  assert.equal(await count('account_capital_return_versions', `WHERE "accountId" = '${ninth}'`), 2);
+  assert.equal((await trades.available(owner, ninth, { instrumentId: rubCash.id, at: atEnd })).quantity, '8500');
+  assert.equal((await new OperationListService(db).read(owner, {})).operations.some((item) => item.id === listed[0].id), false);
+  const returnVersions = (await new AuditHistoryService(db).read(owner, { entity: 'capital-return' })).events
+    .filter((item) => item.entityId === returnId).sort((a, b) => a.version - b.version);
+  assert.deepEqual(returnVersions.map((item) => [item.version, item.actor]), [[1, 'broker'], [2, 'owner']],
+    'The broker created the return, but the owner deleted it');
+  assert.ok((await operationsCsv(db, owner)).includes(`${listed[0].id},capital-return,capital-return,in,voided,broker,`));
+  console.log('PASS BROKER-CAPRET-VOID');
 }
 
 async function main() {

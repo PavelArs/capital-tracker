@@ -37,6 +37,8 @@ export const backupTables = [
   'account_swap_versions',
   'account_rewards',
   'account_reward_versions',
+  'account_capital_returns',
+  'account_capital_return_versions',
   'broker_instrument_links',
   'broker_imports',
   'broker_imported_operations',

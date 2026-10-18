@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { importedByBroker } from '../brokers/broker-provenance';
 import {
   type AccountingCurrency,
   FxConverter,
@@ -48,6 +49,7 @@ interface FeeColumns {
   feeQuantity: string;
 }
 interface TradeRow extends Versioned {
+  broker: boolean;
   tradeId: string;
   side: 'buy' | 'sell';
   quantity: string;
@@ -83,11 +85,25 @@ interface SwapRow extends Versioned, FeeColumns {
   considerationUsd: string | null;
 }
 interface RewardRow extends Versioned {
+  broker: boolean;
   rewardId: string;
   category: RewardOperationInput['category'];
   quantity: string;
   incomeValueUsd: string | null;
   acquisitionBasisUsd: string | null;
+}
+interface CapitalReturnRow extends Versioned {
+  broker: boolean;
+  capitalReturnId: string;
+  returnedInstrumentId: string;
+  returnedName: string;
+  returnedSymbol: string | null;
+  amount: string;
+  amountUsd: string;
+  paidCurrency: string | null;
+  rateDate: string | null;
+  perUsd: string | null;
+  rateSource: string | null;
 }
 interface OpeningRow extends Named {
   lotId: string;
@@ -180,6 +196,20 @@ function payment(row: TradeRow): TradePayment | null {
   };
 }
 
+function returnedPayment(row: CapitalReturnRow): TradePayment | null {
+  if (row.paidCurrency === null) return null;
+  if (!isPaidCurrency(row.paidCurrency) || !isRateSource(row.rateSource) || !row.rateDate)
+    throw new Error('Invalid stored capital return rate');
+  return {
+    currency: row.paidCurrency,
+    gross: decimal(row.amount),
+    fee: '0',
+    rateDate: row.rateDate,
+    perUsd: parseDecimal(row.perUsd, true),
+    rateSource: row.rateSource,
+  };
+}
+
 interface ListQuery {
   currency: AccountingCurrency | null;
   range: OperationRange;
@@ -230,7 +260,7 @@ export class OperationListService {
       const trades: TradeRow[] = await manager.query(
         `SELECT t.id AS "tradeId", ${named}, v.side, v.quantity::text AS quantity,
             v."grossUsd"::text AS "grossUsd", v."feeUsd"::text AS "feeUsd",
-            (r."tradeId" IS NOT NULL) AS csv, p.currency AS "paidCurrency",
+            (r."tradeId" IS NOT NULL) AS csv, ${importedByBroker('tradeId')} AS broker, p.currency AS "paidCurrency",
             p.gross::text AS "paidGross", p.fee::text AS "paidFee",
             p."rateDate"::text AS "paidRateDate", p."perUsd"::text AS "paidPerUsd",
             p."rateSource" AS "paidRateSource", c.comment,
@@ -286,13 +316,30 @@ export class OperationListService {
         [owner],
       );
       const rewards: RewardRow[] = await manager.query(
-        `SELECT r.id AS "rewardId", ${named}, v.category, v.quantity::text AS quantity,
+        `SELECT r.id AS "rewardId", ${named}, v.category, ${importedByBroker('rewardId')} AS broker, v.quantity::text AS quantity,
             v."incomeValueUsd"::text AS "incomeValueUsd",
             v."acquisitionBasisUsd"::text AS "acquisitionBasisUsd"
           FROM account_rewards r
           JOIN account_reward_versions v ON v."ownerId"=r."ownerId" AND v."accountId"=r."accountId"
             AND v."rewardId"=r.id AND v.version=r."currentVersion"
           ${instrumentJoin} ${accountJoin}
+          WHERE r."ownerId"=$1 AND v.kind<>'void'`,
+        [owner],
+      );
+      const capitalReturns: CapitalReturnRow[] = await manager.query(
+        `SELECT r.id AS "capitalReturnId", v."accountId", a.name AS "accountName",
+            v."cashInstrumentId" AS "instrumentId", ci.name AS "instrumentName",
+            ci.symbol AS "instrumentSymbol", v."occurredAt", v."orderWithinTimestamp", v.version,
+            v."instrumentId" AS "returnedInstrumentId", i.name AS "returnedName",
+            i.symbol AS "returnedSymbol", v.amount::text AS amount, v."amountUsd"::text AS "amountUsd",
+            v."paidCurrency", v."rateDate"::text AS "rateDate", v."perUsd"::text AS "perUsd",
+            v."rateSource", ${importedByBroker('capitalReturnId')} AS broker
+          FROM account_capital_returns r
+          JOIN account_capital_return_versions v ON v."ownerId"=r."ownerId"
+            AND v."accountId"=r."accountId" AND v."capitalReturnId"=r.id
+            AND v.version=r."currentVersion"
+          ${instrumentJoin} ${accountJoin}
+          JOIN accounting_instruments ci ON ci."ownerId"=v."ownerId" AND ci.id=v."cashInstrumentId"
           WHERE r."ownerId"=$1 AND v.kind<>'void'`,
         [owner],
       );
@@ -401,6 +448,7 @@ export class OperationListService {
             grossUsd: decimal(row.grossUsd),
             feeUsd: decimal(row.feeUsd),
             csv: row.csv,
+            broker: row.broker,
             paid: payment(row),
             comment: row.comment,
             settlement:
@@ -442,6 +490,7 @@ export class OperationListService {
           })),
           rewards: rewards.map((row) => ({
             rewardId: row.rewardId,
+            broker: row.broker,
             version: row.version,
             account: place(row),
             asset: held(row),
@@ -451,6 +500,19 @@ export class OperationListService {
             quantity: decimal(row.quantity),
             incomeValueUsd: optional(row.incomeValueUsd),
             acquisitionBasisUsd: optional(row.acquisitionBasisUsd),
+          })),
+          capitalReturns: capitalReturns.map((row) => ({
+            capitalReturnId: row.capitalReturnId,
+            broker: row.broker,
+            version: row.version,
+            account: place(row),
+            cash: held(row),
+            returned: asset(row.returnedInstrumentId, row.returnedName, row.returnedSymbol),
+            occurredAt: row.occurredAt.toISOString(),
+            orderWithinTimestamp: row.orderWithinTimestamp,
+            amount: decimal(row.amount),
+            amountUsd: decimal(row.amountUsd),
+            paid: returnedPayment(row),
           })),
           openings: openings.map((row) => {
             const quantity = decimal(row.carriedQuantity);

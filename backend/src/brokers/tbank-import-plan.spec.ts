@@ -103,9 +103,8 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
-  it('sells a bond paid back in full and lists a part paid back as not recordable yet', () => {
-    // A part paid back is principal, not income, and T-Bank gives no quantity to lower the
-    // bond's cost by, so it is listed rather than shown as a gain.
+  it('sells a bond paid back in full and records a part paid back as a capital return', () => {
+    // A part paid back is principal, not income: it lowers what the units cost and keeps them.
     const part = op({
       type: 'OPERATION_TYPE_BOND_REPAYMENT',
       payment: '250',
@@ -117,7 +116,13 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       part,
       op({ type: 'OPERATION_TYPE_BOND_REPAYMENT_FULL', payment: '750', quantity: '1' }),
     ]);
-    const full = plan.entries[1];
+    const [returned, full] = [plan.entries[1], plan.entries[2]];
+    expect([returned.record, returned.action, returned.instrumentUid, returned.amount]).toEqual([
+      'capital-return',
+      'return',
+      share,
+      '250',
+    ]);
     expect([full.record, full.action, full.instrumentUid, full.quantity, full.amount]).toEqual([
       'trade',
       'sell',
@@ -125,10 +130,9 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       '1',
       '750',
     ]);
-    expect(plan.entries).toHaveLength(2);
-    expect(plan.skipped).toEqual([
-      { operationId: part.id, type: 'OPERATION_TYPE_BOND_REPAYMENT', reason: 'partial-repayment' },
-    ]);
+    expect(plan.entries).toHaveLength(3);
+    expect(plan.skipped).toEqual([]);
+    expect([plan.trades, plan.rewards, plan.capitalReturns]).toEqual([2, 0, 1]);
   });
 
   it('sells every unit held of a bond paid back in full, as T-Bank gives no quantity for it', () => {
@@ -321,6 +325,31 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       ['fee', '0.1', ['480000002']],
     ]);
   });
+
+  it.each(['OPERATION_TYPE_BOND_REPAYMENT', 'OPERATION_TYPE_BOND_REPAYMENT_FULL'])(
+    'BROKER-CAPRET refuses a negative quantity on %s even when bonds are held',
+    (type) => {
+      const buy = op({
+        id: '480000010',
+        instrumentType: 'bond',
+        occurredAt: '2024-02-01T10:00:00Z',
+      });
+      const repayment = op({
+        id: '480000011',
+        type,
+        instrumentType: 'bond',
+        quantity: '-1',
+        payment: '100',
+      });
+      const plan = planImport([buy, repayment]);
+      expect(plan.skipped).toContainEqual({
+        operationId: repayment.id,
+        type,
+        reason: 'no-quantity',
+      });
+      expect(plan.entries.some((entry) => entry.operationIds.includes(repayment.id))).toBe(false);
+    },
+  );
 
   it('lists trades and dividends settled through a card, which never touch the broker cash', () => {
     const plan = planImport([
@@ -1122,5 +1151,128 @@ describe('BROKER-SYNC: operations without money', () => {
       ['700000002', 'no-payment'],
       ['700000003', 'no-payment'],
     ]);
+  });
+});
+
+describe('BROKER-CAPRET: a part of a bond paid back', () => {
+  const part = (over: Partial<TBankOperation> = {}) =>
+    op({
+      type: 'OPERATION_TYPE_BOND_REPAYMENT',
+      payment: '250',
+      quantity: '0',
+      occurredAt: '2024-01-15T10:00:00Z',
+      ...over,
+    });
+  const buy = (over: Partial<TBankOperation> = {}) =>
+    op({ quantity: '2', payment: '-1980', occurredAt: '2024-01-01T10:00:00Z', ...over });
+
+  it('lists a part paid back on units the history never shows held, not recording a cost to lower', () => {
+    const lone = part({ id: '800000001' });
+    const plan = planImport([lone]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.skipped).toEqual([
+      { operationId: lone.id, type: 'OPERATION_TYPE_BOND_REPAYMENT', reason: 'not-held' },
+    ]);
+  });
+
+  it('lists a part paid back after the units were all sold', () => {
+    const late = part({ id: '800000002', occurredAt: '2024-02-01T10:00:00Z' });
+    const plan = planImport([
+      buy(),
+      op({
+        type: 'OPERATION_TYPE_SELL',
+        quantity: '2',
+        payment: '2100',
+        occurredAt: '2024-01-20T10:00:00Z',
+      }),
+      late,
+    ]);
+    expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
+      [late.id, 'not-held'],
+    ]);
+    expect(plan.capitalReturns).toBe(0);
+  });
+
+  it('keeps each part apart when combining a busy account, and counts none as a trade', () => {
+    const operations = [buy({ quantity: '5', payment: '-4950' })];
+    for (let day = 0; day < 1000; day += 1)
+      operations.push(
+        op({
+          id: `7${String(day).padStart(8, '0')}`,
+          type: day % 2 === 0 ? 'OPERATION_TYPE_BUY' : 'OPERATION_TYPE_SELL',
+          quantity: '1',
+          payment: day % 2 === 0 ? '-100' : '100',
+          instrumentUid: '00000000-0000-4000-8000-000000000002',
+          ticker: 'OTHER',
+          occurredAt: new Date(Date.UTC(2024, 0, 2) + day * 3_600_000).toISOString(),
+        }),
+      );
+    operations.push(
+      part({ id: '800000003' }),
+      part({ id: '800000004', occurredAt: '2024-01-16T10:00:00Z' }),
+    );
+    const plan = planImport(operations);
+    expect(plan.grouping).not.toBe('operation');
+    expect(plan.capitalReturns).toBe(2);
+    expect(plan.entries.filter((entry) => entry.record === 'capital-return')).toHaveLength(2);
+    expect(plan.fitsCapitalReturnLimit).toBe(true);
+  });
+
+  it('never combines the buys of a bond across a part paid back, so the units held then stay as they were', () => {
+    const operations = [
+      buy({ id: '800000010', quantity: '1', payment: '-990', occurredAt: '2024-01-02T10:00:00Z' }),
+      part({ id: '800000011', occurredAt: '2024-01-15T10:00:00Z' }),
+      buy({ id: '800000012', quantity: '1', payment: '-990', occurredAt: '2024-01-28T10:00:00Z' }),
+    ];
+    // Distinct instruments cannot be combined, so the account stays over the combine threshold
+    // and the bond's own buys are what is merged by month.
+    for (let index = 0; index < 950; index += 1)
+      operations.push(
+        op({
+          id: `6${String(index).padStart(8, '0')}`,
+          quantity: '1',
+          payment: '-1',
+          instrumentUid: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
+          ticker: `T${index}`,
+          occurredAt: '2024-01-03T10:00:00Z',
+        }),
+      );
+    const plan = planImport(operations);
+    expect(plan.grouping).toBe('month');
+    const bond = plan.entries.filter((entry) => entry.instrumentUid === share);
+    expect(bond.map((entry) => [entry.action, entry.occurredAt, entry.operationIds])).toEqual([
+      ['buy', '2024-01-02T10:00:00Z', ['800000010']],
+      ['return', '2024-01-15T10:00:00Z', ['800000011']],
+      ['buy', '2024-01-28T10:00:00Z', ['800000012']],
+    ]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('puts a part paid back ahead of a sale of the same instant, which may sell the units it lowers', () => {
+    const sale = op({
+      id: '800000005',
+      type: 'OPERATION_TYPE_SELL',
+      quantity: '2',
+      payment: '1500',
+      occurredAt: '2024-01-15T10:00:00Z',
+    });
+    const plan = planImport([buy(), sale, part({ id: '800000006' })]);
+    expect(plan.entries.map((entry) => entry.action)).toEqual(['buy', 'return', 'sell']);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('lists a part paid back in a currency the app does not keep', () => {
+    const plan = planImport([buy(), part({ id: '800000007', paymentCurrency: 'gbp' })]);
+    expect(plan.capitalReturns).toBe(0);
+    expect(plan.skipped.map((item) => item.reason)).toEqual(['currency']);
+  });
+
+  it('lists a part paid back with no instrument, which names no units to lower', () => {
+    const plan = planImport([
+      buy(),
+      part({ id: '800000008', instrumentUid: '', instrumentType: '', ticker: '' }),
+    ]);
+    expect(plan.capitalReturns).toBe(0);
+    expect(plan.skipped.map((item) => item.reason)).toEqual(['no-instrument']);
   });
 });

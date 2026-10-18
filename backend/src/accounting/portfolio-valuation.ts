@@ -7,6 +7,7 @@ import {
 import { freshness } from '../prices/price-collection';
 import type { AssetType, PriceSource, ValuationCurrency } from './asset-classification';
 import type { SwapAllocation } from './asset-swap-types';
+import type { CapitalReturnAllocation, ReturnedPart } from './capital-return-types';
 import type { FifoCarryInInput, FifoTrade } from './fifo';
 import {
   canonicalDecimalToAtoms,
@@ -55,13 +56,26 @@ export function isPurchase(
   return lot.origin?.kind === 'trade' && isBoughtTrade(lot.origin.tradeId, lot.origin.version);
 }
 
+/**
+ * What a capital return took off the cost of a lot, at the return's own Moscow day: the lot's
+ * `costUsd` is already lowered by it, and in another currency it is taken off at that day's rate.
+ */
+export interface ReturnedCost {
+  costUsd: string;
+  at: string;
+  native?: NativeAmount;
+}
+
 /** A held FIFO fragment with its original acquisition instant (Q1: cost at that date). */
 export interface PortfolioLot {
   instrumentId: string;
   quantity: string;
+  /** What the units cost now, after any capital return lowered it. */
   costUsd: string | null;
   acquiredAt: string;
+  /** The units' purchase as paid, before any capital return. */
   native?: NativeAmount;
+  returned?: readonly ReturnedCost[];
   /** Set on a lot bought or carried in as a purchase; a reward, swap or received coin is not. */
   purchase?: true;
 }
@@ -69,6 +83,7 @@ export interface ConsumedCost {
   costUsd: string | null;
   acquiredAt: string;
   native?: NativeAmount;
+  returned?: readonly ReturnedCost[];
 }
 /** A sale or swap: proceeds at its date minus the FIFO cost of what it consumed. */
 export interface PortfolioRealization {
@@ -264,9 +279,11 @@ export function portfolioAccount(
     trades: readonly FifoTrade[];
     initialLots: readonly FifoCarryInInput[];
     swaps?: readonly { swapId: string; outgoingInstrumentId: string; occurredAt: string }[];
+    capitalReturns?: readonly { capitalReturnId: string }[];
     linkedTrades?: readonly FifoTrade[];
   },
   swapAllocations: ReadonlyMap<string, SwapAllocation> = new Map(),
+  capitalReturnAllocations: ReadonlyMap<string, CapitalReturnAllocation> = new Map(),
 ): PortfolioAccountInput {
   const trades = new Map(
     journal.trades.map((trade) => [tradeKey(trade.tradeId, trade.version), trade.occurredAt]),
@@ -287,7 +304,21 @@ export function portfolioAccount(
   const fromOrigin = (origin: LotOrigin, quantity: string) =>
     origin.kind === 'trade'
       ? nativeShare(paid.get(tradeKey(origin.tradeId, origin.version)), quantity)
-      : undefined;
+      : origin.kind === 'capital-return' && origin.paidCurrency
+        ? { currency: origin.paidCurrency, amount: quantity }
+        : undefined;
+  const returned = (parts: readonly ReturnedPart[] | undefined) =>
+    parts?.length
+      ? {
+          returned: parts.map(
+            (part): ReturnedCost => ({
+              costUsd: part.usd,
+              at: part.occurredAt,
+              ...(part.native ? { native: part.native } : {}),
+            }),
+          ),
+        }
+      : {};
   const native = (value: NativeAmount | undefined) => (value ? { native: value } : {});
   const carried = new Map(
     journal.initialLots.map((lot) => [
@@ -311,6 +342,7 @@ export function portfolioAccount(
       quantity: lot.remainingQuantity,
       costUsd: lot.remainingCostUsd,
       acquiredAt,
+      ...returned(lot.returned),
       ...(isPurchase(lot, isBoughtTrade) ? { purchase: true as const } : {}),
       ...native(
         'origin' in lot
@@ -334,6 +366,7 @@ export function portfolioAccount(
     list.push({
       costUsd: match.costUsd,
       acquiredAt,
+      ...returned(match.returned),
       ...native(
         'origin' in match
           ? fromOrigin(match.origin, match.quantity)
@@ -379,8 +412,23 @@ export function portfolioAccount(
       consumed: allocation.items.map((item) => ({
         costUsd: item.costUsd,
         acquiredAt: item.origin.acquiredAt,
+        ...returned(item.returned),
         ...native(fromOrigin(item.origin, item.quantity)),
       })),
+    });
+  }
+  // The share of a return that the cost of the units could not take is realized when it comes.
+  for (const { capitalReturnId } of journal.capitalReturns ?? []) {
+    const allocation = capitalReturnAllocations.get(capitalReturnId);
+    if (!allocation) continue;
+    if (allocation.realizedUsd !== null && canonicalDecimalToAtoms(allocation.realizedUsd) === 0n)
+      continue;
+    realizations.push({
+      instrumentId: allocation.instrumentId,
+      occurredAt: allocation.occurredAt,
+      proceedsUsd: allocation.realizedUsd,
+      ...(allocation.realizedNative ? { nativeProceeds: allocation.realizedNative } : {}),
+      consumed: [],
     });
   }
   return { ...identity, coverage: 'covered', lots, realizations };
@@ -444,6 +492,28 @@ export function convertAmount(
 }
 
 /**
+ * What a lot cost in the converter's currency: its purchase at its day's rate, less each capital
+ * return at that return's own day's rate. Null when the cost is unknown or a rate is missing.
+ */
+export function lotCostIn(
+  fx: FxConverter,
+  lot: Pick<PortfolioLot, 'costUsd' | 'acquiredAt' | 'native' | 'returned'>,
+): bigint | null {
+  if (lot.costUsd === null) return null;
+  const returned = lot.returned ?? [];
+  let before = signedAtoms(lot.costUsd);
+  for (const part of returned) before += signedAtoms(part.costUsd);
+  let total = convertAmount(fx, formatAtoms(before), lot.acquiredAt, lot.native);
+  if (total === null) return null;
+  for (const part of returned) {
+    const taken = convertAmount(fx, part.costUsd, part.at, part.native);
+    if (taken === null) return null;
+    total -= taken;
+  }
+  return total;
+}
+
+/**
  * Whole-portfolio valuation from one database snapshot (portfolio-valuation, PV-1..4) in one
  * accounting currency (CUR-*): costs at each acquisition date's rate, proceeds at each sale
  * date's rate and current values at today's rate.
@@ -499,7 +569,7 @@ export function projectPortfolio(
       total.quantity += quantity;
       if (lot.costUsd === null) total.unknownQuantity += quantity;
       else {
-        const cost = toCurrency(lot.costUsd, lot.acquiredAt, lot.native);
+        const cost = lotCostIn(fx, lot);
         if (cost === null) total.missingRateQuantity += quantity;
         else total.knownCost += cost;
       }
@@ -541,11 +611,27 @@ export function projectPortfolio(
               native: realization.nativeProceeds,
               sign: 1n,
             },
-        ...realization.consumed.map((item) =>
-          item.costUsd === null
-            ? null
-            : { usd: item.costUsd, at: item.acquiredAt, native: item.native, sign: -1n },
-        ),
+        ...realization.consumed.flatMap((item) => {
+          if (item.costUsd === null) return [null];
+          // A return that lowered the units' cost came back before the sale: their cost is what
+          // they cost at their own day less what each return took off at its day.
+          let gross = signedAtoms(item.costUsd);
+          for (const part of item.returned ?? []) gross += signedAtoms(part.costUsd);
+          return [
+            {
+              usd: item.returned?.length ? formatAtoms(gross) : item.costUsd,
+              at: item.acquiredAt,
+              native: item.native,
+              sign: -1n,
+            },
+            ...(item.returned ?? []).map((part) => ({
+              usd: part.costUsd,
+              at: part.at,
+              native: part.native,
+              sign: 1n,
+            })),
+          ];
+        }),
       ];
       if (amounts.every((amount) => amount !== null)) {
         result = 0n;

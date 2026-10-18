@@ -30,6 +30,17 @@ function remainder(lot: PortfolioLot, held: bigint, kept: bigint): PortfolioLot 
     quantity: formatAtoms(kept),
     costUsd: lot.costUsd === null ? null : scale(lot.costUsd),
     ...(native ? { native } : {}),
+    ...(lot.returned
+      ? {
+          returned: lot.returned.map((part) => ({
+            ...part,
+            costUsd: scale(part.costUsd),
+            ...(part.native
+              ? { native: { currency: part.native.currency, amount: scale(part.native.amount) } }
+              : {}),
+          })),
+        }
+      : {}),
   };
 }
 

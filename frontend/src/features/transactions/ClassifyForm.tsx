@@ -380,7 +380,7 @@ export function recordText(item: Operation, elsewhere = false): string {
             ? ` for ${amount(item.settlement.quantity, item.settlement.asset)}`
             : ''
         }`,
-    item.source === 'csv' ? 'From CSV' : 'Added by you',
+    item.source === 'broker' ? 'From broker' : item.source === 'csv' ? 'From CSV' : 'Added by you',
     ...(elsewhere && item.account ? [item.account.name] : []),
   ].join(' · ');
 }

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { importedByBroker } from '../brokers/broker-provenance';
 import {
   type AuditFilter,
   type AuditHistory,
@@ -25,7 +26,8 @@ const symbol = (alias: string) => `coalesce(${alias}.symbol, ${alias}.name)`;
 const sources = `
   SELECT 'trade' AS entity, v."tradeId"::text AS "entityId", v.version,
       ${changeOf('v.kind')} AS change, v."createdAt", v."occurredAt", a.name AS account,
-      CASE WHEN v.version = 1 AND r."tradeId" IS NOT NULL THEN 'csv'
+      CASE WHEN v.version = 1 AND ${importedByBroker('tradeId')} THEN 'broker'
+        WHEN v.version = 1 AND r."tradeId" IS NOT NULL THEN 'csv'
         WHEN ${madeByApp('tradeId', 'v."tradeId"')} THEN 'automatic' ELSE 'owner' END AS actor,
       jsonb_build_object('side', v.side, 'asset', ${symbol('i')}, 'quantity', v.quantity::text,
         'grossUsd', v."grossUsd"::text, 'feeUsd', v."feeUsd"::text,
@@ -74,7 +76,8 @@ const sources = `
   UNION ALL
   SELECT 'reward', v."rewardId"::text, v.version, ${changeOf('v.kind')}, v."createdAt",
       v."occurredAt", a.name,
-      CASE WHEN ${madeByApp('rewardId', 'v."rewardId"')} THEN 'automatic' ELSE 'owner' END,
+      CASE WHEN v.version = 1 AND ${importedByBroker('rewardId')} THEN 'broker'
+        WHEN ${madeByApp('rewardId', 'v."rewardId"')} THEN 'automatic' ELSE 'owner' END,
       jsonb_build_object('category', v.category, 'asset', ${symbol('i')},
         'quantity', v.quantity::text, 'incomeValueUsd', v."incomeValueUsd"::text,
         'acquisitionBasisUsd', v."acquisitionBasisUsd"::text,
@@ -82,6 +85,18 @@ const sources = `
     FROM account_reward_versions v
     JOIN manual_accounts a ON a."ownerId" = v."ownerId" AND a.id = v."accountId"
     JOIN accounting_instruments i ON i."ownerId" = v."ownerId" AND i.id = v."instrumentId"
+    WHERE v."ownerId" = $1
+  UNION ALL
+  SELECT 'capital-return', v."capitalReturnId"::text, v.version, ${changeOf('v.kind')},
+      v."createdAt", v."occurredAt", a.name,
+      CASE WHEN v.version = 1 AND ${importedByBroker('capitalReturnId')} THEN 'broker' ELSE 'owner' END,
+      jsonb_build_object('asset', ${symbol('c')}, 'returned', ${symbol('i')},
+        'amount', v.amount::text, 'amountUsd', v."amountUsd"::text,
+        'occurredAt', ${iso('v."occurredAt"')})
+    FROM account_capital_return_versions v
+    JOIN manual_accounts a ON a."ownerId" = v."ownerId" AND a.id = v."accountId"
+    JOIN accounting_instruments i ON i."ownerId" = v."ownerId" AND i.id = v."instrumentId"
+    JOIN accounting_instruments c ON c."ownerId" = v."ownerId" AND c.id = v."cashInstrumentId"
     WHERE v."ownerId" = $1
   UNION ALL
   SELECT 'flow', v."flowId"::text, v.version, ${changeOf('v.kind')}, v."createdAt",

@@ -939,6 +939,70 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('BROKER-SOURCE-UI filters broker imports separately from manual entries', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([manual, operation({ id: `trade:${id(62)}`, source: 'broker' })]),
+    );
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: /^Broker/ }));
+    expect(bodyRows()).toHaveLength(1);
+    expect(bodyRows()[0]).toHaveTextContent('Broker');
+    await user.click(screen.getByRole('button', { name: /^Manual/ }));
+    expect(bodyRows()).toHaveLength(1);
+    expect(bodyRows()[0]).toHaveTextContent('Manual');
+  });
+
+  it('BROKER-CAPRET-UI: a broker capital return names its source and bond, cannot be edited and retries one deletion', async () => {
+    const user = userEvent.setup();
+    const returned = operation({
+      id: `capital-return:${id(60)}`,
+      source: 'broker',
+      kind: 'capital-return',
+      type: 'capital-return',
+      asset: usdt,
+      quantity: '250',
+      counterAsset: { instrumentId: id(61), symbol: 'SYNTH', name: 'Synthetic bond' },
+      valueUsd: '250',
+      version: 1,
+    });
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([returned]))
+      .mockResolvedValue(list([]));
+    const post = vi
+      .spyOn(apiClient, 'post')
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockResolvedValue({ data: {} });
+    const state = vi
+      .spyOn(tradesApi, 'state')
+      .mockResolvedValue({ journal: { journalRevision: 5 } } as JournalState);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Capital return' }));
+    const drawer = screen.getByRole('dialog', { name: 'Capital return · USDT' });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Lowered the cost of')).toBe('SYNTH');
+    expect(fact('Source')).toBe('Imported from broker');
+    expect(within(facts).queryByText('Received', { exact: true })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await screen.findByText(/The transaction may have been deleted/);
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(post.mock.calls[0]).toEqual([
+      `/accounting/accounts/${returned.account!.id}/capital-returns/${id(60)}/voids`,
+      { requestId: expect.any(String), expectedJournalRevision: 5 },
+    ]);
+    expect(post.mock.calls[1]).toEqual(post.mock.calls[0]);
+    expect(state).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('PR-OPS-2 edits and deletes a transfer here; staking rewards keep their screen', async () => {
     const user = userEvent.setup();
     const staking = operation({
@@ -3558,6 +3622,7 @@ describe('transactions-page-polish', () => {
       'Blockchain 2',
       'Manual 3',
       'CSV 1',
+      'Broker 0',
     ]);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), bybit.id);
     expect(bodyRows()).toHaveLength(4);
@@ -3568,6 +3633,7 @@ describe('transactions-page-polish', () => {
       'Blockchain 0',
       'Manual 3',
       'CSV 1',
+      'Broker 0',
     ]);
     await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'tether');
     expect(chipCounts()).toEqual([
@@ -3577,6 +3643,7 @@ describe('transactions-page-polish', () => {
       'Blockchain 0',
       'Manual 1',
       'CSV 0',
+      'Broker 0',
     ]);
   });
 

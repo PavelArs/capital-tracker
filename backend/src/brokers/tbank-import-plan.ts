@@ -1,4 +1,5 @@
 import { REWARD_LIMITS } from '../accounting/asset-reward.store';
+import { CAPITAL_RETURN_LIMITS } from '../accounting/capital-return.store';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import type { TBankOperation } from './tbank-client';
@@ -6,20 +7,32 @@ import { operationKind } from './tbank-operation-kinds';
 
 // BROKER-SYNC: what a T-Bank account's executed operations would become in the owner's records,
 // before anything is written. A trade's broker fee joins its trade; money paid in or out is
-// cash bought or sold from outside; dividends and coupons are rewards, not money put in; taxes
-// and fees not tied to a trade only lower the return. Nothing here reads or writes the database.
+// cash bought or sold from outside; dividends and coupons are rewards, not money put in; a bond
+// paid back in part is a return of capital that lowers what its units cost; taxes and fees not tied
+// to a trade only lower the return. Nothing here reads or writes the database.
 
 /** Trades the app keeps active in one account (accounting/fifo.ts MAX_ACTIVE_TRADES). */
 export const ACCOUNT_TRADE_LIMIT = 1000;
 // Room left for the operations still to come before operations are combined.
 const COMBINE_ABOVE = 900;
 
-export type PlanAction = 'buy' | 'sell' | 'deposit' | 'withdrawal' | 'income' | 'fee' | 'tax';
+export type PlanAction =
+  | 'buy'
+  | 'sell'
+  | 'deposit'
+  | 'withdrawal'
+  | 'income'
+  | 'return'
+  | 'fee'
+  | 'tax';
 
 /** One journal entry the import would write. */
 export interface PlanEntry {
-  /** A trade (buy or sell, a fee or tax spent from cash) or a reward (income). */
-  record: 'trade' | 'reward';
+  /**
+   * A trade (buy or sell, a fee or tax spent from cash), a reward (income) or a capital return
+   * (part of a bond's cost paid back as cash).
+   */
+  record: 'trade' | 'reward' | 'capital-return';
   action: PlanAction;
   /** When it happened: a trade's last fill, else the operation's own time; the latest of a group. */
   occurredAt: string;
@@ -32,7 +45,10 @@ export interface PlanEntry {
    * paid for in `currency`. Such a trade holds no security.
    */
   cash?: 'usd' | 'eur';
-  /** For a reward, the T-Bank instrument that paid it; the reward itself is cash. */
+  /**
+   * For a reward, the T-Bank instrument that paid it; the reward itself is cash. A capital
+   * return names the instrument whose cost it lowers in `instrumentUid` instead.
+   */
   paidBy?: { instrumentUid: string; ticker: string; instrumentType: string };
   /** Units of the security, or the cash amount when the entry moves only cash. */
   quantity: string;
@@ -57,7 +73,6 @@ export interface PlanSkip {
     | 'sign'
     | 'not-held'
     | 'short-cover'
-    | 'partial-repayment'
     | 'no-quantity'
     | 'fills'
     | 'card'
@@ -72,10 +87,13 @@ export interface ImportPlan {
   skipped: PlanSkip[];
   trades: number;
   rewards: number;
+  capitalReturns: number;
   /** False when the account's trades exceed the limit even combined by month. */
   fitsTradeLimit: boolean;
   /** False when the account's rewards exceed what the reward journal keeps; never combined. */
   fitsRewardLimit: boolean;
+  /** False when the account's capital returns exceed what that journal keeps; never combined. */
+  fitsCapitalReturnLimit: boolean;
 }
 
 const atoms = (value: string) =>
@@ -311,24 +329,21 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       }));
     }
     if (kind === 'repayment') {
+      if (security) return skip(item, security);
+      if (item.quantity.startsWith('-')) return skip(item, 'no-quantity');
+      const bond = {
+        instrumentUid: item.instrumentUid,
+        ticker: item.ticker,
+        instrumentType: item.instrumentType,
+      };
       // A bond paid back in full leaves the account; T-Bank gives no quantity for it, so
-      // checkHeld takes the units held then. One paid back in part returns principal and keeps
-      // its units; the app cannot lower a lot's cost, and the money is not income, so it is
-      // listed rather than shown as a gain.
+      // checkHeld takes the units held then.
       if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
-        if (security) return skip(item, security);
-        if (item.quantity.startsWith('-')) return skip(item, 'no-quantity');
-        return [
-          {
-            ...cash(item, 'trade', 'sell'),
-            instrumentUid: item.instrumentUid,
-            ticker: item.ticker,
-            instrumentType: item.instrumentType,
-            quantity: item.quantity,
-          },
-        ];
+        return [{ ...cash(item, 'trade', 'sell'), ...bond, quantity: item.quantity }];
       }
-      return skip(item, 'partial-repayment');
+      // One paid back in part returns principal and keeps its units: it lowers what they cost,
+      // and the money is not income.
+      return [{ ...cash(item, 'capital-return', 'return'), ...bond }];
     }
     // A tax or fee given back is money received, like income.
     if (kind === 'income' || ((kind === 'tax' || kind === 'fee') && incoming))
@@ -340,7 +355,17 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
 }
 
 // Within one instant, money arrives before it is spent.
-const actionOrder: PlanAction[] = ['deposit', 'income', 'sell', 'buy', 'fee', 'tax', 'withdrawal'];
+// A return of capital comes before a sale of the instant, which may sell the units it lowers.
+const actionOrder: PlanAction[] = [
+  'deposit',
+  'income',
+  'return',
+  'sell',
+  'buy',
+  'fee',
+  'tax',
+  'withdrawal',
+];
 
 /**
  * Trades of one action, instrument and currency in one period, as one entry. Rewards do not
@@ -357,6 +382,12 @@ function combine(list: PlanEntry[], period: (time: string) => string, hoist: boo
     // Dollars and euros bought are cash a later trade may spend, so each keeps its own time.
     if (entry.record !== 'trade' || entry.cash) {
       kept.push(entry);
+      // A return lowers the cost of the units held at its own time, so trades of that bond
+      // before it and after it are never combined across it.
+      if (entry.record === 'capital-return') {
+        const previous = runs.get(entry.instrumentUid);
+        runs.set(entry.instrumentUid, { action: 'return', run: (previous?.run ?? 0) + 1 });
+      }
       continue;
     }
     let run = 0;
@@ -399,7 +430,8 @@ function combine(list: PlanEntry[], period: (time: string) => string, hoist: boo
  * A bond paid back in full sells every unit held then: payouts for bond repayment carry no
  * instrument quantity (T-Bank investAPI docs, operations_problems); one the history never shows
  * held is listed as skipped. A sale with no quantity can only be such a repayment, as any other
- * trade without one is skipped before.
+ * trade without one is skipped before. A bond paid back in part must be held then, or there is
+ * no cost for the money to lower.
  */
 function checkHeld(
   list: PlanEntry[],
@@ -414,7 +446,11 @@ function checkHeld(
   const kept: PlanEntry[] = [];
   for (const entry of ordered(list, hoist)) {
     // Dollars and euros are cash: the journal's own check finds a sale of more than is held.
-    if (entry.record !== 'trade' || entry.instrumentUid === '' || entry.cash) {
+    if (
+      (entry.record !== 'trade' && entry.record !== 'capital-return') ||
+      entry.instrumentUid === '' ||
+      entry.cash
+    ) {
       kept.push(entry);
       continue;
     }
@@ -440,6 +476,12 @@ function checkHeld(
       listed.add(`${operationId} ${reason}`);
       skipped.push({ operationId, type: typeOf.get(operationId) ?? 'unknown', reason });
     };
+    if (entry.record === 'capital-return') {
+      // Money returned on units the history never shows held has no cost to lower.
+      if (units <= 0n) refuse('not-held');
+      else kept.push(entry);
+      continue;
+    }
     let quantity = entry.quantity;
     if (entry.action === 'sell' && isZero(quantity)) {
       if (units <= 0n) {
@@ -588,13 +630,17 @@ export function planImport(
     list = combine(single, (time) => moscowDate(time).slice(0, 7), hoist);
   }
   const trades = tradesIn(list);
+  const capitalReturns = list.filter((entry) => entry.record === 'capital-return').length;
+  const rewards = list.length - trades - capitalReturns;
   return {
     grouping,
     entries: ordered(list, hoist),
     skipped,
     trades,
-    rewards: list.length - trades,
+    rewards,
+    capitalReturns,
     fitsTradeLimit: trades <= ACCOUNT_TRADE_LIMIT,
-    fitsRewardLimit: list.length - trades <= REWARD_LIMITS.activeRewards,
+    fitsRewardLimit: rewards <= REWARD_LIMITS.activeRewards,
+    fitsCapitalReturnLimit: capitalReturns <= CAPITAL_RETURN_LIMITS.activeReturns,
   };
 }

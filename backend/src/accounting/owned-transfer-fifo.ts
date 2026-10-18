@@ -1,7 +1,8 @@
 import { swapAtoms } from './asset-swap-fifo';
 import type { SwapAllocation } from './asset-swap-types';
+import type { CapitalReturnAllocation } from './capital-return-types';
 import { CostTally } from './cost-evidence';
-import { type BookPortion, FifoBook } from './fifo-book';
+import { type BookPortion, FifoBook, portionReturned } from './fifo-book';
 import { FifoHistoryError } from './fifo-lot-interval';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type {
@@ -31,6 +32,7 @@ export const OWNED_TRANSFER_LIMITS = {
   activeTransfers: 1000,
   activeRewards: 1000,
   activeSwaps: 1000,
+  activeCapitalReturns: 1000,
   matches: 100000,
   heldFragments: 100000,
 } as const;
@@ -58,6 +60,7 @@ function item(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocati
     intervalStart: formatAtoms(portion.interval.start),
     intervalEnd: formatAtoms(portion.interval.end),
     arrival: portion.fragment.arrival,
+    ...portionReturned(portion),
   };
 }
 
@@ -83,9 +86,16 @@ type Event =
       orderWithinTimestamp: number;
       index: number;
     }
+  | {
+      kind: 'capital-return';
+      accountId: string;
+      occurredAt: string;
+      orderWithinTimestamp: number;
+      index: number;
+    }
   | { kind: 'transfer'; occurredAt: string; orderWithinTimestamp: number; index: number };
 
-const eventRank = { trade: 0, reward: 1, swap: 2, transfer: 3 } as const;
+const eventRank = { trade: 0, reward: 1, swap: 2, 'capital-return': 3, transfer: 4 } as const;
 
 /** Pure full-component replay. Callers load current-effective heads in one DB snapshot. */
 export function calculateOwnedTransfers(
@@ -103,6 +113,7 @@ export function calculateOwnedTransfers(
   let tradeCount = 0;
   let rewardCount = 0;
   let swapCount = 0;
+  let capitalReturnCount = 0;
   let heldFragments = 0;
   let matches = 0;
   const books = new Map<string, FifoBook>();
@@ -112,15 +123,19 @@ export function calculateOwnedTransfers(
       account.trades.length > 1000 ||
       account.initialLots.length > 100 ||
       (account.rewards?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeRewards ||
-      (account.swaps?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeSwaps
+      (account.swaps?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeSwaps ||
+      (account.capitalReturns?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeCapitalReturns
     )
       throw new OwnedTransferCapacityError();
     tradeCount += account.trades.length;
     rewardCount += account.rewards?.length ?? 0;
     swapCount += account.swaps?.length ?? 0;
+    capitalReturnCount += account.capitalReturns?.length ?? 0;
     if (tradeCount > OWNED_TRANSFER_LIMITS.activeTrades) throw new OwnedTransferCapacityError();
     if (rewardCount > OWNED_TRANSFER_LIMITS.activeRewards) throw new OwnedTransferCapacityError();
     if (swapCount > OWNED_TRANSFER_LIMITS.activeSwaps) throw new OwnedTransferCapacityError();
+    if (capitalReturnCount > OWNED_TRANSFER_LIMITS.activeCapitalReturns)
+      throw new OwnedTransferCapacityError();
     const book = new FifoBook(account.accountId, {
       match: () => {
         if (++matches > OWNED_TRANSFER_LIMITS.matches) throw new OwnedTransferCapacityError();
@@ -136,6 +151,7 @@ export function calculateOwnedTransfers(
     books.set(account.accountId, book);
     if (account.rewards?.length) book.markRewardIdentity();
     if (account.swaps?.length) book.markSwapIdentity();
+    if (account.capitalReturns?.length) book.markCapitalReturnIdentity();
     if (at === undefined || account.coverageFrom <= at) {
       const baseline = [...account.initialLots].sort((left, right) =>
         left.acquiredAt === right.acquiredAt
@@ -186,6 +202,16 @@ export function calculateOwnedTransfers(
         index,
       });
     }
+    for (const [index, capitalReturn] of (account.capitalReturns ?? []).entries()) {
+      if (capitalReturn.occurredAt < account.coverageFrom) throw new FifoHistoryError();
+      events.push({
+        kind: 'capital-return',
+        accountId: account.accountId,
+        occurredAt: capitalReturn.occurredAt,
+        orderWithinTimestamp: capitalReturn.orderWithinTimestamp,
+        index,
+      });
+    }
   }
   const rewardIds = new Set<string>();
   for (const account of accounts)
@@ -198,6 +224,12 @@ export function calculateOwnedTransfers(
     for (const swap of account.swaps ?? []) {
       if (swapIds.has(swap.swapId)) throw new FifoHistoryError();
       swapIds.add(swap.swapId);
+    }
+  const capitalReturnIds = new Set<string>();
+  for (const account of accounts)
+    for (const capitalReturn of account.capitalReturns ?? []) {
+      if (capitalReturnIds.has(capitalReturn.capitalReturnId)) throw new FifoHistoryError();
+      capitalReturnIds.add(capitalReturn.capitalReturnId);
     }
   const transferIds = new Set<string>();
   for (const [index, transfer] of transfers.entries()) {
@@ -258,6 +290,7 @@ export function calculateOwnedTransfers(
 
   const allocations = new Map<string, TransferAllocation>();
   const swapAllocations = new Map<string, SwapAllocation>();
+  const capitalReturnAllocations = new Map<string, CapitalReturnAllocation>();
   for (const event of events) {
     if (at !== undefined && event.occurredAt > at) break;
     if (event.kind === 'trade') {
@@ -274,6 +307,15 @@ export function calculateOwnedTransfers(
       const account = byAccount.get(event.accountId)!;
       const swap = account.swaps![event.index];
       swapAllocations.set(swap.swapId, books.get(event.accountId)!.applySwap(swap));
+      continue;
+    }
+    if (event.kind === 'capital-return') {
+      const account = byAccount.get(event.accountId)!;
+      const capitalReturn = account.capitalReturns![event.index];
+      capitalReturnAllocations.set(
+        capitalReturn.capitalReturnId,
+        books.get(event.accountId)!.applyCapitalReturn(capitalReturn),
+      );
       continue;
     }
     const transfer = transfers[event.index];
@@ -316,5 +358,6 @@ export function calculateOwnedTransfers(
     accounts: new Map([...books].map(([id, book]) => [id, book.project()])),
     allocations,
     swapAllocations,
+    capitalReturnAllocations,
   };
 }

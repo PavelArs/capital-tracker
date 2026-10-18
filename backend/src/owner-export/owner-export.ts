@@ -35,12 +35,12 @@ export interface ExportWallet {
 export interface ExportOperation {
   /** As the Transactions list names it: `trade:<id>`, `transfer:<id>` and so on. */
   id: string;
-  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'opening' | 'flow';
+  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'capital-return' | 'opening' | 'flow';
   type: string;
   direction: 'in' | 'out' | 'internal';
   status: 'active' | 'voided';
-  /** Csv: imported from a CSV file; chain: produced by classifying a chain transaction. */
-  source: 'manual' | 'csv' | 'chain';
+  /** Csv or broker: imported; chain: produced by classifying a chain transaction. */
+  source: 'manual' | 'csv' | 'chain' | 'broker';
   occurredAt: string;
   orderWithinTimestamp: number;
   accountId: string | null;

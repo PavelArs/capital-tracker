@@ -47,6 +47,7 @@ import RemoveCounted from './RemoveCounted';
 const sourceDetails: Record<Operation['source'], string> = {
   manual: 'Added by you',
   csv: 'Imported from CSV',
+  broker: 'Imported from broker',
   chain: 'Blockchain',
 };
 
@@ -417,6 +418,9 @@ function facts(
     else rows.push(['Account', operation.account?.name ?? 'Whole portfolio']);
     if (operation.counterAsset && operation.counterQuantity)
       rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
+    // BROKER-CAPRET: the money came back out of what these units cost.
+    if (operation.type === 'capital-return' && operation.counterAsset)
+      rows.push(['Lowered the cost of', ticker(operation.counterAsset)]);
     rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
     if ((operation.type === 'buy' || operation.type === 'sell') && operation.value !== null)
       rows.push([
@@ -549,7 +553,11 @@ export default function OperationDrawer({
       modal.current?.querySelector<HTMLElement>('.ui-modal__foot button:not([disabled])')?.focus();
   }, [step]);
 
-  const changeable = editable(operation) && operation.account ? operation.account : null;
+  const changeable =
+    (editable(operation) || (operation.kind === 'capital-return' && operation.version !== null)) &&
+    operation.account
+      ? operation.account
+      : null;
   const trade = operation.kind === 'trade' ? changeable : null;
   const tradeId = operation.id.replace(/^trade:/, '');
   const tradeAccountId = trade?.id;
@@ -631,6 +639,11 @@ export default function OperationDrawer({
           requestId,
           expectedJournalRevision: from,
           expectedVersion,
+        });
+      else if (kind === 'capital-return')
+        await operationsApi.voidCapitalReturn(changeable.id, id, {
+          requestId,
+          expectedJournalRevision: from,
         });
       else
         await tradesApi.void(changeable.id, tradeId, { requestId, expectedJournalRevision: from });
@@ -966,9 +979,11 @@ export default function OperationDrawer({
                   Delete
                 </Button>
                 <span className="ui-grow" />
-                <Button variant="secondary" icon="edit" onClick={() => onEdit?.(operation)}>
-                  Edit
-                </Button>
+                {editable(operation) && (
+                  <Button variant="secondary" icon="edit" onClick={() => onEdit?.(operation)}>
+                    Edit
+                  </Button>
+                )}
               </DrawerFooter>
             ) : null}
           </>

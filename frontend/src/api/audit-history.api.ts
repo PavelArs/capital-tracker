@@ -7,13 +7,14 @@ export type AuditEntity =
   | 'transfer'
   | 'swap'
   | 'reward'
+  | 'capital-return'
   | 'flow'
   | 'price'
   | 'classification'
   | 'deposit';
 export type AuditChange = 'created' | 'changed' | 'deleted';
 /** The owner, an import of a CSV file, or the app itself (wallet sync, own-transfer links). */
-export type AuditActor = 'owner' | 'csv' | 'automatic';
+export type AuditActor = 'owner' | 'csv' | 'automatic' | 'broker';
 
 export interface AuditValue {
   kind: 'text' | 'quantity' | 'usd' | 'moment';

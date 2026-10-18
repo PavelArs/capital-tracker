@@ -67,6 +67,7 @@ export interface StoredMarketPrice {
 }
 
 export interface TradeOperationInput {
+  broker?: boolean;
   tradeId: string;
   version: number;
   account: OperationPlace;
@@ -117,6 +118,7 @@ export interface SwapOperationInput {
   fee: OperationFee | null;
 }
 export interface RewardOperationInput {
+  broker?: boolean;
   rewardId: string;
   version: number;
   account: OperationPlace;
@@ -127,6 +129,24 @@ export interface RewardOperationInput {
   quantity: string;
   incomeValueUsd: string | null;
   acquisitionBasisUsd: string | null;
+}
+/**
+ * BROKER-CAPRET: part of the cost of a held asset came back as cash. The row is the cash that
+ * came in; `returned` is the asset whose cost it lowered.
+ */
+export interface CapitalReturnOperationInput {
+  broker?: boolean;
+  capitalReturnId: string;
+  version: number;
+  account: OperationPlace;
+  cash: OperationAsset;
+  returned: OperationAsset;
+  occurredAt: string;
+  orderWithinTimestamp: number;
+  amount: string;
+  amountUsd: string;
+  /** The amount as paid in RUB or EUR, with the rate its USD worth was derived at. */
+  paid: TradePayment | null;
 }
 export interface OpeningOperationInput {
   lotId: string;
@@ -194,6 +214,7 @@ export interface OperationSources {
   transfers: readonly TransferOperationInput[];
   swaps: readonly SwapOperationInput[];
   rewards: readonly RewardOperationInput[];
+  capitalReturns?: readonly CapitalReturnOperationInput[];
   openings: readonly OpeningOperationInput[];
   flows: readonly FlowOperationInput[];
   chain: readonly ChainOperationInput[];
@@ -219,6 +240,7 @@ export type OperationType =
   | 'transfer'
   | 'swap'
   | 'reward'
+  | 'capital-return'
   | 'staking-reward'
   | 'stake'
   | 'unstake'
@@ -237,7 +259,7 @@ export type OperationType =
 
 export interface Operation {
   id: string;
-  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'opening' | 'flow' | 'chain';
+  kind: 'trade' | 'transfer' | 'swap' | 'reward' | 'capital-return' | 'opening' | 'flow' | 'chain';
   /** Null until the owner classifies a chain transaction (M12). */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';
@@ -301,7 +323,7 @@ export interface Operation {
    * but does not ask to be classified (CLS-DUST).
    */
   status: 'recorded' | 'needs-classification' | 'hidden' | 'dust';
-  source: 'manual' | 'csv' | 'chain';
+  source: 'manual' | 'csv' | 'chain' | 'broker';
   /** Chain only: the owner's current answer, to change it (M12); null before the first. */
   classification: {
     version: number;
@@ -828,7 +850,7 @@ export function projectOperations(
         feeUsd: row.feeUsd,
         account: row.account,
         status: 'recorded',
-        source: row.csv ? 'csv' : 'manual',
+        source: row.broker ? 'broker' : row.csv ? 'csv' : 'manual',
         version: row.version,
         paid: row.paid,
         comment: row.comment,
@@ -884,6 +906,7 @@ export function projectOperations(
       {
         ...blank,
         ...recorded,
+        source: row.broker ? 'broker' : 'manual',
         id: `reward:${row.rewardId}`,
         kind: 'reward',
         type: rewardTypes[row.category],
@@ -893,6 +916,28 @@ export function projectOperations(
         quantity: row.quantity,
         valueUsd: row.incomeValueUsd,
         costBasisUsd: row.acquisitionBasisUsd,
+        account: row.account,
+        version: row.version,
+      },
+      row.orderWithinTimestamp,
+    );
+  }
+  for (const row of sources.capitalReturns ?? []) {
+    push(
+      {
+        ...blank,
+        ...recorded,
+        source: row.broker ? 'broker' : 'manual',
+        id: `capital-return:${row.capitalReturnId}`,
+        kind: 'capital-return',
+        type: 'capital-return',
+        direction: 'in',
+        occurredAt: row.occurredAt,
+        asset: row.cash,
+        quantity: row.amount,
+        counterAsset: row.returned,
+        valueUsd: row.amountUsd,
+        paid: row.paid,
         account: row.account,
         version: row.version,
       },
