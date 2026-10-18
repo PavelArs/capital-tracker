@@ -1073,6 +1073,29 @@ describe('Portfolio after inflation', () => {
     expect(note).toMatch(/realized/i);
     expect(note).not.toMatch(/cost basis|current value/);
   });
+
+  it.each(['official', 'personal'] as const)(
+    'PF-ONE-REAL-UNPRICED explains unavailable real P&L under %s inflation',
+    async (basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const reading = read('79100', null, null);
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        withReal({
+          totalValue: null,
+          missingPriceCount: 1,
+          unrealizedPnl: null,
+          real: { official: reading, personal: { ...reading, ownRate: true } },
+        }),
+      );
+      renderAt('/portfolio');
+      await screen.findByRole('row', { name: /^Bitcoin/ });
+      expect(summary()).toHaveTextContent('Real P&L—');
+      expect(within(summary()).getByRole('img')).toHaveAccessibleName(
+        /Real P&L is unavailable because some held assets have no price or exchange rate/,
+      );
+    },
+  );
   it('PF-ONE-REAL-UNKNOWN-PARTIAL leaves the known nominal cost and profit out under Real', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(

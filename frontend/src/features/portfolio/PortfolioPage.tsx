@@ -304,7 +304,14 @@ function Summary({
   const partialShown = showReal ? partialValue || partialRealized : partial;
   const partialText = !showReal
     ? PARTIAL_NOTE
-    : [partialValue && PARTIAL_NOTE_REAL, partialRealized && PARTIAL_REALIZED]
+    : [
+        partialValue && PARTIAL_NOTE_REAL,
+        partialValue &&
+          reading !== null &&
+          reading.unrealizedPnl === null &&
+          'Real P&L is unavailable because some held assets have no price or exchange rate.',
+        partialRealized && PARTIAL_REALIZED,
+      ]
         .filter((text) => text !== false)
         .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;

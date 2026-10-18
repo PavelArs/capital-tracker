@@ -165,7 +165,7 @@ function NetWorth({
   // the reason, never the nominal one; an answer saved before real figures existed has none to
   // miss, so it stays nominal until a fresh one arrives.
   const realView = view === 'real' && history.real !== undefined;
-  // A real reading can exist and still state no profit (nothing held is priced): same dash and reason.
+  // A real reading can exist and still state no profit when no held asset is priced.
   const shownReal = realView && real !== null && real.profit !== null;
   const noReal = realView && !shownReal;
   const profit = shownReal ? real.profit : noReal ? null : history.profit;
@@ -213,7 +213,7 @@ function NetWorth({
         {profitPercent !== null && <span>{percent(profitPercent)}</span>}
         {noReal ? (
           <span className="dashboard-hero__period">
-            {NO_REAL}
+            {real === null ? NO_REAL : 'No real profit: prices are missing for the assets held.'}
             {info}
           </span>
         ) : invested !== null ? (

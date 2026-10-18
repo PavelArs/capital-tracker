@@ -1,4 +1,4 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { addMonths } from './goal-forecast';
 import { GoalsService } from './goals.service';
@@ -67,6 +67,35 @@ describe('goals service', () => {
     ]);
   });
 
+  it('GOAL-CHART dates the forecast and the goals by the instant the portfolio was valued at', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-30T20:59:59.000Z') });
+    try {
+      const goals = service();
+      const seen: Date[] = [];
+      (goals as unknown as { snapshots: { current: unknown } }).snapshots.current = async (
+        _owner: string,
+        _currency: string,
+        at: Date = new Date(),
+      ) => {
+        seen.push(at);
+        // Moscow midnight passes while the portfolio is read.
+        jest.setSystemTime(new Date('2026-10-30T21:00:01.000Z'));
+        return { value: '5000.00', complete: true };
+      };
+      expect((await goals.forecast(owner, row.id)).asOf).toBe('2026-10-30');
+      jest.setSystemTime(new Date('2026-10-30T20:59:59.000Z'));
+      const list = await goals.list(owner);
+      expect(list.asOf).toBe('2026-10-30');
+      expect(list.items[0].asOf).toBe('2026-10-30');
+      expect(seen.map((at) => at.toISOString())).toEqual([
+        '2026-10-30T20:59:59.000Z',
+        '2026-10-30T20:59:59.000Z',
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('GOAL-PREVIEW refuses a date that is not ahead, as saving would', async () => {
     await expect(
       service().preview(owner, {
@@ -76,6 +105,23 @@ describe('goals service', () => {
         expectedReturnPercent: '8',
       }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('GOAL-CHART charts the saved goal from the portfolio now, ending on its forecast', async () => {
+    const goals = service();
+    const goal = await goals.get(owner, row.id);
+    const forecast = await goals.forecast(owner, row.id);
+    expect(forecast.currency).toBe('USD');
+    expect(forecast.complete).toBe(true);
+    expect(forecast.points[0].base).toBe('5000.00');
+    expect(forecast.points.at(-1)?.base).toBe(goal.scenarios[1].projectedAtDeadline);
+  });
+
+  it('GOAL-CHART answers 404 for a goal that is not there', async () => {
+    const goals = service();
+    (goals as unknown as { source: { manager: { query: unknown } } }).source.manager.query =
+      async () => [];
+    await expect(goals.forecast(owner, row.id)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('reads progress from the portfolio now', async () => {

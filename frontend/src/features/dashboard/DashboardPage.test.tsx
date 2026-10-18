@@ -979,6 +979,30 @@ describe('Dashboard after inflation', () => {
     expect(hero).not.toHaveTextContent(/\+\$25,000\.00|net invested|put in/i);
   });
 
+  it.each(['official', 'personal'] as const)(
+    'DASH-ONE-REAL-UNPRICED names missing holding prices under %s inflation',
+    async (basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const reading = { invested: '96800', profit: null, profitPercent: null, estimated: false };
+      get.mockImplementation(async (period: HistoryPeriod) =>
+        history({
+          period,
+          value: '0',
+          complete: false,
+          profit: null,
+          profitPercent: null,
+          real: { official: reading, personal: { ...reading, ownRate: true } },
+        }),
+      );
+      renderPage();
+      const hero = await screen.findByRole('region', { name: 'Net worth' });
+      const line = profitLine(hero, 'Real profit or loss to date');
+      expect(line).toHaveTextContent('No real profit: prices are missing for the assets held.');
+      expect(line).not.toHaveTextContent('some of your deposits');
+    },
+  );
+
   it('DASH-ONE-NOMINAL-UNKNOWN keeps quiet about a real profit that is missing', async () => {
     get.mockImplementation(async (period: HistoryPeriod) =>
       history({ period, real: { official: null, personal: null } }),
