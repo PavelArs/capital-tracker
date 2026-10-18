@@ -935,6 +935,83 @@ describe('Portfolio after inflation', () => {
   });
   const summary = () => screen.getByRole('region', { name: 'Portfolio summary' });
 
+  it.each([
+    ['bank-only', 'official'],
+    ['bank-only', 'personal'],
+    ['sold', 'official'],
+    ['sold', 'personal'],
+  ] as const)(
+    'PF-REAL-NOTHING-HELD shows known zero cost and profit for %s under %s inflation',
+    async (kind, basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const value = kind === 'bank-only' ? '1000' : '0';
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio(kind === 'bank-only' ? [] : [valued(1, 'Bitcoin', 'BTC', crypto)], {
+          totalValue: value,
+          pricedSubtotal: value,
+          depositsValue: value,
+          costBasis: '0',
+          knownCostSubtotal: '0',
+          unrealizedPnl: '0',
+          unrealizedReturnPercent: null,
+          knownUnrealizedPnl: '0',
+          knownUnrealizedReturnPercent: null,
+          real: { official: null, personal: null },
+          allocation: { complete: true, byAsset: [], byType: [], byAccount: [] },
+        }),
+      );
+      renderAt('/portfolio');
+      await screen.findByRole('region', { name: 'Portfolio summary' });
+      expect(summary()).toHaveTextContent("Cost in today's money$0.00");
+      expect(summary()).toHaveTextContent('Real P&L$0.00');
+      expect(summary()).toHaveTextContent('Nothing held, so there is no real cost or profit');
+      expect(summary()).not.toHaveTextContent(/is missing|at the official rate|at your own rate/);
+      expect(within(summary()).queryByRole('link', { name: 'Settings' })).toBeNull();
+      if (kind === 'bank-only') {
+        expect(summary()).toHaveTextContent('Current value$1,000.00');
+        expect(summary()).toHaveTextContent('$1,000.00 in bank deposits');
+      }
+    },
+  );
+  it.each([
+    ['bank-only', 'official'],
+    ['bank-only', 'personal'],
+    ['sold', 'official'],
+    ['sold', 'personal'],
+  ] as const)(
+    'PF-REAL-NOTHING-KNOWN keeps %s cost and profit unknown with unavailable history under %s inflation',
+    async (kind, basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const value = kind === 'bank-only' ? '1000' : '0';
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio(kind === 'bank-only' ? [] : [valued(1, 'Bitcoin', 'BTC', crypto)], {
+          completeness: 'incomplete',
+          unavailableAccountCount: 1,
+          totalValue: null,
+          pricedSubtotal: value,
+          depositsValue: value,
+          costBasis: null,
+          knownCostSubtotal: '0',
+          unrealizedPnl: null,
+          unrealizedReturnPercent: null,
+          knownUnrealizedPnl: null,
+          knownUnrealizedReturnPercent: null,
+          real: { official: null, personal: null },
+          allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+        }),
+      );
+      renderAt('/portfolio');
+      await screen.findByRole('region', { name: 'Portfolio summary' });
+      expect(summary()).toHaveTextContent("Cost in today's money—");
+      expect(summary()).toHaveTextContent('Real P&L—');
+      expect(summary()).toHaveTextContent('an account history starts later');
+      expect(summary()).not.toHaveTextContent('Nothing held');
+      expect(within(summary()).queryByRole('link', { name: 'Settings' })).toBeNull();
+    },
+  );
+
   it('PF-ONE-NOMINAL opens on the nominal figures and nothing about inflation', async () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });

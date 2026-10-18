@@ -284,6 +284,10 @@ function Summary({
 }) {
   const summaryTitle = useId();
   const reading: RealReading | null = portfolio.real?.[basis] ?? null;
+  // No held lots need inflation data, unless a later account history may hide some.
+  const nothingHeld =
+    portfolio.unavailableAccountCount === 0 &&
+    portfolio.assets.every((asset) => Number(asset.quantity) === 0);
   const unpriced = portfolio.missingPriceCount;
   const unrated = portfolio.unratedDepositCount;
   const currency = portfolio.currency;
@@ -365,9 +369,13 @@ function Summary({
               {showReal ? (
                 reading === null ? (
                   <>
-                    {DASH}
+                    {nothingHeld ? amount('0') : DASH}
                     <span className="ui-sub">
-                      {portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST}
+                      {nothingHeld
+                        ? 'Nothing held, so there is no real cost or profit'
+                        : portfolio.unavailableAccountCount > 0
+                          ? NO_REAL_ACCOUNT
+                          : NO_REAL_COST}
                     </span>
                   </>
                 ) : (
@@ -398,7 +406,7 @@ function Summary({
             <>
               {showReal ? (
                 <Signed
-                  value={reading?.unrealizedPnl ?? null}
+                  value={nothingHeld ? '0' : (reading?.unrealizedPnl ?? null)}
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
                 />
