@@ -979,35 +979,111 @@ describe('Portfolio after inflation', () => {
   });
   const summary = () => screen.getByRole('region', { name: 'Portfolio summary' });
 
-  it('PF-REAL-NOMINAL opens on the nominal figures and shows the real ones beside them', async () => {
+  it.each([
+    ['bank-only', 'official'],
+    ['bank-only', 'personal'],
+    ['sold', 'official'],
+    ['sold', 'personal'],
+  ] as const)(
+    'PF-REAL-NOTHING-HELD shows known zero cost and profit for %s under %s inflation',
+    async (kind, basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const value = kind === 'bank-only' ? '1000' : '0';
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio(kind === 'bank-only' ? [] : [valued(1, 'Bitcoin', 'BTC', crypto)], {
+          totalValue: value,
+          pricedSubtotal: value,
+          depositsValue: value,
+          costBasis: '0',
+          knownCostSubtotal: '0',
+          unrealizedPnl: '0',
+          unrealizedReturnPercent: null,
+          knownUnrealizedPnl: '0',
+          knownUnrealizedReturnPercent: null,
+          real: { official: null, personal: null },
+          allocation: { complete: true, byAsset: [], byType: [], byAccount: [] },
+        }),
+      );
+      renderAt('/portfolio');
+      await screen.findByRole('region', { name: 'Portfolio summary' });
+      expect(summary()).toHaveTextContent("Cost in today's money$0.00");
+      expect(summary()).toHaveTextContent('Real P&L$0.00');
+      expect(summary()).toHaveTextContent('Nothing held, so there is no real cost or profit');
+      expect(summary()).not.toHaveTextContent(/is missing|at the official rate|at your own rate/);
+      expect(within(summary()).queryByRole('link', { name: 'Settings' })).toBeNull();
+      if (kind === 'bank-only') {
+        expect(summary()).toHaveTextContent('Current value$1,000.00');
+        expect(summary()).toHaveTextContent('$1,000.00 in bank deposits');
+      }
+    },
+  );
+  it.each([
+    ['bank-only', 'official'],
+    ['bank-only', 'personal'],
+    ['sold', 'official'],
+    ['sold', 'personal'],
+  ] as const)(
+    'PF-REAL-NOTHING-KNOWN keeps %s cost and profit unknown with unavailable history under %s inflation',
+    async (kind, basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const value = kind === 'bank-only' ? '1000' : '0';
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio(kind === 'bank-only' ? [] : [valued(1, 'Bitcoin', 'BTC', crypto)], {
+          completeness: 'incomplete',
+          unavailableAccountCount: 1,
+          totalValue: null,
+          pricedSubtotal: value,
+          depositsValue: value,
+          costBasis: null,
+          knownCostSubtotal: '0',
+          unrealizedPnl: null,
+          unrealizedReturnPercent: null,
+          knownUnrealizedPnl: null,
+          knownUnrealizedReturnPercent: null,
+          real: { official: null, personal: null },
+          allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+        }),
+      );
+      renderAt('/portfolio');
+      await screen.findByRole('region', { name: 'Portfolio summary' });
+      expect(summary()).toHaveTextContent("Cost in today's money—");
+      expect(summary()).toHaveTextContent('Real P&L—');
+      expect(summary()).toHaveTextContent('an account history starts later');
+      expect(summary()).not.toHaveTextContent('Nothing held');
+      expect(within(summary()).queryByRole('link', { name: 'Settings' })).toBeNull();
+    },
+  );
+
+  it('PF-ONE-NOMINAL opens on the nominal figures and nothing about inflation', async () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
-    expect(summary()).toHaveTextContent("Cost basis$70,000.00$79,100.00 in today's money");
-    expect(summary()).toHaveTextContent('Unrealized P&L+$30,000.00+42.86%Real +$20,900.00');
+    expect(summary()).toHaveTextContent('Cost basis$70,000.00');
+    expect(summary()).toHaveTextContent('Unrealized P&L+$30,000.00+42.86%');
+    expect(summary()).not.toHaveTextContent(/today.s money|\breal\b|inflation/i);
+    expect(within(summary()).queryByRole('link', { name: 'Settings' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Unrealized P&L' })).toBeInTheDocument();
     expect(cells(rowOf('Bitcoin')).at(-2)).toBe('+$30,000.00+45.45%');
     expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
   });
-
-  it('PF-REAL-SWITCH Real puts the cost in today money and the real profit first', async () => {
+  it('PF-ONE-REAL shows the cost in today money and the real profit only', async () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     await user.click(screen.getByRole('radio', { name: 'Real' }));
-    expect(summary()).toHaveTextContent(
-      "Cost in today's money$79,100.00$70,000.00 paid + $9,100.00 inflation",
-    );
-    expect(summary()).toHaveTextContent('Real P&L+$20,900.00+26.42%Nominal +$30,000.00');
+    expect(summary()).toHaveTextContent("Cost in today's money$79,100.00");
+    expect(summary()).toHaveTextContent('Real P&L+$20,900.00+26.42%');
+    expect(summary()).not.toHaveTextContent(/nominal|paid|\$70,000\.00|\+\$30,000\.00/i);
     expect(summary()).toHaveTextContent("In today's USD, at the official rate");
     expect(within(summary()).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/settings',
     );
     expect(screen.getByRole('button', { name: 'Real P&L' })).toBeInTheDocument();
-    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('+$21,000.00+28.00%nominal +$30,000.00');
-    expect(cells(rowOf('US dollar')).at(-2)).toBe('-$100.00-2.44%nominal $0.00');
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('+$21,000.00+28.00%');
+    expect(cells(rowOf('US dollar')).at(-2)).toBe('-$100.00-2.44%');
   });
-
   it('PF-REAL-OWN-RATE reads the figures at the own rate when that is chosen', async () => {
     setInflationBasis('personal');
     setValueView('real');
@@ -1047,19 +1123,6 @@ describe('Portfolio after inflation', () => {
     expect(order()).toEqual(['US doll', 'Bitcoin']);
   });
 
-  it('PF-REAL-EXACT states the inflation added to a cost wider than a float holds', async () => {
-    setValueView('real');
-    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
-      withReal({
-        costBasis: '9007199254740993',
-        real: { official: read('9007199254740995', '1', '0'), personal: null },
-      }),
-    );
-    renderAt('/portfolio');
-    await screen.findByRole('row', { name: /^Bitcoin/ });
-    expect(summary()).toHaveTextContent('+ $2.00 inflation');
-  });
-
   it('PF-REAL-SORT-EXACT orders profits a float cannot tell apart', async () => {
     const user = userEvent.setup();
     setValueView('real');
@@ -1083,7 +1146,7 @@ describe('Portfolio after inflation', () => {
     expect(order()).toEqual(['Zzz', 'Aaa']);
   });
 
-  it('PF-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
+  it('PF-ONE-REAL-UNKNOWN shows dashes and why, not the nominal figures', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([{ ...bitcoin, real: { official: null, personal: null } }], {
@@ -1097,13 +1160,64 @@ describe('Portfolio after inflation', () => {
     expect(summary()).toHaveTextContent(
       'a purchase price, exchange rate or inflation figure is missing',
     );
-    expect(summary()).toHaveTextContent('$70,000.00 paid');
-    expect(summary()).toHaveTextContent('Nominal +$30,000.00');
-    // portfolio-08: the row keeps its nominal profit when it has no real one.
-    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—nominal +$30,000.00');
+    expect(summary()).not.toHaveTextContent(/nominal|paid|\$70,000\.00|\+\$30,000\.00/i);
+    // A row without a real reading is a dash; the nominal profit is a switch away.
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
+  });
+  it('PF-ONE-REAL-PARTIAL-NOTE words the partial-figures note for the Real reading only', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({
+        totalValue: null,
+        costBasis: null,
+        unknownCostCount: 1,
+        unrealizedPnl: null,
+        knownUnrealizedPnl: '30000',
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(within(summary()).getByRole('img').getAttribute('aria-label')).toMatch(/cost basis/);
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    const note = within(summary()).getByRole('img').getAttribute('aria-label');
+    expect(note).toMatch(/current value/);
+    expect(note).not.toMatch(/cost basis|purchase price|P&L/);
+  });
+  it('PF-ONE-REAL-PARTIAL-REALIZED keeps a note under Real when only the realized result is partial', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({ realizedPnl: null, knownRealizedSubtotal: '-250.50', unknownRealizedCount: 1 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const note = within(summary()).getByRole('img').getAttribute('aria-label');
+    expect(note).toMatch(/realized/i);
+    expect(note).not.toMatch(/cost basis|current value/);
   });
 
-  it("settings-04 PF-REAL-UNKNOWN-PARTIAL names the known nominal cost as paid, not as a figure in today's money", async () => {
+  it.each(['official', 'personal'] as const)(
+    'PF-ONE-REAL-UNPRICED explains unavailable real P&L under %s inflation',
+    async (basis) => {
+      setValueView('real');
+      setInflationBasis(basis);
+      const reading = read('79100', null, null);
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        withReal({
+          totalValue: null,
+          missingPriceCount: 1,
+          unrealizedPnl: null,
+          real: { official: reading, personal: { ...reading, ownRate: true } },
+        }),
+      );
+      renderAt('/portfolio');
+      await screen.findByRole('row', { name: /^Bitcoin/ });
+      expect(summary()).toHaveTextContent('Real P&L—');
+      expect(within(summary()).getByRole('img')).toHaveAccessibleName(
+        /Real P&L is unavailable because some held assets have no price or exchange rate/,
+      );
+    },
+  );
+  it('PF-ONE-REAL-UNKNOWN-PARTIAL leaves the known nominal cost and profit out under Real', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio(
@@ -1121,13 +1235,8 @@ describe('Portfolio after inflation', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(summary()).toHaveTextContent("Cost in today's money—");
-    // Under "Cost in today's money" the nominal subtotal says what it is: paid, for part.
-    expect(summary()).toHaveTextContent('$40,000.00 paid for the known part');
-    expect(summary()).not.toHaveTextContent('$40,000.00 known');
-    expect(summary().textContent?.match(/paid/g)).toHaveLength(1);
-    expect(summary()).toHaveTextContent('Nominal +$12,000.00 known');
+    expect(summary()).not.toHaveTextContent(/nominal|paid|known|\$40,000\.00|\$12,000\.00/i);
   });
-
   it('PF-REAL-UNAVAILABLE names the account history that starts later, not a missing lot figure', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
@@ -1156,29 +1265,28 @@ describe('Portfolio after inflation', () => {
 
   const position = () => screen.getByRole('region', { name: 'Position' });
 
-  it('ASSET-REAL-NOMINAL shows the real cost and profit beside the nominal ones', async () => {
+  it('ASSET-ONE-NOMINAL shows the nominal cost and profit only', async () => {
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
-    expect(position()).toHaveTextContent("Cost basis$66,000.00$75,000.00 in today's money");
-    expect(position()).toHaveTextContent('Unrealized P&L+$30,000.00+45.45%Real +$21,000.00');
+    expect(position()).toHaveTextContent('Cost basis$66,000.00');
+    expect(position()).toHaveTextContent('Unrealized P&L+$30,000.00+45.45%');
+    expect(position()).not.toHaveTextContent(/today.s money|\breal\b|inflation/i);
     expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
   });
-
-  it('ASSET-REAL-SWITCH Real puts the cost in today money and the real profit first', async () => {
+  it('ASSET-ONE-REAL shows the cost in today money and the real profit only', async () => {
     const user = userEvent.setup();
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
     await user.click(screen.getByRole('radio', { name: 'Real' }));
-    expect(position()).toHaveTextContent(
-      "Cost in today's money$75,000.00$66,000.00 paid + $9,000.00 inflation",
-    );
-    expect(position()).toHaveTextContent('Real P&L+$21,000.00+28.00%Nominal +$30,000.00');
+    expect(position()).toHaveTextContent("Cost in today's money$75,000.00");
+    expect(position()).toHaveTextContent('Real P&L+$21,000.00+28.00%');
+    expect(position()).not.toHaveTextContent(/nominal|paid|\$66,000\.00|\+\$30,000\.00/i);
     expect(position()).toHaveTextContent("In today's USD, at the official rate");
     // The choice is the same one the Portfolio and the Dashboard use.
     await user.click(screen.getByRole('radio', { name: 'Nominal' }));
     expect(position()).toHaveTextContent('Unrealized P&L');
+    expect(position()).not.toHaveTextContent(/\breal\b/i);
   });
-
   it('ASSET-REAL-OWN-RATE follows the basis chosen in Settings', async () => {
     setValueView('real');
     setInflationBasis('personal');
@@ -1188,7 +1296,7 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent("In today's USD, at your own rate");
   });
 
-  it('ASSET-REAL-UNKNOWN keeps the nominal figures and says why there is no real one', async () => {
+  it('ASSET-ONE-REAL-UNKNOWN shows dashes and why, not the nominal figures', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([{ ...bitcoin, real: { official: null, personal: null } }]),
@@ -1198,12 +1306,9 @@ describe('Portfolio after inflation', () => {
     expect(position()).toHaveTextContent("Cost in today's money—");
     expect(position()).toHaveTextContent('a purchase price, exchange rate or inflation figure');
     expect(position()).toHaveTextContent('Real P&L—');
-    // Both nominal figures stay on screen beside the dashes.
-    expect(position()).toHaveTextContent('$66,000.00 paid');
-    expect(position()).toHaveTextContent('Nominal +$30,000.00');
+    expect(position()).not.toHaveTextContent(/nominal|paid|\$66,000\.00|\+\$30,000\.00/i);
   });
-
-  it("settings-04 ASSET-REAL-UNKNOWN-PARTIAL names the known nominal cost as paid, not as a figure in today's money", async () => {
+  it('ASSET-ONE-REAL-UNKNOWN-PARTIAL leaves the known nominal cost and profit out under Real', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([
@@ -1222,13 +1327,9 @@ describe('Portfolio after inflation', () => {
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent("Cost in today's money—");
-    expect(position()).toHaveTextContent('$40,000.00 paid for the known part');
-    expect(position()).not.toHaveTextContent('$40,000.00 known');
-    expect(position().textContent?.match(/paid/g)).toHaveLength(1);
-    expect(position()).toHaveTextContent('Nominal +$12,000.00 known');
+    expect(position()).not.toHaveTextContent(/nominal|paid|known|\$40,000\.00|\$12,000\.00/i);
   });
-
-  it('settings-04 ASSET-REAL-ZERO-COST keeps a known zero cost beside an unknown one, as paid', async () => {
+  it('ASSET-ONE-REAL-ZERO-COST leaves a known zero cost out under Real too', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([
@@ -1245,9 +1346,8 @@ describe('Portfolio after inflation', () => {
     );
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await screen.findByRole('region', { name: 'Position' });
-    expect(position()).toHaveTextContent('$0.00 paid for the known part');
+    expect(position()).not.toHaveTextContent(/paid|known|\$0\.00 paid/i);
   });
-
   it('ASSET-REAL-INCOMPLETE says the figures leave out an account whose history starts later, in every view', async () => {
     const user = userEvent.setup();
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
@@ -1295,21 +1395,8 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent("Cost in today's money$0.00");
     expect(position()).toHaveTextContent('Nothing held, so there is no real cost or profit');
-    expect(position()).toHaveTextContent('Real P&L$0.00Nominal $0.00');
-    expect(position()).not.toHaveTextContent('is missing');
-  });
-
-  it('ASSET-REAL-DEFLATION words a fall in prices as deflation', async () => {
-    setValueView('real');
-    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
-      portfolio([
-        { ...bitcoin, real: { official: read('60000', '36000', '60.00'), personal: null } },
-      ]),
-    );
-    renderAt(`/portfolio/${bitcoin.instrumentId}`);
-    await screen.findByRole('region', { name: 'Position' });
-    expect(position()).toHaveTextContent('$66,000.00 paid − $6,000.00 deflation');
-    expect(position()).not.toHaveTextContent('+ -');
+    expect(position()).toHaveTextContent('Real P&L$0.00');
+    expect(position()).not.toHaveTextContent(/nominal|is missing/i);
   });
 
   it('ASSET-REAL-SOLD-PARTIAL keeps the missing-history state when an account is unavailable', async () => {
@@ -1324,16 +1411,6 @@ describe('Portfolio after inflation', () => {
     await screen.findByRole('region', { name: 'Position' });
     expect(position()).toHaveTextContent('an account history starts later');
     expect(position()).not.toHaveTextContent('Nothing held');
-  });
-
-  it('PF-REAL-DEFLATION words a fall in prices as deflation in the summary', async () => {
-    setValueView('real');
-    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
-      withReal({ real: { official: read('65000', '35000', '53.85'), personal: null } }),
-    );
-    renderAt('/portfolio');
-    await screen.findByRole('row', { name: /^Bitcoin/ });
-    expect(summary()).toHaveTextContent('$70,000.00 paid − $5,000.00 deflation');
   });
 
   it('ASSET-REAL-LEGACY stays nominal for an answer saved before real figures existed', async () => {
@@ -1399,9 +1476,9 @@ describe('Portfolio after inflation', () => {
     }
   });
 
-  it('portfolio-08 keeps the nominal profit of an asset without a real reading', async () => {
+  it('portfolio-08 PF-ONE-REAL-ROW shows a dash for an asset without a real reading, not its nominal profit', async () => {
     setValueView('real');
-    // Part of the coins has no purchase price: the nominal profit is the known part's.
+    // Part of the coins has no purchase price: no real reading, and no nominal one in its place.
     const partBitcoin = {
       ...bitcoin,
       unrealizedPnl: null,
@@ -1415,14 +1492,15 @@ describe('Portfolio after inflation', () => {
     );
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
-    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—nominal -$3,916.90 known');
-    expect(cells(rowOf('US dollar')).at(-2)).toBe('-$100.00-2.44%nominal $0.00');
+    expect(cells(rowOf('Bitcoin')).at(-2)).toBe('—');
+    expect(cells(rowOf('US dollar')).at(-2)).toBe('-$100.00-2.44%');
     cleanup();
     phoneScreen();
     try {
       renderAt('/portfolio');
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
-      expect(row).toHaveTextContent('$96,000.00—nominal -$3,916.90 known');
+      expect(row).toHaveTextContent('$96,000.00—');
+      expect(row).not.toHaveTextContent(/nominal|3,916/i);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1500,10 +1578,23 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
   };
   const bodyRows = (region: HTMLElement) => within(region).getAllByRole('row').slice(1);
 
+  const realBitcoin = {
+    ...bitcoin,
+    real: {
+      official: {
+        costBasis: '75000',
+        unrealizedPnl: '21000',
+        unrealizedReturnPercent: '28.00',
+        estimated: false,
+      },
+      personal: null,
+    },
+  };
+  // The card belongs to the Real reading: the rest of the describe runs under Real.
   beforeEach(() => {
-    setValueView('nominal');
+    setValueView('real');
     setInflationBasis('official');
-    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([realBitcoin]));
   });
   afterEach(() => {
     setValueView('nominal');
@@ -1534,7 +1625,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
       '+10.00%',
       '$13,200.00',
       '$16,000.00',
-      '+$2,800.00+21.21%nominal +$4,000.00',
+      '+$2,800.00+21.21%',
     ]);
     expect(cells(rows[1])).toEqual([
       'Jan 10, 2025Bybit',
@@ -1543,7 +1634,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
       '+50.00%',
       '$81,000.00',
       '$80,000.00',
-      '-$1,000.00-1.23%nominal +$26,000.00',
+      '-$1,000.00-1.23%',
     ]);
     expect(within(region).getByText(/at the official rate, latest months estimated/)).toBeVisible();
   });
@@ -1560,7 +1651,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
       '+7.00%',
       '$12,840.00',
       '$16,000.00',
-      '+$3,160.00+24.61%nominal +$4,000.00',
+      '+$3,160.00+24.61%',
     ]);
     expect(within(region).getByText(/at your own rate/)).toBeVisible();
   });
@@ -1581,7 +1672,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(region).toHaveTextContent('A dash means a purchase price');
   });
 
-  it('LOTS-NOMINAL-ONLY keeps the paid, value and nominal profit when a basis has no reading', async () => {
+  it('LOTS-NOMINAL-ONLY keeps the paid and value of a purchase when a basis has no reading, and no nominal profit', async () => {
     setInflationBasis('personal');
     withLots([older]);
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
@@ -1591,10 +1682,31 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
       '—',
       '—',
       '$80,000.00',
-      '—nominal +$26,000.00',
+      '—',
     ]);
+    expect(region).not.toHaveTextContent(/nominal/i);
   });
 
+  it('LOTS-ONE-NOMINAL-HIDDEN has no Purchases after inflation card under Nominal', async () => {
+    setValueView('nominal');
+    const lots = withLots([lot()]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(screen.queryByRole('region', { name: 'Purchases after inflation' })).toBeNull();
+    expect(lots).not.toHaveBeenCalled();
+  });
+
+  it('LOTS-ONE-SWITCH shows the card once Real is chosen', async () => {
+    setValueView('nominal');
+    const user = userEvent.setup();
+    withLots([lot()]);
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(screen.queryByRole('region', { name: 'Purchases after inflation' })).toBeNull();
+    await user.click(screen.getByRole('radio', { name: 'Real' }));
+    const region = await card();
+    expect(region).not.toHaveTextContent(/nominal/i);
+  });
   it('LOTS-OWN-FALLBACK says so when the currency has no own rate and the official one is used', async () => {
     setInflationBasis('personal');
     const fallback = lot();
@@ -1670,7 +1782,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     expect(errors.mock.calls.flat().join(' ')).not.toContain('same key');
   });
 
-  it('LOTS-PHONE-NOMINAL-READ shows the nominal profit under the real one in a phone row', async () => {
+  it('LOTS-PHONE shows only the real profit in a phone row', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: true,
       media: query,
@@ -1680,12 +1792,12 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     withLots([lot()]);
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const region = await card();
-    expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent(
-      '+$2,800.00 · +21.21%nominal +$4,000.00',
-    );
+    const row = within(region).getAllByRole('listitem')[0];
+    expect(row).toHaveTextContent('+$2,800.00 · +21.21%');
+    expect(row).not.toHaveTextContent(/nominal|\+\$4,000\.00/i);
   });
 
-  it('LOTS-PHONE-NOMINAL keeps the nominal profit of a purchase whose real reading is missing', async () => {
+  it('LOTS-PHONE-UNREADABLE shows a dash, not the nominal profit, for a purchase with no real reading', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: true,
       media: query,
@@ -1695,9 +1807,8 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     withLots([{ ...unreadable, paid: '4000', nominalPnl: '0' }]);
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
     const region = await card();
-    expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent('nominal $0.00');
+    expect(within(region).getAllByRole('listitem')[0]).not.toHaveTextContent(/nominal/i);
   });
-
   it('LOTS-STALE says when a refresh failed and the figures on screen may be out of date', async () => {
     withLots([lot()]);
     const { rerender } = render(
@@ -1828,7 +1939,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
   });
 
   it('LOTS-EMPTY-INCOMPLETE lists the purchases of an asset with none held while an account history starts later', async () => {
-    const emptied = { ...bitcoin, quantity: '0', value: '0', holdings: [] };
+    const emptied = { ...realBitcoin, quantity: '0', value: '0', holdings: [] };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([emptied], { unavailableAccountCount: 1 }),
     );
@@ -1843,7 +1954,7 @@ describe('INFL-REAL-LOTS Purchases after inflation', () => {
     let read = 0;
     withLots([lot()]);
     vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () =>
-      portfolio([bitcoin], { at: `2026-10-14T13:00:0${++read}.000Z` }),
+      portfolio([realBitcoin], { at: `2026-10-14T13:00:0${++read}.000Z` }),
     );
     const first = renderAt(`/portfolio/${bitcoin.instrumentId}`);
     await card();

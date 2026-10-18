@@ -55,11 +55,9 @@ function basisLine(
 }
 
 function RealProfit({
-  lot,
   reading,
   currency,
 }: {
-  lot: LotAfterInflation;
   reading: LotReading | null;
   currency: AccountingCurrency;
 }) {
@@ -74,9 +72,6 @@ function RealProfit({
           ratio={reading.unrealizedReturnPercent}
           inline
         />
-      )}
-      {lot.nominalPnl !== null && (
-        <span className="ui-sub">nominal {money(lot.nominalPnl, currency, true)}</span>
       )}
     </>
   );
@@ -136,7 +131,7 @@ function LotsTable({
                 </td>
                 <td className="ui-num ui-strong">{money(lot.value, currency)}</td>
                 <td className="ui-num">
-                  <RealProfit lot={lot} reading={reading} currency={currency} />
+                  <RealProfit reading={reading} currency={currency} />
                 </td>
               </tr>
             );
@@ -175,27 +170,13 @@ function LotsList({
               amount={money(lot.value, currency)}
               value={
                 reading === null ? (
-                  <>
-                    {DASH}
-                    {lot.nominalPnl !== null && (
-                      <span className="ui-sub">
-                        nominal {money(lot.nominalPnl, currency, true)}
-                      </span>
-                    )}
-                  </>
+                  DASH
                 ) : (
-                  <>
-                    <span className={toneClass(reading.unrealizedPnl)}>
-                      {money(reading.unrealizedPnl, currency, true)}
-                      {reading.unrealizedReturnPercent !== null &&
-                        ` · ${percent(reading.unrealizedReturnPercent)}`}
-                    </span>
-                    {lot.nominalPnl !== null && (
-                      <span className="ui-sub">
-                        nominal {money(lot.nominalPnl, currency, true)}
-                      </span>
-                    )}
-                  </>
+                  <span className={toneClass(reading.unrealizedPnl)}>
+                    {money(reading.unrealizedPnl, currency, true)}
+                    {reading.unrealizedReturnPercent !== null &&
+                      ` · ${percent(reading.unrealizedReturnPercent)}`}
+                  </span>
                 )
               }
             />

@@ -169,7 +169,7 @@ a.portfolio-asset__name:hover {
     width: 10rem;
   }
 
-  /* A long note under a figure ("nominal -$3,916.90 known") wraps instead of widening it. */
+  /* A long note under a figure wraps instead of widening it. */
   .portfolio-table .ui-sub {
     white-space: normal;
   }

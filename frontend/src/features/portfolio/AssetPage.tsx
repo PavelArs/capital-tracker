@@ -46,7 +46,6 @@ import {
   sourceName,
 } from './format';
 import HideAsset from './HideAsset';
-import { adjustmentText } from './real-cost';
 import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
@@ -477,51 +476,21 @@ function AssetDetails({
                           a purchase price, exchange rate or inflation figure is missing for some
                           lots
                         </span>
-                        {asset.costBasis !== null ? (
-                          <span className="ui-sub">{amount(asset.costBasis)} paid</span>
-                        ) : (
-                          Number(asset.knownCostQuantity) > 0 && (
-                            <span className="ui-sub">
-                              {amount(asset.knownCostSubtotal)} paid for the known part
-                            </span>
-                          )
-                        )}
                       </>
                     )
                   ) : (
-                    <>
-                      {amount(reading.costBasis)}
-                      {asset.costBasis !== null && (
-                        <span className="ui-sub">
-                          {amount(asset.costBasis)} paid{' '}
-                          {adjustmentText(reading.costBasis, asset.costBasis, amount)}
-                        </span>
-                      )}
-                    </>
+                    amount(reading.costBasis)
                   )
                 }
               />
               <Stat
                 label="Real P&L"
                 value={
-                  <>
-                    <Signed
-                      value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
-                      currency={currency}
-                      ratio={reading?.unrealizedReturnPercent ?? null}
-                    />
-                    {asset.unrealizedPnl !== null || sold ? (
-                      <span className="ui-sub">
-                        Nominal {money(sold ? '0' : asset.unrealizedPnl, currency, true)}
-                      </span>
-                    ) : (
-                      asset.knownUnrealizedPnl !== null && (
-                        <span className="ui-sub">
-                          Nominal {money(asset.knownUnrealizedPnl, currency, true)} known
-                        </span>
-                      )
-                    )}
-                  </>
+                  <Signed
+                    value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
+                    currency={currency}
+                    ratio={reading?.unrealizedReturnPercent ?? null}
+                  />
                 }
               />
             </>
@@ -529,34 +498,18 @@ function AssetDetails({
             <>
               <Stat
                 label="Cost basis"
-                value={
-                  <>
-                    {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
-                    {reading !== null && asset.costBasis !== null && (
-                      <span className="ui-sub">
-                        {amount(reading.costBasis)} in today&apos;s money
-                      </span>
-                    )}
-                  </>
-                }
+                value={amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
               />
               <Stat
                 label="Unrealized P&L"
                 value={
-                  <>
-                    <Signed
-                      value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
-                      currency={currency}
-                      ratio={
-                        partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
-                      }
-                    />
-                    {reading?.unrealizedPnl != null && asset.unrealizedPnl !== null && (
-                      <span className="ui-sub">
-                        Real {money(reading.unrealizedPnl, currency, true)}
-                      </span>
-                    )}
-                  </>
+                  <Signed
+                    value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
+                    currency={currency}
+                    ratio={
+                      partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
+                    }
+                  />
                 }
               />
             </>
@@ -603,16 +556,25 @@ function AssetDetails({
               </ButtonLink>
             }
           >
-            {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
-            unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known cost:{' '}
-            {amount(asset.knownCostSubtotal)}.
+            {showReal ? (
+              <>
+                {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so the real cost
+                and profit cannot be worked out.
+              </>
+            ) : (
+              <>
+                {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis
+                and unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known
+                cost: {amount(asset.knownCostSubtotal)}.
+              </>
+            )}
           </Banner>
         )}
         {missingRate && (
           <Banner tone="warn">
             {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
-            rates, so its cost in {currency} is unknown. Known cost:{' '}
-            {amount(asset.knownCostSubtotal)}.
+            rates, so its cost in {currency} is unknown.
+            {!showReal && <> Known cost: {amount(asset.knownCostSubtotal)}.</>}
           </Banner>
         )}
         {asset.unknownRealizedCount > 0 && (
@@ -623,7 +585,7 @@ function AssetDetails({
         )}
       </Card>
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
-      {!sold && (
+      {!sold && showReal && (
         <AssetLotsCard
           instrumentId={asset.instrumentId}
           asked={asked}
