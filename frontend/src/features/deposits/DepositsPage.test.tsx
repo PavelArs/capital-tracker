@@ -631,6 +631,32 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     ).toBeInTheDocument();
   });
 
+  it.each([null, '6'])(
+    'DEP-ACCOUNT-GAP hides dependent capitalized interest at rate %s',
+    async (ratePercent) => {
+      vi.spyOn(depositsApi, 'get').mockResolvedValue(
+        detail(
+          { ...unrated, ratePercent, capitalized: true, interestMissing: true },
+          {
+            periods: [],
+            rates: ratePercent === null ? [] : [{ effectiveFrom: '2026-08-01', ratePercent }],
+          },
+        ),
+      );
+      open(`/deposits/${unrated.id}?currency=RUB`);
+      await screen.findByRole('heading', { level: 2, name: 'Current C' });
+      expect(screen.queryByText('Interest added so far')).toBeNull();
+      if (ratePercent !== null)
+        expect(
+          screen.getByText(/Later interest also depends on those missing amounts/),
+        ).toBeInTheDocument();
+      else
+        expect(
+          screen.getByText(/No rate entered, so the interest is not counted/),
+        ).toBeInTheDocument();
+    },
+  );
+
   it('says it once on the page, with no interest figures and no periods', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(unrated, { periods: [] }));
     open(`/deposits/${unrated.id}?currency=RUB`);
@@ -642,14 +668,15 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     expect(screen.getByText('In the deposit').parentElement).toHaveTextContent('₽50,000.00');
   });
 
-  it('says which days a rate from a later date leaves out, and still states the interest after it', async () => {
+  it('a noncapitalizing account states covered later interest and names the earlier missing days', async () => {
     const later: Deposit = {
       ...unrated,
+      capitalized: false,
       ratePercent: '6',
       accrued: '12.34',
       due: '0.00',
       interestEarned: '12.34',
-      nextPayout: { date: '2026-11-01', interest: '25.00', treatment: 'capitalized' },
+      nextPayout: { date: '2026-11-01', interest: '25.00', treatment: 'payable' },
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([later]), interestMissingCount: 1 });
     open('/deposits?currency=RUB');

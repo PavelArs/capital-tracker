@@ -507,6 +507,8 @@ export class DepositsService {
     // and a day with no rate in force has none to state, so those figures are not stated.
     const interestMissing = accountInterestMissing(stored);
     const noRate = noRateInForceOn(stored, asOf);
+    // Missing capitalized interest would itself earn interest in every later period.
+    const incompleteInterest = noRate || (interestMissing && terms.capitalized);
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
       reading && !noRate
         ? depositReal(
@@ -539,11 +541,11 @@ export class DepositsService {
       closedOn: now.closedOn,
       principal: now.principal,
       interestMissing,
-      accrued: noRate ? null : now.accrued,
-      due: noRate ? null : now.due,
+      accrued: incompleteInterest ? null : now.accrued,
+      due: incompleteInterest ? null : now.due,
       balance: now.balance,
       // Everything the deposit has earned, posted or not, less what was forfeited.
-      interestEarned: noRate
+      interestEarned: incompleteInterest
         ? null
         : centsText(
             canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
@@ -554,7 +556,7 @@ export class DepositsService {
       },
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
       nextPayout:
-        status === 'active' && !noRate
+        status === 'active' && !incompleteInterest
           ? nextPayout(knownTerms, known, asOf, interestMissing ? firstRateDay(stored) : undefined)
           : null,
       atMaturity: maturity
@@ -610,8 +612,11 @@ export class DepositsService {
     // Missing is not zero (DEP-ACCOUNT): a period with a day before the account's first rate has
     // unknown interest, so it is not listed; with no rate at all there are no periods to list.
     const firstRate = firstRateDay(stored);
-    const periods = accountInterestMissing(stored)
-      ? projection.periods.filter((period) => firstRate !== undefined && period.from >= firstRate)
+    const missing = accountInterestMissing(stored);
+    const periods = missing
+      ? terms.capitalized
+        ? []
+        : projection.periods.filter((period) => firstRate !== undefined && period.from >= firstRate)
       : projection.periods;
     // One replay gives the money held at the start of every period.
     const held = depositBalances(
@@ -660,7 +665,7 @@ export class DepositsService {
           personal: personal?.[index] ?? null,
         },
       })),
-      interestPosted: projection.interestPosted,
+      interestPosted: missing && terms.capitalized ? null : projection.interestPosted,
       interestPaidOut: projection.interestPaidOut,
       interestForfeited: projection.interestForfeited,
       checks: stored.checks

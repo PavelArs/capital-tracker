@@ -302,8 +302,10 @@ async function account(db, service, owner) {
   assert.notEqual(rated.balance, '100000.00', 'Interest from the rate date is added');
   // The days before the first rate stay without one: the interest of that time is still unknown.
   assert.equal(rated.interestMissing, true, 'A rate from a later date leaves the earlier days open');
-  assert.notEqual(rated.interestEarned, null, 'The interest from the rate date is stated');
-  assert.notEqual(rated.accrued, null);
+  assert.deepEqual([rated.interestEarned, rated.accrued, rated.due, rated.nextPayout], [null, null, null, null],
+    'Unknown capitalized interest leaves all later interest projections unknown');
+  assert.deepEqual(rated.periods, [], 'Later capitalized periods depend on the unknown earlier principal');
+  assert.equal(rated.interestPosted, null);
   assert.equal((await service.list(owner, '2026-09-01')).interestMissingCount, 1);
   // The periods that contain a day before the first rate are not listed, and a check against the
   // bank states no calculated balance and no difference: both would be a guess.
@@ -329,6 +331,11 @@ async function account(db, service, owner) {
     [midway.real.official, midway.real.personal].every((real) => real === null || real.gain === null),
     'No real gain while interest is missing',
   );
+  const paidOut = await service.create(owner, { ...terms, name: 'Current noncapitalizing', capitalized: false });
+  await service.addRate(owner, paidOut.id, { effectiveFrom: '2026-08-01', ratePercent: '6' });
+  const coveredPeriod = await service.get(owner, paidOut.id, '2026-09-01');
+  assert.notEqual(coveredPeriod.nextPayout, null, 'A noncapitalizing covered period does not depend on unknown earlier interest');
+  assert.ok(coveredPeriod.periods.some((period) => period.from === '2026-08-01'));
   // Before that date no rate is in force: the later rate is not shown as the rate of an earlier day.
   const unrated = await service.get(owner, made.id, '2026-07-15');
   assert.equal(unrated.ratePercent, null, 'No rate is in force before the first one begins');

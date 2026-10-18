@@ -112,7 +112,7 @@ export interface DepositDetail extends Deposit {
     /** The interest less the inflation on the money held at the period's start. */
     afterInflation?: { official: string | null; personal: string | null };
   }[];
-  interestPosted: string;
+  interestPosted: string | null;
   interestPaidOut: string;
   interestForfeited: string;
   checks: (DepositCheck & { id: string })[];

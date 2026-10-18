@@ -386,7 +386,7 @@ export default function DepositPage() {
             <Banner tone="warn" role="note">
               {deposit.ratePercent === null
                 ? `No rate entered, so the interest is not counted. The balance is what you put in, less what you took out. Enter the rate from ${dateText(deposit.startDate)} to count it.`
-                : `Interest before ${dateText(firstRateDate(deposit.rates))} is not counted: no rate was entered for those days. Enter the rate from ${dateText(deposit.startDate)} to count them.`}
+                : `Interest before ${dateText(firstRateDate(deposit.rates))} is not counted: no rate was entered for those days.${deposit.capitalized ? ' Later interest also depends on those missing amounts.' : ''} Enter the rate from ${dateText(deposit.startDate)} to count them.`}
             </Banner>
           )}
           <Card>
@@ -410,7 +410,7 @@ export default function DepositPage() {
                   hint="Until the next interest date"
                 />
               )}
-              {deposit.capitalized && (
+              {deposit.capitalized && !deposit.interestMissing && (
                 <Stat
                   label="Interest added so far"
                   value={money(capitalizedInterest(deposit.periods), own)}
@@ -515,7 +515,7 @@ export default function DepositPage() {
               {deposit.periods.length === 0 ? (
                 <p className="ui-muted">
                   {deposit.interestMissing
-                    ? 'Interest periods are unavailable for days with no rate entered.'
+                    ? `Interest periods are unavailable for days with no rate entered.${deposit.capitalized ? ' Later periods also depend on the missing interest.' : ''}`
                     : 'No interest has been posted yet.'}
                 </p>
               ) : (
