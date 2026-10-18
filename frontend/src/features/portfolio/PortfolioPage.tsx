@@ -270,7 +270,9 @@ const PARTIAL_NOTE =
 
 // Bank deposits are part of the value even when no asset is held.
 const hasDeposits = (portfolio: PortfolioValuation) =>
-  Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0;
+  Number(portfolio.depositsValue) > 0 ||
+  portfolio.unratedDepositCount > 0 ||
+  (portfolio.interestMissingDepositCount ?? 0) > 0;
 
 const NO_REAL_ACCOUNT = 'an account history starts later';
 // Bank deposits count in the current value only: cost basis and P&L are the assets' (DEP-VALUE).

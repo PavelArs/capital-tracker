@@ -126,6 +126,14 @@ describe('DEP-ACCOUNT depositValuesAt says when an account has days without a ra
   const at = new Date('2026-01-14T12:00:00Z');
   const missing = (held: Stored) => depositValuesAt([held], at, fx('RUB'))[0].interestMissing;
 
+  it('DEP-ACCOUNT-ZERO leaves an account out before its opening Moscow day', () => {
+    const held = account([]);
+    const before = depositValuesAt([held], new Date('2025-12-31T20:59:59Z'), fx('RUB'))[0];
+    expect(before).toMatchObject({ value: 0n, interestMissing: false });
+    const opened = depositValuesAt([held], new Date('2025-12-31T21:00:00Z'), fx('RUB'))[0];
+    expect(opened.interestMissing).toBe(true);
+  });
+
   it('flags an account whose rates do not reach back to its opening day, and nothing else', () => {
     expect(missing(account([]))).toBe(true);
     // A rate that begins after the opening leaves the days before it without one, also later on.

@@ -571,6 +571,22 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
   });
 
+  it('DEP-ACCOUNT-ZERO shows the missing-interest warning for an otherwise empty portfolio', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([], {
+        totalValue: '0',
+        pricedSubtotal: '0',
+        depositsValue: '0',
+        interestMissingDepositCount: 1,
+        completeness: 'incomplete',
+        allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+      }),
+    );
+    renderAt('/portfolio');
+    expect(await screen.findByText(/1 account has days with no rate entered/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Portfolio summary' })).toBeInTheDocument();
+  });
+
   it('DEP-ACCOUNT says the value leaves out the interest of an account with no rate entered', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin], { depositsValue: '20000', interestMissingDepositCount: 2 }),

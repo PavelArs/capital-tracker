@@ -662,6 +662,18 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
     expect(result.allocation.complete).toBe(false);
   });
 
+  it('DEP-ACCOUNT-ZERO keeps a zero lower bound incomplete while interest is missing', () => {
+    const result = projectPortfolio(now, [], [], prices({}), undefined, undefined, [
+      { ...bank(1, 'First Bank', 0n), interestMissing: true },
+    ]);
+    expect(result).toMatchObject({
+      totalValue: '0',
+      completeness: 'incomplete',
+      interestMissingDepositCount: 1,
+    });
+    expect(result.allocation.complete).toBe(false);
+  });
+
   it('DEP-ACCOUNT counts the accounts without a rate, whose interest is not in the value', () => {
     const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
       bank(1, 'First Bank', worth(15_000)),
@@ -674,7 +686,7 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
       completeness: 'incomplete',
       totalValue: '100000',
       depositsValue: '20000',
-      interestMissingDepositCount: 1,
+      interestMissingDepositCount: 2,
     });
     const without = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
       bank(1, 'First Bank', worth(15_000)),

@@ -75,7 +75,7 @@ export function depositValuesAt(holdings: readonly DepositHolding[], at: Date, f
     name: holding.deposit.name,
     bank: holding.deposit.bank,
     value: depositValueOn(holding, date, fx),
-    interestMissing: interestMissing(holding),
+    interestMissing: holding.deposit.startDate <= date && interestMissing(holding),
   }));
 }
 

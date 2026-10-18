@@ -86,10 +86,8 @@ export class DepositsService {
       return {
         asOf: date,
         items,
-        // Accounts holding money with no rate entered: the totals count what was put in only.
-        interestMissingCount: open.filter(
-          (item) => item.interestMissing && canonicalDecimalToAtoms(item.balance) > 0n,
-        ).length,
+        // A zero floor can still leave unknown interest payable.
+        interestMissingCount: open.filter((item) => item.interestMissing).length,
         totals: Object.fromEntries(
           accountingCurrencies.map((currency) => {
             const values = open.map((item) => item.values[currency]);

@@ -360,6 +360,11 @@ async function account(db, service, owner) {
   );
   // Emptying an account leaves it open: it takes the next top-up, and a term deposit does not.
   const empty = await service.create(owner, { ...terms, name: 'Current Z', amount: '100.00' });
+  const beforeZeroCount = (await service.list(owner, '2026-07-10')).interestMissingCount;
+  const { PortfolioValuationService } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+  const valuation = new PortfolioValuationService(db);
+  const zeroDay = new Date('2026-07-10T12:00:00Z');
+  const beforeZeroPortfolio = await valuation.read(owner, { currency: 'RUB' }, zeroDay);
   const zero = await service.addMovement(owner, empty.id, {
     date: '2026-07-10',
     kind: 'withdrawal',
@@ -367,6 +372,12 @@ async function account(db, service, owner) {
   });
   assert.equal(zero.status, 'active', 'An emptied account is not closed');
   assert.equal(zero.balance, '0.00');
+  assert.equal((await service.list(owner, '2026-07-10')).interestMissingCount, beforeZeroCount,
+    'A zero lower bound does not mean unknown interest is gone');
+  const zeroPortfolio = await valuation.read(owner, { currency: 'RUB' }, zeroDay);
+  assert.equal(zeroPortfolio.interestMissingDepositCount, beforeZeroPortfolio.interestMissingDepositCount);
+  assert.equal(zeroPortfolio.completeness, 'incomplete');
+  assert.equal(zeroPortfolio.allocation.complete, false);
   const refilled = await service.addMovement(owner, empty.id, {
     date: '2026-07-20',
     kind: 'topup',

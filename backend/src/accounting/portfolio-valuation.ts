@@ -701,9 +701,9 @@ export function projectPortfolio(
   let unratedDepositCount = 0;
   let interestMissingDepositCount = 0;
   for (const deposit of deposits) {
+    if (deposit.interestMissing) interestMissingDepositCount++;
     if (deposit.value === null) unratedDepositCount++;
     else if (deposit.value > 0n) {
-      if (deposit.interestMissing) interestMissingDepositCount++;
       depositValue += deposit.value;
       subtotal += deposit.value;
       add(byAsset, `deposit:${deposit.id}`, deposit.name, deposit.value);
