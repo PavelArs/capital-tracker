@@ -19,7 +19,8 @@ const today = new Date().toISOString().slice(0, 10);
 function service(complete = true) {
   const source = {
     manager: { query: async () => [{ ...row, deadline: addMonths(today, 36) }] },
-    transaction: async (work: (manager: unknown) => unknown) => work({ query: async () => [] }),
+    transaction: async (work: (manager: unknown) => unknown) =>
+      work({ query: async () => [], queryRunner: { isTransactionActive: true } }),
   };
   const snapshots = {
     current: async () => ({ value: '5000.00', complete, stalePrices: 0 }),
@@ -197,7 +198,8 @@ describe('goals service', () => {
       };
       const source = {
         manager: { query },
-        transaction: async (work: (manager: unknown) => unknown) => work({ query }),
+        transaction: async (work: (manager: unknown) => unknown) =>
+          work({ query, queryRunner: { isTransactionActive: true } }),
       };
       const snapshots = {
         current: async () => ({ value: '5000.00', complete: true, stalePrices: 0 }),

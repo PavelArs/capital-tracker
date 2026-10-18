@@ -96,6 +96,7 @@ const expectedMigrationNames = [
   'AddBrokerImports1797500000000',
   'AddDepositKind1797600000000',
   'AddCapitalReturns1797700000000',
+  'AddRetiredCommands1797800000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';
@@ -870,7 +871,7 @@ async function main() {
         ({ name }) => name,
       ),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current seventy-migration ledger',
+      'The actual migration CLI must build the complete current seventy-one-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [

@@ -17,7 +17,7 @@ const settings = {
 };
 const database = 'capital_tracker_goals_e2e';
 const modulePath = '/app/backend/dist/goals/goals.service.js';
-const MIGRATIONS = 70;
+const MIGRATIONS = 71;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -84,6 +84,16 @@ async function terms(db, service, owner, other) {
     'A replay needs no new deadline',
   );
   await service.remove(owner, soonMade.id);
+  await rejected(() => service.create(owner, soon), 409);
+  await rejected(() => service.create(owner, { ...soon, name: 'Different reuse' }), 409);
+  assert.equal(
+    (await db.query(
+      'SELECT count(*)::int AS count FROM savings_goals WHERE "ownerId"=$1 AND "requestId"=$2',
+      [owner, soon.requestId],
+    ))[0].count,
+    0,
+  );
+  console.log('PASS GOAL-RETIRED-COMMAND deleted goal request IDs stay retired');
   const open = await service.create(owner, {
     ...reserve(),
     deadline: null,

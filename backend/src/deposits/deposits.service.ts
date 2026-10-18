@@ -7,7 +7,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { canonicalDecimalToAtoms } from '../accounting/money';
+import { refuseRetiredCommand } from '../accounting/retired-command';
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readEffectiveChanges, readPersonalRate } from '../inflation/inflation.service';
@@ -137,6 +139,8 @@ export class DepositsService {
     if (input.startDate > moscowDate(new Date()))
       throw new UnprocessableEntityException('Start date is in the future');
     const id = await this.source.transaction(async (manager) => {
+      await lockAccountingOwner(manager, owner);
+      await refuseRetiredCommand(manager, owner, 'deposit', requestId);
       const created: { id: string }[] = await manager.query(
         `INSERT INTO bank_deposits (id, "ownerId", "requestId", "canonicalPayload", name, bank, currency,
            "startDate", "endDate", payout, capitalized, "dayBasis", "earlyClose", kind)
@@ -229,6 +233,7 @@ export class DepositsService {
       throw new UnprocessableEntityException('Date is in the future');
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
+      await refuseRetiredCommand(manager, owner, 'deposit-movement', requestId);
       const [earlier]: { canonicalPayload: string }[] = await manager.query(
         'SELECT "canonicalPayload" FROM bank_deposit_movements WHERE "ownerId"=$1 AND "requestId"=$2',
         [owner, requestId],
@@ -292,6 +297,12 @@ export class DepositsService {
         );
       if (firstImpossibleMovement(termsOf(stored), remaining) !== -1)
         throw new ConflictException('A later movement depends on this one');
+      await manager.query(
+        `INSERT INTO retired_commands ("ownerId", scope, "requestId")
+         SELECT "ownerId", 'deposit-movement', "requestId" FROM bank_deposit_movements
+         WHERE "ownerId"=$1 AND id=$2 ON CONFLICT DO NOTHING`,
+        [owner, moveId],
+      );
       await manager.query('DELETE FROM bank_deposit_movements WHERE "ownerId"=$1 AND id=$2', [
         owner,
         moveId,
@@ -370,6 +381,7 @@ export class DepositsService {
       throw new UnprocessableEntityException('Date is in the future');
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
+      await refuseRetiredCommand(manager, owner, 'deposit-check', requestId);
       if (input.checkedOn < stored.deposit.startDate)
         throw new UnprocessableEntityException('The date is before the deposit started');
       const [earlier]: { canonicalPayload: string }[] = await manager.query(
@@ -402,6 +414,16 @@ export class DepositsService {
     const depositId = parseUuid(id);
     await this.source.transaction(async (manager) => {
       await this.locked(manager, owner, depositId);
+      await manager.query(
+        `INSERT INTO retired_commands ("ownerId", scope, "requestId")
+         SELECT "ownerId", 'deposit', "requestId" FROM bank_deposits WHERE "ownerId"=$1 AND id=$2
+         UNION ALL
+         SELECT "ownerId", 'deposit-movement', "requestId" FROM bank_deposit_movements WHERE "ownerId"=$1 AND "depositId"=$2
+         UNION ALL
+         SELECT "ownerId", 'deposit-check', "requestId" FROM bank_deposit_checks WHERE "ownerId"=$1 AND "depositId"=$2
+         ON CONFLICT DO NOTHING`,
+        [owner, depositId],
+      );
       await recordDepositEvent(manager, owner, depositId, 'deleted');
       await manager.query('DELETE FROM bank_deposits WHERE "ownerId"=$1 AND id=$2', [
         owner,
@@ -443,6 +465,7 @@ export class DepositsService {
   }
 
   private async locked(manager: EntityManager, owner: string, id: string): Promise<Stored> {
+    await lockAccountingOwner(manager, owner);
     const found: { id: string }[] = await manager.query(
       'SELECT id FROM bank_deposits WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
       [owner, id],

@@ -5,6 +5,7 @@
 /** The owner's own records, each keyed by "ownerId", in restore order. */
 export const backupTables = [
   'owner_settings',
+  'retired_commands',
   'accounting_instruments',
   'hidden_assets',
   'bank_deposits',

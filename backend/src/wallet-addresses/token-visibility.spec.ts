@@ -56,6 +56,18 @@ describe('TOKEN-DUST: tokens worth nothing', () => {
     expect(isWorthless({ listed: true }, '5', '1', undefined)).toBe(false);
   });
 
+  it.each([
+    ['0.29', '100', '29', false],
+    ['-0.29', '100', '29', false],
+    ['0.289999999999999999999999999999', '100', '29', true],
+    ['0.290000000000000000000000000001', '100', '29', false],
+  ])(
+    'TOKEN-DUST-EXACT compares %s at %s against %s without floating-point rounding',
+    (quantity, price, threshold, hidden) => {
+      expect(isWorthless({ listed: true }, quantity, threshold, price)).toBe(hidden);
+    },
+  );
+
   it('compares the value at the latest price with the threshold', () => {
     expect(isWorthless({ listed: true }, '7', '1', '0.01')).toBe(true);
     expect(isWorthless({ listed: true }, '7', '1', '1')).toBe(false);

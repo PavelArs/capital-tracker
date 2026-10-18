@@ -364,7 +364,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 70/);
+  assert.match(migrate(database), /Migrations applied: 71/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -1624,11 +1624,33 @@ async function main() {
           ]);
           await reload();
           assert.equal((await hiddenOf()).WANTED, undefined);
+          // Bind the now-listed token through the normal instrument-creation path.
+          await s.addresses.update(owner, spamId, { accountId: tokenAccount });
+          await price('0.01', 180);
+          assert.equal((await hiddenOf()).WANTED, undefined,
+            'TOKEN-DUST-FRESH a stale quote cannot hide a listed holding');
+          const { PortfolioValuationService } = require(
+            `${dist}/accounting/portfolio-valuation.service.js`,
+          );
+          const staleAsset = (
+            await new PortfolioValuationService(db).read(owner, {}, new Date())
+          ).assets.find((item) => item.symbol === 'WANTED');
+          assert.equal(staleAsset.price.status, 'stale',
+            'The actual portfolio retains the stale-price indication');
+          assert.equal((await portfolioSymbols()).held.has('WANTED'), true,
+            'The stale-priced holding stays in provisional portfolio lots');
           // 7 tokens at 0.01 USD are worth 0.07 USD, below the threshold; at 1 USD they are worth 7 USD.
           await price('0.01', 10);
           assert.equal((await hiddenOf()).WANTED, 'dust');
           await price('1', 5);
           assert.equal((await hiddenOf()).WANTED, undefined);
+          await settings.update(owner, { dustThresholdUsd: '4.9' });
+          await price('0.7', 4);
+          assert.equal((await hiddenOf()).WANTED, undefined,
+            'TOKEN-DUST-EXACT seven tokens at 0.7 equal the 4.9 threshold');
+          console.log(
+            'PASS TOKEN-DUST-FRESH and TOKEN-DUST-EXACT actual wallet and portfolio retain stale and threshold-equal holdings',
+          );
           // Without a threshold a token with a price is never dust, listed or not: the price decides.
           await settings.update(owner, { dustThresholdUsd: null });
           assert.equal((await hiddenOf()).WANTED, undefined);

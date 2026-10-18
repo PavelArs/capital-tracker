@@ -53,6 +53,7 @@ const walletTables = [
   'bank_deposit_checks',
   'bank_deposit_events',
   'savings_goals',
+  'retired_commands',
   'broker_connections',
   'broker_instrument_links',
   'broker_imports',
@@ -187,6 +188,7 @@ const migrationNames = [
   'AddBrokerImports1797500000000',
   'AddDepositKind1797600000000',
   'AddCapitalReturns1797700000000',
+  'AddRetiredCommands1797800000000',
 ];
 
 function connection(database) {
@@ -360,7 +362,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy migrations',
+      'Exactly seventy-one migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -2532,6 +2534,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797500000000',
           '1797600000000',
           '1797700000000',
+          '1797800000000',
         ][index - 11],
       );
     }

@@ -1,6 +1,7 @@
 import type { EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
+import { freshness } from '../prices/price-collection';
 import {
   anyTokenNetworks,
   chainAsset,
@@ -96,26 +97,22 @@ export async function withDust<Row extends TokenHolder>(
       ),
     ),
   ];
+  const now = new Date();
   const prices = new Map(
     tickers.length === 0
       ? []
-      : (await latestMarketPrices(manager, tickers, new Date())).map((item) => [
-          item.asset,
-          item.price,
-        ]),
+      : (await latestMarketPrices(manager, tickers, now)).map((item) => [item.asset, item]),
   );
   for (const row of candidates) {
     const dust = new Set<string>();
     for (const item of held(row)) {
       const asset = chainAsset(row.network, item.asset);
       const units = BigInt(item.units);
+      const quote = prices.get(asset.symbol);
+      // An old quote may value a holding as stale, but cannot silently hide it.
+      if (quote && freshness(quote.observedAt, now) !== 'fresh') continue;
       if (
-        isWorthless(
-          asset,
-          formatUnits(units, asset),
-          units === 0n ? null : threshold,
-          prices.get(asset.symbol),
-        )
+        isWorthless(asset, formatUnits(units, asset), units === 0n ? null : threshold, quote?.price)
       )
         dust.add(item.asset as string);
     }
