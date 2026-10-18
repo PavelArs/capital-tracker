@@ -275,7 +275,8 @@ async function migrationPreservation() {
       ],
     );
     const before = await fingerprint(db, ['migrations'], true);
-    assert.match(migrate(predecessor), /Migrations applied: 50/);
+    assert.match(migrate(predecessor), /Migrations applied: 51/);
+    assert.deepEqual(await db.query('SELECT * FROM retired_commands'), []);
     assert.deepEqual(await db.query('SELECT "consecutiveFailures" FROM owner_mfa'), [
       { consecutiveFailures: 0 },
     ]);
@@ -331,6 +332,7 @@ async function migrationPreservation() {
           'broker_imported_operations',
           'account_capital_returns',
           'account_capital_return_versions',
+          'retired_commands',
           'inflation_months',
           'inflation_manual_months',
           'inflation_personal_rates',
@@ -970,7 +972,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 70/);
+  assert.match(migrate(database), /Migrations applied: 71/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

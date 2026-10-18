@@ -655,6 +655,12 @@ async function jsonBackup(db, s, f, made) {
     'Every table is backed up or left out on purpose, exactly once',
   );
 
+  const retiredRequest = randomUUID();
+  await db.query(
+    `INSERT INTO retired_commands ("ownerId", scope, "requestId")
+     VALUES ($1, 'goal', $3), ($2, 'deposit', $3)`,
+    [f.owner, f.other, retiredRequest],
+  );
   const before = await fingerprint(db);
   const download = await s.exports.backup(f.owner, now);
   assert.equal(download.filename, 'capital-tracker-backup-2026-10-08.json');
@@ -679,6 +685,11 @@ async function jsonBackup(db, s, f, made) {
     assert.equal(backup.tables[name].length, n, `${name}: every row of the owner`);
     for (const row of backup.tables[name]) assert.equal('ownerId' in row, false);
   }
+  assert.deepEqual(
+    backup.tables.retired_commands,
+    [{ scope: 'goal', requestId: retiredRequest }],
+    'EXP-JSON preserves deleted-command protection without exporting another owner',
+  );
   assert.ok(backup.tables.wallet_address_transactions.length === 3);
   // The tables of the screens retired in M20 are dropped: the backup has no trace of them.
   for (const name of ['assets', 'liabilities', 'crypto_wallets', 'currencies', 'reports'])
@@ -758,7 +769,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 70);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 71);
     const [owner, other, third] =
       await db.query(`INSERT INTO users(email,password) VALUES
       ('export-owner@example.invalid','synthetic-not-a-hash'),

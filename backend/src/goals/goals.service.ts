@@ -6,6 +6,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { lockAccountingOwner } from '../accounting/accounting-lock';
+import { refuseRetiredCommand } from '../accounting/retired-command';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
 import { goalForecast } from './goal-chart';
@@ -90,9 +92,8 @@ export class GoalsService {
     const payload = JSON.stringify(input);
     const id = await this.source.transaction(async (manager) => {
       // One lock per owner keeps the count honest and a retry of the same request a no-op.
-      await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
-        `savings-goals:${owner}`,
-      ]);
+      await lockAccountingOwner(manager, owner);
+      await refuseRetiredCommand(manager, owner, 'goal', requestId);
       const [earlier]: { id: string; canonicalPayload: string }[] = await manager.query(
         'SELECT id, "canonicalPayload" FROM savings_goals WHERE "ownerId"=$1 AND "requestId"=$2',
         [owner, requestId],
@@ -169,6 +170,12 @@ export class GoalsService {
     const goalId = parseUuid(id);
     await this.source.transaction(async (manager) => {
       await this.locked(manager, owner, goalId);
+      await manager.query(
+        `INSERT INTO retired_commands ("ownerId", scope, "requestId")
+         SELECT "ownerId", 'goal', "requestId" FROM savings_goals
+         WHERE "ownerId"=$1 AND id=$2 ON CONFLICT DO NOTHING`,
+        [owner, goalId],
+      );
       await manager.query('DELETE FROM savings_goals WHERE "ownerId"=$1 AND id=$2', [
         owner,
         goalId,
@@ -178,6 +185,7 @@ export class GoalsService {
   }
 
   private async locked(manager: EntityManager, owner: string, id: string) {
+    await lockAccountingOwner(manager, owner);
     const [found]: { id: string; deadline: string | null }[] = await manager.query(
       `SELECT id, to_char(deadline, 'YYYY-MM-DD') AS deadline FROM savings_goals
        WHERE "ownerId"=$1 AND id=$2 FOR UPDATE`,

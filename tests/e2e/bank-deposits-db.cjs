@@ -19,7 +19,7 @@ const settings = {
 };
 const database = 'capital_tracker_bank_deposits_e2e';
 const modulePath = '/app/backend/dist/deposits/deposits.service.js';
-const MIGRATIONS = 70;
+const MIGRATIONS = 71;
 let stage = 'synthetic configuration';
 
 function source() {
@@ -597,7 +597,7 @@ async function backfill() {
       timeout: 60000,
     });
     assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
-    assert.match(migrated.stdout, /Migrations applied: 7/);
+    assert.match(migrated.stdout, /Migrations applied: 8/);
     const events = await prior.query(
       `SELECT version, kind, "depositKind", name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
           to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,
@@ -1003,6 +1003,51 @@ async function wholePortfolio(db, owner) {
   await deposits.remove(owner, rubles.id);
 }
 
+async function deletedCommands(db, service, owner) {
+  stage = 'DEP-RETIRED-COMMAND deleted bank commands cannot recreate records';
+  const body = {
+    ...savings,
+    requestId: randomUUID(),
+    startDate: '2026-01-01',
+    endDate: null,
+    ratePercent: '0',
+  };
+  const deposit = await service.create(owner, body);
+  const movement = { requestId: randomUUID(), date: '2026-01-02', kind: 'topup', amount: '20' };
+  const moved = await service.addMovement(owner, deposit.id, movement);
+  const moveId = moved.movements.find((item) => item.date === movement.date).id;
+  await service.removeMovement(owner, deposit.id, moveId);
+  await rejected(() => service.addMovement(owner, deposit.id, movement), 409);
+  assert.equal(
+    (await service.get(owner, deposit.id)).principal,
+    '100000.00',
+    'A deleted top-up stays deleted',
+  );
+  const active = { ...movement, requestId: randomUUID() };
+  await service.addMovement(owner, deposit.id, active);
+  const check = { requestId: randomUUID(), checkedOn: '2026-01-03', bankBalance: '100020' };
+  await service.addCheck(owner, deposit.id, check);
+  await service.remove(owner, deposit.id);
+  await rejected(() => service.create(owner, body), 409);
+  await rejected(() => service.create(owner, { ...body, name: 'Different reuse' }), 409);
+  const replacement = await service.create(owner, { ...body, requestId: randomUUID() });
+  await rejected(() => service.addMovement(owner, replacement.id, active), 409);
+  await rejected(() => service.addCheck(owner, replacement.id, check), 409);
+  assert.equal(
+    (
+      await db.query(
+        'SELECT count(*)::int AS count FROM bank_deposits WHERE "ownerId"=$1 AND "requestId"=$2',
+        [owner, body.requestId],
+      )
+    )[0].count,
+    0,
+  );
+  await service.remove(owner, replacement.id);
+  console.log(
+    'PASS DEP-RETIRED-COMMAND deleted deposit, movement and check request IDs stay retired',
+  );
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -1057,6 +1102,7 @@ async function main() {
       addCheck: (owner, id, body) =>
         plain.addCheck(owner, id, { requestId: randomUUID(), ...body }),
     });
+    await deletedCommands(db, service, owner.id);
     const ids = await accrual(db, service, owner.id);
     await daily(db, service, fourth.id);
     await account(db, service, fourth.id);

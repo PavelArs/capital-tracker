@@ -1,3 +1,4 @@
+import { canonicalDecimalToAtoms } from '../accounting/money';
 import type { ChainAsset } from './chain-assets';
 
 // TOKEN-HIDE: an Ethereum or Solana wallet is sent every token anyone cares to send it. Most of
@@ -27,7 +28,11 @@ export function isWorthless(
 ): boolean {
   if (price === undefined) return token.listed === false;
   if (thresholdUsd === null) return false;
-  return Math.abs(Number(quantity)) * Number(price) < Number(thresholdUsd);
+  const units = canonicalDecimalToAtoms(quantity.startsWith('-') ? quantity.slice(1) : quantity);
+  return (
+    units * canonicalDecimalToAtoms(price) <
+    canonicalDecimalToAtoms(thresholdUsd) * canonicalDecimalToAtoms('1')
+  );
 }
 
 /**

@@ -4,6 +4,7 @@
 // CoinGecko providers are synthetic: requests leave through HTTPS_PROXY to providers.cjs.
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
 const { DataSource } = require('typeorm');
@@ -620,13 +621,77 @@ async function backfillRetry(db) {
   );
 }
 
+async function fairBatches(db) {
+  const [{ id: owner }] = await db.query(
+    `INSERT INTO users(email,password) VALUES ('price-batches@example.invalid','synthetic-not-a-hash') RETURNING id`,
+  );
+  const symbols = Array.from({ length: 51 }, (_, i) => `SYN${String(i).padStart(3, '0')}`);
+  for (const symbol of symbols)
+    await db.query(
+      `INSERT INTO accounting_instruments (id, "ownerId", "requestId", "canonicalPayload", name, symbol, "assetType", "priceSource") VALUES ($1,$2,$3,'synthetic',$4,$4,'crypto','market')`,
+      [randomUUID(), owner, randomUUID(), symbol],
+    );
+  await post('bybit', { markets: Object.fromEntries(symbols.map((symbol) => [symbol, '1'])) });
+  const { BybitMarketClient } = require('/app/backend/dist/prices/bybit-market.js');
+  const prices = new PricesService(
+    db,
+    new ConfigService({}),
+    new KrakenClient(),
+    new CoinGeckoClient(),
+    new BybitMarketClient(),
+  );
+  const requested = async () => {
+    const response = await fetch(`${control}/requests`);
+    assert.equal(response.status, 200);
+    return (await response.json())
+      .map((item) => new URL(item.url))
+      .filter(
+        (url) =>
+          url.hostname === 'api.bybit.com' &&
+          url.pathname === '/v5/market/kline' &&
+          url.searchParams.get('interval') === '60',
+      );
+  };
+  const before = (await requested()).length;
+  const now = new Date(hourStart(Date.now()) + 5 * 60000);
+  await prices.collectBybit(now);
+  const first = (await requested()).length;
+  assert.ok(first - before <= 50, 'A real outbound price batch stays bounded');
+  assert.equal(
+    (await prices.read(now)).assets.filter((asset) => symbols.includes(asset.asset)).length,
+    51,
+    'PRC-ALL-HEALTH includes the symbol waiting for its batch',
+  );
+  assert.equal(
+    (await prices.read(now)).sources.find((source) => source.key === 'prices:bybit').state,
+    'delayed',
+  );
+  await prices.collectBybit(new Date(now.getTime() + HOUR));
+  const calls = await requested();
+  assert.ok(calls.length - first <= 50);
+  assert.deepEqual(
+    new Set(calls.slice(before).map((url) => url.searchParams.get('symbol'))),
+    new Set(symbols.map((symbol) => `${symbol}USDT`)),
+    'PRC-FAIR-BATCH every symbol is actually requested over two hours',
+  );
+  assert.equal(
+    (await prices.read(new Date(now.getTime() + HOUR))).assets.filter(
+      (asset) => symbols.includes(asset.asset) && asset.status === 'fresh',
+    ).length,
+    51,
+  );
+  console.log(
+    'PASS PRC-FAIR-BATCH and PRC-ALL-HEALTH 51 symbols priced through real outbound requests and PostgreSQL',
+  );
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 70/);
+    assert.match(migrate(name), /Migrations applied: 71/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const main = sourceFor(databases.main);
@@ -647,6 +712,7 @@ async function main() {
     await interrupted(main);
     await stale(retry);
     await backfillRetry(retry);
+    await fairBatches(retry);
   } finally {
     await main.destroy();
     await retry.destroy();

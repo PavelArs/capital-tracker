@@ -1811,7 +1811,7 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 70/);
+  assert.match(migrated.stdout, /Migrations applied: 71/);
   const db = source();
   try {
     await db.initialize();

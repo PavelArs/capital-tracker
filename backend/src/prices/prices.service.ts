@@ -157,8 +157,11 @@ export class PricesService {
    * so a transaction can be valued at its time. A coin Bybit does not list stays without a price.
    */
   private async collectBybit(now: Date): Promise<{ stored: number; backfilled: number }> {
-    const codes = (await extraMarketCodes(this.source)).slice(0, MAX_BYBIT_COINS);
-    if (codes.length === 0) return { stored: 0, backfilled: 0 };
+    const all = await extraMarketCodes(this.source);
+    if (all.length === 0) return { stored: 0, backfilled: 0 };
+    // Rotate bounded hourly batches; historical symbols must not starve later holdings.
+    const batch = Math.floor(now.getTime() / 3_600_000) % Math.ceil(all.length / MAX_BYBIT_COINS);
+    const codes = all.slice(batch * MAX_BYBIT_COINS, (batch + 1) * MAX_BYBIT_COINS);
     const done: { asset: string }[] = await this.source.query(
       `SELECT DISTINCT asset FROM price_observations
        WHERE kind = 'daily-close' AND source = 'bybit' AND "quoteCurrency" = $1
@@ -196,7 +199,25 @@ export class PricesService {
     return this.source.transaction(async (manager) => {
       const backfilled = await this.insert(manager, history);
       const stored = await this.insert(manager, quotes);
-      await this.record(manager, BYBIT_KEY, outcome, now);
+      const latest = all.length > codes.length ? await latestMarketPrices(manager, all, now) : [];
+      const fresh = new Set(
+        latest
+          .filter((quote) => freshness(quote.observedAt, now) === 'fresh')
+          .map((quote) => quote.asset),
+      );
+      const pending = all.length > codes.length ? all.filter((code) => !fresh.has(code)) : [];
+      await this.record(
+        manager,
+        BYBIT_KEY,
+        pending.length > 0 && outcome.state === 'synced'
+          ? {
+              state: 'delayed',
+              errorCode: 'pending_assets',
+              errorMessage: `${pending.length} assets await fresh prices in the next collection batches`,
+            }
+          : outcome,
+        now,
+      );
       return { stored, backfilled };
     });
   }
@@ -383,7 +404,7 @@ export class PricesService {
       // BYBIT-ANY-COIN: the catalog, then the coins priced from Bybit's market.
       const codes = [
         ...MARKET_ASSETS.map(({ code }) => code),
-        ...(await extraMarketCodes(manager)).slice(0, MAX_BYBIT_COINS),
+        ...(await extraMarketCodes(manager)),
       ];
       const latest = await latestMarketPrices(manager, codes, now);
       const sources: SourceRow[] = await manager.query(
