@@ -1,6 +1,13 @@
+import { FxConverter } from '../fx-rates/fx-conversion';
 import type { InflationFactor } from '../inflation/inflation-math';
+import { calculateFifo, type FifoTrade } from './fifo';
 import { lotsAfterInflation, realReadings } from './portfolio-real';
-import { type PortfolioAccountInput, type PortfolioLot, usdOnly } from './portfolio-valuation';
+import {
+  type PortfolioAccountInput,
+  type PortfolioLot,
+  portfolioAccount,
+  usdOnly,
+} from './portfolio-valuation';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const lot = (
@@ -138,6 +145,111 @@ describe('real portfolio readings (INFL-REAL-PF)', () => {
 });
 
 describe('lots after inflation (INFL-REAL-LOTS)', () => {
+  it('RUB-LOT-PROVENANCE reserves entered precision for an unsplit purchase', () => {
+    const buy: FifoTrade = {
+      tradeId: id(10),
+      version: 1,
+      instrumentId: id(1),
+      instrumentName: 'Synthetic',
+      instrumentSymbol: 'SYNTH',
+      side: 'buy',
+      occurredAt: '2026-01-10T09:00:00.000Z',
+      orderWithinTimestamp: 0,
+      quantity: '3',
+      grossUsd: '1000',
+      feeUsd: '0',
+      paid: {
+        currency: 'RUB',
+        gross: '100000',
+        fee: '0',
+        rateDate: '2026-01-10',
+        perUsd: '100',
+        rateSource: 'owner',
+      },
+    };
+    const sell: FifoTrade = {
+      ...buy,
+      tradeId: id(11),
+      side: 'sell',
+      occurredAt: '2026-01-11T09:00:00.000Z',
+      quantity: '1',
+      grossUsd: '400',
+      paid: undefined,
+    };
+    const read = (trades: FifoTrade[]) =>
+      lotsAfterInflation({
+        instrumentId: id(1),
+        accounts: [
+          portfolioAccount({ accountId: id(100), name: 'Synthetic' }, calculateFifo(trades, []), {
+            trades,
+            initialLots: [],
+          }),
+        ],
+        fx: new FxConverter({ USD: [], EUR: [] }, 'RUB'),
+        price: null,
+        official: factor,
+        personal: null,
+      })[0];
+    expect(read([buy])).toMatchObject({ quantity: '3', paid: '100000', paidExact: true });
+    expect(read([buy, sell])).toMatchObject({
+      quantity: '2',
+      paidCurrency: 'RUB',
+      paidExact: false,
+    });
+    expect(read([buy, sell]).paid).toMatch(/^66666\.6666/);
+  });
+
+  it('RUB-LOT-CAPRET rounds a full native lot once a capital return lowers its cost', () => {
+    const original: PortfolioLot = {
+      ...lot(1, '3', '1000.0075', '2026-01-10T09:00:00.000Z'),
+      native: { currency: 'RUB', amount: '100000.75', entered: true },
+    };
+    const read = (held: PortfolioLot) =>
+      lotsAfterInflation({
+        instrumentId: id(1),
+        accounts: [account([held])],
+        fx: new FxConverter({ USD: [], EUR: [] }, 'RUB'),
+        price: null,
+        official: factor,
+        personal: null,
+      })[0];
+    expect(read(original)).toMatchObject({ paid: '100000.75', paidExact: true });
+    expect(
+      read({
+        ...original,
+        costUsd: '900.0075',
+        returned: [
+          {
+            at: '2026-02-10T09:00:00.000Z',
+            costUsd: '100',
+            native: { currency: 'RUB', amount: '10000' },
+          },
+        ],
+      }),
+    ).toMatchObject({ quantity: '3', paid: '90000.75', paidCurrency: 'RUB', paidExact: false });
+  });
+
+  it('RUB-WHOLE-LOTS keeps the payment currency beside an exact native amount and legacy USD cost', () => {
+    const result = lotsAfterInflation({
+      instrumentId: id(1),
+      accounts: [
+        account([
+          {
+            ...lot(1, '1', '1000', '2026-01-10T09:00:00.000Z'),
+            native: { currency: 'RUB', amount: '83000.75', entered: true },
+          },
+          lot(1, '1', '1000', '2026-01-09T09:00:00.000Z'),
+        ]),
+      ],
+      fx: new FxConverter({ USD: [], EUR: [] }, 'RUB'),
+      price: null,
+      official: factor,
+      personal: null,
+    });
+    expect(result[0]).toMatchObject({ paidCurrency: 'RUB', paid: '83000.75' });
+    expect(result[1]).toMatchObject({ paidCurrency: 'USD', paid: null });
+  });
+
   const fx = usdOnly();
   const lots = [
     lot(1, '1', '100', '2025-01-10T09:00:00.000Z'),
@@ -167,6 +279,8 @@ describe('lots after inflation (INFL-REAL-LOTS)', () => {
       acquiredAt: '2026-01-10T09:00:00.000Z',
       quantity: '2',
       paid: '200',
+      paidCurrency: 'USD',
+      paidExact: false,
       value: '400',
       nominalPnl: '200',
       real: {

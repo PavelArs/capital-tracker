@@ -51,6 +51,10 @@ export interface LotAfterInflation {
   quantity: string;
   /** Null when the lot has no cost, or none can be stated in the report currency. */
   paid: string | null;
+  /** Original payment currency; absent in older cached answers. `paid` is in the report currency. */
+  paidCurrency?: AccountingCurrency;
+  /** True only for the full entered payment in this response currency. */
+  paidExact?: boolean;
   value: string | null;
   nominalPnl: string | null;
   real: {

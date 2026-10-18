@@ -215,6 +215,7 @@ function setup({
   coldClass = null,
   valuation = portfolio(),
   listPage = <p>Wallets list</p>,
+  quoteCurrency = 'USD',
 }: {
   account?: string;
   list?: WalletAddress[];
@@ -223,6 +224,7 @@ function setup({
   coldClass?: 'property' | null;
   valuation?: PortfolioValuation;
   listPage?: ReactElement;
+  quoteCurrency?: OperationList['quoteCurrency'];
 } = {}) {
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
@@ -252,7 +254,7 @@ function setup({
   vi.spyOn(walletAddressesApi, 'list').mockResolvedValue(list);
   vi.spyOn(walletAddressesApi, 'syncRuns').mockResolvedValue([]);
   vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
-  vi.spyOn(operationsApi, 'list').mockResolvedValue(operations(items));
+  vi.spyOn(operationsApi, 'list').mockResolvedValue({ ...operations(items), quoteCurrency });
   // Success notices are toasts (plan 1.5): the app's toast region is mounted as in App.tsx.
   render(
     <ToastProvider>
@@ -275,6 +277,35 @@ afterEach(() => {
 });
 
 describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () => {
+  it.each(['RUB', 'USD'] as const)(
+    'RUB-WHOLE-WALLET keeps only native %s transaction kopecks',
+    async (paidCurrency) => {
+      setup({
+        quoteCurrency: 'RUB',
+        valuation: { ...portfolio(), currency: 'RUB', mainCurrency: 'RUB' },
+        items: [
+          operation(1, {
+            value: '83000.75',
+            paid:
+              paidCurrency === 'RUB'
+                ? {
+                    currency: 'RUB',
+                    gross: '83000.75',
+                    fee: '0',
+                    rateDate: '2025-06-13',
+                    perUsd: '103.7509375',
+                    rateSource: 'owner',
+                  }
+                : null,
+          }),
+        ],
+      });
+      const region = await screen.findByRole('region', { name: /^Transactions/ });
+      expect(
+        await within(region).findByText(paidCurrency === 'RUB' ? '₽83,000.75' : '₽83,000'),
+      ).toBeInTheDocument();
+    },
+  );
   it('shows the summary, its own addresses and assets, and only its transactions', async () => {
     setup();
     expect(await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' })).toBeVisible();

@@ -157,6 +157,22 @@ const renderPage = () =>
   );
 
 describe('PROPERTY-LIST Real estate', () => {
+  it('RUB-WHOLE-PROPERTY keeps kopecks in the whole-property unit estimate', async () => {
+    const property = {
+      ...properties[0],
+      price: { ...properties[0].price!, value: '92000.75' },
+      value: '46000.375',
+    };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...valuation([property]),
+      currency: 'RUB',
+      mainCurrency: 'RUB',
+    });
+    renderPage();
+    expect(await screen.findByRole('link', { name: /Studio/ })).toHaveTextContent(
+      'Whole property₽92,000.75',
+    );
+  });
   it('shows each property held in a property account with the owner’s share', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
     const user = userEvent.setup();

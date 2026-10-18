@@ -15,7 +15,7 @@ import PageIntro from '@/ui/PageIntro';
 import { Stat, Stats } from '@/ui/Stats';
 import { dayText, moscowDate } from '@/utils/dates';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
-import { money, percent, tone } from '../portfolio/format';
+import { money, percent, price, tone } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
@@ -71,7 +71,7 @@ function PropertyTile({
           <KeyValue>
             {share < 100 && (
               <KeyValueRow term="Whole property">
-                {money(asset.price?.value ?? null, currency)}
+                {price(asset.price?.value ?? null, currency)}
               </KeyValueRow>
             )}
             <KeyValueRow term="Estimate of">

@@ -156,7 +156,7 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   await expect(page).toHaveURL(/currency=RUB/);
   await expect(page).toHaveURL(/account=/);
   await expect(rows).toHaveCount(1);
-  await expect(cells(rows.nth(0)).nth(3)).toHaveText(/^(₽[\d,]+\.\d{2}|—No rate)$/);
+  await expect(cells(rows.nth(0)).nth(3)).toHaveText(/^(₽[\d,]+|—No rate)$/);
   await main.getByRole('radio', { name: 'USD', exact: true }).check();
   await expect(cells(rows.nth(0)).nth(3)).toHaveText('$1,000.00');
   // OPS-PHONE: at 390 px two-line rows replace the table and nothing scrolls sideways.

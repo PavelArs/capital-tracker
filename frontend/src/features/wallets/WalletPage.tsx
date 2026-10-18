@@ -26,7 +26,13 @@ import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
-import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
+import {
+  day,
+  rounding,
+  signedAmount,
+  statusLabels,
+  typeLabel,
+} from '../transactions/operation-format';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import EditWalletDialog from './EditWalletDialog';
@@ -163,7 +169,12 @@ function WalletTransactions({
                     {signedAmount(operation)}
                     {operation.value !== null && typeof operations === 'object' && (
                       <span className="ui-sub">
-                        {money(operation.value, operations.quoteCurrency)}
+                        {money(
+                          operation.value,
+                          operations.quoteCurrency,
+                          false,
+                          rounding(operation, operations.quoteCurrency),
+                        )}
                       </span>
                     )}
                   </span>

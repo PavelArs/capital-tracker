@@ -34,6 +34,8 @@ export interface PortfolioInstrument {
 export interface NativeAmount {
   currency: PaidCurrency;
   amount: string;
+  /** The complete entered payment, rather than a computed share. */
+  entered?: boolean;
 }
 /**
  * Whether a held FIFO lot was bought, however it moved since: an own transfer keeps its origin.
@@ -263,6 +265,7 @@ function nativeShare(trade: FifoTrade | undefined, quantity: string): NativeAmou
   return {
     currency: trade.paid.currency,
     amount: formatAtoms((total * part * 2n + whole) / (whole * 2n)),
+    entered: part === whole,
   };
 }
 

@@ -373,6 +373,8 @@ async function wholePortfolio(db, s, f) {
     assert.equal(lotsOf.instrumentId, btc);
     assert.equal(lotsOf.currency, rising.currency);
     assert.ok(lotsOf.lots.length > 0, 'A held asset lists its lots');
+    assert.ok(lotsOf.lots.every((lot) => lot.paidCurrency === 'USD'), 'Legacy USD purchases keep their original payment currency');
+    assert.ok(lotsOf.lots.every((lot) => lot.paidExact === false), 'Legacy or converted costs are not entered native payments');
     // Exact decimal sums: a float tolerance would let a lost fraction or whole units pass.
     const SCALE = 60;
     const exact = (text) => {
@@ -609,6 +611,31 @@ async function handValueCurrency(db, s) {
   console.log('PASS AST-MANUAL-VALUE a ruble hand value stays in rubles as the dollar rate moves');
 }
 
+async function nativeLotProvenance(db, s) {
+  stage = 'RUB-LOT-PROVENANCE full native payments and computed remaining shares';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+    VALUES ('portfolio-native-lot@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const assetId = await instrument(s, owner, { name: 'Synthetic lot', assetType: 'manual', valuationCurrency: 'RUB' });
+  const held = await account(s, owner, 'Synthetic native lot');
+  await s.trades.create(owner, held.id, {
+    requestId: randomUUID(), expectedJournalRevision: 0, instrumentId: assetId,
+    side: 'buy', occurredAt: '2025-01-05T00:00:00.000Z', quantity: '3',
+    paid: { currency: 'RUB', gross: '100000.75', fee: '0', perUsd: '100' },
+  });
+  const before = await fingerprint(db);
+  const full = (await s.portfolio.lots(owner, assetId, { currency: 'RUB' }, now)).lots[0];
+  assert.equal(await fingerprint(db), before, 'Reading the payment never changes records');
+  assert.deepEqual([full.paid, full.paidCurrency, full.paidExact], ['100000.75', 'RUB', true]);
+  await s.trades.create(owner, held.id, {
+    requestId: randomUUID(), expectedJournalRevision: 1, instrumentId: assetId,
+    side: 'sell', occurredAt: '2025-01-06T00:00:00.000Z', quantity: '1', grossUsd: '400', feeUsd: '0',
+  });
+  const partial = (await s.portfolio.lots(owner, assetId, { currency: 'RUB' }, now)).lots[0];
+  assert.deepEqual([partial.quantity, partial.paidCurrency, partial.paidExact], ['2', 'RUB', false]);
+  assert.match(partial.paid, /^66667\.16666/);
+  console.log('PASS RUB-LOT-PROVENANCE full and prorated native cost');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -656,6 +683,7 @@ async function main() {
     for (const check of [wholePortfolio, gapsAndInvalidHistory, hiddenAssets])
       await check(db, s, f);
     await handValueCurrency(db, s);
+    await nativeLotProvenance(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

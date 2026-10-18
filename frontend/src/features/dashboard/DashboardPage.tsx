@@ -119,14 +119,11 @@ const INCOMPLETE_NOTE =
   'Incomplete: some assets had no price or rate, or an account had no interest rate, in this period, so their value is not fully included. Add the missing prices on the Portfolio page.';
 
 // The prototype dims the cents of the big number: $42,738.84 with .84 muted. A rouble figure
-// shows whole roubles with no cents (cut, never rounded up: a loss keeps its cents). The cut is
-// made on the exact decimal string, before money() rounds it to cents.
+// shows whole roubles, cut from the exact amount by money(); a loss keeps its kopecks here.
 function Amount({ value, currency }: { value: string; currency: AccountingCurrency }) {
   if (currency === 'RUB') {
-    const [whole, fraction = ''] = value.split('.');
-    if (value.startsWith('-') && /[1-9]/.test(fraction)) return money(value, currency);
-    const shown = money(whole, currency);
-    return shown.slice(0, shown.lastIndexOf('.'));
+    const negative = value.startsWith('-') && /[1-9]/.test(value.split('.')[1] ?? '');
+    return money(value, currency, false, negative ? 'exact' : 'down');
   }
   const text = money(value, currency);
   const point = text.lastIndexOf('.');

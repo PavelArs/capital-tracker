@@ -17,7 +17,7 @@ import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { newRequestId, useAttempt } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
-import { DASH, money, price, quantity } from '../portfolio/format';
+import { DASH, money, price, quantity, type Rounding } from '../portfolio/format';
 import CopyValue from '../shell/CopyValue';
 import { Icon } from '../shell/icons';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
@@ -25,6 +25,7 @@ import {
   amount,
   assetNetwork,
   day,
+  derivedRounding,
   exchangeChain,
   exchangeRecord,
   explorerUrl,
@@ -34,6 +35,7 @@ import {
   networkName,
   operationMoment,
   placeLabel,
+  rounding,
   signedAmount,
   sourceLabel,
   statusLabel,
@@ -161,15 +163,16 @@ function shown(
   usd: string | null,
   currency: AccountingCurrency,
   missing: string,
+  rounded: Rounding = 'down',
 ): string {
-  if (value !== null) return money(value, currency);
+  if (value !== null) return money(value, currency, false, rounded);
   return usd === null ? missing : 'No Bank of Russia rate for this date';
 }
 
 /** TOKEN-FEE: a network fee in its coin and, when known, what it was worth at the time. */
 function networkFee(fee: NonNullable<Operation['fee']>, currency: AccountingCurrency): string {
   const coins = amount(fee.quantity, fee.asset);
-  return fee.value != null ? `${coins} · ≈ ${money(fee.value, currency)}` : coins;
+  return fee.value != null ? `${coins} · ≈ ${money(fee.value, currency, false, 'up')}` : coins;
 }
 
 /** A transaction hash: copied in one click, opened on its network's explorer when it has one. */
@@ -253,7 +256,16 @@ function swapFacts(
     rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
   rows.push(
     ['Network fee', operation.fee ? networkFee(operation.fee, currency) : 'Paid by sender'],
-    ['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')],
+    [
+      'Value',
+      shown(
+        operation.value,
+        operation.valueUsd,
+        currency,
+        'Not recorded',
+        rounding(operation, currency),
+      ),
+    ],
     ['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, 'Unknown')],
   );
   return rows;
@@ -340,7 +352,7 @@ function facts(
       [
         'Estimated value',
         operation.estimatedValue !== null && chain.priceObservedAt
-          ? `≈ ${money(operation.estimatedValue, currency)} at the price stored ${moment(chain.priceObservedAt)}`
+          ? `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))} at the price stored ${moment(chain.priceObservedAt)}`
           : operation.estimatedValueUsd !== null
             ? 'No Bank of Russia rate for that date'
             : 'No stored price for that time',
@@ -382,7 +394,16 @@ function facts(
           : 'A record added by hand or from CSV',
       ]);
     if (operation.status === 'recorded' && !moved && !staking && !pooled && !linked) {
-      rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+      rows.push([
+        'Value',
+        shown(
+          operation.value,
+          operation.valueUsd,
+          currency,
+          'Not recorded',
+          rounding(operation, currency),
+        ),
+      ]);
       if (
         exchange &&
         (operation.type === 'buy' || operation.type === 'sell') &&
@@ -421,7 +442,16 @@ function facts(
     // BROKER-CAPRET: the money came back out of what these units cost.
     if (operation.type === 'capital-return' && operation.counterAsset)
       rows.push(['Lowered the cost of', ticker(operation.counterAsset)]);
-    rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+    rows.push([
+      'Value',
+      shown(
+        operation.value,
+        operation.valueUsd,
+        currency,
+        'Not recorded',
+        rounding(operation, currency),
+      ),
+    ]);
     if ((operation.type === 'buy' || operation.type === 'sell') && operation.value !== null)
       rows.push([
         'Price',
@@ -445,7 +475,13 @@ function facts(
     rows.push([
       'Fee',
       operation.feeUsd !== null && Number(operation.feeUsd) !== 0
-        ? shown(operation.feeValue, operation.feeUsd, currency, DASH)
+        ? shown(
+            operation.feeValue,
+            operation.feeUsd,
+            currency,
+            DASH,
+            rounding(operation, currency, 'up'),
+          )
         : operation.fee
           ? amount(operation.fee.quantity, operation.fee.asset)
           : 'None',
@@ -717,9 +753,9 @@ export default function OperationDrawer({
   const dust = operation.status === 'dust';
   const value =
     operation.value !== null
-      ? money(operation.value, currency)
+      ? money(operation.value, currency, false, rounding(operation, currency))
       : operation.estimatedValue !== null
-        ? `≈ ${money(operation.estimatedValue, currency)} at the price at the time`
+        ? `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))} at the price at the time`
         : null;
   const purchase = operation.type === 'buy';
   // SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool

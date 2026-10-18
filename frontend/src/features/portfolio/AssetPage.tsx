@@ -26,6 +26,7 @@ import {
   day,
   amount as operationAmount,
   placeLabel,
+  rounding,
   signedAmount,
   statusLabels,
   typeLabel,
@@ -314,7 +315,12 @@ function AssetTransactions({
                   amount={movedAmount(operation, key)}
                   value={
                     operation.value !== null && typeof operations === 'object'
-                      ? money(operation.value, operations.quoteCurrency)
+                      ? money(
+                          operation.value,
+                          operations.quoteCurrency,
+                          false,
+                          rounding(operation, operations.quoteCurrency),
+                        )
                       : undefined
                   }
                 />
