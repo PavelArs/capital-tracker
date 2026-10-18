@@ -136,6 +136,8 @@ export interface PortfolioDeposit {
   name: string;
   bank: string;
   value: bigint | null;
+  /** An account with no rate entered: its value leaves out interest that is not known. */
+  interestMissing?: boolean;
 }
 const NO_RATES: FxRates = { USD: [], EUR: [] };
 export const usdOnly = () => new FxConverter(NO_RATES, 'USD');
@@ -697,7 +699,9 @@ export function projectPortfolio(
 
   let depositValue = 0n;
   let unratedDepositCount = 0;
+  let interestMissingDepositCount = 0;
   for (const deposit of deposits) {
+    if (deposit.interestMissing) interestMissingDepositCount++;
     if (deposit.value === null) unratedDepositCount++;
     else if (deposit.value > 0n) {
       depositValue += deposit.value;
@@ -715,7 +719,12 @@ export function projectPortfolio(
     currency: fx.currency as AccountingCurrency,
     rates: fx.ratesOn(today),
     staleRates: fx.staleRatesOn(today),
-    completeness: complete ? ('complete' as const) : ('incomplete' as const),
+    // The total of an account whose interest is missing is a floor: it stays a figure, marked
+    // incomplete so history and goals do not take it for exact.
+    completeness:
+      complete && interestMissingDepositCount === 0
+        ? ('complete' as const)
+        : ('incomplete' as const),
     totalValue: complete ? formatProduct(subtotal) : null,
     pricedSubtotal: formatProduct(subtotal),
     missingPriceCount,
@@ -723,6 +732,7 @@ export function projectPortfolio(
     unavailableAccountCount,
     depositsValue: formatProduct(depositValue),
     unratedDepositCount,
+    interestMissingDepositCount,
     costBasis: costComplete ? formatAtoms(knownCost) : null,
     knownCostSubtotal: formatAtoms(knownCost),
     unknownCostCount,
@@ -751,11 +761,13 @@ export function projectPortfolio(
       return {
         ...asset,
         allocationPercent:
-          allocation && subtotal > 0n ? formatPercent(allocation.value, subtotal) : null,
+          allocation && subtotal > 0n && interestMissingDepositCount === 0
+            ? formatPercent(allocation.value, subtotal)
+            : null,
       };
     }),
     allocation: {
-      complete,
+      complete: complete && interestMissingDepositCount === 0,
       byAsset: slices(byAsset, subtotal),
       byType: slices(byType, subtotal),
       byAccount: slices(byAccount, subtotal),

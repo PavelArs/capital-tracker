@@ -54,6 +54,23 @@ describe('deposit text', () => {
       '12% · interest paid quarterly · until Dec 1, 2026',
     );
   });
+
+  it('DEP-ACCOUNT describes an account by its rate and payout, with no term', () => {
+    expect(
+      termText(
+        deposit({
+          kind: 'account',
+          endDate: null,
+          capitalized: true,
+          payout: 'daily',
+          ratePercent: '5.25',
+        }),
+      ),
+    ).toBe('5.25% · interest added daily');
+    expect(
+      termText(deposit({ kind: 'account', endDate: null, payout: 'monthly', ratePercent: null })),
+    ).toBe('No rate entered · interest paid monthly');
+  });
 });
 
 describe('attention', () => {

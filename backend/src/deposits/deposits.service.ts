@@ -44,7 +44,14 @@ import {
   inTodaysMoney,
   periodsAfterInflation,
 } from './deposit-real';
-import { loadDeposits, movementsOf, type Stored, termsOf } from './deposit-store';
+import {
+  interestMissing as accountInterestMissing,
+  loadDeposits,
+  movementsOf,
+  noRateInForceOn,
+  type Stored,
+  termsOf,
+} from './deposit-store';
 
 const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
 
@@ -79,6 +86,8 @@ export class DepositsService {
       return {
         asOf: date,
         items,
+        // A zero floor can still leave unknown interest payable.
+        interestMissingCount: open.filter((item) => item.interestMissing).length,
         totals: Object.fromEntries(
           accountingCurrencies.map((currency) => {
             const values = open.map((item) => item.values[currency]);
@@ -122,14 +131,16 @@ export class DepositsService {
     const owner = parseUuid(ownerId);
     // A stored quarterly schedule is read as a retry of an earlier request only (below).
     const { requestId, ...input } = parseDeposit(raw, payoutSchedules);
-    const payload = JSON.stringify(input);
+    // A term deposit's payload is what it was before kinds, so a retry of an earlier request matches.
+    const { kind: _kind, ...terms } = input;
+    const payload = JSON.stringify(input.kind === 'account' ? input : terms);
     if (input.startDate > moscowDate(new Date()))
       throw new UnprocessableEntityException('Start date is in the future');
     const id = await this.source.transaction(async (manager) => {
       const created: { id: string }[] = await manager.query(
         `INSERT INTO bank_deposits (id, "ownerId", "requestId", "canonicalPayload", name, bank, currency,
-           "startDate", "endDate", payout, capitalized, "dayBasis", "earlyClose")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           "startDate", "endDate", payout, capitalized, "dayBasis", "earlyClose", kind)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT ("ownerId", "requestId") DO NOTHING
          RETURNING id`,
         [
@@ -146,6 +157,7 @@ export class DepositsService {
           input.capitalized,
           input.dayBasis,
           input.earlyClose,
+          input.kind,
         ],
       );
       if (created.length === 0) {
@@ -161,10 +173,12 @@ export class DepositsService {
       // Quarterly is no longer offered: it is accepted only as the retry of a deposit made before.
       if (input.payout === 'quarterly') throw new BadRequestException('Invalid deposit input');
       const depositId = created[0].id;
-      await manager.query(
-        'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',
-        [owner, depositId, input.startDate, input.ratePercent],
-      );
+      // An account entered without a rate has no rate: it earns nothing, and its figures show 0.
+      if (input.ratePercent !== null)
+        await manager.query(
+          'INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent") VALUES ($1,$2,$3,$4)',
+          [owner, depositId, input.startDate, input.ratePercent],
+        );
       await manager.query(
         `INSERT INTO bank_deposit_movements (id, "ownerId", "depositId", "requestId", "canonicalPayload",
            "occurredOn", kind, amount, "position")
@@ -198,7 +212,10 @@ export class DepositsService {
       capitalized: input.capitalized,
       dayBasis: input.dayBasis,
       earlyClose: input.earlyClose,
-      rates: [{ effectiveFrom: input.startDate, ratePercent: input.ratePercent }],
+      rates:
+        input.ratePercent === null
+          ? []
+          : [{ effectiveFrom: input.startDate, ratePercent: input.ratePercent }],
     };
     return previewDeposit(terms, input.amount);
   }
@@ -298,8 +315,15 @@ export class DepositsService {
       const stored = await this.locked(manager, owner, depositId);
       if (input.effectiveFrom > moscowDate(new Date()))
         throw new UnprocessableEntityException('The rate change date is in the future');
+      // A term deposit opens with its rate; an account entered without one may be given its first
+      // rate from its opening day, so that day's interest is not lost.
+      const firstRateOfAccount =
+        stored.deposit.kind === 'account' &&
+        !stored.rates.some((rate) => rate.effectiveFrom === stored.deposit.startDate);
       if (
-        input.effectiveFrom <= stored.deposit.startDate ||
+        (firstRateOfAccount
+          ? input.effectiveFrom < stored.deposit.startDate
+          : input.effectiveFrom <= stored.deposit.startDate) ||
         (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
       )
         throw new UnprocessableEntityException('The rate must change inside the term');
@@ -472,25 +496,24 @@ export class DepositsService {
         : null;
     // Only checks made by the asked day: a later one says nothing about this day.
     const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
-    const lastCheck = last
-      ? (() => {
-          const calculated = bankBalanceOf(terms, projectDeposit(terms, movements, last.checkedOn));
-          return {
-            checkedOn: last.checkedOn,
-            bankBalance: last.bankBalance,
-            calculated,
-            difference: centsText(
-              canonicalDecimalToAtoms(last.bankBalance) - canonicalDecimalToAtoms(calculated),
-            ),
-          };
-        })()
-      : null;
+    const lastCheck = last ? this.checkOf(stored, terms, last) : null;
+    const inForce = [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf);
+    // A term deposit read before its first rate still shows that rate; an account has none until
+    // a rate takes effect, and a missing rate is not stated as 0%.
     const ratePercent =
-      [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf)?.ratePercent ??
-      terms.rates[0]?.ratePercent ??
-      '0';
+      inForce?.ratePercent ??
+      (stored.deposit.kind === 'account' ? null : (terms.rates[0]?.ratePercent ?? null));
+    // Missing is not zero: the days of an account before its first rate have unknown interest,
+    // and a day with no rate in force has none to state, so those figures are not stated.
+    const interestMissing = accountInterestMissing(stored);
+    const noRate = noRateInForceOn(stored, asOf);
+    // Missing capitalized interest would itself earn interest in every later period.
+    const incompleteInterest = noRate || (interestMissing && terms.capitalized);
+    const periodStart = now.periods.at(-1)?.to ?? terms.startDate;
+    const incompleteAccrual =
+      incompleteInterest || (interestMissing && periodStart < (firstRateDay(stored) ?? asOf));
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
-      reading
+      reading && !noRate
         ? depositReal(
             {
               balance: now.balance,
@@ -499,12 +522,14 @@ export class DepositsService {
               terms,
               movements: known,
               asOf,
+              interestMissing,
             },
             reading,
           )
         : null;
     return {
       id: stored.deposit.id,
+      kind: stored.deposit.kind,
       name: stored.deposit.name,
       bank: stored.deposit.bank,
       currency: stored.deposit.currency,
@@ -518,19 +543,26 @@ export class DepositsService {
       status,
       closedOn: now.closedOn,
       principal: now.principal,
-      accrued: now.accrued,
-      due: now.due,
+      interestMissing,
+      accrued: incompleteAccrual ? null : now.accrued,
+      due: interestMissing || noRate ? null : now.due,
       balance: now.balance,
       // Everything the deposit has earned, posted or not, less what was forfeited.
-      interestEarned: centsText(
-        canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
-      ),
+      interestEarned:
+        interestMissing || noRate
+          ? null
+          : centsText(
+              canonicalDecimalToAtoms(now.interestPosted) + canonicalDecimalToAtoms(now.accrued),
+            ),
       real: {
         official: afterInflation(readings?.official),
         personal: afterInflation(readings?.personal),
       },
       values: this.values(now.balance, stored.deposit.currency, asOf, converters),
-      nextPayout: status === 'active' ? nextPayout(knownTerms, known, asOf) : null,
+      nextPayout:
+        status === 'active' && !incompleteInterest
+          ? nextPayout(knownTerms, known, asOf, interestMissing ? firstRateDay(stored) : undefined)
+          : null,
       atMaturity: maturity
         ? {
             date: terms.endDate as string,
@@ -546,6 +578,33 @@ export class DepositsService {
     };
   }
 
+  /**
+   * A bank-balance check against the replay. With the interest of the account's days missing
+   * (DEP-ACCOUNT) the replay is a floor, not what the bank should show, so no calculated figure
+   * and no difference are stated: missing is not zero.
+   */
+  private checkOf(stored: Stored, terms: DepositTerms, check: Stored['checks'][number]) {
+    if (accountInterestMissing(stored))
+      return {
+        checkedOn: check.checkedOn,
+        bankBalance: check.bankBalance,
+        calculated: null,
+        difference: null,
+      };
+    const calculated = bankBalanceOf(
+      terms,
+      projectDeposit(terms, movementsOf(stored), check.checkedOn),
+    );
+    return {
+      checkedOn: check.checkedOn,
+      bankBalance: check.bankBalance,
+      calculated,
+      difference: centsText(
+        canonicalDecimalToAtoms(check.bankBalance) - canonicalDecimalToAtoms(calculated),
+      ),
+    };
+  }
+
   private detail(
     stored: Stored,
     asOf: string,
@@ -554,29 +613,41 @@ export class DepositsService {
   ) {
     const terms = termsOf(stored);
     const projection = projectDeposit(terms, movementsOf(stored), asOf);
+    // Missing is not zero (DEP-ACCOUNT): a period with a day before the account's first rate has
+    // unknown interest, so it is not listed; with no rate at all there are no periods to list.
+    const firstRate = firstRateDay(stored);
+    const missing = accountInterestMissing(stored);
+    const periods = missing
+      ? terms.capitalized
+        ? []
+        : projection.periods.filter((period) => firstRate !== undefined && period.from >= firstRate)
+      : projection.periods;
     // One replay gives the money held at the start of every period.
     const held = depositBalances(
       terms,
       movementsOf(stored),
-      projection.periods.map((period) => period.from),
+      periods.map((period) => period.from),
     );
-    const official = readings && periodsAfterInflation(projection.periods, held, readings.official);
-    const personal = readings && periodsAfterInflation(projection.periods, held, readings.personal);
+    const official =
+      readings && !missing ? periodsAfterInflation(periods, held, readings.official) : undefined;
+    const personal =
+      readings && !missing ? periodsAfterInflation(periods, held, readings.personal) : undefined;
     // The value by month from the start, each movement day and the day asked.
     const dates = chartDates(
       terms.startDate,
       asOf,
       movementsOf(stored).map((movement) => movement.date),
     );
-    const chart = readings
-      ? depositChart(
-          dates,
-          depositBalances(terms, movementsOf(stored), dates),
-          movementsOf(stored),
-          asOf,
-          readings,
-        )
-      : [];
+    const chart =
+      readings && !missing
+        ? depositChart(
+            dates,
+            depositBalances(terms, movementsOf(stored), dates),
+            movementsOf(stored),
+            asOf,
+            readings,
+          )
+        : [];
     return {
       ...this.view(stored, asOf, converters, readings),
       asOf,
@@ -594,37 +665,36 @@ export class DepositsService {
           comment: row.comment,
         })),
       chart,
-      periods: projection.periods.map((period, index) => ({
+      periods: periods.map((period, index) => ({
         ...period,
         afterInflation: {
           official: official?.[index] ?? null,
           personal: personal?.[index] ?? null,
         },
       })),
-      interestPosted: projection.interestPosted,
-      interestPaidOut: projection.interestPaidOut,
+      interestPosted: missing ? null : projection.interestPosted,
+      // Payouts are entered facts, even when unknown interest makes replayed due a lower bound.
+      interestPaidOut: centsText(
+        movementsOf(stored).reduce(
+          (sum, movement) =>
+            movement.date <= asOf && movement.kind === 'interest-payout'
+              ? sum + canonicalDecimalToAtoms(movement.amount)
+              : sum,
+          0n,
+        ),
+      ),
       interestForfeited: projection.interestForfeited,
       checks: stored.checks
         .filter((check) => check.checkedOn <= asOf)
-        .map((check) => {
-          const calculated = bankBalanceOf(
-            terms,
-            projectDeposit(terms, movementsOf(stored), check.checkedOn),
-          );
-          return {
-            id: check.id,
-            checkedOn: check.checkedOn,
-            bankBalance: check.bankBalance,
-            calculated,
-            difference: centsText(
-              canonicalDecimalToAtoms(check.bankBalance) - canonicalDecimalToAtoms(calculated),
-            ),
-          };
-        })
+        .map((check) => ({ id: check.id, ...this.checkOf(stored, terms, check) }))
         .reverse(),
     };
   }
 }
+
+/** The day the first rate of a deposit takes effect, or undefined when it has none. */
+const firstRateDay = (stored: Stored): string | undefined =>
+  stored.rates.map((rate) => rate.effectiveFrom).sort()[0];
 
 /** A snapshot may look one year ahead; the figures are replayed day by day up to it. */
 const latestSnapshot = (today: string) => `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`;

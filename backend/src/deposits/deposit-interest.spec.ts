@@ -354,6 +354,51 @@ describe('interest paid out after the term or the closure', () => {
   });
 });
 
+describe('firstImpossibleMovement of an account with missing interest', () => {
+  it.each([
+    [true, 'withdrawal', -1],
+    [false, 'interest-payout', -1],
+    [false, 'withdrawal', 1],
+    [true, 'interest-payout', 1],
+  ] as const)(
+    'DEP-ACCOUNT-BOUNDS capitalized=%s %s validates its own balance',
+    (capitalized, kind, expected) => {
+      const account = terms({ kind: 'account', endDate: null, capitalized, rates: [] });
+      expect(
+        firstImpossibleMovement(account, [
+          topup('2026-01-01', '1000'),
+          { date: '2026-01-02', kind, amount: '1001' },
+        ]),
+      ).toBe(expected);
+    },
+  );
+
+  const account = (rates: DepositTerms['rates']) =>
+    terms({ kind: 'account', endDate: null, capitalized: true, rates });
+  const held = [topup('2026-01-01', '1000')];
+  const bigger: DepositMovement = { date: '2026-02-10', kind: 'withdrawal', amount: '1050' };
+
+  it('DEP-ACCOUNT accepts a withdrawal above the money the app counts, as the interest is unknown', () => {
+    expect(firstImpossibleMovement(account([]), [...held, bigger])).toBe(-1);
+    // A rate from a later date still leaves the earlier days open.
+    expect(
+      firstImpossibleMovement(account([{ effectiveFrom: '2026-02-05', ratePercent: '6' }]), [
+        ...held,
+        bigger,
+      ]),
+    ).toBe(-1);
+  });
+
+  it('DEP-ACCOUNT still refuses it once a rate covers the whole time', () => {
+    expect(
+      firstImpossibleMovement(account([{ effectiveFrom: '2026-01-01', ratePercent: '6' }]), [
+        ...held,
+        bigger,
+      ]),
+    ).toBe(1);
+  });
+});
+
 describe('nextPayout', () => {
   it('estimates the next posting from what is held now', () => {
     const next = nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-02-10');
@@ -370,6 +415,14 @@ describe('nextPayout', () => {
     expect(payoutDates(quarterly, '2026-12-31').slice(0, 2)).toEqual(['2026-04-30', '2026-07-31']);
     const next = nextPayout(quarterly, [topup('2026-01-31', '100000')], '2026-04-30');
     expect(next?.date).toBe('2026-07-31');
+  });
+
+  it('DEP-ACCOUNT is null while its period starts before the first known rate', () => {
+    const held = [topup('2026-01-01', '100000')];
+    // The next payout, March 1, closes the period that starts February 1: a first rate from
+    // February 15 covers only part of it, one from February 1 all of it.
+    expect(nextPayout(terms(), held, '2026-02-10', '2026-02-15')?.date).toBeUndefined();
+    expect(nextPayout(terms(), held, '2026-02-10', '2026-02-01')?.date).toBe('2026-03-01');
   });
 
   it('is null once the term is over', () => {
@@ -429,5 +482,38 @@ describe('depositBalances', () => {
 
   it('is empty without dates', () => {
     expect(depositBalances(terms(), [], []).size).toBe(0);
+  });
+});
+
+describe('DEP-ACCOUNT: an account that reaches zero stays open', () => {
+  const account = terms({
+    kind: 'account',
+    endDate: null,
+    payout: 'monthly',
+    capitalized: true,
+    earlyClose: 'keeps-interest',
+  });
+  const emptied: DepositMovement[] = [
+    topup('2026-01-01', '1000.00'),
+    { date: '2026-01-20', kind: 'withdrawal', amount: '1000.00' },
+  ];
+
+  it('is not closed by a withdrawal of everything, and takes a top-up afterwards', () => {
+    expect(projectDeposit(account, emptied, '2026-02-10').closedOn).toBeNull();
+    expect(firstImpossibleMovement(account, [...emptied, topup('2026-02-01', '50.00')])).toBe(-1);
+    // A term deposit emptied the same way is closed and refuses the top-up, as before.
+    const term = terms({ endDate: null });
+    expect(projectDeposit(term, emptied, '2026-02-10').closedOn).toBe('2026-01-20');
+    expect(firstImpossibleMovement(term, [...emptied, topup('2026-02-01', '50.00')])).toBe(2);
+  });
+
+  it('earns again on the money put back, in the balances as in the projection', () => {
+    const back = [...emptied, topup('2026-02-01', '1000.00')];
+    const projected = projectDeposit(account, back, '2026-03-01');
+    expect(canonicalDecimalToAtoms(projected.balance)).toBeGreaterThan(
+      canonicalDecimalToAtoms('1000.00'),
+    );
+    const balances = depositBalances(account, back, ['2026-03-01']);
+    expect(balances.get('2026-03-01')).toBe(canonicalDecimalToAtoms(projected.balance));
   });
 });

@@ -516,6 +516,20 @@ describe('BROKERS the Brokers page', () => {
     expect(get).toHaveBeenCalledTimes(2);
   });
 
+  it('DEP-ACCOUNT-SHARE gives no share of a net worth that is a floor for want of an account rate', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...valuation(held, '40000'),
+      completeness: 'incomplete',
+      interestMissingDepositCount: 1,
+    });
+    renderPage();
+    const summary = await screen.findByRole('region', { name: 'Total at brokers' });
+    expect(summary).toHaveTextContent(
+      'Share of net worth—Net worth is a floor: 1 account without an interest rate.',
+    );
+    expect(summary).not.toHaveTextContent('%');
+  });
+
   it('classes-22 says why the share of net worth is unknown, with no number made up', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
       ...valuation(held, null),

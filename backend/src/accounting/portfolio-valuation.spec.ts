@@ -662,6 +662,43 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
     expect(result.allocation.complete).toBe(false);
   });
 
+  it('DEP-ACCOUNT-ZERO keeps a zero lower bound incomplete while interest is missing', () => {
+    const result = projectPortfolio(now, [], [], prices({}), undefined, undefined, [
+      { ...bank(1, 'First Bank', 0n), interestMissing: true },
+    ]);
+    expect(result).toMatchObject({
+      totalValue: '0',
+      completeness: 'incomplete',
+      interestMissingDepositCount: 1,
+    });
+    expect(result.allocation.complete).toBe(false);
+  });
+
+  it('DEP-ACCOUNT counts the accounts without a rate, whose interest is not in the value', () => {
+    const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', worth(15_000)),
+      { ...bank(2, 'First Bank', worth(5_000)), interestMissing: true },
+      { ...bank(3, 'First Bank', 0n), interestMissing: true },
+    ]);
+    // Their balance is what the owner put in: the total stays a floor figure, marked incomplete
+    // so the history and goals do not take it for exact, and it says what it leaves out.
+    expect(result).toMatchObject({
+      completeness: 'incomplete',
+      totalValue: '100000',
+      depositsValue: '20000',
+      interestMissingDepositCount: 2,
+    });
+    const without = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
+      bank(1, 'First Bank', worth(15_000)),
+    ]);
+    expect(assetOf(result, btc).allocationPercent).toBeNull();
+    expect(assetOf(without, btc).allocationPercent).toBe('84.21');
+    expect(without.interestMissingDepositCount).toBe(0);
+    expect(without.allocation.complete).toBe(true);
+    // The shares are worked out against that floor, so they carry the same "incomplete" mark.
+    expect(result.allocation.complete).toBe(false);
+  });
+
   it('keeps a deposit that is worth nothing out of the allocation', () => {
     const result = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
       bank(1, 'First Bank', 0n),

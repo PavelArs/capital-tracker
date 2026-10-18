@@ -29,6 +29,7 @@ const deposit = (
 ): Stored => ({
   deposit: {
     id: 'd1',
+    kind: 'term-deposit',
     name: 'Synthetic EUR',
     bank: 'Synthetic Bank',
     currency: 'EUR',
@@ -114,6 +115,38 @@ describe('depositValuesAt', () => {
     const [value] = depositValuesAt([deposit()], new Date('2026-01-14T21:30:00Z'), fx('RUB'));
     expect(value).toMatchObject({ id: 'd1', name: 'Synthetic EUR', bank: 'Synthetic Bank' });
     expect(value.value).toBe(100_000n * scale);
+  });
+});
+
+describe('DEP-ACCOUNT depositValuesAt says when an account has days without a rate', () => {
+  const account = (rates: Stored['rates']) => ({
+    ...deposit({ kind: 'account', currency: 'RUB' }),
+    rates,
+  });
+  const at = new Date('2026-01-14T12:00:00Z');
+  const missing = (held: Stored) => depositValuesAt([held], at, fx('RUB'))[0].interestMissing;
+
+  it('DEP-ACCOUNT-ZERO leaves an account out before its opening Moscow day', () => {
+    const held = account([]);
+    const before = depositValuesAt([held], new Date('2025-12-31T20:59:59Z'), fx('RUB'))[0];
+    expect(before).toMatchObject({ value: 0n, interestMissing: false });
+    const opened = depositValuesAt([held], new Date('2025-12-31T21:00:00Z'), fx('RUB'))[0];
+    expect(opened.interestMissing).toBe(true);
+  });
+
+  it('flags an account whose rates do not reach back to its opening day, and nothing else', () => {
+    expect(missing(account([]))).toBe(true);
+    // A rate that begins after the opening leaves the days before it without one, also later on.
+    const later = account([{ depositId: 'd1', effectiveFrom: '2026-01-05', ratePercent: '5' }]);
+    expect(missing(later)).toBe(true);
+    expect(depositValuesAt([later], new Date('2026-03-01T12:00:00Z'), fx('RUB'))[0]).toMatchObject({
+      interestMissing: true,
+    });
+    // An explicit 0% from the opening day is a rate.
+    expect(
+      missing(account([{ depositId: 'd1', effectiveFrom: '2026-01-01', ratePercent: '0' }])),
+    ).toBe(false);
+    expect(missing(deposit({ currency: 'RUB' }))).toBe(false);
   });
 });
 

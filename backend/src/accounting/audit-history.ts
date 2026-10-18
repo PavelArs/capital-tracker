@@ -215,6 +215,9 @@ const payoutNames: Record<string, string> = {
 function depositAction(s: Snapshot): string | null {
   const action = depositActions[s.event ?? ''];
   if (!action) return null;
+  // An account is not a deposit with a term: say so on the two actions that name the thing itself.
+  if (s.depositKind === 'account' && (s.event === 'opened' || s.event === 'deleted'))
+    return s.event === 'opened' ? 'Account opened' : 'Account deleted';
   return s.event?.startsWith('movement')
     ? `${movementNames[s.movement ?? ''] ?? 'Movement'} ${action}`
     : action;

@@ -571,6 +571,35 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
   });
 
+  it('DEP-ACCOUNT-ZERO shows the missing-interest warning for an otherwise empty portfolio', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([], {
+        totalValue: '0',
+        pricedSubtotal: '0',
+        depositsValue: '0',
+        interestMissingDepositCount: 1,
+        completeness: 'incomplete',
+        allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+      }),
+    );
+    renderAt('/portfolio');
+    expect(await screen.findByText(/1 account has days with no rate entered/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Portfolio summary' })).toBeInTheDocument();
+  });
+
+  it('DEP-ACCOUNT says the value leaves out the interest of an account with no rate entered', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { depositsValue: '20000', interestMissingDepositCount: 2 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(
+      screen.getByText(
+        '2 accounts have days with no rate entered; the interest of those days is not counted.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('portfolio-03 says under Cost basis and Unrealized P&L that bank deposits are left out', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin], { depositsValue: '20000' }),
@@ -752,6 +781,21 @@ describe('PV-UI Portfolio values every asset', () => {
     );
     expect(screen.getByRole('region', { name: 'Allocation' })).toHaveTextContent(
       'Deposits without a current exchange rate are not included.',
+    );
+  });
+
+  it('DEP-ACCOUNT-SHARE says the allocation leaves out the interest of accounts without a rate', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], {
+        completeness: 'incomplete',
+        interestMissingDepositCount: 2,
+        allocation: { ...portfolio([]).allocation, complete: false },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(screen.getByRole('region', { name: 'Allocation' })).toHaveTextContent(
+      'Interest on accounts without a rate is not included.',
     );
   });
 
@@ -3487,6 +3531,17 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
       'US dollar',
       'Rubles',
     ]);
+  });
+
+  it('DEP-ACCOUNT-SHARE drops the class share while the net worth is a floor for want of an account rate', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...complete(),
+      completeness: 'incomplete',
+      interestMissingDepositCount: 1,
+    });
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(names().slice(0, 2)).toEqual(['# Crypto$96,000.05', 'Bitcoin']);
   });
 
   it('PF-GROUPS heads the phone rows the same way', async () => {

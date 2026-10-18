@@ -24,6 +24,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { AddDepositDialog } from './DepositDialogs';
 import {
+  accountsWithoutRate,
   attention,
   dateText,
   money,
@@ -72,7 +73,14 @@ function DepositTile({
             </p>
           )}
           <KeyValue>
-            {deposit.interestEarned !== undefined && (
+            {deposit.interestMissing && (
+              <KeyValueRow term="Interest">
+                {deposit.ratePercent === null
+                  ? 'Not counted, no rate entered'
+                  : 'Not counted before the first rate'}
+              </KeyValueRow>
+            )}
+            {deposit.interestEarned != null && (
               <KeyValueRow term="Interest earned">
                 {money(deposit.interestEarned, deposit.currency)}
                 {real?.gain != null && (
@@ -97,9 +105,11 @@ function DepositTile({
             {check && (
               <KeyValueRow term="Last check">
                 {dateText(check.checkedOn)},{' '}
-                {Number(check.difference) === 0
-                  ? 'matches the bank'
-                  : `differs by ${money(check.difference, deposit.currency)}`}
+                {check.difference === null
+                  ? 'not compared, the interest is missing'
+                  : Number(check.difference) === 0
+                    ? 'matches the bank'
+                    : `differs by ${money(check.difference, deposit.currency)}`}
               </KeyValueRow>
             )}
           </KeyValue>
@@ -247,6 +257,9 @@ export default function DepositsPage() {
             <p className="deposit-total__note">
               At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only
               while interest it earned is unpaid.
+              {list.interestMissingCount
+                ? ` ${accountsWithoutRate(list.interestMissingCount)}`
+                : ''}
             </p>
           </Card>
           <ul className="deposit-banks">

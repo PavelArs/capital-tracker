@@ -74,8 +74,12 @@ export function brokerAccountsOf(
     );
 }
 
-/** The share of net worth held at brokers, or null while the net worth is unknown. */
+/**
+ * The share of net worth held at brokers, or null while the net worth is unknown or only a floor
+ * (an account without a rate leaves its interest out, so any share of it would read too high).
+ */
 export function brokerShare(total: string, portfolio: PortfolioValuation): number | null {
+  if ((portfolio.interestMissingDepositCount ?? 0) > 0) return null;
   const worth = Number(portfolio.totalValue ?? Number.NaN);
   return worth > 0 ? (Number(total) / worth) * 100 : null;
 }

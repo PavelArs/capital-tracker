@@ -183,6 +183,7 @@ const migrationNames = [
   'AddBrokerConnections1797300000000',
   'AddManualPriceCurrency1797400000000',
   'AddBrokerImports1797500000000',
+  'AddDepositKind1797600000000',
 ];
 
 function connection(database) {
@@ -356,7 +357,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly sixty-eight migrations',
+      'Exactly sixty-nine migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1450,6 +1451,20 @@ function manualPriceCurrencyAddition(kind, row) {
     row.conname.includes('quoteCurrency')
   );
 }
+function depositKindAddition(kind, row) {
+  if (kind === 'columns')
+    return (
+      (row.table_name === 'bank_deposits' && row.column_name === 'kind') ||
+      (row.table_name === 'bank_deposit_events' && row.column_name === 'depositKind')
+    );
+  return (
+    kind === 'constraints' &&
+    ((row.relname === 'bank_deposits' &&
+      ['bank_deposits_kind_check', 'bank_deposits_account_has_no_term'].includes(row.conname)) ||
+      (row.relname === 'bank_deposit_events' &&
+        row.conname === 'bank_deposit_events_depositKind_check'))
+  );
+}
 function replacedOriginCheck(kind, row) {
   return (
     kind === 'constraints' &&
@@ -2482,6 +2497,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797300000000',
           '1797400000000',
           '1797500000000',
+          '1797600000000',
         ][index - 11],
       );
     }
@@ -2504,6 +2520,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           !sessionDeviceAddition(kind, row) &&
           !walletKindAddition(kind, row) &&
           !manualPriceCurrencyAddition(kind, row) &&
+          !depositKindAddition(kind, row) &&
           !replacedScopeCheck(kind, row),
       );
       assert.deepEqual(

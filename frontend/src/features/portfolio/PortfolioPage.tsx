@@ -13,6 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
+import { accountsWithoutRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
 import { type AccountClasses, heldClass } from '../shell/asset-identity';
@@ -269,7 +270,9 @@ const PARTIAL_NOTE =
 
 // Bank deposits are part of the value even when no asset is held.
 const hasDeposits = (portfolio: PortfolioValuation) =>
-  Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0;
+  Number(portfolio.depositsValue) > 0 ||
+  portfolio.unratedDepositCount > 0 ||
+  (portfolio.interestMissingDepositCount ?? 0) > 0;
 
 const NO_REAL_ACCOUNT = 'an account history starts later';
 // Bank deposits count in the current value only: cost basis and P&L are the assets' (DEP-VALUE).
@@ -468,6 +471,9 @@ function Summary({
             Settings
           </Link>
         </p>
+      )}
+      {!!portfolio.interestMissingDepositCount && (
+        <Banner tone="warn">{accountsWithoutRate(portfolio.interestMissingDepositCount)}</Banner>
       )}
       {portfolio.stalePriceCount > 0 && (
         <Banner tone="warn">
@@ -793,7 +799,9 @@ export default function PortfolioPage() {
   const heads = new Map(
     classOrder.map((key): [AssetClassFilter, GroupHead] => {
       const subtotal = groupSubtotal(visible.filter((asset) => classOf(asset) === key));
-      const share = groupShare(subtotal, portfolio?.totalValue ?? null);
+      // A net worth that is a floor for want of an account's interest overstates every share.
+      const floor = (portfolio?.interestMissingDepositCount ?? 0) > 0;
+      const share = groupShare(subtotal, floor ? null : (portfolio?.totalValue ?? null));
       return [key, { key, label: classLabels[key], share, ...subtotal }];
     }),
   );

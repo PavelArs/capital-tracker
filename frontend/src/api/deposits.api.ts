@@ -4,6 +4,8 @@ import type { AccountingCurrency } from './portfolio-valuation.api';
 // DEP-ACCRUAL, DEP-CHECK: bank deposits the owner entered once; interest and value are computed.
 
 export type DepositCurrency = AccountingCurrency;
+/** A term deposit runs to an end date at a rate; an account has a balance and no term (DEP-ACCOUNT). */
+export type DepositKind = 'term-deposit' | 'account';
 /** Quarterly is only on deposits made before it was removed from the form. */
 export type PayoutSchedule = 'daily' | 'monthly' | 'quarterly' | 'at-end';
 export type DayBasis = 'actual-365' | 'actual-actual';
@@ -15,9 +17,9 @@ export type Values = Record<AccountingCurrency, string | null>;
 export interface DepositCheck {
   checkedOn: string;
   bankBalance: string;
-  /** What the bank's screen should show: with a capitalizing deposit, without the interest earned since the last interest date. */
-  calculated: string;
-  difference: string;
+  /** What the bank's screen should show: with a capitalizing deposit, without the interest earned since the last interest date. Null for an account whose interest is missing (DEP-ACCOUNT). */
+  calculated: string | null;
+  difference: string | null;
 }
 
 /**
@@ -49,6 +51,8 @@ export interface DepositChartPoint {
 
 export interface Deposit {
   id: string;
+  /** Absent in an answer the browser saved before accounts existed: a term deposit. */
+  kind?: DepositKind;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -58,15 +62,22 @@ export interface Deposit {
   capitalized: boolean;
   dayBasis: DayBasis;
   earlyClose: EarlyClose;
-  ratePercent: string;
+  /** Null for an account with no rate entered: no interest is counted for it, and none is shown as a rate. */
+  ratePercent: string | null;
   status: DepositStatus;
   closedOn: string | null;
   principal: string;
-  accrued: string;
-  due: string;
+  /**
+   * True for an account with no rate in force on the day: its interest is unknown, not zero, so
+   * the interest figures below are null and the balance is only what was put in less what was
+   * taken out. Absent in an answer the browser saved before this.
+   */
+  interestMissing?: boolean;
+  accrued: string | null;
+  due: string | null;
   balance: string;
   /** All the interest earned, posted or not. Absent in an answer the browser saved before this. */
-  interestEarned?: string;
+  interestEarned?: string | null;
   real?: { official: DepositReal | null; personal: DepositReal | null };
   values: Values;
   nextPayout: { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null;
@@ -101,7 +112,7 @@ export interface DepositDetail extends Deposit {
     /** The interest less the inflation on the money held at the period's start. */
     afterInflation?: { official: string | null; personal: string | null };
   }[];
-  interestPosted: string;
+  interestPosted: string | null;
   interestPaidOut: string;
   interestForfeited: string;
   checks: (DepositCheck & { id: string })[];
@@ -112,12 +123,15 @@ export interface DepositDetail extends Deposit {
 export interface DepositList {
   asOf: string;
   items: Deposit[];
+  /** Accounts holding money with no rate entered, whose interest the totals leave out. */
+  interestMissingCount?: number;
   totals: Values;
 }
 
 export interface NewDeposit {
   /** One per attempt; a retry of the same attempt returns the deposit it made. */
   requestId: string;
+  kind: DepositKind;
   name: string;
   bank: string;
   currency: DepositCurrency;
@@ -127,7 +141,7 @@ export interface NewDeposit {
   capitalized: boolean;
   dayBasis: DayBasis;
   earlyClose: EarlyClose;
-  ratePercent: string;
+  ratePercent: string | null;
   amount: string;
 }
 

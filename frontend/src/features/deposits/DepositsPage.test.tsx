@@ -72,7 +72,10 @@ const list = (items: Deposit[]): DepositList => ({
 const detail = (deposit: Deposit, change: Partial<DepositDetail> = {}): DepositDetail => ({
   ...deposit,
   asOf: '2026-10-11',
-  rates: [{ effectiveFrom: '2026-07-01', ratePercent: deposit.ratePercent }],
+  rates:
+    deposit.ratePercent === null
+      ? []
+      : [{ effectiveFrom: '2026-07-01', ratePercent: deposit.ratePercent }],
   movements: [
     { id: 'm1', date: '2026-07-01', kind: 'topup', amount: '100000.00', comment: null },
     {
@@ -228,6 +231,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create).toHaveBeenCalledWith({
       requestId: expect.any(String),
+      kind: 'term-deposit',
       name: 'Savings A',
       bank: 'Synthetic Bank',
       currency: 'RUB',
@@ -241,6 +245,100 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       amount: '100000',
     });
     expect(await screen.findByRole('heading', { level: 2, name: 'Savings A' })).toBeInTheDocument();
+  });
+
+  it.each(['term-deposit', 'account'] as const)(
+    "DEP-OPENING-RATE asks for the opening rate of a %s rather than applying today's rate to past days",
+    async (kind) => {
+      const user = userEvent.setup();
+      vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+      open('/deposits');
+      await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+      if (kind === 'account')
+        await user.click(screen.getByRole('radio', { name: 'Savings or current account' }));
+      const dialog = screen.getByRole('dialog');
+      const rate = within(dialog).getByLabelText(/^Rate, % a year/);
+      expect(rate).toHaveAccessibleDescription(/rate from the opening date/i);
+      expect(rate).toHaveAccessibleDescription(/date each took effect/i);
+      expect(rate).not.toHaveAccessibleDescription(/pays now/i);
+      if (kind === 'account')
+        expect(rate).toHaveAccessibleDescription(/Leave it blank if unknown/i);
+    },
+  );
+
+  it('DEP-ACCOUNT adds a savings or current account with no end date and no rate, sent as the owner entered it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    const preview = vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const kind = within(screen.getByRole('dialog', { name: 'Add bank deposit' })).getByRole(
+      'radiogroup',
+      { name: 'Kind' },
+    );
+    await user.click(within(kind).getByRole('radio', { name: 'Savings or current account' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add savings or current account' });
+    expect(within(dialog).queryByLabelText('Ends on (optional)')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByText('More options'));
+    expect(within(dialog).queryByLabelText('If closed early')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Days in a year')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Rate, % a year (optional)')).not.toBeRequired();
+    expect(
+      within(within(dialog).getByLabelText('Interest comes'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Every day', 'Every month']);
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Amount put in'), '50000');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith({
+      requestId: expect.any(String),
+      kind: 'account',
+      name: 'Account',
+      bank: 'Synthetic Bank',
+      currency: 'RUB',
+      startDate: expect.any(String),
+      endDate: null,
+      payout: 'monthly',
+      capitalized: true,
+      dayBasis: 'actual-365',
+      earlyClose: 'keeps-interest',
+      ratePercent: null,
+      amount: '50000',
+    });
+    // Without a rate there is nothing to preview: no figures are invented for it.
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it('DEP-ACCOUNT sends a rate the owner gives for an account, and moves an at-the-end payout to every month', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
+    vi.spyOn(depositsApi, 'preview').mockReturnValue(new Promise(() => undefined));
+    const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open('/deposits');
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    const term = screen.getByRole('dialog', { name: 'Add bank deposit' });
+    await user.selectOptions(within(term).getByLabelText('Interest comes'), 'at-end');
+    await user.click(within(term).getByRole('radio', { name: 'Savings or current account' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add savings or current account' });
+    expect(within(dialog).getByLabelText('Interest comes')).toHaveValue('monthly');
+    await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
+    await user.type(within(dialog).getByLabelText('Amount put in'), '50000');
+    await user.type(within(dialog).getByLabelText('Rate, % a year (optional)'), '5.25');
+    await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'account',
+        ratePercent: '5.25',
+        endDate: null,
+        payout: 'monthly',
+      }),
+    );
   });
 
   it('classes-07 asks for the bank first, an optional name, the currency as a choice and the terms as the prototype words them', async () => {
@@ -323,6 +421,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
 
   describe('classes-05: the figures of the deposit being entered', () => {
     const terms = {
+      kind: 'term-deposit',
       name: 'Deposit',
       bank: 'Synthetic Bank',
       currency: 'RUB',
@@ -461,6 +560,223 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   });
 });
 
+// An account with no rate entered: its interest is unknown, so none is stated (DEP-ACCOUNT).
+const unrated: Deposit = {
+  ...savings,
+  id: '00000000-0000-4000-8000-000000000003',
+  kind: 'account',
+  name: 'Current C',
+  currency: 'RUB',
+  endDate: null,
+  payout: 'monthly',
+  capitalized: true,
+  ratePercent: null,
+  interestMissing: true,
+  accrued: null,
+  due: null,
+  interestEarned: null,
+  nextPayout: null,
+  atMaturity: null,
+  principal: '50000.00',
+  balance: '50000.00',
+  values: { USD: '555.55', EUR: '500.00', RUB: '50000.00' },
+};
+
+describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, not as 0.00', () => {
+  it.each([null, '6'])(
+    'DEP-ACCOUNT-PERIODS explains hidden periods when the current rate is %s',
+    async (ratePercent) => {
+      vi.spyOn(depositsApi, 'get').mockResolvedValue(
+        detail(
+          { ...unrated, ratePercent },
+          {
+            periods: [],
+            rates: ratePercent === null ? [] : [{ effectiveFrom: '2026-10-01', ratePercent }],
+          },
+        ),
+      );
+      open(`/deposits/${unrated.id}?currency=RUB`);
+      const periods = await screen.findByRole('region', { name: 'Interest by period' });
+      expect(periods).toHaveTextContent(
+        'Interest periods are unavailable for days with no rate entered.',
+      );
+      expect(periods).not.toHaveTextContent('No interest has been posted yet.');
+    },
+  );
+
+  it('DEP-ACCOUNT-PERIODS keeps the unposted message when the rate history is complete', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings, { periods: [] }));
+    open(`/deposits/${savings.id}?currency=RUB`);
+    const periods = await screen.findByRole('region', { name: 'Interest by period' });
+    expect(periods).toHaveTextContent('No interest has been posted yet.');
+    expect(periods).not.toHaveTextContent('no rate entered');
+  });
+
+  it('says on its card that the interest is not counted, and what the list total leaves out', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      ...list([unrated]),
+      interestMissingCount: 1,
+    });
+    open('/deposits?currency=RUB');
+    const card = await screen.findByRole('link', { name: /Current C/ });
+    expect(card).toHaveTextContent('Interest');
+    expect(card).toHaveTextContent('Not counted, no rate entered');
+    expect(card).not.toHaveTextContent('Interest earned');
+    expect(card).not.toHaveTextContent(/₽0\.00/);
+    expect(card).not.toHaveTextContent('Next interest');
+    expect(
+      screen.getByText(
+        /1 account has days with no rate entered; the interest of those days is not counted\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([null, '6'])(
+    'DEP-ACCOUNT-GAP hides dependent capitalized interest at rate %s',
+    async (ratePercent) => {
+      vi.spyOn(depositsApi, 'get').mockResolvedValue(
+        detail(
+          { ...unrated, ratePercent, capitalized: true, interestMissing: true },
+          {
+            periods: [],
+            rates: ratePercent === null ? [] : [{ effectiveFrom: '2026-08-01', ratePercent }],
+          },
+        ),
+      );
+      open(`/deposits/${unrated.id}?currency=RUB`);
+      await screen.findByRole('heading', { level: 2, name: 'Current C' });
+      expect(screen.queryByText('Interest added so far')).toBeNull();
+      if (ratePercent !== null)
+        expect(
+          screen.getByText(/Later interest also depends on those missing amounts/),
+        ).toBeInTheDocument();
+      else
+        expect(
+          screen.getByText(/No rate entered, so the interest is not counted/),
+        ).toBeInTheDocument();
+    },
+  );
+
+  it('says it once on the page, with no interest figures and no periods', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(unrated, { periods: [] }));
+    open(`/deposits/${unrated.id}?currency=RUB`);
+    expect(await screen.findByRole('heading', { level: 2, name: 'Current C' })).toBeInTheDocument();
+    expect(screen.getByText(/No rate entered, so the interest is not counted/)).toBeInTheDocument();
+    expect(screen.queryByText('Interest earned')).toBeNull();
+    expect(screen.queryByText('Earned, not posted yet')).toBeNull();
+    expect(screen.queryByText('Interest to be paid out')).toBeNull();
+    expect(screen.getByText('In the deposit').parentElement).toHaveTextContent('₽50,000.00');
+  });
+
+  it('a noncapitalizing account states covered later interest and names the earlier missing days', async () => {
+    const later: Deposit = {
+      ...unrated,
+      capitalized: false,
+      ratePercent: '6',
+      accrued: '12.34',
+      due: null,
+      interestEarned: null,
+      nextPayout: { date: '2026-11-01', interest: '25.00', treatment: 'payable' },
+    };
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([later]), interestMissingCount: 1 });
+    open('/deposits?currency=RUB');
+    const card = await screen.findByRole('link', { name: /Current C/ });
+    expect(card).toHaveTextContent('Not counted before the first rate');
+    expect(card).not.toHaveTextContent('Interest earned');
+    cleanup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(later, {
+        rates: [{ effectiveFrom: '2026-08-01', ratePercent: '6' }],
+        periods: [
+          {
+            from: '2026-08-01',
+            to: '2026-09-01',
+            interest: '25.00',
+            treatment: 'payable',
+            afterInflation: { official: null, personal: null },
+          },
+        ],
+      }),
+    );
+    open(`/deposits/${later.id}?currency=RUB`);
+    expect(
+      await screen.findByText(
+        /Interest before Aug 1, 2026 is not counted: no rate was entered for those days\. Enter the rate from Jul 1, 2026/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
+    expect(
+      screen.getByText(/After-inflation figures are unavailable while earlier interest is missing/),
+    ).toBeInTheDocument();
+  });
+
+  it('does not compare a bank check with a balance that leaves the interest out', async () => {
+    const check = {
+      id: 'c1',
+      checkedOn: '2026-10-05',
+      bankBalance: '50123.00',
+      calculated: null,
+      difference: null,
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(unrated, { periods: [], checks: [check], lastCheck: check }),
+    );
+    open(`/deposits/${unrated.id}?currency=RUB`);
+    await screen.findByRole('heading', { level: 2, name: 'Current C' });
+    const checks = await screen.findByRole('region', { name: 'Checks against the bank' });
+    expect(within(checks).getByText('Not compared')).toBeInTheDocument();
+    expect(checks).not.toHaveTextContent(/₽0\.00/);
+    expect(screen.queryByText('Matches')).toBeNull();
+  });
+
+  it('TOAST-CHECK does not say a saved check agrees with the app while the interest is missing', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(unrated, { periods: [] }));
+    const check = {
+      id: 'c1',
+      checkedOn: '2026-10-05',
+      bankBalance: '50123.00',
+      calculated: null,
+      difference: null,
+    };
+    vi.spyOn(depositsApi, 'addCheck').mockResolvedValue(
+      detail(unrated, { periods: [], checks: [check], lastCheck: check }),
+    );
+    open(`/deposits/${unrated.id}?currency=RUB`);
+    await user.click(await screen.findByRole('button', { name: 'Check balance' }));
+    const dialog = screen.getByRole('dialog', { name: 'Check against the bank' });
+    await user.clear(within(dialog).getByLabelText('Date'));
+    await user.type(within(dialog).getByLabelText('Date'), '2026-10-05');
+    await user.type(within(dialog).getByLabelText('Balance in the bank, RUB'), '50123');
+    await user.click(within(dialog).getByRole('button', { name: 'Save check' }));
+    const messages = await screen.findByRole('region', { name: 'Messages' });
+    await waitFor(() => expect(messages).toHaveTextContent('Balance check saved'));
+    expect(messages).toHaveTextContent('Not compared: the interest is missing');
+    expect(messages).not.toHaveTextContent('agree');
+  });
+
+  it('keeps the interest figures of an account once a rate is in force', async () => {
+    const rated: Deposit = {
+      ...unrated,
+      ratePercent: '6',
+      interestMissing: false,
+      accrued: '12.34',
+      due: '0.00',
+      interestEarned: '12.34',
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(rated));
+    open(`/deposits/${rated.id}?currency=RUB`);
+    await screen.findByRole('heading', { level: 2, name: 'Current C' });
+    expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12.34');
+    expect(
+      screen.queryByText(
+        /After-inflation figures are unavailable while earlier interest is missing/,
+      ),
+    ).toBeNull();
+    expect(screen.queryByText(/No rate entered, so the interest is not counted/)).toBeNull();
+  });
+});
+
 describe('DEP-DETAIL: one deposit', () => {
   it('shows the computed figures, the periods, the movements and the terms', async () => {
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
@@ -579,6 +895,23 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Dollar B' })).toBeInTheDocument();
     expect(screen.getByText('Interest added so far').parentElement).toHaveTextContent('$50.41');
     expect(screen.getByText('Interest to be paid out').parentElement).toHaveTextContent('$12.30');
+  });
+
+  it('DEP-ACCOUNT tells a withdrawal from an account that it stays open, and a term deposit that it closes', async () => {
+    const user = userEvent.setup();
+    const account: Deposit = { ...dollars, kind: 'account', currency: 'RUB' };
+    for (const [deposit, note] of [
+      [account, 'Money you took out of the account. The account stays open when it reaches zero.'],
+      [savings, 'Money you took out of the deposit. Taking all of it closes the deposit.'],
+    ] as const) {
+      vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(deposit));
+      open(`/deposits/${deposit.id}?currency=RUB`);
+      await user.click(await screen.findByRole('button', { name: 'Record movement' }));
+      const dialog = screen.getByRole('dialog', { name: 'Record a movement' });
+      await user.selectOptions(within(dialog).getByLabelText('What happened'), 'withdrawal');
+      expect(within(dialog).getByText(note)).toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it('records a movement and shows the new figures', async () => {
@@ -1060,6 +1393,23 @@ describe('classes-19: deposits grouped by bank', () => {
     expect((await within(below).findByText('Share of net worth')).parentElement).toHaveTextContent(
       'Share of net worth—Net worth is below zero.',
     );
+  });
+
+  it('DEP-ACCOUNT-SHARE gives no share of a net worth that is a floor for want of an account rate', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...netWorth('5550150.70'),
+      completeness: 'incomplete',
+      interestMissingDepositCount: 2,
+    });
+    open('/deposits?currency=RUB');
+    const summary = await screen.findByRole('region', { name: 'Total in deposits' });
+    const share = (await within(summary).findByText('Share of net worth'))
+      .parentElement as HTMLElement;
+    expect(share).toHaveTextContent(
+      'Share of net worth—Net worth is a floor: 2 accounts without an interest rate.',
+    );
+    expect(summary).not.toHaveTextContent('%');
   });
 
   it('deposits-bank-total a bank whose deposits are all closed and settled holds 0.00, not a dash', async () => {

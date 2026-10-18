@@ -218,6 +218,31 @@ describe('bank deposit events (DEP-HISTORY)', () => {
     expect(fields[1].after).toEqual({ kind: 'quantity', value: '10000', unit: 'RUB' });
   });
 
+  it('DEP-ACCOUNT names an account as an account when it is opened and when it is deleted', () => {
+    const opened = auditFields(
+      deposit({
+        event: 'opened',
+        depositKind: 'account',
+        ratePercent: null,
+        date: '2025-07-01',
+        endDate: null,
+        payout: 'monthly',
+      }),
+    );
+    expect(pairs(opened)).toEqual([
+      ['Action', 'Account opened'],
+      ['Starts', '2025-07-01'],
+      ['Interest', 'Every month'],
+    ]);
+    expect(pairs(auditFields(deposit({ event: 'deleted', depositKind: 'account' })))[0]).toEqual([
+      'Action',
+      'Account deleted',
+    ]);
+    expect(
+      pairs(auditFields(deposit({ event: 'deleted', depositKind: 'term-deposit' })))[0],
+    ).toEqual(['Action', 'Deposit deleted']);
+  });
+
   it('lists the facts of each later action, not a difference from the action before', () => {
     const topup = auditFields(
       deposit(
