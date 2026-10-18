@@ -27,6 +27,13 @@ export function daysBetween(from: string, to: string): number {
 /** Today's calendar date in Moscow, the day the server counts interest by. */
 export const today = () => moscowDate(Date.now());
 
+/** Why an interest after inflation cannot be shown: the history has gaps. */
+export const NO_REAL_GAIN = 'no inflation figures yet';
+
+/** Why the end balance has no figure in today's money: the term is over, or the data is short. */
+export const noRealEndReason = (endDate: string, asOf: string): string =>
+  endDate < asOf ? 'the term has ended' : 'no inflation figures for the term yet';
+
 /** The badge tone of each status. */
 export const statusTone: Record<DepositStatus, BadgeTone> = {
   active: 'info',
