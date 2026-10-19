@@ -24,6 +24,7 @@ import { CarryInService } from '../accounting/carry-in.service';
 import { rethrowAccountingHistory } from '../accounting/connected-accounting.store';
 import type { FifoCarryInInput } from '../accounting/fifo';
 import { type Execution, FifoHistoryError } from '../accounting/fifo';
+import { canonicalDecimalToAtoms } from '../accounting/money';
 import {
   calculateOwnedTransfers,
   OwnedTransferCapacityError,
@@ -47,7 +48,7 @@ import {
   openingPositions,
   openingQuantities,
 } from './broker-opening';
-import type { TBankOperation } from './tbank-client';
+import type { TBankOperation, TBankPosition } from './tbank-client';
 import {
   type CashCurrency,
   type ImportInstrument,
@@ -60,6 +61,7 @@ import { type ImportPlan, type PlanEntry, planImport } from './tbank-import-plan
 /** Why the history cannot be written as it stands, with the operations it concerns. */
 export interface ImportProblem {
   reason:
+    | 'opening-holding'
     | 'not-recordable'
     | 'already-imported'
     | 'no-rate'
@@ -152,14 +154,14 @@ export class BrokerImportService {
     const { opening } = parseImportPreview(raw);
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
-    const history = await this.connections.history(owner, account);
+    const history = await this.connections.history(owner, account, true);
     return this.source
       .transaction('REPEATABLE READ', async (manager) => {
         await manager.query('SET TRANSACTION READ ONLY');
         const review = await this.review(manager, owner, account, history, false, opening);
         return {
           ...review.plan,
-          openingAssets: openingAssets(history.operations),
+          openingAssets: openingAssets(history.operations, history.positions),
           accountHasEntries: review.accountHasEntries,
           problems: review.problems,
           canImport: review.canImport,
@@ -181,7 +183,7 @@ export class BrokerImportService {
     });
     const earlier = await this.replay(this.source.manager, owner, account, input.requestId);
     if (earlier) return this.replayed(earlier, payload);
-    const history = await this.connections.history(owner, account);
+    const history = await this.connections.history(owner, account, true);
     return this.source
       .transaction(async (manager) => {
         await lockAccountingOwner(manager, owner);
@@ -366,7 +368,11 @@ export class BrokerImportService {
     manager: EntityManager,
     owner: string,
     account: string,
-    history: { brokerAccountId: string; operations: readonly TBankOperation[] },
+    history: {
+      brokerAccountId: string;
+      operations: readonly TBankOperation[];
+      positions?: readonly TBankPosition[];
+    },
     write: boolean,
     opening?: BrokerOpening,
   ): Promise<Review> {
@@ -399,7 +405,11 @@ export class BrokerImportService {
     manager: EntityManager,
     owner: string,
     account: string,
-    history: { brokerAccountId: string; operations: readonly TBankOperation[] },
+    history: {
+      brokerAccountId: string;
+      operations: readonly TBankOperation[];
+      positions?: readonly TBankPosition[];
+    },
     write: boolean,
     plan: ImportPlan,
     opening?: BrokerOpening,
@@ -408,9 +418,7 @@ export class BrokerImportService {
     const problems: ImportProblem[] = [];
     // Anything left out that moved money or shares would leave the records better off than the
     // account really is, so it stops the import; an operation that moved nothing does not.
-    const left = plan.skipped.filter(
-      (item) => item.reason !== 'no-amount' && item.reason !== 'outside-dividend',
-    );
+    const left = plan.skipped.filter((item) => item.reason !== 'no-amount');
     if (left.length > 0)
       problems.push(
         listed(
@@ -432,7 +440,7 @@ export class BrokerImportService {
           done.map((row) => row.operationId),
         ),
       );
-    const available = openingAssets(history.operations);
+    const available = openingAssets(history.operations, history.positions);
     if (opening?.lots.some((lot) => !available.some((asset) => asset.asset === lot.asset)))
       throw new BadRequestException('An opening holding is not in this broker history');
     const instruments = await this.instruments(
@@ -516,7 +524,32 @@ export class BrokerImportService {
         initialLots: openingLots,
       };
       try {
-        calculateOwnedTransfers([replayed], []);
+        const result = calculateOwnedTransfers([replayed], []).accounts.get(account)!;
+        // A current holding can predate the returned history even when that history trades it.
+        for (const position of history.positions ?? []) {
+          if (
+            position.virtual ||
+            position.quantity === '0' ||
+            position.instrumentType === 'currency'
+          )
+            continue;
+          const instrument = instruments.securities.get(position.instrumentUid);
+          const quantity = result.lots
+            .filter((lot) => lot.instrumentId === instrument?.id)
+            .reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.remainingQuantity), 0n);
+          if (
+            !instrument ||
+            !['share', 'bond', 'etf'].includes(position.instrumentType) ||
+            position.quantity.startsWith('-') ||
+            quantity !== canonicalDecimalToAtoms(position.quantity)
+          )
+            problems.push({
+              reason: 'opening-holding',
+              occurredAt: null,
+              ticker: position.instrumentUid,
+              operationIds: [],
+            });
+        }
       } catch (error) {
         if (error instanceof OwnedTransferCapacityError || !(error instanceof FifoHistoryError))
           throw error;
@@ -570,6 +603,16 @@ export class BrokerImportService {
         JSON.stringify([
           'tbank-import-v3',
           opening ?? null,
+          (history.positions ?? [])
+            .filter((position) => !position.virtual)
+            .map((position) => [
+              position.instrumentUid,
+              position.instrumentType,
+              position.quantity,
+              position.currentPriceCurrency,
+              position.averagePriceCurrency,
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0])),
           account,
           plan.grouping,
           plan.entries,
@@ -655,7 +698,10 @@ export class BrokerImportService {
         !asset.asset.startsWith('cash:') &&
         opening?.lots.some((lot) => lot.asset === asset.asset)
       )
-        wanted.set(asset.asset, { ticker: asset.label, currency: asset.currency });
+        wanted.set(asset.asset, {
+          ticker: asset.label === asset.asset ? '' : asset.label,
+          currency: asset.currency,
+        });
     for (const entry of plan)
       if (
         entry.record === 'trade' &&

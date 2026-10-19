@@ -173,11 +173,23 @@ export class BrokerConnectionsService {
   async history(
     ownerId: string,
     accountId: string,
-  ): Promise<{ brokerAccountId: string; operations: TBankOperation[] }> {
+    includePositions = false,
+  ): Promise<{
+    brokerAccountId: string;
+    operations: TBankOperation[];
+    positions?: TBankPosition[];
+  }> {
     const { token, target } = await this.savedConnection(ownerId, accountId);
     const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
     if (!result.ok) throw savedTokenFailure(result.reason);
-    return { brokerAccountId: target.id, operations: result.value };
+    if (!includePositions) return { brokerAccountId: target.id, operations: result.value };
+    if (target.closed || target.investBox)
+      throw new UnprocessableEntityException(
+        'T-Bank cannot verify current holdings for this account. Reconcile it before importing.',
+      );
+    const positions = await this.tbank.portfolio(token, target.id);
+    if (!positions.ok) throw savedTokenFailure(positions.reason);
+    return { brokerAccountId: target.id, operations: result.value, positions: positions.value };
   }
 
   async disconnect(ownerId: string, accountId: string) {

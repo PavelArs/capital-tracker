@@ -3860,3 +3860,52 @@ it('PORTFOLIO-CLASS-FOLD shows five rows per class with an explicit disclosure a
   await userEvent.click(screen.getByRole('button', { name: 'Show less Crypto assets' }));
   expect(screen.queryByRole('link', { name: 'Coin 6' })).toBeNull();
 });
+
+it('PORTFOLIO-BANK-ZERO lists an existing zero-balance product instead of the empty state', async () => {
+  vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([]));
+  vi.mocked(depositsApi.list).mockResolvedValue({
+    asOf: '2026-10-18',
+    totals: { USD: '0', EUR: '0', RUB: '0' },
+    interestMissingCount: 0,
+    items: [
+      {
+        id: id(999),
+        kind: 'account',
+        name: 'Empty savings',
+        bank: 'Synthetic Bank',
+        currency: 'USD',
+        startDate: '2026-07-01',
+        endDate: null,
+        payout: 'monthly',
+        capitalized: false,
+        dayBasis: 'actual-365',
+        earlyClose: 'keeps-interest',
+        ratePercent: '0',
+        status: 'active',
+        closedOn: null,
+        principal: '0',
+        accrued: '0',
+        due: '0',
+        balance: '0',
+        values: { USD: '0', EUR: '0', RUB: '0' },
+        nextPayout: null,
+        atMaturity: null,
+        lastCheck: null,
+      },
+    ],
+  });
+  renderAt('/portfolio');
+  expect(await screen.findByRole('link', { name: 'Empty savings' })).toHaveAttribute(
+    'href',
+    `/deposits/${id(999)}`,
+  );
+  expect(screen.queryByText('No assets yet')).toBeNull();
+});
+
+it('PORTFOLIO-BANK-ZERO keeps a bank-read error visible when aggregate holdings are zero', async () => {
+  vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([]));
+  vi.mocked(depositsApi.list).mockRejectedValue(new Error('synthetic unavailable'));
+  renderAt('/portfolio');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load bank products');
+  expect(screen.queryByText('No assets yet')).toBeNull();
+});

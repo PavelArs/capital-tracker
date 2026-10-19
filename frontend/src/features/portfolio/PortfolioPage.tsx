@@ -980,7 +980,11 @@ export default function PortfolioPage() {
         <ErrorState what="your portfolio" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
-      ) : assets.length === 0 && !hasDeposits(portfolio) ? (
+      ) : assets.length === 0 &&
+        deposits.length === 0 &&
+        !hasDeposits(portfolio) &&
+        !bankError &&
+        !banksStale ? (
         <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
           Add a wallet, a bank deposit, a coin or anything else you want to track.
         </EmptyState>
@@ -1000,7 +1004,11 @@ export default function PortfolioPage() {
             </Banner>
           )}
           <Summary portfolio={portfolio} asked={asked} real={real !== null} basis={basis} />
-          {assets.length === 0 && deposits.length === 0 && !hasDeposits(portfolio) ? (
+          {assets.length === 0 &&
+          deposits.length === 0 &&
+          !hasDeposits(portfolio) &&
+          !bankError &&
+          !banksStale ? (
             <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
               Add a wallet, a bank deposit, a coin or anything else you want to track.
             </EmptyState>

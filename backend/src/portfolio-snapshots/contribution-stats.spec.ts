@@ -73,3 +73,54 @@ it('GOAL-CONTRIBUTIONS uses the first real record instead of automatic epoch cov
   inputs.accounts[0].coverageFrom = new Date('2026-07-01T00:00:00+03:00');
   expect(contributionStart(inputs, '2026-10-18')).toBe('2026-07-01');
 });
+
+it('GOAL-CONTRIBUTIONS waits for every account coverage boundary before averaging', () => {
+  const inputs = {
+    accounts: [
+      { accountId: 'early', coverageFrom: new Date('2026-01-01T00:00:00+03:00') },
+      { accountId: 'later', coverageFrom: new Date('2026-07-01T00:00:00+03:00') },
+    ],
+    deposits: [{ deposit: { startDate: '2026-01-01' } }],
+  } as unknown as ValuationInputs;
+  const start = contributionStart(inputs, '2026-10-18');
+  expect(start).toBe('2026-07-01');
+  expect(monthlyContributions([], start, '2026-10-18')).toEqual({
+    months: [
+      { month: '2026-07', net: '0' },
+      { month: '2026-08', net: '0' },
+      { month: '2026-09', net: '0' },
+    ],
+    averages: { 3: '0', 6: null, 12: null },
+  });
+});
+
+it('GOAL-CONTRIBUTIONS uses the first actual record per automatic account, then the latest boundary', () => {
+  const inputs = {
+    accounts: [
+      { accountId: 'early', coverageFrom: new Date('2026-01-01T00:00:00+03:00') },
+      { accountId: 'auto', coverageFrom: new Date('1970-01-01T00:00:00Z') },
+    ],
+    ledgers: new Map([
+      [
+        'auto',
+        {
+          accounts: new Map([
+            [
+              'auto',
+              {
+                trades: [
+                  { occurredAt: '2026-07-15T10:00:00Z' },
+                  { occurredAt: '2026-09-01T10:00:00Z' },
+                ],
+              },
+            ],
+          ]),
+          transfers: [],
+        },
+      ],
+    ]),
+    chainMoves: new Map(),
+    deposits: [],
+  } as unknown as ValuationInputs;
+  expect(contributionStart(inputs, '2026-10-18')).toBe('2026-07-15');
+});

@@ -43,9 +43,9 @@ export function monthlyContributions(allFlows: readonly StatedFlow[], from: stri
 
 /** Automatic coverage's epoch sentinel proves no calendar history before the first actual record. */
 export function contributionStart(inputs: ValuationInputs, today: string): string {
-  const dates = inputs.accounts.flatMap((row) => {
+  const dates = inputs.accounts.map((row) => {
     if (row.coverageFrom && row.coverageFrom.toISOString() !== AUTOMATIC_COVERAGE_FROM)
-      return [moscowDate(row.coverageFrom)];
+      return moscowDate(row.coverageFrom);
     const ledger = inputs.ledgers.get(row.accountId);
     const account = ledger?.accounts.get(row.accountId);
     const records = [
@@ -60,8 +60,20 @@ export function contributionStart(inputs: ValuationInputs, today: string): strin
           (transfer.fromAccountId === row.accountId || transfer.toAccountId === row.accountId),
       ) ?? []),
     ];
-    return records.map((record) => moscowDate(new Date(record.occurredAt)));
+    return (
+      records
+        .map((record) => moscowDate(new Date(record.occurredAt)))
+        .filter((date) => date <= today)
+        .sort()[0] ?? today
+    );
   });
-  dates.push(...inputs.deposits.map((holding) => holding.deposit.startDate));
-  return dates.filter((date) => date <= today).sort()[0] ?? today;
+  // Every included account must cover a month before its missing flows can count as quiet.
+  return (
+    dates.sort().at(-1) ??
+    inputs.deposits
+      .map((holding) => holding.deposit.startDate)
+      .filter((date) => date <= today)
+      .sort()[0] ??
+    today
+  );
 }

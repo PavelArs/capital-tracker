@@ -33,7 +33,7 @@ const skipText: Record<string, string> = {
   unsupported: 'Operation types the app does not record yet',
   transfer: 'Transfers of securities',
   card: 'Settled through a card',
-  'outside-dividend': 'Dividends paid to your card, outside this broker account',
+  'outside-dividend': 'Dividends paid to your card require reconciliation',
   'no-amount': 'Moved no money',
   'no-payment': 'Moved units for no money',
   currency: 'In a currency the app does not keep',
@@ -48,6 +48,7 @@ const skipText: Record<string, string> = {
 };
 
 const problemText: Record<TBankImportProblem['reason'], string> = {
+  'opening-holding': 'A current holding needs matching known-cost opening lots',
   'not-recordable': 'Operations left out moved money or shares',
   'already-imported': 'Already imported into an account',
   'no-rate': 'No Bank of Russia rate for that day',

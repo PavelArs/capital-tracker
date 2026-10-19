@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAsOf, parseDecimal, parseUuid } from '../accounting/input';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
-import type { TBankOperation } from './tbank-client';
+import type { TBankOperation, TBankPosition } from './tbank-client';
 import { operationKind } from './tbank-operation-kinds';
 
 export interface BrokerOpening {
@@ -76,7 +76,10 @@ export function openingPositions(
 }
 
 /** The import's own instrument identities, not ticker guesses supplied by the browser. */
-export function openingAssets(operations: readonly TBankOperation[]) {
+export function openingAssets(
+  operations: readonly TBankOperation[],
+  positions: readonly TBankPosition[] = [],
+) {
   const assets = new Map<string, { asset: string; label: string; currency: string }>(
     ['USD', 'EUR', 'RUB'].map((currency) => [
       `cash:${currency}`,
@@ -96,6 +99,25 @@ export function openingAssets(operations: readonly TBankOperation[]) {
       asset: operation.instrumentUid,
       label: operation.ticker || operation.instrumentUid,
       currency: operation.paymentCurrency,
+    });
+  }
+  for (const position of positions) {
+    const currency = [position.currentPriceCurrency, position.averagePriceCurrency].find((code) =>
+      ['usd', 'eur', 'rub'].includes(code),
+    );
+    if (
+      position.virtual ||
+      position.quantity === '0' ||
+      position.quantity.startsWith('-') ||
+      !['share', 'bond', 'etf'].includes(position.instrumentType) ||
+      !currency ||
+      assets.has(position.instrumentUid)
+    )
+      continue;
+    assets.set(position.instrumentUid, {
+      asset: position.instrumentUid,
+      label: position.instrumentUid,
+      currency,
     });
   }
   return [...assets.values()];

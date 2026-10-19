@@ -380,3 +380,30 @@ describe('BROKER-SYNC: reading the history an import is made from', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
+
+it('BROKER-OPENING reads positions with the same saved account as its import history', async () => {
+  const position = { instrumentUid: 'synthetic-uid-0001', quantity: '2', virtual: false };
+  const { service, histories, portfolios } = build(ok(mine), true, true, {
+    ok: true,
+    value: [position],
+  });
+  expect(await service.history(owner, account, true)).toMatchObject({
+    brokerAccountId: mine.id,
+    positions: [position],
+  });
+  expect(histories).toEqual([mine.id]);
+  expect(portfolios).toEqual([mine.id]);
+});
+
+it('BROKER-OPENING never treats an unreadable current portfolio as empty', async () => {
+  const { service } = build(ok(mine), true, true, { ok: false, reason: 'unavailable' });
+  await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
+    ServiceUnavailableException,
+  );
+  for (const listed of [ok({ ...mine, closed: true }), ok({ ...mine, investBox: true })]) {
+    const { service } = build(listed, true, true);
+    await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+  }
+});

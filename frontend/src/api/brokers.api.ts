@@ -43,6 +43,7 @@ export interface TBankPlanEntry {
 
 export interface TBankImportProblem {
   reason:
+    | 'opening-holding'
     | 'not-recordable'
     | 'already-imported'
     | 'no-rate'
