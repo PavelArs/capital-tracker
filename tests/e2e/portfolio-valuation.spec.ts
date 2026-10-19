@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
+import { money } from '../../frontend/src/features/portfolio/format';
 import { origin, test } from './mfa-fixtures';
 import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
@@ -61,7 +62,13 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     assertReviewed: true,
   });
 
-  const valuation = (await api.result('GET', '/portfolio', 200)) as { assets: AssetRow[] };
+  const valuation = (await api.result('GET', '/portfolio', 200)) as {
+    assets: AssetRow[];
+    allocation: {
+      byAsset: { key: string; label: string; value: string }[];
+      byAccount: { key: string; label: string; value: string }[];
+    };
+  };
   const asset = valuation.assets.find((item) => item.instrumentId === created.id);
   expect(asset).toMatchObject({
     name: assetName,
@@ -86,6 +93,9 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await expect(main.getByRole('region', { name: 'Portfolio summary' })).toContainText(
     'Current value',
   );
+  // A class shows five rows until expanded; search finds this case's asset independently of others.
+  const search = main.getByRole('searchbox', { name: 'Search assets' });
+  await search.fill('pvui');
   const row = main.getByRole('row', { name: new RegExp(`^${assetName}`) });
   const cells = row.getByRole('cell');
   await expect(cells.nth(0)).toHaveText(`${assetName}PVUI · Crypto · USD`);
@@ -97,7 +107,6 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   // portfolio-11: a hand-priced asset has no market move, so its 24h cell says Manual.
   await expect(cells.nth(7)).toHaveText('Manual');
   // SEARCH: the box next to the type filter finds the asset by its ticker.
-  const search = main.getByRole('searchbox', { name: 'Search assets' });
   await search.fill('pvui');
   await expect(main.getByRole('row', { name: new RegExp(`^${assetName}`) })).toHaveCount(1);
   // Only the header row lacks the ticker while the search is on (the class heads are no assets).
@@ -106,18 +115,40 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   ).toHaveCount(1);
   await search.fill('');
 
+  await expect(main.getByRole('region', { name: 'Allocation' })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('portfolio-1440-dark.png'), fullPage: true });
+
+  // ALLOC moved to Dashboard; its folded rows still reflect the exact account and asset values.
+  expect(valuation.allocation.byAsset.find((slice) => slice.key === created.id)?.value).toBe('96000');
+  expect(valuation.allocation.byAccount.find((slice) => slice.key === account.id)?.value).toBe('96000');
+  await page.goto('/dashboard');
   const allocation = main.getByRole('region', { name: 'Allocation' });
   const grouping = allocation.getByRole('radiogroup', { name: 'Group allocation by' });
-  await expect(allocation.getByRole('listitem').filter({ hasText: assetName })).toHaveCount(1);
-  await grouping.getByRole('radio', { name: 'Type', exact: true }).check();
+  const largestAsset = valuation.allocation.byAsset[0];
+  await expect(allocation.getByRole('listitem').first()).toContainText(largestAsset.label);
+  await expect(allocation.getByRole('listitem').first()).toContainText(
+    money(largestAsset.value, 'USD'),
+  );
+  await grouping.getByRole('radio', { name: 'Classes', exact: true }).check();
   await expect(
     allocation.getByRole('listitem').filter({ has: page.getByText('Crypto', { exact: true }) }),
   ).toHaveCount(1);
-  await grouping.getByRole('radio', { name: 'Wallets', exact: true }).check();
-  await expect(allocation.getByRole('listitem').filter({ hasText: accountName })).toContainText(
-    '$96,000.00',
+  await grouping.getByRole('radio', { name: 'Accounts', exact: true }).check();
+  const largestAccount = valuation.allocation.byAccount[0];
+  await expect(allocation.getByRole('listitem').first()).toContainText(largestAccount.label);
+  await expect(allocation.getByRole('listitem').first()).toContainText(
+    money(largestAccount.value, 'USD'),
   );
-  await page.screenshot({ path: testInfo.outputPath('portfolio-1440-dark.png'), fullPage: true });
+  // The case's account may be folded into Other when other cases have larger holdings.
+  const visibleAccounts = valuation.allocation.byAccount.length <= 6
+    ? valuation.allocation.byAccount
+    : valuation.allocation.byAccount.slice(0, 5);
+  if (visibleAccounts.some((slice) => slice.key === account.id))
+    await expect(allocation.getByRole('listitem').filter({ hasText: accountName })).toContainText(
+      '$96,000.00',
+    );
+  await page.goto('/portfolio');
+  await search.fill('pvui');
 
   await row.getByRole('link', { name: assetName, exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio/${created.id}`);
@@ -225,6 +256,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   ).toBeVisible();
   await main.getByRole('link', { name: 'Back to Portfolio' }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
+  await search.fill(depositName);
   const depositCells = main
     .getByRole('row', { name: new RegExp(`^${depositName}`) })
     .getByRole('cell');

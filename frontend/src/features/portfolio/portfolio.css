@@ -384,6 +384,9 @@ a.portfolio-asset__name:hover {
 .portfolio-group__head,
 .portfolio-mgrp {
   display: flex;
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
   align-items: baseline;
   gap: var(--sp-2);
 }

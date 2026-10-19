@@ -471,6 +471,7 @@ function operation(id, type, payment, over = {}) {
   };
 }
 const share = (over) => ({ instrumentUid: shareUid, instrumentType: 'share', ticker: 'SYNTHA', ...over });
+const heldPosition = (instrumentUid, quantity, instrumentType = 'share') => ({ instrumentUid, instrumentType, quantity, averagePrice: '100', averagePriceCurrency: 'rub', currentPrice: '120', currentPriceCurrency: 'rub', virtual: false, expiresAt: '' });
 
 async function importing(db, service, imports, tbank, owner, other) {
   const { OperationListService } = require('/app/backend/dist/accounting/operation-list.service.js');
@@ -500,6 +501,8 @@ async function importing(db, service, imports, tbank, owner, other) {
     operation('100000009', 'BROKER_FEE', '0', { occurredAt: '2024-03-12T10:00:00Z' }),
     operation('100000010', 'BUY', '-1', share({ state: 'canceled', quantity: '1' })),
   ];
+  tbank.positions = [heldPosition(shareUid, '6')];
+  tbank.cash = [['RUB', '6456']];
   const instrumentsBefore = await count('accounting_instruments');
   const preview = await imports.preview(owner, broker);
   assert.deepEqual(preview.problems, []);
@@ -647,6 +650,8 @@ async function importing(db, service, imports, tbank, owner, other) {
     operation('200000001', 'INPUT', '1000'),
     operation('200000002', 'BUY', '-500', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' })),
   ];
+  tbank.positions = [heldPosition(shareUid, '1')];
+  tbank.cash = [['RUB', '500']];
   const reused = await imports.preview(owner, second);
   await imports.import(owner, second, { requestId: randomUUID(), previewHash: reused.previewHash });
   assert.equal(await count('broker_instrument_links'), 1);
@@ -667,6 +672,8 @@ async function importing(db, service, imports, tbank, owner, other) {
     }),
     operation('300000003', 'SOMETHING_NEW', '-1', { occurredAt: '2024-03-04T10:00:00Z' }),
   ];
+  tbank.positions = [];
+  tbank.cash = [];
   const refused = await imports.preview(owner, third);
   assert.equal(refused.canImport, false);
   assert.deepEqual(
@@ -690,6 +697,8 @@ async function importing(db, service, imports, tbank, owner, other) {
   const fourth = await account(db, owner, 'broker');
   await takeOver(db, service, owner, fourth);
   history = firstHistory;
+  tbank.positions = [heldPosition(shareUid, '6')];
+  tbank.cash = [['RUB', '6456']];
   const twice = await imports.preview(owner, fourth);
   assert.equal(twice.accountHasEntries, false);
   assert.equal(twice.canImport, false);
@@ -745,6 +754,9 @@ async function importing(db, service, imports, tbank, owner, other) {
       quantity: '1',
     })),
   ];
+  tbank.currencyCodes[goldUid] = 'XAU';
+  tbank.positions = [heldPosition(shareUid, '2'), heldPosition(goldUid, '1', 'currency')];
+  tbank.cash = [['RUB', '29955'], ['USD', '100']];
   const exchanged = await imports.preview(owner, fifth);
   assert.deepEqual([exchanged.problems, exchanged.skipped], [[], []]);
   assert.deepEqual(
@@ -793,6 +805,8 @@ async function importing(db, service, imports, tbank, owner, other) {
   const sixth = await account(db, owner, 'broker');
   await takeOver(db, service, owner, sixth);
   history = [operation('600000001', 'INPUT', '100', { occurredAt: '2019-12-20T10:00:00Z' })];
+  tbank.positions = [];
+  tbank.cash = [['RUB', '100']];
   const unrated = await imports.preview(owner, sixth);
   assert.deepEqual(unrated.problems.map((problem) => problem.reason), ['no-rate']);
   await db.query(`INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit")
@@ -816,6 +830,7 @@ async function importing(db, service, imports, tbank, owner, other) {
       quantity: '0',
     })),
   );
+  tbank.cash = [['RUB', '1001']];
   const crowded = await imports.preview(owner, seventh);
   assert.equal(crowded.fitsRewardLimit, false);
   assert.equal(crowded.canImport, false);
@@ -831,6 +846,8 @@ async function importing(db, service, imports, tbank, owner, other) {
     operation('800000003', 'SELL', '150', share({ occurredAt: '2024-03-05T10:00:00Z', quantity: '1', price: '150' })),
     operation('800000004', 'BUY', '-150', share({ occurredAt: '2024-03-05T10:00:00Z', quantity: '1', price: '150' })),
   ];
+  tbank.positions = [heldPosition(shareUid, '1')];
+  tbank.cash = [];
   const funded = await imports.preview(owner, eighth);
   assert.deepEqual(funded.problems, []);
   assert.equal(funded.canImport, true);
@@ -854,6 +871,8 @@ async function importing(db, service, imports, tbank, owner, other) {
     operation('900000003', 'BOND_REPAYMENT', '2000', bond({ occurredAt: '2024-03-15T07:00:00Z' })),
     operation('900000004', 'BOND_REPAYMENT_FULL', '7500', bond({ occurredAt: '2024-03-20T07:00:00Z' })),
   ];
+  tbank.positions = [];
+  tbank.cash = [['RUB', '10500']];
   const returns = await imports.preview(owner, ninth);
   assert.deepEqual(returns.problems, []);
   assert.deepEqual(
@@ -930,6 +949,115 @@ async function importing(db, service, imports, tbank, owner, other) {
   await rejected(() => new AccountingService(db).removeAccount(owner, ninth), 409);
   assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
   console.log('PASS BROKER-CAPRET');
+
+  stage = 'BROKER-CARD: external card trades never spend or credit broker cash';
+  const cardAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, cardAccount);
+  history = [operation('1100000001', 'BUY_CARD', '-500', share({ quantity: '2' })), operation('1100000002', 'SELL_CARD', '300', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' }))];
+  tbank.positions = [heldPosition(shareUid, '1')];
+  tbank.cash = [];
+  history.push(operation('1100000003', 'DIV_EXT', '15', share({ occurredAt: '2024-03-03T08:00:00Z', quantity: '0' })));
+  const outsideDividend = await imports.preview(owner, cardAccount);
+  assert.equal(outsideDividend.canImport, false, 'External dividends require reconciliation, never disappear from a successful import');
+  await rejected(() => imports.import(owner, cardAccount, { requestId: randomUUID(), previewHash: outsideDividend.previewHash }), 409);
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${cardAccount}'`), 0);
+  history.pop();
+  const cardPreview = await imports.preview(owner, cardAccount);
+  assert.equal(cardPreview.canImport, true);
+  await imports.import(owner, cardAccount, { requestId: randomUUID(), previewHash: cardPreview.previewHash });
+  assert.equal((await trades.available(owner, cardAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '0');
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${cardAccount}'`), 2);
+  console.log('PASS BROKER-CARD PostgreSQL card-paid security entries and no phantom broker cash');
+
+  stage = 'BROKER-OPENING: explicit owner quantities and exact costs cover pre-history holdings';
+  const openingAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, openingAccount);
+  history = [operation('1200000001', 'SELL', '9000', { instrumentUid: dollarsUid, instrumentType: 'currency', ticker: 'USD000UTSTOM', quantity: '100' }), operation('1200000002', 'SELL', '500', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' }))];
+  tbank.positions = [];
+  const opening = { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: 'cash:USD', acquiredAt: '2024-02-01T00:00:00Z', quantity: '100', costUsd: '100' }, { asset: shareUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '10' }] };
+  tbank.cash = [['RUB', '9500']];
+  const openingPreview = await imports.preview(owner, openingAccount, { opening });
+  assert.equal(openingPreview.canImport, true, 'Declared opening holdings must participate in planner and FIFO checks');
+  await rejected(() => imports.import(owner, openingAccount, { requestId: randomUUID(), previewHash: openingPreview.previewHash, opening: { ...opening, lots: opening.lots.map((lot) => ({ ...lot, costUsd: '999' })) } }), 409);
+  assert.equal(await count('account_opening_snapshots', `WHERE "accountId" = '${openingAccount}'`), 0, 'A stale preview rolls back opening creation');
+  assert.equal(await count('account_carry_in_lots', `WHERE "accountId" = '${openingAccount}'`), 0);
+  const openingRequest = { requestId: randomUUID(), previewHash: openingPreview.previewHash, opening };
+  const importedOpening = await imports.import(owner, openingAccount, openingRequest);
+  assert.equal((await imports.import(owner, openingAccount, openingRequest)).value.id, importedOpening.value.id, 'Replay preserves one atomic opening and import');
+  assert.equal((await trades.available(owner, openingAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '9500');
+  assert.equal(await count('account_opening_snapshots', `WHERE "accountId" = '${openingAccount}'`), 1);
+  assert.equal(await count('account_carry_in_lots', `WHERE "accountId" = '${openingAccount}'`), 2);
+  console.log('PASS BROKER-OPENING PostgreSQL known-cost carry-in, atomic import and idempotent retry');
+
+  stage = 'BROKER-OPENING-POSITIONS: untouched earlier holdings cannot silently disappear';
+  const untouchedAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, untouchedAccount);
+  history = [operation('1300000001', 'INPUT', '1000')];
+  const untouched = { instrumentUid: otherUid, instrumentType: 'share', quantity: '2', averagePrice: '100', averagePriceCurrency: 'rub', currentPrice: '120', currentPriceCurrency: 'rub', virtual: false, expiresAt: '' };
+  tbank.positions = [untouched];
+  tbank.cash = [['RUB', '1000']];
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'A held security absent from operations needs opening lots');
+  const earlierGold = heldPosition('10000000-0000-4000-8000-0000000000f2', '1', 'currency');
+  tbank.currencyCodes[earlierGold.instrumentUid] = 'XAU';
+  tbank.positions = [earlierGold];
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'An earlier commodity cannot be silently classified as cash');
+  const goldOpening = { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: earlierGold.instrumentUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '25' }] };
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: goldOpening })).canImport, true, 'Verified commodity metadata allows explicit opening lots');
+  const withEarlierDollars = { ...goldOpening, lots: [...goldOpening.lots, { asset: 'cash:USD', acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '1' }] };
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: withEarlierDollars })).canImport, false, 'Opening cash cannot invent dollars absent from the current portfolio');
+  tbank.cash = [['RUB', '999']];
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: goldOpening })).canImport, false, 'Replayed ruble cash must match the provider too');
+  tbank.cash = [['RUB', '1000'], ['USD', '1']];
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: goldOpening })).canImport, false, 'Earlier cash absent from operations must be declared');
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: withEarlierDollars })).canImport, true, 'Matching explicit earlier cash restores the exact balance');
+  tbank.cash = [['RUB', '1000']];
+  tbank.positions = [untouched];
+
+  history.push(operation('1300000002', 'BUY', '0', { ...share({ quantity: '0' }), instrumentUid: otherUid }));
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'A zero operation cannot conceal a current holding');
+  history.pop();
+  tbank.cash = [['RUB', '500']];
+  history.push(operation('1300000003', 'BUY', '-500', { ...share({ quantity: '1' }), instrumentUid: otherUid }));
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'One recorded share cannot conceal another earlier share');
+  tbank.positions = [{ ...untouched, quantity: '0' }];
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'A recorded holding cannot contradict an explicitly zero current position');
+  tbank.positions = [untouched];
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: otherUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '10' }] } })).canImport, true, 'Opening and recorded shares reconcile together');
+  history.pop();
+  tbank.cash = [['RUB', '1000']];
+  const untouchedOpening = { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: otherUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '2', costUsd: '20' }] };
+  const untouchedHistory = history;
+  history = [operation('1400000001', 'INPUT', '1000'), operation('1400000002', 'BUY', '-500', { ...share({ quantity: '1' }), instrumentUid: otherUid }), operation('1400000003', 'SELL', '500', { ...share({ quantity: '1', occurredAt: '2024-03-02T10:00:00Z' }), instrumentUid: otherUid })];
+  tbank.positions = [];
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: { ...untouchedOpening, lots: [{ ...untouchedOpening.lots[0], quantity: '1', costUsd: '10' }] } })).canImport, false, 'Opening lots cannot invent a holding absent from the current portfolio');
+  history = untouchedHistory;
+  tbank.positions = [untouched];
+  const untouchedPreview = await imports.preview(owner, untouchedAccount, { opening: untouchedOpening });
+  assert.equal(untouchedPreview.openingAssets.some((asset) => asset.asset === otherUid), true);
+  assert.equal(untouchedPreview.canImport, true);
+  assert.equal((await imports.preview(owner, untouchedAccount, { opening: { ...untouchedOpening, lots: [{ ...untouchedOpening.lots[0], quantity: '3' }] } })).canImport, false, 'Opening quantity must match an untouched current holding');
+  for (const ignored of [{ ...untouched, virtual: true }, { ...untouched, quantity: '0' }]) {
+    tbank.positions = [ignored];
+    assert.equal((await imports.preview(owner, untouchedAccount)).canImport, true, 'Virtual or zero positions are not required opening holdings');
+  }
+  tbank.positions = [{ ...untouched, currentPriceCurrency: '', averagePriceCurrency: '' }];
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'Missing position metadata never becomes an empty holding');
+  tbank.positions = [{ ...untouched, instrumentType: 'futures' }];
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'Unsupported positions require reconciliation');
+  tbank.positions = [{ ...untouched, currentPriceCurrency: 'usd' }];
+  const changedMetadata = await imports.preview(owner, untouchedAccount, { opening: untouchedOpening });
+  assert.equal(changedMetadata.canImport, true);
+  assert.notEqual(changedMetadata.previewHash, untouchedPreview.previewHash, 'The preview pins position metadata even with unchanged quantities');
+  await rejected(() => imports.import(owner, untouchedAccount, { requestId: randomUUID(), previewHash: untouchedPreview.previewHash, opening: untouchedOpening }), 409);
+  tbank.positions = [{ ...untouched, quantity: '3' }];
+  await rejected(() => imports.import(owner, untouchedAccount, { requestId: randomUUID(), previewHash: untouchedPreview.previewHash, opening: untouchedOpening }), 409);
+  assert.equal(await count('account_opening_snapshots', `WHERE "accountId" = '${untouchedAccount}'`), 0);
+  tbank.positions = [untouched];
+  await imports.import(owner, untouchedAccount, { requestId: randomUUID(), previewHash: untouchedPreview.previewHash, opening: untouchedOpening });
+  const [untouchedLink] = await db.query('SELECT "instrumentId" FROM broker_instrument_links WHERE "ownerId"=$1 AND "providerInstrumentId"=$2', [owner, otherUid]);
+  assert.equal((await trades.available(owner, untouchedAccount, { instrumentId: untouchedLink.instrumentId, at: atEnd })).quantity, '2');
+  tbank.positions = [];
+  console.log('PASS BROKER-OPENING-POSITIONS explicit current holdings, quantity reconciliation and stale-portfolio rollback');
 
   stage = 'BROKER-CAPRET-VOID: one owner command removes a return without erasing its history';
   const { CapitalReturnService } = require('/app/backend/dist/accounting/capital-return.service.js');
@@ -1021,6 +1149,11 @@ async function main() {
       accounts: async () =>
         tbank.down ? { ok: false, reason: 'unavailable' } : { ok: true, value: tbank.listed },
       operations: async () => ({ ok: true, value: history }),
+      positions: [],
+      cash: [],
+      currencyCodes: {},
+      currencyCode: async (_token, uid) => { const code = uid.startsWith('cash-') ? uid.slice(5) : tbank.currencyCodes[uid]; return code ? { ok: true, value: code } : { ok: false, reason: 'unavailable' }; },
+      portfolio: async () => ({ ok: true, value: [...tbank.positions, ...tbank.cash.map(([code, quantity]) => heldPosition(`cash-${code}`, quantity, 'currency'))] }),
     };
     const service = new BrokerConnectionsService(db, tbank, box);
     await connection(db, service, owner.id, other.id);
@@ -1028,7 +1161,7 @@ async function main() {
     const { BrokerSetupService } = require('/app/backend/dist/brokers/broker-setup.service.js');
     await setup(db, service, new BrokerSetupService(db, service, box), tbank, owner.id, other.id);
     const { BrokerImportService } = require('/app/backend/dist/brokers/broker-import.service.js');
-    const imports = new BrokerImportService(db, service);
+    const imports = new BrokerImportService(db, service, new (require('/app/backend/dist/accounting/accounting.service.js').AccountingService)(db), new (require('/app/backend/dist/accounting/carry-in.service.js').CarryInService)(db));
     const instrument = await heldPreview(db, service, imports, owner.id);
     await voidedTransferPreview(db, service, imports, owner.id, instrument);
     await rewardRoomPreview(db, service, imports, owner.id, instrument);

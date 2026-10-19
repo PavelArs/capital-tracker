@@ -70,6 +70,6 @@ import { ValuationHistoryService } from './valuation-history.service';
     HiddenAssetService,
   ],
   // Wallet sync links own transfers after each pass (M13, D7).
-  exports: [ChainClassificationService],
+  exports: [ChainClassificationService, AccountingService, CarryInService],
 })
 export class AccountingModule {}

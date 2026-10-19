@@ -20,8 +20,8 @@ import './allocation.css';
 type Grouping = 'byAsset' | 'byType' | 'byAccount';
 const groupings: [Grouping, string][] = [
   ['byAsset', 'Assets'],
-  ['byAccount', 'Wallets'],
-  ['byType', 'Type'],
+  ['byType', 'Classes'],
+  ['byAccount', 'Accounts'],
 ];
 
 /** Allocation key of all bank deposits in the by-type grouping. */
@@ -38,7 +38,10 @@ function sliceColor(
   key: string,
 ): string | undefined {
   if (grouping === 'byType')
-    return key === DEPOSITS ? depositColor : assetTypeColors[key as AssetType];
+    return key === DEPOSITS
+      ? depositColor
+      : (assetClassColors[key as keyof typeof assetClassColors] ??
+          assetTypeColors[key as AssetType]);
   if (grouping === 'byAccount') {
     if (key.startsWith('bank:')) return depositColor;
     const assetClass = classes[key];
@@ -58,6 +61,45 @@ function sliceColor(
 export function shareText(value: string | null): string {
   const shown = percent(value, false);
   return value !== null && shown === '0.00%' && Number(value) > 0 ? '<0.01%' : shown;
+}
+
+/** The same holding classes as the portfolio table, independently of how a price is entered. */
+function classSlices(portfolio: PortfolioValuation, classes: AccountClasses): AllocationSlice[] {
+  const labels: Record<string, string> = {
+    crypto: 'Crypto',
+    fiat: 'Cash',
+    manual: 'Other',
+    property: 'Real estate',
+    broker: 'Broker',
+    deposits: 'Bank',
+  };
+  const values = new Map<string, string[]>();
+  for (const asset of portfolio.assets) {
+    if (asset.holdings.length === 0 && asset.value !== null && Number(asset.value) > 0) {
+      values.set(asset.assetType, [...(values.get(asset.assetType) ?? []), asset.value]);
+    }
+    for (const holding of asset.holdings) {
+      if (holding.value === null || Number(holding.value) <= 0) continue;
+      const key = classes[holding.accountId] ?? asset.assetType;
+      values.set(key, [...(values.get(key) ?? []), holding.value]);
+    }
+  }
+  const banks = portfolio.allocation.byType.find((slice) => slice.key === DEPOSITS);
+  if (banks) values.set(DEPOSITS, [banks.value]);
+  // Older saved responses may have no holdings; keep their original allocation until refreshed.
+  if (values.size === 0) return portfolio.allocation.byType;
+  const total = Number(sum([...values.values()].flat()));
+  return [...values]
+    .map(([key, parts]) => {
+      const value = sum(parts);
+      return {
+        key,
+        label: labels[key] ?? key,
+        value,
+        percent: total > 0 ? ((Number(value) / total) * 100).toFixed(2) : null,
+      };
+    })
+    .sort((a, b) => Number(b.value) - Number(a.value));
 }
 
 const OTHER = '__other__';
@@ -95,7 +137,10 @@ export default function Allocation({
   const [grouping, setGrouping] = useState<Grouping>('byAsset');
   const heading = useId();
   const classes = useAccountClasses();
-  const { shown, rest } = folded(portfolio.allocation[grouping], limit);
+  const { shown, rest } = folded(
+    grouping === 'byType' ? classSlices(portfolio, classes) : portfolio.allocation[grouping],
+    limit,
+  );
   const slices = shown.map((slice, index) => {
     const other = slice.key === OTHER;
     const color = other ? 'var(--c-other)' : sliceColor(portfolio, classes, grouping, slice.key);

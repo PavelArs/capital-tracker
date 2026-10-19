@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AccountingModule } from '../accounting/accounting.module';
 import { BrokerConnectionsController } from './broker-connections.controller';
 import { BrokerConnectionsService } from './broker-connections.service';
 import { BrokerImportService } from './broker-import.service';
@@ -10,6 +11,7 @@ import { TBankClient } from './tbank-client';
 import { TBankTokenBox } from './tbank-token-box';
 
 @Module({
+  imports: [AccountingModule],
   controllers: [BrokerConnectionsController, BrokerSetupController],
   providers: [
     BrokerConnectionsService,

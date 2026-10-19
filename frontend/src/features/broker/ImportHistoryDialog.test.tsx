@@ -1,7 +1,7 @@
 import { brokersApi, type TBankImportPreview, type TBankPlanEntry } from '@api/brokers.api';
 import ToastViewport from '@components/Toast';
 import { ToastProvider } from '@contexts/ToastContext';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -182,4 +182,53 @@ describe('BROKER-IMPORT-UI the Import history dialog', () => {
     expect(within(dialog()).getByRole('button', { name: 'Import 4 entries' })).toBeDisabled();
     expect(write).not.toHaveBeenCalled();
   });
+});
+
+it('BROKER-OPENING previews declared earlier holdings and submits them with one import command', async () => {
+  const assets = [{ asset: 'cash:USD', label: 'USD cash', currency: 'usd' }];
+  const blocked = preview({
+    canImport: false,
+    openingAssets: assets,
+    problems: [
+      {
+        reason: 'not-held',
+        occurredAt: '2024-03-01T00:00:00Z',
+        ticker: 'USD',
+        operationIds: ['op-1'],
+      },
+    ],
+  });
+  const read = vi
+    .spyOn(brokersApi, 'importPreview')
+    .mockResolvedValueOnce(blocked)
+    .mockResolvedValue(preview({ openingAssets: assets }));
+  const write = vi.spyOn(brokersApi, 'importHistory').mockResolvedValue(receipt);
+  const user = userEvent.setup();
+  open();
+  await user.click(await screen.findByRole('button', { name: 'Record earlier holdings' }));
+  const form = screen.getByRole('form', { name: 'Opening holdings' });
+  const change = (label: string, value: string) =>
+    fireEvent.change(within(form).getByLabelText(label), { target: { value } });
+  change('Opening date (Moscow)', '2024-02-25');
+  change('Acquired on (Moscow)', '2024-02-01');
+  await user.type(within(form).getByLabelText('Quantity still held'), '100');
+  await user.type(within(form).getByLabelText('Remaining purchase cost (USD)'), '100');
+  await user.click(within(form).getByRole('button', { name: 'Review opening holdings' }));
+  await screen.findByRole('button', { name: 'Edit opening holdings' });
+  const opening = {
+    asOf: '2024-02-25T00:00:00+03:00',
+    lots: [
+      {
+        asset: 'cash:USD',
+        acquiredAt: '2024-02-01T00:00:00+03:00',
+        quantity: '100',
+        costUsd: '100',
+      },
+    ],
+  };
+  expect(read).toHaveBeenLastCalledWith(ACCOUNT, opening);
+  expect(write).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Import 4 entries' }));
+  expect(write).toHaveBeenCalledWith(ACCOUNT, expect.any(String), HASH, opening);
+  expect(write).toHaveBeenCalledTimes(1);
 });

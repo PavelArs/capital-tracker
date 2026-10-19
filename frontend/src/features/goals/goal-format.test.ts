@@ -215,12 +215,12 @@ describe('GOAL-VERDICT with assets that have no price', () => {
     stalePrices: 0,
   };
 
-  it('gives no date or sum worked out from an understated value', () => {
+  it('GOAL-PRICED-SUBSET distinguishes estimates from the whole-portfolio verdict', () => {
     expect(verdict(goal({ progress: unpriced }))).toBe(
       'On track even without the assets that have no price or rate yet.',
     );
     expect(verdict(goal({ progress: unpriced, status: 'open', deadline: null }))).toContain(
-      'no date or monthly sum is worked out',
+      'Estimated from priced assets only',
     );
   });
 });

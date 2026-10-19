@@ -130,6 +130,18 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
 });
 
 describe('BROKER-CONNECT: prices and positions T-Bank gives', () => {
+  it('BROKER-OPENING rejects duplicate held UIDs but keeps a separate virtual gift', () => {
+    const position = {
+      instrumentUid: 'synthetic-uid-duplicate',
+      instrumentType: 'share',
+      quantity: { units: '1' },
+    };
+    expect(() => parsePositions({ positions: [position, position] }, '2000000001')).toThrow();
+    expect(
+      parsePositions({ positions: [position], virtualPositions: [position] }, '2000000001'),
+    ).toHaveLength(2);
+  });
+
   const positionsOf = (body: unknown) => parsePositions(body, '2000000001');
 
   it('reads a Quotation or MoneyValue as exact decimal text', () => {
@@ -492,6 +504,34 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
     expect(seen?.headers.authorization).toBe(`Bearer ${token}`);
     expect(seen?.url).not.toContain(token);
     expect(seen?.body).not.toContain(token);
+  });
+
+  it('BROKER-OPENING reads the documented CurrencyBy ISO identity and binds its UID', async () => {
+    const client = new TBankClient({ baseUrl: base });
+    const uid = '00000000-0000-4000-8000-000000000099';
+    // CurrencyResponse.Currency: uid and isoCurrencyName, documented in instruments.proto.
+    for (const code of ['USD', 'rub', 'XAU']) {
+      reply = { status: 200, body: JSON.stringify({ instrument: { uid, isoCurrencyName: code } }) };
+      expect(await client.currencyCode(token, uid)).toEqual({
+        ok: true,
+        value: code.toUpperCase(),
+      });
+      expect(seen?.url).toBe(
+        '/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/CurrencyBy',
+      );
+      expect(JSON.parse(seen!.body)).toEqual({ idType: 'INSTRUMENT_ID_TYPE_UID', id: uid });
+    }
+    for (const instrument of [
+      { uid: 'wrong', isoCurrencyName: 'USD' },
+      { uid },
+      { uid, isoCurrencyName: 'USD cash' },
+    ]) {
+      reply = { status: 200, body: JSON.stringify({ instrument }) };
+      expect(await client.currencyCode(token, uid)).toEqual({
+        ok: false,
+        reason: 'invalid_response',
+      });
+    }
   });
 
   it('names why T-Bank gave nothing, without the answer or the token', async () => {

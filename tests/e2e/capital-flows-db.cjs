@@ -545,14 +545,23 @@ async function unpricedEnd(db, s, f) {
     minus(String(last), String(first)),
     'Market effect of BTC alone, the ETH without a price left out of both ends',
   );
-  // More ETH bought inside the period: its cost is a flow while its value is not counted.
+  // Buying more excluded ETH must change neither BTC invested money nor its market result.
   await trade(db, s, left, wallet, eth, 'buy', '2026-09-20T10:00:00.000Z', '1', '1000');
   const bought = await s.snapshots.history(left, { period: '1M', currency: 'USD' }, now);
-  assert.equal(bought.netFlow, '1000');
+  assert.deepEqual(
+    [bought.deposits, bought.withdrawals, bought.netFlow, bought.invested],
+    ['0', '0', '0', '50000'],
+    'Excluded ETH costs are excluded from period flows and all-time invested money',
+  );
+  assert.deepEqual(
+    [bought.value, bought.profit, bought.complete, bought.excludedAssetCount],
+    [String(last), minus(String(last), '50000'), false, 1],
+  );
+  const market = minus(String(last), String(first));
   assert.deepEqual(
     [bought.marketEffect, bought.marketReturnPercent],
-    [null, null],
-    'A flow of the coin without a price leaves the market effect unknown',
+    [market, percent(market, String(first))],
+    'The priced BTC subset keeps its exact market gain and return',
   );
   console.log(
     'PASS HIST-END-UNPRICED the market effect counts the priced coins and leaves one without a price out',

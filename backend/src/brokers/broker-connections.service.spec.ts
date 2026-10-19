@@ -61,6 +61,10 @@ function build(
       portfolios.push(id);
       return positions;
     },
+    currencyCode: async (_token: string, _uid: string): Promise<TBankResult<string>> => ({
+      ok: false,
+      reason: 'unavailable',
+    }),
     operations: async (_token: string, id: string) => {
       histories.push(id);
       return operations;
@@ -80,6 +84,7 @@ function build(
     locks,
     portfolios,
     histories,
+    tbank,
   };
 }
 const ok = (...items: TBankAccount[]): TBankResult<TBankAccount[]> => ({ ok: true, value: items });
@@ -379,4 +384,48 @@ describe('BROKER-SYNC: reading the history an import is made from', () => {
       }).service.history(owner, account),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
+});
+
+it('BROKER-OPENING reads positions with the same saved account as its import history', async () => {
+  const position = { instrumentUid: 'synthetic-uid-0001', quantity: '2', virtual: false };
+  const { service, histories, portfolios } = build(ok(mine), true, true, {
+    ok: true,
+    value: [position],
+  });
+  expect(await service.history(owner, account, true)).toMatchObject({
+    brokerAccountId: mine.id,
+    positions: [position],
+  });
+  expect(histories).toEqual([mine.id]);
+  expect(portfolios).toEqual([mine.id]);
+});
+
+it('BROKER-OPENING never treats an unreadable current portfolio as empty', async () => {
+  const { service } = build(ok(mine), true, true, { ok: false, reason: 'unavailable' });
+  await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
+    ServiceUnavailableException,
+  );
+  for (const listed of [ok({ ...mine, closed: true }), ok({ ...mine, investBox: true })]) {
+    const { service } = build(listed, true, true);
+    await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+  }
+});
+
+it('BROKER-OPENING classifies currency positions using provider metadata and never guesses on failure', async () => {
+  const position = {
+    instrumentUid: 'synthetic-currency-uid',
+    instrumentType: 'currency',
+    quantity: '1',
+    virtual: false,
+  };
+  const { service, tbank } = build(ok(mine), true, true, { ok: true, value: [position] });
+  await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
+    ServiceUnavailableException,
+  );
+  tbank.currencyCode = async () => ({ ok: true, value: 'XAU' });
+  expect((await service.history(owner, account, true)).positions).toEqual([
+    { ...position, currencyCode: 'XAU' },
+  ]);
 });

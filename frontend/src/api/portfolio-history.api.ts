@@ -38,6 +38,9 @@ export interface PortfolioHistory {
   at: string;
   value: string | null;
   complete: boolean;
+  /** Current unpriced assets excluded consistently from value, flows and P&L. */
+  excludedAssetCount?: number;
+  excludedDepositCount?: number;
   change: string | null;
   changePercent: string | null;
   invested: string | null;

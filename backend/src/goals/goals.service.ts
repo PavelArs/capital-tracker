@@ -10,6 +10,7 @@ import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { refuseRetiredCommand } from '../accounting/retired-command';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
+import { firstValuedPoint } from '../portfolio-snapshots/snapshot-series';
 import { goalForecast } from './goal-chart';
 import { addMonths, MAX_MONTHS } from './goal-forecast';
 import {
@@ -66,6 +67,50 @@ export class GoalsService {
     const at = new Date();
     const now = await this.snapshots.current(owner, row.currency, at);
     return goalForecast(row, now, moscowDate(at));
+  }
+
+  /** Contributions and growth use the same priced subset and exact flows as the dashboard. */
+  async insights(ownerId: string, id: string) {
+    const owner = parseUuid(ownerId);
+    const goalId = parseUuid(id);
+    const [row] = await this.rows(this.source.manager, owner, goalId);
+    if (!row) throw new NotFoundException('Goal not found');
+    const at = new Date();
+    const history = await this.snapshots.history(
+      owner,
+      { period: '1Y', currency: row.currency },
+      at,
+    );
+    const average = history.contributions.averages[6];
+    const pace =
+      average === null
+        ? null
+        : goalView(
+            { ...row, monthlyContribution: average },
+            { value: history.value, complete: history.complete, stalePrices: 0 },
+            moscowDate(at),
+          );
+    return {
+      currency: row.currency,
+      asOf: moscowDate(at),
+      complete: history.complete,
+      ...history.contributions,
+      paceStatus:
+        average === null
+          ? ('insufficient-history' as const)
+          : history.value === null
+            ? ('missing-value' as const)
+            : pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn
+              ? ('projected' as const)
+              : ('beyond-horizon' as const),
+      paceReachedOn: pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn ?? null,
+      growth: {
+        from: firstValuedPoint(history.points)?.at ?? null,
+        contributions: history.netFlow,
+        market: history.marketEffect,
+        total: history.change,
+      },
+    };
   }
 
   /**

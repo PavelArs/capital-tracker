@@ -35,12 +35,14 @@ import {
   capitalFlows,
   type HeldAssets,
   investedAt,
+  pricedInputs,
   profitToDate,
   type SplitPoint,
   type StatedFlow,
   splitChange,
   stateFlows,
 } from './capital-flows';
+import { contributionStart, monthlyContributions } from './contribution-stats';
 import { personalReading, realProfit } from './real-profit';
 import {
   DEFAULT_PERIOD,
@@ -228,6 +230,28 @@ export function valuesAt(
   });
 }
 
+/** A missing-only subset has no value; genuinely empty history still has zero. */
+function scopedValue(
+  priced: ReturnType<typeof valuesAt>[number],
+  whole: ReturnType<typeof valuesAt>[number],
+  subset: ValuationInputs,
+  excludedCount: number,
+  at: Date,
+  fx: FxConverter,
+) {
+  const noPricedHoldings =
+    ![...priced.held.values()].some((asset) => asset.value !== null) &&
+    !depositValuesAt(subset.deposits, at, fx).some(
+      (deposit) => deposit.value !== null && deposit.value !== 0n,
+    );
+  const leftOut = whole.held.size > priced.held.size || whole.unrated || whole.unpriced;
+  return {
+    ...priced,
+    value: excludedCount > 0 && noPricedHoldings && leftOut ? null : priced.value,
+    complete: whole.complete && excludedCount === 0,
+  };
+}
+
 /**
  * Valuation inputs and every stored price series they use. With `instrumentId`, only that
  * instrument's prices are read.
@@ -409,7 +433,7 @@ export class PortfolioSnapshotsService {
           ORDER BY "takenAt"`,
         [owner, currency, new Date(from), now],
       );
-      const stored = periodPoints(
+      let stored = periodPoints(
         rows.map((row) => ({
           at: row.takenAt.getTime(),
           value: row.value,
@@ -419,10 +443,39 @@ export class PortfolioSnapshotsService {
         now.getTime(),
       );
       // The current value closes the period with the same rules as the snapshots.
-      const valuation = await readValuationInputs(manager, owner);
-      const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
+      const original = await readValuationInputs(manager, owner);
+      const prices = await latestPortfolioPrices(manager, owner, original.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
-      const [current] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      const [whole] = valuesAt(original, now.getTime(), prices, [fx]);
+      const scope = pricedInputs(original, whole.held, depositValuesAt(original.deposits, now, fx));
+      const { valuation, excluded, excludedDeposits } = scope;
+      const excludedCount = excluded.size + excludedDeposits.size;
+      const [priced] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
+      if (excludedCount > 0) {
+        // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
+        const inputs = await readSeriesInputs(manager, owner);
+        const subset = {
+          ...inputs.valuation,
+          hidden: valuation.hidden,
+          deposits: valuation.deposits,
+          instruments: inputs.valuation.instruments.filter((asset) => !excluded.has(asset.id)),
+        };
+        primeDepositBalances(
+          original.deposits,
+          stored.map((point) => point.at),
+        );
+        stored = stored.map((point) =>
+          scopedValue(
+            valuesAt(subset, point.at, pricesAt(inputs, point.at), [fx])[0],
+            valuesAt(original, point.at, pricesAt(inputs, point.at), [fx])[0],
+            subset,
+            excludedCount,
+            new Date(point.at),
+            fx,
+          ),
+        );
+      }
       const series: (SplitPoint & { complete: boolean })[] = [
         ...stored,
         {
@@ -468,6 +521,13 @@ export class PortfolioSnapshotsService {
         at: now.toISOString(),
         value: current.value,
         complete: points.every((point) => point.complete),
+        excludedAssetCount: excluded.size,
+        excludedDepositCount: excludedDeposits.size,
+        contributions: monthlyContributions(
+          flows,
+          contributionStart(valuation, moscowDate(now)),
+          moscowDate(now),
+        ),
         ...periodChange(start?.unpriced ? null : (start?.value ?? null), current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
@@ -496,7 +556,21 @@ export class PortfolioSnapshotsService {
       const valuation = await readValuationInputs(manager, owner);
       const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
-      const [value] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      const [whole] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      const scope = pricedInputs(
+        valuation,
+        whole.held,
+        depositValuesAt(valuation.deposits, now, fx),
+      );
+      const [priced] = valuesAt(scope.valuation, now.getTime(), prices, [fx]);
+      const value = scopedValue(
+        priced,
+        whole,
+        scope.valuation,
+        scope.excluded.size + scope.excludedDeposits.size,
+        now,
+        fx,
+      );
       return { value: value.value, complete: value.complete, stalePrices: value.stalePrices };
     });
   }

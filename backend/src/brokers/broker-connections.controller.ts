@@ -31,6 +31,16 @@ export class BrokerConnectionsController {
     return this.imports.preview(owner.userId, accountId);
   }
 
+  @Post('import-preview')
+  @HttpCode(200)
+  previewOpening(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('accountId') accountId: string,
+    @Body() body: unknown,
+  ) {
+    return this.imports.preview(owner.userId, accountId, body);
+  }
+
   @Post('import')
   async import(
     @CurrentUser() owner: OwnerIdentity,

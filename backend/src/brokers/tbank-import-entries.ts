@@ -200,7 +200,7 @@ export function journalEntries(
         side: source.action,
         quantity: source.quantity,
         ...priced,
-        ...(settled > 0n
+        ...(settled > 0n && !source.externalCash
           ? {
               settlement: {
                 instrumentId: cash.id,

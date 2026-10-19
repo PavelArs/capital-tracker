@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { AccountingService } from '../accounting/accounting.service';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { classifyAsset, instrumentPayload } from '../accounting/asset-classification';
 import {
@@ -19,8 +20,11 @@ import {
   capitalReturnPayload,
   readCapitalReturnCounts,
 } from '../accounting/capital-return.store';
+import { CarryInService } from '../accounting/carry-in.service';
 import { rethrowAccountingHistory } from '../accounting/connected-accounting.store';
+import type { FifoCarryInInput } from '../accounting/fifo';
 import { type Execution, FifoHistoryError } from '../accounting/fifo';
+import { canonicalDecimalToAtoms } from '../accounting/money';
 import {
   calculateOwnedTransfers,
   OwnedTransferCapacityError,
@@ -36,9 +40,16 @@ import {
 } from '../accounting/trade-journal.store';
 import { cashAsset } from '../accounting/trade-settlement';
 import { readFxRates } from '../fx-rates/fx-rates.service';
-import { parseImport, parseUuid } from './broker-connection-input';
+import { parseImport, parseImportPreview, parseUuid } from './broker-connection-input';
 import { BrokerConnectionsService } from './broker-connections.service';
-import type { TBankOperation } from './tbank-client';
+import {
+  type BrokerOpening,
+  cashPositionCurrency,
+  openingAssets,
+  openingPositions,
+  openingQuantities,
+} from './broker-opening';
+import type { TBankOperation, TBankPosition } from './tbank-client';
 import {
   type CashCurrency,
   type ImportInstrument,
@@ -51,6 +62,7 @@ import { type ImportPlan, type PlanEntry, planImport } from './tbank-import-plan
 /** Why the history cannot be written as it stands, with the operations it concerns. */
 export interface ImportProblem {
   reason:
+    | 'opening-holding'
     | 'not-recordable'
     | 'already-imported'
     | 'no-rate'
@@ -67,6 +79,8 @@ export interface ImportProblem {
 }
 
 interface Review {
+  openingLots: FifoCarryInInput[];
+  openingPositions: ReturnType<typeof openingPositions>;
   plan: ImportPlan;
   accountHasEntries: boolean;
   entries: JournalEntry[];
@@ -132,19 +146,23 @@ export class BrokerImportService {
   constructor(
     private readonly source: DataSource,
     private readonly connections: BrokerConnectionsService,
+    private readonly accounting: AccountingService,
+    private readonly carryIn: CarryInService,
   ) {}
 
   /** The entries the history would become and whether they can be written. Nothing is recorded. */
-  async preview(ownerId: string, accountId: string) {
+  async preview(ownerId: string, accountId: string, raw: unknown = {}) {
+    const { opening } = parseImportPreview(raw);
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
-    const history = await this.connections.history(owner, account);
+    const history = await this.connections.history(owner, account, true);
     return this.source
       .transaction('REPEATABLE READ', async (manager) => {
         await manager.query('SET TRANSACTION READ ONLY');
-        const review = await this.review(manager, owner, account, history, false);
+        const review = await this.review(manager, owner, account, history, false, opening);
         return {
           ...review.plan,
+          openingAssets: openingAssets(history.operations, history.positions),
           accountHasEntries: review.accountHasEntries,
           problems: review.problems,
           canImport: review.canImport,
@@ -159,18 +177,43 @@ export class BrokerImportService {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
     const input = parseImport(body);
-    const payload = JSON.stringify({ provider: 'tbank', previewHash: input.previewHash });
+    const payload = JSON.stringify({
+      provider: 'tbank',
+      previewHash: input.previewHash,
+      ...(input.opening ? { opening: input.opening } : {}),
+    });
     const earlier = await this.replay(this.source.manager, owner, account, input.requestId);
     if (earlier) return this.replayed(earlier, payload);
-    const history = await this.connections.history(owner, account);
+    const history = await this.connections.history(owner, account, true);
     return this.source
       .transaction(async (manager) => {
         await lockAccountingOwner(manager, owner);
         const again = await this.replay(manager, owner, account, input.requestId);
         if (again) return this.replayed(again, payload);
         const row = await readOwnedAccount(manager, owner, account, true);
-        const review = await this.review(manager, owner, account, history, true);
+        const review = await this.review(manager, owner, account, history, true, input.opening);
         if (!review.canImport || review.previewHash !== input.previewHash) throw conflict();
+        if (input.opening) {
+          const opening = await this.accounting.saveOpeningWithin(manager, owner, account, {
+            requestId: input.requestId,
+            expectedRevision: 0,
+            asOf: input.opening.asOf,
+            positions: review.openingPositions,
+          });
+          await this.carryIn.initializeWithin(manager, owner, account, {
+            requestId: input.requestId,
+            expectedOpeningRevision: opening.value.revision,
+            assertReviewed: true,
+            lots: review.openingLots.map((lot) => ({
+              instrumentId: lot.instrumentId,
+              acquiredAt: lot.acquiredAt,
+              orderWithinTimestamp: lot.orderWithinTimestamp,
+              originalQuantity: lot.originalQuantity,
+              originalCostUsd: lot.originalCostUsd,
+              remainingQuantity: lot.carriedQuantity,
+            })),
+          });
+        }
         const journal =
           (await readJournal(manager, owner, account)) ??
           (await startEmptyJournal(manager, owner, row, input.requestId));
@@ -326,8 +369,13 @@ export class BrokerImportService {
     manager: EntityManager,
     owner: string,
     account: string,
-    history: { brokerAccountId: string; operations: readonly TBankOperation[] },
+    history: {
+      brokerAccountId: string;
+      operations: readonly TBankOperation[];
+      positions?: readonly TBankPosition[];
+    },
     write: boolean,
+    opening?: BrokerOpening,
   ): Promise<Review> {
     const review = await this.reviewPlan(
       manager,
@@ -335,7 +383,8 @@ export class BrokerImportService {
       account,
       history,
       write,
-      planImport(history.operations),
+      planImport(history.operations, { initialHoldings: openingQuantities(opening) }),
+      opening,
     );
     if (!review.problems.some((problem) => problem.reason === 'not-held')) return review;
     // The planner places a buy ahead of a same-instant sale of its security, so the buy may spend
@@ -347,7 +396,8 @@ export class BrokerImportService {
       account,
       history,
       write,
-      planImport(history.operations, { hoist: false }),
+      planImport(history.operations, { hoist: false, initialHoldings: openingQuantities(opening) }),
+      opening,
     );
     return unhoisted.problems.length === 0 ? unhoisted : review;
   }
@@ -356,9 +406,14 @@ export class BrokerImportService {
     manager: EntityManager,
     owner: string,
     account: string,
-    history: { brokerAccountId: string; operations: readonly TBankOperation[] },
+    history: {
+      brokerAccountId: string;
+      operations: readonly TBankOperation[];
+      positions?: readonly TBankPosition[];
+    },
     write: boolean,
     plan: ImportPlan,
+    opening?: BrokerOpening,
   ): Promise<Review> {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
     const problems: ImportProblem[] = [];
@@ -386,7 +441,43 @@ export class BrokerImportService {
           done.map((row) => row.operationId),
         ),
       );
-    const instruments = await this.instruments(manager, owner, plan.entries, write);
+    const available = openingAssets(history.operations, history.positions);
+    if (opening?.lots.some((lot) => !available.some((asset) => asset.asset === lot.asset)))
+      throw new BadRequestException('An opening holding is not in this broker history');
+    const instruments = await this.instruments(
+      manager,
+      owner,
+      plan.entries,
+      write,
+      opening,
+      available,
+    );
+    const openingLots = (opening?.lots ?? []).map((lot, index): FifoCarryInInput => {
+      const instrument = lot.asset.startsWith('cash:')
+        ? instruments.cash[lot.asset.slice(5) as CashCurrency]
+        : instruments.securities.get(lot.asset);
+      if (!instrument) throw new BadRequestException('Opening instrument is unavailable');
+      return {
+        lotId: `opening-${index}`,
+        openingRevision: 1,
+        ordinal: index + 1,
+        instrumentId: instrument.id,
+        instrumentName: instrument.name,
+        instrumentSymbol: instrument.symbol,
+        acquiredAt: lot.acquiredAt,
+        orderWithinTimestamp: index,
+        originalQuantity: lot.quantity,
+        originalCostUsd: lot.costUsd,
+        carriedQuantity: lot.quantity,
+      };
+    });
+    const positions = openingPositions(
+      openingLots.map((lot) => ({
+        instrumentId: lot.instrumentId,
+        quantity: lot.carriedQuantity,
+        costUsd: lot.originalCostUsd,
+      })),
+    );
     const built = journalEntries(plan.entries, instruments, await readFxRates(manager));
     for (const problem of built.problems) problems.push({ ...problem, ticker: '' });
     const entries = built.entries;
@@ -396,7 +487,8 @@ export class BrokerImportService {
       entry.capitalReturn ? [entry.capitalReturn] : [],
     );
     const journal = await readJournal(manager, owner, account);
-    const coverageFrom = journal?.coverageFrom.toISOString() ?? AUTOMATIC_COVERAGE_FROM;
+    const coverageFrom =
+      opening?.asOf ?? journal?.coverageFrom.toISOString() ?? AUTOMATIC_COVERAGE_FROM;
     const early = entries.find((entry) => recordOf(entry).occurredAt < coverageFrom);
     if (early) problems.push(problemOf('before-records', early));
     // The reward journal's caps hold across all the owner's accounts, not only this one.
@@ -426,14 +518,62 @@ export class BrokerImportService {
     if (plan.fitsTradeLimit && fitsRewardLimit && fitsCapitalReturnLimit && entries.length > 0) {
       const replayed = {
         accountId: account,
-        coverageFrom: AUTOMATIC_COVERAGE_FROM,
+        coverageFrom,
         trades,
         rewards,
         capitalReturns,
-        initialLots: [],
+        initialLots: openingLots,
       };
       try {
-        calculateOwnedTransfers([replayed], []);
+        const result = calculateOwnedTransfers([replayed], []).accounts.get(account)!;
+        // Both directions, including cash: opening lots cannot invent a current balance.
+        const actual = new Map<string, bigint>();
+        for (const lot of result.lots)
+          actual.set(
+            lot.instrumentId,
+            (actual.get(lot.instrumentId) ?? 0n) + canonicalDecimalToAtoms(lot.remainingQuantity),
+          );
+        const reported = new Map<string, { quantity: bigint; invalid: boolean }>();
+        for (const position of history.positions ?? []) {
+          if (position.virtual) continue;
+          const code = cashPositionCurrency(position);
+          const key = code ? `cash:${code}` : position.instrumentUid;
+          const invalid =
+            position.quantity.startsWith('-') ||
+            (position.quantity !== '0' &&
+              !['share', 'bond', 'etf'].includes(position.instrumentType) &&
+              !(position.instrumentType === 'currency' && position.currencyCode));
+          const before = reported.get(key);
+          reported.set(key, {
+            quantity:
+              (before?.quantity ?? 0n) +
+              (invalid ? 0n : canonicalDecimalToAtoms(position.quantity)),
+            invalid: invalid || (before?.invalid ?? false),
+          });
+        }
+        const keys = new Set([
+          ...instruments.securities.keys(),
+          'cash:USD',
+          'cash:EUR',
+          'cash:RUB',
+          ...reported.keys(),
+        ]);
+        for (const key of keys) {
+          const instrument = key.startsWith('cash:')
+            ? instruments.cash[key.slice(5) as CashCurrency]
+            : instruments.securities.get(key);
+          const quantity = instrument ? (actual.get(instrument.id) ?? 0n) : 0n;
+          const expected = reported.get(key);
+          if (quantity === 0n && (!expected || expected.quantity === 0n) && !expected?.invalid)
+            continue;
+          if (!instrument || expected?.invalid || quantity !== (expected?.quantity ?? 0n))
+            problems.push({
+              reason: 'opening-holding',
+              occurredAt: null,
+              ticker: key,
+              operationIds: [],
+            });
+        }
       } catch (error) {
         if (error instanceof OwnedTransferCapacityError || !(error instanceof FifoHistoryError))
           throw error;
@@ -485,7 +625,19 @@ export class BrokerImportService {
     const previewHash = createHash('sha256')
       .update(
         JSON.stringify([
-          'tbank-import-v2',
+          'tbank-import-v3',
+          opening ?? null,
+          (history.positions ?? [])
+            .filter((position) => !position.virtual)
+            .map((position) => [
+              position.instrumentUid,
+              position.instrumentType,
+              position.quantity,
+              position.currentPriceCurrency,
+              position.averagePriceCurrency,
+              position.currencyCode ?? '',
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0])),
           account,
           plan.grouping,
           plan.entries,
@@ -495,6 +647,8 @@ export class BrokerImportService {
       )
       .digest('hex');
     return {
+      openingLots,
+      openingPositions: positions,
       plan: { ...plan, fitsRewardLimit, fitsCapitalReturnLimit },
       accountHasEntries,
       entries,
@@ -546,20 +700,33 @@ export class BrokerImportService {
     owner: string,
     plan: readonly PlanEntry[],
     write: boolean,
+    opening?: BrokerOpening,
+    available: ReturnType<typeof openingAssets> = [],
   ) {
     const cash = {} as Record<CashCurrency, ImportInstrument>;
     for (const code of ['RUB', 'USD', 'EUR'] as const) {
       const asset = cashAsset[code];
-      const used = plan.some(
-        (entry) =>
-          cashCurrency[entry.currency] === code ||
-          (entry.cash !== undefined && cashCurrency[entry.cash] === code),
-      );
+      const used =
+        opening?.lots.some((lot) => lot.asset === `cash:${code}`) ||
+        plan.some(
+          (entry) =>
+            cashCurrency[entry.currency] === code ||
+            (entry.cash !== undefined && cashCurrency[entry.cash] === code),
+        );
       const found = used ? await findOrCreateInstrument(manager, owner, asset, write) : null;
       cash[code] = found ?? { id: `new-cash-${code}`, name: asset.name, symbol: asset.symbol };
     }
     const securities = new Map<string, ImportInstrument>();
-    const wanted = new Map<string, PlanEntry>();
+    const wanted = new Map<string, Pick<PlanEntry, 'ticker' | 'currency'>>();
+    for (const asset of available)
+      if (
+        !asset.asset.startsWith('cash:') &&
+        opening?.lots.some((lot) => lot.asset === asset.asset)
+      )
+        wanted.set(asset.asset, {
+          ticker: asset.label === asset.asset ? '' : asset.label,
+          currency: asset.currency,
+        });
     for (const entry of plan)
       if (
         entry.record === 'trade' &&

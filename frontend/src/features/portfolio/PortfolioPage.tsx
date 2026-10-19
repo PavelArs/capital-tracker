@@ -1,4 +1,5 @@
 import { cachedReads } from '@api/cached-reads';
+import type { Deposit } from '@api/deposits.api';
 import type { AssetType, PortfolioAsset } from '@api/portfolio-assets.api';
 import type {
   AccountingCurrency,
@@ -18,17 +19,17 @@ import AddPropertyDialog from '../property/AddPropertyDialog';
 import AssetIcon from '../shell/AssetIcon';
 import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
-import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
+import { useCachedRead } from '../shell/useCachedRead';
 import { useValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
-import Allocation, { shareText } from './Allocation';
+import { shareText } from './Allocation';
 import { assetCaption, Change, Signed, toneClass } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity } from './format';
@@ -47,12 +48,13 @@ import { Stat, Stats } from '@/ui/Stats';
 
 // The filter is the asset's class (polish 12); Manual is how an asset is priced, so it stays on
 // the row and is no class of its own.
-type AssetClassFilter = 'crypto' | 'cash' | 'broker' | 'property' | 'other';
+type AssetClassFilter = 'crypto' | 'cash' | 'bank' | 'broker' | 'property' | 'other';
 type Filter = 'all' | AssetClassFilter;
 const filters: [Filter, string][] = [
   ['all', 'All'],
   ['crypto', 'Crypto'],
   ['cash', 'Cash'],
+  ['bank', 'Bank'],
   ['broker', 'Broker'],
   ['property', 'Real estate'],
   ['other', 'Other'],
@@ -101,7 +103,91 @@ type GroupHead = ReturnType<typeof groupSubtotal> & {
   label: string;
   share: string | null;
 };
-type AssetGroup = { head: GroupHead; rows: AssetValuation[] };
+type AssetGroup = {
+  head: GroupHead;
+  rows: AssetValuation[];
+  deposits: Deposit[];
+  remaining: number;
+  expanded: boolean;
+};
+
+function MoreInGroup({
+  group,
+  onToggle,
+}: {
+  group: AssetGroup;
+  onToggle: (key: AssetClassFilter) => void;
+}) {
+  return group.remaining > 0 || group.expanded ? (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => onToggle(group.head.key)}
+      aria-label={
+        group.expanded
+          ? `Show less ${group.head.label} assets`
+          : `Show ${group.remaining} more ${group.head.label} assets`
+      }
+    >
+      {group.expanded ? 'Show less' : `Show ${group.remaining} more`}
+    </Button>
+  ) : null;
+}
+
+function BankAsset({
+  deposit,
+  currency,
+  asked,
+  phone = false,
+}: {
+  deposit: Deposit;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+  phone?: boolean;
+}) {
+  const link = (
+    <Link className="portfolio-asset__name" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
+      {deposit.name}
+    </Link>
+  );
+  const detail = `${deposit.bank} · ${deposit.kind === 'account' ? 'Savings account' : 'Term deposit'}`;
+  if (phone)
+    return (
+      <li>
+        <div className={rowClass()}>
+          <Icon name="bank" />
+          <ListRowText
+            title={link}
+            detail={detail}
+            amount={money(deposit.values[currency], currency)}
+            value={`${quantity(deposit.balance)} ${deposit.currency}`}
+          />
+        </div>
+      </li>
+    );
+  return (
+    <tr>
+      <td>
+        <span className="portfolio-asset">
+          <Icon name="bank" />
+          <span className="portfolio-asset__text">
+            {link}
+            <span className="portfolio-asset__ticker">{detail}</span>
+          </span>
+        </span>
+      </td>
+      <td className="ui-num">
+        {quantity(deposit.balance)} {deposit.currency}
+      </td>
+      <td className="ui-num">{DASH}</td>
+      <td className="ui-num ui-strong">{money(deposit.values[currency], currency)}</td>
+      <td className="ui-num">{DASH}</td>
+      <td className="ui-num">{DASH}</td>
+      <td className="ui-num">{DASH}</td>
+      <td className="ui-num">{DASH}</td>
+    </tr>
+  );
+}
 
 /** A group's name and share, and its subtotal on the right, marked when a value is missing. */
 function GroupHeadText({ head, currency }: { head: GroupHead; currency: AccountingCurrency }) {
@@ -197,6 +283,27 @@ export function realProfit(
 ): { pnl: string | null; ratio: string | null } {
   const real = asset.real?.[basis] ?? null;
   return { pnl: real?.unrealizedPnl ?? null, ratio: real?.unrealizedReturnPercent ?? null };
+}
+
+/** Bank products use the same known-first ordering; columns they do not have tie by name. */
+function sortBankProducts(rows: Deposit[], sort: AssetSort, currency: AccountingCurrency) {
+  const byName = (a: Deposit, b: Deposit) =>
+    a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+  const direction = sort.direction === 'asc' ? 1 : -1;
+  const value = (deposit: Deposit) =>
+    sort.key === 'amount'
+      ? deposit.balance
+      : sort.key === 'value' || sort.key === 'allocation'
+        ? deposit.values[currency]
+        : null;
+  return [...rows].sort((a, b) => {
+    if (sort.key === 'name') return direction * byName(a, b);
+    const left = value(a);
+    const right = value(b);
+    if (left === null || right === null)
+      return left === right ? byName(a, b) : left === null ? 1 : -1;
+    return direction * compareDecimals(left, right) || byName(a, b);
+  });
 }
 
 /**
@@ -473,6 +580,7 @@ function Summary({
 
 function AssetsTable({
   groups,
+  onToggle,
   currency,
   asked,
   now,
@@ -482,6 +590,7 @@ function AssetsTable({
   real,
 }: {
   groups: AssetGroup[];
+  onToggle: (key: AssetClassFilter) => void;
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   now: Date;
@@ -522,79 +631,97 @@ function AssetsTable({
             })}
           </tr>
         </thead>
-        {groups.map(({ head, rows }) => (
-          <tbody key={head.key}>
-            <tr className="portfolio-group">
-              <th scope="rowgroup" colSpan={sortColumns(real !== null).length}>
-                <span className="portfolio-group__head">
-                  <GroupHeadText head={head} currency={currency} />
-                </span>
-              </th>
-            </tr>
-            {rows.map((asset) => (
-              <tr key={asset.instrumentId}>
-                <td>
-                  <span className="portfolio-asset">
-                    <AssetIcon
-                      symbol={asset.symbol}
-                      name={asset.name}
-                      assetType={asset.assetType}
-                      assetClass={heldClass(asset.holdings, classes)}
-                      network={onlyChain(asset.symbol, chains)}
-                    />
-                    <span className="portfolio-asset__text">
-                      <Link
-                        className="portfolio-asset__name"
-                        to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
-                      >
-                        {asset.name}
-                      </Link>
-                      <span className="portfolio-asset__ticker" title={assetCaption(asset, chains)}>
-                        {assetCaption(asset, chains)}
+        {groups.map((group) => {
+          const { head, rows } = group;
+          return (
+            <tbody key={head.key}>
+              <tr className="portfolio-group">
+                <th scope="rowgroup" colSpan={sortColumns(real !== null).length}>
+                  <span className="portfolio-group__head">
+                    <GroupHeadText head={head} currency={currency} />
+                  </span>
+                </th>
+              </tr>
+              {rows.map((asset) => (
+                <tr key={asset.instrumentId}>
+                  <td>
+                    <span className="portfolio-asset">
+                      <AssetIcon
+                        symbol={asset.symbol}
+                        name={asset.name}
+                        assetType={asset.assetType}
+                        assetClass={heldClass(asset.holdings, classes)}
+                        network={onlyChain(asset.symbol, chains)}
+                      />
+                      <span className="portfolio-asset__text">
+                        <Link
+                          className="portfolio-asset__name"
+                          to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+                        >
+                          {asset.name}
+                        </Link>
+                        <span
+                          className="portfolio-asset__ticker"
+                          title={assetCaption(asset, chains)}
+                        >
+                          {assetCaption(asset, chains)}
+                        </span>
                       </span>
                     </span>
-                  </span>
-                </td>
-                <td className="ui-num">{quantity(asset.quantity)}</td>
-                <td className="ui-num">
-                  {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
-                  <span className="ui-sub">{priceNote(asset, now)}</span>
-                </td>
-                <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
-                <td className="ui-num">
-                  <span className="portfolio-share">
-                    <span className="portfolio-share__bar" aria-hidden="true">
-                      <i
-                        style={{ width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%` }}
-                      />
+                  </td>
+                  <td className="ui-num">{quantity(asset.quantity)}</td>
+                  <td className="ui-num">
+                    {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
+                    <span className="ui-sub">{priceNote(asset, now)}</span>
+                  </td>
+                  <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
+                  <td className="ui-num">
+                    <span className="portfolio-share">
+                      <span className="portfolio-share__bar" aria-hidden="true">
+                        <i
+                          style={{
+                            width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%`,
+                          }}
+                        />
+                      </span>
+                      <span className="portfolio-share__text">
+                        {shareText(asset.allocationPercent)}
+                      </span>
                     </span>
-                    <span className="portfolio-share__text">
-                      {shareText(asset.allocationPercent)}
-                    </span>
-                  </span>
-                </td>
-                <td className="ui-num">
-                  {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
-                </td>
-                <td className="ui-num">
-                  <Signed
-                    value={(real === null ? shownProfit(asset) : realProfit(asset, real)).pnl}
-                    currency={currency}
-                    ratio={(real === null ? shownProfit(asset) : realProfit(asset, real)).ratio}
-                    inline
-                  />
-                </td>
-                <td className="ui-num">
-                  {asset.priceSource === 'manual' ? (
-                    <span className="ui-muted">Manual</span>
-                  ) : (
-                    <Change value={asset.priceChange24hPercent} />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        ))}
+                  </td>
+                  <td className="ui-num">
+                    {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
+                  </td>
+                  <td className="ui-num">
+                    <Signed
+                      value={(real === null ? shownProfit(asset) : realProfit(asset, real)).pnl}
+                      currency={currency}
+                      ratio={(real === null ? shownProfit(asset) : realProfit(asset, real)).ratio}
+                      inline
+                    />
+                  </td>
+                  <td className="ui-num">
+                    {asset.priceSource === 'manual' ? (
+                      <span className="ui-muted">Manual</span>
+                    ) : (
+                      <Change value={asset.priceChange24hPercent} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {group.deposits.map((deposit) => (
+                <BankAsset key={deposit.id} deposit={deposit} currency={currency} asked={asked} />
+              ))}
+              {(group.remaining > 0 || group.expanded) && (
+                <tr className="portfolio-more">
+                  <td colSpan={8}>
+                    <MoreInGroup group={group} onToggle={onToggle} />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          );
+        })}
       </table>
     </div>
   );
@@ -628,58 +755,67 @@ function Profit({
 // columns that do not fit are on the asset page (design: tables on phones).
 function AssetsList({
   groups,
+  onToggle,
   currency,
   asked,
   chains,
   real,
 }: {
   groups: AssetGroup[];
+  onToggle: (key: AssetClassFilter) => void;
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   chains: TokenChains;
   real: InflationBasis | null;
 }) {
   const classes = useAccountClasses();
-  return groups.map(({ head, rows }) => (
-    <Fragment key={head.key}>
-      <div className="portfolio-mgrp">
-        <h3 className="portfolio-group__name">{head.label}</h3>
-        {head.share !== null && <span className="portfolio-group__share">{head.share}</span>}
-        <span className="portfolio-group__total">
-          {money(head.value, currency)}
-          {head.missing > 0 && <span className="ui-sub">{head.missing} without a price</span>}
-        </span>
-      </div>
-      <ul className="ui-rows">
-        {rows.map((asset) => (
-          <li key={asset.instrumentId}>
-            <Link
-              className={rowClass()}
-              to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
-            >
-              <AssetIcon
-                symbol={asset.symbol}
-                name={asset.name}
-                assetType={asset.assetType}
-                assetClass={heldClass(asset.holdings, classes)}
-                network={onlyChain(asset.symbol, chains)}
-              />
-              <ListRowText
-                title={asset.name}
-                detail={withChains(
-                  `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
-                  asset.symbol,
-                  chains,
-                )}
-                amount={money(asset.value, currency)}
-                value={<Profit asset={asset} currency={currency} real={real} />}
-              />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </Fragment>
-  ));
+  return groups.map((group) => {
+    const { head, rows } = group;
+    return (
+      <Fragment key={head.key}>
+        <div className="portfolio-mgrp">
+          <h3 className="portfolio-group__name">{head.label}</h3>
+          {head.share !== null && <span className="portfolio-group__share">{head.share}</span>}
+          <span className="portfolio-group__total">
+            {money(head.value, currency)}
+            {head.missing > 0 && <span className="ui-sub">{head.missing} without a price</span>}
+          </span>
+        </div>
+        <ul className="ui-rows">
+          {rows.map((asset) => (
+            <li key={asset.instrumentId}>
+              <Link
+                className={rowClass()}
+                to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+              >
+                <AssetIcon
+                  symbol={asset.symbol}
+                  name={asset.name}
+                  assetType={asset.assetType}
+                  assetClass={heldClass(asset.holdings, classes)}
+                  network={onlyChain(asset.symbol, chains)}
+                />
+                <ListRowText
+                  title={asset.name}
+                  detail={withChains(
+                    `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
+                    asset.symbol,
+                    chains,
+                  )}
+                  amount={money(asset.value, currency)}
+                  value={<Profit asset={asset} currency={currency} real={real} />}
+                />
+              </Link>
+            </li>
+          ))}
+          {group.deposits.map((deposit) => (
+            <BankAsset key={deposit.id} deposit={deposit} currency={currency} asked={asked} phone />
+          ))}
+        </ul>
+        <MoreInGroup group={group} onToggle={onToggle} />
+      </Fragment>
+    );
+  });
 }
 
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
@@ -690,6 +826,20 @@ export default function PortfolioPage() {
     () => cachedReads.portfolio.last(asked) ?? null,
   );
   const [failed, setFailed] = useState(false);
+  const {
+    data: bankList,
+    error: bankError,
+    stale: banksStale,
+    reload: reloadBanks,
+  } = useCachedRead(cachedReads.deposits);
+  const [expanded, setExpanded] = useState<Set<AssetClassFilter>>(new Set());
+  const toggle = (key: AssetClassFilter) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AssetSort>(defaultSort);
@@ -736,17 +886,29 @@ export default function PortfolioPage() {
   const classes = useAccountClasses();
   const inFilter = (asset: AssetValuation, value: Filter) =>
     value === 'all' || assetClassOf(asset, classes) === value;
-  const count = (value: Filter) => assets.filter((asset) => inFilter(asset, value)).length;
+  const deposits = bankList?.items ?? [];
+  const count = (value: Filter) =>
+    assets.filter((asset) => inFilter(asset, value)).length +
+    (value === 'bank' || value === 'all' ? deposits.length : 0);
   // A class with no assets gets no chip; a chosen class that no longer has any shows them all.
   const active: Filter = filter !== 'all' && count(filter) === 0 ? 'all' : filter;
   const visible = assets.filter((asset) => inFilter(asset, active) && matchesSearch(asset, search));
-  // PAGES: twenty assets a page; the list is sorted first, so its pages follow the order.
+  // PAGES: each class starts with five assets; its disclosure keeps the chosen sorted order.
   // The table and the phone list share one order, Value largest first until another is chosen;
   // a phone shows only the orders its Sort by can name.
   const shown = phone ? phoneSort(sort) : sort;
   const classOf = (asset: AssetValuation) => assetClassOf(asset, classes);
   const sorted = sortAssets(visible, shown, real);
-  const ordered = classOrder.flatMap((key) => sorted.filter((asset) => classOf(asset) === key));
+  const bankRows = sortBankProducts(
+    deposits.filter(
+      (deposit) =>
+        (active === 'all' || active === 'bank') &&
+        (!search.trim() ||
+          `${deposit.name} ${deposit.bank}`.toLowerCase().includes(search.trim().toLowerCase())),
+    ),
+    shown,
+    portfolio?.currency ?? 'USD',
+  );
   // A group's subtotal counts all its rows shown, not only the loaded page.
   const heads = new Map(
     classOrder.map((key): [AssetClassFilter, GroupHead] => {
@@ -757,9 +919,6 @@ export default function PortfolioPage() {
       return [key, { key, label: classLabels[key], share, ...subtotal }];
     }),
   );
-  const paged = useInfinite(ordered, {
-    resetKey: `${active}|${search.trim()}|${shown.key}|${shown.direction}|${phone}`,
-  });
   // A new asset opens on its own page, and a toast says it was added (portfolio-06).
   const added = (asset: PortfolioAsset) => {
     toast.show({ tone: 'success', title: 'Asset added', detail: asset.name });
@@ -775,12 +934,44 @@ export default function PortfolioPage() {
     </Button>
   );
   const now = new Date();
-  const groups = paged.rows.reduce<AssetGroup[]>((list, asset) => {
-    const last = list.at(-1);
-    if (last?.head.key === classOf(asset)) last.rows.push(asset);
-    else list.push({ head: heads.get(classOf(asset)) as GroupHead, rows: [asset] });
-    return list;
-  }, []);
+  const groups = classOrder.flatMap((key): AssetGroup[] => {
+    const rows = sorted.filter((asset) => classOf(asset) === key);
+    const banks = key === 'bank' ? bankRows : [];
+    if (rows.length + banks.length === 0) return [];
+    const bankValues = banks.flatMap((deposit) =>
+      deposit.values[portfolio?.currency ?? 'USD'] === null
+        ? []
+        : [deposit.values[portfolio?.currency ?? 'USD']!],
+    );
+    const subtotal = {
+      value: bankValues.length ? sumDecimals(bankValues) : null,
+      missing: banks.length - bankValues.length,
+    };
+    const head =
+      key === 'bank'
+        ? {
+            key,
+            label: 'Bank',
+            ...subtotal,
+            share: groupShare(
+              subtotal,
+              (portfolio?.interestMissingDepositCount ?? 0) > 0
+                ? null
+                : (portfolio?.totalValue ?? null),
+            ),
+          }
+        : heads.get(key)!;
+    const open = expanded.has(key);
+    return [
+      {
+        head,
+        rows: open ? rows : rows.slice(0, 5),
+        deposits: open ? banks : banks.slice(0, 5),
+        remaining: open ? 0 : Math.max(0, rows.length + banks.length - 5),
+        expanded: open,
+      },
+    ];
+  });
 
   return (
     <div className="shell-page">
@@ -789,7 +980,11 @@ export default function PortfolioPage() {
         <ErrorState what="your portfolio" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
-      ) : assets.length === 0 && !hasDeposits(portfolio) ? (
+      ) : assets.length === 0 &&
+        deposits.length === 0 &&
+        !hasDeposits(portfolio) &&
+        !bankError &&
+        !banksStale ? (
         <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
           Add a wallet, a bank deposit, a coin or anything else you want to track.
         </EmptyState>
@@ -809,7 +1004,11 @@ export default function PortfolioPage() {
             </Banner>
           )}
           <Summary portfolio={portfolio} asked={asked} real={real !== null} basis={basis} />
-          {assets.length === 0 ? (
+          {assets.length === 0 &&
+          deposits.length === 0 &&
+          !hasDeposits(portfolio) &&
+          !bankError &&
+          !banksStale ? (
             <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
               Add a wallet, a bank deposit, a coin or anything else you want to track.
             </EmptyState>
@@ -868,6 +1067,7 @@ export default function PortfolioPage() {
                   </label>
                   <AssetsList
                     groups={groups}
+                    onToggle={toggle}
                     currency={portfolio.currency}
                     asked={asked}
                     chains={chains}
@@ -877,6 +1077,7 @@ export default function PortfolioPage() {
               ) : (
                 <AssetsTable
                   groups={groups}
+                  onToggle={toggle}
                   currency={portfolio.currency}
                   asked={asked}
                   now={now}
@@ -886,8 +1087,22 @@ export default function PortfolioPage() {
                   real={real}
                 />
               )}
-              {paged.more && <LoadMore {...paged.more} label="assets" />}
-              {visible.length === 0 && (
+              {(!!bankError || banksStale) && (
+                <Banner
+                  tone="warn"
+                  role="alert"
+                  action={
+                    <Button size="sm" onClick={() => reloadBanks()}>
+                      Retry
+                    </Button>
+                  }
+                >
+                  {bankList
+                    ? 'Could not refresh bank products; showing the last loaded rows. The summary uses the portfolio valuation.'
+                    : 'Could not load bank products. Their value remains in the portfolio summary.'}
+                </Banner>
+              )}
+              {visible.length === 0 && bankRows.length === 0 && (
                 <p className="ui-none">
                   {search.trim()
                     ? `No assets match "${search.trim()}".`
@@ -903,7 +1118,6 @@ export default function PortfolioPage() {
               </p>
             </Card>
           )}
-          <Allocation portfolio={portfolio} />
         </>
       )}
       {adding === 'pick' && (

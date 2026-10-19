@@ -45,6 +45,8 @@ export interface PlanEntry {
    * paid for in `currency`. Such a trade holds no security.
    */
   cash?: 'usd' | 'eur';
+  /** Securities paid from or sold to the owner's card, outside broker cash. */
+  externalCash?: true;
   /**
    * For a reward, the T-Bank instrument that paid it; the reward itself is cash. A capital
    * return names the instrument whose cost it lowers in `instrumentUid` instead.
@@ -76,6 +78,7 @@ export interface PlanSkip {
     | 'no-quantity'
     | 'fills'
     | 'card'
+    | 'outside-dividend'
     | 'no-payment'
     | 'no-amount';
 }
@@ -138,7 +141,7 @@ const exchangeCash: Readonly<Record<string, 'usd' | 'eur'>> = {
   EUR_RUB__TOD: 'eur',
 };
 /** The currency a dollar or euro trade on the exchange moves as cash, if it is one. */
-const cashOf = (item: TBankOperation) =>
+export const cashOf = (item: TBankOperation) =>
   item.instrumentType === 'currency' ? exchangeCash[item.ticker] : undefined;
 /**
  * Why a trade's security cannot be recorded: T-Bank names no instrument or does not say what
@@ -285,7 +288,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     const kind = operationKind(item.type);
     if (kind === 'unsupported') return skip(item, 'unsupported');
     if (kind === 'transfer') return skip(item, 'transfer');
-    if (cardSettled.has(item.type)) return skip(item, 'card');
+    if (item.type === 'OPERATION_TYPE_DIV_EXT') return skip(item, 'outside-dividend');
     if (joins(item)) return [];
     if (isZero(item.payment))
       // A trade or repayment that moved units for no money changed the holding, so it is listed;
@@ -319,6 +322,7 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
         ticker: item.ticker,
         instrumentType: item.instrumentType,
         ...(moved ? { cash: moved } : {}),
+        ...(cardSettled.has(item.type) ? { externalCash: true as const } : {}),
         quantity: formatAtoms(part.quantity),
         amount: amounts[index],
         fee: paidFees[index],
@@ -400,6 +404,7 @@ function combine(list: PlanEntry[], period: (time: string) => string, hoist: boo
       entry.action,
       entry.instrumentUid,
       entry.currency,
+      entry.externalCash ? 'card' : 'broker',
       period(entry.occurredAt),
       run,
     ].join('|');
@@ -438,8 +443,9 @@ function checkHeld(
   skipped: PlanSkip[],
   typeOf: ReadonlyMap<string, string>,
   hoist: boolean,
+  initialHoldings: ReadonlyMap<string, bigint>,
 ): PlanEntry[] {
-  const held = new Map<string, bigint>();
+  const held = new Map(initialHoldings);
   // Units sold that the history never showed held: a buy may cover them, or may not.
   const uncovered = new Map<string, bigint>();
   const listed = new Set<string>();
@@ -612,12 +618,18 @@ function buysFirst(sorted: PlanEntry[], hoist: boolean): PlanEntry[] {
  */
 export function planImport(
   operations: readonly TBankOperation[],
-  options: { hoist?: boolean } = {},
+  options: { hoist?: boolean; initialHoldings?: ReadonlyMap<string, bigint> } = {},
 ): ImportPlan {
   const hoist = options.hoist ?? true;
   const skipped: PlanSkip[] = [];
   const typeOf = new Map(operations.map((item) => [item.id, item.type]));
-  const single = checkHeld(entries(operations, skipped), skipped, typeOf, hoist);
+  const single = checkHeld(
+    entries(operations, skipped),
+    skipped,
+    typeOf,
+    hoist,
+    options.initialHoldings ?? new Map(),
+  );
   const tradesIn = (list: PlanEntry[]) => list.filter((entry) => entry.record === 'trade').length;
   let grouping: ImportPlan['grouping'] = 'operation';
   let list = single;

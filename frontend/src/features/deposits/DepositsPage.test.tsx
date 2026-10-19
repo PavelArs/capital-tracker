@@ -194,26 +194,40 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
   it('shows each deposit with its terms, value in the chosen currency and what needs a look', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
     open('/deposits?currency=RUB');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(within(card).getByText('₽100,328')).toBeInTheDocument();
     expect(
       within(card).getByText('12% · interest paid monthly · until Dec 1, 2026'),
     ).toBeInTheDocument();
-    expect(within(card).getByText(/₽1,019 on Nov 1, 2026/)).toBeInTheDocument();
+    expect(within(card).getAllByText(/₽1,019 on Nov 1, 2026/)[0]).toBeInTheDocument();
     expect(within(card).getByText('Not checked against the bank yet')).toBeInTheDocument();
-    const usd = screen.getByRole('link', { name: /Dollar B/ });
+    const usd = screen.getByRole('link', { name: /Dollar B/ }).closest('li') as HTMLElement;
     expect(within(usd).getByText('₽454,686')).toBeInTheDocument();
     expect(within(usd).getByText('$5,052.07')).toBeInTheDocument();
     expect(within(usd).getByText(/differs by \$0\.03/)).toBeInTheDocument();
     const total = screen.getByRole('region', { name: 'Total in deposits' });
     expect(within(total).getByText('₽555,015')).toBeInTheDocument();
-    expect(card).toHaveAttribute('href', `/deposits/${savings.id}?currency=RUB`);
+    expect(within(card).getByRole('link')).toHaveAttribute(
+      'href',
+      `/deposits/${savings.id}?currency=RUB`,
+    );
   });
 
-  it('classes-19 calls the section Banks, as the accepted v8 prototype does', async () => {
+  it('BANK-PROTOTYPE shows bank product rows and the account-aware add action', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
     open('/deposits');
     expect(await screen.findByRole('heading', { level: 1, name: 'Banks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add deposit or account' })).toBeInTheDocument();
+    const product = await screen.findByRole('link', { name: /Savings A/ });
+    expect(product).toHaveClass('deposit-product__row');
+    expect(product.querySelector('.ui-card')).toBeNull();
+    const details = product.closest('li')?.querySelector('details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    await userEvent.click(within(details).getByText('Interest and balance details'));
+    expect(details.open).toBe(true);
+    expect(within(details).getByText('Next interest')).toBeVisible();
   });
 
   it('invites the first deposit when there is none', async () => {
@@ -235,7 +249,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     expect(within(dialog).getByLabelText('Bank')).toHaveFocus();
     await user.click(within(dialog).getByRole('button', { name: 'Add deposit' }));
@@ -274,7 +288,9 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
       const user = userEvent.setup();
       vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
       open('/deposits');
-      await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+      await user.click(
+        (await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0],
+      );
       if (kind === 'account')
         await user.click(screen.getByRole('radio', { name: 'Savings or current account' }));
       const dialog = screen.getByRole('dialog');
@@ -294,7 +310,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const kind = within(screen.getByRole('dialog', { name: 'Add bank deposit' })).getByRole(
       'radiogroup',
       { name: 'Kind' },
@@ -341,7 +357,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const term = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.selectOptions(within(term).getByLabelText('Interest comes'), 'at-end');
     await user.click(within(term).getByRole('radio', { name: 'Savings or current account' }));
@@ -369,7 +385,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(dollars));
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(dollars));
     open('/deposits');
-    await user.click(await screen.findByRole('button', { name: 'Add deposit' }));
+    await user.click(await screen.findByRole('button', { name: 'Add deposit or account' }));
     const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     const bank = within(dialog).getByLabelText('Bank');
     expect(bank).toHaveFocus();
@@ -417,7 +433,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Rate, % a year'), '12.34567');
@@ -458,7 +474,9 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const enter = async (user: ReturnType<typeof userEvent.setup>, end?: string) => {
       vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
       open('/deposits');
-      await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+      await user.click(
+        (await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0],
+      );
       const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
       await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
       await user.type(within(dialog).getByLabelText('Amount put in'), '100000');
@@ -530,7 +548,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     const interest = within(dialog).getByLabelText('Interest comes');
     expect(
@@ -546,7 +564,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000');
@@ -567,7 +585,7 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([]));
     const create = vi.spyOn(depositsApi, 'create').mockResolvedValue(detail(savings));
     open('/deposits');
-    await user.click((await screen.findAllByRole('button', { name: 'Add deposit' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Add deposit or account' }))[0]);
     const dialog = screen.getByRole('dialog', { name: 'Add bank deposit' });
     await user.type(within(dialog).getByLabelText('Bank'), 'Synthetic Bank');
     await user.type(within(dialog).getByLabelText('Amount put in'), '1000000000000');
@@ -639,7 +657,9 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
       interestMissingCount: 1,
     });
     open('/deposits?currency=RUB');
-    const card = await screen.findByRole('link', { name: /Current C/ });
+    const card = (await screen.findByRole('link', { name: /Current C/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(card).toHaveTextContent('Interest');
     expect(card).toHaveTextContent('Not counted, no rate entered');
     expect(card).not.toHaveTextContent('Interest earned');
@@ -701,7 +721,9 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([later]), interestMissingCount: 1 });
     open('/deposits?currency=RUB');
-    const card = await screen.findByRole('link', { name: /Current C/ });
+    const card = (await screen.findByRole('link', { name: /Current C/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(card).toHaveTextContent('Not counted before the first rate');
     expect(card).not.toHaveTextContent('Interest earned');
     cleanup();
@@ -1130,9 +1152,9 @@ describe('DEP-DETAIL: one deposit', () => {
       cleanup();
       vi.spyOn(depositsApi, 'list').mockResolvedValue(list([{ ...savings, lastCheck: check }]));
       open('/deposits');
-      expect(await screen.findByRole('link', { name: /Savings A/ })).toHaveTextContent(
-        `differs by ${unsigned}`,
-      );
+      expect(
+        (await screen.findByRole('link', { name: /Savings A/ })).closest('li'),
+      ).toHaveTextContent(`differs by ${unsigned}`);
     },
   );
 
@@ -1192,7 +1214,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
   it('DEP-ONE-NOMINAL-LIST shows the bank figures only and carries the switch', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(within(card).getByText('₽3,328')).toBeInTheDocument();
     expect(card).not.toHaveTextContent(/inflation|\breal\b/i);
     expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
@@ -1202,7 +1226,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     setValueView('real');
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(within(card).getByText('Real +2.84% a year after 8.90% inflation')).toBeInTheDocument();
     expect(within(card).getByText('Interest after inflation')).toBeInTheDocument();
     expect(within(card).getByText('+₽2,450')).toBeInTheDocument();
@@ -1225,7 +1251,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ending]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(card).toHaveTextContent("At the end, in today's money");
     expect(card).toHaveTextContent('₽98,000');
     expect(card).not.toHaveTextContent('104,000');
@@ -1248,7 +1276,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([estimated]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     const end = within(card)
       .getByText("At the end, in today's money")
       .closest('div') as HTMLElement;
@@ -1277,7 +1307,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([settled]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(card).not.toHaveTextContent('estimated');
   });
 
@@ -1285,7 +1317,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     setValueView('real');
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     const end = within(card)
       .getByText("At the end, in today's money")
       .closest('div') as HTMLElement;
@@ -1308,7 +1342,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ending]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     const interest = within(card)
       .getByText('Interest after inflation')
       .closest('div') as HTMLElement;
@@ -1366,7 +1402,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ended]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     const end = within(card)
       .getByText("At the end, in today's money")
       .closest('div') as HTMLElement;
@@ -1421,7 +1459,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(card).not.toHaveTextContent(/inflation/i);
     await user.click(screen.getByRole('radio', { name: 'Real' }));
     expect(card).toHaveTextContent('Real +2.84% a year after 8.90% inflation');
@@ -1433,7 +1473,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     setInflationBasis('personal');
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(within(card).getByText('Real +1.82% a year after 10.00% inflation')).toBeInTheDocument();
     expect(within(card).getByText('-₽121')).toBeInTheDocument();
   });
@@ -1445,7 +1487,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
       list([{ ...inflated, real: { official: unknown, personal: unknown } }]),
     );
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(within(card).getAllByText('—').length).toBeGreaterThan(0);
     expect(card).not.toHaveTextContent('3,328');
     expect(card).not.toHaveTextContent(/Real [+-]/);
@@ -1455,7 +1499,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     setValueView('real');
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
     open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })) as HTMLElement;
+    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+      'li',
+    ) as HTMLElement;
     expect(within(card).queryByText(/inflation/)).toBeNull();
     expect(within(card).queryByText('Interest earned')).toBeNull();
   });
@@ -1712,7 +1758,7 @@ describe('classes-19: deposits grouped by bank', () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars, other]));
     open('/deposits?currency=RUB');
     const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
-    expect(within(bank).getByText('2 deposits')).toBeInTheDocument();
+    expect(within(bank).getByText('2 products')).toBeInTheDocument();
     // 100,328.77 + 454,686.30, summed as decimals.
     expect(within(bank).getByText('₽555,015')).toBeInTheDocument();
     expect(
@@ -1721,7 +1767,7 @@ describe('classes-19: deposits grouped by bank', () => {
         .map((link) => link.textContent),
     ).toEqual([expect.stringContaining('Savings A'), expect.stringContaining('Dollar B')]);
     const second = screen.getByRole('region', { name: 'Other Synthetic Bank' });
-    expect(within(second).getByText('1 deposit')).toBeInTheDocument();
+    expect(within(second).getByText('1 product')).toBeInTheDocument();
     expect(within(second).getAllByText('₽900').length).toBeGreaterThan(0);
   });
 
@@ -1811,7 +1857,7 @@ describe('classes-19: deposits grouped by bank', () => {
     open('/deposits?currency=RUB');
     const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
     const total = bank.querySelector('.deposit-bank__total') as HTMLElement;
-    expect(total).toHaveTextContent(/^₽0$/);
+    expect(total.querySelector('strong')).toHaveTextContent(/^₽0$/);
   });
 });
 

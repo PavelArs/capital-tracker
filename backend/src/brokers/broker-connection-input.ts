@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAccount } from '../accounting/input';
 import { parseUuid } from '../deposits/deposit-input';
+import { type BrokerOpening, parseBrokerOpening } from './broker-opening';
 import { isTBankToken } from './tbank-client';
 
 export { parseUuid };
@@ -39,11 +40,23 @@ export function parseConnection(input: unknown): { token: string; brokerAccountI
  * BROKER-SYNC: one import of the broker history, named by the client's request and pinned to
  * the preview the owner saw.
  */
-export function parseImport(input: unknown): { requestId: string; previewHash: string } {
-  const record = object(input, ['requestId', 'previewHash'], ['requestId', 'previewHash']);
+export function parseImport(input: unknown): {
+  requestId: string;
+  previewHash: string;
+  opening?: BrokerOpening;
+} {
+  const record = object(
+    input,
+    ['requestId', 'previewHash', 'opening'],
+    ['requestId', 'previewHash'],
+  );
   const hash = record.previewHash;
   if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) return bad();
-  return { requestId: parseUuid(record.requestId), previewHash: hash };
+  return {
+    requestId: parseUuid(record.requestId),
+    previewHash: hash,
+    ...(record.opening === undefined ? {} : { opening: parseBrokerOpening(record.opening) }),
+  };
 }
 
 export const MAX_SETUP_ACCOUNTS = 20;
@@ -80,4 +93,10 @@ export function parseSetup(input: unknown): {
   )
     return bad();
   return { token: token(record.token), accounts };
+}
+
+/** Read-only preview terms stay in a POST body, never in URLs or logs. */
+export function parseImportPreview(input: unknown): { opening?: BrokerOpening } {
+  const row = object(input, ['opening'], []);
+  return row.opening === undefined ? {} : { opening: parseBrokerOpening(row.opening) };
 }

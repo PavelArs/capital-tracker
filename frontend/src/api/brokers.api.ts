@@ -43,6 +43,7 @@ export interface TBankPlanEntry {
 
 export interface TBankImportProblem {
   reason:
+    | 'opening-holding'
     | 'not-recordable'
     | 'already-imported'
     | 'no-rate'
@@ -58,7 +59,13 @@ export interface TBankImportProblem {
 }
 
 /** BROKER-SYNC: what a connected account's T-Bank history would become. Nothing is recorded. */
+export interface TBankOpening {
+  asOf: string;
+  lots: { asset: string; acquiredAt: string; quantity: string; costUsd: string }[];
+}
+
 export interface TBankImportPreview {
+  openingAssets?: { asset: string; label: string; currency: string }[];
   grouping: 'operation' | 'day' | 'month';
   entries: TBankPlanEntry[];
   skipped: { operationId: string; type: string; reason: string }[];
@@ -100,7 +107,15 @@ export const brokersApi = {
     return response.data.connections;
   },
 
-  importPreview: async (accountId: string): Promise<TBankImportPreview> => {
+  importPreview: async (accountId: string, opening?: TBankOpening): Promise<TBankImportPreview> => {
+    if (opening)
+      return (
+        await apiClient.post<TBankImportPreview>(
+          `/brokers/${accountId}/connection/import-preview`,
+          { opening },
+          { changesNothing: true },
+        )
+      ).data;
     const response = await apiClient.get<TBankImportPreview>(
       `/brokers/${accountId}/connection/import-preview`,
     );
@@ -112,10 +127,11 @@ export const brokersApi = {
     accountId: string,
     requestId: string,
     previewHash: string,
+    opening?: TBankOpening,
   ): Promise<TBankImportReceipt> => {
     const response = await apiClient.post<TBankImportReceipt>(
       `/brokers/${accountId}/connection/import`,
-      { requestId, previewHash },
+      { requestId, previewHash, ...(opening ? { opening } : {}) },
     );
     return response.data;
   },
