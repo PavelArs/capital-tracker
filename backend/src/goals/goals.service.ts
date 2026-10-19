@@ -68,6 +68,50 @@ export class GoalsService {
     return goalForecast(row, now, moscowDate(at));
   }
 
+  /** Contributions and growth use the same priced subset and exact flows as the dashboard. */
+  async insights(ownerId: string, id: string) {
+    const owner = parseUuid(ownerId);
+    const goalId = parseUuid(id);
+    const [row] = await this.rows(this.source.manager, owner, goalId);
+    if (!row) throw new NotFoundException('Goal not found');
+    const at = new Date();
+    const history = await this.snapshots.history(
+      owner,
+      { period: '1Y', currency: row.currency },
+      at,
+    );
+    const average = history.contributions.averages[6];
+    const pace =
+      average === null
+        ? null
+        : goalView(
+            { ...row, monthlyContribution: average },
+            { value: history.value, complete: history.complete, stalePrices: 0 },
+            moscowDate(at),
+          );
+    return {
+      currency: row.currency,
+      asOf: moscowDate(at),
+      complete: history.complete,
+      ...history.contributions,
+      paceStatus:
+        average === null
+          ? ('insufficient-history' as const)
+          : history.value === null
+            ? ('missing-value' as const)
+            : pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn
+              ? ('projected' as const)
+              : ('beyond-horizon' as const),
+      paceReachedOn: pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn ?? null,
+      growth: {
+        from: history.points[0]?.at ?? null,
+        contributions: history.netFlow,
+        market: history.marketEffect,
+        total: history.change,
+      },
+    };
+  }
+
   /**
    * GOAL-PREVIEW: the progress, status and return cases a goal with these terms would have now,
    * so the dialogs can show the plan while the owner types. Nothing is stored.

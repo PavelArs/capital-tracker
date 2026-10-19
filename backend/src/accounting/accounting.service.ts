@@ -220,6 +220,21 @@ export class AccountingService {
     input: unknown,
   ): Promise<{ created: boolean; value: Opening }> {
     const owner = parseUuid(ownerId);
+    const account = parseUuid(accountId);
+    const value = parseOpening(input);
+    return this.source.transaction((manager) =>
+      this.saveOpeningWithin(manager, owner, account, value),
+    );
+  }
+
+  /** Reuses opening validation inside another atomic owner command. */
+  async saveOpeningWithin(
+    manager: EntityManager,
+    ownerId: string,
+    accountId: string,
+    input: unknown,
+  ): Promise<{ created: boolean; value: Opening }> {
+    const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const value = parseOpening(input);
     const payload = JSON.stringify({
@@ -227,59 +242,57 @@ export class AccountingService {
       asOf: value.asOf,
       positions: value.positions,
     });
-    return this.source.transaction(async (manager) => {
-      await lockAccountingOwner(manager, owner);
-      const [account]: AccountRow[] = await manager.query(
-        `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT} FOR UPDATE`,
-        [owner, id],
-      );
-      if (!account) throw new NotFoundException();
-      const [previous]: SnapshotRow[] = await manager.query(
-        `SELECT * FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2 AND "requestId"=$3`,
-        [owner, id, value.requestId],
-      );
-      if (previous) {
-        if (previous.canonicalPayload !== payload) throw conflict();
-        return { created: false, value: await projectOpening(manager, owner, previous) };
-      }
-      const [journal] = await manager.query(
-        'SELECT 1 FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2',
-        [owner, id],
-      );
-      if (journal) throw conflict();
-      if ((account.currentRevision ?? 0) !== value.expectedRevision) throw conflict();
-      const instruments: { id: string }[] = await manager.query(
-        'SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND id=ANY($2::uuid[])',
-        [owner, value.positions.map((position) => position.instrumentId)],
-      );
-      if (instruments.length !== value.positions.length) throw new NotFoundException();
-      const revision = value.expectedRevision + 1;
-      const [snapshot]: SnapshotRow[] = await manager.query(
-        `INSERT INTO account_opening_snapshots
-        ("ownerId","accountId",revision,"requestId","canonicalPayload","asOf") VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [owner, id, revision, value.requestId, payload, value.asOf],
-      );
-      for (const position of value.positions) {
-        await manager.query(
-          `INSERT INTO account_opening_positions
-          ("ownerId","accountId",revision,"instrumentId",quantity,"costStatus","totalCostUsd") VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [
-            owner,
-            id,
-            revision,
-            position.instrumentId,
-            position.quantity,
-            position.costStatus,
-            position.totalCostUsd,
-          ],
-        );
-      }
+    await lockAccountingOwner(manager, owner);
+    const [account]: AccountRow[] = await manager.query(
+      `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND ${TRACKED_ACCOUNT} FOR UPDATE`,
+      [owner, id],
+    );
+    if (!account) throw new NotFoundException();
+    const [previous]: SnapshotRow[] = await manager.query(
+      `SELECT * FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2 AND "requestId"=$3`,
+      [owner, id, value.requestId],
+    );
+    if (previous) {
+      if (previous.canonicalPayload !== payload) throw conflict();
+      return { created: false, value: await projectOpening(manager, owner, previous) };
+    }
+    const [journal] = await manager.query(
+      'SELECT 1 FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2',
+      [owner, id],
+    );
+    if (journal) throw conflict();
+    if ((account.currentRevision ?? 0) !== value.expectedRevision) throw conflict();
+    const instruments: { id: string }[] = await manager.query(
+      'SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND id=ANY($2::uuid[])',
+      [owner, value.positions.map((position) => position.instrumentId)],
+    );
+    if (instruments.length !== value.positions.length) throw new NotFoundException();
+    const revision = value.expectedRevision + 1;
+    const [snapshot]: SnapshotRow[] = await manager.query(
+      `INSERT INTO account_opening_snapshots
+      ("ownerId","accountId",revision,"requestId","canonicalPayload","asOf") VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [owner, id, revision, value.requestId, payload, value.asOf],
+    );
+    for (const position of value.positions) {
       await manager.query(
-        'UPDATE manual_accounts SET "currentRevision"=$3 WHERE "ownerId"=$1 AND id=$2',
-        [owner, id, revision],
+        `INSERT INTO account_opening_positions
+        ("ownerId","accountId",revision,"instrumentId",quantity,"costStatus","totalCostUsd") VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          owner,
+          id,
+          revision,
+          position.instrumentId,
+          position.quantity,
+          position.costStatus,
+          position.totalCostUsd,
+        ],
       );
-      return { created: true, value: await projectOpening(manager, owner, snapshot) };
-    });
+    }
+    await manager.query(
+      'UPDATE manual_accounts SET "currentRevision"=$3 WHERE "ownerId"=$1 AND id=$2',
+      [owner, id, revision],
+    );
+    return { created: true, value: await projectOpening(manager, owner, snapshot) };
   }
 
   async listAccounts(ownerId: string, options: { cursor?: string; limit?: number } = {}) {

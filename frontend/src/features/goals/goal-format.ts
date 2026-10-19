@@ -209,12 +209,12 @@ export function verdict(goal: GoalPreview): string {
   const baseReached = base ? reachedDate(goal, base) : null;
   const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
   const { current, remaining } = goal.progress;
-  // With unpriced assets the value is understated: only "on track" still holds, and no figure
-  // worked out from that value is given.
+  // With unpriced assets the value is understated: only "on track" still holds, and projections
+  // describe only the priced subset.
   if (!goal.progress.complete && goal.status !== 'reached' && goal.status !== 'unknown') {
     return goal.status === 'on-track'
       ? 'On track even without the assets that have no price or rate yet.'
-      : 'Some assets have no price or rate, so the value is understated and no date or monthly sum is worked out yet.';
+      : 'Estimated from priced assets only. The full portfolio may reach the target earlier.';
   }
   switch (goal.status) {
     case 'reached': {

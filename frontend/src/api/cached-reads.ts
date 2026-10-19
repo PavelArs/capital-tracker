@@ -190,6 +190,7 @@ export const cachedReads = {
   deposits: cachedRead('deposits', (): Promise<DepositList> => depositsApi.list()),
   deposit: cachedRead('deposit', (id: string): Promise<DepositDetail> => depositsApi.get(id)),
   goals: cachedRead('goals', (): Promise<GoalList> => goalsApi.list()),
+  goalInsights: cachedRead('goal-insights', (id: string, _terms: string) => goalsApi.insights(id)),
   goal: cachedRead('goal', (id: string): Promise<Goal> => goalsApi.get(id)),
   // The goal's terms are part of the key, so an edit reads the forecast for the new terms.
   goalForecast: cachedRead(

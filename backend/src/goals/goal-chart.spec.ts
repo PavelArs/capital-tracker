@@ -110,10 +110,11 @@ describe('GOAL-CHART goal forecast', () => {
         expect(point[key]).toMatch(/^\d+\.\d{2}$/);
   });
 
-  it('has no points while an asset has no price, and says the value is incomplete', () => {
+  it('GOAL-PRICED-SUBSET projects the priced value and retains the incomplete flag', () => {
     const partial = goalForecast(row, now('5000.00', false), today);
     expect(partial.complete).toBe(false);
-    expect(partial.points).toEqual([]);
+    expect(partial.points).toEqual(goalForecast(row, now('5000.00'), today).points);
+    expect(partial.points[0].base).toBe('5000.00');
     expect(goalForecast(row, now('5000.00'), today).complete).toBe(true);
   });
 

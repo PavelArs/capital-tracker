@@ -70,6 +70,13 @@ function ChangeSplit({
   return (
     <div className="dashboard-split" aria-label="What changed">
       <span className="dashboard-split__period">{sentence(periodLabels[history.period])}</span>
+      {!!((history.excludedAssetCount ?? 0) + (history.excludedDepositCount ?? 0)) && (
+        <span className="dashboard-split__period">
+          Priced assets only ·{' '}
+          {(history.excludedAssetCount ?? 0) + (history.excludedDepositCount ?? 0)} without a price
+          or rate excluded
+        </span>
+      )}
       <span className="dashboard-split__item">
         <i className="dashboard-split__key dashboard-split__key--market" aria-hidden="true" />
         <span className="dashboard-split__label">Market</span>

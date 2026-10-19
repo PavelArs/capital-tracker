@@ -273,7 +273,7 @@ describe('GOAL-CHART goal chart', () => {
     expect(Number(today)).toBeCloseTo(Number(origin), 1);
   });
 
-  it('leaves the forecast out while an asset has no price, and says why', async () => {
+  it('GOAL-PRICED-SUBSET draws an estimated forecast when some assets have no price', async () => {
     vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
     vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
     const chart = await show({
@@ -283,25 +283,25 @@ describe('GOAL-CHART goal chart', () => {
     });
     expect(
       await screen.findByText(
-        'The forecast needs every asset priced, so only the portfolio so far is drawn.',
+        'Estimated from priced assets only. Assets without a price or rate are excluded.',
       ),
     ).toBeInTheDocument();
-    expect(chart.querySelector('.goal-chart__deadline-label')).toBeNull();
-    expect(chart.querySelector('.goal-chart__forecast')).toBeNull();
-    expect(screen.queryByText(/Forecast at/)).toBeNull();
+    expect(chart.querySelector('.goal-chart__deadline-label')).not.toBeNull();
+    expect(chart.querySelector('.goal-chart__forecast')).not.toBeNull();
+    expect(screen.getByText(/Forecast at/)).toBeInTheDocument();
     expect(chart.querySelector('.goal-chart__line')).not.toBeNull();
   });
 
-  it('leaves the forecast out when the server says the value now is incomplete', async () => {
+  it('GOAL-PRICED-SUBSET draws an incomplete server forecast with its scope notice', async () => {
     vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
-    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({ ...forecast, complete: false, points: [] });
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue({ ...forecast, complete: false });
     const chart = await show();
     expect(
       await screen.findByText(
-        'The forecast needs every asset priced, so only the portfolio so far is drawn.',
+        'Estimated from priced assets only. Assets without a price or rate are excluded.',
       ),
     ).toBeInTheDocument();
-    expect(chart.querySelector('.goal-chart__forecast')).toBeNull();
+    expect(chart.querySelector('.goal-chart__forecast')).not.toBeNull();
   });
 
   it('marks a past day whose value left out an asset, and says so in its tooltip', async () => {

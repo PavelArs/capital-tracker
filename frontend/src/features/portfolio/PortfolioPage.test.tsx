@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
+import { depositsApi } from '@api/deposits.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
@@ -24,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ToastViewport from '../../components/Toast';
 import { setInflationBasis } from '../shell/inflation-basis';
 import { setValueView } from '../shell/value-view';
+import Allocation from './Allocation';
 import AssetLotsCard from './AssetLots';
 import AssetPage from './AssetPage';
 import PortfolioPage, {
@@ -184,6 +186,17 @@ function portfolio(assets: AssetValuation[], changes: Partial<PortfolioValuation
   } satisfies PortfolioValuation;
 }
 
+async function renderAllocation() {
+  expect(screen.queryByRole('region', { name: 'Allocation' })).toBeNull();
+  const data = await portfolioValuationApi.get();
+  render(
+    <MemoryRouter>
+      <Allocation portfolio={data} />
+    </MemoryRouter>,
+  );
+  return screen.getByRole('region', { name: 'Allocation' });
+}
+
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -275,6 +288,12 @@ beforeEach(() => {
   vi.restoreAllMocks();
   createTrade.mockReset();
   setPrice.mockReset();
+  vi.spyOn(depositsApi, 'list').mockResolvedValue({
+    asOf: '2026-10-18',
+    items: [],
+    totals: { USD: '0', EUR: '0', RUB: '0' },
+    interestMissingCount: 0,
+  });
   vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates('90.12', '100.5'));
   vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
   // The token chains read the wallets. Unanswered, that read fails as signed out, and a sign-out
@@ -394,12 +413,7 @@ describe('PV-UI Portfolio values every asset', () => {
       `/portfolio/${bitcoin.instrumentId}`,
     );
 
-    const allocation = screen.getByRole('region', { name: 'Allocation' });
-    // The assets table comes first; how they are split follows it (review item P1).
-    const assetsCard = screen.getByRole('region', { name: 'Assets' });
-    expect(
-      assetsCard.compareDocumentPosition(allocation) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    const allocation = await renderAllocation();
     const grouping = within(allocation).getByRole('radiogroup', { name: 'Group allocation by' });
     const slices = () =>
       within(allocation)
@@ -415,10 +429,10 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(
       within(rowOf('Bitcoin')).getAllByRole('cell')[0].querySelector('.asset-icon'),
     ).toHaveAttribute('data-glyph', '₿');
-    await user.click(within(grouping).getByRole('radio', { name: 'Type' }));
+    await user.click(within(grouping).getByRole('radio', { name: 'Classes' }));
     expect(slices()).toEqual(['Crypto$96,000.0096.00%', 'Cash$4,000.004.00%']);
     expect(swatches()).toEqual(['var(--c-eth)', 'var(--c-cash)']);
-    await user.click(within(grouping).getByRole('radio', { name: 'Wallets' }));
+    await user.click(within(grouping).getByRole('radio', { name: 'Accounts' }));
     expect(slices()).toEqual(['Trust Wallet$80,000.0080.00%', 'Bybit$20,000.0020.00%']);
     expect(allocation).toHaveTextContent('Assets without a price are not included.');
   });
@@ -527,7 +541,7 @@ describe('PV-UI Portfolio values every asset', () => {
       'Cost basis—$70,000.00 known, an account history starts later',
     );
     expect(summary).not.toHaveTextContent('no purchase price');
-    const allocation = screen.getByRole('region', { name: 'Allocation' });
+    const allocation = await renderAllocation();
     expect(allocation).toHaveTextContent('Accounts whose history starts later are not included.');
     expect(cells(rowOf('Bitcoin'))[1]).toBe('<0.00000001');
   });
@@ -535,25 +549,36 @@ describe('PV-UI Portfolio values every asset', () => {
   it('counts bank deposits in the value, links them and lists them in the allocation', async () => {
     const base = portfolio([bitcoin]);
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
-      portfolio([bitcoin], {
-        depositsValue: '20000',
-        allocation: {
-          ...base.allocation,
-          byType: [
-            { key: 'crypto', label: 'Crypto', value: '80000', percent: '80.00' },
-            { key: 'deposits', label: 'Bank deposits', value: '20000', percent: '20.00' },
-          ],
-          byAccount: [
-            { key: id(101), label: 'Trust Wallet', value: '80000', percent: '80.00' },
-            {
-              key: 'bank:Synthetic Bank',
-              label: 'Synthetic Bank',
-              value: '20000',
-              percent: '20.00',
-            },
-          ],
+      portfolio(
+        [
+          {
+            ...bitcoin,
+            value: '80000',
+            holdings: [
+              { accountId: id(101), accountName: 'Trust Wallet', quantity: '1', value: '80000' },
+            ],
+          },
+        ],
+        {
+          depositsValue: '20000',
+          allocation: {
+            ...base.allocation,
+            byType: [
+              { key: 'crypto', label: 'Crypto', value: '80000', percent: '80.00' },
+              { key: 'deposits', label: 'Bank deposits', value: '20000', percent: '20.00' },
+            ],
+            byAccount: [
+              { key: id(101), label: 'Trust Wallet', value: '80000', percent: '80.00' },
+              {
+                key: 'bank:Synthetic Bank',
+                label: 'Synthetic Bank',
+                value: '20000',
+                percent: '20.00',
+              },
+            ],
+          },
         },
-      }),
+      ),
     );
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
@@ -563,11 +588,11 @@ describe('PV-UI Portfolio values every asset', () => {
       'href',
       '/deposits',
     );
-    const allocation = screen.getByRole('region', { name: 'Allocation' });
+    const allocation = await renderAllocation();
     const user = userEvent.setup();
-    await user.click(within(allocation).getByRole('radio', { name: 'Type' }));
-    expect(allocation).toHaveTextContent('Bank deposits$20,000.0020.00%');
-    await user.click(within(allocation).getByRole('radio', { name: 'Wallets' }));
+    await user.click(within(allocation).getByRole('radio', { name: 'Classes' }));
+    expect(allocation).toHaveTextContent('Bank$20,000.0020.00%');
+    await user.click(within(allocation).getByRole('radio', { name: 'Accounts' }));
     expect(allocation).toHaveTextContent('Synthetic Bank$20,000.00');
   });
 
@@ -759,10 +784,10 @@ describe('PV-UI Portfolio values every asset', () => {
     renderAt('/portfolio');
     const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
     expect(summary).toHaveTextContent('$20,000.00 in bank deposits');
-    expect(screen.getByText('No assets yet')).toBeInTheDocument();
+    expect(screen.queryByText('No assets yet')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Add' }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getByRole('region', { name: 'Allocation' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Assets' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Allocation' })).toBeNull();
   });
 
   it('says so when a deposit has no current rate and leaves it out of the value', async () => {
@@ -779,7 +804,7 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(screen.getByRole('region', { name: 'Portfolio summary' })).toHaveTextContent(
       '2 deposits without a rate',
     );
-    expect(screen.getByRole('region', { name: 'Allocation' })).toHaveTextContent(
+    expect(await renderAllocation()).toHaveTextContent(
       'Deposits without a current exchange rate are not included.',
     );
   });
@@ -794,7 +819,7 @@ describe('PV-UI Portfolio values every asset', () => {
     );
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
-    expect(screen.getByRole('region', { name: 'Allocation' })).toHaveTextContent(
+    expect(await renderAllocation()).toHaveTextContent(
       'Interest on accounts without a rate is not included.',
     );
   });
@@ -3769,4 +3794,69 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
       missing: 1,
     });
   });
+});
+
+describe('ALLOC-CLASSES: classify holdings by their account', () => {
+  it('ALLOC-CLASSES keeps property and broker holdings out of Manual', async () => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: id(202),
+          name: 'Flat',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const flat = valued(
+      90,
+      'Apartment',
+      null,
+      { assetType: 'manual', priceSource: 'manual', valuationCurrency: 'USD' },
+      {
+        value: '100000',
+        holdings: [{ accountId: id(202), accountName: 'Flat', quantity: '1', value: '100000' }],
+      },
+    );
+    const answer = portfolio([flat], {
+      allocation: {
+        complete: true,
+        byAsset: [
+          { key: flat.instrumentId, label: 'Apartment', value: '100000', percent: '100.00' },
+        ],
+        byAccount: [],
+        byType: [{ key: 'manual', label: 'Manual', value: '100000', percent: '100.00' }],
+      },
+    });
+    render(
+      <MemoryRouter>
+        <Allocation portfolio={answer} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(accountingApi.listAccounts).toHaveBeenCalled());
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Classes' }));
+    expect(await screen.findByText('Real estate')).toBeInTheDocument();
+    expect(screen.queryByText('Manual')).toBeNull();
+    expect(screen.getByRole('listitem')).toHaveTextContent('$100,000.00100.00%');
+  });
+});
+
+it('PORTFOLIO-CLASS-FOLD shows five rows per class with an explicit disclosure and no allocation card', async () => {
+  const rows = Array.from({ length: 8 }, (_, n) => ({
+    ...bitcoin,
+    instrumentId: id(500 + n),
+    name: `Coin ${n + 1}`,
+  }));
+  vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio(rows));
+  renderAt('/portfolio');
+  await screen.findByRole('link', { name: 'Coin 1' });
+  expect(screen.queryByRole('link', { name: 'Coin 6' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Allocation' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Show 3 more Crypto assets' }));
+  expect(screen.getByRole('link', { name: 'Coin 8' })).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Show less Crypto assets' }));
+  expect(screen.queryByRole('link', { name: 'Coin 6' })).toBeNull();
 });

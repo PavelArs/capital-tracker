@@ -111,8 +111,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     return () => observer.disconnect();
   }, [box]);
 
-  // The server also leaves the forecast out when its own reading of the value is incomplete.
-  const known = goal.progress.complete && forecast?.complete !== false;
+  // The server leaves the forecast out only when no current value can be estimated.
+  const known = goal.progress.current !== null;
   // The forecast's own valuation, not the goal read's: the two requests can see other prices.
   const staleNote = staleText(forecast?.stalePrices);
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
@@ -572,9 +572,9 @@ export default function GoalChart({ goal }: { goal: Goal }) {
         </Banner>
       )}
       {staleNote && <Banner tone="warn">{staleNote}</Banner>}
-      {!known && (
+      {(!goal.progress.complete || forecast?.complete === false) && (
         <Banner tone="info">
-          The forecast needs every asset priced, so only the portfolio so far is drawn.
+          Estimated from priced assets only. Assets without a price or rate are excluded.
         </Banner>
       )}
     </Card>

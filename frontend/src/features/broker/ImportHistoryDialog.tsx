@@ -2,6 +2,7 @@ import {
   brokersApi,
   type TBankImportPreview,
   type TBankImportProblem,
+  type TBankOpening,
   type TBankPlanEntry,
 } from '@api/brokers.api';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { dayText, moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
+import BrokerOpeningForm from './BrokerOpeningForm';
 import { plural } from './brokers';
 import './broker.css';
 
@@ -31,6 +33,7 @@ const skipText: Record<string, string> = {
   unsupported: 'Operation types the app does not record yet',
   transfer: 'Transfers of securities',
   card: 'Settled through a card',
+  'outside-dividend': 'Dividends paid to your card, outside this broker account',
   'no-amount': 'Moved no money',
   'no-payment': 'Moved units for no money',
   currency: 'In a currency the app does not keep',
@@ -106,6 +109,8 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
   const id = useId();
   const toast = useToast();
   const [preview, setPreview] = useState<TBankImportPreview | null>(null);
+  const opening = useRef<TBankOpening | undefined>(undefined);
+  const [editingOpening, setEditingOpening] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -115,7 +120,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
 
   const load = useCallback(() => {
     setLoadError(null);
-    brokersApi.importPreview(accountId).then(
+    brokersApi.importPreview(accountId, ...(opening.current ? [opening.current] : [])).then(
       (next) => live.current && setPreview(next),
       (caught) => live.current && setLoadError(loadFailure(caught)),
     );
@@ -128,6 +133,32 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
     };
   }, [load]);
 
+  const reviewOpening = async (value: TBankOpening) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await brokersApi.importPreview(accountId, value);
+      if (!live.current) return;
+      opening.current = value;
+      setPreview(next);
+      setEditingOpening(false);
+    } catch (caught) {
+      if (live.current)
+        setError(
+          requestFailure(caught, {
+            unreachable: 'Could not reach the server.',
+            status: {
+              400: 'Check the opening dates, quantities and known USD costs.',
+              409: 'The account changed. Close this window and reload.',
+            },
+            fallback: 'Could not review opening holdings.',
+          }),
+        );
+    } finally {
+      if (live.current) setBusy(false);
+    }
+  };
+
   const confirm = async () => {
     if (!preview?.canImport || busy) return;
     const hash = preview.previewHash;
@@ -139,6 +170,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
         accountId,
         requests.current.get(hash) as string,
         hash,
+        ...(opening.current ? [opening.current] : []),
       );
       toast.show({
         tone: 'success',
@@ -223,7 +255,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
             )}
             {skipped.size > 0 && (
               <>
-                <p className="ui-soft">Left out, since the app cannot record them:</p>
+                <p className="ui-soft">Not included in this broker account:</p>
                 <KeyValue label="Left out">
                   {[...skipped].map(([reason, total]) => (
                     <KeyValueRow key={reason} term={skipText[reason] ?? reason}>
@@ -235,6 +267,13 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
             )}
             {blockers.length > 0 && (
               <Banner tone="warn" role="none" title="Cannot import yet">
+                {preview.problems.some((problem) => problem.reason === 'not-held') && (
+                  <p>
+                    The provider history does not establish enough holdings or cash before a sale or
+                    payment. Check for an incoming transfer or earlier history. The app will not
+                    invent an opening balance.
+                  </p>
+                )}
                 <ul className="broker-howto" aria-label="Cannot import yet">
                   {blockers.map((line, index) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: two problems can read alike.
@@ -244,6 +283,31 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
               </Banner>
             )}
           </>
+        )}
+        {preview &&
+          !preview.accountHasEntries &&
+          (preview.openingAssets?.length ?? 0) > 0 &&
+          !editingOpening && (
+            <div className="ui-toolbar">
+              <Button size="sm" disabled={busy} onClick={() => setEditingOpening(true)}>
+                {opening.current ? 'Edit opening holdings' : 'Record earlier holdings'}
+              </Button>
+              {opening.current && (
+                <Banner tone="info">
+                  The final import will also save {opening.current.lots.length} opening lot(s) with
+                  the quantities and USD costs you reviewed.
+                </Banner>
+              )}
+            </div>
+          )}
+        {editingOpening && preview?.openingAssets && (
+          <BrokerOpeningForm
+            assets={preview.openingAssets}
+            initial={opening.current}
+            busy={busy}
+            onReview={reviewOpening}
+            onCancel={() => setEditingOpening(false)}
+          />
         )}
         {error && <Banner tone="neg">{error}</Banner>}
       </ModalBody>
@@ -256,7 +320,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
           <Button
             variant="primary"
             busy={busy}
-            disabled={!preview.canImport}
+            disabled={!preview.canImport || editingOpening}
             onClick={() => void confirm()}
           >
             {busy ? 'Importing…' : `Import ${count === 1 ? '1 entry' : `${count} entries`}`}

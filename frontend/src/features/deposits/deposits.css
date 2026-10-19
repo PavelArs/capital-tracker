@@ -31,70 +31,121 @@
   font-size: var(--fs-xs);
 }
 
-/* One deposit of a bank: a tile that opens its page. */
-.deposit-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: var(--sp-4);
-  margin: var(--sp-4) 0 0;
-  padding: 0;
-  list-style: none;
+/* Products share the bank surface; financial detail remains available below each row. */
+.deposit-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
 }
-
-.deposit-card__link {
+.deposit-intro p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--ink-2);
+}
+.deposit-bank__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+.deposit-bank__icon {
+  color: var(--c-bank);
+  background: var(--raised);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+}
+.deposit-bank__identity {
+  flex: 1;
+  min-width: 0;
+}
+.deposit-bank__identity h2 {
+  font-size: var(--fs-md);
+  margin: 0;
+}
+.deposit-bank small,
+.deposit-product small {
   display: block;
-  height: 100%;
-  border-radius: var(--r-lg);
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+.deposit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.deposit-product {
+  border-top: 1px solid var(--line);
+}
+.deposit-product:is(:hover, :focus-within) {
+  background: var(--raised);
+}
+.deposit-product__row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(150px, 1.5fr) minmax(130px, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
   color: inherit;
   text-decoration: none;
 }
-
-.deposit-card__link:focus-visible {
+.deposit-product__row:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
-
-.deposit-card {
-  display: grid;
-  align-content: start;
-  gap: var(--sp-3);
-  height: 100%;
-}
-
-.deposit-card__link:hover .deposit-card {
-  border-color: var(--line-strong);
-}
-
-.deposit-card__head {
+.deposit-product__identity {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--sp-3);
 }
-
-.deposit-card__name {
-  font-weight: 600;
+.deposit-product__identity > svg {
+  color: var(--c-bank);
+  flex-shrink: 0;
 }
-
-.deposit-card__value {
-  display: grid;
-  gap: 2px;
+.deposit-product__identity strong {
+  font-weight: 500;
 }
-
-.deposit-card__value strong {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-}
-
-.deposit-card__value span {
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
-
-.deposit-card__terms {
-  margin: 0;
+.deposit-product__terms {
   color: var(--ink-2);
   font-size: var(--fs-sm);
+}
+.deposit-product__balance,
+.deposit-product__value {
+  text-align: right;
+}
+.deposit-product__details {
+  padding: 0 var(--sp-4) var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.deposit-product__details summary {
+  cursor: pointer;
+  color: var(--ink-3);
+}
+.deposit-product > .ui-banner {
+  margin: 0 var(--sp-4) var(--sp-3);
+}
+@media (max-width: 1100px) {
+  .deposit-product__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--sp-2) var(--sp-3);
+  }
+  .deposit-product__terms {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .deposit-product__balance {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .deposit-product__value {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .deposit-product__row > .ui-badge {
+    justify-self: start;
+  }
 }
 
 /* One deposit: its value at the right of the head, the terms beside the interest by period. */

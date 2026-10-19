@@ -8,6 +8,7 @@ import {
 import type { PaidCurrency } from '../accounting/paid-currency';
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
 import { settlementLeg } from '../accounting/trade-settlement';
+import type { depositValuesAt } from '../deposits/deposit-valuation';
 import { type FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { valueAtoms } from './snapshot-series';
 
@@ -19,6 +20,8 @@ const ATOM_SCALE = 10n ** 30n;
  * A trade paid in RUB or EUR also keeps the signed amount as paid (CUR-PAID-RUB).
  */
 export interface CapitalFlow {
+  /** Carried cost establishes invested basis; it is not a new monthly contribution. */
+  baseline?: true;
   at: number;
   /** The instrument the money bought or sold, to tell the flows of an unpriced coin apart. */
   instrumentId?: string;
@@ -28,11 +31,34 @@ export interface CapitalFlow {
 }
 /** A flow in one accounting currency at scale 60, like snapshot values; null without a rate. */
 export interface StatedFlow {
+  baseline?: true;
   at: number;
   /** The Moscow day whose rate states the flow; a carry-in keeps its acquisition day, not `at`. */
   rateDate?: string;
   instrumentId?: string;
   amount: bigint | null;
+}
+
+/** Scope value and invested money together; a trade into an excluded asset is an outflow. */
+export function pricedInputs(
+  inputs: ValuationInputs,
+  held: HeldAssets,
+  deposits: ReturnType<typeof depositValuesAt>,
+) {
+  const excluded = new Set([...held].filter(([, asset]) => asset.value === null).map(([id]) => id));
+  const excludedDeposits = new Set(
+    deposits.filter((deposit) => deposit.value === null).map((deposit) => deposit.id),
+  );
+  return {
+    excluded,
+    excludedDeposits,
+    valuation: {
+      ...inputs,
+      deposits: inputs.deposits.filter((holding) => !excludedDeposits.has(holding.deposit.id)),
+      hidden: new Set([...inputs.hidden, ...excluded]),
+      instruments: inputs.instruments.filter((asset) => !excluded.has(asset.id)),
+    },
+  };
 }
 
 const signed = (value: string) =>
@@ -64,6 +90,7 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
         if (inputs.hidden.has(lot.instrumentId)) continue;
         flows.push({
           at: start,
+          baseline: true,
           instrumentId: lot.instrumentId,
           usd: signed(
             deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity)
@@ -165,6 +192,7 @@ export function stateFlows(flows: readonly CapitalFlow[], fx: FxConverter): Stat
     return {
       at: flow.at,
       rateDate: flow.rateDate,
+      ...(flow.baseline ? { baseline: true as const } : {}),
       ...(flow.instrumentId === undefined ? {} : { instrumentId: flow.instrumentId }),
       amount: amount === null ? null : amount * ATOM_SCALE,
     };

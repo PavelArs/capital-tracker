@@ -89,6 +89,16 @@ const answers = (...items: Goal[]) =>
   });
 
 beforeEach(() => {
+  vi.spyOn(goalsApi, 'insights').mockResolvedValue({
+    currency: 'RUB',
+    asOf: '2026-10-18',
+    complete: true,
+    months: [],
+    averages: { 3: null, 6: null, 12: null },
+    paceStatus: 'projected',
+    paceReachedOn: null,
+    growth: { from: null, contributions: null, market: null, total: null },
+  });
   vi.restoreAllMocks();
   forgetReads();
   // The edit dialog asks for its plan; the page tests do not look at it.
@@ -206,7 +216,7 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     expect(screen.queryByText('under a month')).toBeNull();
   });
 
-  it('works out no sums or dates while some assets have no price', async () => {
+  it('GOAL-PRICED-SUBSET shows estimated sums and dates for the priced assets', async () => {
     answers({
       ...dated,
       status: 'unknown',
@@ -220,13 +230,13 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     });
     show(dated);
     expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
-    expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getByText(/need every asset priced/i)).toBeInTheDocument();
-    expect(screen.getByText('Forecast for Dec 2099').nextSibling).toHaveTextContent('—');
-    expect(screen.queryByText(/Needed for the date/)).toBeNull();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getAllByText(/Estimated from priced assets only/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Forecast for Dec 2099').nextSibling).not.toHaveTextContent('—');
+    expect(screen.getByText(/Needed for the date/)).toBeInTheDocument();
   });
 
-  it('shows no projections for a reached goal while assets are unpriced', async () => {
+  it('GOAL-PRICED-SUBSET shows projections for a reached priced subtotal', async () => {
     answers({
       ...open,
       status: 'reached',
@@ -240,8 +250,8 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     });
     show(open);
     expect(await screen.findByRole('heading', { name: 'Reserve B' })).toBeInTheDocument();
-    expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getByText(/need every asset priced/i)).toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getAllByText(/Estimated from priced assets only/).length).toBeGreaterThan(0);
   });
 
   it('says so when the goal does not exist', async () => {

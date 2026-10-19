@@ -239,3 +239,43 @@ describe('goals service', () => {
     });
   });
 });
+
+it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for its pace', async () => {
+  const goals = service(false);
+  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+    value: '5000',
+    complete: false,
+    contributions: { months: [], averages: { 3: '80', 6: '100', 12: null } },
+    netFlow: '900',
+    deposits: '1000',
+    marketEffect: '-50',
+    change: '850',
+    points: [{ at: '2025-10-18T00:00:00Z' }],
+  });
+  const view = await goals.insights(owner, row.id);
+  expect(view.growth).toEqual({
+    from: '2025-10-18T00:00:00Z',
+    contributions: '900',
+    market: '-50',
+    total: '850',
+  });
+  expect(view.averages[6]).toBe('100');
+  expect(view.complete).toBe(false);
+  expect(view.paceReachedOn).not.toBeNull();
+});
+
+it('GOAL-WIDGETS keeps missing current value distinct from an unreachable pace', async () => {
+  const goals = service(false);
+  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+    value: null,
+    complete: false,
+    contributions: { months: [], averages: { 3: '0', 6: '0', 12: '0' } },
+    netFlow: '0',
+    marketEffect: null,
+    change: null,
+    points: [],
+  });
+  const view = await goals.insights(owner, row.id);
+  expect(view.paceStatus).toBe('missing-value');
+  expect(view.paceReachedOn).toBeNull();
+});

@@ -131,6 +131,21 @@ export class CarryInService {
     raw: unknown,
   ): Promise<{ created: boolean; value: CarryInOrigin }> {
     const owner = parseUuid(ownerId);
+    const account = parseUuid(accountId);
+    const value = parseCarryInInitialization(raw);
+    return this.source.transaction((manager) =>
+      this.initializeWithin(manager, owner, account, value),
+    );
+  }
+
+  /** Reuses carry-in reconciliation inside another atomic owner command. */
+  async initializeWithin(
+    manager: EntityManager,
+    ownerId: string,
+    accountId: string,
+    raw: unknown,
+  ): Promise<{ created: boolean; value: CarryInOrigin }> {
+    const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const input = parseCarryInInitialization(raw);
     const payload = JSON.stringify([
@@ -146,56 +161,54 @@ export class CarryInService {
         lot.remainingQuantity,
       ]),
     ]);
-    return this.source.transaction(async (manager) => {
-      const account = await readOwnedAccount(manager, owner, id, true);
-      const previous = await readJournal(manager, owner, id);
-      if (previous) {
-        if (
-          previous.originKind !== 'known-cost-carry-in' ||
-          previous.requestId !== input.requestId ||
-          previous.canonicalPayload !== payload
-        )
-          throw conflict();
-        return {
-          created: false,
-          value: projectCarryInOrigin(previous, await readBaseline(manager, owner, id, previous)),
-        };
-      }
-      const preview = await this.evaluate(manager, owner, id, account.currentRevision, input);
-      if (!preview.canInitialize) throw conflict();
-      const [journal]: JournalRow[] = await manager.query(
-        `INSERT INTO account_trade_journals
-        ("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","openingRevision","currentRevision")
-        VALUES ($1,$2,$3,$4,'known-cost-carry-in',$5,$6,0) RETURNING *`,
-        [owner, id, input.requestId, payload, preview.coverageFrom, input.expectedOpeningRevision],
-      );
-      if (journal.originKind !== 'known-cost-carry-in')
-        throw new Error('Invalid saved carry-in origin');
-      for (const lot of preview.lots) {
-        await manager.query(
-          `INSERT INTO account_carry_in_lots
-          (id,"ownerId","accountId","openingRevision",ordinal,"instrumentId","acquiredAt","orderWithinTimestamp","originalQuantity","originalCostUsd","remainingQuantity")
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            randomUUID(),
-            owner,
-            id,
-            input.expectedOpeningRevision,
-            lot.ordinal,
-            lot.instrumentId,
-            lot.acquiredAt,
-            lot.orderWithinTimestamp,
-            lot.originalQuantity,
-            lot.originalCostUsd,
-            lot.remainingQuantity,
-          ],
-        );
-      }
+    const account = await readOwnedAccount(manager, owner, id, true);
+    const previous = await readJournal(manager, owner, id);
+    if (previous) {
+      if (
+        previous.originKind !== 'known-cost-carry-in' ||
+        previous.requestId !== input.requestId ||
+        previous.canonicalPayload !== payload
+      )
+        throw conflict();
       return {
-        created: true,
-        value: projectCarryInOrigin(journal, await readBaseline(manager, owner, id, journal)),
+        created: false,
+        value: projectCarryInOrigin(previous, await readBaseline(manager, owner, id, previous)),
       };
-    });
+    }
+    const preview = await this.evaluate(manager, owner, id, account.currentRevision, input);
+    if (!preview.canInitialize) throw conflict();
+    const [journal]: JournalRow[] = await manager.query(
+      `INSERT INTO account_trade_journals
+      ("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","openingRevision","currentRevision")
+      VALUES ($1,$2,$3,$4,'known-cost-carry-in',$5,$6,0) RETURNING *`,
+      [owner, id, input.requestId, payload, preview.coverageFrom, input.expectedOpeningRevision],
+    );
+    if (journal.originKind !== 'known-cost-carry-in')
+      throw new Error('Invalid saved carry-in origin');
+    for (const lot of preview.lots) {
+      await manager.query(
+        `INSERT INTO account_carry_in_lots
+        (id,"ownerId","accountId","openingRevision",ordinal,"instrumentId","acquiredAt","orderWithinTimestamp","originalQuantity","originalCostUsd","remainingQuantity")
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          randomUUID(),
+          owner,
+          id,
+          input.expectedOpeningRevision,
+          lot.ordinal,
+          lot.instrumentId,
+          lot.acquiredAt,
+          lot.orderWithinTimestamp,
+          lot.originalQuantity,
+          lot.originalCostUsd,
+          lot.remainingQuantity,
+        ],
+      );
+    }
+    return {
+      created: true,
+      value: projectCarryInOrigin(journal, await readBaseline(manager, owner, id, journal)),
+    };
   }
 
   async listLots(ownerId: string, accountId: string, rawQuery: unknown = {}) {

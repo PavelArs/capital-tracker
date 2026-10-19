@@ -931,6 +931,35 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
   console.log('PASS BROKER-CAPRET');
 
+  stage = 'BROKER-CARD: external card trades never spend or credit broker cash';
+  const cardAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, cardAccount);
+  history = [operation('1100000001', 'BUY_CARD', '-500', share({ quantity: '2' })), operation('1100000002', 'SELL_CARD', '300', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' })), operation('1100000003', 'DIV_EXT', '15', share({ occurredAt: '2024-03-03T08:00:00Z', quantity: '0' }))];
+  const cardPreview = await imports.preview(owner, cardAccount);
+  assert.equal(cardPreview.canImport, true);
+  await imports.import(owner, cardAccount, { requestId: randomUUID(), previewHash: cardPreview.previewHash });
+  assert.equal((await trades.available(owner, cardAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '0');
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${cardAccount}'`), 2);
+  console.log('PASS BROKER-CARD PostgreSQL card-paid security entries and no phantom broker cash');
+
+  stage = 'BROKER-OPENING: explicit owner quantities and exact costs cover pre-history holdings';
+  const openingAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, openingAccount);
+  history = [operation('1200000001', 'SELL', '9000', { instrumentUid: dollarsUid, instrumentType: 'currency', ticker: 'USD000UTSTOM', quantity: '100' }), operation('1200000002', 'SELL', '500', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' }))];
+  const opening = { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: 'cash:USD', acquiredAt: '2024-02-01T00:00:00Z', quantity: '100', costUsd: '100' }, { asset: shareUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '10' }] };
+  const openingPreview = await imports.preview(owner, openingAccount, { opening });
+  assert.equal(openingPreview.canImport, true, 'Declared opening holdings must participate in planner and FIFO checks');
+  await rejected(() => imports.import(owner, openingAccount, { requestId: randomUUID(), previewHash: openingPreview.previewHash, opening: { ...opening, lots: opening.lots.map((lot) => ({ ...lot, costUsd: '999' })) } }), 409);
+  assert.equal(await count('account_opening_snapshots', `WHERE "accountId" = '${openingAccount}'`), 0, 'A stale preview rolls back opening creation');
+  assert.equal(await count('account_carry_in_lots', `WHERE "accountId" = '${openingAccount}'`), 0);
+  const openingRequest = { requestId: randomUUID(), previewHash: openingPreview.previewHash, opening };
+  const importedOpening = await imports.import(owner, openingAccount, openingRequest);
+  assert.equal((await imports.import(owner, openingAccount, openingRequest)).value.id, importedOpening.value.id, 'Replay preserves one atomic opening and import');
+  assert.equal((await trades.available(owner, openingAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '9500');
+  assert.equal(await count('account_opening_snapshots', `WHERE "accountId" = '${openingAccount}'`), 1);
+  assert.equal(await count('account_carry_in_lots', `WHERE "accountId" = '${openingAccount}'`), 2);
+  console.log('PASS BROKER-OPENING PostgreSQL known-cost carry-in, atomic import and idempotent retry');
+
   stage = 'BROKER-CAPRET-VOID: one owner command removes a return without erasing its history';
   const { CapitalReturnService } = require('/app/backend/dist/accounting/capital-return.service.js');
   const capitalReturns = new CapitalReturnService(db);
@@ -1028,7 +1057,7 @@ async function main() {
     const { BrokerSetupService } = require('/app/backend/dist/brokers/broker-setup.service.js');
     await setup(db, service, new BrokerSetupService(db, service, box), tbank, owner.id, other.id);
     const { BrokerImportService } = require('/app/backend/dist/brokers/broker-import.service.js');
-    const imports = new BrokerImportService(db, service);
+    const imports = new BrokerImportService(db, service, new (require('/app/backend/dist/accounting/accounting.service.js').AccountingService)(db), new (require('/app/backend/dist/accounting/carry-in.service.js').CarryInService)(db));
     const instrument = await heldPreview(db, service, imports, owner.id);
     await voidedTransferPreview(db, service, imports, owner.id, instrument);
     await rewardRoomPreview(db, service, imports, owner.id, instrument);

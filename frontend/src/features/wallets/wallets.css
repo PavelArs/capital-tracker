@@ -209,8 +209,13 @@ button.wallets-source__open {
   transition: background var(--dur-1) ease-out;
 }
 
-button.wallets-source__open:hover {
+/* The source includes its disclosure and messages, so its hover surface belongs to the parent. */
+.wallets-source:has(> button):is(:hover, :focus-within) {
   background: var(--raised);
+}
+
+.wallets-source:has(> button) > button:is(:hover, :focus) {
+  background: transparent;
 }
 
 button.wallets-source__open:focus-visible {
@@ -293,7 +298,7 @@ button.wallets-source__open:focus-visible {
 }
 
 /* Phones: the shared two-line row inside the card's edge. */
-.wallets-source .ui-row {
+.wallets-source:not(.wallets-source--manual) .ui-row {
   padding: 10px var(--sp-4);
   border-bottom: 0;
 }
@@ -591,4 +596,23 @@ a.wallets-holdings__asset:hover {
   .wallets-card__head {
     padding: var(--sp-4) var(--wallets-x);
   }
+}
+
+/* Bound both phone columns: a long exchange balance must not squeeze the account to one letter. */
+.wallets-source:not(.wallets-source--manual) .ui-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1.3fr);
+}
+
+.wallets-source:not(.wallets-source--manual) .ui-row__side {
+  min-width: 0;
+  white-space: normal;
+}
+
+.wallets-source:not(.wallets-source--manual) .wallets-stack,
+.wallets-source:not(.wallets-source--manual) .wallets-stack > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: right;
 }

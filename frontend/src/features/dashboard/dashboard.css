@@ -192,7 +192,7 @@
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   gap: var(--sp-5);
-  align-items: start;
+  align-items: stretch;
 }
 
 /* Beside the allocation the five-column table needs about 640 px; below 1360 px (the 1280 px
@@ -241,4 +241,13 @@
   display: block;
   color: var(--warn);
   font-size: var(--fs-xs);
+}
+
+.dashboard-bottom > .ui-card {
+  height: 100%;
+  min-width: 0;
+}
+
+.dashboard-bottom .portfolio-slices li {
+  min-height: 54px;
 }

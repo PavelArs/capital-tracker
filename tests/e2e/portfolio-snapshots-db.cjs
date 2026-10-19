@@ -86,7 +86,7 @@ async function account(s, owner, name, start) {
   });
   return { id, revision: 0 };
 }
-async function trade(s, owner, target, instrumentId, side, occurredAt, quantity, grossUsd) {
+async function trade(s, owner, target, instrumentId, side, occurredAt, quantity, grossUsd, extra = {}) {
   await s.trades.create(owner, target.id, {
     requestId: randomUUID(),
     expectedJournalRevision: target.revision,
@@ -97,6 +97,7 @@ async function trade(s, owner, target, instrumentId, side, occurredAt, quantity,
     quantity,
     grossUsd,
     feeUsd: '0',
+    ...extra,
   });
   target.revision++;
 }
@@ -203,8 +204,11 @@ async function backfill(db, s, f) {
       'change',
       'changePercent',
       'complete',
+      'contributions',
       'currency',
       'deposits',
+      'excludedAssetCount',
+      'excludedDepositCount',
       'from',
       'invested',
       'mainCurrency',
@@ -570,6 +574,52 @@ async function schedule(db, f) {
   );
 }
 
+async function pricedSubset(db, s) {
+  stage = 'DASH-PRICED-SUBSET excludes unpriced value and its matching invested money';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+    VALUES('priced-scope@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const currency = await instrument(s, owner, { name: 'Dollar cash', symbol: 'USD', assetType: 'fiat' });
+  const unknown = await instrument(s, owner, { name: 'Unpriced holding', assetType: 'manual' });
+  const target = await account(s, owner, 'Priced subset', '2026-10-17T00:00:00Z');
+  await trade(s, owner, target, currency, 'buy', '2026-10-17T01:00:00Z', '1000', '1000');
+  await trade(s, owner, target, unknown, 'buy', '2026-10-17T02:00:00Z', '1', '900');
+  const answer = await s.snapshots.history(owner, { period: 'ALL', currency: 'USD' },
+    new Date('2026-10-18T10:00:00Z'));
+  assert.equal(answer.value, '1000');
+  assert.equal(answer.complete, false);
+  assert.equal(answer.profit, '0', 'Exclude the unpriced purchase cost as well as its value');
+  assert.equal(answer.invested, '1000');
+  assert.equal(answer.excludedAssetCount, 1);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM accounting_instruments WHERE "ownerId"=$1', [owner]))[0].n, 2,
+    'The excluded asset is preserved in the owner records');
+  const reserve = await account(s, owner, 'Priced reserve', '2026-10-17T00:00:00Z');
+  await trade(s, owner, reserve, currency, 'buy', '2026-10-17T01:00:00Z', '50', '50');
+  await trade(s, owner, target, unknown, 'buy', '2026-10-17T03:00:00Z', '1', '900', { settlementCurrency: 'USD' });
+  let settled = await s.snapshots.history(owner, { period: 'ALL', currency: 'USD' }, new Date('2026-10-18T10:00:00Z'));
+  assert.deepEqual([settled.value, settled.invested, settled.profit], ['150', '150', '0'], 'Fully cash-settled excluded purchase removes its cash outflow from invested');
+  await trade(s, owner, target, unknown, 'buy', '2026-10-17T04:00:00Z', '1', '200', { settlementCurrency: 'USD' });
+  settled = await s.snapshots.history(owner, { period: 'ALL', currency: 'USD' }, new Date('2026-10-18T10:00:00Z'));
+  assert.deepEqual([settled.value, settled.invested, settled.profit], ['50', '50', '0'], 'Partly cash-settled excluded purchase removes only spent cash; external cost stays excluded');
+  const { DepositsService } = require('/app/backend/dist/deposits/deposits.service.js');
+  await new DepositsService(db).create(owner, { requestId: randomUUID(), kind: 'account', name: 'Unrated bank', bank: 'Synthetic Bank', currency: 'RUB', startDate: '2026-10-17', endDate: null, payout: 'monthly', capitalized: false, dayBasis: 'actual-365', earlyClose: 'keeps-interest', ratePercent: '0', amount: '1000' });
+  settled = await s.snapshots.history(owner, { period: 'ALL', currency: 'USD' }, new Date('2026-10-18T10:00:00Z'));
+  assert.deepEqual([settled.value, settled.invested, settled.profit, settled.excludedDepositCount], ['50', '50', '0', 1], 'Unrated bank value and flows are excluded together');
+  const [{ id: missingOwner }] = await db.query(`INSERT INTO users(email,password) VALUES('missing-scope@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const missing = await instrument(s, missingOwner, { name: 'Missing only', assetType: 'manual' });
+  const laterPriced = await instrument(s, missingOwner, { name: 'Priced later', assetType: 'manual' });
+  const missingAccount = await account(s, missingOwner, 'Missing scope', '2026-10-16T00:00:00Z');
+  await trade(s, missingOwner, missingAccount, missing, 'buy', '2026-10-16T01:00:00Z', '1', '900');
+  await trade(s, missingOwner, missingAccount, laterPriced, 'buy', '2026-10-16T02:00:00Z', '1', '100');
+  const missingHistory = await s.snapshots.history(missingOwner, { period: 'ALL', currency: 'USD' }, new Date('2026-10-18T10:00:00Z'));
+  assert.equal(missingHistory.value, null, 'Only unpriced holdings are missing, never zero');
+  assert.ok(missingHistory.points.filter((point) => point.at >= '2026-10-18').every((point) => point.value === null));
+  await s.prices.set(missingOwner, laterPriced, { requestId: randomUUID(), expectedRevision: 0, observedAt: '2026-10-18T00:00:00Z', priceUsd: '120', assertReviewed: true });
+  const repriced = await s.snapshots.history(missingOwner, { period: 'ALL', currency: 'USD' }, new Date('2026-10-18T10:00:00Z'));
+  assert.equal(repriced.value, '120');
+  assert.equal(repriced.points.find((point) => point.at === '2026-10-17T00:00:00.000Z').value, null, 'Historical retained holdings without quotes remain missing');
+  console.log('PASS DASH-PRICED-SUBSET exact matched value and invested money, exclusion stated, records preserved');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -619,6 +669,7 @@ async function main() {
     await instrument(s, other.id, { name: 'Foreign bitcoin', symbol: 'BTC', assetType: 'crypto' });
     for (const check of [backfill, hourly, rebuild, assetHistory, reads]) await check(db, s, f);
     await schedule(db, f);
+    await pricedSubset(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

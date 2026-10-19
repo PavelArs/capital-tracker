@@ -82,7 +82,7 @@ export type GoalPreview = Omit<Goal, 'id' | 'name' | 'createdAt'>;
 export interface GoalForecast {
   currency: GoalCurrency;
   asOf: string;
-  /** False while an asset has no price or rate; the points are then left out. */
+  /** False when the forecast excludes assets without a price or rate. */
   complete: boolean;
   /** Held assets valued at a stored market price older than 2 hours, as the forecast valued them. */
   stalePrices?: number;
@@ -97,7 +97,25 @@ export interface NewGoal extends GoalTerms {
 const path = '/goals';
 const one = (id: string) => `${path}/${encodeURIComponent(id)}`;
 
+export interface GoalInsights {
+  currency: GoalCurrency;
+  asOf: string;
+  complete: boolean;
+  months: { month: string; net: string | null }[];
+  averages: Record<3 | 6 | 12, string | null>;
+  paceStatus: 'insufficient-history' | 'missing-value' | 'projected' | 'beyond-horizon';
+  paceReachedOn: string | null;
+  growth: {
+    from: string | null;
+    contributions: string | null;
+    market: string | null;
+    total: string | null;
+  };
+}
+
 export const goalsApi = {
+  insights: (id: string) =>
+    apiClient.get<GoalInsights>(`/goals/${id}/insights`).then((response) => response.data),
   list: async (): Promise<GoalList> => (await apiClient.get<GoalList>(path)).data,
 
   get: async (id: string): Promise<Goal> => (await apiClient.get<Goal>(one(id))).data,

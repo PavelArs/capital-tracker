@@ -7,7 +7,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
-import { Card, CardHeader } from '@/ui/Card';
+import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
 import { ErrorState } from '@/ui/ErrorState';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
@@ -61,88 +61,98 @@ function DepositTile({
   const real = realOf(deposit, basis);
   const rate = showReal ? realRateText(real) : null;
   return (
-    <li>
-      <Link className="deposit-card__link" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
-        <Card as="div" className="deposit-card">
-          <div className="deposit-card__head">
-            <span className="deposit-card__name">{deposit.name}</span>
-            <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
-          </div>
-          <div className="deposit-card__value">
-            <strong className="ui-num">{money(deposit.values[shown], shown)}</strong>
-            {!inOwn && <span className="ui-num">{money(deposit.balance, deposit.currency)}</span>}
-          </div>
-          <p className="deposit-card__terms">{termText(deposit)}</p>
-          {rate && (
-            <p className="deposit-card__terms">
-              <span className={toneClass(real?.ratePercent ?? null)}>{rate}</span>
-            </p>
+    <li className="deposit-product">
+      <Link className="deposit-product__row" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
+        <span className="deposit-product__identity">
+          <Icon name="bank" />
+          <span>
+            <strong>{deposit.name}</strong>
+            <small>{deposit.kind === 'account' ? 'Savings account' : 'Term deposit'}</small>
+          </span>
+        </span>
+        <span className="deposit-product__terms">
+          {termText(deposit)}
+          {rate && <small className={toneClass(real?.ratePercent ?? null)}>{rate}</small>}
+        </span>
+        <span className="deposit-product__balance ui-num">
+          {money(deposit.balance, deposit.currency)}
+          {deposit.nextPayout && (
+            <small>
+              Next {money(deposit.nextPayout.interest, deposit.currency)} on{' '}
+              {dateText(deposit.nextPayout.date)}
+            </small>
           )}
-          <KeyValue>
-            {deposit.interestMissing && (
-              <KeyValueRow term="Interest">
-                {deposit.ratePercent === null
-                  ? 'Not counted, no rate entered'
-                  : 'Not counted before the first rate'}
-              </KeyValueRow>
-            )}
-            {deposit.interestEarned != null &&
-              (showReal ? (
-                <KeyValueRow term="Interest after inflation">
-                  <span className={toneClass(real?.gain ?? null)}>
-                    {real?.gain != null ? money(real.gain, deposit.currency, true) : DASH}
-                  </span>
-                  {real?.gain != null && real.estimated && ESTIMATED}
-                  {real?.gain == null && <span className="ui-sub"> {NO_REAL_GAIN}</span>}
-                </KeyValueRow>
-              ) : (
-                <KeyValueRow term="Interest earned">
-                  {money(deposit.interestEarned, deposit.currency)}
-                </KeyValueRow>
-              ))}
-            {deposit.nextPayout && (
-              <KeyValueRow term="Next interest">
-                {money(deposit.nextPayout.interest, deposit.currency)} on{' '}
-                {dateText(deposit.nextPayout.date)}
-              </KeyValueRow>
-            )}
-            {deposit.atMaturity &&
-              (showReal ? (
-                <KeyValueRow term="At the end, in today's money">
-                  {deposit.atMaturity.inTodaysMoney?.[basis]
-                    ? money(deposit.atMaturity.inTodaysMoney[basis].amount, deposit.currency)
-                    : DASH}
-                  {deposit.atMaturity.inTodaysMoney?.[basis]?.estimated && ESTIMATED}
-                  {!deposit.atMaturity.inTodaysMoney?.[basis] && (
-                    <span className="ui-sub">
-                      {' '}
-                      {noRealEndReason(deposit.atMaturity.date, asOf)}
-                    </span>
-                  )}
-                </KeyValueRow>
-              ) : (
-                <KeyValueRow term="At the end of the term">
-                  {money(deposit.atMaturity.balance, deposit.currency)}
-                </KeyValueRow>
-              ))}
-            {check && (
-              <KeyValueRow term="Last check">
-                {dateText(check.checkedOn)},{' '}
-                {check.difference === null
-                  ? 'not compared, the interest is missing'
-                  : Number(check.difference) === 0
-                    ? 'matches the bank'
-                    : `differs by ${money(check.difference, deposit.currency)}`}
-              </KeyValueRow>
-            )}
-          </KeyValue>
-          {note && (
-            <Banner tone="warn" role="none">
-              {note}
-            </Banner>
-          )}
-        </Card>
+        </span>
+        {!inOwn && (
+          <strong className="deposit-product__value ui-num">
+            {money(deposit.values[shown], shown)}
+          </strong>
+        )}
+        <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
       </Link>
+      <details className="deposit-product__details">
+        <summary>Interest and balance details</summary>
+        <KeyValue>
+          {deposit.interestMissing && (
+            <KeyValueRow term="Interest">
+              {deposit.ratePercent === null
+                ? 'Not counted, no rate entered'
+                : 'Not counted before the first rate'}
+            </KeyValueRow>
+          )}
+          {deposit.interestEarned != null &&
+            (showReal ? (
+              <KeyValueRow term="Interest after inflation">
+                <span className={toneClass(real?.gain ?? null)}>
+                  {real?.gain != null ? money(real.gain, deposit.currency, true) : DASH}
+                </span>
+                {real?.gain != null && real.estimated && ESTIMATED}
+                {real?.gain == null && <span className="ui-sub"> {NO_REAL_GAIN}</span>}
+              </KeyValueRow>
+            ) : (
+              <KeyValueRow term="Interest earned">
+                {money(deposit.interestEarned, deposit.currency)}
+              </KeyValueRow>
+            ))}
+          {deposit.nextPayout && (
+            <KeyValueRow term="Next interest">
+              {money(deposit.nextPayout.interest, deposit.currency)} on{' '}
+              {dateText(deposit.nextPayout.date)}
+            </KeyValueRow>
+          )}
+          {deposit.atMaturity &&
+            (showReal ? (
+              <KeyValueRow term="At the end, in today's money">
+                {deposit.atMaturity.inTodaysMoney?.[basis]
+                  ? money(deposit.atMaturity.inTodaysMoney[basis].amount, deposit.currency)
+                  : DASH}
+                {deposit.atMaturity.inTodaysMoney?.[basis]?.estimated && ESTIMATED}
+                {!deposit.atMaturity.inTodaysMoney?.[basis] && (
+                  <span className="ui-sub"> {noRealEndReason(deposit.atMaturity.date, asOf)}</span>
+                )}
+              </KeyValueRow>
+            ) : (
+              <KeyValueRow term="At the end of the term">
+                {money(deposit.atMaturity.balance, deposit.currency)}
+              </KeyValueRow>
+            ))}
+          {check && (
+            <KeyValueRow term="Last check">
+              {dateText(check.checkedOn)},{' '}
+              {check.difference === null
+                ? 'not compared, the interest is missing'
+                : Number(check.difference) === 0
+                  ? 'matches the bank'
+                  : `differs by ${money(check.difference, deposit.currency)}`}
+            </KeyValueRow>
+          )}
+        </KeyValue>
+      </details>
+      {note && (
+        <Banner tone="warn" role="none">
+          {note}
+        </Banner>
+      )}
     </li>
   );
 }
@@ -183,23 +193,27 @@ function Bank({
   const total = values.length === 0 ? '0' : known.length > 0 ? sumDecimals(known) : null;
   return (
     <li>
-      <Card labelledBy={`${id}-bank`}>
-        <CardHeader
-          id={`${id}-bank`}
-          title={bank}
-          sub={plural(deposits.length, 'deposit')}
-          actions={
-            <div className="deposit-bank__total">
-              <strong className="ui-num">{money(total, shown)}</strong>
-              {missing > 0 && (
-                <span className="deposit-bank__reason">
-                  Incomplete: {plural(missing, 'deposit')} {missing === 1 ? 'has' : 'have'} no
-                  current exchange rate to {shown}
-                </span>
-              )}
-            </div>
-          }
-        />
+      <Card variant="flush" className="deposit-bank" labelledBy={`${id}-bank`}>
+        <div className="deposit-bank__head">
+          <span className="deposit-bank__icon">
+            <Icon name="bank" />
+          </span>
+          <div className="deposit-bank__identity">
+            <h2 id={`${id}-bank`}>{bank}</h2>
+            <small>Bank · deposits and savings accounts</small>
+          </div>
+
+          <div className="deposit-bank__total">
+            <strong className="ui-num">{money(total, shown)}</strong>
+            <small>{plural(deposits.length, 'product')}</small>
+            {missing > 0 && (
+              <span className="deposit-bank__reason">
+                Incomplete: {plural(missing, 'deposit')} {missing === 1 ? 'has' : 'have'} no current
+                exchange rate to {shown}
+              </span>
+            )}
+          </div>
+        </div>
         <ul className="deposit-list">
           {deposits.map((deposit) => (
             <DepositTile key={deposit.id} deposit={deposit} asOf={asOf} shown={shown} />
@@ -237,15 +251,16 @@ export default function DepositsPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader
-        title="Banks"
-        valueSwitch
-        actions={
-          <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
-            Add deposit
-          </Button>
-        }
-      />
+      <PageHeader title="Banks" valueSwitch />
+      <div className="deposit-intro">
+        <p>
+          Deposits and accounts are entered once with their terms. The app counts the interest and
+          what each one is worth; you record top-ups, withdrawals and a balance check now and then.
+        </p>
+        <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
+          Add deposit or account
+        </Button>
+      </div>
       {error && list === null ? (
         <ErrorState what="your deposits" onRetry={() => reload()} />
       ) : list === null ? (
@@ -271,7 +286,7 @@ export default function DepositsPage() {
               Total in deposits
             </h2>
             <Stats size="lg">
-              <Stat lead label="In deposits" value={money(total, shown)} />
+              <Stat lead label="In banks" value={money(total, shown)} />
               {(share !== null || (total !== null && unknown)) && (
                 <Stat
                   label="Share of net worth"

@@ -411,3 +411,48 @@
 .goal-chart__incomplete {
   fill: var(--warn);
 }
+
+.goal-insights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+.goal-insights > .ui-banner {
+  grid-column: 1 / -1;
+}
+.goal-month-bars {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-2);
+  height: 120px;
+  margin: var(--sp-5) 0 var(--sp-3);
+}
+.goal-month-bars > span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.goal-month-bars i {
+  display: block;
+  background: var(--accent);
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+}
+.goal-month-bars i[data-negative] {
+  background: var(--neg);
+}
+.goal-month-bars i[data-missing] {
+  background: var(--line);
+}
+.goal-month-bars small {
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+@media (max-width: 899px) {
+  .goal-insights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

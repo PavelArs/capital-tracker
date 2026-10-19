@@ -758,9 +758,9 @@ describe('show-dashboard-top-assets', () => {
       'Zcash ZEC$600.006.00%',
       'Other 2 assets$800.008.00%',
     ]);
-    await user.click(within(allocation).getByRole('radio', { name: 'Type' }));
+    await user.click(within(allocation).getByRole('radio', { name: 'Classes' }));
     expect(shares()).toEqual(['Crypto$8,500.0085.00%', 'Cash$1,500.0015.00%']);
-    await user.click(within(allocation).getByRole('radio', { name: 'Wallets' }));
+    await user.click(within(allocation).getByRole('radio', { name: 'Accounts' }));
     expect(shares()).toEqual(['Trust Wallet$7,000.0070.00%', 'Cold storage$3,000.0030.00%']);
   });
 

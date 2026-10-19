@@ -351,7 +351,7 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     },
   );
 
-  it('lists trades and dividends settled through a card, which never touch the broker cash', () => {
+  it('BROKER-CARD records card-paid securities without broker cash and identifies outside dividends', () => {
     const plan = planImport([
       op({ id: '470000001', type: 'OPERATION_TYPE_BUY_CARD' }),
       cash('OPERATION_TYPE_BROKER_FEE', '-0.2', { id: '470000002', parentId: '470000001' }),
@@ -359,13 +359,20 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       cash('OPERATION_TYPE_DIV_EXT', '15', { id: '470000004', instrumentUid: share }),
     ]);
     expect(plan.skipped.map((item) => [item.operationId, item.reason])).toEqual([
-      ['470000001', 'card'],
-      ['470000003', 'card'],
-      ['470000004', 'card'],
+      ['470000004', 'outside-dividend'],
     ]);
-    expect(plan.entries.map((entry) => [entry.action, entry.amount, entry.operationIds])).toEqual([
-      ['fee', '0.2', ['470000002']],
+    expect(
+      plan.entries
+        .filter((entry) => entry.action === 'buy' || entry.action === 'sell')
+        .map((entry) => [entry.action, entry.externalCash]),
+    ).toEqual([
+      ['buy', true],
+      ['sell', true],
     ]);
+    expect(plan.entries.find((entry) => entry.action === 'fee')).toMatchObject({
+      amount: '0.2',
+      operationIds: ['470000002'],
+    });
   });
 
   it('sells units bought at the very same instant, and lists a trade T-Bank does not classify', () => {

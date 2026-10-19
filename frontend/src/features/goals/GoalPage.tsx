@@ -18,6 +18,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import GoalChart from './GoalChart';
 import { DeleteGoalDialog, GoalDialog } from './GoalDialogs';
+import GoalInsights from './GoalInsights';
 import { GoalBar, GoalFigures } from './GoalProgress';
 import {
   againstTarget,
@@ -201,9 +202,9 @@ export default function GoalPage() {
   const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
   const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
   const gap = goal ? offsets(goal) : null;
-  // With assets that have no price the value is understated, so the projections from it are not
-  // figures to act on, even for a goal that is already reached.
-  const known = goal ? goal.progress.complete : false;
+  // With assets that have no price the value is understated, so projections are estimates
+  // for the priced subset, even for a goal that is already reached.
+  const known = goal?.progress.current != null;
   const against = known ? againstTarget(base?.gap ?? null, goal?.currency ?? 'USD') : null;
   const stale = goal ? staleText(goal.progress.stalePrices) : null;
 
@@ -313,10 +314,9 @@ export default function GoalPage() {
             </Stats>
           </Card>
           <GoalChart goal={goal} />
-          {goal.scenarios.length > 0 && !known && (
+          {!goal.progress.complete && (
             <Banner tone="info">
-              The three cases need every asset priced. Some have no price or rate yet, so no sum or
-              date is worked out.
+              Estimated from priced assets only. Assets without a price or rate are excluded.
             </Banner>
           )}
           {goal.scenarios.length > 0 && known && (
@@ -341,6 +341,7 @@ export default function GoalPage() {
               </Banner>
             </Card>
           )}
+          <GoalInsights goal={goal} />
           {dialog === 'edit' && (
             <GoalDialog
               goal={goal}
