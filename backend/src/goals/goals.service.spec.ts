@@ -250,7 +250,7 @@ it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for i
     deposits: '1000',
     marketEffect: '-50',
     change: '850',
-    points: [{ at: '2025-10-18T00:00:00Z' }],
+    points: [{ at: '2025-10-18T00:00:00Z', value: '4150' }],
   });
   const view = await goals.insights(owner, row.id);
   expect(view.growth).toEqual({
@@ -263,6 +263,34 @@ it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for i
   expect(view.complete).toBe(false);
   expect(view.paceReachedOn).not.toBeNull();
 });
+
+it.each([
+  {
+    points: [
+      { at: '2025-10-18T00:00:00Z', value: null },
+      { at: '2026-01-01T00:00:00Z', value: '0' },
+      { at: '2026-02-01T00:00:00Z', value: '5000' },
+    ],
+    from: '2026-01-01T00:00:00Z',
+  },
+  { points: [{ at: '2025-10-18T00:00:00Z', value: null }], from: null },
+  { points: [], from: null },
+])(
+  'GOAL-WIDGETS dates growth from its first available valuation: $from',
+  async ({ points, from }) => {
+    const goals = service(false);
+    (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+      value: '5000',
+      complete: false,
+      contributions: { months: [], averages: { 3: null, 6: null, 12: null } },
+      netFlow: null,
+      marketEffect: null,
+      change: null,
+      points,
+    });
+    expect((await goals.insights(owner, row.id)).growth.from).toBe(from);
+  },
+);
 
 it('GOAL-WIDGETS keeps missing current value distinct from an unreachable pace', async () => {
   const goals = service(false);

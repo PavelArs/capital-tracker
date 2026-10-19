@@ -10,6 +10,7 @@ import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { refuseRetiredCommand } from '../accounting/retired-command';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
+import { firstValuedPoint } from '../portfolio-snapshots/snapshot-series';
 import { goalForecast } from './goal-chart';
 import { addMonths, MAX_MONTHS } from './goal-forecast';
 import {
@@ -104,7 +105,7 @@ export class GoalsService {
               : ('beyond-horizon' as const),
       paceReachedOn: pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn ?? null,
       growth: {
-        from: history.points[0]?.at ?? null,
+        from: firstValuedPoint(history.points)?.at ?? null,
         contributions: history.netFlow,
         market: history.marketEffect,
         total: history.change,
