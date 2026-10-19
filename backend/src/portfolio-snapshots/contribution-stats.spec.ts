@@ -66,7 +66,7 @@ it('GOAL-CONTRIBUTIONS uses the first real record instead of automatic epoch cov
     chainMoves: new Map(),
     deposits: [],
   } as unknown as ValuationInputs;
-  expect(contributionStart(inputs, '2026-10-18')).toBe('2026-10-01');
+  expect(contributionStart(inputs, '2026-10-18')).toBe('2026-10-02');
   expect(
     monthlyContributions([], contributionStart(inputs, '2026-10-18'), '2026-10-18').averages[12],
   ).toBeNull();
@@ -122,5 +122,23 @@ it('GOAL-CONTRIBUTIONS uses the first actual record per automatic account, then 
     chainMoves: new Map(),
     deposits: [],
   } as unknown as ValuationInputs;
-  expect(contributionStart(inputs, '2026-10-18')).toBe('2026-07-15');
+  expect(contributionStart(inputs, '2026-10-18')).toBe('2026-07-16');
 });
+
+it.each([
+  ['2026-06-30T21:00:00.000Z', '2026-07-01', '0'],
+  ['2026-06-30T21:00:00.001Z', '2026-07-02', null],
+  ['2026-07-01T09:00:00.000Z', '2026-07-02', null],
+  ['2026-07-31T21:00:00.000Z', '2026-08-01', null],
+])(
+  'GOAL-CONTRIBUTIONS counts a first month only from exact Moscow midnight %s',
+  (boundary, expected, average) => {
+    const inputs = {
+      accounts: [{ accountId: 'one', coverageFrom: new Date(boundary) }],
+      deposits: [],
+    } as unknown as ValuationInputs;
+    const start = contributionStart(inputs, '2026-10-18');
+    expect(start).toBe(expected);
+    expect(monthlyContributions([], start, '2026-10-18').averages[3]).toBe(average);
+  },
+);

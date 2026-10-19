@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { parseAsOf, parseDecimal, parseUuid } from '../accounting/input';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import type { TBankOperation, TBankPosition } from './tbank-client';
+import { cashOf } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
 
 export interface BrokerOpening {
@@ -75,6 +76,15 @@ export function openingPositions(
   }));
 }
 
+/** CurrencyBy proves which positions are the cash currencies this ledger keeps. */
+export function cashPositionCurrency(position: TBankPosition) {
+  const code = position.currencyCode;
+  return position.instrumentType === 'currency' &&
+    (code === 'USD' || code === 'EUR' || code === 'RUB')
+    ? code
+    : undefined;
+}
+
 /** The import's own instrument identities, not ticker guesses supplied by the browser. */
 export function openingAssets(
   operations: readonly TBankOperation[],
@@ -89,7 +99,7 @@ export function openingAssets(
   for (const operation of operations) {
     if (
       operation.state !== 'executed' ||
-      operation.instrumentType === 'currency' ||
+      cashOf(operation) ||
       !operation.instrumentUid ||
       !['buy', 'sell', 'repayment'].includes(operationKind(operation.type)) ||
       !['usd', 'eur', 'rub'].includes(operation.paymentCurrency)
@@ -109,7 +119,12 @@ export function openingAssets(
       position.virtual ||
       position.quantity === '0' ||
       position.quantity.startsWith('-') ||
-      !['share', 'bond', 'etf'].includes(position.instrumentType) ||
+      (!['share', 'bond', 'etf'].includes(position.instrumentType) &&
+        !(
+          position.instrumentType === 'currency' &&
+          position.currencyCode &&
+          !cashPositionCurrency(position)
+        )) ||
       !currency ||
       assets.has(position.instrumentUid)
     )

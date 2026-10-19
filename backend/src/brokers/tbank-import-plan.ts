@@ -141,7 +141,7 @@ const exchangeCash: Readonly<Record<string, 'usd' | 'eur'>> = {
   EUR_RUB__TOD: 'eur',
 };
 /** The currency a dollar or euro trade on the exchange moves as cash, if it is one. */
-const cashOf = (item: TBankOperation) =>
+export const cashOf = (item: TBankOperation) =>
   item.instrumentType === 'currency' ? exchangeCash[item.ticker] : undefined;
 /**
  * Why a trade's security cannot be recorded: T-Bank names no instrument or does not say what

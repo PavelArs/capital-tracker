@@ -39,6 +39,8 @@ export interface TBankAccount {
 export interface TBankPosition {
   instrumentUid: string;
   instrumentType: string;
+  /** Import-only CurrencyBy metadata distinguishes cash from commodities. */
+  currencyCode?: string;
   quantity: string;
   /** Each price with its own currency; both '' when T-Bank gives no such price. */
   averagePrice: string;
@@ -209,10 +211,10 @@ export function parsePositions(body: unknown, accountId: string): TBankPosition[
   const gifts = answer.virtualPositions ?? [];
   if (!Array.isArray(held) || !Array.isArray(gifts) || held.length + gifts.length > 500)
     return invalid();
-  return [
-    ...held.map((value) => position(value, false)),
-    ...gifts.map((value) => position(value, true)),
-  ];
+  const positions = held.map((value) => position(value, false));
+  if (new Set(positions.map((item) => item.instrumentUid)).size !== positions.length)
+    return invalid();
+  return [...positions, ...gifts.map((value) => position(value, true))];
 }
 
 // A page of 250 stays well under the body limit even with every field and fill T-Bank gives.
@@ -368,6 +370,25 @@ export class TBankClient {
   portfolio(token: string, accountId: string): Promise<TBankResult<TBankPosition[]>> {
     return this.call(token, 'OperationsService/GetPortfolio', { accountId }, (body) =>
       parsePositions(body, accountId),
+    );
+  }
+
+  /** The documented CurrencyBy ISO code; never infer cash identity from a price. */
+  currencyCode(token: string, uid: string): Promise<TBankResult<string>> {
+    return this.call(
+      token,
+      'InstrumentsService/CurrencyBy',
+      { idType: 'INSTRUMENT_ID_TYPE_UID', id: uid },
+      (body) => {
+        const instrument = record(record(body).instrument);
+        if (
+          instrument.uid !== uid ||
+          typeof instrument.isoCurrencyName !== 'string' ||
+          !/^[A-Za-z]{3}$/.test(instrument.isoCurrencyName)
+        )
+          return invalid();
+        return instrument.isoCurrencyName.toUpperCase();
+      },
     );
   }
 

@@ -61,6 +61,10 @@ function build(
       portfolios.push(id);
       return positions;
     },
+    currencyCode: async (_token: string, _uid: string): Promise<TBankResult<string>> => ({
+      ok: false,
+      reason: 'unavailable',
+    }),
     operations: async (_token: string, id: string) => {
       histories.push(id);
       return operations;
@@ -80,6 +84,7 @@ function build(
     locks,
     portfolios,
     histories,
+    tbank,
   };
 }
 const ok = (...items: TBankAccount[]): TBankResult<TBankAccount[]> => ({ ok: true, value: items });
@@ -406,4 +411,21 @@ it('BROKER-OPENING never treats an unreadable current portfolio as empty', async
       UnprocessableEntityException,
     );
   }
+});
+
+it('BROKER-OPENING classifies currency positions using provider metadata and never guesses on failure', async () => {
+  const position = {
+    instrumentUid: 'synthetic-currency-uid',
+    instrumentType: 'currency',
+    quantity: '1',
+    virtual: false,
+  };
+  const { service, tbank } = build(ok(mine), true, true, { ok: true, value: [position] });
+  await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
+    ServiceUnavailableException,
+  );
+  tbank.currencyCode = async () => ({ ok: true, value: 'XAU' });
+  expect((await service.history(owner, account, true)).positions).toEqual([
+    { ...position, currencyCode: 'XAU' },
+  ]);
 });

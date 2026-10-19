@@ -44,6 +44,7 @@ import { parseImport, parseImportPreview, parseUuid } from './broker-connection-
 import { BrokerConnectionsService } from './broker-connections.service';
 import {
   type BrokerOpening,
+  cashPositionCurrency,
   openingAssets,
   openingPositions,
   openingQuantities,
@@ -525,24 +526,51 @@ export class BrokerImportService {
       };
       try {
         const result = calculateOwnedTransfers([replayed], []).accounts.get(account)!;
-        // A current holding can predate the returned history even when that history trades it.
+        // Both directions, including cash: opening lots cannot invent a current balance.
+        const actual = new Map<string, bigint>();
+        for (const lot of result.lots)
+          actual.set(
+            lot.instrumentId,
+            (actual.get(lot.instrumentId) ?? 0n) + canonicalDecimalToAtoms(lot.remainingQuantity),
+          );
+        const reported = new Map<string, { quantity: bigint; invalid: boolean }>();
         for (const position of history.positions ?? []) {
-          if (position.virtual || position.instrumentType === 'currency') continue;
-          const instrument = instruments.securities.get(position.instrumentUid);
-          if (position.quantity === '0' && !instrument) continue;
-          const quantity = result.lots
-            .filter((lot) => lot.instrumentId === instrument?.id)
-            .reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.remainingQuantity), 0n);
-          if (
-            !instrument ||
-            !['share', 'bond', 'etf'].includes(position.instrumentType) ||
+          if (position.virtual) continue;
+          const code = cashPositionCurrency(position);
+          const key = code ? `cash:${code}` : position.instrumentUid;
+          const invalid =
             position.quantity.startsWith('-') ||
-            quantity !== canonicalDecimalToAtoms(position.quantity)
-          )
+            (position.quantity !== '0' &&
+              !['share', 'bond', 'etf'].includes(position.instrumentType) &&
+              !(position.instrumentType === 'currency' && position.currencyCode));
+          const before = reported.get(key);
+          reported.set(key, {
+            quantity:
+              (before?.quantity ?? 0n) +
+              (invalid ? 0n : canonicalDecimalToAtoms(position.quantity)),
+            invalid: invalid || (before?.invalid ?? false),
+          });
+        }
+        const keys = new Set([
+          ...instruments.securities.keys(),
+          'cash:USD',
+          'cash:EUR',
+          'cash:RUB',
+          ...reported.keys(),
+        ]);
+        for (const key of keys) {
+          const instrument = key.startsWith('cash:')
+            ? instruments.cash[key.slice(5) as CashCurrency]
+            : instruments.securities.get(key);
+          const quantity = instrument ? (actual.get(instrument.id) ?? 0n) : 0n;
+          const expected = reported.get(key);
+          if (quantity === 0n && (!expected || expected.quantity === 0n) && !expected?.invalid)
+            continue;
+          if (!instrument || expected?.invalid || quantity !== (expected?.quantity ?? 0n))
             problems.push({
               reason: 'opening-holding',
               occurredAt: null,
-              ticker: position.instrumentUid,
+              ticker: key,
               operationIds: [],
             });
         }
@@ -607,6 +635,7 @@ export class BrokerImportService {
               position.quantity,
               position.currentPriceCurrency,
               position.averagePriceCurrency,
+              position.currencyCode ?? '',
             ])
             .sort((a, b) => a[0].localeCompare(b[0])),
           account,

@@ -41,11 +41,19 @@ export function monthlyContributions(allFlows: readonly StatedFlow[], from: stri
   return { months, averages };
 }
 
+/** The first whole Moscow day: a partial first day cannot prove a complete first month. */
+function firstFullDay(at: Date): string {
+  const day = moscowDate(at);
+  return at.getTime() === Date.parse(`${day}T00:00:00+03:00`)
+    ? day
+    : moscowDate(new Date(at.getTime() + 86_400_000));
+}
+
 /** Automatic coverage's epoch sentinel proves no calendar history before the first actual record. */
 export function contributionStart(inputs: ValuationInputs, today: string): string {
   const dates = inputs.accounts.map((row) => {
     if (row.coverageFrom && row.coverageFrom.toISOString() !== AUTOMATIC_COVERAGE_FROM)
-      return moscowDate(row.coverageFrom);
+      return firstFullDay(row.coverageFrom);
     const ledger = inputs.ledgers.get(row.accountId);
     const account = ledger?.accounts.get(row.accountId);
     const records = [
@@ -62,7 +70,7 @@ export function contributionStart(inputs: ValuationInputs, today: string): strin
     ];
     return (
       records
-        .map((record) => moscowDate(new Date(record.occurredAt)))
+        .map((record) => firstFullDay(new Date(record.occurredAt)))
         .filter((date) => date <= today)
         .sort()[0] ?? today
     );

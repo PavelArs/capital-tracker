@@ -189,7 +189,17 @@ export class BrokerConnectionsService {
       );
     const positions = await this.tbank.portfolio(token, target.id);
     if (!positions.ok) throw savedTokenFailure(positions.reason);
-    return { brokerAccountId: target.id, operations: result.value, positions: positions.value };
+    const classified: TBankPosition[] = [];
+    for (const position of positions.value) {
+      if (position.virtual || position.instrumentType !== 'currency' || position.quantity === '0') {
+        classified.push(position);
+        continue;
+      }
+      const code = await this.tbank.currencyCode(token, position.instrumentUid);
+      if (!code.ok) throw savedTokenFailure(code.reason);
+      classified.push({ ...position, currencyCode: code.value });
+    }
+    return { brokerAccountId: target.id, operations: result.value, positions: classified };
   }
 
   async disconnect(ownerId: string, accountId: string) {
