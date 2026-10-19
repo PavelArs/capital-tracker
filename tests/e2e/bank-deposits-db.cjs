@@ -956,7 +956,7 @@ async function wholePortfolio(db, owner) {
   assert.match(paid.profit, /^\+?7710\.9[56]/, 'Taking interest out does not change the profit');
   console.log('PASS DEP-VALUE-FLOWS');
 
-  stage = 'synthetic deposit without a fresh rate leaves the profit unknown';
+  stage = 'synthetic deposit without a fresh rate excludes its value and invested money together';
   // The rates stop on 2026-10-02, so by 2026-10-25 the dollar deposit has none at most 15 days old.
   const stale = await snapshots.history(
     owner,
@@ -964,7 +964,14 @@ async function wholePortfolio(db, owner) {
     new Date('2026-10-25T12:00:00.000Z'),
   );
   assert.equal(stale.complete, false);
-  assert.equal(stale.profit, null, 'A deposit that is left out must not read as a loss');
+  // Only the matured RUB deposit remains: 100000 principal, 3024.66 interest, 3000 paid out.
+  assert.deepEqual(
+    [stale.value, stale.invested, stale.profit],
+    ['100024.66', '97000', '3024.66'],
+    'The retained deposit keeps its exact profit; the excluded dollar principal cannot become a loss',
+  );
+  assert.deepEqual([stale.deposits, stale.withdrawals, stale.netFlow], ['100000', '3000', '97000']);
+  assert.deepEqual([stale.excludedAssetCount, stale.excludedDepositCount], [0, 1]);
   console.log('PASS DEP-VALUE-UNRATED-PROFIT');
 
   stage = 'synthetic hourly job refreshes an owner who has only deposits';

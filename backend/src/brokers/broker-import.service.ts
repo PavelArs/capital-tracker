@@ -527,13 +527,9 @@ export class BrokerImportService {
         const result = calculateOwnedTransfers([replayed], []).accounts.get(account)!;
         // A current holding can predate the returned history even when that history trades it.
         for (const position of history.positions ?? []) {
-          if (
-            position.virtual ||
-            position.quantity === '0' ||
-            position.instrumentType === 'currency'
-          )
-            continue;
+          if (position.virtual || position.instrumentType === 'currency') continue;
           const instrument = instruments.securities.get(position.instrumentUid);
+          if (position.quantity === '0' && !instrument) continue;
           const quantity = result.lots
             .filter((lot) => lot.instrumentId === instrument?.id)
             .reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.remainingQuantity), 0n);

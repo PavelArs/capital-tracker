@@ -978,6 +978,9 @@ async function importing(db, service, imports, tbank, owner, other) {
   history.pop();
   history.push(operation('1300000003', 'BUY', '-500', { ...share({ quantity: '1' }), instrumentUid: otherUid }));
   assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'One recorded share cannot conceal another earlier share');
+  tbank.positions = [{ ...untouched, quantity: '0' }];
+  assert.equal((await imports.preview(owner, untouchedAccount)).canImport, false, 'A recorded holding cannot contradict an explicitly zero current position');
+  tbank.positions = [untouched];
   assert.equal((await imports.preview(owner, untouchedAccount, { opening: { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: otherUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '10' }] } })).canImport, true, 'Opening and recorded shares reconcile together');
   history.pop();
   const untouchedOpening = { asOf: '2024-02-25T00:00:00Z', lots: [{ asset: otherUid, acquiredAt: '2024-02-01T00:00:00Z', quantity: '2', costUsd: '20' }] };
