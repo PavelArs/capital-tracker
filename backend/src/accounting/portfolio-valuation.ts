@@ -98,6 +98,7 @@ export interface PortfolioRealization {
 export interface PortfolioAccountInput {
   accountId: string;
   name: string;
+  assetClass?: 'broker' | 'property' | null;
   coverage: 'covered' | 'not-started' | 'before-coverage';
   lots: readonly PortfolioLot[];
   realizations: readonly PortfolioRealization[];
@@ -276,7 +277,7 @@ function nativeShare(trade: FifoTrade | undefined, quantity: string): NativeAmou
  * trades, where transferred fragments were bought.
  */
 export function portfolioAccount(
-  identity: { accountId: string; name: string },
+  identity: Pick<PortfolioAccountInput, 'accountId' | 'name' | 'assetClass'>,
   fifo: Pick<AccountFifoResult, 'lots' | 'realizations' | 'matches'>,
   journal: {
     trades: readonly FifoTrade[];
@@ -473,6 +474,20 @@ interface CostTotals {
   unknownQuantity: bigint;
   missingRateQuantity: bigint;
 }
+
+function addLotCost(totals: Map<string, CostTotals>, instrumentId: string, lot: CostTotals) {
+  const total = totals.get(instrumentId) ?? {
+    quantity: 0n,
+    knownCost: 0n,
+    unknownQuantity: 0n,
+    missingRateQuantity: 0n,
+  };
+  total.quantity += lot.quantity;
+  total.knownCost += lot.knownCost;
+  total.unknownQuantity += lot.unknownQuantity;
+  total.missingRateQuantity += lot.missingRateQuantity;
+  totals.set(instrumentId, total);
+}
 interface RealizedTotals {
   known: bigint;
   unknown: number;
@@ -550,6 +565,7 @@ export function projectPortfolio(
     Map<string, { accountId: string; accountName: string; quantity: bigint }>
   >();
   const totals = new Map<string, CostTotals>();
+  const investmentTotals = new Map<string, CostTotals>();
   for (const account of accounts) {
     for (const lot of account.lots) {
       const quantity = canonicalDecimalToAtoms(lot.quantity);
@@ -563,20 +579,16 @@ export function projectPortfolio(
       holding.quantity += quantity;
       perAccount.set(account.accountId, holding);
       holdings.set(lot.instrumentId, perAccount);
-      const total = totals.get(lot.instrumentId) ?? {
-        quantity: 0n,
-        knownCost: 0n,
-        unknownQuantity: 0n,
-        missingRateQuantity: 0n,
+      const cost = lotCostIn(fx, lot);
+      const amounts = {
+        quantity,
+        knownCost: cost ?? 0n,
+        unknownQuantity: lot.costUsd === null ? quantity : 0n,
+        missingRateQuantity: lot.costUsd !== null && cost === null ? quantity : 0n,
       };
-      total.quantity += quantity;
-      if (lot.costUsd === null) total.unknownQuantity += quantity;
-      else {
-        const cost = lotCostIn(fx, lot);
-        if (cost === null) total.missingRateQuantity += quantity;
-        else total.knownCost += cost;
-      }
-      totals.set(lot.instrumentId, total);
+      addLotCost(totals, lot.instrumentId, amounts);
+      if (account.assetClass !== 'property')
+        addLotCost(investmentTotals, lot.instrumentId, amounts);
     }
   }
   const valueAt = (instrumentId: string, quantity: bigint) => {
@@ -663,11 +675,11 @@ export function projectPortfolio(
   let unknownCostCount = 0;
   let missingRateCount = 0;
   let unrealized = 0n;
+  let unrealizedCost = 0n;
   let unrealizedComplete = true;
   // The same result over the coins whose cost is known, for a portfolio that is only partly known.
   let knownUnrealized = 0n;
   let knownUnrealizedCost = 0n;
-  let knownUnrealizedComplete = true;
   let knownUnrealizedAssets = 0;
   let knownRealized = 0n;
   let unknownRealizedCount = 0;
@@ -704,17 +716,28 @@ export function projectPortfolio(
       if (price?.status === 'stale') stalePriceCount++;
       knownCost += total.knownCost;
       if (total.unknownQuantity > 0n) unknownCostCount++;
-      if (result === null) unrealizedComplete = false;
-      else unrealized += result;
+      const investment = investmentTotals.get(instrument.id);
+      if (investment) {
+        const investmentValue = valueAt(instrument.id, investment.quantity);
+        unrealizedCost += investment.knownCost;
+        if (
+          investmentValue === null ||
+          investment.unknownQuantity > 0n ||
+          investment.missingRateQuantity > 0n
+        )
+          unrealizedComplete = false;
+        else unrealized += investmentValue - investment.knownCost * ATOM_SCALE;
+      }
       // A coin without a price stays out of the known result, as of the known value: it is
       // counted in missingPriceCount and said so in the notes, but does not empty the rest.
-      if (knownQuantity > 0n && value !== null) {
-        if (knownResult === null) knownUnrealizedComplete = false;
-        else {
-          knownUnrealized += knownResult;
-          knownUnrealizedCost += total.knownCost;
-          knownUnrealizedAssets++;
-        }
+      const investmentKnown = investment
+        ? investment.quantity - investment.unknownQuantity - investment.missingRateQuantity
+        : 0n;
+      const investmentKnownValue = valueAt(instrument.id, investmentKnown);
+      if (investmentKnown > 0n && investmentKnownValue !== null && investment) {
+        knownUnrealized += investmentKnownValue - investment.knownCost * ATOM_SCALE;
+        knownUnrealizedCost += investment.knownCost;
+        knownUnrealizedAssets++;
       }
     }
     if ((held && total.missingRateQuantity > 0n) || realization.missingRate > 0) missingRateCount++;
@@ -801,6 +824,9 @@ export function projectPortfolio(
     }
   }
   const available = unavailableAccountCount === 0;
+  const investmentAvailable = !accounts.some(
+    (account) => account.assetClass !== 'property' && account.coverage === 'before-coverage',
+  );
   const complete = available && missingPriceCount === 0 && unratedDepositCount === 0;
   const costComplete = available && unknownCostCount === 0 && missingRateCount === 0;
   return {
@@ -826,20 +852,18 @@ export function projectPortfolio(
     knownCostSubtotal: formatAtoms(knownCost),
     unknownCostCount,
     missingRateCount,
-    unrealizedPnl: available && unrealizedComplete ? formatSignedProduct(unrealized) : null,
+    unrealizedPnl:
+      investmentAvailable && unrealizedComplete ? formatSignedProduct(unrealized) : null,
     unrealizedReturnPercent:
-      available && unrealizedComplete && costComplete && knownCost !== 0n
-        ? formatPercent(unrealized, knownCost * ATOM_SCALE)
+      investmentAvailable && unrealizedComplete && unrealizedCost !== 0n
+        ? formatPercent(unrealized, unrealizedCost * ATOM_SCALE)
         : null,
     knownUnrealizedPnl:
-      available && knownUnrealizedComplete && knownUnrealizedAssets > 0
+      investmentAvailable && knownUnrealizedAssets > 0
         ? formatSignedProduct(knownUnrealized)
         : null,
     knownUnrealizedReturnPercent:
-      available &&
-      knownUnrealizedComplete &&
-      knownUnrealizedAssets > 0 &&
-      knownUnrealizedCost !== 0n
+      investmentAvailable && knownUnrealizedAssets > 0 && knownUnrealizedCost !== 0n
         ? formatPercent(knownUnrealized, knownUnrealizedCost * ATOM_SCALE)
         : null,
     realizedPnl: available && unknownRealizedCount === 0 ? formatAtoms(knownRealized) : null,

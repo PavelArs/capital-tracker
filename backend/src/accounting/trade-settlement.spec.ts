@@ -127,6 +127,9 @@ describe('trade settlement in cash (M9)', () => {
       accountId: 'bybit',
       instrumentId: 'usdt',
       occurredAt: '2026-05-01T00:00:00.000Z',
+      availableQuantity: '0',
+      requiredQuantity: '30000',
+      missingQuantity: '30000',
     });
     expect(() => calculateFifo([bought, buy])).toThrow();
   });

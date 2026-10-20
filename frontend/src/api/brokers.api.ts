@@ -56,6 +56,9 @@ export interface TBankImportProblem {
   occurredAt: string | null;
   ticker: string;
   operationIds: string[];
+  availableQuantity?: string;
+  requiredQuantity?: string;
+  missingQuantity?: string;
 }
 
 /** BROKER-SYNC: what a connected account's T-Bank history would become. Nothing is recorded. */
@@ -68,7 +71,13 @@ export interface TBankImportPreview {
   openingAssets?: { asset: string; label: string; currency: string }[];
   grouping: 'operation' | 'day' | 'month';
   entries: TBankPlanEntry[];
-  skipped: { operationId: string; type: string; reason: string }[];
+  skipped: {
+    operationId: string;
+    type: string;
+    reason: string;
+    ticker?: string;
+    occurredAt?: string | null;
+  }[];
   trades: number;
   rewards: number;
   fitsTradeLimit: boolean;

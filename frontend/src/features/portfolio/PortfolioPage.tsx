@@ -393,6 +393,7 @@ function Summary({
   basis: InflationBasis;
 }) {
   const summaryTitle = useId();
+  const classes = useAccountClasses();
   const reading: RealReading | null = portfolio.real?.[basis] ?? null;
   // No held lots need inflation data, unless a later account history may hide some.
   const nothingHeld =
@@ -429,6 +430,16 @@ function Summary({
         .filter((text) => text !== false)
         .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;
+  const withProperty = portfolio.assets.some((asset) =>
+    asset.holdings.some(
+      (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
+    ),
+  );
+  const profitExclusions = withProperty
+    ? 'excluding bank deposits and real estate'
+    : withDeposits
+      ? NO_DEPOSITS
+      : null;
   const missing = [
     unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
     portfolio.unavailableAccountCount > 0 &&
@@ -477,7 +488,7 @@ function Summary({
           value={
             <>
               {showReal ? (
-                reading === null ? (
+                reading === null || reading.costBasis === null ? (
                   <>
                     {nothingHeld ? amount('0') : DASH}
                     <span className="ui-sub">
@@ -533,7 +544,7 @@ function Summary({
                   ratio={portfolio.unrealizedReturnPercent}
                 />
               )}
-              {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
+              {profitExclusions && <span className="ui-sub">{profitExclusions}</span>}
             </>
           }
         />

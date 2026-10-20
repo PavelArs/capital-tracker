@@ -47,6 +47,31 @@ const item = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+it('BROKER-POSITION-ID preserves documented position UUIDs and rejects malformed metadata', () => {
+  const positionUid = 'ABCDEF01-0000-4000-8000-000000000001';
+  expect(parseOperationsPage({ items: [item({ positionUid })] }).operations[0].positionUid).toBe(
+    positionUid.toLowerCase(),
+  );
+  const position = {
+    instrumentUid: 'synthetic-uid',
+    instrumentType: 'share',
+    quantity: { units: '1' },
+    positionUid,
+  };
+  expect(parsePositions({ positions: [position] }, '2000000001')[0].positionUid).toBe(
+    positionUid.toLowerCase(),
+  );
+  for (const value of [null, 17, 'not-a-position', {}, ' ']) {
+    expect(() => parseOperationsPage({ items: [item({ positionUid: value })] })).toThrow();
+    expect(() =>
+      parsePositions({ positions: [{ ...position, positionUid: value }] }, '2000000001'),
+    ).toThrow();
+  }
+  expect(
+    parseOperationsPage({ items: [item({ positionUid: '' })] }).operations[0].positionUid,
+  ).toBeUndefined();
+});
+
 describe('BROKER-CONNECT: what T-Bank says about a token', () => {
   it('reads the accounts a token reaches and what it may do with each', () => {
     expect(

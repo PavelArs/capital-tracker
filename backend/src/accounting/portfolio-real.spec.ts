@@ -40,6 +40,69 @@ const factor = (day: string): InflationFactor | null =>
 describe('real portfolio readings (INFL-REAL-PF)', () => {
   const fx = usdOnly();
 
+  it('PV-PROPERTY-PNL keeps real investment profit readable when property cost and price are unknown', () => {
+    const accounts = [
+      account([lot(1, '1', '100', '2025-03-10T09:00:00.000Z')]),
+      {
+        ...account([lot(2, '1', null, '2025-03-10T09:00:00.000Z')]),
+        accountId: id(101),
+        assetClass: 'property' as const,
+      },
+    ];
+    const result = realReadings(
+      [
+        { instrumentId: id(1), value: '200' },
+        { instrumentId: id(2), value: null },
+      ],
+      accounts,
+      fx,
+      factor,
+    );
+    expect(result.total).toMatchObject({
+      costBasis: null,
+      unrealizedPnl: '50',
+      unrealizedReturnPercent: '33.33',
+    });
+    expect(result.byAsset.get(id(2))).toBeNull();
+    const unavailable = realReadings(
+      [{ instrumentId: id(1), value: '200' }],
+      [accounts[0], { ...accounts[1], lots: [], coverage: 'before-coverage' }],
+      fx,
+      factor,
+      false,
+    );
+    expect(unavailable.total).toMatchObject({ costBasis: null, unrealizedPnl: '50' });
+    const unknownInvestment = realReadings(
+      [{ instrumentId: id(2), value: null }],
+      [{ ...accounts[0], lots: [], coverage: 'before-coverage' }, accounts[1]],
+      fx,
+      factor,
+      false,
+    );
+    expect(unknownInvestment.total?.unrealizedPnl).toBeNull();
+  });
+
+  it('PV-PROPERTY-PNL excludes only property lots from aggregate real profit, keeping asset readings', () => {
+    const wallet = account([lot(1, '1', '100', '2025-03-10T09:00:00.000Z')]);
+    const property = {
+      ...account([lot(1, '1', '10', '2025-03-10T09:00:00.000Z')]),
+      accountId: id(101),
+      assetClass: 'property' as const,
+    };
+    const result = realReadings(
+      [{ instrumentId: id(1), value: '400' }],
+      [wallet, property],
+      fx,
+      factor,
+    );
+    expect(result.byAsset.get(id(1))).toMatchObject({ costBasis: '165', unrealizedPnl: '235' });
+    expect(result.total).toMatchObject({
+      costBasis: '165',
+      unrealizedPnl: '50',
+      unrealizedReturnPercent: '33.33',
+    });
+  });
+
   it('INFL-REAL-PF-ASSET carries each lot by the inflation since its day', () => {
     const accounts = [
       account([

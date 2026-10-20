@@ -25,6 +25,9 @@ export interface Shortfall {
   accountId: string;
   instrumentId: string;
   occurredAt: string;
+  availableQuantity: string;
+  requiredQuantity: string;
+  missingQuantity: string;
 }
 
 // Same order as the FIFO replay: instant, order within it, then kind and position.
@@ -171,13 +174,21 @@ export function firstShortfall(ledger: LedgerView): Shortfall | null {
       balances.set(key, (balances.get(key) ?? 0n) + atoms);
     }
     for (const [accountId, instrumentId] of movement.deltas)
-      if ((balances.get(`${accountId}:${instrumentId}`) ?? 0n) < 0n)
+      if ((balances.get(`${accountId}:${instrumentId}`) ?? 0n) < 0n) {
+        const missing = -balances.get(`${accountId}:${instrumentId}`)!;
+        const required = -movement.deltas
+          .filter(([account, instrument]) => account === accountId && instrument === instrumentId)
+          .reduce((sum, [, , amount]) => sum + amount, 0n);
         return {
           operationId: movement.operationId,
           accountId,
           instrumentId,
           occurredAt: movement.occurredAt,
+          availableQuantity: formatAtoms(required - missing),
+          requiredQuantity: formatAtoms(required),
+          missingQuantity: formatAtoms(missing),
         };
+      }
   }
   return null;
 }

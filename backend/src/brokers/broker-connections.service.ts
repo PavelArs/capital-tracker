@@ -18,6 +18,7 @@ import {
 } from './tbank-client';
 import { timeKey } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
+import { positionIdentities } from './tbank-position-identities';
 import { TBankTokenBox } from './tbank-token-box';
 
 interface ConnectionRow {
@@ -199,7 +200,9 @@ export class BrokerConnectionsService {
       if (!code.ok) throw savedTokenFailure(code.reason);
       classified.push({ ...position, currencyCode: code.value });
     }
-    return { brokerAccountId: target.id, operations: result.value, positions: classified };
+    const identities = positionIdentities(result.value, classified);
+    if (!identities.ok) throw savedTokenFailure(identities.reason);
+    return { brokerAccountId: target.id, ...identities.value };
   }
 
   async disconnect(ownerId: string, accountId: string) {

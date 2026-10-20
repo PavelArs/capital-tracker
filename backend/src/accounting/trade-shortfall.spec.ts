@@ -66,6 +66,9 @@ describe('trade shortfall (OPS-OVERSPEND, OPS-DELETE-GUARD)', () => {
       accountId: account,
       instrumentId: btc,
       occurredAt: tooLarge.occurredAt,
+      availableQuantity: '0.5',
+      requiredQuantity: '10',
+      missingQuantity: '9.5',
     });
     const refusal = body(tradeRefusal(shortfall!, tooLarge.tradeId));
     expect(refusal.message).toBe('An account does not hold enough for this trade');
@@ -86,6 +89,9 @@ describe('trade shortfall (OPS-OVERSPEND, OPS-DELETE-GUARD)', () => {
       accountId: account,
       instrumentId: btc,
       occurredAt: sale.occurredAt,
+      availableQuantity: '0',
+      requiredQuantity: '1.5',
+      missingQuantity: '1.5',
     });
     // Deleting the sale leaves nothing short.
     expect(tradeShortfall(saved, account, [buy])).toBeNull();

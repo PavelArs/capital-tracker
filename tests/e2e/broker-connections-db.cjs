@@ -1059,6 +1059,35 @@ async function importing(db, service, imports, tbank, owner, other) {
   tbank.positions = [];
   console.log('PASS BROKER-OPENING-POSITIONS explicit current holdings, quantity reconciliation and stale-portfolio rollback');
 
+  stage = 'BROKER-POSITION-ID: trading modes share one verified security position';
+  const modeAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, modeAccount);
+  const oldMode = '10000000-0000-4000-8000-00000000f001';
+  const currentMode = '10000000-0000-4000-8000-00000000f002';
+  const positionUid = '10000000-0000-4000-8000-00000000f003';
+  history = [operation('1500000001', 'INPUT', '200'),
+    operation('1500000002', 'BUY', '-100', share({ instrumentUid: oldMode, positionUid, ticker: 'SYNTHMODE', quantity: '2' })),
+    operation('1500000003', 'SELL', '60', share({ instrumentUid: currentMode, positionUid, ticker: 'SYNTHMODE', quantity: '1', occurredAt: '2024-03-02T07:00:00Z' }))];
+  tbank.positions = [{ ...heldPosition(currentMode, '1'), positionUid }];
+  tbank.cash = [['RUB', '160']];
+  const modePreview = await imports.preview(owner, modeAccount);
+  assert.equal(modePreview.canImport, true);
+  assert.equal(modePreview.skipped.length, 0);
+  // Another raw trading mode under the same position leaves economics unchanged but changes what was reviewed.
+  history[1] = { ...history[1], instrumentUid: '10000000-0000-4000-8000-00000000f004' };
+  await rejected(() => imports.import(owner, modeAccount, { requestId: randomUUID(), previewHash: modePreview.previewHash }), 409);
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${modeAccount}'`), 0);
+  history[1] = { ...history[1], instrumentUid: oldMode };
+  const modeRequest = { requestId: randomUUID(), previewHash: modePreview.previewHash };
+  const modeReceipt = await imports.import(owner, modeAccount, modeRequest);
+  assert.equal((await imports.import(owner, modeAccount, modeRequest)).value.id, modeReceipt.value.id);
+  const [modeLink] = await db.query('SELECT "instrumentId" FROM broker_instrument_links WHERE "ownerId"=$1 AND "providerInstrumentId"=$2', [owner, currentMode]);
+  assert.equal((await trades.available(owner, modeAccount, { instrumentId: modeLink.instrumentId, at: atEnd })).quantity, '1');
+  assert.equal((await trades.available(owner, modeAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '160');
+  assert.equal(await count('broker_instrument_links', `WHERE "providerInstrumentId" = '${oldMode}'`), 0);
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${modeAccount}'`), 3);
+  console.log('PASS BROKER-POSITION-ID PostgreSQL trading-mode identity, exact cash, stale alias refusal and atomic replay');
+
   stage = 'BROKER-CAPRET-VOID: one owner command removes a return without erasing its history';
   const { CapitalReturnService } = require('/app/backend/dist/accounting/capital-return.service.js');
   const capitalReturns = new CapitalReturnService(db);

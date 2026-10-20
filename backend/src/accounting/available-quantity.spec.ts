@@ -239,6 +239,36 @@ describe('OPS-OVERSPEND available quantity is the lowest balance from the date o
 });
 
 describe('OPS-DELETE-GUARD names the operation a deletion would break', () => {
+  it('BROKER-DIAG reports the settlement currency and exact partial cash shortage', () => {
+    const dollars = uuid(9);
+    const buy = {
+      ...trade(2, 'buy', '1', '2026-05-01'),
+      settlement: {
+        instrumentId: dollars,
+        instrumentName: 'Dollar',
+        instrumentSymbol: 'USD',
+        quantity: '100',
+      },
+    };
+    const history = ledger([
+      {
+        accountId: wallet,
+        trades: [
+          {
+            ...trade(1, 'buy', '99.999999999999999999999999999999', '2026-03-01', dollars),
+            grossUsd: '99.999999999999999999999999999999',
+          },
+          buy,
+        ],
+      },
+    ]);
+    expect(firstShortfall(history)).toMatchObject({
+      instrumentId: dollars,
+      availableQuantity: '99.999999999999999999999999999999',
+      requiredQuantity: '100',
+      missingQuantity: '0.000000000000000000000000000001',
+    });
+  });
   it('names the later sale that spends the purchase', () => {
     const history = ledger([
       {
@@ -252,6 +282,9 @@ describe('OPS-DELETE-GUARD names the operation a deletion would break', () => {
       accountId: wallet,
       instrumentId: btc,
       occurredAt: at('2026-05-01'),
+      availableQuantity: '0',
+      requiredQuantity: '0.8',
+      missingQuantity: '0.8',
     });
   });
 

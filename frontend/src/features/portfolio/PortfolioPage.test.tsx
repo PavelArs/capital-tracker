@@ -1004,6 +1004,25 @@ describe('Portfolio after inflation', () => {
   });
   const summary = () => screen.getByRole('region', { name: 'Portfolio summary' });
 
+  it('PF-REAL-PROPERTY-COST explains missing whole cost while investment profit remains known', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({
+        real: {
+          official: { ...read('0', '50', '5.00'), costBasis: null },
+          personal: null,
+        },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('region', { name: 'Portfolio summary' });
+    expect(summary()).toHaveTextContent("Cost in today's money—");
+    expect(summary()).toHaveTextContent(
+      'a purchase price, exchange rate or inflation figure is missing',
+    );
+    expect(summary()).toHaveTextContent('Real P&L+$50.00+5.00%');
+  });
+
   it.each([
     ['bank-only', 'official'],
     ['bank-only', 'personal'],

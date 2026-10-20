@@ -38,6 +38,8 @@ export interface TBankAccount {
 /** One position the token reads in a broker account, with prices as exact decimal text. */
 export interface TBankPosition {
   instrumentUid: string;
+  positionUid?: string;
+  providerInstrumentUid?: string;
   instrumentType: string;
   /** Import-only CurrencyBy metadata distinguishes cash from commodities. */
   currencyCode?: string;
@@ -67,6 +69,8 @@ export interface TBankOperation {
   /** When T-Bank recorded the operation; for a trade, when it was ordered (see `fills`). */
   occurredAt: string;
   instrumentUid: string;
+  positionUid?: string;
+  providerInstrumentUid?: string;
   instrumentType: string;
   ticker: string;
   /** Whole units the operation moved: for a trade, the filled part, not the ordered one. */
@@ -112,6 +116,13 @@ export const tokenPattern = /^[0-9A-Za-z._-]{20,200}$/;
 export const isTBankToken = (value: unknown): value is string =>
   typeof value === 'string' && tokenPattern.test(value);
 const idPattern = /^[0-9A-Za-z_-]{1,64}$/;
+
+function positionReference(value: unknown): { positionUid?: string } {
+  if (value === undefined || value === '') return {};
+  if (typeof value !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value))
+    return invalid();
+  return { positionUid: value.toLowerCase() };
+}
 
 const accessLevels: Record<string, TBankAccess> = {
   ACCOUNT_ACCESS_LEVEL_READ_ONLY: 'read_only',
@@ -187,6 +198,7 @@ function position(value: unknown, virtual: boolean): TBankPosition {
   const expires = virtual && typeof item.expireDate === 'string' ? item.expireDate : '';
   return {
     instrumentUid: uid,
+    ...positionReference(item.positionUid),
     // T-Bank names the type in lower case: share, bond, etf, currency, futures.
     instrumentType: /^[a-z_]{1,40}$/.test(type) ? type : 'unknown',
     // A position without a quantity is a broken answer, not an empty holding.
@@ -314,6 +326,7 @@ function executedShape(item: Record<string, unknown>, state: TBankOperationState
     state,
     occurredAt: date,
     instrumentUid: text(item.instrumentUid, idPattern),
+    ...positionReference(item.positionUid),
     instrumentType: text(item.instrumentType, /^[a-z_]{1,40}$/),
     ticker: text(item.ticker, /^[0-9A-Za-z._-]{1,32}$/),
     quantity: movedQuantity(item),
