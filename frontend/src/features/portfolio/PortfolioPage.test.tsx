@@ -1046,6 +1046,57 @@ describe('Portfolio after inflation', () => {
     },
   );
 
+  it.each(
+    (['nominal', 'real'] as const).flatMap((view) =>
+      (['loading', 'failed', 'missing'] as const).flatMap((state) =>
+        (['covered', 'before-coverage'] as const).map((coverage) => ({ view, state, coverage })),
+      ),
+    ),
+  )(
+    'PF-PROPERTY-CLASSES keeps the exclusion under $view with $state classes and $coverage history',
+    async ({ view, state, coverage }) => {
+      setValueView(view);
+      vi.mocked(accountingApi.listAccounts).mockImplementation(async () => {
+        if (state === 'loading') await new Promise(() => {});
+        if (state === 'missing')
+          return {
+            items: [
+              {
+                id: id(202),
+                name: 'Apartment',
+                kind: null,
+                currentRevision: 0,
+                createdAt: '2025-01-01T00:00:00Z',
+              },
+            ],
+            nextCursor: null,
+          };
+        throw new Error('Synthetic account classes unavailable');
+      });
+      vi.mocked(portfolioValuationApi.get).mockResolvedValue(
+        withReal({
+          totalValue: coverage === 'before-coverage' ? null : '100000',
+          unavailableAccountCount: coverage === 'before-coverage' ? 1 : 0,
+          accounts: [
+            {
+              accountId: id(202),
+              name: 'Apartment',
+              coverage,
+              pricedValue: coverage === 'before-coverage' ? null : '0',
+              missingPriceCount: 0,
+            },
+          ],
+        }),
+      );
+      renderAt('/portfolio');
+      const shown = await screen.findByRole('region', { name: 'Portfolio summary' });
+      expect(shown).toHaveTextContent(
+        view === 'real' ? 'Real P&L+$20,900.00' : 'Unrealized P&L+$30,000.00',
+      );
+      expect(shown).toHaveTextContent('excluding bank deposits and real estate');
+    },
+  );
+
   it('PF-REAL-PROPERTY-COST explains missing whole cost while investment profit remains known', async () => {
     setValueView('real');
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(

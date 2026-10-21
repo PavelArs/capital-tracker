@@ -454,11 +454,16 @@ function Summary({
         (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
       ),
     );
-  const profitExclusions = withProperty
-    ? 'excluding bank deposits and real estate'
-    : withDeposits
-      ? NO_DEPOSITS
-      : null;
+  // Account classes are a separate read; an unknown class must not hide the P&L's scope.
+  const unknownClasses = portfolio.accounts.some(
+    (account) => classes[account.accountId] === undefined,
+  );
+  const profitExclusions =
+    withProperty || unknownClasses
+      ? 'excluding bank deposits and real estate'
+      : withDeposits
+        ? NO_DEPOSITS
+        : null;
   const missing = [
     unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
     portfolio.unavailableAccountCount > 0 &&
