@@ -103,10 +103,11 @@ type GroupHead = ReturnType<typeof groupSubtotal> & {
   label: string;
   share: string | null;
 };
+type BankHolding = Deposit & Pick<AssetValuation, 'allocationPercent'>;
 type AssetGroup = {
   head: GroupHead;
   rows: AssetValuation[];
-  deposits: Deposit[];
+  deposits: BankHolding[];
   remaining: number;
   expanded: boolean;
 };
@@ -134,13 +135,24 @@ function MoreInGroup({
   ) : null;
 }
 
+function AllocationShare({ value }: { value: string | null }) {
+  return (
+    <span className="portfolio-share">
+      <span className="portfolio-share__bar" aria-hidden="true">
+        <i style={{ width: `${Math.min(Number(value ?? 0), 100)}%` }} />
+      </span>
+      <span className="portfolio-share__text">{shareText(value)}</span>
+    </span>
+  );
+}
+
 function BankAsset({
   deposit,
   currency,
   asked,
   phone = false,
 }: {
-  deposit: Deposit;
+  deposit: BankHolding;
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   phone?: boolean;
@@ -181,7 +193,9 @@ function BankAsset({
       </td>
       <td className="ui-num">{DASH}</td>
       <td className="ui-num ui-strong">{money(deposit.values[currency], currency)}</td>
-      <td className="ui-num">{DASH}</td>
+      <td className="ui-num">
+        <AllocationShare value={deposit.allocationPercent} />
+      </td>
       <td className="ui-num">{DASH}</td>
       <td className="ui-num">{DASH}</td>
       <td className="ui-num">{DASH}</td>
@@ -430,11 +444,16 @@ function Summary({
         .filter((text) => text !== false)
         .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;
-  const withProperty = portfolio.assets.some((asset) =>
-    asset.holdings.some(
-      (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
-    ),
-  );
+  const withProperty =
+    portfolio.accounts.some(
+      (account) =>
+        classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
+    ) ||
+    portfolio.assets.some((asset) =>
+      asset.holdings.some(
+        (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
+      ),
+    );
   const profitExclusions = withProperty
     ? 'excluding bank deposits and real estate'
     : withDeposits
@@ -687,18 +706,7 @@ function AssetsTable({
                   </td>
                   <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
                   <td className="ui-num">
-                    <span className="portfolio-share">
-                      <span className="portfolio-share__bar" aria-hidden="true">
-                        <i
-                          style={{
-                            width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%`,
-                          }}
-                        />
-                      </span>
-                      <span className="portfolio-share__text">
-                        {shareText(asset.allocationPercent)}
-                      </span>
-                    </span>
+                    <AllocationShare value={asset.allocationPercent} />
                   </td>
                   <td className="ui-num">
                     {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
@@ -977,7 +985,15 @@ export default function PortfolioPage() {
       {
         head,
         rows: open ? rows : rows.slice(0, 5),
-        deposits: open ? banks : banks.slice(0, 5),
+        deposits: (open ? banks : banks.slice(0, 5)).map((deposit) => ({
+          ...deposit,
+          allocationPercent:
+            (portfolio?.interestMissingDepositCount ?? 0) > 0
+              ? null
+              : (portfolio?.allocation.byAsset.find(
+                  (slice) => slice.key === `deposit:${deposit.id}`,
+                )?.percent ?? null),
+        })),
         remaining: open ? 0 : Math.max(0, rows.length + banks.length - 5),
         expanded: open,
       },
