@@ -464,6 +464,7 @@ export class BrokerImportService {
       write,
       opening,
       available,
+      [...history.operations, ...(history.positions ?? []).filter((row) => !row.virtual)],
     );
     const openingLots = (opening?.lots ?? []).map((lot, index): FifoCarryInInput => {
       const instrument = lot.asset.startsWith('cash:')
@@ -736,6 +737,7 @@ export class BrokerImportService {
     write: boolean,
     opening?: BrokerOpening,
     available: ReturnType<typeof openingAssets> = [],
+    identities: readonly (TBankOperation | TBankPosition)[] = [],
   ) {
     const cash = {} as Record<CashCurrency, ImportInstrument>;
     for (const code of ['RUB', 'USD', 'EUR'] as const) {
@@ -770,15 +772,23 @@ export class BrokerImportService {
       )
         wanted.set(entry.instrumentUid, entry);
     if (wanted.size === 0) return { cash, securities };
+    // Canonical trading modes may change between imports; resolve every verified original UID.
+    const aliases = new Map([...wanted.keys()].map((uid) => [uid, new Set([uid])]));
+    for (const row of identities)
+      if (row.providerInstrumentUid) aliases.get(row.instrumentUid)?.add(row.providerInstrumentUid);
     const linked: (ImportInstrument & { uid: string })[] = await manager.query(
       `SELECT l."providerInstrumentId" AS uid, i.id, i.name, i.symbol
         FROM broker_instrument_links l JOIN accounting_instruments i
           ON i."ownerId" = l."ownerId" AND i.id = l."instrumentId"
         WHERE l."ownerId" = $1 AND l.provider = 'tbank' AND l."providerInstrumentId" = ANY($2::text[])`,
-      [owner, [...wanted.keys()]],
+      [owner, [...new Set([...aliases.values()].flatMap((ids) => [...ids]))]],
     );
-    for (const row of linked)
-      securities.set(row.uid, { id: row.id, name: row.name, symbol: row.symbol });
+    for (const [uid, ids] of aliases) {
+      const matches = linked.filter((row) => ids.has(row.uid));
+      if (new Set(matches.map((row) => row.id)).size > 1) throw conflict();
+      const row = matches[0];
+      if (row) securities.set(uid, { id: row.id, name: row.name, symbol: row.symbol });
+    }
     for (const [uid, entry] of wanted) {
       if (securities.has(uid)) continue;
       const name = entry.ticker || `T-Bank ${uid}`;
