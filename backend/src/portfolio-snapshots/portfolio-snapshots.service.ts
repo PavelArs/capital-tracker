@@ -5,12 +5,14 @@ import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
 import { parseDecimal, parseUuid } from '../accounting/input';
 import type {
+  PortfolioAccountInput,
   PortfolioInstrument,
   PortfolioPrices,
   StoredPrice,
 } from '../accounting/portfolio-valuation';
-import { projectPortfolio } from '../accounting/portfolio-valuation';
+import { projectPortfolio, withoutAssets } from '../accounting/portfolio-valuation';
 import {
+  accountHistoryReader,
   accountsAt,
   latestPortfolioPrices,
   marketCodes,
@@ -184,6 +186,7 @@ export function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
+  suppliedAccounts?: readonly PortfolioAccountInput[],
 ): (SnapshotValue & {
   unpriced: boolean;
   unrated: boolean;
@@ -191,7 +194,9 @@ export function valuesAt(
   stalePrices: number;
 })[] {
   const instant = new Date(at);
-  const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
+  const accounts = suppliedAccounts
+    ? withoutAssets(suppliedAccounts, valuation.hidden)
+    : accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
     const report = projectPortfolio(
       instant,
@@ -259,9 +264,10 @@ function scopedValue(
 async function readSeriesInputs(
   manager: EntityManager,
   owner: string,
-  instrumentId?: string,
+  options: { instrumentId?: string; valuation?: ValuationInputs } = {},
 ): Promise<SeriesInputs> {
-  const valuation = await readValuationInputs(manager, owner);
+  const { instrumentId } = options;
+  const valuation = options.valuation ?? (await readValuationInputs(manager, owner));
   const priced = valuation.instruments.filter(
     (instrument) => instrumentId === undefined || instrument.id === instrumentId,
   );
@@ -444,17 +450,19 @@ export class PortfolioSnapshotsService {
       );
       // The current value closes the period with the same rules as the snapshots.
       const original = await readValuationInputs(manager, owner);
+      const readAccounts = accountHistoryReader(original);
+      const currentAccounts = readAccounts(now.toISOString());
       const prices = await latestPortfolioPrices(manager, owner, original.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
-      const [whole] = valuesAt(original, now.getTime(), prices, [fx]);
+      const [whole] = valuesAt(original, now.getTime(), prices, [fx], currentAccounts);
       const scope = pricedInputs(original, whole.held, depositValuesAt(original.deposits, now, fx));
       const { valuation, excluded, excludedDeposits } = scope;
       const excludedCount = excluded.size + excludedDeposits.size;
-      const [priced] = valuesAt(valuation, now.getTime(), prices, [fx]);
+      const [priced] = valuesAt(valuation, now.getTime(), prices, [fx], currentAccounts);
       const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
       if (excludedCount > 0) {
         // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
-        const inputs = await readSeriesInputs(manager, owner);
+        const inputs = await readSeriesInputs(manager, owner, { valuation: original });
         const subset = {
           ...inputs.valuation,
           hidden: valuation.hidden,
@@ -467,8 +475,20 @@ export class PortfolioSnapshotsService {
         );
         stored = stored.map((point) =>
           scopedValue(
-            valuesAt(subset, point.at, pricesAt(inputs, point.at), [fx])[0],
-            valuesAt(original, point.at, pricesAt(inputs, point.at), [fx])[0],
+            valuesAt(
+              subset,
+              point.at,
+              pricesAt(inputs, point.at),
+              [fx],
+              readAccounts(iso(point.at)),
+            )[0],
+            valuesAt(
+              original,
+              point.at,
+              pricesAt(inputs, point.at),
+              [fx],
+              readAccounts(iso(point.at)),
+            )[0],
             subset,
             excludedCount,
             new Date(point.at),
@@ -509,8 +529,14 @@ export class PortfolioSnapshotsService {
         // A stored snapshot is incomplete for a held asset without a price and for accounts
         // not yet started; only the first leaves out value, so that is read again, with what
         // it held. A coin now without a price also needs what it was worth at the start.
-        const inputs = await readSeriesInputs(manager, owner);
-        const [again] = valuesAt(inputs.valuation, start.at, pricesAt(inputs, start.at), [fx]);
+        const inputs = await readSeriesInputs(manager, owner, { valuation: original });
+        const [again] = valuesAt(
+          inputs.valuation,
+          start.at,
+          pricesAt(inputs, start.at),
+          [fx],
+          readAccounts(iso(start.at)),
+        );
         start = { ...start, unpriced: again.unpriced, unrated: again.unrated, held: again.held };
       }
       return {
@@ -614,7 +640,7 @@ export class PortfolioSnapshotsService {
     const query = parseQuery(rawQuery);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const inputs = await readSeriesInputs(manager, owner, id);
+      const inputs = await readSeriesInputs(manager, owner, { instrumentId: id });
       const instrument = inputs.valuation.instruments.find((item) => item.id === id);
       if (!instrument) throw new NotFoundException();
       const mainCurrency = await readMainCurrency(manager, owner);
@@ -722,9 +748,10 @@ export class PortfolioSnapshotsService {
       const rates = await readFxRates(manager);
       const converters = accountingCurrencies.map((currency) => new FxConverter(rates, currency));
       const due = instants.filter((at) => at >= from);
+      const readAccounts = accountHistoryReader(inputs.valuation);
       primeDepositBalances(inputs.valuation.deposits, due);
       const computed = due.flatMap((at) =>
-        valuesAt(inputs.valuation, at, pricesAt(inputs, at), converters),
+        valuesAt(inputs.valuation, at, pricesAt(inputs, at), converters, readAccounts(iso(at))),
       );
       const changes = snapshotChanges(existing, computed);
       await this.write(manager, owner, changes);

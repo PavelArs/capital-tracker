@@ -270,6 +270,47 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     fullPage: true,
   });
 
+  // PORTFOLIO-BANK-ALLOCATION: bank rows use the same backend allocation as other assets.
+  const bankName = `Sample savings ${suffix}`;
+  const bankCreated = await api.request.post('/api/deposits', {
+    headers: { Origin: origin, 'X-CSRF-Token': api.csrfToken },
+    data: {
+      requestId: randomUUID(),
+      name: bankName,
+      bank: 'Synthetic Bank',
+      currency: 'USD',
+      kind: 'account',
+      startDate: '2026-07-01',
+      endDate: null,
+      payout: 'monthly',
+      capitalized: false,
+      dayBasis: 'actual-365',
+      earlyClose: 'keeps-interest',
+      ratePercent: '0',
+      amount: '5000',
+    },
+  });
+  expect(bankCreated.status()).toBe(201);
+  const bank = (await bankCreated.json()) as { id: string };
+  const withBank = (await api.result('GET', '/portfolio', 200)) as {
+    allocation: { byAsset: { key: string; value: string; percent: string | null }[] };
+  };
+  const bankShare = withBank.allocation.byAsset.find((slice) => slice.key === `deposit:${bank.id}`);
+  expect(bankShare?.value).toBe('5000');
+  expect(bankShare?.percent).toMatch(/^\d+\.\d{2}$/);
+  await forgetBrowserReads(page);
+  await page.goto('/portfolio');
+  await search.fill(bankName);
+  const bankCells = main.getByRole('row', { name: new RegExp(`^${bankName}`) }).getByRole('cell');
+  await expect(bankCells.nth(3)).toHaveText('$5,000.00');
+  await expect(bankCells.nth(4)).toHaveText(`${bankShare!.percent}%`);
+  expect(await bankCells.nth(4).locator('.portfolio-share__bar i').evaluate(
+    (element) => (element as HTMLElement).style.width,
+  )).toBe(`${Number(bankShare!.percent)}%`);
+  await search.fill('');
+  await search.blur();
+  await page.screenshot({ path: testInfo.outputPath('portfolio-bank-1440-dark.png'), fullPage: true });
+
   // PHONE-LIST: on a phone the table becomes two-line rows and nothing scrolls sideways.
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(main.getByRole('table')).toHaveCount(0);
@@ -283,6 +324,17 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     ),
   ).toBeLessThanOrEqual(0);
   await page.screenshot({ path: testInfo.outputPath('portfolio-390-dark.png'), fullPage: true });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await search.fill('');
+  await search.blur();
+  await page.setViewportSize({
+    width: 390,
+    height: await page.evaluate(() => document.documentElement.scrollHeight + 100),
+  });
+  await page.screenshot({ path: testInfo.outputPath('portfolio-bank-390-light.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await search.fill(suffix);
   await phoneRow.click();
   await expect(page).toHaveURL(`${origin}/portfolio/${created.id}`);
   expect(

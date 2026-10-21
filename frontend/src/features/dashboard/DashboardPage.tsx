@@ -319,6 +319,11 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     const request = ++latest.current;
     setFailed(false);
+    const defaultHistory = cachedReads.history.last(period);
+    const kept =
+      cachedReads.history.last(period, asked) ??
+      (asked === defaultHistory?.currency ? defaultHistory : undefined);
+    if (kept) setHistory(kept);
     try {
       const next = await cachedReads.history.load(period, asked);
       if (request === latest.current) setHistory(next);
@@ -335,6 +340,11 @@ export default function DashboardPage() {
   const loadPortfolio = useCallback(async () => {
     const request = ++latestPortfolio.current;
     setPortfolioFailed(false);
+    const defaultPortfolio = cachedReads.portfolio.last();
+    const kept =
+      cachedReads.portfolio.last(asked) ??
+      (asked === defaultPortfolio?.currency ? defaultPortfolio : undefined);
+    if (kept) setPortfolio(kept);
     try {
       const next = await cachedReads.portfolio.load(asked);
       if (request === latestPortfolio.current) setPortfolio(next);

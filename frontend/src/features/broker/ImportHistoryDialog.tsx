@@ -68,6 +68,9 @@ const problemLine = (problem: TBankImportProblem) =>
         problem.ticker,
         // The server counts days in Moscow time.
         problem.occurredAt && dayText(moscowDate(problem.occurredAt)),
+        problem.availableQuantity !== undefined && `available ${problem.availableQuantity}`,
+        problem.requiredQuantity !== undefined && `required ${problem.requiredQuantity}`,
+        problem.missingQuantity !== undefined && `short ${problem.missingQuantity}`,
       ]
         .filter(Boolean)
         .join(' · ');
@@ -270,9 +273,10 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
               <Banner tone="warn" role="none" title="Cannot import yet">
                 {preview.problems.some((problem) => problem.reason === 'not-held') && (
                   <p>
-                    The provider history does not establish enough holdings or cash before a sale or
-                    payment. Check for an incoming transfer or earlier history. The app will not
-                    invent an opening balance.
+                    The imported operations do not establish enough holdings or cash for a sale or
+                    payment. This can mean missing earlier records, transfers or corporate actions.
+                    Check the broker report before adding opening lots; current holdings alone
+                    cannot establish the original purchase dates and costs.
                   </p>
                 )}
                 <ul className="broker-howto" aria-label="Cannot import yet">
@@ -282,6 +286,27 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
                   ))}
                 </ul>
               </Banner>
+            )}
+            {preview.skipped.some((item) => item.reason !== 'no-amount' && item.occurredAt) && (
+              <details>
+                <summary>Operations needing reconciliation</summary>
+                <ul className="broker-howto">
+                  {preview.skipped
+                    .filter((item) => item.reason !== 'no-amount')
+                    .map((item) => (
+                      <li key={`${item.operationId}:${item.reason}`}>
+                        {[
+                          item.ticker,
+                          item.occurredAt && `ordered ${dayText(moscowDate(item.occurredAt))}`,
+                          skipText[item.reason] ?? item.reason,
+                          `operation ${item.operationId}`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </li>
+                    ))}
+                </ul>
+              </details>
             )}
           </>
         )}

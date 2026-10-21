@@ -1,4 +1,5 @@
 import { type AccountSummary, accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
 import { connection } from '@api/connection';
 import { type Deposit, depositsApi } from '@api/deposits.api';
 import { type Goal, goalsApi } from '@api/goals.api';
@@ -420,6 +421,19 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(heroValue(screen.getByRole('region', { name: 'Net worth' }))).toHaveTextContent(
       /^€115,000\.00$/,
     );
+  });
+
+  it('DASH-CURRENCY-PERF paints a previously loaded currency immediately while refreshing it', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('Total net worth · USD');
+    await user.click(screen.getByRole('radio', { name: 'EUR' }));
+    await screen.findByText('Total net worth · EUR');
+    // The attention refresh may invalidate earlier answers when it sees a completed sync.
+    await cachedReads.history.load('1M', 'USD');
+    get.mockImplementation(() => new Promise(() => {}));
+    await user.click(screen.getByRole('radio', { name: 'USD' }));
+    expect(screen.getByText('Total net worth · USD')).toBeInTheDocument();
   });
 
   it('marks an incomplete period, a falling value and a missing rate honestly', async () => {

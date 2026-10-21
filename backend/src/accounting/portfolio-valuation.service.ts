@@ -58,6 +58,7 @@ import { findOrCreateInstrument } from './trade.service';
 export interface AccountRow {
   accountId: string;
   name: string;
+  assetClass?: 'broker' | 'property' | null;
   coverageFrom: Date | null;
 }
 interface ManualPriceRow {
@@ -344,7 +345,7 @@ export async function readValuationInputs(
   const hidden = await readHiddenAssets(manager, owner);
   const instruments = all.filter((instrument) => !hidden.has(instrument.id));
   const accounts: AccountRow[] = await manager.query(
-    `SELECT a.id AS "accountId",a.name,j."coverageFrom"
+    `SELECT a.id AS "accountId",a.name,a."assetClass",j."coverageFrom"
       FROM manual_accounts a LEFT JOIN account_trade_journals j
         ON j."ownerId"=a."ownerId" AND j."accountId"=a.id
       WHERE a."ownerId"=$1 AND a."removedAt" IS NULL ORDER BY a.id`,
@@ -385,6 +386,44 @@ export function accountsAt(
   return withoutAssets(allAccountsAt(inputs, at, options), inputs.hidden);
 }
 
+/** One read-only input snapshot; prices and currency cannot change its FIFO holdings. */
+export function accountHistoryReader(inputs: ValuationInputs) {
+  const changes = [
+    ...new Set([
+      ...inputs.accounts.flatMap((account) =>
+        account.coverageFrom ? [account.coverageFrom.getTime()] : [],
+      ),
+      ...[...new Set(inputs.ledgers.values())].flatMap((ledger) => [
+        ...ledger.transfers.map((item) => Date.parse(item.occurredAt)),
+        ...[...ledger.accounts.values()].flatMap((account) => [
+          Date.parse(account.coverageFrom),
+          ...[
+            ...account.trades,
+            ...(account.rewards ?? []),
+            ...(account.swaps ?? []),
+            ...(account.capitalReturns ?? []),
+          ].map((item) => Date.parse(item.occurredAt)),
+        ]),
+      ]),
+      ...[...inputs.chainMoves.values()].flatMap((moves) =>
+        moves.map((item) => Date.parse(item.occurredAt)),
+      ),
+    ]),
+  ].sort((a, b) => a - b);
+  let from = -Infinity;
+  let until = Infinity;
+  let kept: PortfolioAccountInput[] | undefined;
+  return (at: string) => {
+    const instant = Date.parse(at);
+    if (!kept || instant < from || instant >= until) {
+      kept = accountsAt(inputs, at, { emptyBeforeCoverage: true });
+      from = changes.findLast((time) => time <= instant) ?? -Infinity;
+      until = changes.find((time) => time > instant) ?? Infinity;
+    }
+    return kept;
+  };
+}
+
 function allAccountsAt(
   inputs: ValuationInputs,
   at: string,
@@ -394,7 +433,7 @@ function allAccountsAt(
   const projections = new Map<ConnectedLedger, OwnedProjection>();
   try {
     for (const row of inputs.accounts) {
-      const identity = { accountId: row.accountId, name: row.name };
+      const identity = { accountId: row.accountId, name: row.name, assetClass: row.assetClass };
       const ledger = inputs.ledgers.get(row.accountId);
       const moves = inputs.chainMoves.get(row.accountId) ?? [];
       // D1: a wallet account with no operation of its own holds what the chain moved.

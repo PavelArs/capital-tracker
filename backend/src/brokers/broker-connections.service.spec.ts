@@ -109,6 +109,36 @@ const operation = (over: Partial<TBankOperation>): TBankOperation => ({
 });
 
 describe('broker connections service', () => {
+  it('BROKER-POSITION-ID reconciles trading-mode UIDs before preview and import', async () => {
+    const first = operation({ positionUid: '00000000-0000-4000-8000-000000000010' });
+    const later = {
+      ...first,
+      id: '900000002',
+      instrumentUid: '00000000-0000-4000-8000-000000000002',
+      type: 'OPERATION_TYPE_SELL',
+      payment: '100',
+      quantity: '1',
+    };
+    const held = {
+      instrumentUid: later.instrumentUid,
+      positionUid: first.positionUid,
+      instrumentType: 'share',
+      quantity: '1',
+      virtual: false,
+    };
+    const { service } = build(
+      ok(mine),
+      true,
+      true,
+      { ok: true, value: [held] },
+      { ok: true, value: [first, later] },
+    );
+    const history = await service.history(owner, account, true);
+    expect(history.operations[0]).toMatchObject({
+      instrumentUid: later.instrumentUid,
+      providerInstrumentUid: first.instrumentUid,
+    });
+  });
   it('lists the open accounts a read-only token reaches', async () => {
     const { service } = build(ok(mine, { ...mine, id: '2000000002', open: false, closed: true }));
     expect(await service.check(owner, account, { token })).toEqual({

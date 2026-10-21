@@ -107,6 +107,50 @@ const holding = (n: number, name: string, lots: PortfolioLot[]): PortfolioAccoun
 const assetOf = (result: ReturnType<typeof projectPortfolio>, asset: PortfolioInstrument) =>
   result.assets.find((item) => item.instrumentId === asset.id)!;
 
+describe('PV-PROPERTY-PNL real estate stays in net worth but not aggregate unrealized profit', () => {
+  it('excludes property value and cost from both nominal profit and its denominator', () => {
+    const property = {
+      ...holding(2, 'Flat', [position(btc, '1', '10000')]),
+      assetClass: 'property' as const,
+    };
+    const result = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Wallet', [position(btc, '1', '50000')]), property],
+      prices({ BTC: ['60000', minutesAgo(5)] }),
+    );
+    expect(result).toMatchObject({
+      totalValue: '120000',
+      costBasis: '60000',
+      unrealizedPnl: '10000',
+      unrealizedReturnPercent: '20.00',
+      knownUnrealizedPnl: '10000',
+      knownUnrealizedReturnPercent: '20.00',
+    });
+    expect(assetOf(result, btc).unrealizedPnl).toBe('60000');
+  });
+
+  it('does not let a property without a price or cost blank the investment result', () => {
+    const property = {
+      ...holding(2, 'Flat', [position(deposit, '1', null)]),
+      assetClass: 'property' as const,
+    };
+    const result = projectPortfolio(
+      now,
+      [btc, deposit],
+      [holding(1, 'Wallet', [position(btc, '1', '50000')]), property],
+      prices({ BTC: ['60000', minutesAgo(5)] }),
+    );
+    expect(result).toMatchObject({
+      totalValue: null,
+      costBasis: null,
+      unrealizedPnl: '10000',
+      unrealizedReturnPercent: '20.00',
+      missingPriceCount: 1,
+    });
+  });
+});
+
 describe('PV-BR11 two buys and a price', () => {
   it('shows amount, average buy price, cost basis, value and unrealized P&L', () => {
     const result = projectPortfolio(

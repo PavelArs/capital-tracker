@@ -25,7 +25,7 @@ export interface AssetHolding {
  * inflation since its day. Null when a lot has no cost, rate or inflation figure.
  */
 export interface RealReading {
-  costBasis: string;
+  costBasis: string | null;
   unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;
   /** Some span reaches past the latest published month, or rests on the owner's own rate. */

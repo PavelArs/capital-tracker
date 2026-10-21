@@ -636,6 +636,28 @@ async function nativeLotProvenance(db, s) {
   console.log('PASS RUB-LOT-PROVENANCE full and prorated native cost');
 }
 
+async function propertyUnrealized(db, s) {
+  stage = 'PV-PROPERTY-PNL real estate contributes net worth and cost, not aggregate unrealized P&L';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('property-pnl@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const held = await instrument(s, owner, { name: 'Synthetic shared holding', assetType: 'manual' });
+  const wallet = await account(s, owner, 'Wallet');
+  const property = (await s.accounting.createAccount(owner, {
+    requestId: randomUUID(), name: 'Synthetic property', assetClass: 'property',
+  })).value;
+  await s.trades.initialize(owner, property.id, { requestId: randomUUID(), coverageFrom, assertEmpty: true });
+  const propertyJournal = { id: property.id, revision: 0 };
+  await trade(s, owner, wallet, held, 'buy', '2025-01-02T00:00:00Z', '1', '100');
+  await trade(s, owner, propertyJournal, held, 'buy', '2025-01-03T00:00:00Z', '1', '25');
+  await s.prices.set(owner, held, { requestId: randomUUID(), expectedRevision: 0,
+    observedAt: ago(60).toISOString(), priceUsd: '150', assertReviewed: true });
+  const report = await read(s, owner);
+  assert.deepEqual([report.totalValue, report.costBasis, report.unrealizedPnl, report.unrealizedReturnPercent],
+    ['300', '125', '50', '50.00']);
+  assert.equal(asset(report, held).unrealizedPnl, '175', 'The asset detail still includes its own property holdings');
+  console.log('PASS PV-PROPERTY-PNL PostgreSQL account class, exact mixed holdings and denominator');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -684,6 +706,7 @@ async function main() {
       await check(db, s, f);
     await handValueCurrency(db, s);
     await nativeLotProvenance(db, s);
+    await propertyUnrealized(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

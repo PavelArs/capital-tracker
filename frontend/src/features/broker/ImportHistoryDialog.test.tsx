@@ -76,6 +76,29 @@ const open = () =>
   );
 const dialog = () => screen.getByRole('dialog', { name: 'Import history' });
 
+it('BROKER-DIAG identifies the actual deficient currency and exact amounts rather than the exchange ticker', async () => {
+  vi.spyOn(brokersApi, 'importPreview').mockResolvedValue(
+    preview({
+      canImport: false,
+      problems: [
+        {
+          reason: 'not-held',
+          occurredAt: '2022-10-05T12:00:00Z',
+          ticker: 'RUB',
+          operationIds: ['op-2'],
+          availableQuantity: '100',
+          requiredQuantity: '150.01',
+          missingQuantity: '50.01',
+        },
+      ],
+    }),
+  );
+  open();
+  expect(
+    await screen.findByText(/RUB.*available 100.*required 150.01.*short 50.01/),
+  ).toBeInTheDocument();
+});
+
 describe('BROKER-IMPORT-UI the Import history dialog', () => {
   it('BROKER-IMPORT-UI shows what the history would become, and what it leaves out, before writing anything', async () => {
     vi.spyOn(brokersApi, 'importPreview').mockResolvedValue(preview());

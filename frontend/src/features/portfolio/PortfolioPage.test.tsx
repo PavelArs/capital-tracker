@@ -1,6 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
-import { depositsApi } from '@api/deposits.api';
+import { type Deposit, depositsApi } from '@api/deposits.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
@@ -1003,6 +1003,118 @@ describe('Portfolio after inflation', () => {
     setInflationBasis('official');
   });
   const summary = () => screen.getByRole('region', { name: 'Portfolio summary' });
+
+  it.each(['nominal', 'real'] as const)(
+    'PF-PROPERTY-COVERAGE discloses excluded property with unavailable history under %s',
+    async (view) => {
+      setValueView(view);
+      vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+        items: [
+          {
+            id: id(202),
+            name: 'Apartment',
+            kind: null,
+            assetClass: 'property',
+            currentRevision: 0,
+            createdAt: '2025-01-01T00:00:00Z',
+          },
+        ],
+        nextCursor: null,
+      });
+      vi.mocked(portfolioValuationApi.get).mockResolvedValue(
+        withReal({
+          totalValue: null,
+          unavailableAccountCount: 1,
+          accounts: [
+            {
+              accountId: id(202),
+              name: 'Apartment',
+              coverage: 'before-coverage',
+              pricedValue: null,
+              missingPriceCount: 0,
+            },
+          ],
+        }),
+      );
+      renderAt('/portfolio');
+      expect(
+        await screen.findByText('excluding bank deposits and real estate'),
+      ).toBeInTheDocument();
+      expect(summary()).toHaveTextContent(
+        view === 'real' ? 'Real P&L+$20,900.00' : 'Unrealized P&L+$30,000.00',
+      );
+    },
+  );
+
+  it.each(
+    (['nominal', 'real'] as const).flatMap((view) =>
+      (['loading', 'failed', 'missing'] as const).flatMap((state) =>
+        (['covered', 'before-coverage'] as const).map((coverage) => ({ view, state, coverage })),
+      ),
+    ),
+  )(
+    'PF-PROPERTY-CLASSES keeps the exclusion under $view with $state classes and $coverage history',
+    async ({ view, state, coverage }) => {
+      setValueView(view);
+      vi.mocked(accountingApi.listAccounts).mockImplementation(async () => {
+        if (state === 'loading') await new Promise(() => {});
+        if (state === 'missing')
+          return {
+            items: [
+              {
+                id: id(202),
+                name: 'Apartment',
+                kind: null,
+                currentRevision: 0,
+                createdAt: '2025-01-01T00:00:00Z',
+              },
+            ],
+            nextCursor: null,
+          };
+        throw new Error('Synthetic account classes unavailable');
+      });
+      vi.mocked(portfolioValuationApi.get).mockResolvedValue(
+        withReal({
+          totalValue: coverage === 'before-coverage' ? null : '100000',
+          unavailableAccountCount: coverage === 'before-coverage' ? 1 : 0,
+          accounts: [
+            {
+              accountId: id(202),
+              name: 'Apartment',
+              coverage,
+              pricedValue: coverage === 'before-coverage' ? null : '0',
+              missingPriceCount: 0,
+            },
+          ],
+        }),
+      );
+      renderAt('/portfolio');
+      const shown = await screen.findByRole('region', { name: 'Portfolio summary' });
+      expect(shown).toHaveTextContent(
+        view === 'real' ? 'Real P&L+$20,900.00' : 'Unrealized P&L+$30,000.00',
+      );
+      expect(shown).toHaveTextContent('excluding bank deposits and real estate');
+    },
+  );
+
+  it('PF-REAL-PROPERTY-COST explains missing whole cost while investment profit remains known', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      withReal({
+        real: {
+          official: { ...read('0', '50', '5.00'), costBasis: null },
+          personal: null,
+        },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('region', { name: 'Portfolio summary' });
+    expect(summary()).toHaveTextContent("Cost in today's money—");
+    expect(summary()).toHaveTextContent(
+      'a purchase price, exchange rate or inflation figure is missing',
+    );
+    expect(summary()).toHaveTextContent('Real P&L+$50.00+5.00%');
+  });
 
   it.each([
     ['bank-only', 'official'],
@@ -3859,6 +3971,85 @@ it('PORTFOLIO-CLASS-FOLD shows five rows per class with an explicit disclosure a
   expect(screen.getByRole('link', { name: 'Coin 8' })).toBeVisible();
   await userEvent.click(screen.getByRole('button', { name: 'Show less Crypto assets' }));
   expect(screen.queryByRole('link', { name: 'Coin 6' })).toBeNull();
+});
+
+describe('PORTFOLIO-BANK-ALLOCATION', () => {
+  const bank: Deposit = {
+    id: id(999),
+    kind: 'account',
+    name: 'Empty savings',
+    bank: 'Synthetic Bank',
+    currency: 'USD',
+    startDate: '2026-07-01',
+    endDate: null,
+    payout: 'monthly',
+    capitalized: false,
+    dayBasis: 'actual-365',
+    earlyClose: 'keeps-interest',
+    ratePercent: '0',
+    status: 'active',
+    closedOn: null,
+    principal: '0',
+    accrued: '0',
+    due: '0',
+    balance: '0',
+    values: { USD: '0', EUR: '0', RUB: '0' },
+    nextPayout: null,
+    atMaturity: null,
+    lastCheck: null,
+  };
+  it.each([
+    ['USD', '12.50', 0, '12.50%'],
+    ['EUR', '25.00', 0, '25.00%'],
+    ['USD', null, 0, '—'],
+    ['USD', '12.50', 1, '—'],
+  ] as const)(
+    'uses the valuation share in %s (%s, missing interest %s)',
+    async (currency, share, interestMissing, expected) => {
+      vi.mocked(depositsApi.list).mockResolvedValue({
+        asOf: '2026-10-18',
+        items: [
+          {
+            ...bank,
+            balance: '10000',
+            principal: '10000',
+            values: { USD: '10000', EUR: '9000', RUB: null },
+          },
+        ],
+        totals: { USD: '10000', EUR: '9000', RUB: null },
+      });
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+        portfolio([bitcoin], {
+          currency,
+          totalValue: currency === 'USD' ? '80000' : '36000',
+          depositsValue: currency === 'USD' ? '10000' : '9000',
+          interestMissingDepositCount: interestMissing,
+          allocation: {
+            complete: share !== null && interestMissing === 0,
+            byAsset:
+              share === null
+                ? []
+                : [
+                    {
+                      key: `deposit:${bank.id}`,
+                      label: bank.name,
+                      value: currency === 'USD' ? '10000' : '9000',
+                      percent: share,
+                    },
+                  ],
+            byAccount: [],
+            byType: [],
+          },
+        }),
+      );
+      renderAt(`/portfolio?currency=${currency}`);
+      const row = await screen.findByRole('row', { name: /^Empty savings/ });
+      const cell = within(row).getAllByRole('cell')[4];
+      expect(cell).toHaveTextContent(expected);
+      if (share !== null && interestMissing === 0)
+        expect(cell.querySelector('.portfolio-share__bar i')).toHaveStyle({ width: `${share}%` });
+    },
+  );
 });
 
 it('PORTFOLIO-BANK-ZERO lists an existing zero-balance product instead of the empty state', async () => {

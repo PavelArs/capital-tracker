@@ -76,6 +76,9 @@ export interface ImportProblem {
   occurredAt: string | null;
   ticker: string;
   operationIds: string[];
+  availableQuantity?: string;
+  requiredQuantity?: string;
+  missingQuantity?: string;
 }
 
 interface Review {
@@ -162,6 +165,16 @@ export class BrokerImportService {
         const review = await this.review(manager, owner, account, history, false, opening);
         return {
           ...review.plan,
+          skipped: review.plan.skipped.map((item) => {
+            const operation = history.operations.find(
+              (operation) => operation.id === item.operationId,
+            );
+            return {
+              ...item,
+              ticker: operation?.ticker ?? '',
+              occurredAt: operation?.occurredAt ?? null,
+            };
+          }),
           openingAssets: openingAssets(history.operations, history.positions),
           accountHasEntries: review.accountHasEntries,
           problems: review.problems,
@@ -451,6 +464,7 @@ export class BrokerImportService {
       write,
       opening,
       available,
+      [...history.operations, ...(history.positions ?? []).filter((row) => !row.virtual)],
     );
     const openingLots = (opening?.lots ?? []).map((lot, index): FifoCarryInInput => {
       const instrument = lot.asset.startsWith('cash:')
@@ -570,7 +584,7 @@ export class BrokerImportService {
             problems.push({
               reason: 'opening-holding',
               occurredAt: null,
-              ticker: key,
+              ticker: available.find((asset) => asset.asset === key)?.label ?? key,
               operationIds: [],
             });
         }
@@ -590,9 +604,20 @@ export class BrokerImportService {
               item.reward?.rewardId ??
               item.capitalReturn?.capitalReturnId) === id,
         );
+        const deficient =
+          shortfall &&
+          [...Object.values(instruments.cash), ...instruments.securities.values()].find(
+            (instrument) => instrument.id === shortfall.instrumentId,
+          );
         problems.push(
-          entry
-            ? problemOf('not-held', entry)
+          entry && shortfall
+            ? {
+                ...problemOf('not-held', entry),
+                ticker: deficient?.symbol ?? deficient?.name ?? entry.source.ticker,
+                availableQuantity: shortfall.availableQuantity,
+                requiredQuantity: shortfall.requiredQuantity,
+                missingQuantity: shortfall.missingQuantity,
+              }
             : { reason: 'not-held', occurredAt: null, ticker: '', operationIds: [] },
         );
       }
@@ -627,10 +652,20 @@ export class BrokerImportService {
         JSON.stringify([
           'tbank-import-v3',
           opening ?? null,
+          history.operations
+            .map((operation) => [
+              operation.id,
+              operation.instrumentUid,
+              operation.positionUid ?? '',
+              operation.providerInstrumentUid ?? operation.instrumentUid,
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0])),
           (history.positions ?? [])
             .filter((position) => !position.virtual)
             .map((position) => [
               position.instrumentUid,
+              position.positionUid ?? '',
+              position.providerInstrumentUid ?? position.instrumentUid,
               position.instrumentType,
               position.quantity,
               position.currentPriceCurrency,
@@ -702,6 +737,7 @@ export class BrokerImportService {
     write: boolean,
     opening?: BrokerOpening,
     available: ReturnType<typeof openingAssets> = [],
+    identities: readonly (TBankOperation | TBankPosition)[] = [],
   ) {
     const cash = {} as Record<CashCurrency, ImportInstrument>;
     for (const code of ['RUB', 'USD', 'EUR'] as const) {
@@ -736,15 +772,23 @@ export class BrokerImportService {
       )
         wanted.set(entry.instrumentUid, entry);
     if (wanted.size === 0) return { cash, securities };
+    // Canonical trading modes may change between imports; resolve every verified original UID.
+    const aliases = new Map([...wanted.keys()].map((uid) => [uid, new Set([uid])]));
+    for (const row of identities)
+      if (row.providerInstrumentUid) aliases.get(row.instrumentUid)?.add(row.providerInstrumentUid);
     const linked: (ImportInstrument & { uid: string })[] = await manager.query(
       `SELECT l."providerInstrumentId" AS uid, i.id, i.name, i.symbol
         FROM broker_instrument_links l JOIN accounting_instruments i
           ON i."ownerId" = l."ownerId" AND i.id = l."instrumentId"
         WHERE l."ownerId" = $1 AND l.provider = 'tbank' AND l."providerInstrumentId" = ANY($2::text[])`,
-      [owner, [...wanted.keys()]],
+      [owner, [...new Set([...aliases.values()].flatMap((ids) => [...ids]))]],
     );
-    for (const row of linked)
-      securities.set(row.uid, { id: row.id, name: row.name, symbol: row.symbol });
+    for (const [uid, ids] of aliases) {
+      const matches = linked.filter((row) => ids.has(row.uid));
+      if (new Set(matches.map((row) => row.id)).size > 1) throw conflict();
+      const row = matches[0];
+      if (row) securities.set(uid, { id: row.id, name: row.name, symbol: row.symbol });
+    }
     for (const [uid, entry] of wanted) {
       if (securities.has(uid)) continue;
       const name = entry.ticker || `T-Bank ${uid}`;
