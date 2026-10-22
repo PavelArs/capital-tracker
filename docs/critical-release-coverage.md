@@ -12,7 +12,7 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The manifest held 28 entries at review; G1 later removed ten browser cases of retired screens (see "Retired with their screens") and 19 remain. At review it contained 28 entries: 14 of the original 19 browser cases,
+The manifest held 28 entries at review; G1 later removed ten browser cases of retired screens (see "Retired with their screens") and 19 remained. GOAL-WIDGETS-UI adds a twentieth journey for priced-subset goal insights. At review it contained 28 entries: 14 of the original 19 browser cases,
 CSV-006-B session-renewal recovery, since 2026-10-03 the wallet-address import (ADDR-API since
 M20) and, since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
 and CHART-PERIODS portfolio snapshots on the dashboard, and since 2026-10-05 OPS-UI operations
@@ -44,6 +44,7 @@ using synthetic owner data and provider fixtures.
 | SEC-UI / SEC-CODES / SEC-SESSIONS | Two browsers signed in with recovery codes appear in Settings → Security as "Chrome on Windows" (this browser) and "Safari on iPhone" with 8 of 10 codes unused; a TOTP from the authenticator makes ten new codes shown once, the dialog closes only after "I have saved these codes", the count reads 10 of 10 after a reload and an old code no longer completes a sign-in; "Log out everywhere" ends both browsers, this one returns to the login page and no owner session remains. |
 | RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT | "Forgot password?" on the login page asks for an email; an unknown and the owner's email get the same 202, body and "Check your email" page, and only the owner's request delivers one message through the synthetic Yandex SMTP fixture with a link that lives 30 minutes; the link sets a new password, the other browser's session is signed out, the used link is refused, the old password fails and the new one still needs the TOTP code; past the per-client limit a request is refused with Retry-After and no link is made or sent. |
 | EXP-UI / EXP-CSV / EXP-JSON | Export requests without a session are refused; Settings → Data downloads one ZIP archive holding assets.csv, accounts.csv, wallets.csv, operations.csv, chain-transactions.csv, deposits.csv, deposit-rates.csv, deposit-movements.csv and deposit-checks.csv, with the owner's new account and its buy among them, and a JSON backup with format version 1 holding that account and buy; the backup has no users, owner_auth, owner_mfa, recovery-code or session table and contains neither the owner's email, password, session cookie, its hash nor the CSRF token; responses are no-store and at 390 px the page fits without horizontal scroll. |
+| GOAL-WIDGETS-UI | A goal with an unpriced holding loads contribution averages and growth from the real backend without the client timeout retry, displays the growth-composition bar and one scope note, and fits desktop/dark and phone/light layouts. |
 
 ## Retired with their screens (M20)
 

@@ -4,13 +4,14 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
 import { parseDecimal, parseUuid } from '../accounting/input';
+import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from '../accounting/money';
 import type {
   PortfolioAccountInput,
   PortfolioInstrument,
   PortfolioPrices,
   StoredPrice,
 } from '../accounting/portfolio-valuation';
-import { projectPortfolio, withoutAssets } from '../accounting/portfolio-valuation';
+import { projectPortfolio, resolvePrice } from '../accounting/portfolio-valuation';
 import {
   accountHistoryReader,
   accountsAt,
@@ -194,43 +195,64 @@ export function valuesAt(
   stalePrices: number;
 })[] {
   const instant = new Date(at);
-  const accounts = suppliedAccounts
-    ? withoutAssets(suppliedAccounts, valuation.hidden)
-    : accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
+  const accounts =
+    suppliedAccounts ?? accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
+  // History needs quantities and prices, not purchase costs and realized P&L at every instant.
+  const quantities = new Map<string, bigint>();
+  for (const account of accounts)
+    for (const lot of account.lots)
+      if (!valuation.hidden.has(lot.instrumentId))
+        quantities.set(
+          lot.instrumentId,
+          (quantities.get(lot.instrumentId) ?? 0n) + canonicalDecimalToAtoms(lot.quantity),
+        );
   return converters.map((fx) => {
-    const report = projectPortfolio(
-      instant,
-      valuation.instruments,
-      accounts,
-      prices,
-      fx,
-      undefined,
-      depositValuesAt(valuation.deposits, instant, fx),
-    );
+    const held = new Map<string, { quantity: string; value: string | null }>();
+    let subtotal = 0n;
+    let rated = true;
+    let missingPriceCount = 0;
+    let stalePrices = 0;
+    for (const instrument of valuation.instruments) {
+      const quantity = quantities.get(instrument.id) ?? 0n;
+      if (quantity === 0n) continue;
+      const { price, missingPrice } = resolvePrice(instrument, prices, instant, fx);
+      const value = price === null ? null : quantity * canonicalDecimalToAtoms(price.value);
+      if (value === null) missingPriceCount++;
+      else subtotal += value;
+      if (missingPrice === 'no-rate') rated = false;
+      if (price?.status === 'stale') stalePrices++;
+      held.set(instrument.id, {
+        quantity: formatAtoms(quantity),
+        value: value === null ? null : formatProduct(value),
+      });
+    }
+    const deposits = depositValuesAt(valuation.deposits, instant, fx);
+    for (const deposit of deposits)
+      if (deposit.value !== null && deposit.value > 0n) subtotal += deposit.value;
+    const unrated = deposits.some((deposit) => deposit.value === null);
+    const available = !accounts.some((account) => account.coverage === 'before-coverage');
     // Without a rate a held asset needs, the value in that currency is unknown, not a smaller sum;
     // holdings in this currency need none. Deposits state their own rate, and one without it is
     // counted as unrated.
-    const rated = !report.assets.some(
-      (asset) => asset.value === null && asset.missingPrice === 'no-rate',
-    );
     return {
       at,
       currency: fx.currency,
-      value: rated ? report.pricedSubtotal : null,
-      complete: rated && report.completeness === 'complete',
+      value: rated ? formatProduct(subtotal) : null,
+      complete:
+        rated &&
+        available &&
+        missingPriceCount === 0 &&
+        !unrated &&
+        !deposits.some((deposit) => deposit.interestMissing),
       // The value leaves out a held asset without a price (not an account yet to start) or a
       // deposit without a rate.
-      unpriced: rated && (report.missingPriceCount > 0 || report.unratedDepositCount > 0),
+      unpriced: rated && (missingPriceCount > 0 || unrated),
       // A deposit left out of the value is still in the money put in.
-      unrated: rated && report.unratedDepositCount > 0,
+      unrated: rated && unrated,
       // What is held, to take a coin without a price out of the market effect.
-      held: new Map(
-        report.assets
-          .filter((asset) => asset.quantity !== '0')
-          .map((asset) => [asset.instrumentId, { quantity: asset.quantity, value: asset.value }]),
-      ),
+      held,
       // Held assets valued at a stored market price older than 2 hours, as the portfolio counts them.
-      stalePrices: report.stalePriceCount,
+      stalePrices,
     };
   });
 }

@@ -5,8 +5,9 @@ import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { money } from '../portfolio/format';
+import { InlineSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
-import { monthYear } from './goal-format';
+import { monthsFrom, monthYear, span } from './goal-format';
 
 /** Historical contributions stay nominal, including when the forecast is shown in real terms. */
 export default function GoalInsights({ goal }: { goal: Goal }) {
@@ -17,22 +18,52 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
     goal.deadline,
   ]);
   const { data, error, reload, stale } = useCachedRead(cachedReads.goalInsights, goal.id, terms);
-  if (error && !data)
+  if (!data)
     return (
-      <Banner
-        tone="warn"
-        action={
-          <Button size="sm" onClick={() => reload()}>
-            Retry
-          </Button>
-        }
-      >
-        Could not load contributions and growth.
-      </Banner>
+      <div className="goal-insights">
+        {Boolean(error) && (
+          <Banner
+            tone="warn"
+            action={
+              <Button size="sm" onClick={() => reload()}>
+                Retry
+              </Button>
+            }
+          >
+            Could not load contributions and growth.
+          </Banner>
+        )}
+        {['Your contributions', 'Where the growth came from'].map((title) => (
+          <Card key={title} label={title} busy={!error}>
+            <CardHeader title={title} />
+            {error ? (
+              <p className="ui-none">Figures are unavailable. Retry to load them.</p>
+            ) : (
+              <InlineSkeleton label={`Loading ${title.toLowerCase()}`} />
+            )}
+          </Card>
+        ))}
+      </div>
     );
-  if (!data) return <p className="ui-sub">Loading contributions and growth…</p>;
   const shown = (value: string | null, signed = false) => money(value, data.currency, signed);
   const maximum = Math.max(1, ...data.months.map((entry) => Math.abs(Number(entry.net ?? 0))));
+  // Chart widths only; monetary labels keep the exact strings returned by the server.
+  const growthSizes =
+    data.growth.contributions !== null && data.growth.market !== null
+      ? [Math.abs(Number(data.growth.contributions)), Math.abs(Number(data.growth.market))]
+      : null;
+  const barTotal = growthSizes?.reduce((sum, size) => sum + size, 0) ?? 0;
+  const negativeGrowth = [data.growth.contributions, data.growth.market].some(
+    (value) => value !== null && Number(value) < 0,
+  );
+  const pace = data.paceReachedOn;
+  const deadline = goal.deadline;
+  const paceGap =
+    pace && deadline && pace > data.asOf
+      ? pace === deadline
+        ? 'On the date'
+        : `${span(monthsFrom(pace < deadline ? pace : deadline, pace < deadline ? deadline : pace))} ${pace < deadline ? 'before' : 'after'} the date`
+      : null;
   return (
     <div className="goal-insights">
       {stale && (
@@ -113,6 +144,14 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
                 : data.paceStatus === 'beyond-horizon'
                   ? 'Not reached within 100 years'
                   : 'No current priced value'}
+            {paceGap && (
+              <span
+                className="goal-pace-gap"
+                data-late={(pace && deadline && pace > deadline) || undefined}
+              >
+                {paceGap}
+              </span>
+            )}
           </KeyValueRow>
         </KeyValue>
         <p className="ui-sub">
@@ -122,6 +161,37 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
       </Card>
       <Card label="Where the growth came from">
         <CardHeader title="Where the growth came from" sub="Last 12 months" />
+        {growthSizes && barTotal > 0 ? (
+          <div
+            className="goal-growth-bar"
+            role="img"
+            aria-label={`You put in ${shown(data.growth.contributions, true)}; Market ${shown(data.growth.market, true)}${negativeGrowth ? '; segment widths show movement sizes, not shares of net growth' : ''}`}
+          >
+            <span
+              aria-hidden="true"
+              data-part="contributions"
+              data-negative={data.growth.contributions?.startsWith('-') || undefined}
+              style={{ width: `${(growthSizes[0] / barTotal) * 100}%` }}
+            />
+            <span
+              aria-hidden="true"
+              data-part="market"
+              data-negative={data.growth.market?.startsWith('-') || undefined}
+              style={{ width: `${(growthSizes[1] / barTotal) * 100}%` }}
+            />
+          </div>
+        ) : (
+          <p className="ui-none">
+            {growthSizes
+              ? 'No contributions or market movement in this period.'
+              : 'Growth breakdown is unavailable.'}
+          </p>
+        )}
+        {negativeGrowth && (
+          <p className="ui-sub">
+            Segment widths show movement sizes. Withdrawals and market losses are shown in red.
+          </p>
+        )}
         <KeyValue>
           <KeyValueRow term="You put in">{shown(data.growth.contributions, true)}</KeyValueRow>
           <KeyValueRow term="Market">{shown(data.growth.market, true)}</KeyValueRow>

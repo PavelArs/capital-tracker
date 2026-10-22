@@ -14,7 +14,9 @@ import GoalPage from './GoalPage';
 
 /** The page's own status line: the toasts' status region (Messages) is not part of the page. */
 function pageStatus(): HTMLElement {
-  const found = screen.getAllByRole('status').filter((node) => !node.closest('.ui-toasts'));
+  const found = screen
+    .getAllByRole('status')
+    .filter((node) => !node.closest('.ui-toasts, .goal-insights'));
   expect(found).toHaveLength(1);
   return found[0] as HTMLElement;
 }
@@ -89,6 +91,8 @@ const answers = (...items: Goal[]) =>
   });
 
 beforeEach(() => {
+  vi.restoreAllMocks();
+  forgetReads();
   vi.spyOn(goalsApi, 'insights').mockResolvedValue({
     currency: 'RUB',
     asOf: '2026-10-18',
@@ -99,8 +103,6 @@ beforeEach(() => {
     paceReachedOn: null,
     growth: { from: null, contributions: null, market: null, total: null },
   });
-  vi.restoreAllMocks();
-  forgetReads();
   // The edit dialog asks for its plan; the page tests do not look at it.
   vi.spyOn(goalsApi, 'preview').mockResolvedValue(dated);
   // The chart has its own tests; here it only has to be on the page.
@@ -217,6 +219,15 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
   });
 
   it('GOAL-PRICED-SUBSET shows estimated sums and dates for the priced assets', async () => {
+    vi.mocked(goalsApi.forecast).mockResolvedValue({
+      currency: 'RUB',
+      asOf: '2026-10-13',
+      complete: false,
+      points: [
+        { on: '2026-10-13', pessimistic: '5500000', base: '5500000', optimistic: '5500000' },
+        { on: '2099-12-01', pessimistic: '13000000', base: '15000000', optimistic: '23000000' },
+      ],
+    });
     answers({
       ...dated,
       status: 'unknown',
@@ -231,7 +242,10 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     show(dated);
     expect(await screen.findByRole('heading', { name: 'Down payment A' })).toBeInTheDocument();
     expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(screen.getAllByText(/Estimated from priced assets only/).length).toBeGreaterThan(0);
+    await screen.findByText('Today');
+    await waitFor(() =>
+      expect(screen.getAllByText(/Estimated from priced assets only/)).toHaveLength(1),
+    );
     expect(screen.getByText('Forecast for Dec 2099').nextSibling).not.toHaveTextContent('—');
     expect(screen.getByText(/Needed for the date/)).toBeInTheDocument();
   });
@@ -251,7 +265,9 @@ describe('GOAL-PAGE: one goal with its figures and the three return cases', () =
     show(open);
     expect(await screen.findByRole('heading', { name: 'Reserve B' })).toBeInTheDocument();
     expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(screen.getAllByText(/Estimated from priced assets only/).length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Estimated from priced assets only/)).toHaveLength(1),
+    );
   });
 
   it('says so when the goal does not exist', async () => {

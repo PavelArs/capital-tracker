@@ -314,11 +314,6 @@ export default function GoalPage() {
             </Stats>
           </Card>
           <GoalChart goal={goal} />
-          {!goal.progress.complete && (
-            <Banner tone="info">
-              Estimated from priced assets only. Assets without a price or rate are excluded.
-            </Banner>
-          )}
           {goal.scenarios.length > 0 && known && (
             <Card labelledBy={cases}>
               <CardHeader id={cases} title="Three cases" />
