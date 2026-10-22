@@ -391,6 +391,9 @@ export class BrokerImportService {
     write: boolean,
     opening?: BrokerOpening,
   ): Promise<Review> {
+    // UIDs whose instrument this command created; a second plan finds them saved, but the preview
+    // named them as new.
+    const created = new Set<string>();
     const review = await this.reviewPlan(
       manager,
       owner,
@@ -398,6 +401,7 @@ export class BrokerImportService {
       history,
       write,
       planImport(history.operations, { initialHoldings: openingQuantities(opening) }),
+      created,
       opening,
     );
     if (!review.problems.some((problem) => problem.reason === 'not-held')) return review;
@@ -411,6 +415,7 @@ export class BrokerImportService {
       history,
       write,
       planImport(history.operations, { hoist: false, initialHoldings: openingQuantities(opening) }),
+      created,
       opening,
     );
     return unhoisted.problems.length === 0 ? unhoisted : review;
@@ -427,6 +432,7 @@ export class BrokerImportService {
     },
     write: boolean,
     plan: ImportPlan,
+    created: Set<string>,
     opening?: BrokerOpening,
   ): Promise<Review> {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
@@ -463,6 +469,7 @@ export class BrokerImportService {
       owner,
       plan.entries,
       write,
+      created,
       opening,
       available,
       [...history.operations, ...(history.positions ?? []).filter((row) => !row.virtual)],
@@ -739,6 +746,7 @@ export class BrokerImportService {
     owner: string,
     plan: readonly PlanEntry[],
     write: boolean,
+    created: Set<string>,
     opening?: BrokerOpening,
     available: ReturnType<typeof openingAssets> = [],
     identities: readonly (TBankOperation | TBankPosition)[] = [],
@@ -810,7 +818,10 @@ export class BrokerImportService {
           [owner, row.uid, fact.assetUid ?? null, fact.instrumentType ?? null],
         );
     }
-    const linked = [...resolved].map(([uid, row]) => [uid, row.id]).sort();
+    const linked = [...resolved]
+      .filter(([uid]) => !created.has(uid))
+      .map(([uid, row]) => [uid, row.id])
+      .sort();
     for (const [uid, entry] of wanted) {
       if (securities.has(uid)) continue;
       const name = entry.ticker || `T-Bank ${uid}`;
@@ -827,7 +838,7 @@ export class BrokerImportService {
         valuationCurrency: cashCurrency[entry.currency],
       };
       const classification = classifyAsset(value);
-      const [created]: ImportInstrument[] = await manager.query(
+      const [instrument]: ImportInstrument[] = await manager.query(
         `INSERT INTO accounting_instruments
           (id, "ownerId", "requestId", "canonicalPayload", name, symbol, "assetType",
             "valuationCurrency", "priceSource")
@@ -849,9 +860,10 @@ export class BrokerImportService {
         `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId",
             "instrumentId", "assetUid", "instrumentType")
           VALUES ($1, 'tbank', $2, $3, $4, $5)`,
-        [owner, uid, created.id, fact.assetUid ?? null, fact.instrumentType ?? null],
+        [owner, uid, instrument.id, fact.assetUid ?? null, fact.instrumentType ?? null],
       );
-      securities.set(uid, created);
+      created.add(uid);
+      securities.set(uid, instrument);
     }
     return { cash, securities, linked };
   }

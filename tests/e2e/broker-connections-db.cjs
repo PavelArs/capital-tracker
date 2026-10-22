@@ -853,6 +853,18 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(funded.canImport, true);
   await imports.import(owner, eighth, { requestId: randomUUID(), previewHash: funded.previewHash });
   assert.equal(await count('broker_imports', `WHERE "accountId" = '${eighth}'`), 1);
+  // The same order with a security no earlier import linked: the import creates it on its first
+  // pass and still matches the preview that named it as new.
+  const fundedNew = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, fundedNew);
+  const fundedUid = '10000000-0000-4000-8000-00000000f101';
+  history = history.map((row, index) => ({ ...row, id: String(810000001 + index),
+    ...(row.instrumentUid ? { instrumentUid: fundedUid, ticker: 'SYNTHFUNDED' } : {}) }));
+  tbank.positions = [heldPosition(fundedUid, '1')];
+  const fundedNewPreview = await imports.preview(owner, fundedNew);
+  assert.equal(fundedNewPreview.canImport, true);
+  await imports.import(owner, fundedNew, { requestId: randomUUID(), previewHash: fundedNewPreview.previewHash });
+  assert.equal(await count('broker_instrument_links', `WHERE "providerInstrumentId" = '${fundedUid}'`), 1);
   console.log('PASS BROKER-SYNC-FUNDING');
 
   stage = 'BROKER-CAPRET: a bond paid back in part lowers its cost and brings cash in, once';
