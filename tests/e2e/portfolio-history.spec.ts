@@ -86,6 +86,25 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   expect((await api.send('GET', '/portfolio/history?currency=GBP')).status()).toBe(400);
   expect((await api.send('GET', '/portfolio/history?period=1M&owner=x')).status()).toBe(400);
 
+  // Other cases may hold only unpriced assets: give this comparison a known value of its own.
+  const suffix = randomUUID().slice(0, 8);
+  const account = await api.account(`CHART-PERIODS account ${suffix}`);
+  await api.initialize(account.id);
+  const cash = (await api.result('POST', '/instruments', 201, {
+    requestId: randomUUID(),
+    name: `CHART-PERIODS dollars ${suffix}`,
+    symbol: 'USD',
+    assetType: 'fiat',
+  })) as { id: string };
+  await api.create(
+    account.id,
+    tradeInput(cash.id, 0, {
+      occurredAt: '2025-01-01T00:00:00.000Z',
+      quantity: '1',
+      grossUsd: '1',
+    }),
+  );
+
   // SNAP-BACKFILL: ALL is daily from Jan 1, 2025, and the default period is one month.
   const before = await history('period=ALL&currency=USD');
   expect(before.points[0].at).toBe('2025-01-01T00:00:00.000Z');
@@ -96,16 +115,13 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   expect((await history('currency=USD')).period).toBe('1M');
 
   // SNAP-REBUILD: a buy dated 2025-01-02 and a price from 2025-01-03 rebuild later snapshots.
-  const suffix = randomUUID().slice(0, 8);
-  const account = await api.account(`CHART-PERIODS account ${suffix}`);
-  await api.initialize(account.id);
   const created = (await api.result('POST', '/instruments', 201, {
     requestId: randomUUID(),
     name: `CHART-PERIODS coin ${suffix}`,
     symbol: 'CHPD',
     assetType: 'crypto',
   })) as { id: string };
-  await api.create(account.id, tradeInput(created.id, 0, { quantity: '1', grossUsd: '800' }));
+  await api.create(account.id, tradeInput(created.id, 1, { quantity: '1', grossUsd: '800' }));
   await api.result('POST', `/instruments/${created.id}/usd-prices`, 201, {
     requestId: randomUUID(),
     expectedRevision: 0,
@@ -121,7 +137,8 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
     const was = before.points.find((point) => point.at === at)?.value;
     const now = after.points.find((point) => point.at === at)?.value;
     expect(was, `${at} had a value`).not.toBeNull();
-    expect(difference(now ?? '0', was ?? '0'), `${at} rebuilt`).toBe(added);
+    expect(now, `${at} has a rebuilt value`).not.toBeNull();
+    expect(difference(now!, was!), `${at} rebuilt`).toBe(added);
   }
 
   // DASH-MAIN: the dashboard opens on one month and shows exactly what the backend returned.
