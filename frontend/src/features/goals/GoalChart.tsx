@@ -170,6 +170,11 @@ export default function GoalChart({ goal }: { goal: Goal }) {
               ? 'Loading the chart…'
               : `No portfolio figures in ${goal.currency} yet.`}
         </p>
+        {!goal.progress.complete && (
+          <Banner tone="info">
+            Estimated from priced assets only. Assets without a price or rate are excluded.
+          </Banner>
+        )}
       </Card>
     );
 

@@ -74,5 +74,9 @@
   {
     "file": "tests/e2e/security-settings.spec.ts",
     "title": "SEC-TOTP: Settings sets the authenticator up again after a fresh code; other browsers sign out and the new app signs in"
+  },
+  {
+    "file": "tests/e2e/goal-widgets.spec.ts",
+    "title": "GOAL-WIDGETS-UI: priced-subset goals load contributions and growth over real HTTPS"
   }
 ]

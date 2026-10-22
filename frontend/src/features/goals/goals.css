@@ -424,7 +424,7 @@
   display: flex;
   align-items: stretch;
   gap: var(--sp-2);
-  height: 120px;
+  height: 72px;
   margin: var(--sp-5) 0 var(--sp-3);
 }
 .goal-month-bars > span {
@@ -437,7 +437,8 @@
 }
 .goal-month-bars i {
   display: block;
-  background: var(--accent);
+  background: var(--ink-3);
+  opacity: 0.6;
   border-radius: var(--r-xs) var(--r-xs) 0 0;
 }
 .goal-month-bars i[data-negative] {
@@ -455,4 +456,50 @@
   .goal-insights {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.goal-growth-bar {
+  display: flex;
+  height: 12px;
+  margin: var(--sp-4) 0;
+  overflow: hidden;
+  border-radius: var(--r-xs);
+  background: var(--sunken);
+}
+.goal-growth-bar > span[data-part="contributions"] {
+  background: var(--ink-3);
+}
+.goal-growth-bar > span[data-part="market"] {
+  background: var(--accent);
+}
+.goal-growth-bar > span[data-negative] {
+  background: var(--neg);
+}
+.goal-pace-gap {
+  display: block;
+  color: var(--pos);
+  font-size: var(--fs-xs);
+}
+.goal-pace-gap[data-late] {
+  color: var(--neg);
+}
+
+.goal-insights .ui-kv {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.goal-insights .ui-kv > dt,
+.goal-insights .ui-kv > dd {
+  padding: var(--sp-3) 0;
+}
+.goal-insights .ui-kv > :nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+.goal-insights .ui-kv dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.goal-insights .ui-kv dd .ui-sub {
+  display: inline;
 }

@@ -1,7 +1,13 @@
 import type { ConnectedLedger } from '../accounting/connected-accounting.store';
 import type { FifoCarryInInput } from '../accounting/fifo';
-import type { PortfolioInstrument } from '../accounting/portfolio-valuation';
+import {
+  type PortfolioAccountInput,
+  type PortfolioInstrument,
+  projectPortfolio,
+  withoutAssets,
+} from '../accounting/portfolio-valuation';
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
+import { type DepositHolding, depositValuesAt } from '../deposits/deposit-valuation';
 import { accountingCurrencies, FxConverter, type FxRates } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService, valuesAt } from './portfolio-snapshots.service';
 import { seriesInstants } from './snapshot-series';
@@ -154,3 +160,195 @@ describe('a snapshot computed under an earlier valuation rule', () => {
     expect(writes).toHaveLength(1);
   });
 });
+
+it('SNAP-VALUE-ONLY values holdings without recalculating their purchase costs or realized profit', () => {
+  const cost = jest.fn(() => '50');
+  const realized = jest.fn(() => []);
+  const dollar: PortfolioInstrument = {
+    id: 'usd',
+    name: 'Dollar',
+    symbol: 'USD',
+    assetType: 'fiat',
+    valuationCurrency: 'USD',
+    priceSource: 'fixed',
+  };
+  const account = {
+    accountId: 'bank',
+    name: 'Bank',
+    coverage: 'covered' as const,
+    lots: [
+      {
+        instrumentId: dollar.id,
+        quantity: '100',
+        acquiredAt: '2025-06-01T00:00:00Z',
+        get costUsd() {
+          return cost();
+        },
+      },
+    ],
+    get realizations() {
+      return realized();
+    },
+  };
+  const [point] = valuesAt(
+    { ...holding([]), instruments: [dollar] },
+    at,
+    prices,
+    [new FxConverter({ USD: [], EUR: [] }, 'USD')],
+    [account],
+  );
+  expect(point).toMatchObject({
+    value: '100',
+    complete: true,
+    unpriced: false,
+    unrated: false,
+    stalePrices: 0,
+  });
+  expect(point.held.get(dollar.id)).toEqual({ quantity: '100', value: '100' });
+  expect(cost).not.toHaveBeenCalled();
+  expect(realized).not.toHaveBeenCalled();
+});
+
+it.each(accountingCurrencies)(
+  'SNAP-VALUE-PARITY preserves full-portfolio value and flags in %s',
+  (currency) => {
+    const manual: PortfolioInstrument = {
+      ...bitcoin,
+      id: 'manual',
+      name: 'Manual',
+      symbol: null,
+      assetType: 'manual',
+      priceSource: 'manual',
+    };
+    const accounts: PortfolioAccountInput[] = [
+      {
+        accountId: 'bank',
+        name: 'Synthetic',
+        coverage: 'covered',
+        lots: [rubles, bitcoin, manual].map((instrument) => ({
+          instrumentId: instrument.id,
+          quantity: '1.23456789',
+          costUsd: null,
+          acquiredAt: '2025-06-01T00:00:00Z',
+        })),
+        realizations: [],
+      },
+    ];
+    const deposit: DepositHolding = {
+      deposit: {
+        id: 'd1',
+        kind: 'account',
+        name: 'Synthetic deposit',
+        bank: 'Synthetic Bank',
+        currency: 'EUR',
+        startDate: '2025-06-01',
+        endDate: null,
+        payout: 'monthly',
+        capitalized: false,
+        dayBasis: 'actual-365',
+        earlyClose: 'keeps-interest',
+      },
+      rates: [{ depositId: 'd1', effectiveFrom: '2025-06-01', ratePercent: '0' }],
+      movements: [
+        {
+          id: 'm1',
+          depositId: 'd1',
+          occurredOn: '2025-06-01',
+          kind: 'topup',
+          amount: '100',
+          comment: null,
+        },
+      ],
+      checks: [],
+    };
+    for (const mode of [
+      'normal',
+      'hidden',
+      'missing-price',
+      'stale-price',
+      'missing-rate',
+      'later-history',
+      'bank',
+      'missing-interest',
+      'unrated-bank',
+    ] as const) {
+      const inputs = {
+        ...holding([]),
+        instruments: [rubles, bitcoin, manual],
+        hidden: new Set(mode === 'hidden' ? ['btc'] : []),
+        deposits: ['bank', 'unrated-bank', 'missing-interest'].includes(mode)
+          ? [{ ...deposit, rates: mode === 'missing-interest' ? [] : deposit.rates }]
+          : [],
+      };
+      const visible = accounts.map((account) => ({
+        ...account,
+        coverage: mode === 'later-history' ? ('before-coverage' as const) : account.coverage,
+      }));
+      const sourcePrices = {
+        market:
+          mode === 'missing-price'
+            ? new Map()
+            : new Map([
+                [
+                  'BTC',
+                  {
+                    priceUsd: '100000',
+                    observedAt:
+                      mode === 'stale-price' ? '2025-06-01T00:00:00Z' : '2025-07-01T11:00:00Z',
+                    source: 'kraken',
+                  },
+                ],
+              ]),
+        manual: new Map([
+          [
+            manual.id,
+            { priceUsd: '12.3456789', observedAt: '2025-07-01T11:00:00Z', source: 'manual' },
+          ],
+        ]),
+      };
+      const fx = new FxConverter(
+        ['missing-rate', 'unrated-bank'].includes(mode)
+          ? { USD: [], EUR: [] }
+          : {
+              USD: [{ date: '2025-07-01', rubPerUnit: '80' }],
+              EUR: [{ date: '2025-07-01', rubPerUnit: '100' }],
+            },
+        currency,
+      );
+      const reference = projectPortfolio(
+        new Date(at),
+        inputs.instruments,
+        withoutAssets(visible, inputs.hidden),
+        sourcePrices,
+        fx,
+        undefined,
+        depositValuesAt(inputs.deposits, new Date(at), fx),
+      );
+      const rated = !reference.assets.some(
+        (asset) => asset.value === null && asset.missingPrice === 'no-rate',
+      );
+      const [actual] = valuesAt(inputs, at, sourcePrices, [fx], visible);
+      expect({
+        mode,
+        value: actual.value,
+        complete: actual.complete,
+        unpriced: actual.unpriced,
+        unrated: actual.unrated,
+        stalePrices: actual.stalePrices,
+        held: actual.held,
+      }).toEqual({
+        mode,
+        value: rated ? reference.pricedSubtotal : null,
+        complete: rated && reference.completeness === 'complete',
+        unpriced: rated && (reference.missingPriceCount > 0 || reference.unratedDepositCount > 0),
+        unrated: rated && reference.unratedDepositCount > 0,
+        stalePrices: reference.stalePriceCount,
+        held: new Map(
+          reference.assets
+            .filter((asset) => asset.quantity !== '0')
+            .map((asset) => [asset.instrumentId, { quantity: asset.quantity, value: asset.value }]),
+        ),
+      });
+    }
+  },
+);
