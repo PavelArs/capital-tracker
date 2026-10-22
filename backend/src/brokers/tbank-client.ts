@@ -70,6 +70,8 @@ export interface TBankOperation {
   occurredAt: string;
   instrumentUid: string;
   positionUid?: string;
+  /** The asset behind the instrument: one fund traded on two venues is one asset. */
+  assetUid?: string;
   providerInstrumentUid?: string;
   instrumentType: string;
   ticker: string;
@@ -117,12 +119,16 @@ export const isTBankToken = (value: unknown): value is string =>
   typeof value === 'string' && tokenPattern.test(value);
 const idPattern = /^[0-9A-Za-z_-]{1,64}$/;
 
-function positionReference(value: unknown): { positionUid?: string } {
+function uidReference<K extends 'positionUid' | 'assetUid'>(
+  key: K,
+  value: unknown,
+): Partial<Record<K, string>> {
   if (value === undefined || value === '') return {};
   if (typeof value !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value))
     return invalid();
-  return { positionUid: value.toLowerCase() };
+  return { [key]: value.toLowerCase() } as Partial<Record<K, string>>;
 }
+const positionReference = (value: unknown) => uidReference('positionUid', value);
 
 const accessLevels: Record<string, TBankAccess> = {
   ACCOUNT_ACCESS_LEVEL_READ_ONLY: 'read_only',
@@ -327,6 +333,7 @@ function executedShape(item: Record<string, unknown>, state: TBankOperationState
     occurredAt: date,
     instrumentUid: text(item.instrumentUid, idPattern),
     ...positionReference(item.positionUid),
+    ...uidReference('assetUid', item.assetUid),
     instrumentType: text(item.instrumentType, /^[a-z_]{1,40}$/),
     ticker: text(item.ticker, /^[0-9A-Za-z._-]{1,32}$/),
     quantity: movedQuantity(item),
