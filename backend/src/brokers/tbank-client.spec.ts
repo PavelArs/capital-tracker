@@ -72,6 +72,18 @@ it('BROKER-POSITION-ID preserves documented position UUIDs and rejects malformed
   ).toBeUndefined();
 });
 
+it('BROKER-ASSET-ID keeps the documented asset UUID of an operation and rejects malformed ones', () => {
+  const assetUid = 'A0C7E33E-0000-4000-8000-000000000001';
+  expect(parseOperationsPage({ items: [item({ assetUid })] }).operations[0].assetUid).toBe(
+    assetUid.toLowerCase(),
+  );
+  for (const value of [null, 17, 'not-an-asset', {}, ' '])
+    expect(() => parseOperationsPage({ items: [item({ assetUid: value })] })).toThrow();
+  expect(
+    parseOperationsPage({ items: [item({ assetUid: '' })] }).operations[0].assetUid,
+  ).toBeUndefined();
+});
+
 describe('BROKER-CONNECT: what T-Bank says about a token', () => {
   it('reads the accounts a token reaches and what it may do with each', () => {
     expect(

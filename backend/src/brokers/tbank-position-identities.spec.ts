@@ -88,6 +88,42 @@ it('BROKER-POSITION-ID rejects conflicting position metadata and ambiguous curre
   }
 });
 
+it('BROKER-ASSET-ID joins a fund bought on the exchange and sold on another venue: one asset, two positions', () => {
+  // As T-Bank answered for a real fund: bought as TITR on TQTF, sold as TITR@ on SPBRU. Each
+  // venue is its own position, but both name the same asset.
+  const asset = '00000000-0000-4000-8000-0000000000a1';
+  const venue = '00000000-0000-4000-8000-000000000005';
+  const bought = { ...buy, assetUid: asset };
+  const sold = { ...sell, positionUid: venue, assetUid: asset };
+  const result = positionIdentities([bought, sold], []);
+  if (!result.ok) throw new Error('Expected one asset');
+  expect(planImport(result.value.operations).skipped).toEqual([]);
+  // Different assets stay apart, and one instrument never names two assets.
+  const apart = positionIdentities(
+    [bought, { ...sold, assetUid: '00000000-0000-4000-8000-0000000000a2' }],
+    [],
+  );
+  if (!apart.ok) throw new Error('Expected distinct assets');
+  expect(planImport(apart.value.operations).skipped).toMatchObject([{ reason: 'not-held' }]);
+  expect(
+    positionIdentities(
+      [bought, { ...bought, id: '100000003', assetUid: '00000000-0000-4000-8000-0000000000a2' }],
+      [],
+    ).ok,
+  ).toBe(false);
+  // Units still held on both venues are two real holdings of one asset, not a duplicate.
+  const both = positionIdentities(
+    [bought, sold],
+    [
+      { ...holding, instrumentUid: old, quantity: '1' },
+      { ...holding, positionUid: venue },
+    ],
+  );
+  if (!both.ok) throw new Error('Expected one asset held on two venues');
+  expect(new Set(both.value.positions.map((row) => row.instrumentUid)).size).toBe(1);
+  expect(new Set(both.value.operations.map((row) => row.instrumentUid)).size).toBe(1);
+});
+
 it('BROKER-POSITION-ID chooses a deterministic identity for closed positions regardless of API page order', () => {
   const a = positionIdentities([buy, sell], []);
   const b = positionIdentities([sell, buy], []);
