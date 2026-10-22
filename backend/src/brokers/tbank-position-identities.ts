@@ -23,7 +23,6 @@ export function positionIdentities(
     if (x !== y) parent.set(y, x);
   };
   const named = { positionUid: new Map<string, string>(), assetUid: new Map<string, string>() };
-  const assetOfPosition = new Map<string, string>();
   for (const row of rows) {
     if (!security(row) || !row.instrumentUid) continue;
     for (const key of ['positionUid', 'assetUid'] as const) {
@@ -34,13 +33,16 @@ export function positionIdentities(
       named[key].set(row.instrumentUid, value);
       join(`${key}:${value}`, `instrument:${row.instrumentUid}`);
     }
-    // One position never names two assets: joining them would merge two securities.
-    const asset = (row as { assetUid?: string }).assetUid;
-    if (row.positionUid && asset) {
-      const previous = assetOfPosition.get(row.positionUid);
-      if (previous && previous !== asset) return { ok: false, reason: 'invalid_response' };
-      assetOfPosition.set(row.positionUid, asset);
-    }
+  }
+  // One position never names two assets, even through rows that each name one: joining them
+  // would merge two securities.
+  const assetOfPosition = new Map<string, string>();
+  for (const [instrument, position] of named.positionUid) {
+    const asset = named.assetUid.get(instrument);
+    if (!asset) continue;
+    const previous = assetOfPosition.get(position);
+    if (previous && previous !== asset) return { ok: false, reason: 'invalid_response' };
+    assetOfPosition.set(position, asset);
   }
   const groups = new Map<string, { type: string; ids: Set<string>; held: Set<string> }>();
   const groupOf = (instrumentUid: string) =>

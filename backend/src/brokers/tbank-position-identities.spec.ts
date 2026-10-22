@@ -133,6 +133,20 @@ it('BROKER-ASSET-ID joins a fund bought on the exchange and sold on another venu
       ],
     ).ok,
   ).toBe(false);
+  // Nor when each row names only one of the two: the instruments still tie one position to two
+  // assets.
+  const other = '00000000-0000-4000-8000-0000000000a2';
+  expect(
+    positionIdentities(
+      [
+        { ...buy, assetUid: undefined },
+        { ...buy, id: '100000005', positionUid: undefined, assetUid: asset },
+        { ...sell, assetUid: undefined },
+        { ...sell, id: '100000006', positionUid: undefined, assetUid: other },
+      ],
+      [],
+    ).ok,
+  ).toBe(false);
   // One position never names two assets: that would join two securities.
   expect(
     positionIdentities([bought, { ...sell, assetUid: '00000000-0000-4000-8000-0000000000a2' }], [])
