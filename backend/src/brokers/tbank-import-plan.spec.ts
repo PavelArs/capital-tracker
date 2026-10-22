@@ -91,6 +91,13 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
       cash('OPERATION_TYPE_BROKER_FEE', '-0.3', { id: '106000003', parentId: plain.id }),
     ];
     expect(planImport([plain, ...fees]).entries[0]).toMatchObject({ fee: '0.6' });
+    // Rows that differ are all charged, even when the commission names only one of them.
+    const mixed = op({ id: '108000001', commission: '-0.3', commissionCurrency: 'rub' });
+    const parts = [
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.2', { id: '108000002', parentId: mixed.id }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.3', { id: '108000003', parentId: mixed.id }),
+    ];
+    expect(planImport([mixed, ...parts]).entries[0]).toMatchObject({ fee: '0.5' });
     // A commission of zero or above the rows never zeroes or adds a fee.
     for (const commission of ['0', '-1']) {
       const trade = op({ id: '107000001', commission, commissionCurrency: 'rub' });
