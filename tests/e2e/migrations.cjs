@@ -189,6 +189,7 @@ const migrationNames = [
   'AddDepositKind1797600000000',
   'AddCapitalReturns1797700000000',
   'AddRetiredCommands1797800000000',
+  'LinkBrokerAssets1797900000000',
 ];
 
 function connection(database) {
@@ -362,7 +363,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-one migrations',
+      'Exactly seventy-two migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -2535,6 +2536,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797600000000',
           '1797700000000',
           '1797800000000',
+          '1797900000000',
         ][index - 11],
       );
     }
