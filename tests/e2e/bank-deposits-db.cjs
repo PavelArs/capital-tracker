@@ -597,7 +597,7 @@ async function backfill() {
       timeout: 60000,
     });
     assert.equal(migrated.status, 0, 'Actual guarded migration CLI');
-    assert.match(migrated.stdout, /Migrations applied: 8/);
+    assert.match(migrated.stdout, /Migrations applied: 9/);
     const events = await prior.query(
       `SELECT version, kind, "depositKind", name, bank, currency, to_char("occurredOn",'YYYY-MM-DD') AS day,
           to_char("endDate",'YYYY-MM-DD') AS "endDate", payout, "movementKind", amount::text AS amount,

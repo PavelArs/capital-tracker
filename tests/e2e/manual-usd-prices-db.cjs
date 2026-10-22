@@ -197,7 +197,7 @@ async function main() {
       ],
     });
     const beforeUpgrade = await fingerprint(source, ['migrations'], true);
-    assert.match(migrate(database), /Migrations applied: 54/);
+    assert.match(migrate(database), /Migrations applied: 55/);
     assert.deepEqual(await source.query('SELECT * FROM retired_commands'), []);
     assert.equal(
       await fingerprint(
