@@ -103,6 +103,17 @@ export function readAccount(value: unknown): Account {
   };
 }
 
+export function readListedAccount(value: unknown): Account {
+  const { connection, ...account } = record(value);
+  if (connection !== null) {
+    const source = record(connection);
+    keys(source, ['provider', 'imported']);
+    expect(source.provider).toBe('tbank');
+    expect(typeof source.imported).toBe('boolean');
+  }
+  return readAccount(account);
+}
+
 export function readInstrument(value: unknown): Instrument {
   const row = record(value);
   keys(row, [
