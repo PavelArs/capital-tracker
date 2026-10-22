@@ -56,6 +56,59 @@ describe('BROKER-SYNC: what a T-Bank history would become in the records', () =>
     ]);
   });
 
+  it('BROKER-FEE-REPEAT takes the fee a trade reports as its commission when T-Bank lists the fee twice', () => {
+    // As T-Bank answered for one real purchase: two identical fee rows a moment apart, both
+    // naming the trade, while the trade's own commission and the account's cash show one fee.
+    const buy = op({
+      id: '105000001',
+      payment: '-6917.08',
+      commission: '-62.25',
+      commissionCurrency: 'rub',
+    });
+    const first = cash('OPERATION_TYPE_BROKER_FEE', '-62.25', {
+      id: '105000002',
+      parentId: buy.id,
+      occurredAt: '2024-03-01T10:00:00.938Z',
+    });
+    const repeat = cash('OPERATION_TYPE_BROKER_FEE', '-62.25', {
+      id: '105000003',
+      parentId: buy.id,
+      occurredAt: '2024-03-01T10:00:01Z',
+    });
+    const plan = planImport([buy, first, repeat]);
+    expect(plan.entries).toEqual([
+      expect.objectContaining({
+        action: 'buy',
+        amount: '6917.08',
+        fee: '62.25',
+        operationIds: ['105000001', '105000002', '105000003'],
+      }),
+    ]);
+    // Without a commission on the trade, its fee rows are all it was charged.
+    const plain = op({ id: '106000001' });
+    const fees = [
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.3', { id: '106000002', parentId: plain.id }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.3', { id: '106000003', parentId: plain.id }),
+    ];
+    expect(planImport([plain, ...fees]).entries[0]).toMatchObject({ fee: '0.6' });
+    // Rows that differ are all charged, even when the commission names only one of them.
+    const mixed = op({ id: '108000001', commission: '-0.3', commissionCurrency: 'rub' });
+    const parts = [
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.2', { id: '108000002', parentId: mixed.id }),
+      cash('OPERATION_TYPE_BROKER_FEE', '-0.3', { id: '108000003', parentId: mixed.id }),
+    ];
+    expect(planImport([mixed, ...parts]).entries[0]).toMatchObject({ fee: '0.5' });
+    // A commission of zero or above the rows never zeroes or adds a fee.
+    for (const commission of ['0', '-1']) {
+      const trade = op({ id: '107000001', commission, commissionCurrency: 'rub' });
+      const fee = cash('OPERATION_TYPE_BROKER_FEE', '-0.3', {
+        id: '107000002',
+        parentId: trade.id,
+      });
+      expect(planImport([trade, fee]).entries[0]).toMatchObject({ fee: '0.3' });
+    }
+  });
+
   it('spends a fee in another currency than its trade from cash, not as the trade fee', () => {
     const buy = op({ id: '110000001', payment: '-20', paymentCurrency: 'usd' });
     const fee = cash('OPERATION_TYPE_BROKER_FEE', '-15', { id: '110000002', parentId: buy.id });
