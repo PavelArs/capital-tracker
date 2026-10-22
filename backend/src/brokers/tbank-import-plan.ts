@@ -45,7 +45,7 @@ export interface PlanEntry {
    * paid for in `currency`. Such a trade holds no security.
    */
   cash?: 'usd' | 'eur';
-  /** Securities paid from or sold to the owner's card, outside broker cash. */
+  /** Securities sold to the owner's card, outside broker cash. */
   externalCash?: true;
   /**
    * For a reward, the T-Bank instrument that paid it; the reward itself is cash. A capital
@@ -119,14 +119,12 @@ const expectedSign: Partial<Record<ReturnType<typeof operationKind>, 'in' | 'out
   withdrawal: 'out',
 };
 /**
- * Trades and dividends T-Bank settles through a card: their money never passes through the
- * broker account's cash, and whether T-Bank lists that money elsewhere is not known.
+ * Sales and dividends T-Bank settles through a card: their money never passes through the
+ * broker account's cash, and whether T-Bank lists that money elsewhere is not known. A buy paid
+ * by card is not here: T-Bank lists the card's money as paid in (INPUT) a moment before it, so
+ * it is paid from the account's cash like any buy.
  */
-const cardSettled = new Set([
-  'OPERATION_TYPE_BUY_CARD',
-  'OPERATION_TYPE_SELL_CARD',
-  'OPERATION_TYPE_DIV_EXT',
-]);
+const cardSettled = new Set(['OPERATION_TYPE_SELL_CARD', 'OPERATION_TYPE_DIV_EXT']);
 const signOf = (payment: string) => (payment.startsWith('-') ? 'out' : 'in');
 /**
  * Dollars and euros as the Moscow Exchange trades them against rubles, settled the next day or

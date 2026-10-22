@@ -18,6 +18,7 @@ import {
   raceAcrossReplicas,
   readAccount,
   readInstrument,
+  readListedAccount,
   readOpening,
   readPage,
   rows,
@@ -283,7 +284,7 @@ test('OPEN-001-B: duplicate symbols, bounded discovery and labels beyond the fir
     `SELECT id FROM manual_accounts WHERE "ownerId" = '${owner.id}' AND "removedAt" IS NULL ORDER BY id`,
   ).map((row) => row.id);
   for (const [resource, ids, read] of [
-    ['/accounts', expectedAccounts, readAccount],
+    ['/accounts', expectedAccounts, readListedAccount],
     ['/instruments', expectedInstruments, readInstrument],
   ] as const) {
     const first = readPage<Account | Instrument, string>(
