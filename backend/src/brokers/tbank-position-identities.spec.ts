@@ -122,6 +122,22 @@ it('BROKER-ASSET-ID joins a fund bought on the exchange and sold on another venu
   if (!both.ok) throw new Error('Expected one asset held on two venues');
   expect(new Set(both.value.positions.map((row) => row.instrumentUid)).size).toBe(1);
   expect(new Set(both.value.operations.map((row) => row.instrumentUid)).size).toBe(1);
+  // A held instrument that names no position may duplicate the other; never summed on a guess.
+  const unnamed = '00000000-0000-4000-8000-000000000006';
+  expect(
+    positionIdentities(
+      [bought, sold, { ...sold, id: '100000004', instrumentUid: unnamed, positionUid: undefined }],
+      [
+        { ...holding, instrumentUid: unnamed, positionUid: undefined, quantity: '1' },
+        { ...holding, positionUid: venue },
+      ],
+    ).ok,
+  ).toBe(false);
+  // One position never names two assets: that would join two securities.
+  expect(
+    positionIdentities([bought, { ...sell, assetUid: '00000000-0000-4000-8000-0000000000a2' }], [])
+      .ok,
+  ).toBe(false);
 });
 
 it('BROKER-POSITION-ID chooses a deterministic identity for closed positions regardless of API page order', () => {
