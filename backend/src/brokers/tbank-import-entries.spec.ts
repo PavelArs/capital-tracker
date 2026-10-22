@@ -45,15 +45,15 @@ const buy = (over: Partial<PlanEntry> = {}) =>
   });
 
 describe('BROKER-SYNC: the journal entries a T-Bank import writes', () => {
-  it('BROKER-CARD never spends or credits broker cash for card trades', () => {
+  it('BROKER-CARD never credits broker cash for a card sale', () => {
     const { entries, problems } = journalEntries(
-      [buy({ externalCash: true }), buy({ externalCash: true, action: 'sell' })],
+      [buy({ externalCash: true, action: 'sell' })],
       instruments,
       rates,
     );
     expect(problems).toEqual([]);
-    expect(entries.map((entry) => entry.trade?.settlement)).toEqual([undefined, undefined]);
-    expect(entries.map((entry) => entry.trade?.instrumentId)).toEqual([id(4), id(4)]);
+    expect(entries.map((entry) => entry.trade?.settlement)).toEqual([undefined]);
+    expect(entries.map((entry) => entry.trade?.instrumentId)).toEqual([id(4)]);
   });
 
   it('buys cash from outside for money paid in and settles a buy in full from that cash', () => {

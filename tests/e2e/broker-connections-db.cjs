@@ -950,12 +950,20 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(await count('account_capital_returns', `WHERE "accountId" = '${ninth}'`), 1);
   console.log('PASS BROKER-CAPRET');
 
-  stage = 'BROKER-CARD: external card trades never spend or credit broker cash';
+  stage = 'BROKER-CARD: a card buy spends the money T-Bank lists as paid in; a card sale never credits broker cash';
   const cardAccount = await account(db, owner, 'broker');
   await takeOver(db, service, owner, cardAccount);
-  history = [operation('1100000001', 'BUY_CARD', '-500', share({ quantity: '2' })), operation('1100000002', 'SELL_CARD', '300', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' }))];
+  history = [operation('1100000004', 'INPUT', '500', { occurredAt: '2024-03-01T06:59:59Z' }), operation('1100000001', 'BUY_CARD', '-500', share({ quantity: '2' })), operation('1100000002', 'SELL_CARD', '300', share({ occurredAt: '2024-03-02T08:00:00Z', quantity: '1' }))];
   tbank.positions = [heldPosition(shareUid, '1')];
   tbank.cash = [];
+  const paidIn = history.shift();
+  const unfunded = await imports.preview(owner, cardAccount);
+  assert.equal(unfunded.canImport, false, 'A card buy without the money T-Bank lists as paid in never invents cash');
+  assert.deepEqual(
+    unfunded.problems.filter((problem) => problem.reason === 'not-held').map((problem) => [problem.ticker, problem.missingQuantity]),
+    [['RUB', '500']],
+  );
+  history.unshift(paidIn);
   history.push(operation('1100000003', 'DIV_EXT', '15', share({ occurredAt: '2024-03-03T08:00:00Z', quantity: '0' })));
   const outsideDividend = await imports.preview(owner, cardAccount);
   assert.equal(outsideDividend.canImport, false, 'External dividends require reconciliation, never disappear from a successful import');
@@ -966,8 +974,8 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(cardPreview.canImport, true);
   await imports.import(owner, cardAccount, { requestId: randomUUID(), previewHash: cardPreview.previewHash });
   assert.equal((await trades.available(owner, cardAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '0');
-  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${cardAccount}'`), 2);
-  console.log('PASS BROKER-CARD PostgreSQL card-paid security entries and no phantom broker cash');
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${cardAccount}'`), 3);
+  console.log('PASS BROKER-CARD PostgreSQL card buy paid from the money paid in, card sale off broker cash');
 
   stage = 'BROKER-OPENING: explicit owner quantities and exact costs cover pre-history holdings';
   const openingAccount = await account(db, owner, 'broker');
