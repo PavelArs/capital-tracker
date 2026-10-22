@@ -408,7 +408,8 @@ jobs:
         if: startsWith(matrix.shard, 'browser-') && needs.release-images.outputs.reuse != 'true'
         run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       # A cached browser of the same Playwright version skips the download; the install
-      # below still checks it and installs the system packages Chromium needs.
+      # below still checks it. The runner image has Chromium's system libraries, so no apt-get:
+      # --with-deps only added fonts and stalled a shard 14 min on a slow Ubuntu mirror.
       - name: Restore the Playwright browser
         if: startsWith(matrix.shard, 'browser-') && needs.release-images.outputs.reuse != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -417,7 +418,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install the Playwright browser
         if: startsWith(matrix.shard, 'browser-') && needs.release-images.outputs.reuse != 'true'
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
       - name: Download the built release images
         if: needs.release-images.outputs.reuse != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
