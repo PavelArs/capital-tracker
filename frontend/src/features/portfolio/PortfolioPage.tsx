@@ -16,6 +16,7 @@ import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import { accountsWithoutRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
+import { propertiesOf, propertyTotal } from '../property/real-estate';
 import AssetIcon from '../shell/AssetIcon';
 import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
@@ -444,6 +445,7 @@ function Summary({
         .filter((text) => text !== false)
         .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;
+  const propertyValue = propertyTotal(propertiesOf(portfolio, classes));
   const withProperty =
     portfolio.accounts.some(
       (account) =>
@@ -501,6 +503,14 @@ function Summary({
                   {amount(portfolio.depositsValue)} in{' '}
                   <Link className="ui-link" to={withCurrency('/deposits', asked)}>
                     bank deposits
+                  </Link>
+                </span>
+              )}
+              {Number(propertyValue) > 0 && (
+                <span className="ui-sub">
+                  Includes {amount(propertyValue)} in{' '}
+                  <Link className="ui-link" to={withCurrency('/real-estate', asked)}>
+                    real estate
                   </Link>
                 </span>
               )}

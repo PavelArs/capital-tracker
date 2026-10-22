@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { money } from '../../frontend/src/features/portfolio/format';
+import { sumDecimals } from '../../frontend/src/utils/decimal';
 import { origin, test } from './mfa-fixtures';
 import { forgetBrowserReads, tradeApi, tradeInput } from './usd-trades-fixtures';
 
@@ -342,5 +343,94 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     ),
   ).toBeLessThanOrEqual(0);
+  // PROPERTY-INCLUDES: property value is named beneath net worth, alongside bank deposits.
+  const propertyAccount = (await api.result('POST', '/accounts', 201, {
+    requestId: randomUUID(),
+    name: `Studio account ${suffix}`,
+    assetClass: 'property',
+  })) as { id: string };
+  await api.initialize(propertyAccount.id);
+  const property = (await api.result('POST', '/instruments', 201, {
+    requestId: randomUUID(),
+    name: `Studio ${suffix}`,
+    assetType: 'manual',
+  })) as { id: string };
+  await api.create(
+    propertyAccount.id,
+    tradeInput(property.id, 0, { quantity: '0.5', grossUsd: '40000' }),
+  );
+  await api.result('POST', `/instruments/${property.id}/usd-prices`, 201, {
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    observedAt: '2025-01-04T00:00:00.000Z',
+    priceUsd: '100000.258',
+    assertReviewed: true,
+  });
+  const propertyAccounts = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const listed = (await api.result(
+      'GET',
+      `/accounts?limit=100${cursor ? `&cursor=${cursor}` : ''}`,
+      200,
+    )) as {
+      items: { id: string; assetClass: string | null }[];
+      nextCursor: string | null;
+    };
+    listed.items
+      .filter((item) => item.assetClass === 'property')
+      .forEach((item) => propertyAccounts.add(item.id));
+    cursor = listed.nextCursor;
+  } while (cursor);
+  const propertyValuation = (await api.result('GET', '/portfolio?currency=USD', 200)) as {
+    assets: AssetRow[];
+  };
+  expect(propertyValuation.assets.find((item) => item.instrumentId === property.id)?.value).toBe(
+    '50000.129',
+  );
+  const propertyValues = propertyValuation.assets.flatMap((item) => {
+    const held = item.holdings.filter((holding) => propertyAccounts.has(holding.accountId));
+    return held.some((holding) => holding.value === null)
+      ? []
+      : held.map((holding) => holding.value!);
+  });
+  const note = `Includes ${money(sumDecimals(propertyValues), 'USD')} in real estate`;
+  await forgetBrowserReads(page);
+  for (const screen of ['portfolio', 'dashboard'] as const) {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto(`/${screen}?currency=USD`);
+    const summary = main.getByRole('region', {
+      name: screen === 'portfolio' ? 'Portfolio summary' : 'Net worth',
+    });
+    const propertyLink = summary.getByRole('link', { name: 'real estate', exact: true });
+    await expect(propertyLink).toHaveAttribute('href', '/real-estate?currency=USD');
+    await expect(propertyLink.locator('..')).toHaveText(note);
+    await expect(summary.getByRole('link', { name: 'bank deposits', exact: true })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`${screen}-property-1440-dark.png`),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(propertyLink).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      ),
+    ).toBeLessThanOrEqual(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`${screen}-property-390-light.png`),
+      fullPage: true,
+    });
+  }
+  await main
+    .getByRole('region', { name: 'Net worth' })
+    .getByRole('link', { name: 'real estate', exact: true })
+    .click();
+  await expect(page).toHaveURL(`${origin}/real-estate?currency=USD`);
+  await expect(main.getByRole('heading', { name: 'Real estate', level: 1, exact: true })).toBeVisible();
+  await expect(main.getByRole('link', { name: new RegExp(`^Studio ${suffix}`) })).toBeVisible();
   expect(errors).toEqual([]);
 });

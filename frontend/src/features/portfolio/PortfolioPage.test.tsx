@@ -140,6 +140,51 @@ const depositAsset: PortfolioAsset = {
   createdAt: '2026-10-04T12:00:00.000Z',
 };
 
+it.each([
+  ['USD', '60000.129', '120000.258', '$60,000.12'],
+  ['EUR', '54000.129', '108000.258', '€54,000.12'],
+  ['RUB', '5400000.129', '10800000.258', '₽5,400,000'],
+] as const)(
+  'PROPERTY-INCLUDES shows only property holdings in Portfolio current value in %s',
+  async (currency, value, total, expected) => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: id(202),
+          name: 'Studio account',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 1,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const flat = valued(
+      90,
+      'Studio',
+      null,
+      { assetType: 'manual', valuationCurrency: currency, priceSource: 'manual' },
+      {
+        quantity: '2',
+        value: total,
+        holdings: [
+          { accountId: id(202), accountName: 'Studio account', quantity: '1', value },
+          { accountId: id(101), accountName: 'Trust Wallet', quantity: '1', value },
+        ],
+      },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([flat], { currency, totalValue: total, pricedSubtotal: total }),
+    );
+    renderAt(`/portfolio?currency=${currency}`);
+    const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
+    const link = await within(summary).findByRole('link', { name: 'real estate' });
+    expect(link).toHaveAttribute('href', `/real-estate?currency=${currency}`);
+    expect(link.parentElement).toHaveTextContent(`Includes ${expected} in real estate`);
+  },
+);
+
 function portfolio(assets: AssetValuation[], changes: Partial<PortfolioValuation> = {}) {
   return {
     at: new Date().toISOString(),

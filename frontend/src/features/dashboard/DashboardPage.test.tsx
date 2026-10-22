@@ -277,6 +277,36 @@ const account = (
   createdAt: '2025-01-01T00:00:00Z',
 });
 
+it.each([
+  ['USD', '60000.129', '120000.258', '$60,000.12'],
+  ['EUR', '54000.129', '108000.258', '€54,000.12'],
+  ['RUB', '5400000.129', '10800000.258', '₽5,400,000'],
+] as const)(
+  'PROPERTY-INCLUDES shows only property holdings beneath Dashboard net worth in %s',
+  async (currency, value, total, expected) => {
+    accounts.mockResolvedValue({
+      items: [account(id(50), 'Studio account', 'property')],
+      nextCursor: null,
+    });
+    const flat = asset(99, 'Studio', '', total, {
+      assetType: 'manual',
+      priceSource: 'manual',
+      holdings: [
+        { accountId: id(50), accountName: 'Studio account', quantity: '1', value },
+        { accountId: trust, accountName: 'Trust Wallet', quantity: '1', value },
+      ],
+    });
+    valued.mockResolvedValue(
+      valuation({ currency, assets: [flat], totalValue: total, pricedSubtotal: total }),
+    );
+    renderPage(`/dashboard?currency=${currency}`);
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const link = await within(hero).findByRole('link', { name: 'real estate' });
+    expect(link).toHaveAttribute('href', `/real-estate?currency=${currency}`);
+    expect(link.parentElement).toHaveTextContent(`Includes ${expected} in real estate`);
+  },
+);
+
 beforeEach(() => {
   // Answered, so no read goes to a server that is not there (the stale banner would say so).
   vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
