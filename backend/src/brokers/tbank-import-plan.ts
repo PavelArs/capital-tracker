@@ -312,7 +312,16 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
       if (!parts) return skip(item, 'fills');
       const weights = parts.map((part) => part.weight);
       const amounts = split(absolute(item.payment), weights);
-      const paidFees = split(absolute(sum(fees.map((fee) => fee.payment))), weights);
+      // T-Bank can list one fee twice. A commission the trade reports in its own currency, above
+      // zero and within its fee rows, is what it charged; it never zeroes or adds a fee, and the
+      // fee rows stay its record.
+      const rows = atoms(absolute(sum(fees.map((fee) => fee.payment))));
+      const commission =
+        item.commission !== '' && item.commissionCurrency === item.paymentCurrency
+          ? atoms(absolute(item.commission))
+          : 0n;
+      const charged = commission > 0n && commission <= rows ? commission : rows;
+      const paidFees = split(formatAtoms(charged), weights);
       const moved = cashOf(item);
       return parts.map((part, index) => ({
         record: 'trade',
