@@ -484,7 +484,8 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     const steps = shard.steps ?? [];
     const browser = steps.filter((step) => step.run?.includes('playwright install'));
     expect(browser).toHaveLength(1);
-    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install --with-deps chromium');
+    // The runner image has Chromium's libraries; apt-get only added fonts and once took 14 min.
+    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install chromium');
     expect(expression(browser[0].if)).toBe(
       `startsWith(matrix.shard, 'browser-') && ${unlessReusedNeeds}`,
     );

@@ -90,7 +90,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install the Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
       - name: Run this slice of the full acceptance suite
         env:
           ACCEPTANCE_FULL_SHARD: ${{ matrix.index }}/4
