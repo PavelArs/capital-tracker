@@ -16,6 +16,7 @@ import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import { accountsWithoutRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
+import { estimateOverdue, propertiesOf, propertyTotal } from '../property/real-estate';
 import AssetIcon from '../shell/AssetIcon';
 import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
@@ -444,11 +445,21 @@ function Summary({
         .filter((text) => text !== false)
         .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;
+  const properties = propertiesOf(portfolio, classes);
+  const propertyValue = propertyTotal(properties);
+  const unpricedProperties = properties.filter(({ value }) => value === null).length;
+  const oldEstimates = properties.filter(
+    ({ value, asset }) =>
+      value !== null &&
+      asset.price?.observedAt &&
+      estimateOverdue(asset.price.observedAt, new Date()),
+  ).length;
+  const unavailablePropertyAccounts = portfolio.accounts.filter(
+    (account) =>
+      classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
+  ).length;
   const withProperty =
-    portfolio.accounts.some(
-      (account) =>
-        classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
-    ) ||
+    unavailablePropertyAccounts > 0 ||
     portfolio.assets.some((asset) =>
       asset.holdings.some(
         (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
@@ -502,6 +513,23 @@ function Summary({
                   <Link className="ui-link" to={withCurrency('/deposits', asked)}>
                     bank deposits
                   </Link>
+                </span>
+              )}
+              {!unknownClasses && Number(propertyValue) > 0 && (
+                <span className="ui-sub">
+                  Includes{' '}
+                  {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
+                  {amount(propertyValue)} in{' '}
+                  <Link className="ui-link" to={withCurrency('/real-estate', asked)}>
+                    real estate
+                  </Link>{' '}
+                  (estimated)
+                  {unpricedProperties > 0 &&
+                    ` · ${unpricedProperties} without a price or rate left out.`}
+                  {unavailablePropertyAccounts > 0 &&
+                    ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
+                  {oldEstimates > 0 &&
+                    ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
                 </span>
               )}
             </>

@@ -140,6 +140,107 @@ const depositAsset: PortfolioAsset = {
   createdAt: '2026-10-04T12:00:00.000Z',
 };
 
+it.each([
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, false, false],
+  ['EUR', '54000.129', '108000.258', '€54,000.12', 0, 0, false, false],
+  ['RUB', '5400000.129', '10800000.258', '₽5,400,000', 0, 0, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 0, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 2, 0, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 1, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 2, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, true, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 0, false, true],
+] as const)(
+  'PROPERTY-INCLUDES shows only property holdings in Portfolio current value in %s',
+  async (currency, value, total, expected, missing, unavailable, unknownClass, oldEstimate) => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: id(202),
+          name: 'Studio account',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 1,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+        ...Array.from({ length: unavailable }, (_, index) => ({
+          id: id(210 + index),
+          name: `Earlier property ${index}`,
+          kind: null,
+          assetClass: 'property' as const,
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        })),
+      ],
+      nextCursor: null,
+    });
+    const flat = valued(
+      90,
+      'Studio',
+      null,
+      { assetType: 'manual', valuationCurrency: currency, priceSource: 'manual' },
+      {
+        quantity: '2',
+        value: total,
+        missingPrice: null,
+        price: {
+          value: total,
+          source: 'manual',
+          status: 'manual',
+          observedAt: new Date(Date.now() - (oldEstimate ? 61 : 1) * 86_400_000).toISOString(),
+        },
+        holdings: [
+          { accountId: id(202), accountName: 'Studio account', quantity: '1', value },
+          { accountId: id(101), accountName: 'Trust Wallet', quantity: '1', value },
+        ],
+      },
+    );
+    const unpriced = Array.from({ length: missing }, (_, index) =>
+      valued(
+        91 + index,
+        `Unestimated property ${index}`,
+        null,
+        { assetType: 'manual', valuationCurrency: currency, priceSource: 'manual' },
+        {
+          quantity: '1',
+          value: null,
+          holdings: [
+            { accountId: id(202), accountName: 'Studio account', quantity: '1', value: null },
+          ],
+        },
+      ),
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([flat, ...unpriced], {
+        currency,
+        totalValue: missing || unavailable ? null : total,
+        pricedSubtotal: total,
+        missingPriceCount: missing,
+        unavailableAccountCount: unavailable,
+        accounts: Array.from({ length: unavailable + (unknownClass ? 1 : 0) }, (_, index) => ({
+          accountId: id(210 + index),
+          name: `Earlier property ${index}`,
+          coverage: 'before-coverage' as const,
+          pricedValue: null,
+          missingPriceCount: 0,
+        })),
+      }),
+    );
+    renderAt(`/portfolio?currency=${currency}`);
+    const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
+    if (unknownClass) {
+      await waitFor(() => expect(accountingApi.listAccounts).toHaveBeenCalled());
+      expect(within(summary).queryByRole('link', { name: 'real estate' })).toBeNull();
+      return;
+    }
+    const link = await within(summary).findByRole('link', { name: 'real estate' });
+    expect(link).toHaveAttribute('href', `/real-estate?currency=${currency}`);
+    expect(link.parentElement).toHaveTextContent(
+      `Includes ${missing || unavailable ? 'at least ' : ''}${expected} in real estate (estimated)${missing ? ` · ${missing} without a price or rate left out.` : ''}${unavailable ? ` · ${unavailable} property ${unavailable === 1 ? 'account has' : 'accounts have'} unavailable history.` : ''}${oldEstimate ? ' · 1 estimate over 60 days old.' : ''}`,
+    );
+  },
+);
+
 function portfolio(assets: AssetValuation[], changes: Partial<PortfolioValuation> = {}) {
   return {
     at: new Date().toISOString(),
