@@ -445,12 +445,15 @@ function Summary({
         .filter((text) => text !== false)
         .join(' ');
   const withDeposits = Number(portfolio.depositsValue) > 0;
-  const propertyValue = propertyTotal(propertiesOf(portfolio, classes));
+  const properties = propertiesOf(portfolio, classes);
+  const propertyValue = propertyTotal(properties);
+  const unpricedProperties = properties.filter(({ value }) => value === null).length;
+  const unavailablePropertyAccounts = portfolio.accounts.filter(
+    (account) =>
+      classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
+  ).length;
   const withProperty =
-    portfolio.accounts.some(
-      (account) =>
-        classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
-    ) ||
+    unavailablePropertyAccounts > 0 ||
     portfolio.assets.some((asset) =>
       asset.holdings.some(
         (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
@@ -506,12 +509,18 @@ function Summary({
                   </Link>
                 </span>
               )}
-              {Number(propertyValue) > 0 && (
+              {!unknownClasses && Number(propertyValue) > 0 && (
                 <span className="ui-sub">
-                  Includes {amount(propertyValue)} in{' '}
+                  Includes{' '}
+                  {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
+                  {amount(propertyValue)} in{' '}
                   <Link className="ui-link" to={withCurrency('/real-estate', asked)}>
                     real estate
                   </Link>
+                  {unpricedProperties > 0 &&
+                    ` · ${unpricedProperties} without a price or rate left out.`}
+                  {unavailablePropertyAccounts > 0 &&
+                    ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
                 </span>
               )}
             </>

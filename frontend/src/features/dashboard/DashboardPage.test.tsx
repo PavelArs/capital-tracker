@@ -278,14 +278,24 @@ const account = (
 });
 
 it.each([
-  ['USD', '60000.129', '120000.258', '$60,000.12'],
-  ['EUR', '54000.129', '108000.258', '€54,000.12'],
-  ['RUB', '5400000.129', '10800000.258', '₽5,400,000'],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, false],
+  ['EUR', '54000.129', '108000.258', '€54,000.12', 0, 0, false],
+  ['RUB', '5400000.129', '10800000.258', '₽5,400,000', 0, 0, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 0, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 2, 0, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 1, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 2, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, true],
 ] as const)(
   'PROPERTY-INCLUDES shows only property holdings beneath Dashboard net worth in %s',
-  async (currency, value, total, expected) => {
+  async (currency, value, total, expected, missing, unavailable, unknownClass) => {
     accounts.mockResolvedValue({
-      items: [account(id(50), 'Studio account', 'property')],
+      items: [
+        account(id(50), 'Studio account', 'property'),
+        ...Array.from({ length: unavailable }, (_, index) =>
+          account(id(210 + index), `Earlier property ${index}`, 'property'),
+        ),
+      ],
       nextCursor: null,
     });
     const flat = asset(99, 'Studio', '', total, {
@@ -296,14 +306,48 @@ it.each([
         { accountId: trust, accountName: 'Trust Wallet', quantity: '1', value },
       ],
     });
+    const unpriced = Array.from({ length: missing }, (_, index) =>
+      asset(100 + index, `Unestimated property ${index}`, '', '0', {
+        assetType: 'manual',
+        priceSource: 'manual',
+        quantity: '1',
+        price: null,
+        missingPrice: 'no-price',
+        value: null,
+        holdings: [
+          { accountId: id(50), accountName: 'Studio account', quantity: '1', value: null },
+        ],
+      }),
+    );
     valued.mockResolvedValue(
-      valuation({ currency, assets: [flat], totalValue: total, pricedSubtotal: total }),
+      valuation({
+        currency,
+        assets: [flat, ...unpriced],
+        totalValue: missing || unavailable ? null : total,
+        pricedSubtotal: total,
+        missingPriceCount: missing,
+        unavailableAccountCount: unavailable,
+        accounts: Array.from({ length: unavailable + (unknownClass ? 1 : 0) }, (_, index) => ({
+          accountId: id(210 + index),
+          name: `Earlier property ${index}`,
+          coverage: 'before-coverage' as const,
+          pricedValue: null,
+          missingPriceCount: 0,
+        })),
+      }),
     );
     renderPage(`/dashboard?currency=${currency}`);
     const hero = await screen.findByRole('region', { name: 'Net worth' });
+    if (unknownClass) {
+      await waitFor(() => expect(accountingApi.listAccounts).toHaveBeenCalled());
+      expect(within(hero).queryByRole('link', { name: 'real estate' })).toBeNull();
+      return;
+    }
     const link = await within(hero).findByRole('link', { name: 'real estate' });
     expect(link).toHaveAttribute('href', `/real-estate?currency=${currency}`);
-    expect(link.parentElement).toHaveTextContent(`Includes ${expected} in real estate`);
+    expect(link.parentElement).toHaveTextContent(
+      `Includes ${missing || unavailable ? 'at least ' : ''}${expected} in real estate${missing ? ` · ${missing} without a price or rate left out.` : ''}${unavailable ? ` · ${unavailable} property ${unavailable === 1 ? 'account has' : 'accounts have'} unavailable history.` : ''}`,
+    );
   },
 );
 

@@ -366,6 +366,15 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     priceUsd: '100000.258',
     assertReviewed: true,
   });
+  const unpricedProperty = (await api.result('POST', '/instruments', 201, {
+    requestId: randomUUID(),
+    name: `Unvalued property ${suffix}`,
+    assetType: 'manual',
+  })) as { id: string };
+  await api.create(
+    propertyAccount.id,
+    tradeInput(unpricedProperty.id, 1, { quantity: '1', grossUsd: '1000' }),
+  );
   const propertyAccounts = new Set<string>();
   let cursor: string | null = null;
   do {
@@ -388,13 +397,20 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   expect(propertyValuation.assets.find((item) => item.instrumentId === property.id)?.value).toBe(
     '50000.129',
   );
+  expect(
+    propertyValuation.assets.find((item) => item.instrumentId === unpricedProperty.id)?.value,
+  ).toBeNull();
+  let unpricedProperties = 0;
   const propertyValues = propertyValuation.assets.flatMap((item) => {
     const held = item.holdings.filter((holding) => propertyAccounts.has(holding.accountId));
-    return held.some((holding) => holding.value === null)
-      ? []
-      : held.map((holding) => holding.value!);
+    if (held.some((holding) => holding.value === null)) {
+      unpricedProperties++;
+      return [];
+    }
+    return held.map((holding) => holding.value!);
   });
-  const note = `Includes ${money(sumDecimals(propertyValues), 'USD')} in real estate`;
+  expect(unpricedProperties).toBeGreaterThan(0);
+  const note = `Includes at least ${money(sumDecimals(propertyValues), 'USD')} in real estate · ${unpricedProperties} without a price or rate left out.`;
   await forgetBrowserReads(page);
   for (const screen of ['portfolio', 'dashboard'] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 });

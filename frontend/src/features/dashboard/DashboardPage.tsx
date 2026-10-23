@@ -166,7 +166,17 @@ function NetWorth({
 }) {
   const { currency } = history;
   const classes = useAccountClasses();
-  const propertyValue = portfolio ? propertyTotal(propertiesOf(portfolio, classes)) : null;
+  const properties = portfolio ? propertiesOf(portfolio, classes) : [];
+  const propertyValue = portfolio ? propertyTotal(properties) : null;
+  const unpricedProperties = properties.filter(({ value }) => value === null).length;
+  const unavailablePropertyAccounts =
+    portfolio?.accounts.filter(
+      (account) =>
+        classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
+    ).length ?? 0;
+  const unknownClasses = portfolio?.accounts.some(
+    (account) => classes[account.accountId] === undefined,
+  );
   const [view] = useValueView();
   const [basis] = useInflationBasis();
   const real = history.real?.[basis] ?? null;
@@ -250,10 +260,14 @@ function NetWorth({
             <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
           </div>
         )}
-      {portfolio?.currency === currency && Number(propertyValue) > 0 && (
+      {portfolio?.currency === currency && !unknownClasses && Number(propertyValue) > 0 && (
         <div className="dashboard-hero__note">
-          Includes {money(propertyValue, currency)} in{' '}
+          Includes {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
+          {money(propertyValue, currency)} in{' '}
           <Link to={withCurrency('/real-estate', asked)}>real estate</Link>
+          {unpricedProperties > 0 && ` · ${unpricedProperties} without a price or rate left out.`}
+          {unavailablePropertyAccounts > 0 &&
+            ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
         </div>
       )}
       <ChangeSplit history={history} portfolio={portfolio} />
