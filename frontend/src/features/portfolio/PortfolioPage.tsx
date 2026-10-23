@@ -16,7 +16,7 @@ import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
 import { accountsWithoutRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
-import { propertiesOf, propertyTotal } from '../property/real-estate';
+import { estimateOverdue, propertiesOf, propertyTotal } from '../property/real-estate';
 import AssetIcon from '../shell/AssetIcon';
 import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
@@ -448,6 +448,12 @@ function Summary({
   const properties = propertiesOf(portfolio, classes);
   const propertyValue = propertyTotal(properties);
   const unpricedProperties = properties.filter(({ value }) => value === null).length;
+  const oldEstimates = properties.filter(
+    ({ value, asset }) =>
+      value !== null &&
+      asset.price?.observedAt &&
+      estimateOverdue(asset.price.observedAt, new Date()),
+  ).length;
   const unavailablePropertyAccounts = portfolio.accounts.filter(
     (account) =>
       classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
@@ -516,11 +522,14 @@ function Summary({
                   {amount(propertyValue)} in{' '}
                   <Link className="ui-link" to={withCurrency('/real-estate', asked)}>
                     real estate
-                  </Link>
+                  </Link>{' '}
+                  (estimated)
                   {unpricedProperties > 0 &&
                     ` · ${unpricedProperties} without a price or rate left out.`}
                   {unavailablePropertyAccounts > 0 &&
                     ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
+                  {oldEstimates > 0 &&
+                    ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
                 </span>
               )}
             </>

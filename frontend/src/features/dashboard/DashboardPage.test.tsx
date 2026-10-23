@@ -278,17 +278,18 @@ const account = (
 });
 
 it.each([
-  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, false],
-  ['EUR', '54000.129', '108000.258', '€54,000.12', 0, 0, false],
-  ['RUB', '5400000.129', '10800000.258', '₽5,400,000', 0, 0, false],
-  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 0, false],
-  ['USD', '60000.129', '120000.258', '$60,000.12', 2, 0, false],
-  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 1, false],
-  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 2, false],
-  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, true],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, false, false],
+  ['EUR', '54000.129', '108000.258', '€54,000.12', 0, 0, false, false],
+  ['RUB', '5400000.129', '10800000.258', '₽5,400,000', 0, 0, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 0, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 2, 0, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 1, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 2, false, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 0, 0, true, false],
+  ['USD', '60000.129', '120000.258', '$60,000.12', 1, 0, false, true],
 ] as const)(
   'PROPERTY-INCLUDES shows only property holdings beneath Dashboard net worth in %s',
-  async (currency, value, total, expected, missing, unavailable, unknownClass) => {
+  async (currency, value, total, expected, missing, unavailable, unknownClass, oldEstimate) => {
     accounts.mockResolvedValue({
       items: [
         account(id(50), 'Studio account', 'property'),
@@ -301,6 +302,12 @@ it.each([
     const flat = asset(99, 'Studio', '', total, {
       assetType: 'manual',
       priceSource: 'manual',
+      price: {
+        value: total,
+        source: 'manual',
+        status: 'manual',
+        observedAt: new Date(Date.now() - (oldEstimate ? 61 : 1) * 86_400_000).toISOString(),
+      },
       holdings: [
         { accountId: id(50), accountName: 'Studio account', quantity: '1', value },
         { accountId: trust, accountName: 'Trust Wallet', quantity: '1', value },
@@ -346,7 +353,7 @@ it.each([
     const link = await within(hero).findByRole('link', { name: 'real estate' });
     expect(link).toHaveAttribute('href', `/real-estate?currency=${currency}`);
     expect(link.parentElement).toHaveTextContent(
-      `Includes ${missing || unavailable ? 'at least ' : ''}${expected} in real estate${missing ? ` · ${missing} without a price or rate left out.` : ''}${unavailable ? ` · ${unavailable} property ${unavailable === 1 ? 'account has' : 'accounts have'} unavailable history.` : ''}`,
+      `Includes ${missing || unavailable ? 'at least ' : ''}${expected} in real estate (estimated)${missing ? ` · ${missing} without a price or rate left out.` : ''}${unavailable ? ` · ${unavailable} property ${unavailable === 1 ? 'account has' : 'accounts have'} unavailable history.` : ''}${oldEstimate ? ' · 1 estimate over 60 days old.' : ''}`,
     );
   },
 );

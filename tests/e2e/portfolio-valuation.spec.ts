@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
+import { estimateOverdue } from '../../frontend/src/features/property/real-estate';
 import { money } from '../../frontend/src/features/portfolio/format';
 import { sumDecimals } from '../../frontend/src/utils/decimal';
 import { origin, test } from './mfa-fixtures';
@@ -11,7 +12,7 @@ type AssetRow = {
   instrumentId: string;
   name: string;
   quantity: string;
-  price: { value: string; status: string } | null;
+  price: { value: string; status: string; observedAt: string | null } | null;
   value: string | null;
   costBasis: string | null;
   averageBuyPrice: string | null;
@@ -410,7 +411,15 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     return held.map((holding) => holding.value!);
   });
   expect(unpricedProperties).toBeGreaterThan(0);
-  const note = `Includes at least ${money(sumDecimals(propertyValues), 'USD')} in real estate · ${unpricedProperties} without a price or rate left out.`;
+  const oldEstimates = propertyValuation.assets.filter(
+    (item) =>
+      item.value !== null &&
+      item.holdings.some((holding) => propertyAccounts.has(holding.accountId)) &&
+      item.price?.observedAt &&
+      estimateOverdue(item.price.observedAt, new Date()),
+  ).length;
+  expect(oldEstimates).toBeGreaterThan(0);
+  const note = `Includes at least ${money(sumDecimals(propertyValues), 'USD')} in real estate (estimated) · ${unpricedProperties} without a price or rate left out. · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`;
   await forgetBrowserReads(page);
   for (const screen of ['portfolio', 'dashboard'] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 });

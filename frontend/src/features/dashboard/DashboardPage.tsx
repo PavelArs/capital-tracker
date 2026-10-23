@@ -15,7 +15,7 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { DASH, money, percent, quantity, tone } from '../portfolio/format';
-import { propertiesOf, propertyTotal } from '../property/real-estate';
+import { estimateOverdue, propertiesOf, propertyTotal } from '../property/real-estate';
 import AboutChart from '../shell/AboutChart';
 import { useAttention } from '../shell/attention-context';
 import { basisText } from '../shell/basis-text';
@@ -169,6 +169,12 @@ function NetWorth({
   const properties = portfolio ? propertiesOf(portfolio, classes) : [];
   const propertyValue = portfolio ? propertyTotal(properties) : null;
   const unpricedProperties = properties.filter(({ value }) => value === null).length;
+  const oldEstimates = properties.filter(
+    ({ value, asset }) =>
+      value !== null &&
+      asset.price?.observedAt &&
+      estimateOverdue(asset.price.observedAt, new Date()),
+  ).length;
   const unavailablePropertyAccounts =
     portfolio?.accounts.filter(
       (account) =>
@@ -264,10 +270,12 @@ function NetWorth({
         <div className="dashboard-hero__note">
           Includes {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
           {money(propertyValue, currency)} in{' '}
-          <Link to={withCurrency('/real-estate', asked)}>real estate</Link>
+          <Link to={withCurrency('/real-estate', asked)}>real estate</Link> (estimated)
           {unpricedProperties > 0 && ` · ${unpricedProperties} without a price or rate left out.`}
           {unavailablePropertyAccounts > 0 &&
             ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
+          {oldEstimates > 0 &&
+            ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
         </div>
       )}
       <ChangeSplit history={history} portfolio={portfolio} />
