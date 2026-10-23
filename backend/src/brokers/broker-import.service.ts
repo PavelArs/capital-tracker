@@ -42,6 +42,7 @@ import { cashAsset } from '../accounting/trade-settlement';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { parseImport, parseImportPreview, parseUuid } from './broker-connection-input';
 import { BrokerConnectionsService } from './broker-connections.service';
+import { instrumentFacts, resolveLinks, type SavedLink } from './broker-instrument-links';
 import {
   type BrokerOpening,
   cashPositionCurrency,
@@ -390,6 +391,9 @@ export class BrokerImportService {
     write: boolean,
     opening?: BrokerOpening,
   ): Promise<Review> {
+    // UIDs whose instrument this command created; a second plan finds them saved, but the preview
+    // named them as new.
+    const created = new Set<string>();
     const review = await this.reviewPlan(
       manager,
       owner,
@@ -397,6 +401,7 @@ export class BrokerImportService {
       history,
       write,
       planImport(history.operations, { initialHoldings: openingQuantities(opening) }),
+      created,
       opening,
     );
     if (!review.problems.some((problem) => problem.reason === 'not-held')) return review;
@@ -410,6 +415,7 @@ export class BrokerImportService {
       history,
       write,
       planImport(history.operations, { hoist: false, initialHoldings: openingQuantities(opening) }),
+      created,
       opening,
     );
     return unhoisted.problems.length === 0 ? unhoisted : review;
@@ -426,6 +432,7 @@ export class BrokerImportService {
     },
     write: boolean,
     plan: ImportPlan,
+    created: Set<string>,
     opening?: BrokerOpening,
   ): Promise<Review> {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
@@ -462,6 +469,7 @@ export class BrokerImportService {
       owner,
       plan.entries,
       write,
+      created,
       opening,
       available,
       [...history.operations, ...(history.positions ?? []).filter((row) => !row.virtual)],
@@ -623,8 +631,9 @@ export class BrokerImportService {
       }
     }
     // The hash pins what the owner reviewed: the plan, the amounts it becomes at the rates stored
-    // then (instrument ids aside, since the preview only names the ones it would create) and
-    // what stood in the way, so a rate that arrives later cannot slip an unreviewed entry in.
+    // then, the saved instrument each linked UID or asset resolves to (new ones aside, since the
+    // preview only names the ones it would create) and what stood in the way, so a rate or link
+    // that arrives later cannot slip an unreviewed entry in.
     const derived = entries.map((entry) => {
       const { trade, reward, capitalReturn } = entry;
       if (trade)
@@ -650,7 +659,7 @@ export class BrokerImportService {
     const previewHash = createHash('sha256')
       .update(
         JSON.stringify([
-          'tbank-import-v3',
+          'tbank-import-v4',
           opening ?? null,
           history.operations
             .map((operation) => [
@@ -658,6 +667,7 @@ export class BrokerImportService {
               operation.instrumentUid,
               operation.positionUid ?? '',
               operation.providerInstrumentUid ?? operation.instrumentUid,
+              operation.assetUid ?? '',
             ])
             .sort((a, b) => a[0].localeCompare(b[0])),
           (history.positions ?? [])
@@ -673,6 +683,7 @@ export class BrokerImportService {
               position.currencyCode ?? '',
             ])
             .sort((a, b) => a[0].localeCompare(b[0])),
+          instruments.linked,
           account,
           plan.grouping,
           plan.entries,
@@ -735,6 +746,7 @@ export class BrokerImportService {
     owner: string,
     plan: readonly PlanEntry[],
     write: boolean,
+    created: Set<string>,
     opening?: BrokerOpening,
     available: ReturnType<typeof openingAssets> = [],
     identities: readonly (TBankOperation | TBankPosition)[] = [],
@@ -771,24 +783,45 @@ export class BrokerImportService {
         !wanted.has(entry.instrumentUid)
       )
         wanted.set(entry.instrumentUid, entry);
-    if (wanted.size === 0) return { cash, securities };
-    // Canonical trading modes may change between imports; resolve every verified original UID.
-    const aliases = new Map([...wanted.keys()].map((uid) => [uid, new Set([uid])]));
-    for (const row of identities)
-      if (row.providerInstrumentUid) aliases.get(row.instrumentUid)?.add(row.providerInstrumentUid);
-    const linked: (ImportInstrument & { uid: string })[] = await manager.query(
-      `SELECT l."providerInstrumentId" AS uid, i.id, i.name, i.symbol
+    if (wanted.size === 0) return { cash, securities, linked: [] };
+    // Canonical trading modes may change between imports; resolve every verified original UID,
+    // and the asset, which joins one fund's venue UIDs across accounts.
+    const facts = instrumentFacts(wanted.keys(), identities);
+    if (!facts) throw conflict();
+    const saved: SavedLink[] = await manager.query(
+      `SELECT l."providerInstrumentId" AS uid, l."assetUid", l."instrumentType", i.id, i.name,
+          i.symbol
         FROM broker_instrument_links l JOIN accounting_instruments i
           ON i."ownerId" = l."ownerId" AND i.id = l."instrumentId"
-        WHERE l."ownerId" = $1 AND l.provider = 'tbank' AND l."providerInstrumentId" = ANY($2::text[])`,
-      [owner, [...new Set([...aliases.values()].flatMap((ids) => [...ids]))]],
+        WHERE l."ownerId" = $1 AND l.provider = 'tbank'
+          AND (l."providerInstrumentId" = ANY($2::text[]) OR l."assetUid" = ANY($3::uuid[]))`,
+      [
+        owner,
+        [...facts.values()].flatMap((fact) => [...fact.uids]),
+        [...facts.values()].flatMap((fact) => (fact.assetUid ? [fact.assetUid] : [])),
+      ],
     );
-    for (const [uid, ids] of aliases) {
-      const matches = linked.filter((row) => ids.has(row.uid));
-      if (new Set(matches.map((row) => row.id)).size > 1) throw conflict();
-      const row = matches[0];
-      if (row) securities.set(uid, { id: row.id, name: row.name, symbol: row.symbol });
+    const resolved = resolveLinks(facts, saved);
+    if (!resolved) throw conflict();
+    for (const [uid, row] of resolved) {
+      securities.set(uid, { id: row.id, name: row.name, symbol: row.symbol });
+      const fact = facts.get(uid)!;
+      // A link saved before asset UIDs were kept learns them from the import that names it.
+      if (
+        write &&
+        ((!row.assetUid && fact.assetUid) || (!row.instrumentType && fact.instrumentType))
+      )
+        await manager.query(
+          `UPDATE broker_instrument_links
+            SET "assetUid" = COALESCE("assetUid", $3), "instrumentType" = COALESCE("instrumentType", $4)
+            WHERE "ownerId" = $1 AND provider = 'tbank' AND "providerInstrumentId" = $2`,
+          [owner, row.uid, fact.assetUid ?? null, fact.instrumentType ?? null],
+        );
     }
+    const linked = [...resolved]
+      .filter(([uid]) => !created.has(uid))
+      .map(([uid, row]) => [uid, row.id])
+      .sort();
     for (const [uid, entry] of wanted) {
       if (securities.has(uid)) continue;
       const name = entry.ticker || `T-Bank ${uid}`;
@@ -805,7 +838,7 @@ export class BrokerImportService {
         valuationCurrency: cashCurrency[entry.currency],
       };
       const classification = classifyAsset(value);
-      const [created]: ImportInstrument[] = await manager.query(
+      const [instrument]: ImportInstrument[] = await manager.query(
         `INSERT INTO accounting_instruments
           (id, "ownerId", "requestId", "canonicalPayload", name, symbol, "assetType",
             "valuationCurrency", "priceSource")
@@ -822,14 +855,17 @@ export class BrokerImportService {
           classification.priceSource,
         ],
       );
+      const fact = facts.get(uid)!;
       await manager.query(
-        `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId", "instrumentId")
-          VALUES ($1, 'tbank', $2, $3)`,
-        [owner, uid, created.id],
+        `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId",
+            "instrumentId", "assetUid", "instrumentType")
+          VALUES ($1, 'tbank', $2, $3, $4, $5)`,
+        [owner, uid, instrument.id, fact.assetUid ?? null, fact.instrumentType ?? null],
       );
-      securities.set(uid, created);
+      created.add(uid);
+      securities.set(uid, instrument);
     }
-    return { cash, securities };
+    return { cash, securities, linked };
   }
 }
 

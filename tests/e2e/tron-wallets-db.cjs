@@ -424,7 +424,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 71/);
+  assert.match(migrate(database), /Migrations applied: 72/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -1215,7 +1215,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS TRON-MIGRATION fresh 71 applies once; the Tron migration refuses down');
+    console.log('PASS TRON-MIGRATION fresh 72 applies once; the Tron migration refuses down');
   } finally {
     await db.destroy();
   }

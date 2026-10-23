@@ -22,7 +22,7 @@ const settings = {
 };
 const database = 'capital_tracker_broker_connections_e2e';
 const servicePath = '/app/backend/dist/brokers/broker-connections.service.js';
-const MIGRATIONS = 71;
+const MIGRATIONS = 72;
 const token = 't.SyntheticToken000000000000000001';
 const replacement = 't.SyntheticToken000000000000000002';
 const brokerAccount = { id: '2000000001', name: 'Synthetic', open: true, access: 'read_only' };
@@ -853,6 +853,18 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(funded.canImport, true);
   await imports.import(owner, eighth, { requestId: randomUUID(), previewHash: funded.previewHash });
   assert.equal(await count('broker_imports', `WHERE "accountId" = '${eighth}'`), 1);
+  // The same order with a security no earlier import linked: the import creates it on its first
+  // pass and still matches the preview that named it as new.
+  const fundedNew = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, fundedNew);
+  const fundedUid = '10000000-0000-4000-8000-00000000f101';
+  history = history.map((row, index) => ({ ...row, id: String(810000001 + index),
+    ...(row.instrumentUid ? { instrumentUid: fundedUid, ticker: 'SYNTHFUNDED' } : {}) }));
+  tbank.positions = [heldPosition(fundedUid, '1')];
+  const fundedNewPreview = await imports.preview(owner, fundedNew);
+  assert.equal(fundedNewPreview.canImport, true);
+  await imports.import(owner, fundedNew, { requestId: randomUUID(), previewHash: fundedNewPreview.previewHash });
+  assert.equal(await count('broker_instrument_links', `WHERE "providerInstrumentId" = '${fundedUid}'`), 1);
   console.log('PASS BROKER-SYNC-FUNDING');
 
   stage = 'BROKER-CAPRET: a bond paid back in part lowers its cost and brings cash in, once';
@@ -1137,6 +1149,91 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(await count('broker_instrument_links'), linksBeforeConflict, 'Conflicting saved instruments are never silently merged');
   assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${conflictingModeAccount}'`), 0);
   console.log('PASS BROKER-POSITION-ID stable linked instrument across current-mode changes, closed positions and conflict refusal');
+
+  stage = 'BROKER-ASSET-ID: one fund on two venues in separate accounts is one instrument';
+  const exchangeUid = '10000000-0000-4000-8000-00000000e001';
+  const venueUid = '10000000-0000-4000-8000-00000000e002';
+  const fundAsset = '10000000-0000-4000-8000-00000000e003';
+  const exchangePosition = '10000000-0000-4000-8000-00000000e004';
+  const venuePosition = '10000000-0000-4000-8000-00000000e005';
+  const onExchange = (over) => ({ instrumentUid: exchangeUid, positionUid: exchangePosition, assetUid: fundAsset, instrumentType: 'etf', ticker: 'SYNTHFUND', ...over });
+  const onVenue = (over) => ({ instrumentUid: venueUid, positionUid: venuePosition, assetUid: fundAsset, instrumentType: 'etf', ticker: 'SYNTHFUND@', ...over });
+  const importAll = async (broker) => {
+    const preview = await imports.preview(owner, broker);
+    assert.equal(preview.canImport, true);
+    await imports.import(owner, broker, { requestId: randomUUID(), previewHash: preview.previewHash });
+  };
+  const exchangeAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, exchangeAccount);
+  history = [operation('1900000001', 'INPUT', '200'),
+    operation('1900000002', 'BUY', '-100', onExchange({ quantity: '2' }))];
+  tbank.positions = [{ ...heldPosition(exchangeUid, '2', 'etf'), positionUid: exchangePosition }];
+  tbank.cash = [['RUB', '100']];
+  await importAll(exchangeAccount);
+  const [fundLink] = await db.query('SELECT "instrumentId" FROM broker_instrument_links WHERE "ownerId"=$1 AND "providerInstrumentId"=$2', [owner, exchangeUid]);
+  const fundInstruments = await count('accounting_instruments');
+
+  // Bought on the exchange, sold on T-Bank's venue: the exchange link resolves the venue UID.
+  const bothVenuesAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, bothVenuesAccount);
+  history = [operation('1900000011', 'INPUT', '200'),
+    operation('1900000012', 'BUY', '-100', onExchange({ quantity: '2' })),
+    operation('1900000013', 'SELL', '60', onVenue({ quantity: '1', occurredAt: '2024-03-02T07:00:00Z' }))];
+  tbank.positions = [{ ...heldPosition(venueUid, '1', 'etf'), positionUid: venuePosition }];
+  tbank.cash = [['RUB', '160']];
+  const migrated = await db.query(`SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'broker_instrument_links' AND column_name = 'assetUid'`);
+  // A link saved before asset UIDs were kept learns its asset from the next import that names it.
+  if (migrated.length)
+    await db.query(`UPDATE broker_instrument_links SET "assetUid" = NULL, "instrumentType" = NULL
+      WHERE "ownerId" = $1 AND "providerInstrumentId" = $2`, [owner, exchangeUid]);
+  await importAll(bothVenuesAccount);
+  assert.equal(await count('accounting_instruments'), fundInstruments, 'The venue UID joins the exchange listing within one account');
+  assert.equal((await trades.available(owner, bothVenuesAccount, { instrumentId: fundLink.instrumentId, at: atEnd })).quantity, '1');
+
+  // Only the venue UID, in another account: the asset UID alone finds the instrument.
+  const venueAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, venueAccount);
+  history = [operation('1900000021', 'INPUT', '200'),
+    operation('1900000022', 'BUY', '-100', onVenue({ quantity: '2' })),
+    operation('1900000023', 'SELL', '60', onVenue({ quantity: '1', occurredAt: '2024-03-02T07:00:00Z' }))];
+  const venuePreview = await imports.preview(owner, venueAccount);
+  assert.equal(venuePreview.canImport, true);
+  // The reviewed asset UID decides the instrument, so another one is a different preview.
+  const otherAsset = '10000000-0000-4000-8000-00000000e006';
+  history = history.map((row) => (row.assetUid ? { ...row, assetUid: otherAsset } : row));
+  await rejected(() => imports.import(owner, venueAccount, { requestId: randomUUID(), previewHash: venuePreview.previewHash }), 409);
+  history = history.map((row) => (row.assetUid ? { ...row, assetUid: fundAsset } : row));
+  await imports.import(owner, venueAccount, { requestId: randomUUID(), previewHash: venuePreview.previewHash });
+  assert.equal(await count('accounting_instruments'), fundInstruments,
+    'A fund held on T-Bank\'s venue in one account and on the exchange in another is one instrument');
+  assert.equal((await trades.available(owner, venueAccount, { instrumentId: fundLink.instrumentId, at: atEnd })).quantity, '1');
+  assert.equal(await count('broker_instrument_links', `WHERE "providerInstrumentId" = '${venueUid}'`), 0);
+  assert.deepEqual(
+    await db.query(`SELECT "providerInstrumentId", "assetUid", "instrumentType" FROM broker_instrument_links
+      WHERE "ownerId" = $1 AND "assetUid" = $2`, [owner, fundAsset]),
+    [{ providerInstrumentId: exchangeUid, assetUid: fundAsset, instrumentType: 'etf' }],
+  );
+
+  // T-Bank naming the same asset as another security type is refused, not guessed.
+  const otherTypeAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, otherTypeAccount);
+  history = history.map((row, index) => ({ ...row, id: String(1900000031 + index),
+    ...(row.assetUid ? { instrumentType: 'share' } : {}) }));
+  tbank.positions = [{ ...heldPosition(venueUid, '1', 'share'), positionUid: venuePosition }];
+  await rejected(() => imports.preview(owner, otherTypeAccount), 409);
+  assert.equal(await count('accounting_instruments'), fundInstruments);
+  assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${otherTypeAccount}'`), 0);
+  const unlinked = (await new (require('/app/backend/dist/accounting/accounting.service.js').AccountingService)(db)
+    .createInstrument(owner, { requestId: randomUUID(), name: 'Synthetic second fund link' })).value;
+  await assert.rejects(
+    db.query(`INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId", "instrumentId", "assetUid", "instrumentType")
+      VALUES ($1, 'tbank', 'synthetic-second-link', $2, $3, 'etf')`, [owner, unlinked.id, fundAsset]),
+    { code: '23505' },
+    'One asset UID links one instrument',
+  );
+  tbank.positions = [];
+  console.log('PASS BROKER-ASSET-ID one asset across venue UIDs and accounts, legacy link backfill, pinned asset and type refusal');
 
   stage = 'BROKER-CAPRET-VOID: one owner command removes a return without erasing its history';
   const { CapitalReturnService } = require('/app/backend/dist/accounting/capital-return.service.js');
