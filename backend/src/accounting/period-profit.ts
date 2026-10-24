@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import { parseAsOf, parseDecimal } from './input';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 
@@ -6,15 +7,9 @@ export function parseProfitPreview(input: unknown) {
   const bad = (): never => {
     throw new BadRequestException('Invalid accounting input');
   };
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  const prototype = Object.getPrototypeOf(input);
-  const keys = ['from', 'to', 'openingValueUsd', 'closingValueUsd', 'assertReviewed'];
-  if (
-    (prototype !== Object.prototype && prototype !== null) ||
-    Object.keys(input).some((key) => !keys.includes(key))
-  )
-    return bad();
-  const row = input as Record<string, unknown>;
+  const row =
+    strictRecord(input, ['from', 'to', 'openingValueUsd', 'closingValueUsd', 'assertReviewed']) ??
+    bad();
   if (row.assertReviewed !== true) return bad();
   const from = parseAsOf(row.from);
   const to = parseAsOf(row.to);

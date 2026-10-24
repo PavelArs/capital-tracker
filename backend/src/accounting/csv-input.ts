@@ -1,5 +1,6 @@
 import { isUtf8 } from 'node:buffer';
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
+import { strictInteger, strictRecord } from '../shared/strict-input';
 import { parseUuid } from './input';
 
 export type CsvBatchState = 'draft' | 'committed' | 'rolled-back';
@@ -63,17 +64,10 @@ function bad(): never {
   throw new BadRequestException('Invalid CSV input');
 }
 function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad();
-  const prototype = Object.getPrototypeOf(raw);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Reflect.ownKeys(raw).some((key) => typeof key !== 'string' || !keys.includes(key)))
-    return bad();
-  return raw as Record<string, unknown>;
+  return strictRecord(raw, keys) ?? bad();
 }
 function integer(raw: unknown, maximum: number): number {
-  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0 || raw > maximum)
-    return bad();
-  return raw === 0 ? 0 : raw;
+  return strictInteger(raw, 0, maximum) ?? bad();
 }
 function queryInteger(raw: unknown, minimum: number, maximum: number): number {
   if (typeof raw !== 'string' || raw.length > 3 || !/^(0|[1-9][0-9]*)$/.test(raw) || /\s/.test(raw))

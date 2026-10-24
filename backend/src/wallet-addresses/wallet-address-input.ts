@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { type AccountInput, parseAccount, parseUuid } from '../accounting/input';
+import { strictRecord } from '../shared/strict-input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
 import { isExtendedKey, normalizeExtendedKey } from './bitcoin-xpub';
 import type { BybitCredentials } from './bybit-client';
@@ -17,11 +18,7 @@ function bad(): never {
   throw new BadRequestException('Invalid wallet address input');
 }
 function object(input: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  const prototype = Object.getPrototypeOf(input);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
-  return input as Record<string, unknown>;
+  return strictRecord(input, keys) ?? bad();
 }
 function queryInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
   if (value === undefined) return fallback;

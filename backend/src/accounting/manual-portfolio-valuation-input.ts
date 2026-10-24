@@ -1,16 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import { parseAsOf, parseUuid } from './input';
 
+const bad = (): never => {
+  throw new BadRequestException('Invalid accounting input');
+};
 function object(input: unknown, allowed: readonly string[]): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input))
-    throw new BadRequestException('Invalid accounting input');
-  const prototype = Object.getPrototypeOf(input);
-  if (
-    (prototype !== Object.prototype && prototype !== null) ||
-    Object.keys(input).some((key) => !allowed.includes(key))
-  )
-    throw new BadRequestException('Invalid accounting input');
-  return input as Record<string, unknown>;
+  return strictRecord(input, allowed) ?? bad();
 }
 
 export function parseManualPortfolioRequest(input: unknown, query: unknown) {

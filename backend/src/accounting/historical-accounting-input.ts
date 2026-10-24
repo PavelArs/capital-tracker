@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import { parseAsOf } from './input';
 import { parseDerivedTradePageQuery, type TradePageQuery } from './trade-input';
 
@@ -7,14 +8,8 @@ export interface HistoricalQuery extends TradePageQuery {
 }
 
 export function parseHistoricalQuery(input: unknown): HistoricalQuery {
-  if (!input || typeof input !== 'object' || Array.isArray(input))
-    throw new BadRequestException('Invalid accounting input');
-  const prototype = Object.getPrototypeOf(input);
-  if (
-    (prototype !== Object.prototype && prototype !== null) ||
-    Object.keys(input).some((key) => !['at', 'offset', 'limit', 'journalRevision'].includes(key))
-  )
-    throw new BadRequestException('Invalid accounting input');
-  const { at, ...page } = input as Record<string, unknown>;
+  const row = strictRecord(input, ['at', 'offset', 'limit', 'journalRevision']);
+  if (!row) throw new BadRequestException('Invalid accounting input');
+  const { at, ...page } = row;
   return { at: parseAsOf(at), ...parseDerivedTradePageQuery(page) };
 }

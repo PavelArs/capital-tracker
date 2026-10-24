@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAmount, parseDate, parseRate, parseUuid } from '../deposits/deposit-input';
+import { strictRecord } from '../shared/strict-input';
 
 export { parseUuid };
 
@@ -19,12 +20,12 @@ const bad = (): never => {
   throw new BadRequestException('Invalid goal input');
 };
 
-function object(input: unknown, keys: readonly string[], required: readonly string[]) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  const record = input as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !keys.includes(key))) return bad();
-  if (required.some((key) => record[key] === undefined)) return bad();
-  return record;
+function object(
+  input: unknown,
+  keys: readonly string[],
+  required: readonly string[],
+): Record<string, unknown> {
+  return strictRecord(input, keys, required) ?? bad();
 }
 
 function name(value: unknown): string {

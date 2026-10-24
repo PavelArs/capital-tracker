@@ -1,4 +1,5 @@
 import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import {
   chainAsset,
   isExchange,
@@ -195,12 +196,7 @@ export const chainTxid =
   /^(([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?|bybit-(trade|deposit|withdrawal|earn-flexible|earn-onchain)-[0-9A-Za-z_-]{1,80})$/;
 
 function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad();
-  const prototype = Object.getPrototypeOf(raw);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Reflect.ownKeys(raw).some((key) => typeof key !== 'string' || !keys.includes(key)))
-    return bad();
-  return raw as Record<string, unknown>;
+  return strictRecord(raw, keys) ?? bad();
 }
 
 function classification(raw: unknown): Classification | null {

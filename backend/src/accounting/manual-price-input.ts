@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 
 export const MAX_PRICE_VERSIONS = 10000;
@@ -7,11 +8,7 @@ function bad(): never {
   throw new BadRequestException('Invalid manual price input');
 }
 function object(input: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  const prototype = Object.getPrototypeOf(input);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
-  return input as Record<string, unknown>;
+  return strictRecord(input, keys) ?? bad();
 }
 function queryInteger(value: unknown, minimum: number, maximum: number): number {
   if (typeof value !== 'string' || !/^(0|[1-9][0-9]{0,4})$/.test(value)) return bad();

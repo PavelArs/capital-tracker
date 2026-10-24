@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import {
   type AssetType,
   assetTypes,
@@ -52,10 +53,8 @@ export interface HistoryQuery {
 const bad = (): never => {
   throw new BadRequestException('Invalid accounting input');
 };
-function object(input: unknown, keys: string[]): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
-  return input as Record<string, unknown>;
+function object(input: unknown, keys: readonly string[]): Record<string, unknown> {
+  return strictRecord(input, keys) ?? bad();
 }
 function label(value: unknown, maximum: number): string {
   if (
