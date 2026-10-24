@@ -48,12 +48,8 @@ x-backend: &backend
 
 services:
   postgres:
+    # The official PostgreSQL image, pulled by digest and tagged by scripts/acceptance.mjs.
     image: capital-tracker-postgres:acceptance
-    build:
-      context: ../..
-      dockerfile: deploy/postgres.Dockerfile
-      labels:
-        org.opencontainers.image.revision: ${CAPITAL_RELEASE_COMMIT:-local-acceptance}
     platform: linux/amd64
     environment:
       POSTGRES_DB: capital_tracker_e2e

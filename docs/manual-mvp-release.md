@@ -192,11 +192,19 @@ main builds the images, confirms that the pull request merged as that commit pas
 full suite on its final head (`Merged Pull Request CI`) and exports the candidate. The
 main images come from the same pinned Dockerfiles and lockfile as the tested ones but
 are a new build of the merged commit. CI exports the release images, their image IDs and
-commit/run schema-v3 manifest. Reviewed PostgreSQL Dockerfile hash and official
-18.6 Alpine3.24 base digest, plus the official Redis8.10.2 platform digest, are in `deploy/manual-mvp-infrastructure-pins.json`, separate from
-the candidate manifest. CI verifies the Dockerfile hash, builds the derived PostgreSQL image with the exact
-commit revision label through acceptance, pulls the Redis digest, scans all four
-images on pull requests and saves the main build in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
+commit/run schema-v3 manifest. The official PostgreSQL 18.6 Alpine3.24 digest
+(`postgres.baseRegistryDigest`) and the official Redis8.10.2 platform digest are in
+`deploy/manual-mvp-infrastructure-pins.json`, separate from the candidate manifest. Since
+2026-10-24 (owner decision) CI pulls the official PostgreSQL digest, as it does Redis, and
+tags it `capital-tracker-postgres:acceptance`; it no longer builds `deploy/postgres.Dockerfile`
+(gosu replaced by su-exec) or checks a build revision label, and the image scan covers the
+backend, frontend and Redis images only. The pin's `registryDigest`, Dockerfile hash and
+`originRevision` remain the reviewed identity of the interrupted first release's derived
+image, which the dispatcher and the resume helper still check. A release promotes the tested
+PostgreSQL image, so new receipts and fresh installations carry the official image; an existing
+installation keeps the PostgreSQL container it runs, since a release never changes
+infrastructure images. `resume-fresh` is retired: it would release that derived image, which CI
+no longer tests, so the promotion step refuses it. CI saves the main build in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
 current main commit, requires its build, merged pull request check and aggregate to have succeeded, validates the manifest,
 loads and verifies the image IDs, and publishes those same outputs to existing GHCR.
 No deployment rebuild or mutable latest promotion is used. Private server receipts record

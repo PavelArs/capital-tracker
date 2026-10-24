@@ -59,10 +59,6 @@ function validateLoadedImages(manifest, inspect) {
     if (actual.Id !== image.imageId || actual.Os !== 'linux' || actual.Architecture !== 'amd64') {
       throw new Error('Candidate image identity or architecture mismatch');
     }
-    if (image.tag === manifest.infrastructure.postgres.tag
-      && actual.Config?.Labels?.['org.opencontainers.image.revision'] !== manifest.infrastructure.postgres.originRevision) {
-      throw new Error('PostgreSQL build revision mismatch');
-    }
   }
 }
 module.exports = { validateRelease, validateInfrastructurePins, validateLoadedImages };

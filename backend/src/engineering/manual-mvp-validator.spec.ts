@@ -217,7 +217,7 @@ describe('MVP-002: exact tested candidate manifest', () => {
       ).toThrow();
     }
   });
-  it('checks every loaded image ID and architecture plus the derived build revision', () => {
+  it('checks every loaded image ID and architecture, with no build revision on the official PostgreSQL image', () => {
     const candidate = manifest();
     const images = [
       candidate.backend,
@@ -252,11 +252,11 @@ describe('MVP-002: exact tested candidate manifest', () => {
       }
       actual[image.tag] = original;
     }
-    const postgres = actual[candidate.infrastructure.postgres.tag];
-    for (const revision of ['', '0'.repeat(40), 'local-acceptance']) {
-      postgres.Config.Labels['org.opencontainers.image.revision'] = revision;
-      expect(() => validateLoadedImages(candidate, inspect)).toThrow();
-    }
+    // The official PostgreSQL image carries no build revision of this repository.
+    actual[candidate.infrastructure.postgres.tag].Config.Labels[
+      'org.opencontainers.image.revision'
+    ] = '';
+    expect(() => validateLoadedImages(candidate, inspect)).not.toThrow();
   });
   it('requires a complete reviewed infrastructure pin set, not only self-asserted manifest digests', () => {
     for (const infrastructurePins of [
