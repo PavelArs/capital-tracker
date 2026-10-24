@@ -9,7 +9,7 @@
 
 ## Verification during the refactor
 
-Use Node 26.10.0 (`nvm use`) and pinned pnpm 12.9.1:
+Use Node 26.12.1 (`nvm use`) and pinned pnpm 12.9.1:
 
 ```bash
 pnpm install --frozen-lockfile

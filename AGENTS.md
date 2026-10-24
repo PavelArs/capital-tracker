@@ -4,7 +4,7 @@ Personal, single-owner capital tracker (public repository): NestJS, TypeORM, Pos
 
 ## Commands
 
-Use Node 26.10.0 (`.nvmrc`) and pnpm 12.9.1 (`packageManager`). Node 26 ships without corepack, so README's `corepack enable` fails; if pnpm is missing, install it with `npm install -g pnpm@12.9.1`. Check `node --version` and `pnpm --version` first: pnpm doesn't enforce `engines`, and on Node 22 backend Jest fails with "Must use import to load ES Module".
+Use Node 26.12.1 (`.nvmrc`) and pnpm 12.9.1 (`packageManager`). Node 26 ships without corepack, so README's `corepack enable` fails; if pnpm is missing, install it with `npm install -g pnpm@12.9.1`. Check `node --version` and `pnpm --version` first: pnpm doesn't enforce `engines`, and on Node 22 backend Jest fails with "Must use import to load ES Module".
 
 ```sh
 pnpm install --frozen-lockfile                # needs network
