@@ -2,6 +2,7 @@ import { availableQuantity, firstShortfall } from './available-quantity';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import { calculateOwnedTransfers } from './owned-transfer-fifo';
 import type { AccountFifoResult } from './owned-transfer-types';
+import { portfolioAccount } from './portfolio-valuation';
 import type { FifoSplit } from './share-split-types';
 
 const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -190,5 +191,43 @@ describe('SPLIT-AVAILABLE: the shortfall checks count the new units from the spl
     // half an old unit: what may still be sold on day 10 is 0.5.
     expect(availableQuantity(held, a, share, at(10))).toBe('0.5');
     expect(availableQuantity(held, a, share, at(18))).toBe('5');
+  });
+});
+
+describe('SPLIT-NATIVE: a buy paid in rubles keeps its ruble cost across a split', () => {
+  const paid = (quantity: string, gross: string): FifoTrade => ({
+    ...trade(1, 'buy', quantity, '3', 2),
+    paid: {
+      currency: 'RUB',
+      gross,
+      fee: '0',
+      rateDate: '2026-04-02',
+      perUsd: '100',
+      rateSource: 'owner',
+    },
+  });
+
+  it('SPLIT-NATIVE-A divides the rubles paid over the new units held and sold', () => {
+    const trades = [paid('3', '300'), trade(2, 'sell', '25', '2.5', 20)];
+    const fifo = calculateOwnedTransfers([account(a, trades)], [], undefined, [split(17)]);
+    const view = portfolioAccount({ accountId: a, name: 'Broker' }, fifo.accounts.get(a)!, {
+      trades,
+      initialLots: [],
+      splits: [split(17)],
+    });
+    expect(view.lots.map((lot) => [lot.quantity, lot.native?.amount])).toEqual([['5', '50']]);
+    expect(view.realizations[0].consumed.map((part) => part.native?.amount)).toEqual(['250']);
+  });
+
+  it('SPLIT-NATIVE-B counts the units of the valuation date before the split', () => {
+    const trades = [paid('3', '300')];
+    const fifo = calculateOwnedTransfers([account(a, trades)], [], at(10), [split(17)]);
+    const view = portfolioAccount({ accountId: a, name: 'Broker' }, fifo.accounts.get(a)!, {
+      trades,
+      initialLots: [],
+      splits: [split(17)],
+      at: at(10),
+    });
+    expect(view.lots.map((lot) => [lot.quantity, lot.native?.amount])).toEqual([['3', '300']]);
   });
 });

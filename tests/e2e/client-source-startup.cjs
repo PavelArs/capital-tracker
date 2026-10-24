@@ -236,12 +236,11 @@ async function main() {
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
     assert.equal(
       Number(state.migrations),
-      72,
+      73,
       'Run after the actual preserved seventy-three migrations',
     );
     assert.equal(
       state.latest_migration,
-      'LinkBrokerAssets1797900000000',
       'AddShareSplits1798000000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );

@@ -329,6 +329,7 @@ async function populatedUpgrade() {
           'inflation_months',
           'inflation_manual_months',
           'inflation_personal_rates',
+          'instrument_splits',
         ],
         true,
       ),

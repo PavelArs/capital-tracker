@@ -18,6 +18,7 @@ import {
 } from './money';
 import type { AccountFifoResult, LotOrigin } from './owned-transfer-types';
 import type { PaidCurrency } from './paid-currency';
+import type { FifoSplit } from './share-split-types';
 
 const ATOM_SCALE = 10n ** 30n;
 export const DAY_MS = 24 * 3_600_000;
@@ -257,11 +258,16 @@ const lotKey = (lotId: string, revision: number, ordinal: number) =>
  * A buy's amount as paid, shared by quantity, half away from zero. A sale's only fragment is
  * the cash it kept (M9), which holds units of the paid currency itself.
  */
-function nativeShare(trade: FifoTrade | undefined, quantity: string): NativeAmount | undefined {
+function nativeShare(
+  trade: FifoTrade | undefined,
+  quantity: string,
+  split = 1n,
+): NativeAmount | undefined {
   if (!trade?.paid) return undefined;
   if (trade.side !== 'buy') return { currency: trade.paid.currency, amount: quantity };
   const total = canonicalDecimalToAtoms(trade.paid.gross) + canonicalDecimalToAtoms(trade.paid.fee);
-  const whole = canonicalDecimalToAtoms(trade.quantity);
+  // The buy's units, counted in the units its part is given in after any splits since.
+  const whole = canonicalDecimalToAtoms(trade.quantity) * split;
   const part = canonicalDecimalToAtoms(quantity);
   return {
     currency: trade.paid.currency,
@@ -285,6 +291,9 @@ export function portfolioAccount(
     swaps?: readonly { swapId: string; outgoingInstrumentId: string; occurredAt: string }[];
     capitalReturns?: readonly { capitalReturnId: string }[];
     linkedTrades?: readonly FifoTrade[];
+    /** The owner's share splits, and the instant the lots are valued at (all splits if none). */
+    splits?: readonly FifoSplit[];
+    at?: string;
   },
   swapAllocations: ReadonlyMap<string, SwapAllocation> = new Map(),
   capitalReturnAllocations: ReadonlyMap<string, CapitalReturnAllocation> = new Map(),
@@ -305,9 +314,25 @@ export function portfolioAccount(
   );
   const isBoughtTrade = (tradeId: string, version: number) =>
     bought.has(tradeKey(tradeId, version));
-  const fromOrigin = (origin: LotOrigin, quantity: string) =>
+  // How many units each unit a buy bought had become by `until`, through the splits since.
+  const splitSince = (trade: FifoTrade | undefined, until?: string) =>
+    (journal.splits ?? []).reduce(
+      (units, split) =>
+        trade &&
+        split.instrumentId === trade.instrumentId &&
+        split.effectiveAt > trade.occurredAt &&
+        (until === undefined || split.effectiveAt <= until)
+          ? units * BigInt(split.ratio)
+          : units,
+      1n,
+    );
+  const share = (tradeId: string, version: number, quantity: string, until?: string) => {
+    const trade = paid.get(tradeKey(tradeId, version));
+    return nativeShare(trade, quantity, splitSince(trade, until));
+  };
+  const fromOrigin = (origin: LotOrigin, quantity: string, until?: string) =>
     origin.kind === 'trade'
-      ? nativeShare(paid.get(tradeKey(origin.tradeId, origin.version)), quantity)
+      ? share(origin.tradeId, origin.version, quantity, until)
       : origin.kind === 'capital-return' && origin.paidCurrency
         ? { currency: origin.paidCurrency, amount: quantity }
         : undefined;
@@ -350,9 +375,9 @@ export function portfolioAccount(
       ...(isPurchase(lot, isBoughtTrade) ? { purchase: true as const } : {}),
       ...native(
         'origin' in lot
-          ? fromOrigin(lot.origin, lot.remainingQuantity)
+          ? fromOrigin(lot.origin, lot.remainingQuantity, journal.at)
           : 'buyTradeId' in lot
-            ? nativeShare(paid.get(tradeKey(lot.buyTradeId, lot.buyVersion)), lot.remainingQuantity)
+            ? share(lot.buyTradeId, lot.buyVersion, lot.remainingQuantity, journal.at)
             : undefined,
       ),
     };
@@ -366,6 +391,8 @@ export function portfolioAccount(
           ? known(trades.get(tradeKey(match.buyTradeId, match.buyVersion)))
           : known(carried.get(lotKey(match.lotId, match.openingRevision, match.ordinal)));
     const key = tradeKey(match.sellTradeId, match.sellVersion);
+    // A sale's units are those of its own date.
+    const soldAt = trades.get(key);
     const list = consumed.get(key) ?? [];
     list.push({
       costUsd: match.costUsd,
@@ -373,9 +400,9 @@ export function portfolioAccount(
       ...returned(match.returned),
       ...native(
         'origin' in match
-          ? fromOrigin(match.origin, match.quantity)
+          ? fromOrigin(match.origin, match.quantity, soldAt)
           : 'buyTradeId' in match
-            ? nativeShare(paid.get(tradeKey(match.buyTradeId, match.buyVersion)), match.quantity)
+            ? share(match.buyTradeId, match.buyVersion, match.quantity, soldAt)
             : undefined,
       ),
     });

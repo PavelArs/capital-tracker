@@ -63,6 +63,7 @@ const walletTables = [
   'inflation_months',
   'inflation_manual_months',
   'inflation_personal_rates',
+  'instrument_splits',
 ];
 const marketPriceTables = ['price_observations', 'sync_sources'];
 const threeCurrencyTables = ['fx_rates', 'owner_settings'];

@@ -110,6 +110,7 @@ const INPUT_TABLES = [
   'account_swap_versions',
   'account_capital_returns',
   'account_capital_return_versions',
+  'instrument_splits',
   'owner_transfer_journals',
   'owned_transfers',
   'owned_transfer_versions',
