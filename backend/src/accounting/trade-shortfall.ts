@@ -28,6 +28,7 @@ export function tradeShortfall(
           ]),
         ),
         transfers: ledger.transfers,
+        splits: ledger.splits,
       });
     if (shortfall) return shortfall;
     throw error;

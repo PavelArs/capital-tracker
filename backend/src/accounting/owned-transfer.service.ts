@@ -190,7 +190,7 @@ export class OwnedTransferService {
       // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
       const shortfall =
         error instanceof FifoHistoryError &&
-        firstShortfall({ accounts: ledger.accounts, transfers });
+        firstShortfall({ accounts: ledger.accounts, transfers, splits: ledger.splits });
       if (shortfall) throw dependent(shortfall, shortfall.operationId === `transfer:${transferId}`);
       throw error;
     }

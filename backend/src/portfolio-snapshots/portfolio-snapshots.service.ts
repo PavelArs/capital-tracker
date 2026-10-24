@@ -110,6 +110,7 @@ const INPUT_TABLES = [
   'account_swap_versions',
   'account_capital_returns',
   'account_capital_return_versions',
+  'instrument_splits',
   'owner_transfer_journals',
   'owned_transfers',
   'owned_transfer_versions',
@@ -178,7 +179,13 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
     }
     return prices;
   };
-  return { market: stored(inputs.market), manual: stored(inputs.manual) };
+  // Every ledger carries the owner's splits; one is enough.
+  const [ledger] = inputs.valuation.ledgers.values();
+  return {
+    market: stored(inputs.market),
+    manual: stored(inputs.manual),
+    splits: ledger?.splits ?? [],
+  };
 }
 
 /** Portfolio value at one instant in every accounting currency at that day's rate. */

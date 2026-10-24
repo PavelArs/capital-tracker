@@ -40,6 +40,7 @@ export const backupTables = [
   'account_reward_versions',
   'account_capital_returns',
   'account_capital_return_versions',
+  'instrument_splits',
   'broker_instrument_links',
   'broker_imports',
   'broker_imported_operations',

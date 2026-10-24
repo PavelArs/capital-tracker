@@ -53,6 +53,7 @@ import {
   withoutAssets,
 } from './portfolio-valuation';
 import { applyChainMoves, type ChainMove } from './provisional-chain';
+import { readSplits } from './share-split.store';
 import { findOrCreateInstrument } from './trade.service';
 
 export interface AccountRow {
@@ -395,6 +396,7 @@ export function accountHistoryReader(inputs: ValuationInputs) {
       ),
       ...[...new Set(inputs.ledgers.values())].flatMap((ledger) => [
         ...ledger.transfers.map((item) => Date.parse(item.occurredAt)),
+        ...(ledger.splits ?? []).map((item) => Date.parse(item.effectiveAt)),
         ...[...ledger.accounts.values()].flatMap((account) => [
           Date.parse(account.coverageFrom),
           ...[
@@ -462,12 +464,13 @@ function allAccountsAt(
       const journal = {
         ...ledger.accounts.get(row.accountId)!,
         linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+        splits: ledger.splits,
       };
-      const lotsAt = (projection: OwnedProjection) =>
+      const lotsAt = (projection: OwnedProjection, instant = at) =>
         portfolioAccount(
           identity,
           projection.accounts.get(row.accountId)!,
-          journal,
+          { ...journal, at: instant },
           projection.swapAllocations,
           projection.capitalReturnAllocations,
         );
@@ -478,7 +481,8 @@ function allAccountsAt(
       // held at the payment's time; that replay runs only then.
       const earlier = new Map<string, readonly PortfolioLot[]>();
       const journalHeld = (instrumentId: string, time: string) => {
-        const lots = earlier.get(time) ?? lotsAt(projectConnectedLedger(ledger, { at: time })).lots;
+        const lots =
+          earlier.get(time) ?? lotsAt(projectConnectedLedger(ledger, { at: time }), time).lots;
         earlier.set(time, lots);
         return lots
           .filter((lot) => lot.instrumentId === instrumentId)
@@ -516,6 +520,7 @@ export async function latestPortfolioPrices(
       ]),
     ),
     manual,
+    splits: await readSplits(manager, owner),
   };
 }
 

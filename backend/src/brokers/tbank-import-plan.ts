@@ -389,7 +389,19 @@ const actionOrder: PlanAction[] = [
  * (a deposit, a sale) is dated by its first part and one that spends money by its last, so the
  * account never holds less cash or fewer shares at any time than it really did.
  */
-function combine(list: PlanEntry[], period: (time: string) => string, hoist: boolean): PlanEntry[] {
+function combine(
+  list: PlanEntry[],
+  period: (time: string) => string,
+  hoist: boolean,
+  splits: readonly PlanSplit[],
+): PlanEntry[] {
+  // Units before and after a split of a security differ, so they never share an entry.
+  const epoch = (entry: PlanEntry) =>
+    splits.filter(
+      (split) =>
+        split.uid === entry.instrumentUid &&
+        timeKey(split.effectiveAt) <= timeKey(entry.occurredAt),
+    ).length;
   const groups = new Map<string, PlanEntry[]>();
   const runs = new Map<string, { action: PlanAction; run: number }>();
   const kept: PlanEntry[] = [];
@@ -417,6 +429,7 @@ function combine(list: PlanEntry[], period: (time: string) => string, hoist: boo
       entry.currency,
       entry.externalCash ? 'card' : 'broker',
       period(entry.occurredAt),
+      epoch(entry),
       run,
     ].join('|');
     const group = groups.get(key);
@@ -449,19 +462,35 @@ function combine(list: PlanEntry[], period: (time: string) => string, hoist: boo
  * trade without one is skipped before. A bond paid back in part must be held then, or there is
  * no cost for the money to lower.
  */
+/** A share split by T-Bank instrument UID: from `effectiveAt` each unit held is `ratio` units. */
+export interface PlanSplit {
+  uid: string;
+  effectiveAt: string;
+  ratio: bigint;
+}
+
 function checkHeld(
   list: PlanEntry[],
   skipped: PlanSkip[],
   typeOf: ReadonlyMap<string, string>,
   hoist: boolean,
   initialHoldings: ReadonlyMap<string, bigint>,
+  splits: readonly PlanSplit[],
 ): PlanEntry[] {
   const held = new Map(initialHoldings);
+  const due = [...splits].sort((a, b) => a.effectiveAt.localeCompare(b.effectiveAt));
+  let applied = 0;
   // Units sold that the history never showed held: a buy may cover them, or may not.
   const uncovered = new Map<string, bigint>();
   const listed = new Set<string>();
   const kept: PlanEntry[] = [];
   for (const entry of ordered(list, hoist)) {
+    // A split takes effect before anything at or after its instant.
+    while (applied < due.length && timeKey(due[applied].effectiveAt) <= timeKey(entry.occurredAt)) {
+      const split = due[applied++];
+      const units = held.get(split.uid);
+      if (units !== undefined) held.set(split.uid, units * split.ratio);
+    }
     // Dollars and euros are cash: the journal's own check finds a sale of more than is held.
     if (
       (entry.record !== 'trade' && entry.record !== 'capital-return') ||
@@ -629,7 +658,11 @@ function buysFirst(sorted: PlanEntry[], hoist: boolean): PlanEntry[] {
  */
 export function planImport(
   operations: readonly TBankOperation[],
-  options: { hoist?: boolean; initialHoldings?: ReadonlyMap<string, bigint> } = {},
+  options: {
+    hoist?: boolean;
+    initialHoldings?: ReadonlyMap<string, bigint>;
+    splits?: readonly PlanSplit[];
+  } = {},
 ): ImportPlan {
   const hoist = options.hoist ?? true;
   const skipped: PlanSkip[] = [];
@@ -640,17 +673,18 @@ export function planImport(
     typeOf,
     hoist,
     options.initialHoldings ?? new Map(),
+    options.splits ?? [],
   );
   const tradesIn = (list: PlanEntry[]) => list.filter((entry) => entry.record === 'trade').length;
   let grouping: ImportPlan['grouping'] = 'operation';
   let list = single;
   if (tradesIn(list) > COMBINE_ABOVE) {
     grouping = 'day';
-    list = combine(single, moscowDate, hoist);
+    list = combine(single, moscowDate, hoist, options.splits ?? []);
   }
   if (tradesIn(list) > COMBINE_ABOVE) {
     grouping = 'month';
-    list = combine(single, (time) => moscowDate(time).slice(0, 7), hoist);
+    list = combine(single, (time) => moscowDate(time).slice(0, 7), hoist, options.splits ?? []);
   }
   const trades = tradesIn(list);
   const capitalReturns = list.filter((entry) => entry.record === 'capital-return').length;
