@@ -1,3 +1,4 @@
+import { availableQuantity, firstShortfall } from './available-quantity';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import { calculateOwnedTransfers } from './owned-transfer-fifo';
 import type { AccountFifoResult } from './owned-transfer-types';
@@ -129,5 +130,38 @@ describe('SPLIT-FIFO: a share split multiplies the units held and keeps their co
     expect(() =>
       calculateOwnedTransfers([account(a, [])], [], undefined, [split(17), split(17)]),
     ).toThrow(FifoHistoryError);
+  });
+});
+
+describe('SPLIT-AVAILABLE: the shortfall checks count the new units from the split on', () => {
+  const ledger = (trades: FifoTrade[], splits = [split(17)]) => ({
+    accounts: new Map([[a, account(a, trades)]]),
+    transfers: [],
+    splits,
+  });
+
+  it('SPLIT-AVAILABLE-A finds no shortfall in a sale of the new units after the split', () => {
+    expect(
+      firstShortfall(ledger([trade(1, 'buy', '3', '1000', 2), trade(2, 'sell', '25', '250', 20)])),
+    ).toBeNull();
+    expect(
+      firstShortfall(
+        ledger([trade(1, 'buy', '3', '1000', 2), trade(2, 'sell', '25', '250', 20)], []),
+      ),
+    ).toMatchObject({ operationId: `trade:${id(2)}`, missingQuantity: '22' });
+  });
+
+  it('SPLIT-AVAILABLE-B flags a sale of the new units before the split takes effect', () => {
+    expect(
+      firstShortfall(ledger([trade(1, 'buy', '3', '1000', 2), trade(2, 'sell', '25', '250', 10)])),
+    ).toMatchObject({ operationId: `trade:${id(2)}`, availableQuantity: '3' });
+  });
+
+  it('SPLIT-AVAILABLE-C counts what may be sold in the units of that date', () => {
+    const held = ledger([trade(1, 'buy', '3', '1000', 2), trade(2, 'sell', '25', '250', 20)]);
+    // Before the split 3 units are held; the later sale of 25 new units leaves 5 new units,
+    // half an old unit: what may still be sold on day 10 is 0.5.
+    expect(availableQuantity(held, a, share, at(10))).toBe('0.5');
+    expect(availableQuantity(held, a, share, at(18))).toBe('5');
   });
 });
