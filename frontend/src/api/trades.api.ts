@@ -127,55 +127,6 @@ export interface TradeReceipt {
   journalRevision: number;
   trade: TradeVersion;
 }
-export interface TransferArrival {
-  transferId: string;
-  version: number;
-}
-export interface RewardOrigin {
-  accountId: string;
-  kind: 'reward';
-  rewardId: string;
-  version: number;
-  category: 'staking' | 'airdrop' | 'other' | 'unclassified';
-  acquiredAt: string;
-  orderWithinTimestamp: number;
-  originalQuantity: string;
-  originalCostUsd: string | null;
-}
-export interface SwapOrigin {
-  accountId: string;
-  kind: 'swap';
-  swapId: string;
-  version: number;
-  acquiredAt: string;
-  orderWithinTimestamp: number;
-  originalQuantity: string;
-  originalCostUsd: string | null;
-}
-export type TransferOrigin =
-  | {
-      accountId: string;
-      kind: 'carry-in';
-      lotId: string;
-      openingRevision: number;
-      ordinal: number;
-      acquiredAt: string;
-      orderWithinTimestamp: number;
-      originalQuantity: string;
-      originalCostUsd: string;
-    }
-  | {
-      accountId: string;
-      kind: 'trade';
-      tradeId: string;
-      version: number;
-      acquiredAt: string;
-      orderWithinTimestamp: number;
-      originalQuantity: string;
-      originalCostUsd: string;
-    }
-  | RewardOrigin
-  | SwapOrigin;
 export interface TradeVersions {
   tradeId: string;
   items: TradeVersion[];

@@ -66,7 +66,7 @@ changes ship.
 ## Tech Stack
 
 - **Backend:** NestJS, TypeScript, TypeORM, PostgreSQL, Redis
-- **Frontend:** React, Vite, TypeScript, Chart.js, i18next (EN/RU)
+- **Frontend:** React, Vite, TypeScript, Chart.js
 - **Tooling:** pnpm, Biome (lint + format), Jest/Vitest
 - **Infrastructure:** Docker Compose, GitHub Actions CI/CD, ghcr.io, nginx
 
@@ -129,7 +129,6 @@ the isolated acceptance stack; never use legacy production Compose for tests.
 | `pnpm test`               | Run tests with coverage                                     |
 | `pnpm lint`               | Biome lint + format check                                   |
 | `pnpm check`              | Auto-fix lint + format issues                               |
-| `pnpm migration:generate` | Generate TypeORM migration                                  |
 | `pnpm migration:run`      | Explicit preflight and migration; requires DB_* environment |
 
 ### Frontend (`cd frontend`)
