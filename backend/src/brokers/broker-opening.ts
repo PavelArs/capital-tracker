@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAsOf, parseDecimal, parseUuid } from '../accounting/input';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
+import { strictRecord } from '../shared/strict-input';
 import type { TBankOperation, TBankPosition } from './tbank-client';
 import { cashOf } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
@@ -12,15 +13,8 @@ export interface BrokerOpening {
 const bad = (): never => {
   throw new BadRequestException('Invalid broker opening holdings');
 };
-function object(value: unknown, keys: string[]): Record<string, unknown> {
-  if (
-    !value ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    Object.keys(value).some((key) => !keys.includes(key))
-  )
-    return bad();
-  return value as Record<string, unknown>;
+function object(value: unknown, keys: readonly string[]): Record<string, unknown> {
+  return strictRecord(value, keys) ?? bad();
 }
 
 /** Explicit owner data only: unknown costs cannot become zero-cost FIFO lots. */

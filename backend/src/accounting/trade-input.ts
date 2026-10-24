@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictInteger, strictRecord } from '../shared/strict-input';
 import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms, MAX_INPUT_ATOMS } from './money';
@@ -58,17 +59,11 @@ function bad(): never {
 }
 
 function object(input: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  const prototype = Object.getPrototypeOf(input);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
-  return input as Record<string, unknown>;
+  return strictRecord(input, keys) ?? bad();
 }
 
 function integer(value: unknown, maximum: number): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > maximum)
-    return bad();
-  return value === 0 ? 0 : value;
+  return strictInteger(value, 0, maximum) ?? bad();
 }
 
 function queryInteger(value: unknown, minimum: number, maximum: number): number {

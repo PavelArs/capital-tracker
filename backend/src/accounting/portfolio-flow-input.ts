@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictRecord } from '../shared/strict-input';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { parseTradePageQuery } from './trade-input';
 
@@ -22,11 +23,7 @@ function bad(): never {
   throw new BadRequestException('Invalid accounting input');
 }
 function object(input: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
-  const prototype = Object.getPrototypeOf(input);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
-  return input as Record<string, unknown>;
+  return strictRecord(input, keys) ?? bad();
 }
 export function parseFlowRevision(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 10000)

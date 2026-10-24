@@ -26,10 +26,6 @@ type Case = {
   valid: Record<string, unknown>;
   /** A key the endpoint needs, or null when every key is optional. */
   required: string | null;
-  /** Today's copy reads keys with Object.keys and has no prototype check. */
-  prototypeAccepted?: true;
-  /** Today's copy reads keys with Object.keys, so symbol and non-enumerable keys slip through. */
-  hiddenKeysAccepted?: true;
 };
 
 const cases: Case[] = [
@@ -38,15 +34,12 @@ const cases: Case[] = [
     parse: parseListQuery,
     valid: { limit: '10' },
     required: null,
-    prototypeAccepted: true,
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/carry-in-input parseCarryInLotsQuery',
     parse: parseCarryInLotsQuery,
     valid: { limit: '10' },
     required: null,
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/csv-input parseCsvRollback',
@@ -70,28 +63,24 @@ const cases: Case[] = [
     parse: (raw) => parseManualPortfolioRequest(raw, {}),
     valid: { at, accountIds: [id] },
     required: 'at',
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/portfolio-flow-input parseFlowVoid',
     parse: parseFlowVoid,
     valid: { requestId: id, expectedJournalRevision: 0 },
     required: 'expectedJournalRevision',
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/linked-twr-input parseTwrBoundaryQuery',
     parse: parseTwrBoundaryQuery,
     valid: { from: '2024-01-01T00:00:00Z', to: at },
     required: 'to',
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/manual-price-input parsePriceVoid',
     parse: parsePriceVoid,
     valid: { requestId: id, expectedRevision: 0, observedAt: at, assertReviewed: true },
     required: 'observedAt',
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/asset-swap-input parseSwapVoid',
@@ -104,7 +93,6 @@ const cases: Case[] = [
     parse: parseTradeVoid,
     valid: { requestId: id, expectedJournalRevision: 0 },
     required: 'requestId',
-    hiddenKeysAccepted: true,
   },
   {
     name: 'accounting/chain-classification parseRemoval',
@@ -126,50 +114,37 @@ const cases: Case[] = [
       lots: [{ asset: id, acquiredAt: '2024-02-01T00:00:00Z', quantity: '1.5', costUsd: '10' }],
     },
     required: 'asOf',
-    prototypeAccepted: true,
-    hiddenKeysAccepted: true,
   },
   {
     name: 'brokers/broker-connection-input parseCheck',
     parse: parseBrokerCheck,
     valid: { token: 't.synthetic-test-token-0000000000' },
     required: 'token',
-    prototypeAccepted: true,
-    hiddenKeysAccepted: true,
   },
   {
     name: 'goals/goal-input parseGoalPreview',
     parse: parseGoalPreview,
     valid: { currency: 'RUB', targetAmount: '2500000', expectedReturnPercent: '12.50' },
     required: 'currency',
-    prototypeAccepted: true,
-    hiddenKeysAccepted: true,
   },
   {
     name: 'deposits/deposit-input parseRateChange',
     parse: parseRateChange,
     valid: { effectiveFrom: '2024-02-01', ratePercent: '12.5' },
     required: 'ratePercent',
-    prototypeAccepted: true,
-    hiddenKeysAccepted: true,
   },
   {
     name: 'wallet-addresses/wallet-address-input parseTokenVisibility',
     parse: parseTokenVisibility,
     valid: { tickers: ['BTC'], visibility: 'hidden' },
     required: 'visibility',
-    hiddenKeysAccepted: true,
   },
 ];
 
 const rejects = (parse: Case['parse'], raw: unknown) =>
   expect(() => parse(raw)).toThrow(BadRequestException);
-const pinned = (accepted: boolean | undefined, parse: Case['parse'], raw: unknown) =>
-  accepted ? expect(() => parse(raw)).not.toThrow() : rejects(parse, raw);
 
-describe.each(cases)('INPUT-STRICT-BODY: $name', (row) => {
-  const { parse, valid, required } = row;
-
+describe.each(cases)('INPUT-STRICT-BODY: $name', ({ parse, valid, required }) => {
   it('accepts the valid body', () => {
     expect(() => parse(valid)).not.toThrow();
   });
@@ -190,16 +165,12 @@ describe.each(cases)('INPUT-STRICT-BODY: $name', (row) => {
 
   it('rejects null', () => rejects(parse, null));
 
-  it('pins an object with a non-plain prototype', () =>
-    pinned(row.prototypeAccepted, parse, Object.assign(Object.create({ inherited: true }), valid)));
+  it('rejects an object with a non-plain prototype', () =>
+    rejects(parse, Object.assign(Object.create({ inherited: true }), valid)));
 
-  it('pins an object with a symbol key', () =>
-    pinned(row.hiddenKeysAccepted, parse, { ...valid, [Symbol('extra')]: true }));
+  it('rejects an object with a symbol key', () =>
+    rejects(parse, { ...valid, [Symbol('extra')]: true }));
 
-  it('pins an object with a non-enumerable unknown key', () =>
-    pinned(
-      row.hiddenKeysAccepted,
-      parse,
-      Object.defineProperty({ ...valid }, 'hidden', { value: 1 }),
-    ));
+  it('rejects an object with a non-enumerable unknown key', () =>
+    rejects(parse, Object.defineProperty({ ...valid }, 'hidden', { value: 1 })));
 });

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { strictInteger, strictRecord } from '../shared/strict-input';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms } from './money';
 
@@ -27,21 +28,10 @@ const bad = (): never => {
   throw new BadRequestException('Invalid accounting input');
 };
 function object(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return bad();
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return bad();
-  if (Object.keys(value).some((key) => !keys.includes(key))) return bad();
-  return value as Record<string, unknown>;
+  return strictRecord(value, keys) ?? bad();
 }
 function integer(value: unknown, minimum: number): number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isSafeInteger(value) ||
-    value < minimum ||
-    value > 2147483647
-  )
-    return bad();
-  return value === 0 ? 0 : value;
+  return strictInteger(value, minimum, 2147483647) ?? bad();
 }
 function preview(row: Record<string, unknown>): CarryInPreviewInput {
   const expectedOpeningRevision = integer(row.expectedOpeningRevision, 1);
