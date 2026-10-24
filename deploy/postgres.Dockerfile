@@ -6,6 +6,8 @@ FROM postgres:18.6-alpine3.24@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c05303
 # This produces a derived image with its own release identity, not the base digest.
 RUN set -eux; \
     apk add --no-cache su-exec=0.3-r0; \
+    # The base ships brotli-libs 1.2.0-r1 (CVE-2026-111497); upgrade it without moving the pinned base.
+    apk add --no-cache 'brotli-libs>=1.2.1-r0'; \
     test "$(stat -c '%a' /sbin/su-exec)" = 755; \
     for script in /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-ensure-initdb.sh; do \
         test "$(grep -c '^[[:space:]]*exec gosu postgres "\$BASH_SOURCE" "\$@"$' "$script")" = 1; \
