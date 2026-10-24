@@ -427,7 +427,7 @@ export class BrokerImportService {
     const created = new Set<string>();
     // Splits saved for securities linked by earlier imports, and those declared now.
     const planSplits = [
-      ...(await readLinkedSplits(manager, owner)),
+      ...(await readLinkedSplits(manager, owner, history.operations)),
       ...splits.map((split) => ({
         uid: split.asset,
         effectiveAt: split.effectiveAt,
@@ -962,23 +962,41 @@ function problemOf(reason: ImportProblem['reason'], entry: JournalEntry): Import
   };
 }
 
-/** Saved splits of the securities earlier imports linked, by their T-Bank UID, for the planner. */
+/**
+ * Saved splits of the securities earlier imports linked, by this history's own UIDs, for the
+ * planner: a link matches an operation by any of its provider UIDs or by its asset UID, since
+ * another account may hold the security under another trading mode or venue.
+ */
 async function readLinkedSplits(
   manager: EntityManager,
   owner: string,
+  operations: readonly TBankOperation[],
 ): Promise<{ uid: string; effectiveAt: string; ratio: bigint }[]> {
-  const rows: { uid: string; effectiveAt: Date; ratio: number }[] = await manager.query(
-    `SELECT l."providerInstrumentId" AS uid, s."effectiveAt", s.ratio
-      FROM instrument_splits s
-      JOIN broker_instrument_links l
-        ON l."ownerId" = s."ownerId" AND l."instrumentId" = s."instrumentId" AND l.provider = 'tbank'
-      WHERE s."ownerId" = $1 AND s."removedAt" IS NULL
-      ORDER BY s."effectiveAt", l."providerInstrumentId"`,
-    [owner],
-  );
-  return rows.map((row) => ({
-    uid: row.uid,
-    effectiveAt: row.effectiveAt.toISOString(),
-    ratio: BigInt(row.ratio),
-  }));
+  const rows: { providerUid: string; assetUid: string | null; effectiveAt: Date; ratio: number }[] =
+    await manager.query(
+      `SELECT l."providerInstrumentId" AS "providerUid", l."assetUid", s."effectiveAt", s.ratio
+        FROM instrument_splits s
+        JOIN broker_instrument_links l
+          ON l."ownerId" = s."ownerId" AND l."instrumentId" = s."instrumentId" AND l.provider = 'tbank'
+        WHERE s."ownerId" = $1 AND s."removedAt" IS NULL
+        ORDER BY s."effectiveAt", l."providerInstrumentId"`,
+      [owner],
+    );
+  const found = new Map<string, { uid: string; effectiveAt: string; ratio: bigint }>();
+  for (const row of rows)
+    for (const operation of operations) {
+      if (!operation.instrumentUid) continue;
+      const same =
+        operation.instrumentUid === row.providerUid ||
+        operation.providerInstrumentUid === row.providerUid ||
+        (row.assetUid !== null && operation.assetUid === row.assetUid);
+      if (!same) continue;
+      const effectiveAt = row.effectiveAt.toISOString();
+      found.set(`${operation.instrumentUid} ${effectiveAt}`, {
+        uid: operation.instrumentUid,
+        effectiveAt,
+        ratio: BigInt(row.ratio),
+      });
+    }
+  return [...found.values()];
 }
