@@ -1,7 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAccount } from '../accounting/input';
 import { parseUuid } from '../deposits/deposit-input';
-import { type BrokerOpening, parseBrokerOpening } from './broker-opening';
+import {
+  type BrokerOpening,
+  type BrokerSplit,
+  parseBrokerOpening,
+  parseBrokerSplits,
+} from './broker-opening';
 import { isTBankToken } from './tbank-client';
 
 export { parseUuid };
@@ -44,10 +49,11 @@ export function parseImport(input: unknown): {
   requestId: string;
   previewHash: string;
   opening?: BrokerOpening;
+  splits?: BrokerSplit[];
 } {
   const record = object(
     input,
-    ['requestId', 'previewHash', 'opening'],
+    ['requestId', 'previewHash', 'opening', 'splits'],
     ['requestId', 'previewHash'],
   );
   const hash = record.previewHash;
@@ -56,6 +62,7 @@ export function parseImport(input: unknown): {
     requestId: parseUuid(record.requestId),
     previewHash: hash,
     ...(record.opening === undefined ? {} : { opening: parseBrokerOpening(record.opening) }),
+    ...(record.splits === undefined ? {} : { splits: parseBrokerSplits(record.splits) }),
   };
 }
 
@@ -96,7 +103,13 @@ export function parseSetup(input: unknown): {
 }
 
 /** Read-only preview terms stay in a POST body, never in URLs or logs. */
-export function parseImportPreview(input: unknown): { opening?: BrokerOpening } {
-  const row = object(input, ['opening'], []);
-  return row.opening === undefined ? {} : { opening: parseBrokerOpening(row.opening) };
+export function parseImportPreview(input: unknown): {
+  opening?: BrokerOpening;
+  splits?: BrokerSplit[];
+} {
+  const row = object(input, ['opening', 'splits'], []);
+  return {
+    ...(row.opening === undefined ? {} : { opening: parseBrokerOpening(row.opening) }),
+    ...(row.splits === undefined ? {} : { splits: parseBrokerSplits(row.splits) }),
+  };
 }

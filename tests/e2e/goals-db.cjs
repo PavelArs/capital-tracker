@@ -17,7 +17,7 @@ const settings = {
 };
 const database = 'capital_tracker_goals_e2e';
 const modulePath = '/app/backend/dist/goals/goals.service.js';
-const MIGRATIONS = 72;
+const MIGRATIONS = 73;
 let stage = 'synthetic configuration';
 
 function source() {

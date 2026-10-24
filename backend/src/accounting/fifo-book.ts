@@ -331,6 +331,32 @@ export class FifoBook {
   }
 
   /**
+   * A share split: every held unit of the security becomes `ratio` units. Each fragment's place
+   * in its lot is scaled, so the lot's cost (and what returns took) divides over the new units
+   * exactly as before: cost × (end × r) / (quantity × r) is the same integer.
+   */
+  applySplit(instrumentId: string, ratio: bigint): void {
+    const scale = (interval: LotInterval): LotInterval =>
+      lotInterval(
+        interval.originalQuantity * ratio,
+        interval.originalCost,
+        interval.start * ratio,
+        interval.end * ratio,
+      );
+    for (const fragment of this.queues.get(instrumentId) ?? []) {
+      fragment.interval = scale(fragment.interval);
+      fragment.cost = scale(fragment.cost);
+      if (fragment.paidCost)
+        fragment.paidCost = { ...fragment.paidCost, cost: scale(fragment.paidCost.cost) };
+      fragment.returns = fragment.returns.map((slice) => ({
+        ...slice,
+        usd: scale(slice.usd),
+        native: slice.native === null ? null : scale(slice.native),
+      }));
+    }
+  }
+
+  /**
    * Part of what the held units cost came back as cash. Every fragment of the asset takes a
    * share by its units, to the last atom; a share above a fragment's remaining cost is realized
    * at once and leaves its cost at zero. A fragment of unknown cost stays unknown (missing is
