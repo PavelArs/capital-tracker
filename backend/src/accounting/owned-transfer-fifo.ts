@@ -12,6 +12,7 @@ import type {
   TransferAllocation,
   TransferAllocationItem,
 } from './owned-transfer-types';
+import { type FifoSplit, SPLIT_LIMITS, validSplitRatio } from './share-split-types';
 
 export type {
   AccountFifoResult,
@@ -93,19 +94,30 @@ type Event =
       orderWithinTimestamp: number;
       index: number;
     }
-  | { kind: 'transfer'; occurredAt: string; orderWithinTimestamp: number; index: number };
+  | { kind: 'transfer'; occurredAt: string; orderWithinTimestamp: number; index: number }
+  | { kind: 'split'; occurredAt: string; orderWithinTimestamp: number; index: number };
 
-const eventRank = { trade: 0, reward: 1, swap: 2, 'capital-return': 3, transfer: 4 } as const;
+// A split takes effect before anything else at its instant: units traded then are new units.
+const eventRank = {
+  split: -1,
+  trade: 0,
+  reward: 1,
+  swap: 2,
+  'capital-return': 3,
+  transfer: 4,
+} as const;
 
 /** Pure full-component replay. Callers load current-effective heads in one DB snapshot. */
 export function calculateOwnedTransfers(
   accounts: readonly OwnedAccountInput[],
   transfers: readonly ActiveTransferInput[],
   at?: string,
+  splits: readonly FifoSplit[] = [],
 ): OwnedProjection {
   if (
     accounts.length > OWNED_TRANSFER_LIMITS.accounts ||
-    transfers.length > OWNED_TRANSFER_LIMITS.activeTransfers
+    transfers.length > OWNED_TRANSFER_LIMITS.activeTransfers ||
+    splits.length > SPLIT_LIMITS.activeSplits
   )
     throw new OwnedTransferCapacityError();
   const byAccount = new Map(accounts.map((account) => [account.accountId, account]));
@@ -262,9 +274,19 @@ export function calculateOwnedTransfers(
     });
   }
 
+  // One split per security and instant; it belongs to no account, so it occupies none.
+  const splitKeys = new Set<string>();
+  for (const [index, split] of splits.entries()) {
+    const key = JSON.stringify([split.instrumentId, split.effectiveAt]);
+    if (!validSplitRatio(split.ratio) || splitKeys.has(key)) throw new FifoHistoryError();
+    splitKeys.add(key);
+    events.push({ kind: 'split', occurredAt: split.effectiveAt, orderWithinTimestamp: -1, index });
+  }
+
   // Validate the entire effective chronology, including events after an as-of prefix.
   const occupied = new Map<string, Set<string>>();
   for (const event of events) {
+    if (event.kind === 'split') continue;
     const ids =
       event.kind !== 'transfer'
         ? [event.accountId]
@@ -293,6 +315,11 @@ export function calculateOwnedTransfers(
   const capitalReturnAllocations = new Map<string, CapitalReturnAllocation>();
   for (const event of events) {
     if (at !== undefined && event.occurredAt > at) break;
+    if (event.kind === 'split') {
+      const split = splits[event.index];
+      for (const book of books.values()) book.applySplit(split.instrumentId, BigInt(split.ratio));
+      continue;
+    }
     if (event.kind === 'trade') {
       const account = byAccount.get(event.accountId)!;
       books.get(event.accountId)!.applyTrade(account.trades[event.index]);

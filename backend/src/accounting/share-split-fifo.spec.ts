@@ -1,0 +1,133 @@
+import { FifoHistoryError, type FifoTrade } from './fifo';
+import { calculateOwnedTransfers } from './owned-transfer-fifo';
+import type { AccountFifoResult } from './owned-transfer-types';
+import type { FifoSplit } from './share-split-types';
+
+const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const share = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const other = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const id = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+const at = (day: number) => `2026-04-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+
+function trade(
+  n: number,
+  side: 'buy' | 'sell',
+  quantity: string,
+  grossUsd: string,
+  day: number,
+  instrumentId = share,
+): FifoTrade {
+  return {
+    tradeId: id(n),
+    version: 1,
+    instrumentId,
+    instrumentName: 'Synthetic share',
+    instrumentSymbol: 'SYNS',
+    side,
+    occurredAt: at(day),
+    orderWithinTimestamp: n,
+    quantity,
+    grossUsd,
+    feeUsd: '0',
+  };
+}
+
+const split = (day: number, ratio = 10, instrumentId = share): FifoSplit => ({
+  splitId: id(900 + day),
+  instrumentId,
+  effectiveAt: at(day),
+  ratio,
+});
+
+function account(accountId: string, trades: FifoTrade[]) {
+  return { accountId, coverageFrom: at(1), initialLots: [], trades };
+}
+
+const held = (lots: AccountFifoResult['lots'], instrumentId = share) =>
+  lots
+    .filter((lot) => lot.instrumentId === instrumentId)
+    .map((lot) => [lot.remainingQuantity, lot.remainingCostUsd]);
+
+describe('SPLIT-FIFO: a share split multiplies the units held and keeps their cost', () => {
+  it('SPLIT-FIFO-A turns 15 shares bought before the split into 150, at the same total cost', () => {
+    const result = calculateOwnedTransfers(
+      [account(a, [trade(1, 'buy', '5', '1500', 2), trade(2, 'buy', '10', '3000', 3)])],
+      [],
+      undefined,
+      [split(17)],
+    );
+    expect(held(result.accounts.get(a)!.lots)).toEqual([
+      ['50', '1500'],
+      ['100', '3000'],
+    ]);
+  });
+
+  it('SPLIT-FIFO-B sells the new units at a tenth of the old cost each, to the last atom', () => {
+    const result = calculateOwnedTransfers(
+      [
+        account(a, [
+          trade(1, 'buy', '3', '1000', 2),
+          trade(2, 'sell', '7', '700', 20),
+          trade(3, 'buy', '45', '450', 21),
+        ]),
+      ],
+      [],
+      undefined,
+      [split(17)],
+    );
+    const state = result.accounts.get(a)!;
+    // 3 shares became 30 costing 1000; selling 7 of them takes 7/30 of 1000.
+    expect(state.matches).toEqual([
+      expect.objectContaining({ quantity: '7', costUsd: '233.' + '3'.repeat(30) }),
+    ]);
+    expect(held(state.lots)).toEqual([
+      ['23', `766.${'6'.repeat(29)}7`],
+      ['45', '450'],
+    ]);
+  });
+
+  it('SPLIT-FIFO-C refuses a sale of the new units before the split takes effect', () => {
+    expect(() =>
+      calculateOwnedTransfers(
+        [account(a, [trade(1, 'buy', '3', '1000', 2), trade(2, 'sell', '7', '700', 10)])],
+        [],
+        undefined,
+        [split(17)],
+      ),
+    ).toThrow(FifoHistoryError);
+  });
+
+  it('SPLIT-FIFO-D splits the units in every account, and only that share', () => {
+    const result = calculateOwnedTransfers(
+      [
+        account(a, [trade(1, 'buy', '2', '200', 2), trade(2, 'buy', '1', '50', 3, other)]),
+        account(b, [trade(3, 'buy', '1', '100', 4)]),
+      ],
+      [],
+      undefined,
+      [split(17)],
+    );
+    expect(held(result.accounts.get(a)!.lots)).toEqual([['20', '200']]);
+    expect(held(result.accounts.get(b)!.lots)).toEqual([['10', '100']]);
+    expect(held(result.accounts.get(a)!.lots, other)).toEqual([['1', '50']]);
+  });
+
+  it('SPLIT-FIFO-E applies a split only once it is due when replaying to a date', () => {
+    const accounts = [account(a, [trade(1, 'buy', '2', '200', 2)])];
+    const before = calculateOwnedTransfers(accounts, [], at(16), [split(17)]);
+    const after = calculateOwnedTransfers(accounts, [], at(17), [split(17)]);
+    expect(held(before.accounts.get(a)!.lots)).toEqual([['2', '200']]);
+    expect(held(after.accounts.get(a)!.lots)).toEqual([['20', '200']]);
+  });
+
+  it('SPLIT-FIFO-F refuses a ratio that is not a whole number of new shares above one', () => {
+    for (const ratio of [0, 1, -10, 2.5, Number.NaN, 1_000_001])
+      expect(() =>
+        calculateOwnedTransfers([account(a, [])], [], undefined, [split(17, ratio)]),
+      ).toThrow(FifoHistoryError);
+    expect(() =>
+      calculateOwnedTransfers([account(a, [])], [], undefined, [split(17), split(17)]),
+    ).toThrow(FifoHistoryError);
+  });
+});
