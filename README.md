@@ -163,7 +163,6 @@ frontend/src/
   features/       Feature-specific components (asset cards, wallet forms, etc.)
   contexts/       Auth, Error, Theme contexts
   api/            Axios API layer
-  i18n/           English and Russian locales
 ```
 
 ## Production Deployment
