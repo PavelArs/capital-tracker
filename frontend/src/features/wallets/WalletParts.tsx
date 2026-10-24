@@ -735,7 +735,11 @@ export function ReconcileNote({
   const advice = result.assets.every((item) => item.exchange)
     ? 'Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.'
     : 'Add the missing transactions or check that every address belongs here.';
-  const countable = target && result.assets.every((item) => item.exchange);
+  // BYBIT-DEBT: a borrowed coin's difference is not counted; the server refuses a negative balance.
+  const borrowed = result.assets
+    .filter((item) => item.exchange && item.chain.startsWith('-'))
+    .map((item) => item.symbol);
+  const countable = target && borrowed.length === 0 && result.assets.every((item) => item.exchange);
   const count = async () => {
     if (!target) return;
     setCounting(true);
@@ -775,6 +779,12 @@ export function ReconcileNote({
         <p>
           {lines.join(' ')} {advice}
         </p>
+        {target && borrowed.length > 0 && (
+          <p>
+            {borrowed.join(', ')} {borrowed.length === 1 ? 'is' : 'are'} borrowed on margin, so the
+            difference is not counted here.
+          </p>
+        )}
         {countable && (
           <>
             <p>

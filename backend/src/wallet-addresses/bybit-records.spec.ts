@@ -7,6 +7,7 @@ import type {
   BybitWithdrawal,
 } from './bybit-client';
 import {
+  bybitTotals,
   chainFacts,
   chainTxid,
   completedTradeLeg,
@@ -468,5 +469,32 @@ describe('BYBIT-LINK-HASH: the hash an Ethereum-like chain wallet leg is found b
     expect(sql).not.toContain("'TRX'");
     expect(sql).toContain("w.network='bybit'");
     expect(sql).toContain("t.raw->'record'->>'txID'");
+  });
+});
+
+describe('BYBIT-DEBT: what Bybit holds, one balance per coin', () => {
+  it('nets a margin debt in the trading account against the funding account', () => {
+    expect(
+      bybitTotals([
+        { coin: 'USDT', quantity: '500' },
+        { coin: 'USDT', quantity: '-1000.25' },
+        { coin: 'BTC', quantity: '0.01' },
+      ]),
+    ).toEqual([
+      { coin: 'BTC', quantity: '0.01' },
+      { coin: 'ETH', quantity: '0' },
+      { coin: 'SOL', quantity: '0' },
+      { coin: 'USDC', quantity: '0' },
+      { coin: 'USDT', quantity: '-500.25' },
+    ]);
+  });
+
+  it('keeps a debt in a coin the account does not always show, and drops a zero one', () => {
+    expect(
+      bybitTotals([
+        { coin: 'DOGE', quantity: '-1.5' },
+        { coin: 'TON', quantity: '0' },
+      ]).filter(({ coin }) => ['DOGE', 'TON'].includes(coin)),
+    ).toEqual([{ coin: 'DOGE', quantity: '-1.5' }]);
   });
 });
