@@ -275,7 +275,7 @@ async function main() {
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map(
       (row) => row.name,
     );
-    assert.equal(shownNames.length, 72);
+    assert.equal(shownNames.length, 73);
     assert.deepEqual(
       shownNames,
       appliedNames,
