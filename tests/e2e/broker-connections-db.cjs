@@ -997,9 +997,9 @@ async function importing(db, service, imports, tbank, owner, other) {
   const splitAccount = await account(db, owner, 'broker');
   await takeOver(db, service, owner, splitAccount);
   history = [
-    operation('1300000001', 'INPUT', '300'),
-    operation('1300000002', 'BUY', '-300', splitShare({ quantity: '3' })),
-    operation('1300000003', 'SELL', '250', splitShare({ occurredAt: '2024-03-15T08:00:00Z', quantity: '25' })),
+    operation('1350000001', 'INPUT', '300'),
+    operation('1350000002', 'BUY', '-300', splitShare({ quantity: '3' })),
+    operation('1350000003', 'SELL', '250', splitShare({ occurredAt: '2024-03-15T08:00:00Z', quantity: '25' })),
   ];
   tbank.positions = [heldPosition(splitUid, '5')];
   tbank.cash = [['RUB', '250']];
@@ -1022,7 +1022,7 @@ async function importing(db, service, imports, tbank, owner, other) {
   // A second account of the same security sells new units too, with no split declared again.
   const splitSecond = await account(db, owner, 'broker');
   await takeOver(db, service, owner, splitSecond);
-  history = history.map((row, index) => ({ ...row, id: String(1300000101 + index) }));
+  history = history.map((row, index) => ({ ...row, id: String(1350000101 + index) }));
   const inherited = await imports.preview(owner, splitSecond);
   assert.deepEqual(inherited.problems, []);
   assert.equal(inherited.canImport, true);
@@ -1034,7 +1034,7 @@ async function importing(db, service, imports, tbank, owner, other) {
   await takeOver(db, service, owner, splitVenue);
   history = history.map((row, index) => ({
     ...row,
-    id: String(1300000201 + index),
+    id: String(1350000201 + index),
     ...(row.instrumentUid ? { instrumentUid: splitVenueUid, ticker: 'SYNTHSPLIT@' } : {}),
   }));
   tbank.positions = [heldPosition(splitVenueUid, '5')];
