@@ -14,6 +14,7 @@ import {
   parsePositions,
   TBankClient,
 } from './tbank-client';
+import { planImport } from './tbank-import-plan';
 
 // BROKER-CONNECT: synthetic tokens and ids only; never an owner's account.
 const token = 't.SyntheticToken000000000000000001';
@@ -82,6 +83,72 @@ it('BROKER-ASSET-ID keeps the documented asset UUID of an operation and rejects 
   expect(
     parseOperationsPage({ items: [item({ assetUid: '' })] }).operations[0].assetUid,
   ).toBeUndefined();
+});
+
+it('BROKER-WHOLE-SECOND keeps T-Bank times to the whole second, so a sale pays the tax stamped in its second', () => {
+  // As T-Bank answered for a real sale: filled at .082 s, while the tax it paid is stamped to
+  // the whole second, and the account held almost no rubles before the sale.
+  const { operations } = parseOperationsPage({
+    items: [
+      item({
+        id: '900000101',
+        type: 'OPERATION_TYPE_SELL',
+        date: '2026-01-06T10:03:35.000Z',
+        payment: { currency: 'rub', units: '888', nano: 60000000 },
+        price: { currency: 'rub', units: '7', nano: 790000000 },
+        quantity: '114',
+        quantityDone: '114',
+        tradesInfo: {
+          trades: [
+            {
+              num: '1',
+              date: '2026-01-06T10:03:35.082Z',
+              quantity: '114',
+              price: { currency: 'rub', units: '7', nano: 790000000 },
+            },
+          ],
+        },
+      }),
+      item({
+        id: '900000102',
+        type: 'OPERATION_TYPE_TAX',
+        date: '2026-01-06T10:03:35Z',
+        instrumentUid: '',
+        instrumentType: '',
+        ticker: '',
+        payment: { currency: 'rub', units: '-888' },
+        price: undefined,
+        quantity: '0',
+        quantityDone: '0',
+      }),
+    ],
+  });
+  const plan = planImport([
+    ...operations,
+    // The units sold, bought earlier.
+    {
+      ...operations[0],
+      id: '900000100',
+      type: 'OPERATION_TYPE_BUY',
+      payment: '-800',
+      occurredAt: '2026-01-05T10:00:00Z',
+      fills: [],
+    },
+    {
+      ...operations[1],
+      id: '900000099',
+      type: 'OPERATION_TYPE_INPUT',
+      payment: '800',
+      occurredAt: '2026-01-05T09:00:00Z',
+    },
+  ]);
+  expect(plan.skipped).toEqual([]);
+  expect(plan.entries.map((entry) => [entry.occurredAt, entry.action])).toEqual([
+    ['2026-01-05T09:00:00Z', 'deposit'],
+    ['2026-01-05T10:00:00Z', 'buy'],
+    ['2026-01-06T10:03:35Z', 'sell'],
+    ['2026-01-06T10:03:35Z', 'tax'],
+  ]);
 });
 
 describe('BROKER-CONNECT: what T-Bank says about a token', () => {
@@ -334,7 +401,7 @@ describe('BROKER-SYNC: operations T-Bank lists', () => {
           parentId: '',
           type: 'OPERATION_TYPE_BUY',
           state: 'executed',
-          occurredAt: '2024-03-01T10:00:00.123456Z',
+          occurredAt: '2024-03-01T10:00:00Z',
           instrumentUid: '00000000-0000-4000-8000-000000000001',
           instrumentType: 'share',
           ticker: 'SYNTH',
@@ -422,10 +489,10 @@ describe('BROKER-SYNC: operations T-Bank lists', () => {
         }),
       ],
     }).operations;
-    expect(trade.occurredAt).toBe('2024-03-01T10:00:00.123456Z');
+    expect(trade.occurredAt).toBe('2024-03-01T10:00:00Z');
     expect(trade.fills).toEqual([
       { filledAt: '2024-03-01T10:00:01Z', quantity: '1', price: '100', priceCurrency: 'rub' },
-      { filledAt: '2024-03-04T07:00:00.5Z', quantity: '1', price: '100.5', priceCurrency: 'rub' },
+      { filledAt: '2024-03-04T07:00:00Z', quantity: '1', price: '100.5', priceCurrency: 'rub' },
     ]);
     expect(parseOperationsPage({ items: [item({ tradesInfo: {} })] }).operations[0].fills).toEqual(
       [],
