@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAsOf, parseDecimal, parseUuid } from '../accounting/input';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
+import { validSplitRatio } from '../accounting/share-split-types';
 import type { TBankOperation, TBankPosition } from './tbank-client';
 import { cashOf } from './tbank-import-plan';
 import { operationKind } from './tbank-operation-kinds';
@@ -47,6 +48,41 @@ export function parseBrokerOpening(raw: unknown): BrokerOpening | undefined {
     })
     .sort((a, b) => a.acquiredAt.localeCompare(b.acquiredAt) || a.asset.localeCompare(b.asset));
   return { asOf, lots };
+}
+
+/** SPLIT: a share split the owner declares for a security of the history, by its T-Bank UID. */
+export interface BrokerSplit {
+  asset: string;
+  effectiveAt: string;
+  ratio: number;
+}
+
+export function parseBrokerSplits(raw: unknown): BrokerSplit[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 20)
+    throw new BadRequestException('Invalid share splits');
+  const splits = raw
+    .map((item) => {
+      const row = object(item, ['asset', 'effectiveAt', 'ratio']);
+      if (!validSplitRatio(row.ratio as number))
+        throw new BadRequestException('Invalid share splits');
+      return {
+        asset: parseUuid(row.asset),
+        effectiveAt: parseAsOf(row.effectiveAt),
+        ratio: row.ratio as number,
+      };
+    })
+    .sort((a, b) => a.effectiveAt.localeCompare(b.effectiveAt) || a.asset.localeCompare(b.asset));
+  if (
+    splits.some(
+      (split, index) =>
+        index > 0 &&
+        splits[index - 1].asset === split.asset &&
+        splits[index - 1].effectiveAt === split.effectiveAt,
+    )
+  )
+    throw new BadRequestException('Invalid share splits');
+  return splits;
 }
 
 /** Securities use provider UIDs in the planner; cash is checked by the journal replay. */

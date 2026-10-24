@@ -67,6 +67,13 @@ export interface TBankOpening {
   lots: { asset: string; acquiredAt: string; quantity: string; costUsd: string }[];
 }
 
+/** SPLIT: a share split declared for a security of the history, saved with the import. */
+export interface TBankSplit {
+  asset: string;
+  effectiveAt: string;
+  ratio: number;
+}
+
 export interface TBankImportPreview {
   openingAssets?: { asset: string; label: string; currency: string }[];
   grouping: 'operation' | 'day' | 'month';
@@ -116,12 +123,16 @@ export const brokersApi = {
     return response.data.connections;
   },
 
-  importPreview: async (accountId: string, opening?: TBankOpening): Promise<TBankImportPreview> => {
-    if (opening)
+  importPreview: async (
+    accountId: string,
+    opening?: TBankOpening,
+    splits?: TBankSplit[],
+  ): Promise<TBankImportPreview> => {
+    if (opening || splits)
       return (
         await apiClient.post<TBankImportPreview>(
           `/brokers/${accountId}/connection/import-preview`,
-          { opening },
+          { ...(opening ? { opening } : {}), ...(splits ? { splits } : {}) },
           { changesNothing: true },
         )
       ).data;
@@ -137,10 +148,11 @@ export const brokersApi = {
     requestId: string,
     previewHash: string,
     opening?: TBankOpening,
+    splits?: TBankSplit[],
   ): Promise<TBankImportReceipt> => {
     const response = await apiClient.post<TBankImportReceipt>(
       `/brokers/${accountId}/connection/import`,
-      { requestId, previewHash, ...(opening ? { opening } : {}) },
+      { requestId, previewHash, ...(opening ? { opening } : {}), ...(splits ? { splits } : {}) },
     );
     return response.data;
   },

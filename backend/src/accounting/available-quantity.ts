@@ -1,12 +1,15 @@
 import { swapAtoms } from './asset-swap-fifo';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { ActiveTransferInput, OwnedAccountInput } from './owned-transfer-types';
+import type { FifoSplit } from './share-split-types';
 import { settlementLeg } from './trade-settlement';
 
 /** The accounts of one connected component and the transfers between them. */
 export interface LedgerView {
   accounts: ReadonlyMap<string, OwnedAccountInput>;
   transfers: readonly ActiveTransferInput[];
+  /** The owner's share splits; each multiplies the units held of its security. */
+  splits?: readonly FifoSplit[];
 }
 
 /** One event's quantity changes per account and instrument, in replay order. */
@@ -17,6 +20,8 @@ interface Movement {
   rank: number;
   index: number;
   deltas: [accountId: string, instrumentId: string, atoms: bigint][];
+  /** A share split: every account's balance of the security is multiplied by `ratio`. */
+  split?: { instrumentId: string; ratio: bigint };
 }
 
 export interface Shortfall {
@@ -31,7 +36,15 @@ export interface Shortfall {
 }
 
 // Same order as the FIFO replay: instant, order within it, then kind and position.
-const rank = { opening: -1, trade: 0, reward: 1, swap: 2, capitalReturn: 3, transfer: 4 } as const;
+const rank = {
+  opening: -2,
+  split: -1,
+  trade: 0,
+  reward: 1,
+  swap: 2,
+  capitalReturn: 3,
+  transfer: 4,
+} as const;
 
 function movements(ledger: LedgerView): Movement[] {
   const found: Movement[] = [];
@@ -127,6 +140,16 @@ function movements(ledger: LedgerView): Movement[] {
       deltas,
     });
   }
+  for (const [index, split] of (ledger.splits ?? []).entries())
+    found.push({
+      operationId: `split:${split.splitId}`,
+      occurredAt: split.effectiveAt,
+      orderWithinTimestamp: -1,
+      rank: rank.split,
+      index,
+      deltas: [],
+      split: { instrumentId: split.instrumentId, ratio: BigInt(split.ratio) },
+    });
   return found.sort(
     (left, right) =>
       (left.occurredAt < right.occurredAt ? -1 : left.occurredAt > right.occurredAt ? 1 : 0) ||
@@ -151,15 +174,22 @@ export function availableQuantity(
   if (!account || at < account.coverageFrom) return '0';
   let balance = 0n;
   let lowest: bigint | null = null;
+  // Splits after `at` count later balances in new units; dividing them back keeps `at`'s units.
+  let later = 1n;
   for (const movement of movements(ledger)) {
+    const future = movement.occurredAt > at;
+    if (future) lowest ??= balance;
+    if (movement.split?.instrumentId === instrumentId) {
+      if (account.coverageFrom >= movement.occurredAt) continue;
+      balance *= movement.split.ratio;
+      if (future) later *= movement.split.ratio;
+      continue;
+    }
     const change = movement.deltas
       .filter(([account, instrument]) => account === accountId && instrument === instrumentId)
       .reduce((sum, [, , atoms]) => sum + atoms, 0n);
-    if (movement.occurredAt > at) {
-      lowest ??= balance;
-      balance += change;
-      if (balance < lowest) lowest = balance;
-    } else balance += change;
+    balance += change;
+    if (future && lowest !== null && balance / later < lowest) lowest = balance / later;
   }
   const available = lowest ?? balance;
   return available > 0n ? formatAtoms(available) : '0';
@@ -169,6 +199,18 @@ export function availableQuantity(
 export function firstShortfall(ledger: LedgerView): Shortfall | null {
   const balances = new Map<string, bigint>();
   for (const movement of movements(ledger)) {
+    if (movement.split) {
+      for (const [key, balance] of balances) {
+        const [accountId, instrumentId] = key.split(':');
+        // An account whose history starts at or after the split holds new units already.
+        if (
+          instrumentId === movement.split.instrumentId &&
+          ledger.accounts.get(accountId)!.coverageFrom < movement.occurredAt
+        )
+          balances.set(key, balance * movement.split.ratio);
+      }
+      continue;
+    }
     for (const [accountId, instrumentId, atoms] of movement.deltas) {
       const key = `${accountId}:${instrumentId}`;
       balances.set(key, (balances.get(key) ?? 0n) + atoms);
@@ -209,6 +251,7 @@ export function withoutTrade<T extends LedgerView>(
       ]),
     ),
     transfers: ledger.transfers,
+    splits: ledger.splits,
   };
 }
 
@@ -238,5 +281,6 @@ export function withoutOperation(ledger: LedgerView, operationId: string): Ledge
       kind === 'transfer'
         ? ledger.transfers.filter((item) => item.transferId !== id)
         : ledger.transfers,
+    splits: ledger.splits,
   };
 }

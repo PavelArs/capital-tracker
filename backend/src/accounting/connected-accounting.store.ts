@@ -37,6 +37,8 @@ import {
   OwnedTransferCapacityError,
   type TransferSummary,
 } from './owned-transfer-fifo';
+import { readSplits } from './share-split.store';
+import type { FifoSplit } from './share-split-types';
 import {
   advanceJournal,
   type JournalRow,
@@ -56,6 +58,8 @@ export interface ConnectedLedger {
   rewardParticipants: ReadonlySet<string>;
   swapParticipants: ReadonlySet<string>;
   capitalReturnParticipants: ReadonlySet<string>;
+  /** The owner's share splits, for every account they reach. */
+  splits: readonly FifoSplit[];
 }
 export type ConnectedLedgerCache = Map<string, ConnectedLedger>;
 
@@ -284,6 +288,7 @@ export async function readConnectedLedger(
     rewardParticipants: new Set(rewardCounts.map((row) => row.accountId)),
     swapParticipants: new Set(swapCounts.map((row) => row.accountId)),
     capitalReturnParticipants: new Set(returnCounts.map((row) => row.accountId)),
+    splits: await readSplits(manager, owner),
   };
 }
 
@@ -311,7 +316,12 @@ export function projectConnectedLedger(
         }
       : account,
   );
-  return calculateOwnedTransfers(accounts, options.transfers ?? ledger.transfers, options.at);
+  return calculateOwnedTransfers(
+    accounts,
+    options.transfers ?? ledger.transfers,
+    options.at,
+    ledger.splits,
+  );
 }
 
 export function connectedResult(ledger: ConnectedLedger, id: string, result: AccountFifoResult) {
