@@ -219,6 +219,42 @@ describe('SPLIT-NATIVE: a buy paid in rubles keeps its ruble cost across a split
     expect(view.realizations[0].consumed.map((part) => part.native?.amount)).toEqual(['250']);
   });
 
+  it('SPLIT-NATIVE-C prices a swap before the split in the units of its own date', () => {
+    const trades = [paid('3', '300')];
+    const swap = {
+      swapId: id(70),
+      version: 1,
+      outgoingInstrumentId: share,
+      outgoingInstrumentName: 'Synthetic share',
+      outgoingInstrumentSymbol: 'SYNS',
+      incomingInstrumentId: other,
+      incomingInstrumentName: 'Other',
+      incomingInstrumentSymbol: 'OTH',
+      occurredAt: at(10),
+      orderWithinTimestamp: 5,
+      outgoingQuantity: '1',
+      incomingQuantity: '1',
+      considerationUsd: '1',
+      feeSource: null,
+      feeInstrumentId: null,
+      feeQuantity: '0',
+    };
+    const fifo = calculateOwnedTransfers(
+      [{ ...account(a, trades), swaps: [swap] }],
+      [],
+      undefined,
+      [split(17)],
+    );
+    const view = portfolioAccount(
+      { accountId: a, name: 'Broker' },
+      fifo.accounts.get(a)!,
+      { trades, initialLots: [], swaps: [swap], splits: [split(17)] },
+      fifo.swapAllocations,
+    );
+    const realized = view.realizations.find((item) => item.instrumentId === share)!;
+    expect(realized.consumed.map((part) => part.native?.amount)).toEqual(['100']);
+  });
+
   it('SPLIT-NATIVE-B counts the units of the valuation date before the split', () => {
     const trades = [paid('3', '300')];
     const fifo = calculateOwnedTransfers([account(a, trades)], [], at(10), [split(17)]);

@@ -444,7 +444,7 @@ export function portfolioAccount(
         costUsd: item.costUsd,
         acquiredAt: item.origin.acquiredAt,
         ...returned(item.returned),
-        ...native(fromOrigin(item.origin, item.quantity)),
+        ...native(fromOrigin(item.origin, item.quantity, swap.occurredAt)),
       })),
     });
   }
