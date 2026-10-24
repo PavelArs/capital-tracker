@@ -107,6 +107,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$RELEASE_VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{7}$ ]]
+          # CI tests the official PostgreSQL image (owner decision 2026-10-24); resume-fresh would
+          # release the derived image of the interrupted first install, which nothing tests now.
+          [[ $RELEASE_INSTALLATION != resume-fresh ]] || { echo 'resume-fresh is retired: CI no longer tests its PostgreSQL image' >&2; exit 1; }
           gzip -dc candidate/images.tar.gz | docker load
           node - <<'NODE'
           const manifest = require('./candidate/manifest.json');

@@ -193,6 +193,9 @@ function price(value: unknown): { amount: string; currency: string } {
 }
 
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
+// T-Bank stamps cash operations to the whole second and fills to fractions of one, so a tax could
+// replay before the sale that paid it; every time is kept to the whole second.
+const wholeSecond = (time: string) => time.replace(/\.\d+Z$/, 'Z');
 
 function position(value: unknown, virtual: boolean): TBankPosition {
   const item = record(value);
@@ -283,7 +286,7 @@ function fill(value: unknown): TBankFill {
   if (typeof date !== 'string' || !timestampPattern.test(date)) return invalid();
   const unit = price(item.price);
   return {
-    filledAt: date,
+    filledAt: wholeSecond(date),
     quantity: count(item.quantity),
     price: unit.amount,
     priceCurrency: unit.currency,
@@ -330,7 +333,7 @@ function executedShape(item: Record<string, unknown>, state: TBankOperationState
     parentId: text(item.parentOperationId, operationIdPattern),
     type: text(item.type, /^OPERATION_TYPE_[A-Z_]{1,60}$/) || 'unknown',
     state,
-    occurredAt: date,
+    occurredAt: wholeSecond(date),
     instrumentUid: text(item.instrumentUid, idPattern),
     ...positionReference(item.positionUid),
     ...uidReference('assetUid', item.assetUid),

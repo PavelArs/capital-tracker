@@ -267,20 +267,14 @@ jobs:
           const pins = require('./deploy/manual-mvp-infrastructure-pins.json');
           const { validateInfrastructurePins } = require('./scripts/validate-manual-mvp-release.cjs');
           validateInfrastructurePins(pins);
-          const { createHash } = require('node:crypto');
-          const { readFileSync } = require('node:fs');
-          if (createHash('sha256').update(readFileSync(pins.postgres.dockerfile)).digest('hex') !== pins.postgres.dockerfileSha256) throw new Error('PostgreSQL Dockerfile differs from reviewed source');
           NODE
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          postgres=$(jq -er '.postgres.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
+          # The official PostgreSQL image, pinned by digest like Redis (owner decision 2026-10-24).
+          postgres=$(jq -er '.postgres.baseRegistryDigest' deploy/manual-mvp-infrastructure-pins.json)
           postgres_tag=$(jq -er '.postgres.tag' deploy/manual-mvp-infrastructure-pins.json)
-          postgres_origin=$(jq -er '.postgres.originRevision' deploy/manual-mvp-infrastructure-pins.json)
-          docker pull "$postgres"
+          docker pull --platform linux/amd64 "$postgres"
           docker tag "$postgres" "$postgres_tag"
           test "$(docker image inspect "$postgres_tag" --format '{{.Id}}')" = "$(docker image inspect "$postgres" --format '{{.Id}}')"
           test "$(docker image inspect "$postgres_tag" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
-          test "$(docker image inspect "$postgres_tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$postgres_origin"
-          docker logout ghcr.io
           for name in redis; do
             digest=$(jq -er --arg name "$name" '.[$name].registryDigest' deploy/manual-mvp-infrastructure-pins.json)
             tag=$(jq -er --arg name "$name" '.[$name].tag' deploy/manual-mvp-infrastructure-pins.json)
@@ -537,21 +531,6 @@ jobs:
           ignore-unfixed: false
           format: json
           output: frontend-image-security.json
-          exit-code: '0'
-          timeout: 10m
-      - name: Scan the PostgreSQL image
-        if: needs.release-images.outputs.reuse != 'true'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          cache: 'false'
-          version: v0.74.0
-          skip-setup-trivy: true
-          scan-type: image
-          image-ref: capital-tracker-postgres:acceptance
-          scanners: vuln,secret
-          ignore-unfixed: false
-          format: json
-          output: postgres-image-security.json
           exit-code: '0'
           timeout: 10m
       - name: Scan the Redis image

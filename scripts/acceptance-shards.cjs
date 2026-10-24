@@ -135,8 +135,7 @@ function plan(command, shard) {
     throw new Error('Only critical acceptance is sharded');
   const parsed = shard === undefined ? undefined : parseShard(shard);
   const steps = [];
-  if (command === 'run') steps.push('build:backend,frontend,postgres');
-  else if (!parsed) steps.push('verify-postgres-pin', 'build:backend,frontend');
+  if (!parsed) steps.push('verify-postgres-pin', 'build:backend,frontend');
   else steps.push('verify-prebuilt-images');
   const checks = CHECKS.filter(
     (check) =>

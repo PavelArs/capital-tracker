@@ -64,10 +64,16 @@ const pins =
         readJson(join(root, 'deploy/manual-mvp-infrastructure-pins.json')),
       );
 
+// The official PostgreSQL image, pinned by digest like Redis (owner decision 2026-10-24).
 function verifyPostgresPin() {
-  const pinnedId = imageId(pins.postgres.registryDigest);
+  const official = pins.postgres.baseRegistryDigest;
+  execFileSync('docker', ['pull', '--quiet', '--platform', 'linux/amd64', official], {
+    stdio: 'ignore',
+  });
+  execFileSync('docker', ['tag', official, pins.postgres.tag]);
+  const pinnedId = imageId(official);
   if (imageId(pins.postgres.tag) !== pinnedId) {
-    throw new Error('Acceptance PostgreSQL differs from the reviewed original digest');
+    throw new Error('Acceptance PostgreSQL differs from the pinned official digest');
   }
   return pinnedId;
 }
