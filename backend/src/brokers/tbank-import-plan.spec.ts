@@ -1338,3 +1338,19 @@ describe('BROKER-CAPRET: a part of a bond paid back', () => {
     expect(plan.skipped.map((item) => item.reason)).toEqual(['no-instrument']);
   });
 });
+
+describe('SPLIT-IMPORT: the import plan counts a share split', () => {
+  it('SPLIT-IMPORT-A sells the new units after a split, and refuses them without it', () => {
+    const buy = op({ id: '120000001', quantity: '3', payment: '-300' });
+    const sale = op({
+      id: '120000002',
+      type: 'OPERATION_TYPE_SELL',
+      occurredAt: '2026-04-29T10:00:00Z',
+      quantity: '25',
+      payment: '250',
+    });
+    const split = { uid: share, effectiveAt: '2026-04-16T21:00:00.000Z', ratio: 10n };
+    expect(planImport([buy, sale], { splits: [split] }).skipped).toEqual([]);
+    expect(planImport([buy, sale]).skipped).toMatchObject([{ reason: 'not-held' }]);
+  });
+});
