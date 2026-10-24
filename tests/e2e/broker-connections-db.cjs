@@ -1026,7 +1026,8 @@ async function importing(db, service, imports, tbank, owner, other) {
   const inherited = await imports.preview(owner, splitSecond);
   assert.deepEqual(inherited.problems, []);
   assert.equal(inherited.canImport, true);
-  await rejected(() => imports.preview(owner, splitSecond, { splits }), 400);
+  // Declaring a split already saved conflicts with the saved state.
+  await rejected(() => imports.preview(owner, splitSecond, { splits }), 409);
   // Nor does an account that holds it on another venue: another UID, the same asset.
   const splitVenueUid = '10000000-0000-4000-8000-00000000c102';
   const splitVenue = await account(db, owner, 'broker');
