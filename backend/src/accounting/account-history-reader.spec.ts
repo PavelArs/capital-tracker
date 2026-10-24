@@ -215,3 +215,19 @@ it('DASH-CURRENCY-PERF respects exact operation, chain and coverage boundaries, 
     expect(read(at)).toEqual(accountsAt(inputs, at, { emptyBeforeCoverage: true }));
   }
 });
+
+it('SPLIT-HISTORY invalidates cached holdings at a share split boundary', () => {
+  const split = '2025-01-20T21:00:00.000Z';
+  const splitLedger = {
+    ...ledger,
+    splits: [{ splitId: 'split', instrumentId: 'usd', effectiveAt: split, ratio: 10 }],
+  } as unknown as ConnectedLedger;
+  const splitInputs: ValuationInputs = { ...inputs, ledgers: new Map([['wallet', splitLedger]]) };
+  const read = accountHistoryReader(splitInputs);
+  const before = read('2025-01-15T00:00:00.000Z');
+  const after = read('2025-01-25T00:00:00.000Z');
+  expect(after).toEqual(
+    accountsAt(splitInputs, '2025-01-25T00:00:00.000Z', { emptyBeforeCoverage: true }),
+  );
+  expect(after).not.toEqual(before);
+});

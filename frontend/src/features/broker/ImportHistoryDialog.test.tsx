@@ -255,3 +255,42 @@ it('BROKER-OPENING previews declared earlier holdings and submits them with one 
   expect(write).toHaveBeenCalledWith(ACCOUNT, expect.any(String), HASH, opening);
   expect(write).toHaveBeenCalledTimes(1);
 });
+
+it('SPLIT-IMPORT-UI previews a declared share split and submits it with the import command', async () => {
+  const share = '10000000-0000-4000-8000-0000000000a1';
+  const assets = [
+    { asset: 'cash:RUB', label: 'RUB cash', currency: 'rub' },
+    { asset: share, label: 'SYNTH', currency: 'rub' },
+  ];
+  const blocked = preview({
+    canImport: false,
+    openingAssets: assets,
+    problems: [{ reason: 'opening-holding', occurredAt: null, ticker: 'SYNTH', operationIds: [] }],
+  });
+  const read = vi
+    .spyOn(brokersApi, 'importPreview')
+    .mockResolvedValueOnce(blocked)
+    .mockResolvedValue(preview({ openingAssets: assets }));
+  const write = vi.spyOn(brokersApi, 'importHistory').mockResolvedValue(receipt);
+  const user = userEvent.setup();
+  open();
+  await user.click(await screen.findByRole('button', { name: 'Record a share split' }));
+  const form = screen.getByRole('form', { name: 'Share split' });
+  // Only securities split, so cash is not offered.
+  expect(
+    within(within(form).getByLabelText('Security'))
+      .getAllByRole('option')
+      .map((o) => o.textContent),
+  ).toEqual(['SYNTH']);
+  fireEvent.change(within(form).getByLabelText('Effective from (Moscow)'), {
+    target: { value: '2026-04-17' },
+  });
+  await user.clear(within(form).getByLabelText('New shares for each old one'));
+  await user.type(within(form).getByLabelText('New shares for each old one'), '10');
+  await user.click(within(form).getByRole('button', { name: 'Review split' }));
+  await screen.findByText(/also save a 1:10 split of SYNTH from Apr 17, 2026/);
+  const splits = [{ asset: share, effectiveAt: '2026-04-17T00:00:00+03:00', ratio: 10 }];
+  expect(read).toHaveBeenLastCalledWith(ACCOUNT, undefined, splits);
+  await user.click(screen.getByRole('button', { name: 'Import 4 entries' }));
+  expect(write).toHaveBeenCalledWith(ACCOUNT, expect.any(String), HASH, undefined, splits);
+});

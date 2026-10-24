@@ -4,6 +4,7 @@ import {
   type TBankImportProblem,
   type TBankOpening,
   type TBankPlanEntry,
+  type TBankSplit,
 } from '@api/brokers.api';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useToast } from '@/contexts/ToastContext';
@@ -15,6 +16,7 @@ import { dayText, moscowDate } from '@/utils/dates';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import BrokerOpeningForm from './BrokerOpeningForm';
+import BrokerSplitForm from './BrokerSplitForm';
 import { plural } from './brokers';
 import './broker.css';
 
@@ -115,6 +117,14 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
   const [preview, setPreview] = useState<TBankImportPreview | null>(null);
   const opening = useRef<TBankOpening | undefined>(undefined);
   const [editingOpening, setEditingOpening] = useState(false);
+  const split = useRef<TBankSplit | undefined>(undefined);
+  const [editingSplit, setEditingSplit] = useState(false);
+  // What the owner declared, in the API's argument order.
+  const declared = useCallback(
+    (): [TBankOpening?, TBankSplit[]?] =>
+      split.current ? [opening.current, [split.current]] : opening.current ? [opening.current] : [],
+    [],
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,11 +134,11 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
 
   const load = useCallback(() => {
     setLoadError(null);
-    brokersApi.importPreview(accountId, ...(opening.current ? [opening.current] : [])).then(
+    brokersApi.importPreview(accountId, ...declared()).then(
       (next) => live.current && setPreview(next),
       (caught) => live.current && setLoadError(loadFailure(caught)),
     );
-  }, [accountId]);
+  }, [accountId, declared]);
   useEffect(() => {
     live.current = true;
     load();
@@ -141,7 +151,11 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
     setBusy(true);
     setError(null);
     try {
-      const next = await brokersApi.importPreview(accountId, value);
+      const next = await brokersApi.importPreview(
+        accountId,
+        value,
+        ...(split.current ? [[split.current]] : []),
+      );
       if (!live.current) return;
       opening.current = value;
       setPreview(next);
@@ -163,6 +177,32 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
     }
   };
 
+  const reviewSplit = async (value: TBankSplit) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await brokersApi.importPreview(accountId, opening.current, [value]);
+      if (!live.current) return;
+      split.current = value;
+      setPreview(next);
+      setEditingSplit(false);
+    } catch (caught) {
+      if (live.current)
+        setError(
+          requestFailure(caught, {
+            unreachable: 'Could not reach the server.',
+            status: {
+              400: 'Check the split: a security of this history, its date, and a whole number of new shares from 2.',
+              409: 'The account changed. Close this window and reload.',
+            },
+            fallback: 'Could not review the split.',
+          }),
+        );
+    } finally {
+      if (live.current) setBusy(false);
+    }
+  };
+
   const confirm = async () => {
     if (!preview?.canImport || busy) return;
     const hash = preview.previewHash;
@@ -174,7 +214,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
         accountId,
         requests.current.get(hash) as string,
         hash,
-        ...(opening.current ? [opening.current] : []),
+        ...declared(),
       );
       toast.show({
         tone: 'success',
@@ -313,11 +353,26 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
         {preview &&
           !preview.accountHasEntries &&
           (preview.openingAssets?.length ?? 0) > 0 &&
-          !editingOpening && (
+          !editingOpening &&
+          !editingSplit && (
             <div className="ui-toolbar">
               <Button size="sm" disabled={busy} onClick={() => setEditingOpening(true)}>
                 {opening.current ? 'Edit opening holdings' : 'Record earlier holdings'}
               </Button>
+              {preview.openingAssets?.some((asset) => !asset.asset.startsWith('cash:')) && (
+                <Button size="sm" disabled={busy} onClick={() => setEditingSplit(true)}>
+                  {split.current ? 'Edit share split' : 'Record a share split'}
+                </Button>
+              )}
+              {split.current && (
+                <Banner tone="info">
+                  The final import will also save a 1:{split.current.ratio} split of{' '}
+                  {preview.openingAssets?.find((asset) => asset.asset === split.current?.asset)
+                    ?.label ?? 'this security'}{' '}
+                  from {dayText(moscowDate(split.current.effectiveAt))}, for every account that
+                  holds it.
+                </Banner>
+              )}
               {opening.current && (
                 <Banner tone="info">
                   The final import will also save {opening.current.lots.length} opening lot(s) with
@@ -335,6 +390,15 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
             onCancel={() => setEditingOpening(false)}
           />
         )}
+        {editingSplit && preview?.openingAssets && (
+          <BrokerSplitForm
+            assets={preview.openingAssets}
+            initial={split.current}
+            busy={busy}
+            onReview={reviewSplit}
+            onCancel={() => setEditingSplit(false)}
+          />
+        )}
         {error && <Banner tone="neg">{error}</Banner>}
       </ModalBody>
       <ModalFooter>
@@ -346,7 +410,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
           <Button
             variant="primary"
             busy={busy}
-            disabled={!preview.canImport || editingOpening}
+            disabled={!preview.canImport || editingOpening || editingSplit}
             onClick={() => void confirm()}
           >
             {busy ? 'Importing…' : `Import ${count === 1 ? '1 entry' : `${count} entries`}`}
