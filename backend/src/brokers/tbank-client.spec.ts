@@ -73,6 +73,15 @@ it('BROKER-POSITION-ID preserves documented position UUIDs and rejects malformed
   ).toBeUndefined();
 });
 
+it("BROKER-VENUE-TICKER reads a ticker on T-Bank's own venue (TITR@) as the fund's ticker", () => {
+  // As T-Bank answered for a real fund sold on its SPBRU venue: ticker "TITR@".
+  expect(parseOperationsPage({ items: [item({ ticker: 'TITR@' })] }).operations[0].ticker).toBe(
+    'TITR',
+  );
+  for (const ticker of ['@', 'TITR@@', 'TI@TR', '@TITR'])
+    expect(parseOperationsPage({ items: [item({ ticker })] }).operations[0].ticker).toBe('');
+});
+
 it('BROKER-ASSET-ID keeps the documented asset UUID of an operation and rejects malformed ones', () => {
   const assetUid = 'A0C7E33E-0000-4000-8000-000000000001';
   expect(parseOperationsPage({ items: [item({ assetUid })] }).operations[0].assetUid).toBe(
