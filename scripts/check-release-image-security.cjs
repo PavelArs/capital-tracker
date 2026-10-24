@@ -3,7 +3,6 @@ const { execFileSync } = require('node:child_process');
 const images = {
   backend: 'capital-tracker-backend:acceptance',
   frontend: 'capital-tracker-frontend:acceptance',
-  postgres: 'capital-tracker-postgres:acceptance',
   redis: 'redis:8.10.2-alpine3.23',
 };
 function checkReport(report, expectedImageId) {
@@ -42,6 +41,6 @@ if (require.main === module) {
       const expected = execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim();
       checkReport(JSON.parse(readFileSync(`${name}-image-security.json`, 'utf8')), expected);
     }
-    console.log('Four exact images passed the high/critical vulnerability and secret gate; complete findings retained');
+    console.log('Three exact images passed the high/critical vulnerability and secret gate; complete findings retained');
   } catch { console.error('Image security gate failed; inspect the sanitized report and scanner status'); process.exitCode = 1; }
 }

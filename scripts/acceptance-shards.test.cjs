@@ -102,7 +102,8 @@ const legacyCritical = [
   'browser:critical',
 ];
 const legacyRun = [
-  'build:backend,frontend,postgres',
+  'verify-postgres-pin',
+  'build:backend,frontend',
   'fixture-ownership',
   'infrastructure-up',
   ...legacyChecks.map((name) => `check:${name}`),

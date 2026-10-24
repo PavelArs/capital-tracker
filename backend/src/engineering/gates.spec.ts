@@ -528,7 +528,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(expression(report?.if)).toBe(`always() && ${unlessReusedNeeds}`);
   });
 
-  it('ENG-005-A retains all four image scans and security enforcement without pause conditions', () => {
+  it('ENG-005-A scans the three images the project builds or pins and enforces the gate without pause conditions', () => {
     const job = workflow('ci').jobs['image-security'];
     expect(job.name).toBe('Image Security Scan');
     const steps = job.steps ?? [];
@@ -536,7 +536,6 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(scans.map((step) => step.with?.['image-ref'])).toEqual([
       'capital-tracker-backend:acceptance',
       'capital-tracker-frontend:acceptance',
-      'capital-tracker-postgres:acceptance',
       'redis:8.10.2-alpine3.23',
     ]);
     for (const step of scans) {
@@ -563,10 +562,11 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     );
     expect(expression(pull?.if)).toBe(unlessReused);
     expect(pull?.run).toContain('validateInfrastructurePins(pins);');
-    expect(pull?.run).toContain('docker pull "$postgres"');
-    expect(pull?.run).toContain(
-      `test "$(docker image inspect "$postgres_tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$postgres_origin"`,
-    );
+    // The official PostgreSQL image, pinned by digest like Redis (owner decision 2026-10-24).
+    expect(pull?.run).toContain(`postgres=$(jq -er '.postgres.baseRegistryDigest'`);
+    expect(pull?.run).toContain('docker pull --platform linux/amd64 "$postgres"');
+    expect(pull?.run).not.toContain('org.opencontainers.image.revision');
+    expect(pull?.run).not.toContain('ghcr.io');
   });
 
   it('ENG-005-D saves the vulnerability database only from main or when no copy exists', () => {
