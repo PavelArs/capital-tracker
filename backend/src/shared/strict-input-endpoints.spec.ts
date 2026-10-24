@@ -4,13 +4,17 @@ import { parseSwapVoid } from '../accounting/asset-swap-input';
 import { parseCarryInLotsQuery } from '../accounting/carry-in-input';
 import { parseRemoval } from '../accounting/chain-classification';
 import { parseCsvRollback } from '../accounting/csv-input';
+import { parseHistoricalQuery } from '../accounting/historical-accounting-input';
+import { parseValuationQuery } from '../accounting/historical-valuation-input';
 import { parseListQuery } from '../accounting/input';
 import { parseTwrBoundaryQuery } from '../accounting/linked-twr-input';
 import { parseManualPortfolioRequest } from '../accounting/manual-portfolio-valuation-input';
 import { parsePriceVoid } from '../accounting/manual-price-input';
 import { parseTransferVoid } from '../accounting/owned-transfer-input';
+import { parseProfitPreview } from '../accounting/period-profit';
 import { parseFlowVoid } from '../accounting/portfolio-flow-input';
 import { parseTradeVoid } from '../accounting/trade-input';
+import { parseValuationHistoryQuery } from '../accounting/valuation-history-input';
 import { parseCheck as parseBrokerCheck } from '../brokers/broker-connection-input';
 import { parseBrokerOpening } from '../brokers/broker-opening';
 import { parseRateChange } from '../deposits/deposit-input';
@@ -139,6 +143,36 @@ const cases: Case[] = [
     valid: { tickers: ['BTC'], visibility: 'hidden' },
     required: 'visibility',
   },
+  {
+    name: 'accounting/valuation-history-input parseValuationHistoryQuery',
+    parse: parseValuationHistoryQuery,
+    valid: { from: '2024-02-20T00:00:00Z', to: at },
+    required: 'to',
+  },
+  {
+    name: 'accounting/historical-accounting-input parseHistoricalQuery',
+    parse: parseHistoricalQuery,
+    valid: { at },
+    required: 'at',
+  },
+  {
+    name: 'accounting/historical-valuation-input parseValuationQuery',
+    parse: parseValuationQuery,
+    valid: { at },
+    required: 'at',
+  },
+  {
+    name: 'accounting/period-profit parseProfitPreview',
+    parse: parseProfitPreview,
+    valid: {
+      from: '2024-01-01T00:00:00Z',
+      to: at,
+      openingValueUsd: '100',
+      closingValueUsd: '110',
+      assertReviewed: true,
+    },
+    required: 'assertReviewed',
+  },
 ];
 
 const rejects = (parse: Case['parse'], raw: unknown) =>
@@ -155,11 +189,11 @@ describe.each(cases)('INPUT-STRICT-BODY: $name', ({ parse, valid, required }) =>
 
   it('rejects an unknown key', () => rejects(parse, { ...valid, unexpected: 1 }));
 
-  it('rejects a missing required key', () => {
-    if (required === null) return;
-    const { [required]: _, ...rest } = valid;
-    rejects(parse, rest);
-  });
+  if (required !== null)
+    it('rejects a missing required key', () => {
+      const { [required]: _, ...rest } = valid;
+      rejects(parse, rest);
+    });
 
   it('rejects an array', () => rejects(parse, [valid]));
 
