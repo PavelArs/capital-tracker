@@ -167,6 +167,12 @@ esac`,
     expect(env).toContain(`RELEASE_POSTGRES=${digest('postgres', 'd')}\n`);
   });
 
+  it('RVR-001-B refuses resume-fresh: it would release the derived PostgreSQL image CI no longer tests', () => {
+    const { result, calls } = promote('resume-fresh');
+    expect(result.status).not.toBe(0);
+    expect(calls.filter((call) => /^(tag|push|login) /.test(call))).toEqual([]);
+  });
+
   it('RVR-001-B refuses a malformed version before publishing anything', () => {
     const { result, calls } = promote('existing', 'latest');
     expect(result.status).not.toBe(0);

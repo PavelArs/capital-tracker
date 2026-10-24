@@ -203,7 +203,8 @@ backend, frontend and Redis images only. The pin's `registryDigest`, Dockerfile 
 image, which the dispatcher and the resume helper still check. A release promotes the tested
 PostgreSQL image, so new receipts and fresh installations carry the official image; an existing
 installation keeps the PostgreSQL container it runs, since a release never changes
-infrastructure images. CI saves the main build in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
+infrastructure images. `resume-fresh` is retired: it would release that derived image, which CI
+no longer tests, so the promotion step refuses it. CI saves the main build in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
 current main commit, requires its build, merged pull request check and aggregate to have succeeded, validates the manifest,
 loads and verifies the image IDs, and publishes those same outputs to existing GHCR.
 No deployment rebuild or mutable latest promotion is used. Private server receipts record
