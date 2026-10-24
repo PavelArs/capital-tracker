@@ -317,7 +317,10 @@ export function calculateOwnedTransfers(
     if (at !== undefined && event.occurredAt > at) break;
     if (event.kind === 'split') {
       const split = splits[event.index];
-      for (const book of books.values()) book.applySplit(split.instrumentId, BigInt(split.ratio));
+      // An account whose history starts at or after the split holds new units already.
+      for (const [id, book] of books)
+        if (byAccount.get(id)!.coverageFrom < split.effectiveAt)
+          book.applySplit(split.instrumentId, BigInt(split.ratio));
       continue;
     }
     if (event.kind === 'trade') {

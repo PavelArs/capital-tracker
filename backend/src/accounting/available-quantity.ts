@@ -180,6 +180,7 @@ export function availableQuantity(
     const future = movement.occurredAt > at;
     if (future) lowest ??= balance;
     if (movement.split?.instrumentId === instrumentId) {
+      if (account.coverageFrom >= movement.occurredAt) continue;
       balance *= movement.split.ratio;
       if (future) later *= movement.split.ratio;
       continue;
@@ -199,9 +200,15 @@ export function firstShortfall(ledger: LedgerView): Shortfall | null {
   const balances = new Map<string, bigint>();
   for (const movement of movements(ledger)) {
     if (movement.split) {
-      for (const [key, balance] of balances)
-        if (key.endsWith(`:${movement.split.instrumentId}`))
+      for (const [key, balance] of balances) {
+        const [accountId, instrumentId] = key.split(':');
+        // An account whose history starts at or after the split holds new units already.
+        if (
+          instrumentId === movement.split.instrumentId &&
+          ledger.accounts.get(accountId)!.coverageFrom < movement.occurredAt
+        )
           balances.set(key, balance * movement.split.ratio);
+      }
       continue;
     }
     for (const [accountId, instrumentId, atoms] of movement.deltas) {

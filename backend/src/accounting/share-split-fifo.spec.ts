@@ -122,6 +122,33 @@ describe('SPLIT-FIFO: a share split multiplies the units held and keeps their co
     expect(held(after.accounts.get(a)!.lots)).toEqual([['20', '200']]);
   });
 
+  it('SPLIT-FIFO-G leaves an account whose history starts after the split: its lots are already new units', () => {
+    const lot = {
+      lotId: id(50),
+      openingRevision: 1,
+      ordinal: 1,
+      instrumentId: share,
+      instrumentName: 'Synthetic share',
+      instrumentSymbol: 'SYNS',
+      acquiredAt: at(18),
+      orderWithinTimestamp: 0,
+      originalQuantity: '20',
+      originalCostUsd: '200',
+      carriedQuantity: '20',
+    };
+    const result = calculateOwnedTransfers(
+      [
+        { accountId: a, coverageFrom: at(18), initialLots: [lot], trades: [] },
+        account(b, [trade(1, 'buy', '1', '100', 2)]),
+      ],
+      [],
+      undefined,
+      [split(17)],
+    );
+    expect(held(result.accounts.get(a)!.lots)).toEqual([['20', '200']]);
+    expect(held(result.accounts.get(b)!.lots)).toEqual([['10', '100']]);
+  });
+
   it('SPLIT-FIFO-F refuses a ratio that is not a whole number of new shares above one', () => {
     for (const ratio of [0, 1, -10, 2.5, Number.NaN, 1_000_001])
       expect(() =>
