@@ -29,6 +29,8 @@ import {
   calculateOwnedTransfers,
   OwnedTransferCapacityError,
 } from '../accounting/owned-transfer-fifo';
+import { readSplits } from '../accounting/share-split.store';
+import type { FifoSplit } from '../accounting/share-split-types';
 import { findOrCreateInstrument } from '../accounting/trade.service';
 import {
   AUTOMATIC_COVERAGE_FROM,
@@ -45,6 +47,7 @@ import { BrokerConnectionsService } from './broker-connections.service';
 import { instrumentFacts, resolveLinks, type SavedLink } from './broker-instrument-links';
 import {
   type BrokerOpening,
+  type BrokerSplit,
   cashPositionCurrency,
   openingAssets,
   openingPositions,
@@ -83,6 +86,8 @@ export interface ImportProblem {
 }
 
 interface Review {
+  /** Splits declared with this import, by their accounting instrument, to save with it. */
+  declaredSplits: { instrumentId: string; effectiveAt: string; ratio: number }[];
   openingLots: FifoCarryInInput[];
   openingPositions: ReturnType<typeof openingPositions>;
   plan: ImportPlan;
@@ -156,14 +161,14 @@ export class BrokerImportService {
 
   /** The entries the history would become and whether they can be written. Nothing is recorded. */
   async preview(ownerId: string, accountId: string, raw: unknown = {}) {
-    const { opening } = parseImportPreview(raw);
+    const { opening, splits } = parseImportPreview(raw);
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
     const history = await this.connections.history(owner, account, true);
     return this.source
       .transaction('REPEATABLE READ', async (manager) => {
         await manager.query('SET TRANSACTION READ ONLY');
-        const review = await this.review(manager, owner, account, history, false, opening);
+        const review = await this.review(manager, owner, account, history, false, opening, splits);
         return {
           ...review.plan,
           skipped: review.plan.skipped.map((item) => {
@@ -195,6 +200,7 @@ export class BrokerImportService {
       provider: 'tbank',
       previewHash: input.previewHash,
       ...(input.opening ? { opening: input.opening } : {}),
+      ...(input.splits ? { splits: input.splits } : {}),
     });
     const earlier = await this.replay(this.source.manager, owner, account, input.requestId);
     if (earlier) return this.replayed(earlier, payload);
@@ -205,8 +211,32 @@ export class BrokerImportService {
         const again = await this.replay(manager, owner, account, input.requestId);
         if (again) return this.replayed(again, payload);
         const row = await readOwnedAccount(manager, owner, account, true);
-        const review = await this.review(manager, owner, account, history, true, input.opening);
+        const review = await this.review(
+          manager,
+          owner,
+          account,
+          history,
+          true,
+          input.opening,
+          input.splits,
+        );
         if (!review.canImport || review.previewHash !== input.previewHash) throw conflict();
+        // SPLIT: the declared splits hold for every account of the owner, from this import on.
+        for (const split of review.declaredSplits)
+          await manager.query(
+            `INSERT INTO instrument_splits
+              (id, "ownerId", "instrumentId", "effectiveAt", ratio, "requestId", "canonicalPayload")
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              randomUUID(),
+              owner,
+              split.instrumentId,
+              split.effectiveAt,
+              split.ratio,
+              randomUUID(),
+              JSON.stringify({ importRequestId: input.requestId, ...split }),
+            ],
+          );
         if (input.opening) {
           const opening = await this.accounting.saveOpeningWithin(manager, owner, account, {
             requestId: input.requestId,
@@ -390,19 +420,33 @@ export class BrokerImportService {
     },
     write: boolean,
     opening?: BrokerOpening,
+    splits: readonly BrokerSplit[] = [],
   ): Promise<Review> {
     // UIDs whose instrument this command created; a second plan finds them saved, but the preview
     // named them as new.
     const created = new Set<string>();
+    // Splits saved for securities linked by earlier imports, and those declared now.
+    const planSplits = [
+      ...(await readLinkedSplits(manager, owner)),
+      ...splits.map((split) => ({
+        uid: split.asset,
+        effectiveAt: split.effectiveAt,
+        ratio: BigInt(split.ratio),
+      })),
+    ];
     const review = await this.reviewPlan(
       manager,
       owner,
       account,
       history,
       write,
-      planImport(history.operations, { initialHoldings: openingQuantities(opening) }),
+      planImport(history.operations, {
+        initialHoldings: openingQuantities(opening),
+        splits: planSplits,
+      }),
       created,
       opening,
+      splits,
     );
     if (!review.problems.some((problem) => problem.reason === 'not-held')) return review;
     // The planner places a buy ahead of a same-instant sale of its security, so the buy may spend
@@ -414,9 +458,14 @@ export class BrokerImportService {
       account,
       history,
       write,
-      planImport(history.operations, { hoist: false, initialHoldings: openingQuantities(opening) }),
+      planImport(history.operations, {
+        hoist: false,
+        initialHoldings: openingQuantities(opening),
+        splits: planSplits,
+      }),
       created,
       opening,
+      splits,
     );
     return unhoisted.problems.length === 0 ? unhoisted : review;
   }
@@ -434,6 +483,7 @@ export class BrokerImportService {
     plan: ImportPlan,
     created: Set<string>,
     opening?: BrokerOpening,
+    splits: readonly BrokerSplit[] = [],
   ): Promise<Review> {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
     const problems: ImportProblem[] = [];
@@ -464,6 +514,8 @@ export class BrokerImportService {
     const available = openingAssets(history.operations, history.positions);
     if (opening?.lots.some((lot) => !available.some((asset) => asset.asset === lot.asset)))
       throw new BadRequestException('An opening holding is not in this broker history');
+    if (splits.some((split) => !available.some((asset) => asset.asset === split.asset)))
+      throw new BadRequestException('A split security is not in this broker history');
     const instruments = await this.instruments(
       manager,
       owner,
@@ -474,6 +526,25 @@ export class BrokerImportService {
       available,
       [...history.operations, ...(history.positions ?? []).filter((row) => !row.virtual)],
     );
+    // SPLIT: the owner's saved splits and those declared now replay with the history; a declared
+    // one already saved for the security on that instant is not a second split.
+    const saved = await readSplits(manager, owner);
+    const declaredSplits = splits.map((split) => {
+      const instrument = instruments.securities.get(split.asset);
+      if (!instrument)
+        throw new BadRequestException('A split security is not in this broker history');
+      if (
+        saved.some(
+          (row) => row.instrumentId === instrument.id && row.effectiveAt === split.effectiveAt,
+        )
+      )
+        throw new BadRequestException('This split is already recorded');
+      return { instrumentId: instrument.id, effectiveAt: split.effectiveAt, ratio: split.ratio };
+    });
+    const replaySplits: FifoSplit[] = [
+      ...saved,
+      ...declaredSplits.map((split, index) => ({ splitId: `declared-${index}`, ...split })),
+    ];
     const openingLots = (opening?.lots ?? []).map((lot, index): FifoCarryInInput => {
       const instrument = lot.asset.startsWith('cash:')
         ? instruments.cash[lot.asset.slice(5) as CashCurrency]
@@ -547,7 +618,12 @@ export class BrokerImportService {
         initialLots: openingLots,
       };
       try {
-        const result = calculateOwnedTransfers([replayed], []).accounts.get(account)!;
+        const result = calculateOwnedTransfers(
+          [replayed],
+          [],
+          undefined,
+          replaySplits,
+        ).accounts.get(account)!;
         // Both directions, including cash: opening lots cannot invent a current balance.
         const actual = new Map<string, bigint>();
         for (const lot of result.lots)
@@ -604,6 +680,7 @@ export class BrokerImportService {
         const shortfall = firstShortfall({
           accounts: new Map([[account, replayed]]),
           transfers: [],
+          splits: replaySplits,
         });
         const id = shortfall?.operationId.replace(/^(trade|reward|capital-return):/, '');
         const entry = entries.find(
@@ -661,6 +738,7 @@ export class BrokerImportService {
         JSON.stringify([
           'tbank-import-v4',
           opening ?? null,
+          splits,
           history.operations
             .map((operation) => [
               operation.id,
@@ -693,6 +771,7 @@ export class BrokerImportService {
       )
       .digest('hex');
     return {
+      declaredSplits,
       openingLots,
       openingPositions: positions,
       plan: { ...plan, fitsRewardLimit, fitsCapitalReturnLimit },
@@ -881,4 +960,25 @@ function problemOf(reason: ImportProblem['reason'], entry: JournalEntry): Import
     ticker: entry.source.ticker,
     operationIds: entry.source.operationIds,
   };
+}
+
+/** Saved splits of the securities earlier imports linked, by their T-Bank UID, for the planner. */
+async function readLinkedSplits(
+  manager: EntityManager,
+  owner: string,
+): Promise<{ uid: string; effectiveAt: string; ratio: bigint }[]> {
+  const rows: { uid: string; effectiveAt: Date; ratio: number }[] = await manager.query(
+    `SELECT l."providerInstrumentId" AS uid, s."effectiveAt", s.ratio
+      FROM instrument_splits s
+      JOIN broker_instrument_links l
+        ON l."ownerId" = s."ownerId" AND l."instrumentId" = s."instrumentId" AND l.provider = 'tbank'
+      WHERE s."ownerId" = $1 AND s."removedAt" IS NULL
+      ORDER BY s."effectiveAt", l."providerInstrumentId"`,
+    [owner],
+  );
+  return rows.map((row) => ({
+    uid: row.uid,
+    effectiveAt: row.effectiveAt.toISOString(),
+    ratio: BigInt(row.ratio),
+  }));
 }

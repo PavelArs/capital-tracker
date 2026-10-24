@@ -989,6 +989,45 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${cardAccount}'`), 3);
   console.log('PASS BROKER-CARD PostgreSQL card buy paid from the money paid in, card sale off broker cash');
 
+  stage = 'SPLIT-IMPORT: a declared share split lets the new units be sold, and holds for every account';
+  const splitUid = '10000000-0000-4000-8000-00000000c101';
+  const splitShare = (over) => ({ instrumentUid: splitUid, instrumentType: 'share', ticker: 'SYNTHSPLIT', ...over });
+  const splitAt = '2024-03-09T21:00:00.000Z';
+  const splitAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, splitAccount);
+  history = [
+    operation('1300000001', 'INPUT', '300'),
+    operation('1300000002', 'BUY', '-300', splitShare({ quantity: '3' })),
+    operation('1300000003', 'SELL', '250', splitShare({ occurredAt: '2024-03-15T08:00:00Z', quantity: '25' })),
+  ];
+  tbank.positions = [heldPosition(splitUid, '5')];
+  tbank.cash = [['RUB', '250']];
+  const unsplit = await imports.preview(owner, splitAccount);
+  assert.equal(unsplit.canImport, false, 'Without the split, 25 shares were never held');
+  const splits = [{ asset: splitUid, effectiveAt: splitAt, ratio: 10 }];
+  const declared = await imports.preview(owner, splitAccount, { splits });
+  assert.deepEqual(declared.problems, []);
+  assert.equal(declared.canImport, true);
+  await rejected(() => imports.import(owner, splitAccount, { requestId: randomUUID(), previewHash: declared.previewHash }), 409);
+  assert.equal(await count('instrument_splits'), 0, 'A preview with the split does not match an import without it');
+  await imports.import(owner, splitAccount, { requestId: randomUUID(), previewHash: declared.previewHash, splits });
+  const [splitLink] = await db.query(
+    `SELECT "instrumentId" FROM broker_instrument_links WHERE "ownerId" = $1 AND "providerInstrumentId" = $2`,
+    [owner, splitUid],
+  );
+  const [saved] = await db.query(`SELECT "instrumentId", "effectiveAt", ratio FROM instrument_splits WHERE "ownerId" = $1`, [owner]);
+  assert.deepEqual([saved.instrumentId, saved.effectiveAt.toISOString(), saved.ratio], [splitLink.instrumentId, splitAt, 10]);
+  assert.equal((await trades.available(owner, splitAccount, { instrumentId: splitLink.instrumentId, at: atEnd })).quantity, '5');
+  // A second account of the same security sells new units too, with no split declared again.
+  const splitSecond = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, splitSecond);
+  history = history.map((row, index) => ({ ...row, id: String(1300000101 + index) }));
+  const inherited = await imports.preview(owner, splitSecond);
+  assert.deepEqual(inherited.problems, []);
+  assert.equal(inherited.canImport, true);
+  await rejected(() => imports.preview(owner, splitSecond, { splits }), 400);
+  console.log('PASS SPLIT-IMPORT PostgreSQL declared split saved with the import, replayed for every account');
+
   stage = 'BROKER-OPENING: explicit owner quantities and exact costs cover pre-history holdings';
   const openingAccount = await account(db, owner, 'broker');
   await takeOver(db, service, owner, openingAccount);
