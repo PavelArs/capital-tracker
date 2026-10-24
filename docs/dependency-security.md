@@ -184,6 +184,25 @@ advisories or treat an unavailable registry as a clean result.
 React/React DOM remain 18.3.1; the Vite major remains 7. This change does not require
 a React, Router, Nest or TypeORM major migration.
 
+## 2026-10-24: body-parser and multer advisories
+
+`pnpm audit:production` failed on two new high advisories in the backend HTTP stack:
+body-parser `<2.4.0` ([GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828),
+via `@nestjs/platform-express > express`) and multer `<2.5.0`
+([GHSA-q7qp-rjg7-q26m](https://github.com/advisories/GHSA-q7qp-rjg7-q26m), via
+`@nestjs/platform-express`). Express's `^2.2.1` range takes body-parser **2.4.0** (with qs
+**6.16.1**) through `pnpm update -r -P --depth 99 body-parser`. Nest 12.1.3, and also the
+latest 12.2.0, pins multer exactly at 2.4.0, so one parent-scoped override in
+`pnpm-workspace.yaml` supplies the fixed release in the same major:
+
+```yaml
+overrides:
+  '@nestjs/platform-express@12.1.3>multer': 2.5.0
+```
+
+Remove it when an adopted Nest release supplies multer 2.5.0 or later. The three moderate
+findings below are unchanged.
+
 Two exact parent-scoped overrides are necessary because upstream pins older
 children:
 
