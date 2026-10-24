@@ -338,7 +338,8 @@ function executedShape(item: Record<string, unknown>, state: TBankOperationState
     ...positionReference(item.positionUid),
     ...uidReference('assetUid', item.assetUid),
     instrumentType: text(item.instrumentType, /^[a-z_]{1,40}$/),
-    ticker: text(item.ticker, /^[0-9A-Za-z._-]{1,32}$/),
+    // T-Bank's own venue (SPBRU) marks a ticker with a trailing @ (TITR@): the same fund's ticker.
+    ticker: text(item.ticker, /^[0-9A-Za-z._-]{1,32}@?$/).replace(/@$/, ''),
     quantity: movedQuantity(item),
     payment: payment.amount,
     paymentCurrency: payment.currency,
