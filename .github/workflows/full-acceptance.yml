@@ -58,8 +58,9 @@ jobs:
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
-  # The browser files are split over four runners (Playwright `--shard`); runner 1 also runs the
-  # containerized probes. Every runner has its own synthetic stack, so the slices do not share state.
+  # The browser files are split over four runners (Playwright `--shard`), and the containerized
+  # probes are dealt out among them in turn. Every runner has its own synthetic stack, so the
+  # slices do not share state.
   acceptance-shard:
     name: Acceptance shard ${{ matrix.index }}
     needs: new-commits

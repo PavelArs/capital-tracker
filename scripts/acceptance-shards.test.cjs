@@ -604,21 +604,25 @@ test('ENG-008-A full acceptance shard value is exactly "i/n" with i within n', (
   }
 });
 
-test('ENG-008-B only the first full acceptance shard runs the containerized probes', () => {
+test('ENG-008-B the full acceptance shards split the containerized probes between them', () => {
   const steps = shards.plan('run');
-  assert.ok(steps.some((step) => step.startsWith('check:')));
-  const first = shards.fullShardPlan(steps, shards.parseFullShard('1/4'));
-  assert.deepEqual(first, steps);
-  for (const index of [2, 3, 4]) {
-    const other = shards.fullShardPlan(steps, shards.parseFullShard(`${index}/4`));
-    assert.equal(
-      other.some((step) => step.startsWith('check:')),
-      false,
-    );
+  const checks = steps.filter((step) => step.startsWith('check:'));
+  assert.ok(checks.length >= 4);
+  const parts = [1, 2, 3, 4].map((index) =>
+    shards.fullShardPlan(steps, shards.parseFullShard(`${index}/4`)),
+  );
+  // Every probe runs exactly once over the four runners, in the planned order.
+  const ran = parts.flatMap((part) => part.filter((step) => step.startsWith('check:')));
+  assert.deepEqual([...ran].sort(), [...checks].sort());
+  for (const part of parts) {
+    const own = part.filter((step) => step.startsWith('check:'));
+    assert.ok(Math.abs(own.length - checks.length / 4) < 1, 'probes are spread evenly');
+    assert.deepEqual(own, checks.filter((step) => own.includes(step)));
+    // Each runner keeps every non-probe step, so each still runs its browser slice.
     assert.deepEqual(
-      other,
+      part.filter((step) => !step.startsWith('check:')),
       steps.filter((step) => !step.startsWith('check:')),
     );
-    assert.ok(other.includes('browser:full'));
+    assert.ok(part.includes('browser:full'));
   }
 });
