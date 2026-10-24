@@ -408,7 +408,7 @@ describe('Bybit client', () => {
     expect(requests[1].url.search).toContain('&cursor=132766%3A2%2C132766%3A2');
   });
 
-  it('reads the unified trading account from its wallet balance; a debt holds nothing', () => {
+  it('BYBIT-DEBT: reads the unified trading account from its wallet balance; a margin debt stays negative', () => {
     const usdt = { coin: 'USDT', walletBalance: '250', equity: '250', locked: '0' };
     expect(
       parseWalletBalance({
@@ -425,7 +425,7 @@ describe('Bybit client', () => {
       }),
     ).toEqual([
       { coin: 'USDT', quantity: '250' },
-      { coin: 'BTC', quantity: '0' },
+      { coin: 'BTC', quantity: '-0.01' },
       { coin: 'ETH', quantity: '0' },
     ]);
     expect(parseWalletBalance({ list: [] })).toEqual([]);

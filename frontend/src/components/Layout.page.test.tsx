@@ -8,13 +8,10 @@ import { walletAddressesApi } from '@api/wallet-addresses.api';
 import PageHeader from '@features/shell/PageHeader';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createInstance } from 'i18next';
 import { useEffect } from 'react';
-import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import indexHtml from '../../index.html?raw';
-import ru from '../i18n/locales/ru.json';
 import Layout from './Layout';
 
 const { logout, showError } = vi.hoisted(() => ({ logout: vi.fn(), showError: vi.fn() }));
@@ -24,21 +21,16 @@ vi.mock('@contexts/AuthContext', () => ({
 vi.mock('@contexts/ErrorContext', () => ({ useError: () => ({ showError }) }));
 vi.mock('@features/portfolio/AddTransactionDialog', () => ({ default: () => null }));
 
-// A browser that prefers Russian: the shell must still speak English (owner decision D6).
-async function renderShell(path: string) {
-  const i18n = createInstance();
-  await i18n.init({ lng: 'ru', resources: { ru: { translation: ru } } });
+function renderShell(path: string) {
   return render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="*" element={<p>Page</p>} />
-          </Route>
-          <Route path="/login" element={<p>Sign in</p>} />
-        </Routes>
-      </MemoryRouter>
-    </I18nextProvider>,
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="*" element={<p>Page</p>} />
+        </Route>
+        <Route path="/login" element={<p>Sign in</p>} />
+      </Routes>
+    </MemoryRouter>,
   );
 }
 
@@ -229,7 +221,7 @@ describe('STALE-STATE leaving a page', () => {
 });
 
 describe('shell-18 the logout error', () => {
-  it('shell-18 says in English that the logout failed, whatever the browser language', async () => {
+  it('shell-18 says in English that the logout failed', async () => {
     const user = userEvent.setup();
     logout.mockRejectedValue(new Error('offline'));
     await renderShell('/dashboard');

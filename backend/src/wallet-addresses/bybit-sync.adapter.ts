@@ -17,7 +17,7 @@ import {
 import { BybitKeyBox } from './bybit-key-box';
 import {
   type BybitLeg,
-  bybitCoins,
+  bybitTotals,
   completedTradeLeg,
   convertLeg,
   depositLeg,
@@ -519,25 +519,8 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     balances: BybitBalance[],
     earn: EarnHolding[] | null,
   ) {
-    const totals = new Map<string, bigint>();
-    const scale = 10n ** 30n;
     const held = (earn ?? []).filter((item) => /[1-9]/.test(item.quantity));
-    for (const { coin, quantity } of [...balances, ...held]) {
-      const [whole, fraction = ''] = quantity.split('.');
-      totals.set(
-        coin,
-        (totals.get(coin) ?? 0n) + BigInt(whole) * scale + BigInt(fraction.padEnd(30, '0')),
-      );
-    }
-    for (const coin of bybitCoins) if (!totals.has(coin)) totals.set(coin, 0n);
-    const format = (value: bigint) => {
-      const fraction = (value % scale).toString().padStart(30, '0').replace(/0+$/, '');
-      return `${value / scale}${fraction ? `.${fraction}` : ''}`;
-    };
-    const rows = [...totals]
-      .filter(([coin, value]) => value > 0n || bybitCoins.includes(coin))
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([coin, value]) => ({ coin, quantity: format(value) }));
+    const rows = bybitTotals([...balances, ...held]);
     await this.source.transaction('READ COMMITTED', async (manager) => {
       await manager.query(
         `UPDATE bybit_accounts SET balances = $2::jsonb, earn = $3::jsonb,
