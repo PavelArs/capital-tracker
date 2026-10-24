@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
+import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import type {
+  BybitBalance,
   BybitConvert,
   BybitDeposit,
   BybitEarnCategory,
@@ -20,6 +22,25 @@ export const BYBIT_DECIMALS = 18;
  * balances hold any other coin `isBybitCoin` accepts too.
  */
 export const bybitCoins = networkAssets('bybit').map((asset) => asset.symbol);
+
+/**
+ * BYBIT-GAPS: one balance per coin across the accounts Bybit lists; the coins always shown first.
+ * BYBIT-DEBT: a margin debt is negative and nets against what the other accounts hold.
+ */
+export function bybitTotals(balances: readonly BybitBalance[]): BybitBalance[] {
+  const totals = new Map<string, bigint>();
+  for (const { coin, quantity } of balances) {
+    const atoms = quantity.startsWith('-')
+      ? -canonicalDecimalToAtoms(quantity.slice(1))
+      : canonicalDecimalToAtoms(quantity);
+    totals.set(coin, (totals.get(coin) ?? 0n) + atoms);
+  }
+  for (const coin of bybitCoins) if (!totals.has(coin)) totals.set(coin, 0n);
+  return [...totals]
+    .filter(([coin, value]) => value !== 0n || bybitCoins.includes(coin))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([coin, value]) => ({ coin, quantity: formatAtoms(value) }));
+}
 
 export type BybitKind = 'trade' | 'deposit' | 'withdrawal' | 'earn';
 

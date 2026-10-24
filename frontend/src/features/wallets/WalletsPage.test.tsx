@@ -1824,6 +1824,30 @@ describe('M22: Bybit accounts', () => {
     expect(count.mock.calls[1][1].requestId).toBe(count.mock.calls[0][1].requestId);
   });
 
+  it('BYBIT-DEBT shows a margin debt as Bybit reports it and offers no count while a coin is borrowed', async () => {
+    setup(
+      [
+        exchangeAccount({
+          balances: [
+            { symbol: 'BTC', quantity: '0.50999' },
+            { symbol: 'ETH', quantity: '0' },
+            { symbol: 'SOL', quantity: '0' },
+            { symbol: 'USDT', quantity: '-500' },
+            { symbol: 'USDC', quantity: '0' },
+          ],
+        }),
+      ],
+      withBybit(),
+    );
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    const note = within(account).getByRole('note');
+    expect(note).toHaveTextContent('Bybit reports -500 USDT');
+    expect(note).toHaveTextContent(
+      'USDT is borrowed on margin, so the difference is not counted here.',
+    );
+    expect(within(account).queryByRole('button', { name: 'Count the difference' })).toBeNull();
+  });
+
   it('BYBIT-COUNT-GAP is not offered for a wallet that is not one Bybit account', async () => {
     setup([wallet(1, { chainBalance: '0.5' })], withBybit());
     expect(await screen.findByRole('note')).toHaveTextContent('Balance differs');
