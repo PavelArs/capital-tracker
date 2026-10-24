@@ -283,7 +283,20 @@ if (command === 'down') {
             'redis',
             'providers',
           );
-        } else if (kind === 'migrate' || kind === 'seed') compose('run', '--rm', '--no-deps', kind);
+        } else if (kind === 'migrate' || kind === 'seed') {
+          // Probes that ran before leave provider state and a request log the browser specs
+          // read; start them from the stub's initial state, as on a stack with no probes.
+          if (kind === 'migrate')
+            compose(
+              'exec',
+              '-T',
+              'providers',
+              'node',
+              '-e',
+              "fetch('http://127.0.0.1:8080/__control/reset',{method:'POST'}).then(r=>{if(!r.ok)process.exit(1)},()=>process.exit(1))",
+            );
+          compose('run', '--rm', '--no-deps', kind);
+        }
         else if (kind === 'application-up') {
           compose(
             'up',

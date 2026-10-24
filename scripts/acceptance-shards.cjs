@@ -109,10 +109,13 @@ function parseFullShard(value) {
   return { index, count, playwrightShard: `${index}/${count}` };
 }
 
-// Only the first runner of a split full run also runs the containerized probes; the others
-// would repeat them without testing anything new.
+// A split full run deals the containerized probes out in turn, so no runner takes them all;
+// they are independent, as the critical probe shards show. Every runner keeps the other steps.
 function fullShardPlan(steps, fullShard) {
-  return fullShard.index === 1 ? steps : steps.filter((step) => !step.startsWith('check:'));
+  let probe = 0;
+  return steps.filter(
+    (step) => !step.startsWith('check:') || probe++ % fullShard.count === fullShard.index - 1,
+  );
 }
 
 function probePlan(shard) {
