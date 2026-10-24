@@ -237,11 +237,12 @@ async function main() {
     assert.equal(
       Number(state.migrations),
       72,
-      'Run after the actual preserved seventy-two migrations',
+      'Run after the actual preserved seventy-three migrations',
     );
     assert.equal(
       state.latest_migration,
       'LinkBrokerAssets1797900000000',
+      'AddShareSplits1798000000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');

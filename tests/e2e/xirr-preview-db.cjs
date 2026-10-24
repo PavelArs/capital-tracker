@@ -149,7 +149,7 @@ async function main() {
     await source.initialize();
     await reader.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 72);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 73);
     const owners = {};
     for (const label of ['period', 'empty', 'foreign']) {
       const [row] = await source.query(

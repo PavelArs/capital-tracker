@@ -190,6 +190,7 @@ const migrationNames = [
   'AddCapitalReturns1797700000000',
   'AddRetiredCommands1797800000000',
   'LinkBrokerAssets1797900000000',
+  'AddShareSplits1798000000000',
 ];
 
 function connection(database) {
@@ -363,7 +364,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-two migrations',
+      'Exactly seventy-three migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
