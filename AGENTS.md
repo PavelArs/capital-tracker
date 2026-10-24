@@ -106,7 +106,7 @@ CI fails when these drift, except where noted:
 
 - The Biome config in each package is the style source for its `src/`; run `pnpm --dir <pkg> check` before committing. Elsewhere (`scripts/`, `tests/`, root config files), match the existing style: two-space indentation and single quotes. Keep the design simple, and add an abstraction only for a demonstrated need.
 - Frontend: reuse `frontend/src/ui/`, read through `useCachedRead` or `frontend/src/api/cached-reads.ts`, call the API only through `apiClient`, and never depend on another feature's CSS.
-- UI copy is English and written inline in components (owner decision D6; the brief's "Russian UI" is superseded). Don't add i18next keys or Russian strings. Only `frontend/src/components/Layout.tsx` still reads translations, from `frontend/src/i18n/locales/en.json` and `ru.json`; change both together.
+- UI copy is English and written inline in components (owner decision D6; the brief's "Russian UI" is superseded). Don't add i18next keys or Russian strings; nothing in the UI reads translations.
 - When a test covers a stable scenario ID, start its `describe` or `it`/`test` title with the ID (for example `describe('XFER-PROPOSED-UI: …')` or `it('OPS-DELETE-GUARD …')`), and cite the IDs with their actual results in the verification record.
 - Frontend tests use real backend response shapes, and every test asserts what its title claims.
 - E2E is real: HTTPS Chromium at `https://127.0.0.1:8443` (not `localhost`) through the backend to PostgreSQL. Never mock your own backend; stub providers at the server's outbound HTTP boundary.

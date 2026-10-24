@@ -14,7 +14,6 @@ import './ui/form.css';
 import './ui/table.css';
 import './ui/filters.css';
 import App from './App';
-import './i18n/config'; // Initialize i18n
 import ErrorBoundary from './components/ErrorBoundary';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

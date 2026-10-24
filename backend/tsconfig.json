@@ -23,11 +23,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "useUnknownInCatchVariables": false,
-    "types": ["node", "jest"],
-    "paths": {
-      "@shared/*": ["./src/shared/*"],
-      "@config/*": ["./src/config/*"],
-      "@entities/*": ["./src/entities/*"]
-    }
+    "types": ["node", "jest"]
   }
 }
