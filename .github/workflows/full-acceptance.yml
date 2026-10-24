@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: "26.10.0"
+  NODE_VERSION: "26.12.1"
 
 jobs:
   new-commits:

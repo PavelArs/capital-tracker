@@ -1,6 +1,6 @@
 # Local verification and explicit migrations
 
-Use Node 26.10.0 (`nvm use`), pnpm 12.9.1 and Docker Compose. The existing
+Use Node 26.12.1 (`nvm use`), pnpm 12.9.1 and Docker Compose. The existing
 application is under incremental refactoring. Archived cookie-session verification
 remains available in `replace-bearer-sessions`. The mandatory-MFA change passed local PostgreSQL checks and55 HTTPS Chromium cases;
 its archived verification record gives exact images, commands and scope. This does
