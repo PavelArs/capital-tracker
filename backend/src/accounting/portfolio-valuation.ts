@@ -130,6 +130,8 @@ export interface StoredPrice {
 export interface PortfolioPrices {
   market: ReadonlyMap<string, StoredPrice>;
   manual: ReadonlyMap<string, StoredPrice>;
+  /** The owner's share splits: a price set before one is per unit of the time it was set. */
+  splits?: readonly FifoSplit[];
 }
 /** A price stated in the report's currency. */
 export interface AssetPrice {
@@ -206,6 +208,17 @@ export function resolvePrice(
     today,
   );
   if (value === null) return { price: null, missingPrice: 'no-rate' };
+  // A unit priced before a split became `ratio` units by `at`; rounding down never overstates.
+  const instant = at.toISOString();
+  const split = (prices.splits ?? []).reduce(
+    (units, item) =>
+      item.instrumentId === instrument.id &&
+      item.effectiveAt > stored.observedAt &&
+      item.effectiveAt <= instant
+        ? units * BigInt(item.ratio)
+        : units,
+    1n,
+  );
   const status =
     instrument.priceSource === 'manual'
       ? 'manual'
@@ -214,7 +227,7 @@ export function resolvePrice(
         : 'stale';
   return {
     price: {
-      value: formatAtoms(value),
+      value: formatAtoms(value / split),
       observedAt: stored.observedAt,
       source: stored.source,
       status,

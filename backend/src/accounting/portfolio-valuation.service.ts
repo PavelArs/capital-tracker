@@ -53,6 +53,7 @@ import {
   withoutAssets,
 } from './portfolio-valuation';
 import { applyChainMoves, type ChainMove } from './provisional-chain';
+import { readSplits } from './share-split.store';
 import { findOrCreateInstrument } from './trade.service';
 
 export interface AccountRow {
@@ -519,6 +520,7 @@ export async function latestPortfolioPrices(
       ]),
     ),
     manual,
+    splits: await readSplits(manager, owner),
   };
 }
 

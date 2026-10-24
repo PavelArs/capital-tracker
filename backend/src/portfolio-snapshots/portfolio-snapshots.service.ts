@@ -179,7 +179,13 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
     }
     return prices;
   };
-  return { market: stored(inputs.market), manual: stored(inputs.manual) };
+  // Every ledger carries the owner's splits; one is enough.
+  const [ledger] = inputs.valuation.ledgers.values();
+  return {
+    market: stored(inputs.market),
+    manual: stored(inputs.manual),
+    splits: ledger?.splits ?? [],
+  };
 }
 
 /** Portfolio value at one instant in every accounting currency at that day's rate. */

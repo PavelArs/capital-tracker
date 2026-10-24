@@ -2,7 +2,7 @@ import { availableQuantity, firstShortfall } from './available-quantity';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import { calculateOwnedTransfers } from './owned-transfer-fifo';
 import type { AccountFifoResult } from './owned-transfer-types';
-import { portfolioAccount } from './portfolio-valuation';
+import { portfolioAccount, resolvePrice } from './portfolio-valuation';
 import type { FifoSplit } from './share-split-types';
 
 const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -265,5 +265,26 @@ describe('SPLIT-NATIVE: a buy paid in rubles keeps its ruble cost across a split
       at: at(10),
     });
     expect(view.lots.map((lot) => [lot.quantity, lot.native?.amount])).toEqual([['3', '300']]);
+  });
+});
+
+describe('SPLIT-PRICE: a price set before a split is read in the units of the valuation date', () => {
+  const instrument = {
+    id: share,
+    name: 'Synthetic share',
+    symbol: 'SYNS',
+    assetType: 'manual' as const,
+    valuationCurrency: 'USD' as const,
+    priceSource: 'manual' as const,
+  };
+  const prices = {
+    market: new Map(),
+    manual: new Map([[share, { priceUsd: '100', observedAt: at(5), source: 'manual' }]]),
+    splits: [split(17)],
+  };
+
+  it('SPLIT-PRICE-A divides a price set before the split by its ratio after it, and not before', () => {
+    expect(resolvePrice(instrument, prices, new Date(at(20))).price?.value).toBe('10');
+    expect(resolvePrice(instrument, prices, new Date(at(10))).price?.value).toBe('100');
   });
 });
