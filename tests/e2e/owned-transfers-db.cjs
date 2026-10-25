@@ -271,7 +271,7 @@ async function populatedUpgrade() {
     const old = await fingerprint(prior, ['migrations'], true);
     assert.match(migrate(previousDatabase), /Migrations applied: 54/);
     assert.deepEqual(await prior.query('SELECT * FROM retired_commands'), []);
-    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 73);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 74);
     assert.equal(
       await fingerprint(
         prior,
@@ -1188,13 +1188,13 @@ async function main() {
     'Missing module is prerequisite failure, not behavioral RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 73/);
+  assert.match(migrate(database), /Migrations applied: 74/);
   assert.match(migrate(database), /Migrations applied: 0/);
   if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 73);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 74);
     for (const table of [
       ...transferTables,
       'account_rewards',
