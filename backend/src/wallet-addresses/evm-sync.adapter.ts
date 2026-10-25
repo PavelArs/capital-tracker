@@ -76,12 +76,15 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     private readonly source: DataSource,
     etherscan: EtherscanClient,
     chain: EvmChain,
+    /** NUTHATCH: the owner's own nest for this chain, from the server's environment. */
+    nest: string | null = null,
   ) {
     this.network = chain.network;
     this.name = chain.name;
+    const nestFallback = nest ? etherscan.nuthatch(nest, chain.chainId) : null;
     this.etherscan = new EvmReader(
       etherscan.forChain(chain.chainId),
-      chain.blockscout ? etherscan.blockscout(chain.blockscout, chain.chainId) : null,
+      chain.blockscout ? etherscan.blockscout(chain.blockscout, chain.chainId) : nestFallback,
     );
     this.stake = chain.network === 'ethereum';
   }

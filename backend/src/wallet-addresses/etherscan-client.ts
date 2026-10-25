@@ -207,6 +207,10 @@ function said(result: string): string {
 
 function refusal(result: unknown): Refused | InvalidResponse {
   if (typeof result !== 'string') return new InvalidResponse();
+  // NUTHATCH: a nest's refusal may quote its own RPC's error, which is never Etherscan's plan,
+  // key or limit.
+  if (/^NUTHATCH_(UNSUPPORTED|INCOMPLETE):/.test(result))
+    return new Refused('unavailable', said(result));
   // Etherscan's own words for a chain outside the free plan (docs.etherscan.io, common errors).
   if (/free api access is not supported|upgrade your api plan/i.test(result))
     return new Refused('plan_required');
@@ -263,6 +267,8 @@ interface ClientOptions {
   proUrl?: string;
   /** BLOCKSCOUT-KEY: parameters sent with every call of a keyless client (the chain and the key). */
   extraParams?: Record<string, string>;
+  /** NUTHATCH: a keyless client asking a nuthatch nest, which takes Etherscan's own calls. */
+  nest?: boolean;
 }
 
 export class EtherscanClient {
@@ -275,6 +281,7 @@ export class EtherscanClient {
   private readonly blockscoutKey: string | null;
   private readonly proUrl: string;
   private readonly extraParams: Record<string, string> | null;
+  private readonly nest: boolean;
   // The key's rate limit is shared by every chain, so the views of one client share the pause.
   private readonly pace: { lastRequestAt: number };
 
@@ -289,6 +296,7 @@ export class EtherscanClient {
     this.blockscoutKey = options.blockscoutKey?.trim() || null;
     this.proUrl = options.proUrl ?? BLOCKSCOUT_PRO_URL;
     this.extraParams = options.extraParams ?? null;
+    this.nest = options.nest ?? false;
     this.pace = pace;
   }
 
@@ -318,6 +326,22 @@ export class EtherscanClient {
     });
   }
 
+  /**
+   * NUTHATCH: the same questions put to the owner's own nuthatch nest (`baseUrl` ends in /api),
+   * which answers Etherscan's calls for its one chain without a key. The chain goes with every
+   * call, so a nest of another chain refuses instead of answering.
+   */
+  nuthatch(baseUrl: string, chainId: number): EtherscanClient {
+    return new EtherscanClient({
+      baseUrl,
+      keyless: true,
+      nest: true,
+      timeoutMs: this.timeoutMs,
+      pauseMs: this.pauseMs,
+      extraParams: { chainid: String(chainId) },
+    });
+  }
+
   /** EVM-MULTICHAIN: the same key and pacing, reading another chain of Etherscan's V2 API. */
   forChain(chainId: number): EtherscanClient {
     return new EtherscanClient(
@@ -338,9 +362,11 @@ export class EtherscanClient {
   }
 
   blockNumber(): Promise<BlockResult> {
-    const params = this.keyless
-      ? { module: 'block', action: 'eth_block_number' }
-      : { module: 'proxy', action: 'eth_blockNumber' };
+    // Blockscout answers it in its own block module; a nest, like Etherscan, as a proxy call.
+    const params =
+      this.keyless && !this.nest
+        ? { module: 'block', action: 'eth_block_number' }
+        : { module: 'proxy', action: 'eth_blockNumber' };
     return this.get(params, (body) => ({
       ok: true,
       block: parseBlockNumber(body),

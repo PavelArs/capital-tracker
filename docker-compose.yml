@@ -53,6 +53,9 @@ services:
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
       # Optional free Blockscout key for OP Mainnet and Base; their public explorers turn away requests without one.
       BLOCKSCOUT_API_KEY: ${BLOCKSCOUT_API_KEY:-}
+      # Optional address of the owner's own nuthatch nest (its /api) for BNB Smart Chain and Avalanche C-Chain, which Etherscan's free plan refuses.
+      NUTHATCH_BNB_URL: ${NUTHATCH_BNB_URL:-}
+      NUTHATCH_AVALANCHE_URL: ${NUTHATCH_AVALANCHE_URL:-}
       # Optional free TronGrid key for Tron wallets; without it TronGrid's lower keyless rate applies.
       TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
       # Free NOWNodes key for Zcash wallets (Blockbook); Trezor's public instances turn servers away.

@@ -13,7 +13,7 @@ import { ChainTokenRefreshInterceptor } from './chain-token-refresh.interceptor'
 import { ChainTokenLoader } from './chain-tokens';
 import { EsploraClient } from './esplora-client';
 import { EtherscanClient } from './etherscan-client';
-import { evmChains } from './evm-chains';
+import { type EvmNetwork, evmChains } from './evm-chains';
 import { EvmSyncAdapter } from './evm-sync.adapter';
 import { HorizonClient } from './horizon-client';
 import { SolanaRpcClient } from './solana-rpc-client';
@@ -25,6 +25,13 @@ import { WalletAddressController } from './wallet-address.controller';
 import { WalletAddressService } from './wallet-address.service';
 import { WalletSyncService } from './wallet-sync.service';
 import { ZcashSyncAdapter } from './zcash-sync.adapter';
+
+// NUTHATCH: where the owner's own nest answers for a chain that Etherscan's free plan refuses
+// and no Blockscout explorer serves.
+const nestUrlVariables: Partial<Record<EvmNetwork, string>> = {
+  bnb: 'NUTHATCH_BNB_URL',
+  avalanche: 'NUTHATCH_AVALANCHE_URL',
+};
 
 @Module({
   imports: [AccountingModule],
@@ -86,6 +93,7 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
     {
       provide: CHAIN_SYNC_ADAPTERS,
       inject: [
+        ConfigService,
         DataSource,
         EtherscanClient,
         BitcoinSyncAdapter,
@@ -96,6 +104,7 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
         ZcashSyncAdapter,
       ],
       useFactory: (
+        config: ConfigService,
         source: DataSource,
         etherscan: EtherscanClient,
         bitcoin: BitcoinSyncAdapter,
@@ -106,7 +115,11 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
         zcash: ZcashSyncAdapter,
       ): ChainSyncAdapter[] => [
         bitcoin,
-        ...evmChains.map((chain) => new EvmSyncAdapter(source, etherscan, chain)),
+        ...evmChains.map((chain) => {
+          const variable = nestUrlVariables[chain.network];
+          const nest = variable ? config.get<string>(variable)?.trim() || null : null;
+          return new EvmSyncAdapter(source, etherscan, chain, nest);
+        }),
         solana,
         bybit,
         tron,

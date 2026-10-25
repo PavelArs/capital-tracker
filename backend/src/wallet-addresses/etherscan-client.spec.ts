@@ -362,6 +362,50 @@ describe('ETH-SYNC Etherscan client', () => {
     await expect(client().internal(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
   });
 
+  it("NUTHATCH asks the owner's nest in Etherscan's own calls, with the chain and no key", async () => {
+    replies.push(json({ jsonrpc: '2.0', id: 1, result: '0x1312d00' }), ok([normal]), ok([]));
+    const nest = client(null).nuthatch(baseUrl, 56);
+    expect(nest.configured).toBe(true);
+    await expect(nest.blockNumber()).resolves.toEqual({ ok: true, block: 20_000_000 });
+    await expect(nest.normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    await expect(nest.tokens(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
+    expect(requests[0].searchParams.get('module')).toBe('proxy');
+    expect(requests[0].searchParams.get('action')).toBe('eth_blockNumber');
+    expect(requests[1].searchParams.get('action')).toBe('txlist');
+    for (const url of requests) {
+      expect(url.searchParams.get('chainid')).toBe('56');
+      expect(url.searchParams.has('apikey')).toBe(false);
+    }
+  });
+
+  it('NUTHATCH reads what a nest cannot answer as a failed read in its words, never as an empty list', async () => {
+    // Refusals as nuthatch's /api words them: status "0" and the reason after its prefix.
+    const refused = (result: string) => json({ status: '0', message: 'NOTOK', result });
+    replies.push(
+      refused("NUTHATCH_UNSUPPORTED: chainid 56 is not this nest's chain 43114"),
+      refused(`NUTHATCH_INCOMPLETE: txlist for ${owned} is indexed through block 1, not 2`),
+      // A nest quotes its own RPC's error, here one about that RPC's key.
+      refused('NUTHATCH_INCOMPLETE: HTTP 401 Unauthorized: invalid API key'),
+    );
+    const host = new URL(baseUrl).hostname;
+    const nest = client(null).nuthatch(baseUrl, 56);
+    await expect(nest.blockNumber()).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: NUTHATCH_UNSUPPORTED: chainid 56 is not this nest's chain 43114`,
+    });
+    await expect(nest.normal(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: NUTHATCH_INCOMPLETE: txlist for 0x… is indexed through block 1, not 2`,
+    });
+    await expect(nest.tokens(owned, 1, 2)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: `${host} said: NUTHATCH_INCOMPLETE: HTTP 401 Unauthorized: invalid API key`,
+    });
+  });
+
   it('SYNC-DETAIL says which source failed and how, without address-like text', async () => {
     replies.push(
       json({}, 404),

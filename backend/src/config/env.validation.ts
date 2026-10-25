@@ -46,6 +46,16 @@ export class EnvironmentVariables {
   @IsOptional()
   BLOCKSCOUT_API_KEY?: string;
 
+  // Optional address of the owner's own nuthatch nest (its /api) for BNB Smart Chain and for
+  // Avalanche C-Chain: Etherscan's free plan refuses both and no Blockscout explorer serves them.
+  @IsString()
+  @IsOptional()
+  NUTHATCH_BNB_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  NUTHATCH_AVALANCHE_URL?: string;
+
   // Optional free TronGrid key for Tron wallet history; without it TronGrid's lower keyless
   // rate applies.
   @IsString()
