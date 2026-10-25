@@ -12,6 +12,7 @@ import {
   rateDateStart,
   seriesInstants,
   snapshotChanges,
+  withBrokerPrices,
 } from './snapshot-series';
 
 const at = (iso: string) => Date.parse(iso);
@@ -185,5 +186,60 @@ describe('portfolio snapshot series (record-portfolio-snapshots)', () => {
     ];
     expect(firstValuedPoint(series)).toEqual({ at: 2, value: '5000' });
     expect(firstValuedPoint([{ at: 1, value: null }])).toBeNull();
+  });
+});
+
+describe('BPR-HISTORY a T-Bank price joins the hand values of its asset', () => {
+  it('keeps the later point at each instant, a hand value winning a tie', () => {
+    const hand = manualSeries([
+      {
+        instrumentId: 'share',
+        observedAt: 1000,
+        revision: 1,
+        kind: 'set',
+        priceUsd: '300',
+        quoteCurrency: 'RUB',
+      },
+      {
+        instrumentId: 'share',
+        observedAt: 3000,
+        revision: 2,
+        kind: 'set',
+        priceUsd: '320',
+        quoteCurrency: 'RUB',
+      },
+    ]);
+    const series = withBrokerPrices(hand, [
+      {
+        instrumentId: 'share',
+        observedAt: 2000,
+        price: '310',
+        quoteCurrency: 'RUB',
+        provider: 'tbank',
+      },
+      {
+        instrumentId: 'share',
+        observedAt: 3000,
+        price: '999',
+        quoteCurrency: 'RUB',
+        provider: 'tbank',
+      },
+      {
+        instrumentId: 'fund',
+        observedAt: 2000,
+        price: '15',
+        quoteCurrency: 'RUB',
+        provider: 'tbank',
+      },
+    ]);
+    expect(series.get('share')).toEqual([
+      { at: 1000, price: '300', source: 'manual', currency: 'RUB' },
+      { at: 2000, price: '310', source: 'tbank', currency: 'RUB' },
+      { at: 3000, price: '320', source: 'manual', currency: 'RUB' },
+    ]);
+    expect(series.get('fund')).toEqual([
+      { at: 2000, price: '15', source: 'tbank', currency: 'RUB' },
+    ]);
+    expect(latestAtOrBefore(series.get('share')!, 2500)?.price).toBe('310');
   });
 });

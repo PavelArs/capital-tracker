@@ -594,6 +594,15 @@ async function importing(db, service, imports, tbank, owner, other) {
     [valuedShare.quantity, valuedShare.value, valuedShare.price.value, valuedShare.price.source, valuedShare.price.status],
     ['6', '720', '120', 'tbank', 'fresh'],
   );
+  // BPR-HISTORY: the asset chart values the share at the same T-Bank price as the portfolio.
+  const { PortfolioSnapshotsService } = require('/app/backend/dist/portfolio-snapshots/portfolio-snapshots.service.js');
+  const chart = await new PortfolioSnapshotsService(db, new ConfigService({})).assetHistory(
+    owner,
+    linked.id,
+    { period: '24H', currency: 'RUB' },
+    new Date(Date.now() + 1000),
+  );
+  assert.deepEqual([chart.points.at(-1).quantity, chart.points.at(-1).value], ['6', '720']);
   console.log('PASS BPR-IMPORT');
   const at = '2024-04-01T00:00:00.000Z';
   // 10000 in, 5015 on the buy, 90 dividend, 12 tax, 2393 kept from the sale, 1000 out.
@@ -1410,11 +1419,21 @@ async function refreshing(db, service, tbank, owner) {
   assert.equal(failure.state, 'failed');
   assert.equal(failure.errorCode, 'unavailable');
   assert.ok(!failure.errorMessage.includes(token.slice(2)), 'No secret in the status');
+  // The owner sees this refresh apart from the crypto prices, with why it failed.
+  const { SyncStatusService } = require('/app/backend/dist/sync-status/sync-status.service.js');
+  const shownSources = async (at) => (await new SyncStatusService(db).read(owner, at)).sources;
+  const shownFailure = (await shownSources(failedAt)).find((item) => item.key === 'prices:tbank');
+  assert.deepEqual(
+    [shownFailure.kind, shownFailure.name, shownFailure.state, shownFailure.errorMessage],
+    ['prices', 'T-Bank prices', 'failed', failure.errorMessage],
+  );
+  assert.equal((await shownSources(failedAt)).some((item) => item.key === 'prices'), false, 'No crypto price source was read');
   assert.deepEqual(await prices(), [['1500.25', 'RUB', first.toISOString()]]);
   tbank.positions = [{ ...heldPosition(fundUid, '2', 'etf'), currentPrice: '1510' }];
   const next = new Date('2026-10-24T12:10:00Z');
   assert.deepEqual(await sync.tick(next), { outcome: 'ran', accounts: 1, failed: 0, saved: 1 });
   assert.deepEqual((await prices()).map((row) => row[0]), ['1500.25', '1510']);
+  assert.equal((await shownSources(next)).find((item) => item.key === 'prices:tbank').state, 'synced');
   await assert.rejects(
     db.query('UPDATE broker_price_observations SET price = 1 WHERE "instrumentId" = $1', [fund.id]),
     /append-only/,
