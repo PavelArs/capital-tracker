@@ -33,7 +33,7 @@ import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
 import { shareText } from './Allocation';
 import { assetCaption, Change, Signed, toneClass } from './asset-parts';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
-import { DASH, missingLabel, money, percent, price, priceNote, quantity } from './format';
+import { DASH, missingLabel, money, percent, price, priceNote, quantity, quoted } from './format';
 import { compareDecimals } from './real-cost';
 import '../shell/shell-page.css';
 import './portfolio.css';
@@ -352,7 +352,9 @@ export function sortAssets(
         return real === null ? shownProfit(asset).pnl : realProfit(asset, real).pnl;
       default:
         // A hand price shows "Manual", not a change, so it ranks with the unknown ones.
-        return asset.priceSource === 'manual' ? null : asset.priceChange24hPercent;
+        return asset.priceSource === 'manual' && !quoted(asset)
+          ? null
+          : asset.priceChange24hPercent;
     }
   };
   const held = (asset: AssetValuation) => Number(asset.quantity) !== 0;
@@ -753,7 +755,7 @@ function AssetsTable({
                     />
                   </td>
                   <td className="ui-num">
-                    {asset.priceSource === 'manual' ? (
+                    {asset.priceSource === 'manual' && !quoted(asset) ? (
                       <span className="ui-muted">Manual</span>
                     ) : (
                       <Change value={asset.priceChange24hPercent} />

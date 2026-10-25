@@ -22,6 +22,7 @@ import {
   percent,
   price,
   quantity,
+  quoted,
   sourceLabels,
   tone,
 } from '../portfolio/format';
@@ -145,7 +146,7 @@ function AssetCells({
         )}
       </td>
       <td className="ui-num">
-        {asset.priceSource === 'market' ? (
+        {quoted(asset) ? (
           <Change value={asset.priceChange24hPercent} />
         ) : (
           <span className="ui-muted">{sourceLabels[asset.priceSource]}</span>
@@ -255,7 +256,7 @@ function Table({
 
 /** Line 2 on the right of a phone row: today's change, the stale age or the price source. */
 function phoneValue(asset: AssetValuation, now: Date): ReactNode {
-  if (asset.priceSource !== 'market') return sourceLabels[asset.priceSource];
+  if (!quoted(asset)) return sourceLabels[asset.priceSource];
   const stale = staleNote(asset, now);
   if (stale) return <span className="dashboard-assets__stale">{stale}</span>;
   const change = asset.priceChange24hPercent;

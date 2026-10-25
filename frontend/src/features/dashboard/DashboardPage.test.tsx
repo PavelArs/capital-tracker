@@ -1365,6 +1365,14 @@ describe('Dashboard UI audit', () => {
         price: { value: '3000', observedAt: ago(60), source: 'manual', status: 'manual' },
         priceChange24hPercent: '0.00',
       }),
+      // BPR-LIST: a T-Bank price moves like a market price; it is not a hand value.
+      asset(21, 'SBER', 'SBER', '1000', {
+        assetType: 'manual',
+        priceSource: 'manual',
+        quantity: '6',
+        price: { value: '166.66', observedAt: ago(180), source: 'tbank', status: 'stale' },
+        priceChange24hPercent: null,
+      }),
       asset(3, 'Euro', 'EUR', '1500', {
         assetType: 'fiat',
         priceSource: 'fixed',
@@ -1386,6 +1394,7 @@ describe('Dashboard UI audit', () => {
         .getAllByRole('cell')
         .map((cell) => cell.textContent);
     expect(cells('Painting').slice(1, 3)).toEqual(['—', 'Manual']);
+    expect(cells('SBER').slice(1, 3)).toEqual(['$166.66stale, 3 h ago', '—']);
     // 1.086957 is shown rounded down, never above the real price.
     expect(cells('Euro').slice(1, 3)).toEqual(['$1.08', 'Fixed']);
     expect(cells('Bitcoin').slice(1, 3)).toEqual(['$2,100.00', '+1.25%']);
