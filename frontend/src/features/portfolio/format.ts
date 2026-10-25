@@ -136,6 +136,7 @@ const sourceNames: Record<string, string> = {
   kraken: 'Kraken',
   coingecko: 'CoinGecko',
   bybit: 'Bybit',
+  tbank: 'T-Bank',
 };
 
 export const sourceLabels: Record<PriceSource, string> = {

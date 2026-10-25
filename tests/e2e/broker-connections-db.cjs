@@ -22,7 +22,7 @@ const settings = {
 };
 const database = 'capital_tracker_broker_connections_e2e';
 const servicePath = '/app/backend/dist/brokers/broker-connections.service.js';
-const MIGRATIONS = 73;
+const MIGRATIONS = 74;
 const token = 't.SyntheticToken000000000000000001';
 const replacement = 't.SyntheticToken000000000000000002';
 const brokerAccount = { id: '2000000001', name: 'Synthetic', open: true, access: 'read_only' };
@@ -578,6 +578,23 @@ async function importing(db, service, imports, tbank, owner, other) {
     [linked.name, linked.symbol, linked.assetType, linked.valuationCurrency, linked.priceSource],
     ['SYNTHA', 'SYNTHA', 'manual', 'RUB', 'manual'],
   );
+  // BPR-IMPORT: the import keeps the price T-Bank reports for the share it holds, and values it.
+  const plainNumber = (value) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
+  const observed = await db.query(
+    `SELECT price::text AS price, "quoteCurrency", provider FROM broker_price_observations
+      WHERE "ownerId" = $1 AND "instrumentId" = $2`,
+    [owner, linked.id],
+  );
+  assert.deepEqual(observed.map((row) => [plainNumber(row.price), row.quoteCurrency, row.provider]), [['120', 'RUB', 'tbank']]);
+  const { PortfolioValuationService } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+  const valuedShare = (await new PortfolioValuationService(db).read(owner, { currency: 'RUB' })).assets.find(
+    (asset) => asset.instrumentId === linked.id,
+  );
+  assert.deepEqual(
+    [valuedShare.quantity, valuedShare.value, valuedShare.price.value, valuedShare.price.source, valuedShare.price.status],
+    ['6', '720', '120', 'tbank', 'fresh'],
+  );
+  console.log('PASS BPR-IMPORT');
   const at = '2024-04-01T00:00:00.000Z';
   // 10000 in, 5015 on the buy, 90 dividend, 12 tax, 2393 kept from the sale, 1000 out.
   assert.equal((await trades.available(owner, broker, { instrumentId: rub.id, at })).quantity, '6456');
@@ -1326,6 +1343,96 @@ async function importing(db, service, imports, tbank, owner, other) {
   console.log('PASS BROKER-CAPRET-VOID');
 }
 
+const fundUid = '10000000-0000-4000-8000-0000000000c7';
+async function refreshing(db, service, tbank, owner) {
+  stage = 'BPR-REFRESH: the hourly refresh keeps T-Bank prices current and names a fallback asset';
+  const { BrokerPriceSyncService } = require('/app/backend/dist/brokers/broker-price-sync.service.js');
+  const broker = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, broker);
+  // Only this connection is read: every other one is closed first.
+  for (const { accountId } of await db.query(
+    `SELECT "accountId" FROM broker_connections WHERE "ownerId" = $1 AND "accountId" <> $2`,
+    [owner, broker],
+  ))
+    await service.disconnect(owner, accountId);
+  // An asset made before its ticker could be read (#347): named by its UID, no ticker.
+  const [fund] = await db.query(
+    `INSERT INTO accounting_instruments (id, "ownerId", "requestId", "canonicalPayload", name, symbol,
+        "assetType", "valuationCurrency", "priceSource")
+      VALUES ($1, $2, $3, 'synthetic', $4, NULL, 'manual', 'RUB', 'manual') RETURNING id`,
+    [randomUUID(), owner, randomUUID(), `T-Bank ${fundUid}`],
+  );
+  await db.query(
+    `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId", "instrumentId", "instrumentType")
+      VALUES ($1, 'tbank', $2, $3, 'etf')`,
+    [owner, fundUid, fund.id],
+  );
+  history = [
+    operation('400000001', 'INPUT', '5000'),
+    operation('400000002', 'BUY', '-3000', {
+      instrumentUid: fundUid, instrumentType: 'etf', ticker: 'SYNTHF', quantity: '2',
+      fills: [{ filledAt: '2024-03-01T08:00:00Z', quantity: '2', price: '1500', priceCurrency: 'rub' }],
+    }),
+  ];
+  tbank.positions = [{ ...heldPosition(fundUid, '2', 'etf'), currentPrice: '1500.25' }, { ...heldPosition('10000000-0000-4000-8000-0000000000c8', '1'), currentPrice: '99' }];
+  tbank.cash = [['RUB', '2000']];
+  const config = (enabled) => new (require('@nestjs/config').ConfigService)({ PRICE_COLLECTION_ENABLED: enabled });
+  const prices = async () =>
+    (await db.query(
+      `SELECT "instrumentId", price::text AS price, "quoteCurrency", "observedAt" FROM broker_price_observations
+        WHERE "ownerId" = $1 AND "instrumentId" = $2 ORDER BY "observedAt"`,
+      [owner, fund.id],
+    )).map((row) => [row.price.replace(/\.?0+$/, ''), row.quoteCurrency, row.observedAt.toISOString()]);
+  const source = async () =>
+    (await db.query(`SELECT state, "errorCode", "errorMessage" FROM sync_sources WHERE key = 'prices:tbank'`))[0];
+  const off = new BrokerPriceSyncService(db, config('false'), service);
+  assert.deepEqual(await off.tick(new Date('2026-10-24T10:10:00Z')), { outcome: 'disabled' });
+  assert.deepEqual(await prices(), [], 'Switched off, nothing is read or saved');
+  const sync = new BrokerPriceSyncService(db, config('true'), service);
+  assert.deepEqual(await sync.tick(new Date('2026-10-24T10:02:00Z')), { outcome: 'not_due' }, 'Not before five past the hour');
+  const first = new Date('2026-10-24T10:10:00Z');
+  assert.deepEqual(await sync.tick(first), { outcome: 'ran', accounts: 1, failed: 0, saved: 1 });
+  assert.deepEqual(await prices(), [['1500.25', 'RUB', first.toISOString()]]);
+  assert.deepEqual(await source(), { state: 'synced', errorCode: null, errorMessage: null });
+  // BPR-RENAME: the asset made without a ticker takes the one its operations name.
+  const [renamed] = await db.query('SELECT name, symbol FROM accounting_instruments WHERE id = $1', [fund.id]);
+  assert.deepEqual([renamed.name, renamed.symbol], ['SYNTHF', 'SYNTHF']);
+  assert.deepEqual(await sync.tick(new Date('2026-10-24T10:40:00Z')), { outcome: 'not_due' }, 'Once an hour');
+  // A price T-Bank reports no more stays; a failed read records why, without the token.
+  tbank.down = true;
+  const failedAt = new Date('2026-10-24T11:10:00Z');
+  try {
+    assert.deepEqual(await sync.tick(failedAt), { outcome: 'ran', accounts: 1, failed: 1, saved: 0 });
+  } finally {
+    tbank.down = false;
+  }
+  const failure = await source();
+  assert.equal(failure.state, 'failed');
+  assert.equal(failure.errorCode, 'unavailable');
+  assert.ok(!failure.errorMessage.includes(token.slice(2)), 'No secret in the status');
+  assert.deepEqual(await prices(), [['1500.25', 'RUB', first.toISOString()]]);
+  tbank.positions = [{ ...heldPosition(fundUid, '2', 'etf'), currentPrice: '1510' }];
+  const next = new Date('2026-10-24T12:10:00Z');
+  assert.deepEqual(await sync.tick(next), { outcome: 'ran', accounts: 1, failed: 0, saved: 1 });
+  assert.deepEqual((await prices()).map((row) => row[0]), ['1500.25', '1510']);
+  await assert.rejects(
+    db.query('UPDATE broker_price_observations SET price = 1 WHERE "instrumentId" = $1', [fund.id]),
+    /append-only/,
+  );
+  // BPR-STALE: three hours later the price still values the fund, marked stale.
+  const { PortfolioValuationService } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+  const later = new Date('2026-10-24T15:10:00Z');
+  const fundValue = (await new PortfolioValuationService(db).read(owner, { currency: 'RUB' }, later)).assets.find(
+    (asset) => asset.instrumentId === fund.id,
+  );
+  assert.deepEqual(
+    [fundValue.name, fundValue.price.value, fundValue.price.source, fundValue.price.status, fundValue.price.observedAt],
+    ['SYNTHF', '1510', 'tbank', 'stale', next.toISOString()],
+  );
+  console.log('PASS BPR-REFRESH');
+  console.log('PASS BPR-RENAME');
+  console.log('PASS BPR-STALE');
+}
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -1395,6 +1502,7 @@ async function main() {
     await voidedTransferPreview(db, service, imports, owner.id, instrument);
     await rewardRoomPreview(db, service, imports, owner.id, instrument);
     await importing(db, service, imports, tbank, owner.id, other.id);
+    await refreshing(db, service, tbank, owner.id);
   } finally {
     if (db.isInitialized) await db.destroy();
     rmSync(directory, { recursive: true, force: true });

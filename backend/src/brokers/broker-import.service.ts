@@ -53,6 +53,7 @@ import {
   openingPositions,
   openingQuantities,
 } from './broker-opening';
+import { saveBrokerPrices } from './broker-prices';
 import type { TBankOperation, TBankPosition } from './tbank-client';
 import {
   type CashCurrency,
@@ -385,6 +386,9 @@ export class BrokerImportService {
           ],
         );
         await advanceJournal(manager, owner, account, last);
+        // BPR-2: the securities just linked are valued at the price T-Bank reports for them now.
+        // Links that disagree save no price: the asset stays unpriced rather than guessed.
+        await saveBrokerPrices(manager, owner, history, new Date());
         return { created: true, value: receipt(saved) };
       })
       .catch(rethrowAccountingHistory);

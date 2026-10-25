@@ -219,8 +219,9 @@ export function resolvePrice(
         : units,
     1n,
   );
+  // BPR-3: a price a broker reported ages like a market price; a hand value does not.
   const status =
-    instrument.priceSource === 'manual'
+    instrument.priceSource === 'manual' && stored.source === 'manual'
       ? 'manual'
       : freshness(stored.observedAt, at) === 'fresh'
         ? 'fresh'
@@ -258,6 +259,14 @@ function priceChange24h(
   }
   const before = resolvePrice(instrument, previous, dayBefore, fx).price;
   if (!before) return null;
+  // BPR-3: a broker's price changes only between two fresh readings; a hand value and a broker
+  // price are not one series.
+  if (
+    (current.status === 'manual') !== (before.status === 'manual') ||
+    current.status === 'stale' ||
+    before.status === 'stale'
+  )
+    return null;
   const then = canonicalDecimalToAtoms(before.value);
   if (then === 0n) return null;
   return formatPercent(canonicalDecimalToAtoms(current.value) - then, then);

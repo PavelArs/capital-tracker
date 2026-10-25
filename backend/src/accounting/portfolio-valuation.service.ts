@@ -81,7 +81,10 @@ function parseQuery(query: unknown): AccountingCurrency | null {
   return currency;
 }
 
-/** Latest manual point at or before the instant whose current version is not void. */
+/**
+ * Latest manual point at or before the instant whose current version is not void, or the latest
+ * price a connected broker reported (BPR-3) when that is later; a hand value wins a tie.
+ */
 async function latestManualPrices(
   manager: EntityManager,
   owner: string,
@@ -103,17 +106,31 @@ async function latestManualPrices(
       ORDER BY point."instrumentId", point."observedAt" DESC`,
     [owner, instrumentIds, at],
   );
-  return new Map(
-    rows.map((row) => [
-      row.instrumentId,
-      {
-        priceUsd: parseDecimal(row.priceUsd, false),
-        observedAt: row.observedAt.toISOString(),
-        source: 'manual',
-        currency: row.quoteCurrency,
-      },
-    ]),
+  const broker: (ManualPriceRow & { provider: string })[] = await manager.query(
+    `SELECT p.* FROM unnest($2::uuid[]) AS instruments(id)
+      CROSS JOIN LATERAL (
+        SELECT b."instrumentId", b."observedAt", b.price::text AS "priceUsd", b."quoteCurrency",
+          b.provider
+        FROM broker_price_observations b
+        WHERE b."ownerId"=$1 AND b."instrumentId"=instruments.id AND b.provider='tbank'
+          AND b."observedAt"<=$3
+        ORDER BY b."observedAt" DESC LIMIT 1
+      ) p`,
+    [owner, instrumentIds, at],
   );
+  const stored = (row: ManualPriceRow, source: string): StoredPrice => ({
+    priceUsd: parseDecimal(row.priceUsd, false),
+    observedAt: row.observedAt.toISOString(),
+    source,
+    currency: row.quoteCurrency,
+  });
+  const prices = new Map(rows.map((row) => [row.instrumentId, stored(row, 'manual')]));
+  for (const row of broker) {
+    const hand = prices.get(row.instrumentId);
+    if (!hand || Date.parse(hand.observedAt) < row.observedAt.getTime())
+      prices.set(row.instrumentId, stored(row, row.provider));
+  }
+  return prices;
 }
 
 export interface ValuationInputs {

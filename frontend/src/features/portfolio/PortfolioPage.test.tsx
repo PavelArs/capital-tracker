@@ -991,6 +991,28 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
   });
 
+  it('BPR-STALE names T-Bank as the source of an imported share and marks an old price stale', async () => {
+    const share = valued(
+      6,
+      'SBER',
+      'SBER',
+      { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' },
+      {
+        quantity: '6',
+        price: { value: '3.05', observedAt: minutesAgo(180), source: 'tbank', status: 'stale' },
+        missingPrice: null,
+        value: '18.30',
+      },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([share]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await user.click(await screen.findByRole('link', { name: 'SBER' }));
+    expect(await screen.findByText('T-Bank · stale, updated 3 h ago')).toHaveClass(
+      'portfolio-head__stale',
+    );
+  });
+
   it('A3 names how a wallet is held under its name in Holdings, when the owner said', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
