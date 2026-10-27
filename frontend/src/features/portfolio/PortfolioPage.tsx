@@ -66,8 +66,12 @@ const typeClass: Record<AssetType, AssetClassFilter> = {
   manual: 'other',
 };
 
-/** An asset's class: its accounts' class when they all are brokers or property, else its type's. */
+/**
+ * An asset's class: a currency is always cash, wherever it is held; any other asset takes its
+ * accounts' class when they all are brokers or property, else its type's.
+ */
 function assetClassOf(asset: AssetValuation, classes: AccountClasses): AssetClassFilter {
+  if (asset.assetType === 'fiat') return 'cash';
   return heldClass(asset.holdings, classes) ?? typeClass[asset.assetType];
 }
 
@@ -938,8 +942,13 @@ export default function PortfolioPage() {
 
   const assets = portfolio?.assets ?? [];
   const classes = useAccountClasses();
+  // Assets no longer held stay out of the list until asked for or searched.
+  const [showSold, setShowSold] = useState(false);
+  const soldCount = assets.filter((asset) => Number(asset.quantity) === 0).length;
+  const listed = (asset: AssetValuation) =>
+    showSold || search.trim() !== '' || Number(asset.quantity) !== 0;
   const inFilter = (asset: AssetValuation, value: Filter) =>
-    value === 'all' || assetClassOf(asset, classes) === value;
+    listed(asset) && (value === 'all' || assetClassOf(asset, classes) === value);
   const deposits = bankList?.items ?? [];
   const count = (value: Filter) =>
     assets.filter((asset) => inFilter(asset, value)).length +
@@ -1148,6 +1157,13 @@ export default function PortfolioPage() {
                   onSort={(key) => setSort((current) => nextSort(current, key))}
                   real={real}
                 />
+              )}
+              {soldCount > 0 && !search.trim() && (
+                <Button size="sm" variant="ghost" onClick={() => setShowSold((shown) => !shown)}>
+                  {showSold
+                    ? 'Hide assets no longer held'
+                    : `Show ${soldCount} ${soldCount === 1 ? 'asset' : 'assets'} no longer held`}
+                </Button>
               )}
               {(!!bankError || banksStale) && (
                 <Banner
