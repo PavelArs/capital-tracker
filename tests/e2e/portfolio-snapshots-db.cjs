@@ -213,6 +213,7 @@ async function backfill(db, s, f) {
       'invested',
       'mainCurrency',
       'marketEffect',
+      'marketMissing',
       'marketReturnPercent',
       'netFlow',
       'period',

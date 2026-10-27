@@ -2,6 +2,15 @@ import apiClient from './client';
 import type { AccountingCurrency } from './portfolio-valuation.api';
 
 export type HistoryPeriod = '24H' | '7D' | '1M' | '3M' | '1Y' | 'ALL';
+
+/** Why the market part of the period's change is unknown. */
+export type MarketMissing =
+  | 'no-start'
+  | 'flow-without-rate'
+  | 'value-unknown'
+  | 'deposit-without-rate'
+  | 'priced-later'
+  | 'unpriced-changed';
 export const historyPeriods: readonly HistoryPeriod[] = ['24H', '7D', '1M', '3M', '1Y', 'ALL'];
 
 // Exact decimal strings from GET /accounting/portfolio/history (record-portfolio-snapshots):
@@ -55,6 +64,8 @@ export interface PortfolioHistory {
   netFlow: string | null;
   marketEffect: string | null;
   marketReturnPercent: string | null;
+  // Why marketEffect is unknown; null when it is known. Absent in an answer saved before it.
+  marketMissing?: MarketMissing | null;
   // Absent in an answer the browser saved before this was added.
   real?: { official: RealProfit | null; personal: RealProfit | null };
   points: HistoryPoint[];

@@ -63,6 +63,7 @@ const history = (changes: Partial<PortfolioHistory> = {}): PortfolioHistory => (
   netFlow: '10000',
   marketEffect: '5000',
   marketReturnPercent: '4.55',
+  marketMissing: null,
   points: [
     { at: '2026-09-05T00:00:00.000Z', value: '100000', complete: true, invested: '80000' },
     { at: '2026-09-06T00:00:00.000Z', value: '104000.5', complete: true, invested: '90000' },
@@ -648,6 +649,60 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage();
     const sold = await screen.findByRole('region', { name: 'Net worth' });
     expect(within(sold).getByLabelText('What changed')).toHaveTextContent('Net deposits-$2,500.00');
+  });
+
+  it('FLOW-SPLIT-REASON says why the market part is unknown, beside the dash', async () => {
+    renderPage();
+    const known = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(known).getByLabelText('What changed')).not.toHaveTextContent(/unknown/i);
+    cleanup();
+    get.mockResolvedValue(
+      history({ marketEffect: null, marketReturnPercent: null, marketMissing: 'priced-later' }),
+    );
+    renderPage();
+    const later = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(later).getByLabelText('What changed')).toHaveTextContent(
+      'Past monthMarket—Net deposits+$10,000.00Market unknown: an asset you held at the start had no price then',
+    );
+    cleanup();
+    // An answer saved before the reason existed keeps the dash and adds nothing.
+    get.mockResolvedValue(
+      history({ marketEffect: null, marketReturnPercent: null, marketMissing: undefined }),
+    );
+    renderPage();
+    const saved = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(saved).getByLabelText('What changed')).toHaveTextContent(
+      'Past monthMarket—Net deposits+$10,000.00',
+    );
+    expect(within(saved).getByLabelText('What changed')).not.toHaveTextContent(/unknown/i);
+  });
+
+  it.each([
+    ['no-start', 'Market and net deposits unknown: no value is known for this period'],
+    [
+      'flow-without-rate',
+      'Market and net deposits unknown: money put in or taken out in this period has no exchange rate',
+    ],
+    ['value-unknown', 'Market unknown: the value at the start or now is unknown'],
+    ['deposit-without-rate', "Market unknown: a bank deposit's value has no exchange rate"],
+    ['priced-later', 'Market unknown: an asset you held at the start had no price then'],
+    [
+      'unpriced-changed',
+      'Market unknown: an asset without a price was bought, sold or moved in this period',
+    ],
+  ] as const)('FLOW-SPLIT-REASON names the reason %s', async (marketMissing, text) => {
+    const split = marketMissing === 'no-start' || marketMissing === 'flow-without-rate';
+    get.mockResolvedValue(
+      history({
+        marketEffect: null,
+        marketReturnPercent: null,
+        marketMissing,
+        ...(split ? { deposits: null, withdrawals: null, netFlow: null } : {}),
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(hero).getByLabelText('What changed')).toHaveTextContent(text);
   });
 
   it('draws the net invested line and reads it with each point', async () => {

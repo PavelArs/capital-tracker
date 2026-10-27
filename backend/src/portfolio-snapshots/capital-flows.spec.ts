@@ -485,6 +485,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       netFlow: '10000',
       marketEffect: '0',
       marketReturnPercent: '0.00',
+      marketMissing: null,
     });
   });
 
@@ -503,6 +504,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       netFlow: '10000',
       marketEffect: '5000',
       marketReturnPercent: '4.55',
+      marketMissing: null,
     });
   });
 
@@ -515,6 +517,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       netFlow: '0',
       marketEffect: '-6',
       marketReturnPercent: '-0.01',
+      marketMissing: null,
     });
   });
 
@@ -531,6 +534,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       netFlow: '600',
       marketEffect: '600',
       marketReturnPercent: '60.00',
+      marketMissing: null,
     });
     // Nothing deposited and nothing held: no return, never a division by zero.
     expect(splitChange(start, { ...end, value: '0' }, []).marketReturnPercent).toBeNull();
@@ -541,9 +545,9 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       marketEffect: null,
       marketReturnPercent: null,
     };
-    expect(splitChange(null, end, flows)).toEqual(unknown);
+    expect(splitChange(null, end, flows)).toEqual({ ...unknown, marketMissing: 'no-start' });
     expect(splitChange(start, end, [{ at: at('2025-06-13T00:00:00.000Z'), amount: null }])).toEqual(
-      unknown,
+      { ...unknown, marketMissing: 'flow-without-rate' },
     );
     // A value without a rate keeps the known flows and leaves the market effect unknown.
     expect(splitChange(start, { ...end, value: null }, flows)).toMatchObject({
@@ -577,6 +581,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       netFlow: '0',
       marketEffect: '5000',
       marketReturnPercent: '10.00',
+      marketMissing: null,
     });
     // A flow that belongs to the coin without a price, or a change in its quantity, is not known.
     const flow = { at: at('2026-09-20T00:00:00.000Z'), instrumentId: 'eth', amount: usd(1000) };
@@ -599,6 +604,35 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
         [],
       ),
     ).toMatchObject({ marketEffect: null });
+  });
+
+  it('FLOW-SPLIT-REASON an unknown market effect says why; a known one says nothing', () => {
+    const held = (eth: string | null, ethQuantity = '2') =>
+      new Map([
+        ['btc', { quantity: '1', value: '50000' }],
+        ['eth', { quantity: ethQuantity, value: eth }],
+      ]);
+    const start = { at: at('2026-09-05T00:00:00.000Z'), value: '60000', held: held('10000') };
+    const end = { at: at('2026-10-05T00:00:00.000Z'), value: '61000', held: held('11000') };
+    const flow = { at: at('2026-09-20T00:00:00.000Z'), amount: usd(500) };
+    const reason = (...args: Parameters<typeof splitChange>) => splitChange(...args).marketMissing;
+    expect(reason(start, end, [flow])).toBeNull();
+    expect(reason(null, end, [flow])).toBe('no-start');
+    expect(reason(start, end, [{ ...flow, amount: null }])).toBe('flow-without-rate');
+    expect(reason(start, { ...end, value: null }, [])).toBe('value-unknown');
+    expect(reason({ ...start, value: null }, end, [])).toBe('value-unknown');
+    expect(reason(start, { ...end, unrated: true }, [])).toBe('deposit-without-rate');
+    // ETH had no price at the start and has one now: its prices begin later.
+    expect(reason({ ...start, value: '50000', unpriced: true, held: held(null) }, end, [])).toBe(
+      'priced-later',
+    );
+    // ETH has no price now and its quantity changed, or one of its flows falls in the period.
+    const unpriced = { ...end, value: '50000', unpriced: true, held: held(null) };
+    expect(reason(start, unpriced, [])).toBeNull();
+    expect(reason(start, { ...unpriced, held: held(null, '3') }, [])).toBe('unpriced-changed');
+    expect(reason(start, unpriced, [{ ...flow, instrumentId: 'eth' }])).toBe('unpriced-changed');
+    // A point read without what it held cannot say what was left out.
+    expect(reason(start, { ...unpriced, held: undefined }, [])).toBe('value-unknown');
   });
 
   it('PROFIT-ALL-TIME profit or loss is net worth minus all-time net invested', () => {
@@ -630,6 +664,7 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       netFlow: '50000',
       marketEffect: null,
       marketReturnPercent: null,
+      marketMissing: 'value-unknown',
     });
     expect(
       splitChange({ ...start, unpriced: true }, { ...end, unpriced: false }, flows),

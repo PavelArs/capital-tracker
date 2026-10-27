@@ -247,6 +247,15 @@ export interface SplitPoint {
   held?: HeldAssets;
 }
 
+/** Why the market effect is unknown. */
+export type MarketMissing =
+  | 'no-start'
+  | 'flow-without-rate'
+  | 'value-unknown'
+  | 'deposit-without-rate'
+  | 'priced-later'
+  | 'unpriced-changed';
+
 /**
  * Capital change from `start` to `end` split into flows and market (BR 10): netFlow =
  * deposits − withdrawals after `start` up to `end`; marketEffect = V1 − V0 − netFlow;
@@ -255,7 +264,7 @@ export interface SplitPoint {
  * long as the coin's quantity is the same at both ends and none of its flows falls between
  * them, otherwise its flows would be counted while its value is not and show its cost as a
  * loss. A deposit without a rate, or a coin whose details are not known, gives no market
- * effect.
+ * effect. `marketMissing` says why the market effect is unknown, and is null when it is known.
  */
 export function splitChange(
   start: SplitPoint | null,
@@ -267,14 +276,15 @@ export function splitChange(
   netFlow: string | null;
   marketEffect: string | null;
   marketReturnPercent: string | null;
+  marketMissing: MarketMissing | null;
 } {
-  if (start === null) return unknownSplit;
+  if (start === null) return { ...unknownSplit, marketMissing: 'no-start' };
   let deposits = 0n;
   let withdrawals = 0n;
   const inWindow: StatedFlow[] = [];
   for (const flow of flows) {
     if (flow.at <= start.at || flow.at > end.at) continue;
-    if (flow.amount === null) return unknownSplit;
+    if (flow.amount === null) return { ...unknownSplit, marketMissing: 'flow-without-rate' };
     inWindow.push(flow);
     if (flow.amount > 0n) deposits += flow.amount;
     else withdrawals -= flow.amount;
@@ -285,30 +295,35 @@ export function splitChange(
     withdrawals: formatProduct(withdrawals),
     netFlow: formatSignedProduct(netFlow),
   };
-  const noMarket = { ...split, marketEffect: null, marketReturnPercent: null };
-  if (start.value === null || end.value === null) return noMarket;
-  if (start.unrated === true || end.unrated === true) return noMarket;
+  const noMarket = (marketMissing: MarketMissing) => ({
+    ...split,
+    marketEffect: null,
+    marketReturnPercent: null,
+    marketMissing,
+  });
+  if (start.value === null || end.value === null) return noMarket('value-unknown');
+  if (start.unrated === true || end.unrated === true) return noMarket('deposit-without-rate');
   // Only a coin that has no price now is left out. One that had none at the start of the
   // period but has now (its prices begin later) leaves its market effect unknown, as before.
   const left = new Set<string>();
   if (end.unpriced === true) {
-    if (end.held === undefined) return noMarket;
+    if (end.held === undefined) return noMarket('value-unknown');
     for (const [id, asset] of end.held) if (asset.value === null) left.add(id);
   }
   if (start.unpriced === true) {
-    if (start.held === undefined) return noMarket;
+    if (start.held === undefined) return noMarket('value-unknown');
     for (const [id, asset] of start.held)
-      if (asset.value === null && !left.has(id)) return noMarket;
+      if (asset.value === null && !left.has(id)) return noMarket('priced-later');
   }
   // The value of the coins left out, to take from both ends.
   let startLeft = 0n;
   for (const id of left) {
     // A point read without its coins cannot say what the coins left out were worth at it.
-    if (start.held === undefined) return noMarket;
+    if (start.held === undefined) return noMarket('value-unknown');
     const before = start.held.get(id);
     const after = end.held?.get(id);
-    if ((before?.quantity ?? '0') !== (after?.quantity ?? '0')) return noMarket;
-    if (inWindow.some((flow) => flow.instrumentId === id)) return noMarket;
+    if ((before?.quantity ?? '0') !== (after?.quantity ?? '0')) return noMarket('unpriced-changed');
+    if (inWindow.some((flow) => flow.instrumentId === id)) return noMarket('unpriced-changed');
     if (before?.value) startLeft += valueAtoms(before.value);
   }
   const from = valueAtoms(start.value) - startLeft;
@@ -318,6 +333,7 @@ export function splitChange(
     ...split,
     marketEffect: formatSignedProduct(market),
     marketReturnPercent: base > 0n ? formatPercent(market, base) : null,
+    marketMissing: null,
   };
 }
 

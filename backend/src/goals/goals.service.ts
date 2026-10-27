@@ -108,6 +108,7 @@ export class GoalsService {
         from: firstValuedPoint(history.points)?.at ?? null,
         contributions: history.netFlow,
         market: history.marketEffect,
+        marketMissing: history.marketMissing,
         total: history.change,
       },
     };

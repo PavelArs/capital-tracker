@@ -545,6 +545,7 @@ async function unpricedEnd(db, s, f) {
     minus(String(last), String(first)),
     'Market effect of BTC alone, the ETH without a price left out of both ends',
   );
+  assert.equal(history.marketMissing, null, 'A known market effect gives no reason');
   // Buying more excluded ETH must change neither BTC invested money nor its market result.
   await trade(db, s, left, wallet, eth, 'buy', '2026-09-20T10:00:00.000Z', '1', '1000');
   const bought = await s.snapshots.history(left, { period: '1M', currency: 'USD' }, now);
@@ -598,6 +599,11 @@ async function unpricedStart(db, s, f) {
     [history.change, history.changePercent, history.marketEffect, history.marketReturnPercent],
     [null, null, null, null],
     'No change from a start that left out a held asset',
+  );
+  assert.equal(
+    history.marketMissing,
+    'priced-later',
+    'FLOW-SPLIT-REASON the asset held at the start had no price then',
   );
   assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
   console.log(
