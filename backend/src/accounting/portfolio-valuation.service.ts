@@ -356,8 +356,13 @@ export async function readValuationInputs(
   startedBy?: string,
 ): Promise<ValuationInputs> {
   const all: PortfolioInstrument[] = await manager.query(
-    `SELECT id,name,symbol,"assetType","valuationCurrency","priceSource"
-      FROM accounting_instruments WHERE "ownerId"=$1 ORDER BY id`,
+    // A security's type comes from its T-Bank links, only when they all name the same one.
+    `SELECT i.id,i.name,i.symbol,i."assetType",i."valuationCurrency",i."priceSource",
+        (SELECT CASE WHEN count(DISTINCT l."instrumentType") = 1 THEN min(l."instrumentType") END
+          FROM broker_instrument_links l
+          WHERE l."ownerId"=i."ownerId" AND l."instrumentId"=i.id
+            AND l."instrumentType" IS NOT NULL) AS "securityType"
+      FROM accounting_instruments i WHERE i."ownerId"=$1 ORDER BY i.id`,
     [owner],
   );
   const hidden = await readHiddenAssets(manager, owner);

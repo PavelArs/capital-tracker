@@ -10,6 +10,7 @@ export const typeLabels: Record<AssetType, string> = {
   fiat: 'Cash',
   manual: 'Manual',
 };
+const securityLabels = { share: 'Share', bond: 'Bond', etf: 'Fund' } as const;
 /**
  * "BTC · Crypto · USD": ticker, type and value currency of an asset; a token held in tracked
  * wallets names their blockchains, "USDT on Ethereum, Solana" (TOKEN-CHAIN).
@@ -17,7 +18,7 @@ export const typeLabels: Record<AssetType, string> = {
 export function assetCaption(asset: AssetValuation, chains: TokenChains = new Map()): string {
   return [
     asset.symbol && withChains(asset.symbol, asset.symbol, chains),
-    typeLabels[asset.assetType],
+    asset.securityType ? securityLabels[asset.securityType] : typeLabels[asset.assetType],
     asset.valuationCurrency,
   ]
     .filter(Boolean)
