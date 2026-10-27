@@ -147,6 +147,39 @@ export function manualSeries(
   return series;
 }
 
+/**
+ * BPR-3: the hand values of each asset with the prices a broker reported for it, ascending. As in
+ * the live valuation the later point values an instant and a hand value wins a tie.
+ */
+export function withBrokerPrices(
+  manual: ReadonlyMap<string, PricePoint[]>,
+  rows: readonly {
+    instrumentId: string;
+    observedAt: number;
+    price: string;
+    quoteCurrency: AccountingCurrency;
+    provider: string;
+  }[],
+): Map<string, PricePoint[]> {
+  const series = new Map([...manual].map(([id, points]) => [id, [...points]]));
+  const hand = new Set(
+    [...manual].flatMap(([id, points]) => points.map((point) => `${id}:${point.at}`)),
+  );
+  for (const row of rows) {
+    if (hand.has(`${row.instrumentId}:${row.observedAt}`)) continue;
+    const points = series.get(row.instrumentId) ?? [];
+    points.push({
+      at: row.observedAt,
+      price: row.price,
+      source: row.provider,
+      currency: row.quoteCurrency,
+    });
+    series.set(row.instrumentId, points);
+  }
+  for (const points of series.values()) points.sort((left, right) => left.at - right.at);
+  return series;
+}
+
 /** A Bank of Russia rate applies from midnight of its Moscow date (UTC+3). */
 export const rateDateStart = (date: string) => Date.parse(`${date}T00:00:00+03:00`);
 

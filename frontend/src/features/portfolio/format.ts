@@ -136,6 +136,7 @@ const sourceNames: Record<string, string> = {
   kraken: 'Kraken',
   coingecko: 'CoinGecko',
   bybit: 'Bybit',
+  tbank: 'T-Bank',
 };
 
 export const sourceLabels: Record<PriceSource, string> = {
@@ -144,11 +145,26 @@ export const sourceLabels: Record<PriceSource, string> = {
   fixed: 'Fixed',
 };
 
-/** The asset's price source and, for market prices, their age ("Market price · 30 min ago"). */
+/**
+ * BPR-3: whether the price moves on its own (a market price, or a broker's for an asset priced by
+ * hand), so it has an age, may be stale and has a daily change, unlike a hand value.
+ */
+export function quoted(asset: AssetValuation): boolean {
+  return (
+    asset.priceSource === 'market' ||
+    asset.price?.status === 'fresh' ||
+    asset.price?.status === 'stale'
+  );
+}
+
+/** The asset's price source and, for a quoted price, its age ("Market price · 30 min ago"). */
 export function priceNote(asset: AssetValuation, now: Date): string {
-  const label = sourceLabels[asset.priceSource];
   const current = asset.price;
-  if (!current?.observedAt || asset.priceSource !== 'market') return label;
+  const label =
+    asset.priceSource !== 'market' && quoted(asset) && current
+      ? sourceName(current.source)
+      : sourceLabels[asset.priceSource];
+  if (!current?.observedAt || !quoted(asset)) return label;
   const when = age(current.observedAt, now);
   return current.status === 'stale' ? `${label} · stale, ${when}` : `${label} · ${when}`;
 }

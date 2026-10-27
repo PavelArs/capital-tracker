@@ -43,6 +43,10 @@ function savedTokenFailure(reason: TBankFailure) {
   );
 }
 
+/** A closed account or an Invest Box: T-Bank gives no holdings to check a history against. */
+export const NO_HOLDINGS =
+  'T-Bank cannot verify current holdings for this account. Reconcile it before importing.';
+
 const iso = (column: string) =>
   `to_char("${column}" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "${column}"`;
 
@@ -184,10 +188,7 @@ export class BrokerConnectionsService {
     const result: TBankResult<TBankOperation[]> = await this.tbank.operations(token, target.id);
     if (!result.ok) throw savedTokenFailure(result.reason);
     if (!includePositions) return { brokerAccountId: target.id, operations: result.value };
-    if (target.closed || target.investBox)
-      throw new UnprocessableEntityException(
-        'T-Bank cannot verify current holdings for this account. Reconcile it before importing.',
-      );
+    if (target.closed || target.investBox) throw new UnprocessableEntityException(NO_HOLDINGS);
     const positions = await this.tbank.portfolio(token, target.id);
     if (!positions.ok) throw savedTokenFailure(positions.reason);
     const classified: TBankPosition[] = [];

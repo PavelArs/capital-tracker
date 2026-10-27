@@ -823,3 +823,81 @@ describe('AST-MANUAL-VALUE a hand value keeps the currency it was set in', () =>
     expect(assetOf(result, flat).priceChange24hPercent).toBe('0.00');
   });
 });
+
+describe('BPR-STALE a T-Bank price is fresh for two hours, then stale', () => {
+  const share = instrument(21, 'SBER', 'SBER', {
+    assetType: 'manual',
+    valuationCurrency: 'RUB',
+    priceSource: 'manual',
+  });
+  const read = (observedAt: string): PortfolioPrices => ({
+    market: new Map(),
+    manual: new Map([
+      [share.id, { priceUsd: '305.5', observedAt, source: 'tbank', currency: 'RUB' }],
+    ]),
+  });
+  const rub = new FxConverter({ USD: [{ date: '2026-10-04', rubPerUnit: '100' }], EUR: [] }, 'RUB');
+
+  it('values the share at the price T-Bank reported an hour ago, fresh, from T-Bank', () => {
+    expect(resolvePrice(share, read(minutesAgo(60)), now, rub).price).toEqual({
+      value: '305.5',
+      observedAt: minutesAgo(60),
+      source: 'tbank',
+      status: 'fresh',
+    });
+  });
+
+  it('still values it at a three-hour-old price, marked stale', () => {
+    expect(resolvePrice(share, read(minutesAgo(180)), now, rub).price).toMatchObject({
+      value: '305.5',
+      source: 'tbank',
+      status: 'stale',
+    });
+  });
+
+  it('BPR-24H shows a day change only between two fresh T-Bank prices', () => {
+    const at = (observedAt: string, price: string): PortfolioPrices => ({
+      market: new Map(),
+      manual: new Map([
+        [share.id, { priceUsd: price, observedAt, source: 'tbank', currency: 'RUB' }],
+      ]),
+    });
+    const dayAgo = (minutes: number) =>
+      new Date(now.getTime() - 24 * 60 * 60_000 - minutes * 60_000).toISOString();
+    const change = (current: PortfolioPrices, previous: PortfolioPrices) =>
+      assetOf(
+        projectPortfolio(
+          now,
+          [share],
+          [holding(21, 'Broker', [position(share, '1', '3')])],
+          current,
+          rub,
+          previous,
+        ),
+        share,
+      ).priceChange24hPercent;
+    expect(change(at(minutesAgo(30), '310'), at(dayAgo(30), '300'))).toBe('3.33');
+    expect(change(at(minutesAgo(180), '310'), at(dayAgo(30), '300'))).toBeNull();
+    expect(change(at(minutesAgo(30), '310'), at(dayAgo(600), '300'))).toBeNull();
+    const hand: PortfolioPrices = {
+      market: new Map(),
+      manual: new Map([
+        [share.id, { priceUsd: '300', observedAt: dayAgo(30), source: 'manual', currency: 'RUB' }],
+      ]),
+    };
+    expect(change(at(minutesAgo(30), '310'), hand)).toBeNull();
+  });
+
+  it('keeps a hand value of the same asset marked manual', () => {
+    const hand: PortfolioPrices = {
+      market: new Map(),
+      manual: new Map([
+        [
+          share.id,
+          { priceUsd: '300', observedAt: minutesAgo(180), source: 'manual', currency: 'RUB' },
+        ],
+      ]),
+    };
+    expect(resolvePrice(share, hand, now, rub).price?.status).toBe('manual');
+  });
+});
