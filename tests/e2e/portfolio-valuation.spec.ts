@@ -459,3 +459,107 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await expect(main.getByRole('link', { name: new RegExp(`^Studio ${suffix}`) })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('PORTFOLIO-SOLD-OUT: broker cash sits under Cash and sold-out assets wait behind a button', async ({
+  page,
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+  const api = await tradeApi(page);
+  const suffix = randomUUID().slice(0, 8);
+  const broker = (await api.result('POST', '/accounts', 201, {
+    requestId: randomUUID(),
+    name: `PORTFOLIO-SOLD-OUT broker ${suffix}`,
+    assetClass: 'broker',
+  })) as { id: string };
+  await api.initialize(broker.id);
+  const shareName = `PORTFOLIO-SOLD-OUT share ${suffix}`;
+  const share = (await api.result('POST', '/instruments', 201, {
+    requestId: randomUUID(),
+    name: shareName,
+    symbol: 'PSOS',
+    assetType: 'manual',
+  })) as { id: string };
+  // Bought and sold in rubles at a rate the owner entered; the sale keeps its rubles as cash.
+  const trade = (revision: number, side: 'buy' | 'sell', gross: string) => ({
+    requestId: randomUUID(),
+    expectedJournalRevision: revision,
+    instrumentId: share.id,
+    side,
+    occurredAt: '2025-01-02T00:00:00.000Z',
+    orderWithinTimestamp: revision,
+    quantity: '10',
+    paid: { currency: 'RUB', gross, fee: '0', perUsd: '100' },
+    ...(side === 'sell' ? { settlementCurrency: 'RUB' } : {}),
+  });
+  await api.result('POST', `/accounts/${broker.id}/trades`, 201, trade(0, 'buy', '10000'));
+  await api.result('POST', `/accounts/${broker.id}/trades`, 201, trade(1, 'sell', '12000'));
+
+  const valuation = (await api.result('GET', '/portfolio', 200)) as {
+    assets: (AssetRow & { assetType: string; symbol: string | null })[];
+  };
+  expect(valuation.assets.find((item) => item.instrumentId === share.id)?.quantity).toBe('0');
+  const rubles = valuation.assets.find(
+    (item) =>
+      item.assetType === 'fiat' &&
+      item.symbol === 'RUB' &&
+      item.holdings.some((holding) => holding.accountId === broker.id),
+  );
+  expect(rubles?.holdings.find((holding) => holding.accountId === broker.id)?.quantity).toBe(
+    '12000',
+  );
+  const soldOut = valuation.assets.filter((item) => item.quantity === '0').length;
+  expect(soldOut).toBeGreaterThan(0);
+
+  await forgetBrowserReads(page);
+  await page.goto('/portfolio');
+  const main = page.getByRole('main');
+  const group = (label: string) =>
+    main
+      .locator('tbody')
+      .filter({ has: page.locator('.portfolio-group__name', { hasText: new RegExp(`^${label}$`) }) });
+  // A currency held at a broker is cash, not a Broker asset.
+  const moreCash = main.getByRole('button', { name: /^Show \d+ more Cash assets$/ });
+  if (await moreCash.isVisible()) await moreCash.click();
+  await expect(group('Cash').getByRole('link', { name: rubles!.name, exact: true })).toBeVisible();
+  await expect(main.getByRole('link', { name: shareName, exact: true })).toHaveCount(0);
+  const show = main.getByRole('button', {
+    name: `Show ${soldOut} ${soldOut === 1 ? 'asset' : 'assets'} no longer held`,
+    exact: true,
+  });
+  await expect(show).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('portfolio-sold-out-1440-dark.png'),
+    fullPage: true,
+  });
+  await show.click();
+  // Open every group: the revealed row may sit past a group's first five.
+  for (const more of await main.getByRole('button', { name: /^Show \d+ more / }).all())
+    await more.click();
+  await expect(main.getByRole('link', { name: shareName, exact: true })).toBeVisible();
+  const hide = main.getByRole('button', { name: 'Hide assets no longer held', exact: true });
+  await hide.click();
+  await expect(main.getByRole('link', { name: shareName, exact: true })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(main.getByRole('table')).toHaveCount(0);
+  await expect(show).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+  await page.setViewportSize({
+    width: 390,
+    height: await page.evaluate(() => document.documentElement.scrollHeight + 100),
+  });
+  await page.screenshot({
+    path: testInfo.outputPath('portfolio-sold-out-390-light.png'),
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});

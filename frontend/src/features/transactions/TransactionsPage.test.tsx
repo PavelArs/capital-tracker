@@ -4700,7 +4700,8 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     first.unmount();
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(40));
-    expect(scrollTo).toHaveBeenCalledWith(0, 900);
+    // The position is set in an effect once the page is ready, which may come a tick later.
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith(0, 900));
   });
 
   it('adds the rows with the button too, for a keyboard or a browser without the observer', async () => {

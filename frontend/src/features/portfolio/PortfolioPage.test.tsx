@@ -124,11 +124,13 @@ const toncoin = valued(2, 'Toncoin', 'TON', {
   valuationCurrency: 'USD',
   priceSource: 'manual',
 });
-const deposit = valued(5, 'Deposit', null, {
-  assetType: 'manual',
-  valuationCurrency: 'RUB',
-  priceSource: 'manual',
-});
+const deposit = valued(
+  5,
+  'Deposit',
+  null,
+  { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' },
+  { quantity: '1' },
+);
 const depositAsset: PortfolioAsset = {
   id: deposit.instrumentId,
   name: 'Deposit',
@@ -458,6 +460,8 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
     expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    // Toncoin is no longer held, so it shows only when asked for.
+    await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
 
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
     // The priced assets are the value; the unpriced one is named under it, and one tooltip
@@ -794,8 +798,11 @@ describe('PV-UI Portfolio values every asset', () => {
 
   it('portfolio-16 offers a type filter only for the types that hold assets', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, toncoin]));
+    const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
+    // Toncoin is no longer held, so it shows only when asked for.
+    await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
     const chips = screen.getByRole('group', { name: 'Filter assets' });
     expect(
       within(chips)
@@ -814,7 +821,10 @@ describe('PV-UI Portfolio values every asset', () => {
         valuationCurrency: 'USD',
         priceSource: 'manual',
       },
-      { holdings: [{ accountId: id(201), accountName: 'QA Broker', quantity: '1', value: '0' }] },
+      {
+        quantity: '1',
+        holdings: [{ accountId: id(201), accountName: 'QA Broker', quantity: '1', value: '0' }],
+      },
     );
     const flat = valued(
       7,
@@ -825,7 +835,10 @@ describe('PV-UI Portfolio values every asset', () => {
         valuationCurrency: 'RUB',
         priceSource: 'manual',
       },
-      { holdings: [{ accountId: id(202), accountName: 'Flat', quantity: '1', value: '0' }] },
+      {
+        quantity: '1',
+        holdings: [{ accountId: id(202), accountName: 'Flat', quantity: '1', value: '0' }],
+      },
     );
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin, cash, fund, flat, deposit]),
@@ -860,6 +873,84 @@ describe('PV-UI Portfolio values every asset', () => {
     await user.click(within(chips).getByRole('button', { name: /^Real estate/ }));
     expect(rowOf('Flat')).toBeInTheDocument();
     expect(assetRows()).toHaveLength(1);
+  });
+
+  it('PORTFOLIO-CASH-GROUP lists a currency held at a broker under Cash, not Broker', async () => {
+    const rubles = valued(
+      8,
+      'Russian ruble',
+      'RUB',
+      { assetType: 'fiat', valuationCurrency: 'RUB', priceSource: 'fixed' },
+      {
+        quantity: '2707.58',
+        value: '33.63',
+        holdings: [
+          { accountId: id(201), accountName: 'QA Broker', quantity: '2707.58', value: '33.63' },
+        ],
+      },
+    );
+    const share = valued(
+      9,
+      'SBER',
+      'SBER',
+      { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' },
+      {
+        quantity: '10',
+        holdings: [{ accountId: id(201), accountName: 'QA Broker', quantity: '10', value: '0' }],
+      },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([rubles, share]));
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: id(201),
+          name: 'QA Broker',
+          kind: null,
+          assetClass: 'broker',
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Russian ruble/ });
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    await waitFor(() =>
+      expect(
+        within(chips)
+          .getAllByRole('button')
+          .map((chip) => chip.textContent),
+      ).toEqual(['All 2', 'Cash 1', 'Broker 1']),
+    );
+    await user.click(within(chips).getByRole('button', { name: /^Cash/ }));
+    expect(assetRows()).toHaveLength(1);
+    expect(rowOf('Russian ruble')).toBeInTheDocument();
+  });
+
+  it('PORTFOLIO-SOLD-OUT hides assets no longer held until asked, and a search finds them', async () => {
+    const soldOut = valued(10, 'Sold share', 'SOLD', {
+      assetType: 'manual',
+      valuationCurrency: 'RUB',
+      priceSource: 'manual',
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, soldOut]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(screen.queryByRole('row', { name: /^Sold share/ })).toBeNull();
+    expect(
+      within(screen.getByRole('group', { name: 'Filter assets' })).getByRole('button', {
+        name: /^All/,
+      }),
+    ).toHaveTextContent('All 1');
+    await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
+    expect(rowOf('Sold share')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hide assets no longer held' }));
+    expect(screen.queryByRole('row', { name: /^Sold share/ })).toBeNull();
+    await user.type(screen.getByRole('searchbox'), 'SOLD');
+    expect(rowOf('Sold share')).toBeInTheDocument();
   });
 
   it('portfolio-19 names the assets table', async () => {
@@ -2502,6 +2593,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
+    // Toncoin is no longer held, so it shows only when asked for.
+    await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
     expect(cells(rowOf('Toncoin'))[0]).toBe('ToncoinTON · Crypto · USD');
     expect(cells(rowOf('Toncoin'))[2]).toBe('No priceManual');
 
@@ -2564,7 +2657,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(assetRows()).toHaveLength(1);
     expect(rowOf('Deposit')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
-    expect(assetRows()).toHaveLength(2);
+    // Back on the list, Toncoin (no longer held) is hidden again.
+    expect(assetRows()).toHaveLength(1);
   });
 
   it('adds cash at its amount and a coin at its cost, with no price for either', async () => {
@@ -2905,6 +2999,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
+    // Toncoin is no longer held, so it shows only when asked for.
+    await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
     const search = screen.getByRole('searchbox', { name: 'Search assets' });
     expect(search).toHaveAttribute('placeholder', 'Search assets');
     const names = () => assetRows().map((row) => row.textContent?.split(' ')[0]);
@@ -2930,6 +3026,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
+    // Toncoin is no longer held, so it shows only when asked for.
+    await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
     const order = () =>
       assetRows().map((row) => row.querySelector('.portfolio-asset__name')?.textContent);
     const header = (name: string) => screen.getByRole('columnheader', { name });
@@ -3030,6 +3128,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       const user = userEvent.setup();
       renderAt('/portfolio');
       const row = await screen.findByRole('link', { name: /^Bitcoin/ });
+      // Toncoin is no longer held, so it shows only when asked for.
+      await user.click(screen.getByRole('button', { name: 'Show 1 asset no longer held' }));
       // The whole row opens the asset; price, allocation, average and 24h live on its page.
       expect(row).toHaveAttribute('href', `/portfolio/${bitcoin.instrumentId}`);
       expect(row).toHaveTextContent('Bitcoin1.2 BTC$96,000.00+$30,000.00 · +45.45%');
