@@ -412,40 +412,70 @@ export function accountsAt(
   return withoutAssets(allAccountsAt(inputs, at, options), inputs.hidden);
 }
 
-/** One read-only input snapshot; prices and currency cannot change its FIFO holdings. */
+/**
+ * One read-only input snapshot; prices and currency cannot change its FIFO holdings. Each
+ * connected ledger (or account without one) is replayed again only when an instant crosses one
+ * of its own changes, so one trade does not replay every other ledger.
+ */
 export function accountHistoryReader(inputs: ValuationInputs) {
-  const changes = [
-    ...new Set([
-      ...inputs.accounts.flatMap((account) =>
-        account.coverageFrom ? [account.coverageFrom.getTime()] : [],
-      ),
-      ...[...new Set(inputs.ledgers.values())].flatMap((ledger) => [
-        ...ledger.transfers.map((item) => Date.parse(item.occurredAt)),
-        ...(ledger.splits ?? []).map((item) => Date.parse(item.effectiveAt)),
-        ...[...ledger.accounts.values()].flatMap((account) => [
-          Date.parse(account.coverageFrom),
-          ...[
-            ...account.trades,
-            ...(account.rewards ?? []),
-            ...(account.swaps ?? []),
-            ...(account.capitalReturns ?? []),
-          ].map((item) => Date.parse(item.occurredAt)),
-        ]),
+  const groups = new Map<ConnectedLedger | string, AccountRow[]>();
+  for (const account of inputs.accounts) {
+    const key = inputs.ledgers.get(account.accountId) ?? account.accountId;
+    groups.set(key, [...(groups.get(key) ?? []), account]);
+  }
+  const parts = [...groups].map(([key, accounts]) => {
+    const ledger = typeof key === 'string' ? undefined : key;
+    const changes = [
+      ...new Set([
+        ...accounts.flatMap((account) =>
+          account.coverageFrom ? [account.coverageFrom.getTime()] : [],
+        ),
+        ...(ledger
+          ? [
+              ...ledger.transfers.map((item) => Date.parse(item.occurredAt)),
+              ...(ledger.splits ?? []).map((item) => Date.parse(item.effectiveAt)),
+              ...[...ledger.accounts.values()].flatMap((account) => [
+                Date.parse(account.coverageFrom),
+                ...[
+                  ...account.trades,
+                  ...(account.rewards ?? []),
+                  ...(account.swaps ?? []),
+                  ...(account.capitalReturns ?? []),
+                ].map((item) => Date.parse(item.occurredAt)),
+              ]),
+            ]
+          : []),
+        ...accounts.flatMap((account) =>
+          (inputs.chainMoves.get(account.accountId) ?? []).map((item) =>
+            Date.parse(item.occurredAt),
+          ),
+        ),
       ]),
-      ...[...inputs.chainMoves.values()].flatMap((moves) =>
-        moves.map((item) => Date.parse(item.occurredAt)),
-      ),
-    ]),
-  ].sort((a, b) => a - b);
-  let from = -Infinity;
-  let until = Infinity;
+    ].sort((a, b) => a - b);
+    return {
+      inputs: { ...inputs, accounts },
+      changes,
+      from: -Infinity,
+      until: Infinity,
+      kept: undefined as PortfolioAccountInput[] | undefined,
+    };
+  });
   let kept: PortfolioAccountInput[] | undefined;
   return (at: string) => {
     const instant = Date.parse(at);
-    if (!kept || instant < from || instant >= until) {
-      kept = accountsAt(inputs, at, { emptyBeforeCoverage: true });
-      from = changes.findLast((time) => time <= instant) ?? -Infinity;
-      until = changes.find((time) => time > instant) ?? Infinity;
+    let replayed = false;
+    for (const part of parts) {
+      if (part.kept && instant >= part.from && instant < part.until) continue;
+      part.kept = accountsAt(part.inputs, at, { emptyBeforeCoverage: true });
+      part.from = part.changes.findLast((time) => time <= instant) ?? -Infinity;
+      part.until = part.changes.find((time) => time > instant) ?? Infinity;
+      replayed = true;
+    }
+    if (!kept || replayed) {
+      const byId = new Map(
+        parts.flatMap((part) => part.kept!.map((account) => [account.accountId, account] as const)),
+      );
+      kept = inputs.accounts.map((account) => byId.get(account.accountId)!);
     }
     return kept;
   };

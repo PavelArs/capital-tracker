@@ -231,3 +231,56 @@ it('SPLIT-HISTORY invalidates cached holdings at a share split boundary', () => 
   );
   expect(after).not.toEqual(before);
 });
+
+it('DASH-CURRENCY-PERF replays only the ledger that changed, matching direct FIFO results', () => {
+  const savings = {
+    ...ledger,
+    accounts: new Map([
+      [
+        'savings',
+        {
+          ...ledger.accounts.get('wallet')!,
+          accountId: 'savings',
+          trades: [
+            {
+              ...ledger.accounts.get('wallet')!.trades[0],
+              tradeId: 'later-buy',
+              occurredAt: '2025-01-12T12:00:00.000Z',
+              quantity: '3',
+              grossUsd: '3',
+            },
+          ],
+        },
+      ],
+    ]),
+  } as unknown as ConnectedLedger;
+  const twoLedgers: ValuationInputs = {
+    ...inputs,
+    accounts: [
+      ...inputs.accounts,
+      { accountId: 'savings', name: 'Savings', coverageFrom: new Date(start) },
+    ],
+    ledgers: new Map([
+      ['wallet', ledger],
+      ['savings', savings],
+    ]),
+  };
+  const read = accountHistoryReader(twoLedgers);
+  const project = jest.spyOn(connected, 'projectConnectedLedger');
+  const instants = [
+    '2025-01-07T00:00:00.000Z',
+    '2025-01-09T00:00:00.000Z',
+    '2025-01-11T00:00:00.000Z',
+    '2025-01-13T00:00:00.000Z',
+    '2025-01-03T00:00:00.000Z',
+  ];
+  for (const at of instants)
+    expect(read(at)).toEqual(accountsAt(twoLedgers, at, { emptyBeforeCoverage: true }));
+  project.mockClear();
+  const reread = accountHistoryReader(twoLedgers);
+  reread('2025-01-07T00:00:00.000Z');
+  project.mockClear();
+  // The wallet bought on 8 January; the savings ledger is unchanged, so it is not replayed.
+  reread('2025-01-09T00:00:00.000Z');
+  expect(project.mock.calls.map(([replayed]) => replayed)).toEqual([ledger]);
+});
