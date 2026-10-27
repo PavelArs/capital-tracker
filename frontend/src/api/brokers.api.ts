@@ -7,7 +7,7 @@ export interface TBankAccountOption {
   /** T-Bank's own account number. */
   id: string;
   name: string;
-  /** An Invest Box (Инвесткопилка): T-Bank gives no portfolio for it. */
+  /** An Invest Box (Инвесткопилка). */
   investBox: boolean;
   /** Already read by one of the owner's broker accounts. */
   connected: boolean;
