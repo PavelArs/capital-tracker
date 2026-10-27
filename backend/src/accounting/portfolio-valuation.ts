@@ -30,7 +30,10 @@ export interface PortfolioInstrument {
   assetType: AssetType;
   valuationCurrency: ValuationCurrency;
   priceSource: PriceSource;
+  /** The security type a T-Bank link names (share, bond, ETF); null for anything else. */
+  securityType?: SecurityType | null;
 }
+export type SecurityType = 'share' | 'bond' | 'etf';
 /** A share of an amount in the currency it was paid in (CUR-PAID-RUB). */
 export interface NativeAmount {
   currency: PaidCurrency;
@@ -807,6 +810,7 @@ export function projectPortfolio(
       assetType: instrument.assetType,
       valuationCurrency: instrument.valuationCurrency,
       priceSource: instrument.priceSource,
+      securityType: instrument.securityType ?? null,
       quantity: formatAtoms(total.quantity),
       price,
       missingPrice: price ? null : missingPrice,

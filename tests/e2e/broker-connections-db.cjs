@@ -594,6 +594,7 @@ async function importing(db, service, imports, tbank, owner, other) {
     [valuedShare.quantity, valuedShare.value, valuedShare.price.value, valuedShare.price.source, valuedShare.price.status],
     ['6', '720', '120', 'tbank', 'fresh'],
   );
+  assert.equal(valuedShare.securityType, 'share', 'A T-Bank share is named a share, not a hand-priced asset');
   // BPR-HISTORY: the asset chart values the share at the same T-Bank price as the portfolio.
   const { PortfolioSnapshotsService } = require('/app/backend/dist/portfolio-snapshots/portfolio-snapshots.service.js');
   const chart = await new PortfolioSnapshotsService(db, new ConfigService({})).assetHistory(

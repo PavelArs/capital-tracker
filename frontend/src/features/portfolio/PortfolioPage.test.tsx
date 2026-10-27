@@ -1106,6 +1106,25 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(cells(rowOf('GAZP'))[7]).not.toBe('Manual');
   });
 
+  it('SECURITY-TYPE names a T-Bank share, bond or fund by its type instead of Manual', async () => {
+    const tbank = { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' } as const;
+    const held = { quantity: '1' };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        valued(6, 'SBER', 'SBER', tbank, { ...held, securityType: 'share' }),
+        valued(7, 'OFZ 26238', 'SU26238RMFS4', tbank, { ...held, securityType: 'bond' }),
+        valued(8, 'TMOS', 'TMOS', tbank, { ...held, securityType: 'etf' }),
+        valued(9, 'Painting', null, tbank, { ...held, securityType: null }),
+      ]),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^SBER/ });
+    expect(cells(rowOf('SBER'))[0]).toBe('SBERSBER · Share · RUB');
+    expect(cells(rowOf('OFZ 26238'))[0]).toBe('OFZ 26238SU26238RMFS4 · Bond · RUB');
+    expect(cells(rowOf('TMOS'))[0]).toBe('TMOSTMOS · Fund · RUB');
+    expect(cells(rowOf('Painting'))[0]).toBe('PaintingManual · RUB');
+  });
+
   it('BPR-STALE names T-Bank as the source of an imported share and marks an old price stale', async () => {
     const share = valued(
       6,

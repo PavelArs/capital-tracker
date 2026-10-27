@@ -79,6 +79,8 @@ export interface AssetValuation {
   assetType: AssetType;
   valuationCurrency: ValuationCurrency;
   priceSource: PriceSource;
+  /** The security type a T-Bank link names; null or absent for anything else. */
+  securityType?: 'share' | 'bond' | 'etf' | null;
   quantity: string;
   price: AssetPrice | null;
   missingPrice: 'no-price' | 'no-rate' | null;
