@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useAskedCurrency } from '../portfolio/currency';
 import { type Attention, collectAttention } from './attention';
 
 // Background sync and the price job run every few minutes; a minute keeps the bell honest.
@@ -62,6 +63,10 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
     now: new Date(),
   });
   const latest = useRef(0);
+  // The bell reads the valuation in the page's currency, so both share one request and answer.
+  const [asked] = useAskedCurrency();
+  const askedRef = useRef(asked);
+  askedRef.current = asked;
 
   const load = useCallback(async () => {
     const request = ++latest.current;
@@ -69,7 +74,7 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
       cachedReads.toClassify.load(),
       cachedReads.sources.load(),
       cachedReads.wallets.load(),
-      cachedReads.portfolio.load(),
+      cachedReads.portfolio.load(askedRef.current),
       cachedReads.hiddenAssets.load(),
     ]);
     if (request !== latest.current) return;

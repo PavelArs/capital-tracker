@@ -3,7 +3,7 @@ import { cachedReads } from './cached-reads';
 import { operationsApi } from './operations.api';
 import { portfolioValuationApi } from './portfolio-valuation.api';
 import { forgetReads, generationNow, recall, remember } from './read-cache';
-import { announceSyncChange } from './sync-status.api';
+import { announceSyncChange, type SyncSource, syncStatusApi } from './sync-status.api';
 
 describe('read cache', () => {
   beforeEach(() => {
@@ -159,6 +159,49 @@ describe('read cache', () => {
     await expect(cachedReads.toClassify.prefetch()).rejects.toThrow('offline');
     await expect(cachedReads.toClassify.load()).resolves.toBe(1);
     expect(count).toHaveBeenCalledTimes(6);
+  });
+
+  it('keeps answers painted after a background sync but answers the next page from the server', async () => {
+    const source = (lastSuccessAt: string): SyncSource => ({
+      key: 'fx:cbr',
+      kind: 'fx',
+      name: 'Rates',
+      state: 'synced',
+      lastAttemptAt: lastSuccessAt,
+      lastSuccessAt,
+      errorMessage: null,
+    });
+    vi.spyOn(syncStatusApi, 'get')
+      .mockResolvedValueOnce([source('2026-10-11T08:00:00.000Z')])
+      .mockResolvedValueOnce([source('2026-10-11T09:00:00.000Z')])
+      .mockResolvedValueOnce([source('2026-10-11T10:00:00.000Z')]);
+    await cachedReads.sources.load();
+    const answers: Array<(value: number) => void> = [];
+    const count = vi
+      .spyOn(operationsApi, 'needsClassification')
+      .mockImplementationOnce(async () => 2)
+      .mockImplementation(
+        () =>
+          new Promise<number>((resolve) => {
+            answers.push(resolve);
+          }),
+      );
+    await cachedReads.toClassify.prefetch();
+    // A sync landed: what was kept still paints the page meanwhile.
+    await cachedReads.sources.load();
+    expect(cachedReads.toClassify.last()).toBe(2);
+    // The prefetched answer is from before the sync, so the page asks the server.
+    const first = cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(2);
+    // Another sync while that read is on its way: a page asking after it gets its own answer.
+    await cachedReads.sources.load();
+    const second = cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(3);
+    answers[1](5);
+    answers[0](4);
+    await expect(Promise.all([first, second])).resolves.toEqual([4, 5]);
+    // Only the answer asked after the last sync is kept.
+    expect(cachedReads.toClassify.last()).toBe(5);
   });
 
   it('lets a page that opens while the prefetch is still on its way share its request', async () => {

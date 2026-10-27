@@ -1,8 +1,8 @@
 // The last answer of each read, kept so a page the owner comes back to, or a page after a reload,
 // can paint it at once (stale-while-revalidate); the page still asks the server every time.
 // Answers live in memory and, for the signed-in owner, also in the browser's own IndexedDB, so
-// they survive a reload. They are dropped when the owner changes something, a sync lands, or the
-// session ends, and never reach another owner.
+// they survive a reload. They are dropped when the owner changes something or the session ends,
+// outdated when a background sync lands, and never reach another owner.
 import { indexedDbStore, type ReadStore } from './read-store';
 
 // An answer older than this is not shown any more: a skeleton is more honest than old numbers.
@@ -95,6 +95,14 @@ export function forgetReads(): void {
   generation++;
   entries.clear();
   enqueue((target) => target.clear());
+}
+
+/**
+ * A background sync brought new data: kept answers still paint the pages until their own reads
+ * replace them, but no read asked before it is shared with, or kept for, a page asking after it.
+ */
+export function outdateReads(): void {
+  generation++;
 }
 
 /**
