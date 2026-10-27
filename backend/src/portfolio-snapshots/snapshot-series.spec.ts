@@ -216,6 +216,7 @@ describe('BPR-HISTORY a T-Bank price joins the hand values of its asset', () => 
         price: '310',
         quoteCurrency: 'RUB',
         provider: 'tbank',
+        fetchedAt: 4000,
       },
       {
         instrumentId: 'share',
@@ -223,6 +224,7 @@ describe('BPR-HISTORY a T-Bank price joins the hand values of its asset', () => 
         price: '999',
         quoteCurrency: 'RUB',
         provider: 'tbank',
+        fetchedAt: 4000,
       },
       {
         instrumentId: 'fund',
@@ -230,15 +232,16 @@ describe('BPR-HISTORY a T-Bank price joins the hand values of its asset', () => 
         price: '15',
         quoteCurrency: 'RUB',
         provider: 'tbank',
+        fetchedAt: 4000,
       },
     ]);
     expect(series.get('share')).toEqual([
       { at: 1000, price: '300', source: 'manual', currency: 'RUB' },
-      { at: 2000, price: '310', source: 'tbank', currency: 'RUB' },
+      { at: 2000, price: '310', source: 'tbank', currency: 'RUB', unitsAt: 4000 },
       { at: 3000, price: '320', source: 'manual', currency: 'RUB' },
     ]);
     expect(series.get('fund')).toEqual([
-      { at: 2000, price: '15', source: 'tbank', currency: 'RUB' },
+      { at: 2000, price: '15', source: 'tbank', currency: 'RUB', unitsAt: 4000 },
     ]);
     expect(latestAtOrBefore(series.get('share')!, 2500)?.price).toBe('310');
   });

@@ -1473,10 +1473,10 @@ async function refreshing(db, service, tbank, owner) {
   const first = new Date('2026-10-24T10:10:00Z');
   assert.deepEqual(await sync.tick(first), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 3 });
   // BPH-BACKFILL: the first run of a Moscow day also stores each complete day's close since
-  // 2025, at the end of its Moscow day; today's unfinished candle is left out.
-  // BPH-SPLIT: the fund's close before its split is back in the units of its day.
+  // 2025, at the end of its Moscow day; today's unfinished candle is left out. A close is stored
+  // as T-Bank gives it, in the units of the day it was read (BPH-SPLIT, valued below).
   assert.deepEqual(await prices(), [
-    ['1400.5', 'RUB', '2025-03-03T20:59:59.999Z'],
+    ['700.25', 'RUB', '2025-03-03T20:59:59.999Z'],
     ['1490', 'RUB', '2026-10-23T20:59:59.999Z'],
     ['1500.25', 'RUB', first.toISOString()],
   ]);
@@ -1514,11 +1514,11 @@ async function refreshing(db, service, tbank, owner) {
     ['prices', 'T-Bank prices', 'failed', failure.errorMessage],
   );
   assert.equal((await shownSources(failedAt)).some((item) => item.key === 'prices'), false, 'No crypto price source was read');
-  assert.deepEqual((await prices()).map((row) => row[0]), ['1400.5', '1490', '1500.25'], 'A failed read keeps every stored price');
+  assert.deepEqual((await prices()).map((row) => row[0]), ['700.25', '1490', '1500.25'], 'A failed read keeps every stored price');
   tbank.positions = [{ ...heldPosition(fundUid, '2', 'etf'), currentPrice: '1510' }];
   const next = new Date('2026-10-24T12:10:00Z');
   assert.deepEqual(await sync.tick(next), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
-  assert.deepEqual((await prices()).map((row) => row[0]), ['1400.5', '1490', '1500.25', '1510']);
+  assert.deepEqual((await prices()).map((row) => row[0]), ['700.25', '1490', '1500.25', '1510']);
   assert.equal(requests.length, asked, 'Past prices are read once a Moscow day');
   assert.equal((await shownSources(next)).find((item) => item.key === 'prices:tbank').state, 'synced');
   await assert.rejects(
@@ -1535,8 +1535,9 @@ async function refreshing(db, service, tbank, owner) {
     [fundValue.name, fundValue.price.value, fundValue.price.source, fundValue.price.status, fundValue.price.observedAt],
     ['SYNTHF', '1510', 'tbank', 'stale', next.toISOString()],
   );
-  // BPH-HISTORY: a past day is valued at the close before it, divided by the split since; a day
-  // before the first close has no price, never zero.
+  // BPH-HISTORY, BPH-SPLIT: a past day is valued at the close before it, in that day's units
+  // (the split since is undone, then applied again after it); a day before the first close has
+  // no price, never zero.
   const valued = async (at) =>
     (await new PortfolioValuationService(db).read(owner, { currency: 'RUB' }, new Date(at))).assets.find(
       (asset) => asset.instrumentId === fund.id,
@@ -1545,22 +1546,32 @@ async function refreshing(db, service, tbank, owner) {
     ['1400.5', '2025-03-03T20:59:59.999Z']);
   assert.equal((await valued('2026-02-01T10:00:00Z')).value, '700.25');
   assert.equal(await valued('2025-03-03T12:00:00Z'), null);
+  // BPH-SPLIT: a split the owner withdraws is in neither the close nor the valuation.
+  await db.query(`UPDATE instrument_splits SET "removedAt" = clock_timestamp() WHERE "instrumentId" = $1`, [fund.id]);
+  assert.deepEqual([(await valued('2025-03-04T10:00:00Z')).value, (await valued('2026-02-01T10:00:00Z')).value], ['700.25', '700.25']);
   // BPH-RETRY: a failed read of past prices is shown with the T-Bank prices and read again the
   // next hour; closes already stored stay.
   state.failing = true;
   const nextDay = new Date('2026-10-24T21:10:00Z');
   assert.deepEqual(await sync.tick(nextDay), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
-  const pastFailure = await source();
+  const past = async () =>
+    (await db.query(`SELECT state, "errorCode", "errorMessage" FROM sync_sources WHERE key = 'prices:tbank-history'`))[0];
+  const pastFailure = await past();
   assert.equal(pastFailure.state, 'failed');
   assert.equal(pastFailure.errorCode, 'unavailable');
-  assert.match(pastFailure.errorMessage, /^Past T-Bank prices were not read: /);
+  // Every linked security is still tried after one fails.
+  assert.match(pastFailure.errorMessage, /^\d+ reads of past T-Bank prices failed: T-Bank could not be reached/);
+  assert.ok(Number(pastFailure.errorMessage.split(' ')[0]) > 1, 'Every linked security was tried');
   assert.ok(!pastFailure.errorMessage.includes(token.slice(2)), 'No secret in the status');
+  assert.equal((await source()).state, 'synced', 'The current prices were read');
+  const shownPast = (await shownSources(nextDay)).find((item) => item.key === 'prices:tbank-history');
+  assert.deepEqual([shownPast.name, shownPast.state, shownPast.errorMessage], ['T-Bank past prices', 'failed', pastFailure.errorMessage]);
   state.failing = false;
   const retried = requests.length;
   assert.deepEqual(await sync.tick(new Date('2026-10-24T22:10:00Z')), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
   assert.ok(requests.length > retried, 'Read again the next hour');
-  assert.equal((await source()).state, 'synced');
-  assert.deepEqual((await prices()).filter((row) => row[2].endsWith('20:59:59.999Z')).map((row) => row[0]), ['1400.5', '1490']);
+  assert.equal((await past()).state, 'synced');
+  assert.deepEqual((await prices()).filter((row) => row[2].endsWith('20:59:59.999Z')).map((row) => row[0]), ['700.25', '1490']);
   console.log('PASS BPR-REFRESH');
   console.log('PASS BPR-RENAME');
   console.log('PASS BPR-STALE');

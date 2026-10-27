@@ -126,6 +126,11 @@ export interface StoredPrice {
   source: string;
   /** AST-MANUAL-VALUE: the currency of `priceUsd` for a hand value; USD when absent. */
   currency?: AccountingCurrency;
+  /**
+   * BPH-SPLIT: when a broker price was read. A broker gives past prices in the units of that
+   * day, so splits after `observedAt` up to then are already in it.
+   */
+  unitsAt?: string;
 }
 export interface PortfolioPrices {
   market: ReadonlyMap<string, StoredPrice>;
@@ -209,16 +214,19 @@ export function resolvePrice(
   );
   if (value === null) return { price: null, missingPrice: 'no-rate' };
   // A unit priced before a split became `ratio` units by `at`; rounding down never overstates.
-  const instant = at.toISOString();
-  const split = (prices.splits ?? []).reduce(
-    (units, item) =>
-      item.instrumentId === instrument.id &&
-      item.effectiveAt > stored.observedAt &&
-      item.effectiveAt <= instant
-        ? units * BigInt(item.ratio)
-        : units,
-    1n,
-  );
+  // A broker price is first put back in the units of its own day (BPH-SPLIT).
+  const ratioUntil = (until: string) =>
+    (prices.splits ?? []).reduce(
+      (units, item) =>
+        item.instrumentId === instrument.id &&
+        item.effectiveAt > stored.observedAt &&
+        item.effectiveAt <= until
+          ? units * BigInt(item.ratio)
+          : units,
+      1n,
+    );
+  const split = ratioUntil(at.toISOString());
+  const restored = stored.unitsAt ? ratioUntil(stored.unitsAt) : 1n;
   // BPR-3: a price a broker reported ages like a market price; a hand value does not.
   const status =
     instrument.priceSource === 'manual' && stored.source === 'manual'
@@ -228,7 +236,7 @@ export function resolvePrice(
         : 'stale';
   return {
     price: {
-      value: formatAtoms(value / split),
+      value: formatAtoms((value * restored) / split),
       observedAt: stored.observedAt,
       source: stored.source,
       status,

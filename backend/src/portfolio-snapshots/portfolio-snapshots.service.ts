@@ -177,6 +177,7 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
           observedAt: iso(point.at),
           source: point.source,
           ...(point.currency ? { currency: point.currency } : {}),
+          ...(point.unitsAt === undefined ? {} : { unitsAt: iso(point.unitsAt) }),
         });
     }
     return prices;
@@ -331,8 +332,9 @@ async function readSeriesInputs(
     price: string;
     quoteCurrency: AccountingCurrency;
     provider: string;
+    fetchedAt: Date;
   }[] = await manager.query(
-    `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider
+    `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider,"fetchedAt"
       FROM broker_price_observations WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
     [owner, priced.map((instrument) => instrument.id)],
   );
@@ -356,6 +358,7 @@ async function readSeriesInputs(
       broker.map((row) => ({
         ...row,
         observedAt: row.observedAt.getTime(),
+        fetchedAt: row.fetchedAt.getTime(),
         price: parseDecimal(row.price, false),
       })),
     ),

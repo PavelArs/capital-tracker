@@ -25,6 +25,8 @@ export interface PricePoint {
   source: string;
   /** AST-MANUAL-VALUE: the currency of a hand value's price; USD when absent. */
   currency?: AccountingCurrency;
+  /** BPH-SPLIT: when a broker price was read; its units are of that instant. */
+  unitsAt?: number;
 }
 export interface SnapshotValue {
   at: number;
@@ -159,6 +161,7 @@ export function withBrokerPrices(
     price: string;
     quoteCurrency: AccountingCurrency;
     provider: string;
+    fetchedAt: number;
   }[],
 ): Map<string, PricePoint[]> {
   const series = new Map([...manual].map(([id, points]) => [id, [...points]]));
@@ -173,6 +176,7 @@ export function withBrokerPrices(
       price: row.price,
       source: row.provider,
       currency: row.quoteCurrency,
+      unitsAt: row.fetchedAt,
     });
     series.set(row.instrumentId, points);
   }

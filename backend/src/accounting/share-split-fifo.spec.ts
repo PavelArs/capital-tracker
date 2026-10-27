@@ -287,4 +287,25 @@ describe('SPLIT-PRICE: a price set before a split is read in the units of the va
     expect(resolvePrice(instrument, prices, new Date(at(20))).price?.value).toBe('10');
     expect(resolvePrice(instrument, prices, new Date(at(10))).price?.value).toBe('100');
   });
+
+  it('SPLIT-PRICE-B reads a broker close in the units of when it was read', () => {
+    // T-Bank gives a past close in the units of the day it is read; splits since its day up to
+    // then are already in it, whenever the owner records them.
+    const close = (priceUsd: string, readOn: number, splits: FifoSplit[]) => ({
+      market: new Map(),
+      manual: new Map([
+        [share, { priceUsd, observedAt: at(5), source: 'tbank', unitsAt: at(readOn) }],
+      ]),
+      splits,
+    });
+    const value = (input: ReturnType<typeof close>, day: number) =>
+      resolvePrice(instrument, input, new Date(at(day))).price?.value;
+    const readAfter = close('10', 25, [split(17)]);
+    expect([value(readAfter, 10), value(readAfter, 20)]).toEqual(['100', '10']);
+    const readBefore = close('100', 15, [split(17)]);
+    expect([value(readBefore, 10), value(readBefore, 20)]).toEqual(['100', '10']);
+    // A split the owner withdrew is in neither the close nor the valuation.
+    const withdrawn = close('10', 25, []);
+    expect([value(withdrawn, 10), value(withdrawn, 20)]).toEqual(['10', '10']);
+  });
 });

@@ -88,10 +88,11 @@ export class SyncStatusService {
       // BPR-2: T-Bank prices for an owner with a T-Bank connection, apart from the crypto prices.
       const broker: KeyedRow[] = await manager.query(
         `SELECT s.* FROM sync_sources s
-          WHERE s.key = 'prices:tbank'
+          WHERE s.key IN ('prices:tbank', 'prices:tbank-history')
             AND EXISTS (SELECT 1 FROM broker_connections c WHERE c."ownerId" = $1 AND c.provider = 'tbank')`,
         [owner],
       );
+      broker.sort((a, b) => a.key.localeCompare(b.key));
       const wallets: (WalletRow & { source: KeyedRow | null })[] = await manager.query(
         `SELECT a.id, a.network, a.label, s.key, s.state, s."lastAttemptAt", s."lastSuccessAt",
             s."nextRunAt", s."errorCode", s."errorMessage"
@@ -107,7 +108,16 @@ export class SyncStatusService {
       if (price) sources.push(price);
       const fx = rows.find(({ key }) => key === 'fx:cbr');
       if (fx) sources.push(summary(fx, 'fx', 'Bank of Russia rates', now));
-      for (const row of broker) sources.push(summary(row, 'prices', 'T-Bank prices', now));
+      // BPH-BACKFILL: the daily read of past closes is shown apart from the current prices.
+      for (const row of broker)
+        sources.push(
+          summary(
+            row,
+            'prices',
+            row.key === 'prices:tbank' ? 'T-Bank prices' : 'T-Bank past prices',
+            now,
+          ),
+        );
       for (const wallet of wallets) {
         const name = walletSourceName(wallet);
         const key = `wallet:${wallet.id}`;

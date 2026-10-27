@@ -105,7 +105,6 @@ describe('BPH-CLOSE a day close values the end of its Moscow day', () => {
           ],
         },
         null,
-        [],
       ),
     ).toEqual([
       {
@@ -123,40 +122,13 @@ describe('BPH-CLOSE a day close values the end of its Moscow day', () => {
         instrument,
         { currency: 'pt.', closes: [{ date: '2025-02-10', close: '98.765' }] },
         { amount: '1000', currency: 'rub' },
-        [],
       ).map((row) => [row.price, row.currency]),
     ).toEqual([['987.65', 'RUB']]);
   });
 
   it('keeps nothing for a bond without a fixed nominal or an unknown currency', () => {
     const closes = [{ date: '2025-02-10', close: '98' }];
-    expect(closeObservations(instrument, { currency: 'pt.', closes }, null, [])).toEqual([]);
-    expect(closeObservations(instrument, { currency: 'cny', closes }, null, [])).toEqual([]);
-  });
-
-  it('BPH-SPLIT puts a close before a split back in the units of its day', () => {
-    // T-Bank adjusts past candles to today's units; the valuation divides a price by the
-    // splits after it, so a close before the split is stored in the old units.
-    const split = {
-      splitId: 's1',
-      instrumentId: instrument,
-      effectiveAt: '2026-04-16T21:00:00.000Z',
-      ratio: 10,
-    };
-    const other = { ...split, splitId: 's2', instrumentId: 'another' };
-    expect(
-      closeObservations(
-        instrument,
-        {
-          currency: 'rub',
-          closes: [
-            { date: '2026-04-10', close: '319.5' },
-            { date: '2026-04-17', close: '326' },
-          ],
-        },
-        null,
-        [split, other],
-      ).map((row) => row.price),
-    ).toEqual(['3195', '326']);
+    expect(closeObservations(instrument, { currency: 'pt.', closes }, null)).toEqual([]);
+    expect(closeObservations(instrument, { currency: 'cny', closes }, null)).toEqual([]);
   });
 });
