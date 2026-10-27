@@ -106,11 +106,11 @@ async function latestManualPrices(
       ORDER BY point."instrumentId", point."observedAt" DESC`,
     [owner, instrumentIds, at],
   );
-  const broker: (ManualPriceRow & { provider: string })[] = await manager.query(
+  const broker: (ManualPriceRow & { provider: string; fetchedAt: Date })[] = await manager.query(
     `SELECT p.* FROM unnest($2::uuid[]) AS instruments(id)
       CROSS JOIN LATERAL (
         SELECT b."instrumentId", b."observedAt", b.price::text AS "priceUsd", b."quoteCurrency",
-          b.provider
+          b.provider, b."fetchedAt"
         FROM broker_price_observations b
         WHERE b."ownerId"=$1 AND b."instrumentId"=instruments.id AND b.provider='tbank'
           AND b."observedAt"<=$3
@@ -128,7 +128,10 @@ async function latestManualPrices(
   for (const row of broker) {
     const hand = prices.get(row.instrumentId);
     if (!hand || Date.parse(hand.observedAt) < row.observedAt.getTime())
-      prices.set(row.instrumentId, stored(row, row.provider));
+      prices.set(row.instrumentId, {
+        ...stored(row, row.provider),
+        unitsAt: row.fetchedAt.toISOString(),
+      });
   }
   return prices;
 }

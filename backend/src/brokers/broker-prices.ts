@@ -11,7 +11,11 @@ export interface BrokerPrice {
 }
 
 const securityTypes = ['share', 'bond', 'etf'];
-const currencies: Record<string, BrokerPrice['currency']> = { rub: 'RUB', usd: 'USD', eur: 'EUR' };
+export const priceCurrencies: Record<string, BrokerPrice['currency']> = {
+  rub: 'RUB',
+  usd: 'USD',
+  eur: 'EUR',
+};
 const positive = (value: string) =>
   /^\d+(\.\d+)?$/.test(value) && canonicalDecimalToAtoms(value) > 0n;
 const held = (position: TBankPosition) =>
@@ -53,7 +57,7 @@ export function pickPrices(
   const prices: BrokerPrice[] = [];
   for (const position of positions) {
     const instrumentId = linked.get(position.instrumentUid);
-    const currency = currencies[position.currentPriceCurrency];
+    const currency = priceCurrencies[position.currentPriceCurrency];
     if (!instrumentId || !held(position) || !currency || !positive(position.currentPrice)) continue;
     prices.push({ instrumentId, price: position.currentPrice, currency });
   }
@@ -142,23 +146,37 @@ export async function readBrokerPrices(
 }
 
 /** BPR-2: stores prices read at `observedAt`; returns how many were new. */
-export async function insertBrokerPrices(
+export function insertBrokerPrices(
   manager: EntityManager,
   owner: string,
   prices: readonly BrokerPrice[],
   observedAt: Date,
 ): Promise<number> {
+  return insertObservations(
+    manager,
+    owner,
+    prices.map((item) => ({ ...item, observedAt })),
+  );
+}
+
+/** BPR-2, BPH-CLOSE: stores prices each at its own instant; returns how many were new. */
+export async function insertObservations(
+  manager: EntityManager,
+  owner: string,
+  prices: readonly (BrokerPrice & { observedAt: Date })[],
+): Promise<number> {
   if (prices.length === 0) return 0;
   const saved: unknown[] = await manager.query(
     `INSERT INTO broker_price_observations ("ownerId", "instrumentId", provider, "observedAt", price,
         "quoteCurrency")
-      SELECT $1, item.instrument, 'tbank', $2, item.price, item.currency
-        FROM unnest($3::uuid[], $4::numeric[], $5::text[]) AS item(instrument, price, currency)
+      SELECT $1, item.instrument, 'tbank', item.at, item.price, item.currency
+        FROM unnest($2::uuid[], $3::timestamptz[], $4::numeric[], $5::text[])
+          AS item(instrument, at, price, currency)
       ON CONFLICT DO NOTHING RETURNING "instrumentId"`,
     [
       owner,
-      observedAt,
       prices.map((item) => item.instrumentId),
+      prices.map((item) => item.observedAt),
       prices.map((item) => item.price),
       prices.map((item) => item.currency),
     ],

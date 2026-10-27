@@ -619,6 +619,80 @@ describe('BROKER-CONNECT: the T-Bank client', () => {
     expect(seen?.body).not.toContain(token);
   });
 
+  it('BPH-FETCH reads day candles one calendar year per request, up to now', async () => {
+    const day = (date: string, units: string) => ({
+      close: { units, nano: 0 },
+      time: `${date}T00:00:00Z`,
+      isComplete: true,
+    });
+    queue = [
+      {
+        status: 200,
+        body: JSON.stringify({ candles: [day('2025-12-30', '10')], priceCurrency: 'rub' }),
+      },
+      {
+        status: 200,
+        body: JSON.stringify({ candles: [day('2026-01-05', '11')], priceCurrency: 'rub' }),
+      },
+    ];
+    const uid = '00000000-0000-4000-8000-0000000000a1';
+    const result = await new TBankClient({ baseUrl: base }).dailyCloses(
+      token,
+      uid,
+      '2025-01-01',
+      new Date('2026-03-01T10:00:00.000Z'),
+    );
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        currency: 'rub',
+        closes: [
+          { date: '2025-12-30', close: '10' },
+          { date: '2026-01-05', close: '11' },
+        ],
+      },
+    });
+    expect(seen?.url).toBe(
+      '/rest/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles',
+    );
+    expect(bodies.map((body) => JSON.parse(body))).toEqual([
+      {
+        instrumentId: uid,
+        from: '2025-01-01T00:00:00Z',
+        to: '2026-01-01T00:00:00.000Z',
+        interval: 'CANDLE_INTERVAL_DAY',
+      },
+      {
+        instrumentId: uid,
+        from: '2026-01-01T00:00:00Z',
+        to: '2026-03-01T10:00:00.000Z',
+        interval: 'CANDLE_INTERVAL_DAY',
+      },
+    ]);
+  });
+
+  it('BPH-FETCH refuses one security quoted in two currencies across years', async () => {
+    const day = { close: { units: '10' }, time: '2025-12-30T00:00:00Z', isComplete: true };
+    queue = [
+      { status: 200, body: JSON.stringify({ candles: [day], priceCurrency: 'rub' }) },
+      {
+        status: 200,
+        body: JSON.stringify({
+          candles: [{ ...day, time: '2026-01-05T00:00:00Z' }],
+          priceCurrency: 'usd',
+        }),
+      },
+    ];
+    expect(
+      await new TBankClient({ baseUrl: base }).dailyCloses(
+        token,
+        '00000000-0000-4000-8000-0000000000a1',
+        '2025-01-01',
+        new Date('2026-03-01T00:00:00Z'),
+      ),
+    ).toEqual({ ok: false, reason: 'invalid_response' });
+  });
+
   it('BROKER-OPENING reads the documented CurrencyBy ISO identity and binds its UID', async () => {
     const client = new TBankClient({ baseUrl: base });
     const uid = '00000000-0000-4000-8000-000000000099';
