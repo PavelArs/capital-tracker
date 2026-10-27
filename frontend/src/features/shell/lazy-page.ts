@@ -38,6 +38,7 @@ export function lazyPage(load: () => Promise<{ default: ComponentType }>) {
     return attempt;
   };
   let waiting = lazy(preload);
+  // biome-ignore lint/correctness/noComponentHookFactories: lazyPage runs once per route at module load, so each Page keeps one identity.
   function Page() {
     return createElement(loaded ?? waiting);
   }
