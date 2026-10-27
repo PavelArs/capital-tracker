@@ -230,36 +230,69 @@ export async function readBaseline(
   id: string,
   journal: JournalRow,
 ): Promise<readonly FifoCarryInInput[]> {
-  if (journal.originKind === 'declared-empty') return [];
+  return (await readBaselines(manager, owner, [{ ...journal, accountId: id }])).get(id)!;
+}
+
+/** The carried-in lots of each journal, by account, read with one query. */
+export async function readBaselines(
+  manager: EntityManager,
+  owner: string,
+  journals: readonly JournalRow[],
+): Promise<Map<string, readonly FifoCarryInInput[]>> {
+  const baselines = new Map<string, readonly FifoCarryInInput[]>(
+    journals.map((journal) => [journal.accountId, []]),
+  );
+  const opened = journals.filter((journal) => journal.originKind !== 'declared-empty');
+  if (opened.length === 0) return baselines;
   if (!manager.queryRunner?.isTransactionActive)
     throw new Error('Baseline read requires transaction');
-  if (!Number.isSafeInteger(journal.openingRevision) || journal.openingRevision < 1)
-    throw new FifoHistoryError();
-  const rows: (Omit<FifoCarryInInput, 'acquiredAt'> & { acquiredAt: Date })[] = await manager.query(
-    `SELECT l.id AS "lotId",l."openingRevision",l.ordinal,l."instrumentId",
-      i.name AS "instrumentName",i.symbol AS "instrumentSymbol",l."acquiredAt",
-      l."orderWithinTimestamp",l."originalQuantity",l."originalCostUsd",
-      l."remainingQuantity" AS "carriedQuantity"
-    FROM account_carry_in_lots l JOIN accounting_instruments i
-      ON i."ownerId"=l."ownerId" AND i.id=l."instrumentId"
-    WHERE l."ownerId"=$1 AND l."accountId"=$2 AND l."openingRevision"=$3
-    ORDER BY l.ordinal LIMIT 101`,
-    [owner, id, journal.openingRevision],
-  );
-  if (rows.length < 1 || rows.length > 100) throw new FifoHistoryError();
-  return rows.map((row, index) => {
-    if (row.ordinal !== index + 1 || row.acquiredAt > journal.coverageFrom)
+  for (const journal of opened)
+    if (!Number.isSafeInteger(journal.openingRevision) || journal.openingRevision < 1)
       throw new FifoHistoryError();
-    const lot: FifoCarryInInput = {
-      ...row,
-      acquiredAt: row.acquiredAt.toISOString(),
-      originalQuantity: parseDecimal(row.originalQuantity, true),
-      originalCostUsd: parseDecimal(row.originalCostUsd, false),
-      carriedQuantity: parseDecimal(row.carriedQuantity, true),
-    };
-    deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity);
-    return lot;
-  });
+  const rows: (Omit<FifoCarryInInput, 'acquiredAt'> & { accountId: string; acquiredAt: Date })[] =
+    await manager.query(
+      // At most 101 lots per journal: more than 100 is refused, never materialized.
+      `SELECT "accountId","lotId","openingRevision",ordinal,"instrumentId","instrumentName",
+        "instrumentSymbol","acquiredAt","orderWithinTimestamp","originalQuantity","originalCostUsd",
+        "carriedQuantity"
+      FROM (SELECT l."accountId",l.id AS "lotId",l."openingRevision",l.ordinal,l."instrumentId",
+          i.name AS "instrumentName",i.symbol AS "instrumentSymbol",l."acquiredAt",
+          l."orderWithinTimestamp",l."originalQuantity",l."originalCostUsd",
+          l."remainingQuantity" AS "carriedQuantity",
+          row_number() OVER (PARTITION BY l."accountId" ORDER BY l.ordinal) AS position
+        FROM account_carry_in_lots l JOIN accounting_instruments i
+          ON i."ownerId"=l."ownerId" AND i.id=l."instrumentId"
+        JOIN unnest($2::uuid[], $3::int[]) AS j("accountId",revision)
+          ON j."accountId"=l."accountId" AND j.revision=l."openingRevision"
+        WHERE l."ownerId"=$1) lots
+      WHERE position <= 101 ORDER BY "accountId",ordinal`,
+      [
+        owner,
+        opened.map((journal) => journal.accountId),
+        opened.map((journal) => journal.openingRevision),
+      ],
+    );
+  for (const journal of opened) {
+    const lots = rows.filter((row) => row.accountId === journal.accountId);
+    if (lots.length < 1 || lots.length > 100) throw new FifoHistoryError();
+    baselines.set(
+      journal.accountId,
+      lots.map(({ accountId: _account, ...row }, index) => {
+        if (row.ordinal !== index + 1 || row.acquiredAt > journal.coverageFrom)
+          throw new FifoHistoryError();
+        const lot: FifoCarryInInput = {
+          ...row,
+          acquiredAt: row.acquiredAt.toISOString(),
+          originalQuantity: parseDecimal(row.originalQuantity, true),
+          originalCostUsd: parseDecimal(row.originalCostUsd, false),
+          carriedQuantity: parseDecimal(row.carriedQuantity, true),
+        };
+        deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity);
+        return lot;
+      }),
+    );
+  }
+  return baselines;
 }
 export async function readTradeHeads(
   manager: EntityManager,
