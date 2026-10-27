@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Operation, OperationList, OperationRange } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import { generationNow } from '@api/read-cache';
 import { useToast } from '@contexts/ToastContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -425,9 +426,10 @@ const shownList = (currency?: AccountingCurrency, range?: OperationRange) =>
   proposalsKept() ? lastList(currency, range) : undefined;
 const proposalsArrived = (): Promise<unknown> => {
   if (proposalsKept()) return Promise.resolve();
+  const asked = generationNow();
   const read = Promise.allSettled([
-    cachedReads.transferProposals.load().then(() => handOver('transfer')),
-    cachedReads.duplicateProposals.load().then(() => handOver('duplicate')),
+    cachedReads.transferProposals.load().then(() => handOver('transfer', asked)),
+    cachedReads.duplicateProposals.load().then(() => handOver('duplicate', asked)),
   ]);
   return Promise.race([read, new Promise((resolve) => setTimeout(resolve, PROPOSALS_WAIT_MS))]);
 };
