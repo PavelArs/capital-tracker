@@ -198,7 +198,7 @@ describe('BROKER-CONNECT: what T-Bank says about a token', () => {
     ]);
   });
 
-  it('marks an Invest Box, whose portfolio T-Bank does not give', () => {
+  it('marks an Invest Box', () => {
     const [box, broker] = parseAccounts({
       accounts: [account({ type: 'ACCOUNT_TYPE_INVEST_BOX' }), account()],
     });

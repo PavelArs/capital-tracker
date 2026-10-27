@@ -125,7 +125,7 @@ export class BrokerPriceSyncService {
           });
         else read.set(ownerId, [...(read.get(ownerId) ?? []), ...result]);
       } catch (error) {
-        // A closed account or an Invest Box holds nothing T-Bank can price.
+        // A closed account holds nothing T-Bank can price.
         if (error instanceof HttpException && error.message === NO_HOLDINGS) continue;
         const code = failureCode(error);
         failures.push({
