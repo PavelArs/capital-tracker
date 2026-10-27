@@ -991,6 +991,52 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
   });
 
+  it('BPR-LIST shows a T-Bank price with its source, age and change, not as Manual', async () => {
+    const tbank = { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' } as const;
+    const fresh = valued(6, 'SBER', 'SBER', tbank, {
+      quantity: '6',
+      price: { value: '3.05', observedAt: minutesAgo(30), source: 'tbank', status: 'fresh' },
+      missingPrice: null,
+      priceChange24hPercent: '1.20',
+      value: '18.30',
+    });
+    const old = valued(7, 'GAZP', 'GAZP', tbank, {
+      quantity: '1',
+      price: { value: '1.5', observedAt: minutesAgo(180), source: 'tbank', status: 'stale' },
+      missingPrice: null,
+      value: '1.50',
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([fresh, old]));
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^SBER/ });
+    expect(cells(rowOf('SBER'))[2]).toBe('$3.05T-Bank · 30 min ago');
+    expect(cells(rowOf('SBER'))[7]).toBe('+1.20%');
+    expect(cells(rowOf('GAZP'))[2]).toBe('$1.50T-Bank · stale, 3 h ago');
+    expect(cells(rowOf('GAZP'))[7]).not.toBe('Manual');
+  });
+
+  it('BPR-STALE names T-Bank as the source of an imported share and marks an old price stale', async () => {
+    const share = valued(
+      6,
+      'SBER',
+      'SBER',
+      { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' },
+      {
+        quantity: '6',
+        price: { value: '3.05', observedAt: minutesAgo(180), source: 'tbank', status: 'stale' },
+        missingPrice: null,
+        value: '18.30',
+      },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([share]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await user.click(await screen.findByRole('link', { name: 'SBER' }));
+    expect(await screen.findByText('T-Bank · stale, updated 3 h ago')).toHaveClass(
+      'portfolio-head__stale',
+    );
+  });
+
   it('A3 names how a wallet is held under its name in Holdings, when the owner said', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({

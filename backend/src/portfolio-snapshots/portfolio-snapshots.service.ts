@@ -67,6 +67,7 @@ import {
   seriesInstants,
   snapshotChanges,
   snapshotKey,
+  withBrokerPrices,
 } from './snapshot-series';
 
 export type RefreshResult =
@@ -142,7 +143,8 @@ const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revi
 ).join(' UNION ALL ')}) parts`;
 // Folded into the inputs revision, so a change to how a point is valued rebuilds every stored
 // snapshot once. Bump it with such a change. 2: a rate over 15 days old converts nothing.
-const VALUATION_RULE = '2';
+// 3: T-Bank prices value assets priced by hand (BPR-3).
+const VALUATION_RULE = '3';
 const INSERT_BATCH = 1000;
 // A burst of edits (a classification run, an import) is rebuilt once, this long after the last.
 const REFRESH_SOON_MS = 2_000;
@@ -323,6 +325,17 @@ async function readSeriesInputs(
       FROM manual_usd_price_versions WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
     [owner, priced.map((instrument) => instrument.id)],
   );
+  const broker: {
+    instrumentId: string;
+    observedAt: Date;
+    price: string;
+    quoteCurrency: AccountingCurrency;
+    provider: string;
+  }[] = await manager.query(
+    `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider
+      FROM broker_price_observations WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
+    [owner, priced.map((instrument) => instrument.id)],
+  );
   return {
     valuation,
     market: marketSeries(
@@ -332,11 +345,18 @@ async function readSeriesInputs(
         price: parseDecimal(row.price, false),
       })),
     ),
-    manual: manualSeries(
-      manual.map((row) => ({
+    manual: withBrokerPrices(
+      manualSeries(
+        manual.map((row) => ({
+          ...row,
+          observedAt: row.observedAt.getTime(),
+          priceUsd: row.priceUsd === null ? null : parseDecimal(row.priceUsd, false),
+        })),
+      ),
+      broker.map((row) => ({
         ...row,
         observedAt: row.observedAt.getTime(),
-        priceUsd: row.priceUsd === null ? null : parseDecimal(row.priceUsd, false),
+        price: parseDecimal(row.price, false),
       })),
     ),
   };
@@ -745,8 +765,10 @@ export class PortfolioSnapshotsService {
     const [read]: { revision: string }[] = await manager.query(INPUTS_REVISION, [owner]);
     const revision = createHash('md5').update(`${VALUATION_RULE}|${read.revision}`).digest('hex');
     const [marks]: { prices: Date | null; rates: Date | null }[] = await manager.query(
-      `SELECT (SELECT max("fetchedAt") FROM price_observations) AS prices,
+      `SELECT GREATEST((SELECT max("fetchedAt") FROM price_observations),
+          (SELECT max("fetchedAt") FROM broker_price_observations WHERE "ownerId"=$1)) AS prices,
         (SELECT max("fetchedAt") FROM fx_rates) AS rates`,
+      [owner],
     );
     const hourlyFrom = state ? state.hourlyFrom.getTime() : hourStart(now);
     const instants = seriesInstants(now, hourlyFrom);
@@ -768,7 +790,7 @@ export class PortfolioSnapshotsService {
     const from =
       !state || state.inputsRevision !== revision
         ? HISTORY_FROM_MS
-        : await this.earliestChange(manager, state, marks, instants, existing);
+        : await this.earliestChange(manager, owner, state, marks, instants, existing);
     if (from === null && obsolete.length === 0) return { outcome: 'fresh' };
 
     let written = 0;
@@ -812,6 +834,7 @@ export class PortfolioSnapshotsService {
   /** The earliest instant a passed hour, a newly stored price or a newly stored rate affects. */
   private async earliestChange(
     manager: EntityManager,
+    owner: string,
     state: StateRow,
     marks: { prices: Date | null; rates: Date | null },
     instants: readonly number[],
@@ -824,9 +847,14 @@ export class PortfolioSnapshotsService {
     if (missing !== undefined) candidates.push(missing);
     if (marks.prices && marks.prices.getTime() !== state.pricesFetchedThrough?.getTime()) {
       const [row]: { at: Date | null }[] = await manager.query(
-        `SELECT min("observedAt") AS at FROM price_observations
-          WHERE $1::timestamptz IS NULL OR "fetchedAt" > $1`,
-        [state.pricesFetchedThrough],
+        `SELECT min(at) AS at FROM (
+          SELECT min("observedAt") AS at FROM price_observations
+            WHERE $1::timestamptz IS NULL OR "fetchedAt" > $1
+          UNION ALL
+          SELECT min("observedAt") FROM broker_price_observations
+            WHERE "ownerId"=$2 AND ($1::timestamptz IS NULL OR "fetchedAt" > $1)
+        ) latest`,
+        [state.pricesFetchedThrough, owner],
       );
       if (row.at) candidates.push(row.at.getTime());
     }

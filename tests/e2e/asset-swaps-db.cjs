@@ -1054,7 +1054,7 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, migrated.stderr);
-  assert.match(migrated.stdout, /Migrations applied: 73/);
+  assert.match(migrated.stdout, /Migrations applied: 74/);
   const db = source();
   await db.initialize();
   try {

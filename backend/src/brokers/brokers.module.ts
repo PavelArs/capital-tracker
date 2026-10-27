@@ -4,6 +4,7 @@ import { AccountingModule } from '../accounting/accounting.module';
 import { BrokerConnectionsController } from './broker-connections.controller';
 import { BrokerConnectionsService } from './broker-connections.service';
 import { BrokerImportService } from './broker-import.service';
+import { BrokerPriceSyncService } from './broker-price-sync.service';
 import { BrokerSetupController } from './broker-setup.controller';
 import { BrokerSetupService } from './broker-setup.service';
 import { russianTrustedRootCa } from './russian-trusted-root-ca';
@@ -16,6 +17,7 @@ import { TBankTokenBox } from './tbank-token-box';
   providers: [
     BrokerConnectionsService,
     BrokerImportService,
+    BrokerPriceSyncService,
     BrokerSetupService,
     {
       provide: TBankClient,

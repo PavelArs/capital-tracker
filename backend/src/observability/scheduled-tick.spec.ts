@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { BrokerPriceSyncService } from '../brokers/broker-price-sync.service';
 import { FxRatesService } from '../fx-rates/fx-rates.service';
 import { InflationService } from '../inflation/inflation.service';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
@@ -11,6 +12,7 @@ const jobs = [
   ['inflation', InflationService],
   ['snapshots', PortfolioSnapshotsService],
   ['wallets', WalletSyncService],
+  ['broker-prices', BrokerPriceSyncService],
 ] as const;
 
 describe.each([...jobs])('JOB-ERROR-LOG: the %s scheduled tick', (_name, Service) => {
