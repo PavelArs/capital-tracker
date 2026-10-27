@@ -248,12 +248,14 @@ describe('broker connections service', () => {
     expect(portfolios).toEqual([mine.id]);
   });
 
-  it('names an Invest Box or an account the token no longer reaches, without asking for it', async () => {
-    for (const listed of [
-      ok({ ...mine, investBox: true }),
-      ok({ ...mine, id: '2000000009' }),
-      ok({ ...mine, closed: true }),
-    ]) {
+  it('BROKER-INVEST-BOX reads the positions of an Invest Box, which T-Bank gives like any account', async () => {
+    const { service, portfolios } = build(ok({ ...mine, investBox: true }), true, true);
+    await expect(service.positions(owner, account)).resolves.toHaveProperty('positions');
+    expect(portfolios).toEqual([mine.id]);
+  });
+
+  it('names an account the token no longer reaches, without asking for it', async () => {
+    for (const listed of [ok({ ...mine, id: '2000000009' }), ok({ ...mine, closed: true })]) {
       const { service, portfolios } = build(listed, true, true);
       await expect(service.positions(owner, account)).rejects.toBeInstanceOf(
         UnprocessableEntityException,
@@ -435,12 +437,16 @@ it('BROKER-OPENING never treats an unreadable current portfolio as empty', async
   await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
     ServiceUnavailableException,
   );
-  for (const listed of [ok({ ...mine, closed: true }), ok({ ...mine, investBox: true })]) {
-    const { service } = build(listed, true, true);
-    await expect(service.history(owner, account, true)).rejects.toBeInstanceOf(
-      UnprocessableEntityException,
-    );
-  }
+  const { service: closed } = build(ok({ ...mine, closed: true }), true, true);
+  await expect(closed.history(owner, account, true)).rejects.toBeInstanceOf(
+    UnprocessableEntityException,
+  );
+});
+
+it('BROKER-INVEST-BOX checks an Invest Box history against the holdings T-Bank gives for it', async () => {
+  const { service, portfolios } = build(ok({ ...mine, investBox: true }), true, true);
+  await expect(service.history(owner, account, true)).resolves.toHaveProperty('positions');
+  expect(portfolios).toEqual([mine.id]);
 });
 
 it('BROKER-OPENING classifies currency positions using provider metadata and never guesses on failure', async () => {

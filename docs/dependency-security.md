@@ -203,6 +203,9 @@ overrides:
 Remove it when an adopted Nest release supplies multer 2.5.0 or later. The three moderate
 findings below are unchanged.
 
+**2026-10-27 update:** Nest 12.3.2 pins multer 2.5.0, so the override was removed with that
+adoption. `pnpm audit --prod --audit-level high` reports no known vulnerabilities.
+
 Two exact parent-scoped overrides are necessary because upstream pins older
 children:
 

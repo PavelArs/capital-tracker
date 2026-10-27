@@ -71,7 +71,6 @@ export function useInfinite<T>(
       const next = to(current);
       return next === current && kept.key === resetKey ? kept : { key: resetKey, count: next };
     });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of length or filters is written.
   useEffect(() => {
     if (keep) remember(keep, { key: resetKey, count });
   }, [keep, resetKey, count]);

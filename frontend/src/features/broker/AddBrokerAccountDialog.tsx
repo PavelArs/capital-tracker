@@ -332,11 +332,7 @@ export default function AddBrokerAccountDialog({ onClose, onAdded, onImport }: P
                   {accounts.map((account) => {
                     const pick = picks[account.id];
                     const on = pick.checked && !account.connected;
-                    const note = account.connected
-                      ? 'Already connected'
-                      : account.investBox
-                        ? 'Invest Box, no holdings given'
-                        : null;
+                    const note = account.connected ? 'Already connected' : null;
                     return (
                       <li
                         key={account.id}

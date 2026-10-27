@@ -574,7 +574,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const sameAccount = transfer && toAccountId === accountId;
   const fewAccounts = transfer && (accounts?.length ?? 0) < 2;
   // Use all leaves room for a transfer's fee.
-  const useAll = () => {
+  const applyAll = () => {
     if (available === null) return;
     setAmount(typedFee ? subtractDecimal(available, typedFee) : available);
   };
@@ -985,7 +985,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         available={available}
                         loading={availableKey !== null && availability?.key !== availableKey}
                         over={overshown}
-                        onUseAll={useAll}
+                        onUseAll={applyAll}
                       />
                     ))}
                 </div>
