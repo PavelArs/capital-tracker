@@ -217,7 +217,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await portfolio.getByRole('link', { name: 'Back to Portfolio', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
   // The asset cell carries the type and value currency; a coin outside the market catalog
-  // never bought shows amount 0 and no price yet (portfolio-valuation PV-5).
+  // never bought shows amount 0 and no price yet (portfolio-valuation PV-5). Holding none, it
+  // shows once the assets no longer held are asked for.
+  const showNotHeld = () =>
+    portfolio.getByRole('button', { name: /^Show \d+ assets? no longer held$/ }).click();
+  await showNotHeld();
   const depositCells = portfolio
     .getByRole('row', { name: new RegExp(`^${depositName}`) })
     .getByRole('cell');
@@ -225,6 +229,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation and logout', as
   await expect(depositCells.nth(1)).toHaveText('0');
   await expect(depositCells.nth(2)).toHaveText('No priceManual');
   await page.reload();
+  await showNotHeld();
   await expect(depositCells.nth(0)).toHaveText(`${depositName}SHUI · Crypto · USD`);
   await expect(depositCells.nth(2)).toHaveText('No priceManual');
   const chips = portfolio.getByRole('group', { name: 'Filter assets' });
