@@ -208,7 +208,7 @@ describe('BROKER-IMPORT-UI the Import history dialog', () => {
 });
 
 it('BROKER-OPENING previews declared earlier holdings and submits them with one import command', async () => {
-  const assets = [{ asset: 'cash:USD', label: 'USD cash', currency: 'usd' }];
+  const assets = [{ asset: 'cash:USD', label: 'USD cash', currency: 'usd', type: 'cash' }];
   const blocked = preview({
     canImport: false,
     openingAssets: assets,
@@ -259,8 +259,26 @@ it('BROKER-OPENING previews declared earlier holdings and submits them with one 
 it('SPLIT-IMPORT-UI previews a declared share split and submits it with the import command', async () => {
   const share = '10000000-0000-4000-8000-0000000000a1';
   const assets = [
-    { asset: 'cash:RUB', label: 'RUB cash', currency: 'rub' },
-    { asset: share, label: 'SYNTH', currency: 'rub' },
+    { asset: 'cash:RUB', label: 'RUB cash', currency: 'rub', type: 'cash' },
+    { asset: share, label: 'SYNTH', currency: 'rub', type: 'share' },
+    {
+      asset: '10000000-0000-4000-8000-0000000000a2',
+      label: 'SYNTHFUND',
+      currency: 'rub',
+      type: 'etf',
+    },
+    {
+      asset: '10000000-0000-4000-8000-0000000000a3',
+      label: 'SYNTHBOND',
+      currency: 'rub',
+      type: 'bond',
+    },
+    {
+      asset: '10000000-0000-4000-8000-0000000000a4',
+      label: 'GBPRUB_TOM',
+      currency: 'rub',
+      type: 'currency',
+    },
   ];
   const blocked = preview({
     canImport: false,
@@ -276,12 +294,12 @@ it('SPLIT-IMPORT-UI previews a declared share split and submits it with the impo
   open();
   await user.click(await screen.findByRole('button', { name: 'Record a share split' }));
   const form = screen.getByRole('form', { name: 'Share split' });
-  // Only securities split, so cash is not offered.
+  // Only shares and funds split, so cash, bonds and currencies are not offered.
   expect(
     within(within(form).getByLabelText('Security'))
       .getAllByRole('option')
       .map((o) => o.textContent),
-  ).toEqual(['SYNTH']);
+  ).toEqual(['SYNTH', 'SYNTHFUND']);
   fireEvent.change(within(form).getByLabelText('Effective from (Moscow)'), {
     target: { value: '2026-04-17' },
   });

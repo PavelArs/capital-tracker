@@ -75,7 +75,8 @@ export interface TBankSplit {
 }
 
 export interface TBankImportPreview {
-  openingAssets?: { asset: string; label: string; currency: string }[];
+  /** `type`: `cash`, or T-Bank's instrument type (`share`, `etf`, `bond`, `currency`, ...). */
+  openingAssets?: { asset: string; label: string; currency: string; type: string }[];
   grouping: 'operation' | 'day' | 'month';
   entries: TBankPlanEntry[];
   skipped: {

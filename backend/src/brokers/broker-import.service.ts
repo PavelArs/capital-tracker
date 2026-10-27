@@ -52,6 +52,7 @@ import {
   openingAssets,
   openingPositions,
   openingQuantities,
+  splittable,
 } from './broker-opening';
 import { saveBrokerPrices } from './broker-prices';
 import type { TBankOperation, TBankPosition } from './tbank-client';
@@ -518,8 +519,14 @@ export class BrokerImportService {
     const available = openingAssets(history.operations, history.positions);
     if (opening?.lots.some((lot) => !available.some((asset) => asset.asset === lot.asset)))
       throw new BadRequestException('An opening holding is not in this broker history');
-    if (splits.some((split) => !available.some((asset) => asset.asset === split.asset)))
-      throw new BadRequestException('A split security is not in this broker history');
+    if (
+      splits.some(
+        (split) => !available.some((asset) => asset.asset === split.asset && splittable(asset)),
+      )
+    )
+      throw new BadRequestException(
+        'A split security is not a share or fund in this broker history',
+      );
     const instruments = await this.instruments(
       manager,
       owner,

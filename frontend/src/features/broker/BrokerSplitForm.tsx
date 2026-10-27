@@ -19,7 +19,8 @@ export default function BrokerSplitForm({
   onReview: (split: TBankSplit) => void;
   onCancel: () => void;
 }) {
-  const securities = assets.filter((asset) => !asset.asset.startsWith('cash:'));
+  // Only shares and funds split.
+  const securities = assets.filter((asset) => ['share', 'etf'].includes(asset.type));
   const day = (instant?: string) =>
     instant ? new Date(new Date(instant).getTime() + 3 * 3600000).toISOString().slice(0, 10) : '';
   const submit = (event: FormEvent<HTMLFormElement>) => {

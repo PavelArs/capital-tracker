@@ -120,10 +120,15 @@ export function openingAssets(
   operations: readonly TBankOperation[],
   positions: readonly TBankPosition[] = [],
 ) {
-  const assets = new Map<string, { asset: string; label: string; currency: string }>(
+  const assets = new Map<string, { asset: string; label: string; currency: string; type: string }>(
     ['USD', 'EUR', 'RUB'].map((currency) => [
       `cash:${currency}`,
-      { asset: `cash:${currency}`, label: `${currency} cash`, currency: currency.toLowerCase() },
+      {
+        asset: `cash:${currency}`,
+        label: `${currency} cash`,
+        currency: currency.toLowerCase(),
+        type: 'cash',
+      },
     ]),
   );
   for (const operation of operations) {
@@ -139,6 +144,7 @@ export function openingAssets(
       asset: operation.instrumentUid,
       label: operation.ticker || operation.instrumentUid,
       currency: operation.paymentCurrency,
+      type: operation.instrumentType,
     });
   }
   for (const position of positions) {
@@ -163,7 +169,11 @@ export function openingAssets(
       asset: position.instrumentUid,
       label: position.instrumentUid,
       currency,
+      type: position.instrumentType,
     });
   }
   return [...assets.values()];
 }
+
+/** SPLIT: only shares and funds split; cash, bonds and currencies never do. */
+export const splittable = (asset: { type: string }) => ['share', 'etf'].includes(asset.type);
