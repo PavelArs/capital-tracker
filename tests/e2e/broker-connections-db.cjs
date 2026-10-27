@@ -1360,9 +1360,57 @@ async function importing(db, service, imports, tbank, owner, other) {
 }
 
 const fundUid = '10000000-0000-4000-8000-0000000000c7';
+const bondUid = '10000000-0000-4000-8000-0000000000c9';
+// BPH: T-Bank's market data stubbed at the HTTP boundary, in the recorded GetCandles and BondBy
+// shapes with synthetic prices. Day candles are stamped midnight UTC; today's is not complete.
+// The fund's candles are in today's units: it split 1:2 on 2026-01-15.
+function candleServer() {
+  const day = (date, units, nano, isComplete = true) => ({
+    open: { units, nano }, high: { units, nano }, low: { units, nano }, close: { units, nano },
+    volume: '10', time: `${date}T00:00:00Z`, ...(isComplete ? { isComplete } : {}),
+    candleSource: 'CANDLE_SOURCE_EXCHANGE', volumeBuy: '5', volumeSell: '5',
+  });
+  const candles = {
+    [fundUid]: {
+      priceCurrency: 'rub',
+      2025: [day('2025-03-03', '700', 250000000)],
+      2026: [day('2026-10-23', '1490', 0), day('2026-10-24', '1495', 0, false)],
+    },
+    [bondUid]: { priceCurrency: 'pt.', 2025: [day('2025-03-03', '98', 765000000)], 2026: [] },
+  };
+  const requests = [];
+  const state = { failing: false };
+  const server = require('node:http').createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      const asked = JSON.parse(body);
+      requests.push({ method: request.url.split('.').pop(), body: asked, authorized: request.headers.authorization === `Bearer ${token}` });
+      let answer;
+      if (state.failing) answer = undefined;
+      else if (request.url.endsWith('MarketDataService/GetCandles')) {
+        const series = candles[asked.instrumentId] ?? { priceCurrency: 'rub' };
+        answer = { candles: series[asked.from.slice(0, 4)] ?? [], priceCurrency: series.priceCurrency };
+      } else if (request.url.endsWith('InstrumentsService/BondBy')) {
+        const nominal = { currency: 'rub', units: '1000', nano: 0 };
+        answer = { instrument: { uid: asked.id, nominal, initialNominal: nominal } };
+      }
+      response.writeHead(answer ? 200 : 404, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify(answer ?? {}));
+    });
+  });
+  return { server, requests, state };
+}
+
 async function refreshing(db, service, tbank, owner) {
   stage = 'BPR-REFRESH: the hourly refresh keeps T-Bank prices current and names a fallback asset';
   const { BrokerPriceSyncService } = require('/app/backend/dist/brokers/broker-price-sync.service.js');
+  const { TBankClient } = require('/app/backend/dist/brokers/tbank-client.js');
+  const { server, requests, state } = candleServer();
+  server.listen(0, '127.0.0.1');
+  await require('node:events').once(server, 'listening');
+  const market = new TBankClient({ baseUrl: `http://127.0.0.1:${server.address().port}/rest` });
+  try {
   const broker = await account(db, owner, 'broker');
   await takeOver(db, service, owner, broker);
   // Only this connection is read: every other one is closed first.
@@ -1383,6 +1431,22 @@ async function refreshing(db, service, tbank, owner) {
       VALUES ($1, 'tbank', $2, $3, 'etf')`,
     [owner, fundUid, fund.id],
   );
+  const [bond] = await db.query(
+    `INSERT INTO accounting_instruments (id, "ownerId", "requestId", "canonicalPayload", name, symbol,
+        "assetType", "valuationCurrency", "priceSource")
+      VALUES ($1, $2, $3, 'synthetic', 'SYNTHB', 'SYNTHB', 'manual', 'RUB', 'manual') RETURNING id`,
+    [randomUUID(), owner, randomUUID()],
+  );
+  await db.query(
+    `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId", "instrumentId", "instrumentType")
+      VALUES ($1, 'tbank', $2, $3, 'bond')`,
+    [owner, bondUid, bond.id],
+  );
+  await db.query(
+    `INSERT INTO instrument_splits (id, "ownerId", "instrumentId", "effectiveAt", ratio, "requestId", "canonicalPayload")
+      VALUES ($1, $2, $3, '2026-01-15T00:00:00+03:00', 2, $4, 'synthetic')`,
+    [randomUUID(), owner, fund.id, randomUUID()],
+  );
   history = [
     operation('400000001', 'INPUT', '5000'),
     operation('400000002', 'BUY', '-3000', {
@@ -1393,32 +1457,47 @@ async function refreshing(db, service, tbank, owner) {
   tbank.positions = [{ ...heldPosition(fundUid, '2', 'etf'), currentPrice: '1500.25' }, { ...heldPosition('10000000-0000-4000-8000-0000000000c8', '1'), currentPrice: '99' }];
   tbank.cash = [['RUB', '2000']];
   const config = (enabled) => new (require('@nestjs/config').ConfigService)({ PRICE_COLLECTION_ENABLED: enabled });
-  const prices = async () =>
+  const prices = async (instrument = fund.id) =>
     (await db.query(
       `SELECT "instrumentId", price::text AS price, "quoteCurrency", "observedAt" FROM broker_price_observations
         WHERE "ownerId" = $1 AND "instrumentId" = $2 ORDER BY "observedAt"`,
-      [owner, fund.id],
+      [owner, instrument],
     )).map((row) => [row.price.replace(/\.?0+$/, ''), row.quoteCurrency, row.observedAt.toISOString()]);
   const source = async () =>
     (await db.query(`SELECT state, "errorCode", "errorMessage" FROM sync_sources WHERE key = 'prices:tbank'`))[0];
-  const off = new BrokerPriceSyncService(db, config('false'), service);
+  const off = new BrokerPriceSyncService(db, config('false'), service, market);
   assert.deepEqual(await off.tick(new Date('2026-10-24T10:10:00Z')), { outcome: 'disabled' });
   assert.deepEqual(await prices(), [], 'Switched off, nothing is read or saved');
-  const sync = new BrokerPriceSyncService(db, config('true'), service);
+  const sync = new BrokerPriceSyncService(db, config('true'), service, market);
   assert.deepEqual(await sync.tick(new Date('2026-10-24T10:02:00Z')), { outcome: 'not_due' }, 'Not before five past the hour');
   const first = new Date('2026-10-24T10:10:00Z');
-  assert.deepEqual(await sync.tick(first), { outcome: 'ran', accounts: 1, failed: 0, saved: 1 });
-  assert.deepEqual(await prices(), [['1500.25', 'RUB', first.toISOString()]]);
+  assert.deepEqual(await sync.tick(first), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 3 });
+  // BPH-BACKFILL: the first run of a Moscow day also stores each complete day's close since
+  // 2025, at the end of its Moscow day; today's unfinished candle is left out.
+  // BPH-SPLIT: the fund's close before its split is back in the units of its day.
+  assert.deepEqual(await prices(), [
+    ['1400.5', 'RUB', '2025-03-03T20:59:59.999Z'],
+    ['1490', 'RUB', '2026-10-23T20:59:59.999Z'],
+    ['1500.25', 'RUB', first.toISOString()],
+  ]);
+  // BPH-BOND: a bond's close in percent is money at its unchanging nominal.
+  assert.deepEqual(await prices(bond.id), [['987.65', 'RUB', '2025-03-03T20:59:59.999Z']]);
+  const candleAsks = requests.filter((item) => item.method === 'MarketDataService/GetCandles' && item.body.instrumentId === fundUid);
+  assert.deepEqual(candleAsks.map((item) => [item.body.from, item.body.to, item.body.interval, item.authorized]), [
+    ['2025-01-01T00:00:00Z', '2026-01-01T00:00:00.000Z', 'CANDLE_INTERVAL_DAY', true],
+    ['2026-01-01T00:00:00Z', first.toISOString(), 'CANDLE_INTERVAL_DAY', true],
+  ]);
   assert.deepEqual(await source(), { state: 'synced', errorCode: null, errorMessage: null });
   // BPR-RENAME: the asset made without a ticker takes the one its operations name.
   const [renamed] = await db.query('SELECT name, symbol FROM accounting_instruments WHERE id = $1', [fund.id]);
   assert.deepEqual([renamed.name, renamed.symbol], ['SYNTHF', 'SYNTHF']);
   assert.deepEqual(await sync.tick(new Date('2026-10-24T10:40:00Z')), { outcome: 'not_due' }, 'Once an hour');
+  const asked = requests.length;
   // A price T-Bank reports no more stays; a failed read records why, without the token.
   tbank.down = true;
   const failedAt = new Date('2026-10-24T11:10:00Z');
   try {
-    assert.deepEqual(await sync.tick(failedAt), { outcome: 'ran', accounts: 1, failed: 1, saved: 0 });
+    assert.deepEqual(await sync.tick(failedAt), { outcome: 'ran', accounts: 1, failed: 1, saved: 0, closes: 0 });
   } finally {
     tbank.down = false;
   }
@@ -1435,11 +1514,12 @@ async function refreshing(db, service, tbank, owner) {
     ['prices', 'T-Bank prices', 'failed', failure.errorMessage],
   );
   assert.equal((await shownSources(failedAt)).some((item) => item.key === 'prices'), false, 'No crypto price source was read');
-  assert.deepEqual(await prices(), [['1500.25', 'RUB', first.toISOString()]]);
+  assert.deepEqual((await prices()).map((row) => row[0]), ['1400.5', '1490', '1500.25'], 'A failed read keeps every stored price');
   tbank.positions = [{ ...heldPosition(fundUid, '2', 'etf'), currentPrice: '1510' }];
   const next = new Date('2026-10-24T12:10:00Z');
-  assert.deepEqual(await sync.tick(next), { outcome: 'ran', accounts: 1, failed: 0, saved: 1 });
-  assert.deepEqual((await prices()).map((row) => row[0]), ['1500.25', '1510']);
+  assert.deepEqual(await sync.tick(next), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
+  assert.deepEqual((await prices()).map((row) => row[0]), ['1400.5', '1490', '1500.25', '1510']);
+  assert.equal(requests.length, asked, 'Past prices are read once a Moscow day');
   assert.equal((await shownSources(next)).find((item) => item.key === 'prices:tbank').state, 'synced');
   await assert.rejects(
     db.query('UPDATE broker_price_observations SET price = 1 WHERE "instrumentId" = $1', [fund.id]),
@@ -1455,9 +1535,43 @@ async function refreshing(db, service, tbank, owner) {
     [fundValue.name, fundValue.price.value, fundValue.price.source, fundValue.price.status, fundValue.price.observedAt],
     ['SYNTHF', '1510', 'tbank', 'stale', next.toISOString()],
   );
+  // BPH-HISTORY: a past day is valued at the close before it, divided by the split since; a day
+  // before the first close has no price, never zero.
+  const valued = async (at) =>
+    (await new PortfolioValuationService(db).read(owner, { currency: 'RUB' }, new Date(at))).assets.find(
+      (asset) => asset.instrumentId === fund.id,
+    ).price;
+  assert.deepEqual([(await valued('2025-03-04T10:00:00Z')).value, (await valued('2025-03-04T10:00:00Z')).observedAt],
+    ['1400.5', '2025-03-03T20:59:59.999Z']);
+  assert.equal((await valued('2026-02-01T10:00:00Z')).value, '700.25');
+  assert.equal(await valued('2025-03-03T12:00:00Z'), null);
+  // BPH-RETRY: a failed read of past prices is shown with the T-Bank prices and read again the
+  // next hour; closes already stored stay.
+  state.failing = true;
+  const nextDay = new Date('2026-10-24T21:10:00Z');
+  assert.deepEqual(await sync.tick(nextDay), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
+  const pastFailure = await source();
+  assert.equal(pastFailure.state, 'failed');
+  assert.equal(pastFailure.errorCode, 'unavailable');
+  assert.match(pastFailure.errorMessage, /^Past T-Bank prices were not read: /);
+  assert.ok(!pastFailure.errorMessage.includes(token.slice(2)), 'No secret in the status');
+  state.failing = false;
+  const retried = requests.length;
+  assert.deepEqual(await sync.tick(new Date('2026-10-24T22:10:00Z')), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
+  assert.ok(requests.length > retried, 'Read again the next hour');
+  assert.equal((await source()).state, 'synced');
+  assert.deepEqual((await prices()).filter((row) => row[2].endsWith('20:59:59.999Z')).map((row) => row[0]), ['1400.5', '1490']);
   console.log('PASS BPR-REFRESH');
   console.log('PASS BPR-RENAME');
   console.log('PASS BPR-STALE');
+  console.log('PASS BPH-BACKFILL');
+  console.log('PASS BPH-SPLIT');
+  console.log('PASS BPH-BOND');
+  console.log('PASS BPH-HISTORY');
+  console.log('PASS BPH-RETRY');
+  } finally {
+    server.close();
+  }
 }
 async function main() {
   for (const [key, value] of Object.entries(settings))

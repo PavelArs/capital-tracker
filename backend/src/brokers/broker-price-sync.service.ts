@@ -2,22 +2,29 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
+import { readSplits } from '../accounting/share-split.store';
+import { moscowDate } from '../fx-rates/fx-conversion';
 import { errorMessage, trackJob } from '../observability/metrics';
 import { isDue, nextRunAt } from '../prices/price-collection';
 import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
 import { BrokerConnectionsService, NO_HOLDINGS } from './broker-connections.service';
+import { closeObservations, PRICE_HISTORY_FROM } from './broker-price-history';
 import {
   type BrokerPrice,
   insertBrokerPrices,
+  insertObservations,
   lowestPrices,
   readBrokerPrices,
 } from './broker-prices';
+import { TBankClient } from './tbank-client';
 
 export type BrokerPriceTick =
-  | { outcome: 'ran'; accounts: number; failed: number; saved: number }
+  | { outcome: 'ran'; accounts: number; failed: number; saved: number; closes: number }
   | { outcome: 'busy' | 'disabled' | 'not_due' };
 
 export const BROKER_PRICES_KEY = 'prices:tbank';
+/** BPH-BACKFILL: when the day closes were last read in full; not shown to the owner itself. */
+export const BROKER_HISTORY_KEY = 'prices:tbank-history';
 // Arbitrary constant identifying the broker price refresh's session advisory lock.
 const LOCK_KEY = 7_340_600_021;
 
@@ -43,6 +50,7 @@ export class BrokerPriceSyncService {
     private readonly source: DataSource,
     private readonly config: ConfigService,
     private readonly connections: BrokerConnectionsService,
+    private readonly tbank: TBankClient,
   ) {}
 
   // Background collection is one owner switch: broker prices follow the hourly prices (M3).
@@ -140,24 +148,118 @@ export class BrokerPriceSyncService {
       saved += await this.source.transaction((manager) =>
         insertBrokerPrices(manager, ownerId, lowestPrices(prices), now),
       );
+    const history = await this.backfill(connected, now);
     const [first] = failures;
     await recordSource(
       this.source,
       BROKER_PRICES_KEY,
-      first
+      first || history.failure
         ? {
             state: 'failed',
-            errorCode: first.code,
-            errorMessage:
-              `T-Bank prices of ${failures.length} of ${connected.length} accounts were not read: ${first.message}`.slice(
-                0,
-                300,
-              ),
+            errorCode: first?.code ?? history.failure!.code,
+            errorMessage: (first
+              ? `T-Bank prices of ${failures.length} of ${connected.length} accounts were not read: ${first.message}`
+              : `Past T-Bank prices were not read: ${history.failure!.message}`
+            ).slice(0, 300),
             nextRunAt: nextRunAt(now),
           }
         : { state: 'synced', errorCode: null, errorMessage: null, nextRunAt: nextRunAt(now) },
       now,
     );
-    return { outcome: 'ran', accounts: connected.length, failed: failures.length, saved };
+    return {
+      outcome: 'ran',
+      accounts: connected.length,
+      failed: failures.length,
+      saved,
+      closes: history.closes,
+    };
+  }
+
+  /**
+   * BPH-BACKFILL: on the first run of each Moscow day until one succeeds, the close of every
+   * complete day since 2025 of each security linked to a T-Bank asset, read with one of the
+   * owner's saved tokens. A day T-Bank serves later is filled in on a later day; a close already
+   * stored stays as it is.
+   * shortcut: rereads the whole range daily (two requests per security), fine for a personal
+   * portfolio; read only the missing days if the range or the holdings grow large.
+   */
+  private async backfill(
+    connected: readonly { ownerId: string; accountId: string }[],
+    now: Date,
+  ): Promise<{ closes: number; failure?: { code: string; message: string } }> {
+    const [row]: { lastSuccessAt: Date | null }[] = await this.source.query(
+      'SELECT "lastSuccessAt" FROM sync_sources WHERE key = $1',
+      [BROKER_HISTORY_KEY],
+    );
+    if (row?.lastSuccessAt && moscowDate(row.lastSuccessAt) === moscowDate(now))
+      return { closes: 0 };
+    const owners = new Map<string, string[]>();
+    for (const { ownerId, accountId } of connected)
+      owners.set(ownerId, [...(owners.get(ownerId) ?? []), accountId]);
+    let closes = 0;
+    let failure: { code: string; message: string } | undefined;
+    for (const [ownerId, accounts] of owners) {
+      try {
+        closes += await this.ownerHistory(ownerId, accounts, now);
+      } catch (error) {
+        const code = failureCode(error);
+        failure ??= {
+          code,
+          message: code === 'error' ? 'The refresh stopped unexpectedly' : (error as Error).message,
+        };
+      }
+    }
+    await recordSource(
+      this.source,
+      BROKER_HISTORY_KEY,
+      failure
+        ? {
+            state: 'failed',
+            errorCode: failure.code,
+            errorMessage: failure.message.slice(0, 300),
+            nextRunAt: nextRunAt(now),
+          }
+        : { state: 'synced', errorCode: null, errorMessage: null, nextRunAt: null },
+      now,
+    );
+    return { closes, failure };
+  }
+
+  /** BPH-BACKFILL: one owner's day closes; returns how many were new. */
+  private async ownerHistory(ownerId: string, accounts: readonly string[], now: Date) {
+    // Market data is the same through any account's token: the first that still works.
+    let token: string | undefined;
+    let lastError: unknown;
+    for (const accountId of accounts) {
+      try {
+        token = await this.connections.marketToken(ownerId, accountId);
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (token === undefined) throw lastError;
+    const links: { uid: string; instrumentId: string }[] = await this.source.query(
+      `SELECT "providerInstrumentId" AS uid, "instrumentId" FROM broker_instrument_links
+        WHERE "ownerId" = $1 AND provider = 'tbank' ORDER BY "providerInstrumentId"`,
+      [ownerId],
+    );
+    const splits = await readSplits(this.source.manager, ownerId);
+    let saved = 0;
+    for (const link of links) {
+      const history = await this.tbank.dailyCloses(token, link.uid, PRICE_HISTORY_FROM, now);
+      if (!history.ok) throw BrokerConnectionsService.failure(history.reason);
+      let nominal: { amount: string; currency: string } | null = null;
+      if (history.value.currency === 'pt.' && history.value.closes.length > 0) {
+        const bond = await this.tbank.bondNominal(token, link.uid);
+        if (!bond.ok) throw BrokerConnectionsService.failure(bond.reason);
+        nominal = bond.value;
+      }
+      const rows = closeObservations(link.instrumentId, history.value, nominal, splits);
+      saved += await this.source.transaction((manager) =>
+        insertObservations(manager, ownerId, rows),
+      );
+    }
+    return saved;
   }
 }

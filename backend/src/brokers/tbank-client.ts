@@ -367,6 +367,55 @@ export function parseOperationsPage(body: unknown): TBankOperationsPage {
   return { operations: items.map(operation), nextCursor: hasNext ? cursor : '' };
 }
 
+/** BPH-PARSE: the closes of complete days, and what they are quoted in ('pt.' is percent). */
+export interface TBankCloses {
+  currency: string;
+  closes: { date: string; close: string }[];
+}
+
+/** One GetCandles answer of day candles; a day still trading has no close yet. */
+export function parseCandles(body: unknown): TBankCloses {
+  const answer = record(body);
+  const candles = answer.candles ?? [];
+  // A day candle per day, a year per request: far fewer than this.
+  if (!Array.isArray(candles) || candles.length > 1000) return invalid();
+  const currency = answer.priceCurrency;
+  if (typeof currency !== 'string' || !/^[a-z.]{1,8}$/.test(currency)) return invalid();
+  const closes: TBankCloses['closes'] = [];
+  for (const value of candles) {
+    const item = record(value);
+    // A day candle is stamped midnight UTC of its trading date.
+    const time = item.time;
+    if (typeof time !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00:00Z$/.test(time)) return invalid();
+    const close = decimal(item.close);
+    if (item.isComplete !== undefined && typeof item.isComplete !== 'boolean') return invalid();
+    if (item.isComplete === true) closes.push({ date: time.slice(0, 10), close });
+  }
+  return { currency, closes };
+}
+
+/**
+ * BPH-PARSE: a bond's nominal when it has never changed (no amortization, no indexation), so
+ * today's nominal turns every past close in percent into money; null otherwise.
+ */
+export function parseBondNominal(
+  body: unknown,
+  uid: string,
+): { amount: string; currency: string } | null {
+  const bond = record(record(body).instrument);
+  if (bond.uid !== uid) return invalid();
+  if (bond.amortizationFlag !== undefined && typeof bond.amortizationFlag !== 'boolean')
+    return invalid();
+  const nominal = price(bond.nominal);
+  const initial = price(bond.initialNominal);
+  return bond.amortizationFlag !== true &&
+    nominal.amount !== '' &&
+    nominal.amount === initial.amount &&
+    nominal.currency === initial.currency
+    ? nominal
+    : null;
+}
+
 export class TBankClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -413,6 +462,54 @@ export class TBankClient {
           return invalid();
         return instrument.isoCurrencyName.toUpperCase();
       },
+    );
+  }
+
+  /**
+   * BPH-FETCH: the close of each complete day from `from` (a date) to `to` (GetCandles), one
+   * calendar year per request.
+   */
+  async dailyCloses(
+    token: string,
+    uid: string,
+    from: string,
+    to: Date,
+  ): Promise<TBankResult<TBankCloses>> {
+    const all: TBankCloses = { currency: '', closes: [] };
+    for (let year = Number(from.slice(0, 4)); year <= to.getUTCFullYear(); year += 1) {
+      const end = new Date(`${year + 1}-01-01T00:00:00Z`);
+      const result = await this.call(
+        token,
+        'MarketDataService/GetCandles',
+        {
+          instrumentId: uid,
+          from: year === Number(from.slice(0, 4)) ? `${from}T00:00:00Z` : `${year}-01-01T00:00:00Z`,
+          to: (end < to ? end : to).toISOString(),
+          interval: 'CANDLE_INTERVAL_DAY',
+        },
+        parseCandles,
+      );
+      if (!result.ok) return result;
+      const { currency, closes } = result.value;
+      // A security quoted in two ways across years is not one series.
+      if (closes.length > 0 && all.closes.length > 0 && currency !== all.currency)
+        return { ok: false, reason: 'invalid_response' };
+      if (closes.length > 0 || !all.currency) all.currency = currency;
+      all.closes.push(...closes);
+    }
+    return { ok: true, value: all };
+  }
+
+  /** BPH-FETCH: a bond's unchanging nominal (BondBy), null when it changes. */
+  bondNominal(
+    token: string,
+    uid: string,
+  ): Promise<TBankResult<{ amount: string; currency: string } | null>> {
+    return this.call(
+      token,
+      'InstrumentsService/BondBy',
+      { idType: 'INSTRUMENT_ID_TYPE_UID', id: uid },
+      (body) => parseBondNominal(body, uid),
     );
   }
 

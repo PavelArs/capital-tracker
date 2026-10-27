@@ -202,6 +202,16 @@ export class BrokerConnectionsService {
     return { brokerAccountId: target.id, ...identities.value };
   }
 
+  /** BPH-FETCH: the saved token, still reaching its account, to read market data with. */
+  async marketToken(ownerId: string, accountId: string): Promise<string> {
+    return (await this.savedConnection(ownerId, accountId)).token;
+  }
+
+  /** Why a market data read with the saved token gave nothing, as the owner should hear it. */
+  static failure(reason: TBankFailure) {
+    return savedTokenFailure(reason);
+  }
+
   async disconnect(ownerId: string, accountId: string) {
     const owner = parseUuid(ownerId);
     const account = parseUuid(accountId);
