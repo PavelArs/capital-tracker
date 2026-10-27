@@ -1031,6 +1031,11 @@ async function importing(db, service, imports, tbank, owner, other) {
   tbank.cash = [['RUB', '250']];
   const unsplit = await imports.preview(owner, splitAccount);
   assert.equal(unsplit.canImport, false, 'Without the split, 25 shares were never held');
+  // Bonds and currencies never split: a split of a held bond is refused.
+  const splitBond = '10000000-0000-4000-8000-00000000c1b0';
+  tbank.positions = [heldPosition(splitUid, '5'), heldPosition(splitBond, '1', 'bond')];
+  await rejected(() => imports.preview(owner, splitAccount, { splits: [{ asset: splitBond, effectiveAt: splitAt, ratio: 10 }] }), 400);
+  tbank.positions = [heldPosition(splitUid, '5')];
   const splits = [{ asset: splitUid, effectiveAt: splitAt, ratio: 10 }];
   const declared = await imports.preview(owner, splitAccount, { splits });
   assert.deepEqual(declared.problems, []);

@@ -359,7 +359,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
               <Button size="sm" disabled={busy} onClick={() => setEditingOpening(true)}>
                 {opening.current ? 'Edit opening holdings' : 'Record earlier holdings'}
               </Button>
-              {preview.openingAssets?.some((asset) => !asset.asset.startsWith('cash:')) && (
+              {preview.openingAssets?.some((asset) => ['share', 'etf'].includes(asset.type)) && (
                 <Button size="sm" disabled={busy} onClick={() => setEditingSplit(true)}>
                   {split.current ? 'Edit share split' : 'Record a share split'}
                 </Button>

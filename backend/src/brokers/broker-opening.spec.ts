@@ -1,4 +1,10 @@
-import { openingPositions, openingQuantities, parseBrokerOpening } from './broker-opening';
+import {
+  openingAssets,
+  openingPositions,
+  openingQuantities,
+  parseBrokerOpening,
+  splittable,
+} from './broker-opening';
 
 const asset = '00000000-0000-4000-8000-000000000001';
 const lot = {
@@ -35,5 +41,37 @@ describe('BROKER-OPENING', () => {
     ).toThrow();
     expect(() => parseBrokerOpening({ ...opening, guessedBalance: '1' })).toThrow();
     expect(() => parseBrokerOpening({ ...opening, lots: [{ ...lot, quantity: '0' }] })).toThrow();
+  });
+});
+
+describe('SPLIT-SECURITY-TYPE: only shares and funds can be split', () => {
+  it('SPLIT-SECURITY-TYPE names the type of each asset and offers shares and ETFs only', () => {
+    const position = (instrumentUid: string, instrumentType: string, currencyCode?: string) => ({
+      instrumentUid,
+      instrumentType,
+      quantity: '1',
+      virtual: false,
+      currentPrice: '1',
+      currentPriceCurrency: 'rub',
+      averagePrice: '1',
+      averagePriceCurrency: 'rub',
+      currencyCode,
+    });
+    const assets = openingAssets([], [
+      position('share-uid', 'share'),
+      position('etf-uid', 'etf'),
+      position('bond-uid', 'bond'),
+      position('gbp-uid', 'currency', 'GBP'),
+    ] as never);
+    expect(assets.map((item) => [item.asset, item.type])).toEqual([
+      ['cash:USD', 'cash'],
+      ['cash:EUR', 'cash'],
+      ['cash:RUB', 'cash'],
+      ['share-uid', 'share'],
+      ['etf-uid', 'etf'],
+      ['bond-uid', 'bond'],
+      ['gbp-uid', 'currency'],
+    ]);
+    expect(assets.filter(splittable).map((item) => item.asset)).toEqual(['share-uid', 'etf-uid']);
   });
 });
