@@ -21,6 +21,7 @@ import { useAttention } from '../shell/attention-context';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
+import { marketMissingText } from '../shell/market-missing';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
@@ -65,10 +66,11 @@ function ChangeSplit({
   history: PortfolioHistory;
   portfolio: PortfolioValuation | null;
 }) {
-  const { currency, marketEffect, marketReturnPercent, netFlow } = history;
+  const { currency, marketEffect, marketMissing, marketReturnPercent, netFlow } = history;
   // Only the market part is a gain or a loss; money added is neither.
   const market = tone(marketEffect);
   const unknown = unknownCostCoins(portfolio);
+  const why = marketEffect === null ? marketMissingText(marketMissing) : null;
   return (
     <div className="dashboard-split" aria-label="What changed">
       <span className="dashboard-split__period">{sentence(periodLabels[history.period])}</span>
@@ -92,6 +94,12 @@ function ChangeSplit({
         <span className="dashboard-split__label">Net deposits</span>
         <span>{money(netFlow, currency, true)}</span>
       </span>
+      {why && (
+        <span className="dashboard-split__item dashboard-split__unknown">
+          <Icon name="info" className="shell-icon shell-icon--sm" />
+          {why}
+        </span>
+      )}
       {/* Coins without a purchase price leave the cost basis and the profit incomplete: said
           in words here, not only in the note beside the profit. */}
       {unknown !== null && (

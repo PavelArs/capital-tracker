@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { MarketMissing } from './portfolio-history.api';
 import type { AccountingCurrency } from './portfolio-valuation.api';
 
 // GOAL-TERMS, GOAL-FORECAST: savings goals measured against the whole portfolio. The server
@@ -109,6 +110,8 @@ export interface GoalInsights {
     from: string | null;
     contributions: string | null;
     market: string | null;
+    // Why market is unknown; absent in an answer saved before it was added.
+    marketMissing?: MarketMissing | null;
     total: string | null;
   };
 }

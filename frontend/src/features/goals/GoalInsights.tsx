@@ -5,6 +5,7 @@ import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { money } from '../portfolio/format';
+import { marketMissingText } from '../shell/market-missing';
 import { InlineSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { monthsFrom, monthYear, span } from './goal-format';
@@ -197,6 +198,9 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
           <KeyValueRow term="Market">{shown(data.growth.market, true)}</KeyValueRow>
           <KeyValueRow term="Net worth grew by">{shown(data.growth.total, true)}</KeyValueRow>
         </KeyValue>
+        {data.growth.market === null && marketMissingText(data.growth.marketMissing) && (
+          <p className="ui-sub">{marketMissingText(data.growth.marketMissing)}</p>
+        )}
         <p className="ui-sub">
           Nominal growth over the available history
           {data.growth.from ? ` since ${monthYear(data.growth.from.slice(0, 10))}` : ''}. Market

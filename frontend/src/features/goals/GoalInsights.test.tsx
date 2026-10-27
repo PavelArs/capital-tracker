@@ -148,6 +148,19 @@ it.each([
   } else expect(within(growth).queryByRole('img')).toBeNull();
 });
 
+it('FLOW-SPLIT-REASON GOAL-GROWTH says why the market part is unknown', async () => {
+  vi.spyOn(goalsApi, 'insights').mockResolvedValue({
+    ...ready,
+    growth: { ...ready.growth, market: null, marketMissing: 'priced-later', total: null },
+  });
+  render(<GoalInsights goal={goal} />);
+  const why = await screen.findByText(
+    'Market unknown: an asset you held at the start had no price then',
+  );
+  expect(why).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Where the growth came from' })).toContainElement(why);
+});
+
 it('GOAL-WIDGETS keeps both cards visible during loading and failure, then retries', async () => {
   const read = vi
     .spyOn(goalsApi, 'insights')
