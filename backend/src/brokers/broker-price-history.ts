@@ -1,4 +1,5 @@
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
+import type { FifoSplit } from '../accounting/share-split-types';
 import { type BrokerPrice, priceCurrencies } from './broker-prices';
 import type { TBankCloses } from './tbank-client';
 
@@ -39,4 +40,28 @@ export function closeObservations(
     });
   }
   return rows;
+}
+
+/** BPH-SETTLED: how long T-Bank may take to give past candles in the units after a split. */
+const SPLIT_SETTLE_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * BPH-SETTLED: the closes safe to store now. A close dated before a split of the last seven days
+ * may still be in the units before it, though its row would say it was read after; it waits
+ * for a later day's run, when T-Bank has adjusted it.
+ */
+export function settledCloses<T extends { instrumentId: string; observedAt: Date }>(
+  rows: readonly T[],
+  splits: readonly FifoSplit[],
+  now: Date,
+): T[] {
+  return rows.filter(
+    (row) =>
+      !splits.some(
+        (split) =>
+          split.instrumentId === row.instrumentId &&
+          Date.parse(split.effectiveAt) > row.observedAt.getTime() &&
+          Date.parse(split.effectiveAt) > now.getTime() - SPLIT_SETTLE_MS,
+      ),
+  );
 }

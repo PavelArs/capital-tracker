@@ -1549,8 +1549,8 @@ async function refreshing(db, service, tbank, owner) {
   // BPH-SPLIT: a split the owner withdraws is in neither the close nor the valuation.
   await db.query(`UPDATE instrument_splits SET "removedAt" = clock_timestamp() WHERE "instrumentId" = $1`, [fund.id]);
   assert.deepEqual([(await valued('2025-03-04T10:00:00Z')).value, (await valued('2026-02-01T10:00:00Z')).value], ['700.25', '700.25']);
-  // BPH-RETRY: a failed read of past prices is shown with the T-Bank prices and read again the
-  // next hour; closes already stored stay.
+  // BPH-RETRY: a failed read of past prices is shown apart from the T-Bank prices and read again
+  // the next Moscow day, not every hour; closes already stored stay.
   state.failing = true;
   const nextDay = new Date('2026-10-24T21:10:00Z');
   assert.deepEqual(await sync.tick(nextDay), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
@@ -1569,7 +1569,10 @@ async function refreshing(db, service, tbank, owner) {
   state.failing = false;
   const retried = requests.length;
   assert.deepEqual(await sync.tick(new Date('2026-10-24T22:10:00Z')), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
-  assert.ok(requests.length > retried, 'Read again the next hour');
+  assert.equal(requests.length, retried, 'Not again the same Moscow day');
+  assert.equal((await past()).state, 'failed');
+  assert.deepEqual(await sync.tick(new Date('2026-10-25T21:10:00Z')), { outcome: 'ran', accounts: 1, failed: 0, saved: 1, closes: 0 });
+  assert.ok(requests.length > retried, 'Read again the next Moscow day');
   assert.equal((await past()).state, 'synced');
   assert.deepEqual((await prices()).filter((row) => row[2].endsWith('20:59:59.999Z')).map((row) => row[0]), ['700.25', '1490']);
   console.log('PASS BPR-REFRESH');

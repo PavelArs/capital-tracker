@@ -2,12 +2,18 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
+import { readSplits } from '../accounting/share-split.store';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { errorMessage, trackJob } from '../observability/metrics';
-import { isDue, nextRunAt } from '../prices/price-collection';
+import { isDue, nextRunAt, RUN_OFFSET_MS } from '../prices/price-collection';
 import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
 import { BrokerConnectionsService, NO_HOLDINGS } from './broker-connections.service';
-import { closeObservations, PRICE_HISTORY_FROM } from './broker-price-history';
+import {
+  closeInstant,
+  closeObservations,
+  PRICE_HISTORY_FROM,
+  settledCloses,
+} from './broker-price-history';
 import {
   type BrokerPrice,
   insertBrokerPrices,
@@ -185,10 +191,11 @@ export class BrokerPriceSyncService {
   }
 
   /**
-   * BPH-BACKFILL: on the first run of each Moscow day until one succeeds, the close of every
+   * BPH-BACKFILL: on the first run of each Moscow day, the close of every
    * complete day since 2025 of each security linked to a T-Bank asset, read with one of the
    * owner's saved tokens. A day T-Bank serves later is filled in on a later day; a close already
-   * stored stays as it is. Its outcome is its own source, apart from the current prices.
+   * stored stays as it is. Its outcome is its own source, apart from the current prices; a failed
+   * read is tried again the next day, so a security T-Bank never serves costs one read a day.
    * shortcut: rereads the whole range daily (two requests per security), fine for a personal
    * portfolio; read only the missing days if the range or the holdings grow large.
    */
@@ -199,11 +206,11 @@ export class BrokerPriceSyncService {
     let closes = 0;
     const failures: { code: string; message: string }[] = [];
     try {
-      const [row]: { lastSuccessAt: Date | null }[] = await this.source.query(
-        'SELECT "lastSuccessAt" FROM sync_sources WHERE key = $1',
+      const [row]: { lastAttemptAt: Date | null }[] = await this.source.query(
+        'SELECT "lastAttemptAt" FROM sync_sources WHERE key = $1',
         [BROKER_HISTORY_KEY],
       );
-      if (row?.lastSuccessAt && moscowDate(row.lastSuccessAt) === moscowDate(now)) return 0;
+      if (row?.lastAttemptAt && moscowDate(row.lastAttemptAt) === moscowDate(now)) return 0;
       const owners = new Map<string, string[]>();
       for (const { ownerId, accountId } of connected)
         owners.set(ownerId, [...(owners.get(ownerId) ?? []), accountId]);
@@ -225,7 +232,7 @@ export class BrokerPriceSyncService {
                 0,
                 300,
               ),
-            nextRunAt: nextRunAt(now),
+            nextRunAt: new Date(closeInstant(moscowDate(now)).getTime() + 1 + RUN_OFFSET_MS),
           }
         : { state: 'synced', errorCode: null, errorMessage: null, nextRunAt: null },
       now,
@@ -263,6 +270,7 @@ export class BrokerPriceSyncService {
         WHERE "ownerId" = $1 AND provider = 'tbank' ORDER BY "providerInstrumentId"`,
       [ownerId],
     );
+    const splits = await readSplits(this.source.manager, ownerId);
     let saved = 0;
     for (const link of links) {
       const history = await this.tbank.dailyCloses(token, link.uid, PRICE_HISTORY_FROM, now);
@@ -279,7 +287,11 @@ export class BrokerPriceSyncService {
         }
         nominal = bond.value;
       }
-      const rows = closeObservations(link.instrumentId, history.value, nominal);
+      const rows = settledCloses(
+        closeObservations(link.instrumentId, history.value, nominal),
+        splits,
+        now,
+      );
       saved += await this.source.transaction((manager) =>
         insertObservations(manager, ownerId, rows),
       );

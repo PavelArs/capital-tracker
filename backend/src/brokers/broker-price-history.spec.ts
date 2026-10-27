@@ -1,4 +1,4 @@
-import { closeInstant, closeObservations } from './broker-price-history';
+import { closeInstant, closeObservations, settledCloses } from './broker-price-history';
 import { parseBondNominal, parseCandles } from './tbank-client';
 
 // The recorded GetCandles shape (CANDLE_INTERVAL_DAY), with synthetic prices: a day candle is
@@ -130,5 +130,43 @@ describe('BPH-CLOSE a day close values the end of its Moscow day', () => {
     const closes = [{ date: '2025-02-10', close: '98' }];
     expect(closeObservations(instrument, { currency: 'pt.', closes }, null)).toEqual([]);
     expect(closeObservations(instrument, { currency: 'cny', closes }, null)).toEqual([]);
+  });
+});
+
+describe('BPH-SETTLED closes before a recent split wait until T-Bank has adjusted them', () => {
+  const split = (effectiveAt: string, instrumentId = instrument) => ({
+    splitId: 's1',
+    instrumentId,
+    effectiveAt,
+    ratio: 10,
+  });
+  const rows = closeObservations(
+    instrument,
+    {
+      currency: 'rub',
+      closes: [
+        { date: '2026-04-10', close: '3190' },
+        { date: '2026-04-17', close: '326' },
+      ],
+    },
+    null,
+  );
+  it('keeps only the closes after a split of the last seven days', () => {
+    const recent = [split('2026-04-16T21:00:00.000Z')];
+    expect(
+      settledCloses(rows, recent, new Date('2026-04-20T00:00:00Z')).map((row) => row.price),
+    ).toEqual(['326']);
+  });
+  it('keeps every close once the split is older, or of another security', () => {
+    expect(
+      settledCloses(rows, [split('2026-04-16T21:00:00.000Z')], new Date('2026-04-24T21:00:00Z')),
+    ).toHaveLength(2);
+    expect(
+      settledCloses(
+        rows,
+        [split('2026-04-16T21:00:00.000Z', 'another')],
+        new Date('2026-04-20T00:00:00Z'),
+      ),
+    ).toHaveLength(2);
   });
 });
