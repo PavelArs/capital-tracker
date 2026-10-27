@@ -43,6 +43,7 @@ import {
   money,
   price,
   quantity,
+  quoted,
   sourceLabels,
   sourceName,
 } from './format';
@@ -406,11 +407,12 @@ function AssetDetails({
               {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
             </b>
             {/* A hand price has no market move to show: the page offers Update price instead. */}
-            {asset.priceChange24hPercent !== null && asset.priceSource !== 'manual' && (
-              <span className="portfolio-head__change">
-                <Change value={asset.priceChange24hPercent} /> today
-              </span>
-            )}
+            {asset.priceChange24hPercent !== null &&
+              (asset.priceSource !== 'manual' || quoted(asset)) && (
+                <span className="portfolio-head__change">
+                  <Change value={asset.priceChange24hPercent} /> today
+                </span>
+              )}
             <span
               className={
                 asset.price?.status === 'stale' ? 'ui-sub portfolio-head__stale' : 'ui-sub'

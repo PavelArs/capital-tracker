@@ -64,6 +64,7 @@ const walletTables = [
   'inflation_manual_months',
   'inflation_personal_rates',
   'instrument_splits',
+  'broker_price_observations',
 ];
 const marketPriceTables = ['price_observations', 'sync_sources'];
 const threeCurrencyTables = ['fx_rates', 'owner_settings'];
@@ -192,6 +193,7 @@ const migrationNames = [
   'AddRetiredCommands1797800000000',
   'LinkBrokerAssets1797900000000',
   'AddShareSplits1798000000000',
+  'AddBrokerPrices1798100000000',
 ];
 
 function connection(database) {
@@ -365,7 +367,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-three migrations',
+      'Exactly seventy-four migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1432,7 +1434,8 @@ function sessionDeviceAddition(kind, row) {
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
 // HideAssets1796400000000, AddBankDeposits1796500000000, AddInflation1796700000000 and
 // AddDepositEvents1797100000000, AddSavingsGoals1797200000000, AddBrokerConnections1797300000000,
-// AddBrokerImports1797500000000, AddCapitalReturns1797700000000 and AddShareSplits1798000000000
+// AddBrokerImports1797500000000, AddCapitalReturns1797700000000, AddShareSplits1798000000000 and
+// AddBrokerPrices1798100000000
 // add only tables;
 // AddManualPriceCurrency1797400000000 adds one quoteCurrency column (text, NOT NULL, default 'USD')
 // and its USD, EUR and RUB check to manual_usd_price_versions;
@@ -2541,6 +2544,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797800000000',
           '1797900000000',
           '1798000000000',
+          '1798100000000',
         ][index - 11],
       );
     }
