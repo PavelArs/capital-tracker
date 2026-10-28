@@ -291,14 +291,17 @@ function scopedValue(
 
 /**
  * Valuation inputs and every stored price series they use. With `instrumentId`, only that
- * instrument's prices are read.
+ * instrument's prices are read. With `since`, the earliest instant that will be valued, market and
+ * broker prices are read from then on plus each one's last price before it: the latest price at
+ * or before any later instant is then the same as with every price read.
  */
 async function readSeriesInputs(
   manager: EntityManager,
   owner: string,
-  options: { instrumentId?: string; valuation?: ValuationInputs } = {},
+  options: { instrumentId?: string; valuation?: ValuationInputs; since?: number } = {},
 ): Promise<SeriesInputs> {
   const { instrumentId } = options;
+  const since = options.since === undefined ? null : new Date(options.since);
   const valuation = options.valuation ?? (await readValuationInputs(manager, owner));
   const priced = valuation.instruments.filter(
     (instrument) => instrumentId === undefined || instrument.id === instrumentId,
@@ -309,11 +312,25 @@ async function readSeriesInputs(
     price: string;
     source: string;
     kind: string;
-  }[] = await manager.query(
-    `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
-        WHERE asset = ANY($1) AND "quoteCurrency" = $2`,
-    [marketCodes(priced), QUOTE_CURRENCY],
-  );
+  }[] =
+    since === null
+      ? await manager.query(
+          `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
+            WHERE asset = ANY($1) AND "quoteCurrency" = $2`,
+          [marketCodes(priced), QUOTE_CURRENCY],
+        )
+      : await manager.query(
+          `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
+            WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND "observedAt" >= $3
+          UNION ALL
+          SELECT p.asset, p."observedAt", p.price::text, p.source, p.kind
+            FROM unnest($1::text[]) a(asset)
+            CROSS JOIN LATERAL (SELECT max("observedAt") AS at FROM price_observations
+              WHERE asset = a.asset AND "quoteCurrency" = $2 AND "observedAt" < $3) last
+            JOIN price_observations p ON p.asset = a.asset AND p."quoteCurrency" = $2
+              AND p."observedAt" = last.at`,
+          [marketCodes(priced), QUOTE_CURRENCY, since],
+        );
   const manual: {
     instrumentId: string;
     observedAt: Date;
@@ -333,11 +350,26 @@ async function readSeriesInputs(
     quoteCurrency: AccountingCurrency;
     provider: string;
     fetchedAt: Date;
-  }[] = await manager.query(
-    `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider,"fetchedAt"
-      FROM broker_price_observations WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
-    [owner, priced.map((instrument) => instrument.id)],
-  );
+  }[] =
+    since === null
+      ? await manager.query(
+          `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider,"fetchedAt"
+            FROM broker_price_observations WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
+          [owner, priced.map((instrument) => instrument.id)],
+        )
+      : await manager.query(
+          `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider,"fetchedAt"
+            FROM broker_price_observations
+            WHERE "ownerId"=$1 AND "instrumentId" = ANY($2) AND "observedAt" >= $3
+          UNION ALL
+          SELECT b."instrumentId",b."observedAt",b.price::text,b."quoteCurrency",b.provider,b."fetchedAt"
+            FROM unnest($2::uuid[]) i(id)
+            CROSS JOIN LATERAL (SELECT max("observedAt") AS at FROM broker_price_observations
+              WHERE "ownerId"=$1 AND "instrumentId"=i.id AND "observedAt" < $3) last
+            JOIN broker_price_observations b ON b."ownerId"=$1 AND b."instrumentId"=i.id
+              AND b."observedAt"=last.at`,
+          [owner, priced.map((instrument) => instrument.id), since],
+        );
   return {
     valuation,
     market: marketSeries(
@@ -512,7 +544,7 @@ export class PortfolioSnapshotsService {
       const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
       if (excludedCount > 0) {
         // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
-        const inputs = await readSeriesInputs(manager, owner, { valuation: original });
+        const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
         const subset = {
           ...inputs.valuation,
           hidden: valuation.hidden,
@@ -579,7 +611,7 @@ export class PortfolioSnapshotsService {
         // A stored snapshot is incomplete for a held asset without a price and for accounts
         // not yet started; only the first leaves out value, so that is read again, with what
         // it held. A coin now without a price also needs what it was worth at the start.
-        const inputs = await readSeriesInputs(manager, owner, { valuation: original });
+        const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
         const [again] = valuesAt(
           inputs.valuation,
           start.at,
@@ -690,14 +722,14 @@ export class PortfolioSnapshotsService {
     const query = parseQuery(rawQuery);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const inputs = await readSeriesInputs(manager, owner, { instrumentId: id });
+      const { from } = periodStart(query.period, now.getTime());
+      const inputs = await readSeriesInputs(manager, owner, { instrumentId: id, since: from });
       const instrument = inputs.valuation.instruments.find((item) => item.id === id);
       if (!instrument) throw new NotFoundException();
       const mainCurrency = await readMainCurrency(manager, owner);
       const currency = query.currency ?? mainCurrency;
       const fx = new FxConverter(await readFxRates(manager), currency);
       const at = now.getTime();
-      const { from } = periodStart(query.period, at);
       const instants = periodPoints(
         seriesInstants(at, at - HOURLY_WINDOW_MS).map((instant) => ({ at: instant })),
         query.period,
@@ -803,7 +835,7 @@ export class PortfolioSnapshotsService {
 
     let written = 0;
     if (from !== null) {
-      const inputs = await readSeriesInputs(manager, owner);
+      const inputs = await readSeriesInputs(manager, owner, { since: from });
       const rates = await readFxRates(manager);
       const converters = accountingCurrencies.map((currency) => new FxConverter(rates, currency));
       const due = instants.filter((at) => at >= from);
