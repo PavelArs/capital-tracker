@@ -55,6 +55,7 @@ const legacyChecks = [
   'portfolio-valuation-db',
   'fx-rates-db',
   'portfolio-snapshots-db',
+  'history-price-bounds-db',
   'operation-list-db',
   'capital-flows-db',
   'manual-operations-db',

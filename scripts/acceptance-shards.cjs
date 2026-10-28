@@ -57,6 +57,7 @@ const CHECKS = [
   { name: 'portfolio-valuation-db', shard: 'probes-2' },
   { name: 'fx-rates-db', shard: 'probes-1' },
   { name: 'portfolio-snapshots-db', shard: 'probes-2' },
+  { name: 'history-price-bounds-db', shard: 'probes-2' },
   { name: 'operation-list-db', shard: 'probes-1' },
   { name: 'capital-flows-db', shard: 'probes-1' },
   { name: 'manual-operations-db', shard: 'probes-2' },
