@@ -417,6 +417,33 @@ async function verifyFresh() {
       for (const column of columns)
         assert.ok(!present.includes(column), `Unused column ${table}.${column} must be gone`);
     }
+    // The snapshot change detector's max("fetchedAt") reads end on these indexes.
+    assert.deepEqual(
+      (
+        await client.query(
+          `SELECT indexname, indexdef FROM pg_indexes
+          WHERE schemaname = 'public' AND indexname = ANY($1) ORDER BY indexname`,
+          [fetchedAtIndexes],
+        )
+      ).rows,
+      [
+        {
+          indexname: 'broker_price_observations_fetched',
+          indexdef:
+            'CREATE INDEX broker_price_observations_fetched ON public.broker_price_observations USING btree ("ownerId", "fetchedAt")',
+        },
+        {
+          indexname: 'fx_rates_fetched',
+          indexdef: 'CREATE INDEX fx_rates_fetched ON public.fx_rates USING btree ("fetchedAt")',
+        },
+        {
+          indexname: 'price_observations_fetched',
+          indexdef:
+            'CREATE INDEX price_observations_fetched ON public.price_observations USING btree ("fetchedAt")',
+        },
+      ],
+      'Fetched-at indexes',
+    );
     assert.equal(
       (await client.query('SELECT count(*)::int AS count FROM auth_request_limits')).rows[0].count,
       0,

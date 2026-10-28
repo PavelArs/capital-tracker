@@ -134,7 +134,7 @@ export const INPUT_TABLES = [
 // No code updates or deletes a row of these tables (an edit or a void is a new row), so the
 // number of an owner's rows changes with every write. A migration that rewrites their rows in
 // place must bump VALUATION_RULE. Every other input table is updated or deleted in place.
-const APPEND_ONLY_INPUTS: ReadonlySet<string> = new Set([
+export const APPEND_ONLY_INPUTS: ReadonlySet<string> = new Set([
   'account_trade_versions',
   'account_opening_snapshots',
   'account_opening_positions',
