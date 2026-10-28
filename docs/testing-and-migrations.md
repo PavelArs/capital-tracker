@@ -174,7 +174,6 @@ secrets or database persistence.
 Periodic jobs are disabled with BACKGROUND_JOBS_ENABLED=false to avoid wall-clock
 races; startup fetches and explicit wallet refresh still use actual adapters.
 Production defaults keep cron enabled. This setting is not an authentication bypass.
-These scenarios do not claim to verify cache-expiry behavior.
 
 Playwright uses one Chromium worker and zero retries. Reports/traces/screenshots
 contain synthetic data only. The retained portfolio cases cover direct anonymous denial

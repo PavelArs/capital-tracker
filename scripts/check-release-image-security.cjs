@@ -40,6 +40,6 @@ if (require.main === module) {
       const expected = execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim();
       checkReport(JSON.parse(readFileSync(`${name}-image-security.json`, 'utf8')), expected);
     }
-    console.log('Three exact images passed the high/critical vulnerability and secret gate; complete findings retained');
+    console.log('Two exact images (backend, frontend) passed the high/critical vulnerability and secret gate; complete findings retained');
   } catch { console.error('Image security gate failed; inspect the sanitized report and scanner status'); process.exitCode = 1; }
 }

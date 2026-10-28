@@ -213,6 +213,8 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
       `import json, os, sys
 with open(os.environ['FIXTURE_LOG'], 'a') as out:
     out.write(json.dumps({'tool':'resume-proof','args':sys.argv[1:]})+'\\n')
+if len(sys.argv) != (6 if sys.argv[1] == 'preflight' else 7):
+    raise SystemExit(2)
 if sys.argv[1] == 'preflight':
     print(json.dumps({'proxyPeer':'172.18.0.3','network':['old-network'],'containers':{}}))
 `,
@@ -220,12 +222,18 @@ if sys.argv[1] == 'preflight':
     writeFileSync(join(directory, '.env.release'), 'OWNER_EMAIL=owner@capital.pavelars.ru\n');
     const { result, calls } = release('resume-success', 'resume-fresh');
     expect(result.status).toBe(0);
-    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'preflight')).toBe(
-      true,
-    );
-    expect(
-      calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'compare-active'),
-    ).toBe(true);
+    const proof = [
+      directory,
+      join(directory, 'pins.json'),
+      join(directory, 'used'),
+      `ghcr.io/pavelars/capital-tracker-postgres@sha256:${'d'.repeat(64)}`,
+    ];
+    const snapshot = '{"proxyPeer": "172.18.0.3", "network": ["old-network"], "containers": {}}';
+    const proofCalls = calls.filter((call) => call.tool === 'resume-proof');
+    expect(proofCalls[0]?.args).toEqual(['preflight', ...proof]);
+    expect(proofCalls.some((call) => call.args[0] === 'compare-active')).toBe(true);
+    for (const call of proofCalls.slice(1))
+      expect(call.args).toEqual([expect.stringMatching(/^compare(-active)?$/), ...proof, snapshot]);
     expect(
       calls.some(
         (call) =>

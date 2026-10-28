@@ -705,7 +705,7 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     ci = workflow('ci');
   });
 
-  it('ENG-007-A builds the four exact images once and publishes them with their manifest', () => {
+  it('ENG-007-A builds the three exact images once and publishes them with their manifest', () => {
     const job = ci.jobs['release-images'];
     expect(job.name).toBe('Build Release Images');
     const steps = job.steps ?? [];

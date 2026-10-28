@@ -101,9 +101,11 @@ first release after this change needs `update` as above, because the installed r
 Compose, pins, resume helper and dispatcher all differ from the reviewed receipt, and the
 updated dispatcher refuses receipts that still carry the retired `redis` field. The
 release neither stops nor removes the old `capital_tracker_redis` container or its
-`redis_data` volume: Compose reports the container as an orphan. Stopping the container
-and deleting the volume are the owner's decisions; the volume holds no application
-data. The `REDIS_IMAGE` line in the server's `.env.release` is no longer read.
+`redis_data` volume: Compose reports the container as an orphan. Keep
+`capital_tracker_redis` running until the first release without it has succeeded,
+because a failed release rolls back to the previous backend, which still connects to it.
+After that, stopping the container and deleting the volume are the owner's decisions;
+the volume holds no application data. The `REDIS_IMAGE` line in the server's `.env.release` is no longer read.
 
 Interrupted first activation (production run 37001810387, 2026-10-02): migrations,
 owner and MFA succeeded, the frontend health check failed and both applications were
