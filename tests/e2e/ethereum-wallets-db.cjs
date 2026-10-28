@@ -364,7 +364,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 74/);
+  assert.match(migrate(database), /Migrations applied: 75/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -1785,6 +1785,63 @@ async function main() {
     console.log(
       'PASS ETH-PRIVATE another owner gets 404 for the wallet and sees none; legs read per asset',
     );
+
+    // SYNC-PROGRESS: a transaction crossing a saturated page must stay whole across restarts.
+    for (const backfill of [false, true]) {
+      const holder = address(`saturated-${backfill}`);
+      const added = await s.addresses.register(owner, {
+        network: 'ethereum', address: holder, accountId: await account(`Saturated ${backfill}`),
+      });
+      const id = added.value.id;
+      const block = 20000010;
+      await db.query(`UPDATE wallet_addresses SET "scannedBlock"=$2,
+        "tokenBackfillTo"=$3, "tokenBackfillAt"=$4 WHERE id=$1`,
+      [id, backfill ? block + 10 : block - 1, backfill ? block + 10 : null, backfill ? block - 1 : null]);
+      const transfers = Array.from({ length: 1001 }, (_, index) => {
+        const item = token(900000, block, usdc, 'USDC', outside, holder, BigInt(index + 1), index);
+        delete item.logIndex;
+        return item;
+      });
+      await post('ethereum', { tip: block + 74,
+        normal: [normal(900000, block, holder, usdc, 0n, 5000, 1), normal(900001, block + 1, outside, holder, 23n, 0, 0)],
+        internal: [internal(900000, block, outside, holder, 300n)], tokens: transfers, pools: {},
+      });
+      let clock = 0;
+      const realNow = Date.now;
+      const pass = async () => {
+        const client = new EtherscanClient({ apiKey: etherscanKey, pauseMs: 0 });
+        const chain = client.forChain(1);
+        const tokens = chain.tokens.bind(chain);
+        chain.tokens = async (...args) => { const result = await tokens(...args); clock += 13000; return result; };
+        client.forChain = () => chain;
+        return new EvmSyncAdapter(db, client, evmChain('ethereum')).step(owner, id);
+      };
+      try {
+        Date.now = () => clock;
+        assert.equal((await pass()).outcome, 'partial');
+        assert.equal((await stored(db, id)).length, 0, 'No partial transaction is published');
+        assert.ok((await db.query('SELECT "evmSync" FROM wallet_addresses WHERE id=$1', [id]))[0].evmSync);
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const result = await pass();
+          assert.notEqual(result.outcome, 'provider_error');
+          if (result.outcome === 'complete') break;
+        }
+        const rows = await stored(db, id);
+        const tokenRows = rows.filter((row) => row.asset !== null);
+        assert.equal(tokenRows.length, 1001);
+        assert.equal(tokenRows.reduce((sum, row) => sum + BigInt(row.received), 0n), 501501n);
+        assert.equal(new Set(tokenRows.map((row) => row.txid)).size, 1001);
+        assert.equal(rows.length, backfill ? 1001 : 1003);
+        if (!backfill) {
+          const native = rows.find((row) => row.txid === bare(900000));
+          assert.equal(native.received, '300');
+          assert.equal(native.fee, '5000');
+        }
+        assert.equal((await pass()).imported, 0, 'Replay is idempotent');
+        assert.equal((await db.query('SELECT "evmSync" FROM wallet_addresses WHERE id=$1', [id]))[0].evmSync, null);
+      } finally { Date.now = realNow; }
+    }
+    console.log('PASS SYNC-PROGRESS saturated EVM block resumes ordinary/backfill pages with exact complete transaction identities and one fee');
 
     const snapshot = JSON.stringify(
       await db.query(

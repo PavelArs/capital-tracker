@@ -974,7 +974,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 74/);
+  assert.match(migrate(database), /Migrations applied: 75/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

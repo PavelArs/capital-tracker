@@ -20,6 +20,26 @@ const fake = (answers: unknown[]) => {
 };
 
 describe('BLOCKSCOUT fallback reader', () => {
+  it('SYNC-PROGRESS pins the source of staged pages across fallback expiry and reader restart', async () => {
+    let now = 1;
+    const primary = fake([planRequired]);
+    const fallback = fake([
+      { ok: true, items: [] },
+      { ok: true, items: [] },
+    ]);
+    const reader = new EvmReader(primary.client, fallback.client, () => now);
+    await reader.normal('0x', 1, 2);
+    const source = reader.historySource;
+    expect(source).toBe('fallback');
+    now += FALLBACK_FOR_MS + 1;
+    const restarted = new EvmReader(primary.client, fallback.client, () => now);
+    await expect(restarted.page(source, 'normal', '0x', 1, 2)).resolves.toEqual({
+      ok: true,
+      items: [],
+    });
+    expect(primary.calls).toEqual(['normal']);
+    expect(fallback.calls).toEqual(['normal', 'normal']);
+  });
   it('uses the primary source alone when no fallback exists, refusals included', async () => {
     const primary = fake([planRequired]);
     const reader = new EvmReader(primary.client, null);

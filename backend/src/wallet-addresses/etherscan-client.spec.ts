@@ -106,6 +106,21 @@ describe('ETH-SYNC Etherscan client', () => {
     expect(requests).toHaveLength(0);
   });
 
+  it('SYNC-PROGRESS sends explicit page numbers within the fixed block and free page size', async () => {
+    replies = [ok([transfer]), ok([normal]), ok([])];
+    const reader = client();
+    await reader.tokens(owned, 20_000_002, 20_000_002, 2);
+    await reader.normal(owned, 20_000_001, 20_000_001, 3);
+    await reader.internal(owned, 20_000_001, 20_000_001, 4);
+    expect(requests.map((url) => url.searchParams.get('page'))).toEqual(['2', '3', '4']);
+    expect(requests.every((url) => url.searchParams.get('offset') === '1000')).toBe(true);
+    await expect(reader.tokens(owned, 1, 1, 0)).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_response',
+    });
+    expect(requests).toHaveLength(3);
+  });
+
   it('EVM-MULTICHAIN asks for the chain it was made for with the same key, and mainnet otherwise', async () => {
     replies.push(ok([]), ok([]), ok([]));
     await client().normal(owned, 1, 2);

@@ -293,7 +293,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 74/);
+  assert.match(migrate(database), /Migrations applied: 75/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();

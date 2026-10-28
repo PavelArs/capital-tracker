@@ -483,7 +483,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings))
     assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 74/);
+  assert.match(migrate(database), /Migrations applied: 75/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -994,18 +994,15 @@ async function main() {
         ['getTokenAccountsByOwner', holder, TOKEN_2022],
         ['getSignaturesForAddress', holder],
         ...[...ownAccounts, own.tt].sort().map((item) => ['getSignaturesForAddress', item]),
-        ...[40, 41, 42, 43, 44].map((n) => ['getTransaction', sig(n)]),
-        [
-          'getMultipleAccounts',
-          [
-            synMint,
-            metadataAddress(synMint),
-            fakeMint,
-            metadataAddress(fakeMint),
-            twentyTwo,
-            metadataAddress(twentyTwo),
-          ],
-        ],
+        // Each complete slot registers its new mints before its atomic commit.
+        ['getTransaction', sig(40)],
+        ['getTransaction', sig(41)],
+        ['getMultipleAccounts', [synMint, metadataAddress(synMint)]],
+        ['getTransaction', sig(42)],
+        ['getMultipleAccounts', [fakeMint, metadataAddress(fakeMint)]],
+        ['getTransaction', sig(43)],
+        ['getMultipleAccounts', [twentyTwo, metadataAddress(twentyTwo)]],
+        ['getTransaction', sig(44)],
       ]);
       const leg = (n, mint) => `${sig(n)}-${tokenLegNumber(mint)}`;
       const tokenLegs = [
@@ -1429,6 +1426,70 @@ async function main() {
     console.log(
       'PASS SOL-STAKE-FIND history stored before stake tracking is read once from the stored transactions, no provider call; wallets without stake accounts make no extra call; zero moves and negative rewards refused',
     );
+
+    // SOL-SYNC-PROGRESS: durable account discovery and whole-slot ingestion across restarts.
+    for (const backfill of [false, true]) {
+      const holder = key(`progress-${backfill}`);
+      const tokenAccounts = Array.from({ length: 101 }, (_, index) => key(`progress-${backfill}-${index}`)).sort();
+      const id = (await s.addresses.register(owner, { network: 'solana', address: holder })).value.id;
+      const slot = 300000210;
+      const discovery = tx(`progress-discovery-${backfill}`, slot - 1, {
+        keys: [outside, ...tokenAccounts, TOKEN],
+        pre: [SOL, ...tokenAccounts.map(() => 2039280), 1],
+        post: [SOL, ...tokenAccounts.map(() => 2039280), 1], fee: 0,
+        preTokens: tokenAccounts.map((_, index) => balance(index + 1, USDC, holder, 0)),
+        postTokens: tokenAccounts.map((_, index) => balance(index + 1, USDC, holder, 0)),
+      });
+      const pending = Array.from({ length: 41 }, (_, index) => tx(`progress-${backfill}-${index}`, slot, {
+        keys: [outside, tokenAccounts[100], TOKEN], pre: [SOL, 2039280, 1], post: [SOL, 2039280, 1], fee: 0,
+        preTokens: [balance(1, USDC, holder, index)], postTokens: [balance(1, USDC, holder, index + 1)],
+      }));
+      for (let start = 0, rows = [discovery, ...pending]; start < rows.length; start += 20)
+        await post('solana', { slot: slot + 10, transactions: rows.slice(start, start + 20) });
+      await db.query(`UPDATE wallet_addresses SET "scannedBlock"=$2, "tokenBackfillTo"=$3,
+        "tokenBackfillAt"=$4 WHERE id=$1`, [id, backfill ? slot + 10 : slot - 2,
+        backfill ? slot + 10 : null, backfill ? -1 : null]);
+      let clock = 0;
+      const realNow = Date.now;
+      const pass = async () => {
+        const rpc = new SolanaRpcClient({ pauseMs: 0 });
+        const signatures = rpc.signatures.bind(rpc);
+        rpc.signatures = async (...args) => { const result = await signatures(...args); clock += 1000; return result; };
+        return new SolanaSyncAdapter(db, rpc).step(owner, id);
+      };
+      try {
+        Date.now = () => clock;
+        assert.equal((await pass()).outcome, 'partial');
+        assert.equal((await stored(db, id)).length, 0);
+        const first = (await db.query('SELECT "solanaSync", "scannedBlock" FROM wallet_addresses WHERE id=$1', [id]))[0];
+        assert.ok(first.solanaSync.accountIndex > 0 && first.solanaSync.accountIndex < 101);
+        assert.equal(first.scannedBlock, backfill ? slot + 10 : slot - 2);
+        let complete = false;
+        let staged = false;
+        for (let attempt = 0; attempt < 15; attempt++) {
+          const result = await pass();
+          assert.notEqual(result.outcome, 'provider_error');
+          const progress = (await db.query('SELECT "solanaSync" FROM wallet_addresses WHERE id=$1', [id]))[0].solanaSync;
+          if (progress?.staged.length) {
+            staged = true;
+            assert.equal((await stored(db, id)).length, 0, 'No part of the oversized slot is published');
+          }
+          if (result.outcome === 'complete') { complete = true; break; }
+        }
+        assert.ok(complete, 'Discovery and oversized slot eventually complete');
+        assert.ok(staged, 'Oversized slot persists fetched transactions');
+        const rows = await stored(db, id);
+        assert.equal(rows.length, 41);
+        assert.equal(rows.reduce((sum, row) => sum + BigInt(row.received), 0n), 41n);
+        assert.equal(new Set(rows.map((row) => row.txid)).size, 41);
+        assert.equal((await pass()).imported, 0);
+        const final = (await db.query('SELECT "solanaSync", "scannedBlock", "tokenBackfillTo" FROM wallet_addresses WHERE id=$1', [id]))[0];
+        assert.equal(final.solanaSync, null);
+        assert.equal(final.scannedBlock, slot + 10);
+        assert.equal(final.tokenBackfillTo, null);
+      } finally { Date.now = realNow; }
+    }
+    console.log('PASS SOL-SYNC-PROGRESS 101 token accounts and 41-transaction slot resume ordinary/backfill with exact idempotent amounts');
 
     const snapshot = JSON.stringify(
       await db.query(

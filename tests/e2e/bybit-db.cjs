@@ -415,7 +415,7 @@ async function main() {
     'Synthetic server key must be mounted',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 74/);
+  assert.match(migrate(database), /Migrations applied: 75/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();

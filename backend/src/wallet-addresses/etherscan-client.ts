@@ -355,16 +355,26 @@ export class EtherscanClient {
     );
   }
 
-  normal(address: string, from: number, to: number): Promise<ListResult<NormalTransaction>> {
-    return this.list('txlist', address, from, to, parseNormal);
+  normal(
+    address: string,
+    from: number,
+    to: number,
+    page = 1,
+  ): Promise<ListResult<NormalTransaction>> {
+    return this.list('txlist', address, from, to, parseNormal, page);
   }
 
-  internal(address: string, from: number, to: number): Promise<ListResult<InternalTransfer>> {
-    return this.list('txlistinternal', address, from, to, parseInternal);
+  internal(
+    address: string,
+    from: number,
+    to: number,
+    page = 1,
+  ): Promise<ListResult<InternalTransfer>> {
+    return this.list('txlistinternal', address, from, to, parseInternal, page);
   }
 
-  tokens(address: string, from: number, to: number): Promise<ListResult<TokenTransfer>> {
-    return this.list('tokentx', address, from, to, parseToken);
+  tokens(address: string, from: number, to: number, page = 1): Promise<ListResult<TokenTransfer>> {
+    return this.list('tokentx', address, from, to, parseToken, page);
   }
 
   private list<T>(
@@ -373,7 +383,10 @@ export class EtherscanClient {
     from: number,
     to: number,
     parse: (item: unknown) => T,
+    page: number,
   ): Promise<ListResult<T>> {
+    if (!Number.isSafeInteger(page) || page < 1)
+      return Promise.resolve({ ok: false, reason: 'invalid_response' });
     return this.get(
       {
         module: 'account',
@@ -381,7 +394,7 @@ export class EtherscanClient {
         address,
         startblock: String(from),
         endblock: String(to),
-        page: '1',
+        page: String(page),
         offset: String(ETHERSCAN_PAGE_SIZE),
         sort: 'asc',
       },
