@@ -43,7 +43,7 @@ import {
   advanceJournal,
   type JournalRow,
   projectTradeVersion,
-  readBaseline,
+  readBaselines,
   type VersionRow,
   versionSelect,
 } from './trade-journal.store';
@@ -158,15 +158,60 @@ export async function readConnectedLedger(
     );
     if (locked.length !== ids.length) throw new NotFoundException();
   }
-  const journals: JournalRow[] = await manager.query(
+  const [ledger] = await readLedgers(manager, owner, [ids], transfers);
+  return ledger;
+}
+
+/**
+ * Every ledger reached from the seeds, one per connected component, in seed order. All of them
+ * are read together with one query per table instead of one round of queries per ledger.
+ */
+export async function readConnectedLedgers(
+  manager: EntityManager,
+  owner: string,
+  seeds: readonly string[],
+): Promise<ConnectedLedger[]> {
+  if (seeds.length === 0) return [];
+  if (!manager.queryRunner?.isTransactionActive)
+    throw new Error('Connected history requires transaction');
+  const transfers = await readTransferHeads(manager, owner);
+  const components: string[][] = [];
+  const seen = new Set<string>();
+  for (const seed of seeds) {
+    if (seen.has(seed)) continue;
+    const ids = componentIds([seed], transfers);
+    for (const id of ids) seen.add(id);
+    components.push(ids);
+  }
+  return readLedgers(manager, owner, components, transfers);
+}
+
+/**
+ * The ledgers of disjoint components. Each step reads every component at once and then checks
+ * each component as a single read would, so one component reads and fails exactly as before.
+ */
+async function readLedgers(
+  manager: EntityManager,
+  owner: string,
+  components: readonly (readonly string[])[],
+  transfers: readonly TransferVersion[],
+): Promise<ConnectedLedger[]> {
+  const ids = components.flat();
+  const members = components.map((component) => new Set(component));
+  const parts = <T extends { accountId: string }>(rows: readonly T[]) =>
+    members.map((member) => rows.filter((row) => member.has(row.accountId)));
+  const allJournals: JournalRow[] = await manager.query(
     'SELECT * FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=ANY($2::uuid[]) ORDER BY "accountId"',
     [owner, ids],
   );
-  if (journals.length !== ids.length) {
-    const started = new Set(journals.map((journal) => journal.accountId));
-    const missing = ids.find((id) => !started.has(id));
-    throw missing ? journalNotStarted(missing) : conflict();
-  }
+  const journals = parts(allJournals);
+  components.forEach((component, index) => {
+    if (journals[index].length !== component.length) {
+      const started = new Set(journals[index].map((journal) => journal.accountId));
+      const missing = component.find((id) => !started.has(id));
+      throw missing ? journalNotStarted(missing) : conflict();
+    }
+  });
   // Count first: do not materialize a corrupt/oversized component and then truncate it.
   const counts: { accountId: string; count: number }[] = await manager.query(
     `SELECT t."accountId",count(*)::int AS count FROM account_trades t
@@ -175,19 +220,22 @@ export async function readConnectedLedger(
       WHERE t."ownerId"=$1 AND t."accountId"=ANY($2::uuid[]) AND v.kind<>'void' GROUP BY t."accountId"`,
     [owner, ids],
   );
-  if (
-    counts.some((row) => row.count > 1000) ||
-    counts.reduce((n, row) => n + row.count, 0) > OWNED_TRANSFER_LIMITS.activeTrades
-  )
-    throw new OwnedTransferCapacityError();
+  for (const part of parts(counts))
+    if (
+      part.some((row) => row.count > 1000) ||
+      part.reduce((n, row) => n + row.count, 0) > OWNED_TRANSFER_LIMITS.activeTrades
+    )
+      throw new OwnedTransferCapacityError();
+  // One row more than a component may hold, per component: an oversized one is still refused.
   const rows: (VersionRow & { accountId: string })[] = await manager.query(
     `${versionSelect} JOIN account_trades t ON t."ownerId"=v."ownerId" AND t."accountId"=v."accountId"
       AND t.id=v."tradeId" AND t."currentVersion"=v.version
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
-      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."tradeId" LIMIT 10001`,
-    [owner, ids],
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."tradeId" LIMIT $3`,
+    [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeTrades + 1)],
   );
-  if (rows.length > OWNED_TRANSFER_LIMITS.activeTrades) throw new OwnedTransferCapacityError();
+  if (parts(rows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeTrades))
+    throw new OwnedTransferCapacityError();
   const byAccount = new Map<string, FifoTrade[]>();
   for (const row of rows) {
     const trades = byAccount.get(row.accountId) ?? [];
@@ -200,18 +248,19 @@ export async function readConnectedLedger(
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
     [owner, ids],
   );
-  if (
-    rewardCounts.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeRewards) ||
-    rewardCounts.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeRewards
-  )
-    throw new OwnedTransferCapacityError();
+  for (const part of parts(rewardCounts))
+    if (
+      part.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeRewards) ||
+      part.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeRewards
+    )
+      throw new OwnedTransferCapacityError();
   const rewardRows: RewardVersionRow[] = await manager.query(
     `${rewardVersionSelect} ${rewardHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
-      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."rewardId" LIMIT 1001`,
-    [owner, ids],
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."rewardId" LIMIT $3`,
+    [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeRewards + 1)],
   );
-  if (rewardRows.length > OWNED_TRANSFER_LIMITS.activeRewards)
+  if (parts(rewardRows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeRewards))
     throw new OwnedTransferCapacityError();
   const rewardsByAccount = new Map<string, FifoReward[]>();
   for (const row of rewardRows) {
@@ -225,18 +274,20 @@ export async function readConnectedLedger(
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
     [owner, ids],
   );
-  if (
-    swapCounts.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeSwaps) ||
-    swapCounts.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeSwaps
-  )
-    throw new OwnedTransferCapacityError();
+  for (const part of parts(swapCounts))
+    if (
+      part.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeSwaps) ||
+      part.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeSwaps
+    )
+      throw new OwnedTransferCapacityError();
   const swapRows: SwapVersionRow[] = await manager.query(
     `${swapVersionSelect} ${swapHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
-      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."swapId" LIMIT 1001`,
-    [owner, ids],
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."swapId" LIMIT $3`,
+    [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeSwaps + 1)],
   );
-  if (swapRows.length > OWNED_TRANSFER_LIMITS.activeSwaps) throw new OwnedTransferCapacityError();
+  if (parts(swapRows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeSwaps))
+    throw new OwnedTransferCapacityError();
   const swapsByAccount = new Map<string, FifoSwap[]>();
   for (const row of swapRows) {
     const swaps = swapsByAccount.get(row.accountId) ?? [];
@@ -249,18 +300,19 @@ export async function readConnectedLedger(
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
     [owner, ids],
   );
-  if (
-    returnCounts.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeCapitalReturns) ||
-    returnCounts.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeCapitalReturns
-  )
-    throw new OwnedTransferCapacityError();
+  for (const part of parts(returnCounts))
+    if (
+      part.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeCapitalReturns) ||
+      part.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeCapitalReturns
+    )
+      throw new OwnedTransferCapacityError();
   const returnRows: CapitalReturnVersionRow[] = await manager.query(
     `${capitalReturnVersionSelect} ${capitalReturnHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
-      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."capitalReturnId" LIMIT 1001`,
-    [owner, ids],
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."capitalReturnId" LIMIT $3`,
+    [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeCapitalReturns + 1)],
   );
-  if (returnRows.length > OWNED_TRANSFER_LIMITS.activeCapitalReturns)
+  if (parts(returnRows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeCapitalReturns))
     throw new OwnedTransferCapacityError();
   const returnsByAccount = new Map<string, FifoCapitalReturn[]>();
   for (const row of returnRows) {
@@ -268,28 +320,34 @@ export async function readConnectedLedger(
     returns.push(projectCapitalReturnVersion(row));
     returnsByAccount.set(row.accountId, returns);
   }
-  const accounts = new Map<string, ConnectedAccount>();
-  for (const journal of journals) {
-    accounts.set(journal.accountId, {
-      accountId: journal.accountId,
-      coverageFrom: journal.coverageFrom.toISOString(),
-      journal,
-      trades: byAccount.get(journal.accountId) ?? [],
-      rewards: rewardsByAccount.get(journal.accountId) ?? [],
-      swaps: swapsByAccount.get(journal.accountId) ?? [],
-      capitalReturns: returnsByAccount.get(journal.accountId) ?? [],
-      initialLots: await readBaseline(manager, owner, journal.accountId, journal),
-    });
-  }
-  return {
-    accounts,
-    transfers: transfers.filter((transfer) => accounts.has(transfer.fromAccountId)),
-    participants: await readTransferParticipants(manager, owner, ids),
-    rewardParticipants: new Set(rewardCounts.map((row) => row.accountId)),
-    swapParticipants: new Set(swapCounts.map((row) => row.accountId)),
-    capitalReturnParticipants: new Set(returnCounts.map((row) => row.accountId)),
-    splits: await readSplits(manager, owner),
-  };
+  const baselines = await readBaselines(manager, owner, allJournals);
+  const participants = await readTransferParticipants(manager, owner, ids);
+  const splits = await readSplits(manager, owner);
+  return components.map((_component, index) => {
+    const accounts = new Map<string, ConnectedAccount>();
+    for (const journal of journals[index]) {
+      accounts.set(journal.accountId, {
+        accountId: journal.accountId,
+        coverageFrom: journal.coverageFrom.toISOString(),
+        journal,
+        trades: byAccount.get(journal.accountId) ?? [],
+        rewards: rewardsByAccount.get(journal.accountId) ?? [],
+        swaps: swapsByAccount.get(journal.accountId) ?? [],
+        capitalReturns: returnsByAccount.get(journal.accountId) ?? [],
+        initialLots: baselines.get(journal.accountId)!,
+      });
+    }
+    const member = members[index];
+    return {
+      accounts,
+      transfers: transfers.filter((transfer) => accounts.has(transfer.fromAccountId)),
+      participants: new Set([...participants].filter((id) => member.has(id))),
+      rewardParticipants: new Set(parts(rewardCounts)[index].map((row) => row.accountId)),
+      swapParticipants: new Set(parts(swapCounts)[index].map((row) => row.accountId)),
+      capitalReturnParticipants: new Set(parts(returnCounts)[index].map((row) => row.accountId)),
+      splits,
+    };
+  });
 }
 
 /** Domain errors remain distinguishable for invalid-candidate CSV previews. */

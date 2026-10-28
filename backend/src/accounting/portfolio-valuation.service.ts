@@ -33,7 +33,7 @@ import {
   type ConnectedLedger,
   type ConnectedLedgerCache,
   projectConnectedLedger,
-  readConnectedLedger,
+  readConnectedLedgers,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
 import { parseDecimal, parseUuid } from './input';
@@ -379,13 +379,18 @@ export async function readValuationInputs(
   );
   const ledgers: ConnectedLedgerCache = new Map();
   try {
-    for (const row of accounts) {
-      if (!row.coverageFrom || ledgers.has(row.accountId)) continue;
-      if (startedBy !== undefined && row.coverageFrom.toISOString() > startedBy) continue;
-      // One replay per connected component, shared by all of its accounts.
-      const ledger = await readConnectedLedger(manager, owner, [row.accountId]);
-      for (const id of ledger.accounts.keys()) ledgers.set(id, ledger);
-    }
+    const started = accounts.filter(
+      (row) =>
+        row.coverageFrom &&
+        (startedBy === undefined || row.coverageFrom.toISOString() <= startedBy),
+    );
+    // One replay per connected component, shared by all of its accounts.
+    const read = await readConnectedLedgers(
+      manager,
+      owner,
+      started.map((row) => row.accountId),
+    );
+    for (const ledger of read) for (const id of ledger.accounts.keys()) ledgers.set(id, ledger);
   } catch (error) {
     rethrowAccountingHistory(error);
   }
