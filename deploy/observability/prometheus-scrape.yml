@@ -13,3 +13,12 @@
   metrics_path: /metrics
   static_configs:
     - targets: ['127.0.0.1:9464']
+
+# The backup alerts (CapitalTrackerBackupStale, CapitalTrackerBackupMissing) read a metric that
+# node_exporter's textfile collector exposes (deploy/backup/README.md). Without a node_exporter
+# scrape, CapitalTrackerBackupMissing fires permanently. If you do not scrape node_exporter yet,
+# add a job like this one (9100 is node_exporter's default port):
+# - job_name: node
+#   scrape_interval: 30s
+#   static_configs:
+#     - targets: ['127.0.0.1:9100']

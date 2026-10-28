@@ -50,6 +50,20 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
     for (const name of used) expect(exported).toContain(name);
   });
 
+  it('OBS-ASSET-4 alert on a stale or missing scheduled backup', () => {
+    const { groups } = parse(read(files[1])) as {
+      groups: { rules: { alert?: string; expr: string; for?: string }[] }[];
+    };
+    const rules = groups.flatMap((group) => group.rules);
+    expect(rules.find((rule) => rule.alert === 'CapitalTrackerBackupStale')).toMatchObject({
+      expr: 'time() - ct_backup_last_success_timestamp_seconds > 36 * 3600',
+    });
+    expect(rules.find((rule) => rule.alert === 'CapitalTrackerBackupMissing')).toMatchObject({
+      expr: 'absent(ct_backup_last_success_timestamp_seconds)',
+      for: '2h',
+    });
+  });
+
   it('OBS-ASSET-3 name no server, address or credential', () => {
     for (const file of [
       ...files,

@@ -22,7 +22,9 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
    and scrape `capital_tracker_backend:9464`. The published port needs the server update step
    once; see the pull request that added it.
 2. **Metrics.** Add the job from `prometheus-scrape.yml`, add the rules file, reload Prometheus.
-   Check Status → Targets shows `capital-tracker-backend` as UP.
+   Check Status → Targets shows `capital-tracker-backend` as UP. The rules include the backup-age
+   alerts, which need a node_exporter scrape (the commented `node` job in the same file); without
+   it `CapitalTrackerBackupMissing` fires permanently.
 3. **Logs.** Either merge `alloy-logs.alloy` into your own Alloy config (point `forward_to` at your
    `loki.write` component), or, if you run no Loki, start the stack in `loki/`:
    `docker compose -f deploy/observability/loki/docker-compose.yml up -d`. It is a separate

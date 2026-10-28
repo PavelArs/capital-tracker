@@ -18,6 +18,8 @@ done
 [[ -d $root ]] || fail "release root $root does not exist"
 [[ -f $backup_key && ! -L $backup_key && -r $backup_key ]] || fail 'private backup key unavailable'
 [[ $(wc -c <"$backup_key") -ge 32 ]] || fail 'private backup key unavailable'
+# Same rule as the release: mode 400 or 600 only (find -perm keeps it portable to BSD for the tests).
+[[ -n $(find "$backup_key" -maxdepth 0 \( -perm 400 -o -perm 600 \)) ]] || fail 'private backup key unavailable'
 [[ $backup_key != "$root/backups/"* ]] || fail 'the backup key must not live in the backup directory'
 # Share the release lock: wait for a running release instead of dumping during its maintenance.
 exec 9>"$root/.release.lock"
@@ -51,7 +53,8 @@ for ((i = 0; i < ${#scheduled[@]} - keep_min; i++)); do
 done
 
 # node_exporter textfile metric. It reads only *.prom, so the hidden temp file is renamed into place.
-mkdir -p "$metrics_dir"
+# umask 022 here: a non-root node_exporter must be able to enter a directory created by this script.
+(umask 022 && mkdir -p "$metrics_dir")
 metric_tmp=$(mktemp "$metrics_dir/.capital_tracker_backup.prom.XXXXXX")
 cat >"$metric_tmp" <<METRICS
 # HELP ct_backup_last_success_timestamp_seconds Unix time of the last verified scheduled backup.

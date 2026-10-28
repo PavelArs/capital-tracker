@@ -1,6 +1,7 @@
 """Synthetic process checks for the scheduled encrypted backup (no real server or data)."""
 
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -38,10 +39,23 @@ if args[:2] == ['inspect', 'capital_tracker_db']:
     print('true')
 elif args[:2] == ['exec', 'capital_tracker_db']:
     sys.stdout.buffer.write(b'PGDMP synthetic custom-format dump')
+    if os.environ.get('PG_DUMP_FAIL') == 'yes':
+        sys.exit(1)
 else:
     sys.exit(2)
 ''')
-        self.fake('flock', '#!/bin/sh\nexit 0\n')
+        # Fake flock records its arguments; FLOCK_TIMEOUT=yes simulates a release holding the lock.
+        self.calls = directory / 'calls'
+        self.fake('flock', f'''#!/bin/sh
+echo "flock $*" >>'{self.calls}'
+[ "$FLOCK_TIMEOUT" = yes ] && exit 1
+exit 0
+''')
+        # Fake mv records its arguments, then renames with the real mv.
+        self.fake('mv', f'''#!/bin/sh
+echo "mv $*" >>'{self.calls}'
+exec '{shutil.which('mv')}' "$@"
+''')
 
     def fake(self, name, body):
         path = self.bin / name
@@ -117,10 +131,16 @@ else:
         dump = next(self.backups.glob('scheduled-*.dump.enc'))
         self.assertEqual(int(values['ct_backup_last_size_bytes']), dump.stat().st_size)
         self.assertEqual(metric.stat().st_mode & 0o777, 0o644)
-        # node_exporter reads only *.prom, so the hidden temp file is never half-read before the rename.
-        source = SCRIPT.read_text()
-        self.assertIn('mktemp "$metrics_dir/.capital_tracker_backup.prom.', source)
-        self.assertIn('mv -f "$metric_tmp" "$metrics_dir/capital_tracker_backup.prom"', source)
+        # node_exporter reads only *.prom: the file is renamed into place from a hidden temp file
+        # in the same directory, so it is never half-read.
+        moves = [line.split() for line in self.calls.read_text().splitlines() if line.startswith('mv ')]
+        self.assertEqual(len(moves), 1)
+        source, target = Path(moves[0][-2]), Path(moves[0][-1])
+        self.assertEqual(source.parent, self.metrics)
+        self.assertRegex(source.name, r'^\.capital_tracker_backup\.prom\.\w+$')
+        self.assertEqual(target, metric)
+        # A non-root node_exporter must be able to list a directory the script creates.
+        self.assertEqual(self.metrics.stat().st_mode & 0o777, 0o755)
 
     def test_absent_container_fails_loudly_without_writing(self):
         result = self.run_backup(CONTAINER_ABSENT='yes')
@@ -135,6 +155,31 @@ else:
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('private backup key unavailable', result.stderr)
         self.assertEqual(list(self.backups.iterdir()), [])
+
+
+    def test_readable_key_fails_without_writing(self):
+        self.key.chmod(0o644)
+        result = self.run_backup()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('private backup key unavailable', result.stderr)
+        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertFalse(self.metrics.exists())
+
+    def test_release_holding_the_lock_fails_without_writing(self):
+        result = self.run_backup(FLOCK_TIMEOUT='yes')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('a release held the server lock for an hour', result.stderr)
+        self.assertEqual(self.calls.read_text().splitlines(), ['flock -w 3600 9'])
+        self.assertTrue((self.root / '.release.lock').is_file())
+        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertFalse(self.metrics.exists())
+
+    def test_failed_dump_removes_the_partial_file(self):
+        result = self.run_backup(PG_DUMP_FAIL='yes')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('pg_dump or encryption did not finish', result.stderr)
+        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertFalse(self.metrics.exists())
 
 
 if __name__ == '__main__':

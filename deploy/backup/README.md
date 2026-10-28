@@ -10,7 +10,18 @@ checks the checksum, prunes old scheduled dumps and updates a Prometheus textfil
 the release lock (`.release.lock`) and waits up to an hour for a running release. On any failure
 it exits non-zero with a message in the journal and leaves no partial dump behind.
 
+The release takes the same lock without waiting. A release that starts while the daily backup
+runs (the timer fires at 03:30 server time plus up to 30 minutes, and the dump takes as long as it
+takes) fails at once with `Another release holds the server lock`. Nothing has changed on the
+server at that point: wait for `systemctl status capital-tracker-backup.service` to show the run
+finished, then re-run the release.
+
 ## Install (one time, as root, on the production host)
+
+Install the timer only after the first activation has finished. The release's resume helper
+(`scripts/manual-mvp-resume.py`) expects `backups/` to hold only the interrupted release's own
+dumps, so a scheduled dump written during an interrupted first installation makes a resume refuse
+with `interrupted encrypted backup set differs`.
 
 From a checkout of the commit you want to install:
 
@@ -45,9 +56,10 @@ never reads half a file:
 - `ct_backup_last_success_timestamp_seconds`: Unix time of the last verified backup.
 - `ct_backup_last_size_bytes`: size of that encrypted dump.
 
-Start node_exporter with `--collector.textfile.directory=/var/lib/node_exporter/textfile_collector`
+The script creates a missing directory with mode 0755 so a non-root node_exporter can read it; if
+you create it yourself, give node_exporter read access. Start node_exporter with `--collector.textfile.directory=/var/lib/node_exporter/textfile_collector`
 (a containerized node_exporter needs that directory mounted read-only), and let your Prometheus
-scrape it. The alert rules `CapitalTrackerBackupStale` and `CapitalTrackerBackupMissing` in
+scrape it (the commented `node` job in `deploy/observability/prometheus-scrape.yml`). The alert rules `CapitalTrackerBackupStale` and `CapitalTrackerBackupMissing` in
 `deploy/observability/capital-tracker.rules.yml` then fire when the last backup is older than 36
 hours or the metric is absent. This needs no change to the release-managed `docker-compose.yml`.
 Without node_exporter, `cat` the file or check `systemctl list-timers` and the journal instead.
