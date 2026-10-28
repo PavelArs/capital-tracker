@@ -127,14 +127,12 @@ const images = () => ({
   frontend: { tag: 'capital-tracker-frontend:acceptance', imageId: `sha256:${'c'.repeat(64)}` },
   infrastructure: {
     postgres: { ...pins.postgres, imageId: `sha256:${'d'.repeat(64)}` },
-    redis: { ...pins.redis, imageId: `sha256:${'e'.repeat(64)}` },
   },
 });
 const ids = () => ({
   backend: `sha256:${'b'.repeat(64)}`,
   frontend: `sha256:${'c'.repeat(64)}`,
   postgres: `sha256:${'d'.repeat(64)}`,
-  redis: `sha256:${'e'.repeat(64)}`,
 });
 const passed = (cases) => ({
   errors: [],
@@ -470,7 +468,7 @@ test('ENG-007-D merge rejects foreign identity, images and missing or extra shar
       label,
     );
   for (const shard of shards.SHARDS) {
-    for (const image of ['backend', 'frontend', 'postgres', 'redis']) {
+    for (const image of ['backend', 'frontend', 'postgres']) {
       const all = receipts();
       all.find((item) => item.shard === shard).images[image] = `sha256:${'f'.repeat(64)}`;
       reject(all, `${shard} tested another ${image}`);
@@ -515,7 +513,7 @@ test('ENG-007-D merge rejects foreign identity, images and missing or extra shar
       shard: 'browser-1',
       commit,
       runId,
-      images: { ...ids(), redis: 'redis:latest' },
+      images: { ...ids(), postgres: 'postgres:latest' },
       cases: shards.browserCases(manifest, 'browser-1'),
       playwright: passed(shards.browserCases(manifest, 'browser-1')),
     }),
@@ -529,7 +527,6 @@ test('ENG-007-A loaded images must equal the build manifest', () => {
       [built.backend.tag]: built.backend.imageId,
       [built.frontend.tag]: built.frontend.imageId,
       [pins.postgres.tag]: built.infrastructure.postgres.imageId,
-      [pins.redis.tag]: built.infrastructure.redis.imageId,
       ...overrides,
     };
     return (tag) => ({
@@ -546,7 +543,7 @@ test('ENG-007-A loaded images must equal the build manifest', () => {
       commit,
       runId,
       pins,
-      inspected({ [pins.redis.tag]: `sha256:${'9'.repeat(64)}` }),
+      inspected({ [pins.postgres.tag]: `sha256:${'9'.repeat(64)}` }),
     ),
   );
   assert.throws(() => shards.verifyImages(images(), 'b'.repeat(40), runId, pins, inspected()));

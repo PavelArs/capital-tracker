@@ -49,10 +49,10 @@ when that matters.
 
 In CI the critical profile runs in parallel shards on images built once:
 
-- `Build Release Images` pulls and verifies the pinned PostgreSQL and Redis images,
+- `Build Release Images` pulls and verifies the pinned PostgreSQL image,
   runs `node scripts/acceptance.mjs images --manifest release-images/manifest.json`
   (the same Compose build of backend and frontend) and uploads `docker save` of the
-  four images, compressed with zstd, with their schema-v3 manifest; the manifest also goes
+  three images, compressed with zstd, with their schema-v3 manifest; the manifest also goes
   alone into `release-images-manifest` for the receipt job.
 - Each shard loads them, refuses any ID that differs from the manifest and runs
   `node scripts/acceptance.mjs critical --shard <name> --images release-images/manifest.json`
@@ -64,8 +64,8 @@ In CI the critical profile runs in parallel shards on images built once:
   Each shard writes `test-results/critical-shard-<name>.json`. Browser shards restore
   the Playwright browser from an Actions cache keyed on the installed Playwright version
   (a push to main refreshes it in `Warm Playwright Browser Cache`, which gates nothing).
-- `Image Security Scan` loads and verifies the same images beside the shards, scans all
-  four with Trivy and enforces the high/critical gate.
+- `Image Security Scan` loads and verifies the same images beside the shards, scans the
+  backend and frontend images with Trivy and enforces the high/critical gate.
 - `Acceptance Receipt and Image Security` runs after the shards and the scan passed. It
   merges the receipts with `node scripts/acceptance-shards.cjs merge …` into the unchanged
   `test-results/critical-release-acceptance.json` only if every shard tested the
@@ -174,12 +174,6 @@ secrets or database persistence.
 Periodic jobs are disabled with BACKGROUND_JOBS_ENABLED=false to avoid wall-clock
 races; startup fetches and explicit wallet refresh still use actual adapters.
 Production defaults keep cron enabled. This setting is not an authentication bypass.
-The synthetic profile also sets the supported EXCHANGE_RATES_CACHE_TTL to86400000ms
-(one day), retaining rates loaded by the real application throughout the bounded
-suite. The production default remains ten minutes. This makes warm-cache restart
-checks deterministic: they still require exactly two crypto constructor requests
-and zero accounting-triggered requests, without accepting arbitrary FX refreshes.
-Release-artifact checks verify that both real backend containers use this setting.
 These scenarios do not claim to verify cache-expiry behavior.
 
 Playwright uses one Chromium worker and zero retries. Reports/traces/screenshots
@@ -260,7 +254,7 @@ generic 503/no-store for the actual HTTP held-lock case. Separate real PostgreSQ
 query, commit and pool-failure probes verify safe service exceptions, transaction
 cleanup and absence of retries. Admission uses `connectTimeoutMS=5000` for every
 runtime PostgreSQL pool checkout. There is no automatic retry, memory fallback,
-Redis fallback or late admission after a pool/lock refusal; releasing a resource only affects a later explicit request.
+cache fallback or late admission after a pool/lock refusal; releasing a resource only affects a later explicit request.
 These bounded resources limit availability; there is no availability guarantee.
 
 The verified run passed all 74 HTTPS Chromium cases without retries, including

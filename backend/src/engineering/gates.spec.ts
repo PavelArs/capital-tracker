@@ -425,8 +425,8 @@ const loadImages = [
   'rm release-images/images.tar.zst',
   'node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
 ];
-const fourImages =
-  'capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23';
+const releaseImages =
+  'capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance';
 
 type ProvenanceStep = { name: string; conclusion: string | undefined };
 type ProvenanceJob = { name: string; conclusion: string; steps: ProvenanceStep[] };
@@ -528,7 +528,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(expression(report?.if)).toBe(`always() && ${unlessReusedNeeds}`);
   });
 
-  it('ENG-005-A scans the three images the project builds or pins and enforces the gate without pause conditions', () => {
+  it('ENG-005-A scans the two images the project builds and enforces the gate without pause conditions', () => {
     const job = workflow('ci').jobs['image-security'];
     expect(job.name).toBe('Image Security Scan');
     const steps = job.steps ?? [];
@@ -536,7 +536,6 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(scans.map((step) => step.with?.['image-ref'])).toEqual([
       'capital-tracker-backend:acceptance',
       'capital-tracker-frontend:acceptance',
-      'redis:8.10.2-alpine3.23',
     ]);
     for (const step of scans) {
       expect(expression(step.if)).toBe(unlessReusedNeeds);
@@ -558,11 +557,11 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
       expect(step?.['continue-on-error'] ?? false).toBe(false);
     }
     const pull = (workflow('ci').jobs['release-images'].steps ?? []).find(
-      (item) => item.name === 'Pull exact reviewed PostgreSQL and Redis images',
+      (item) => item.name === 'Pull the exact reviewed PostgreSQL image',
     );
     expect(expression(pull?.if)).toBe(unlessReused);
     expect(pull?.run).toContain('validateInfrastructurePins(pins);');
-    // The official PostgreSQL image, pinned by digest like Redis (owner decision 2026-10-24).
+    // The official PostgreSQL image, pinned by digest (owner decision 2026-10-24).
     expect(pull?.run).toContain(`postgres=$(jq -er '.postgres.baseRegistryDigest'`);
     expect(pull?.run).toContain('docker pull --platform linux/amd64 "$postgres"');
     expect(pull?.run).not.toContain('org.opencontainers.image.revision');
@@ -604,7 +603,9 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(exportStep.name).toBe(exportStepName);
     expect(steps.indexOf(exportStep)).toBeGreaterThan(build);
     expect(exportStep.run).toContain('set -euo pipefail');
-    expect(exportStep.run).toContain(`docker save ${fourImages} | gzip > candidate/images.tar.gz`);
+    expect(exportStep.run).toContain(
+      `docker save ${releaseImages} | gzip > candidate/images.tar.gz`,
+    );
     expect(exportStep.run).toContain('schemaVersion: 3');
     expect(exportStep.run).toContain(
       'node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID"',
@@ -710,7 +711,7 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     const steps = job.steps ?? [];
     const index = (name: string) => steps.findIndex((step) => step.name === name);
     const order = [
-      'Pull exact reviewed PostgreSQL and Redis images',
+      'Pull the exact reviewed PostgreSQL image',
       'Build the backend and frontend acceptance images once',
       'Save the exact images for the acceptance shards',
       'Upload the exact images for the acceptance shards',
@@ -722,7 +723,7 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     );
     expect(steps[order[2]].run).toContain('set -euo pipefail');
     expect(steps[order[2]].run).toContain(
-      `docker save ${fourImages} | zstd -T0 -3 -q -o release-images/images.tar.zst`,
+      `docker save ${releaseImages} | zstd -T0 -3 -q -o release-images/images.tar.zst`,
     );
     expect(steps[order[2]].run).toContain('sha256sum images.tar.zst > images.tar.zst.sha256');
     expect(steps[order[3]].with).toMatchObject({

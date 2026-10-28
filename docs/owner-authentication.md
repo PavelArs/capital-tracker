@@ -262,8 +262,8 @@ An exhausted source, account or capacity window returns generic 429 with
 `Cache-Control: no-store` and an integer `Retry-After` (1–60 seconds for source
 windows, 1–600 seconds for account or capacity). Connection, lock, query or
 commit failure returns generic 503 with `no-store`; there is no memory fallback,
-automatic retry or late admission after pool refusal. Admission uses PostgreSQL;
-Redis remains part of the existing application cache. The runtime
+automatic retry or late admission after pool refusal. Admission uses PostgreSQL,
+the only data store the application runs. The runtime
 `connectTimeoutMS=5000` bound applies to every runtime PostgreSQL pool checkout
 and new connection, not only admission. It does not bound total HTTP or Nest
 startup time or impose retry behavior outside the pool connection path. A finite

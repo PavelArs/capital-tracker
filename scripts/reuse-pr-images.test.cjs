@@ -21,7 +21,6 @@ function manifest(overrides = {}) {
     frontend: { tag: 'capital-tracker-frontend:acceptance', imageId: imageId('2') },
     infrastructure: {
       postgres: { ...pins.postgres, imageId: imageId('3') },
-      redis: { ...pins.redis, imageId: imageId('4') },
     },
     ...overrides,
   };

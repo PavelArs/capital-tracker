@@ -257,7 +257,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/reuse-pr-images.cjs
-      - name: Pull exact reviewed PostgreSQL and Redis images
+      - name: Pull the exact reviewed PostgreSQL image
         if: steps.reuse.outputs.reuse != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -268,21 +268,13 @@ jobs:
           const { validateInfrastructurePins } = require('./scripts/validate-manual-mvp-release.cjs');
           validateInfrastructurePins(pins);
           NODE
-          # The official PostgreSQL image, pinned by digest like Redis (owner decision 2026-10-24).
+          # The official PostgreSQL image, pinned by digest (owner decision 2026-10-24).
           postgres=$(jq -er '.postgres.baseRegistryDigest' deploy/manual-mvp-infrastructure-pins.json)
           postgres_tag=$(jq -er '.postgres.tag' deploy/manual-mvp-infrastructure-pins.json)
           docker pull --platform linux/amd64 "$postgres"
           docker tag "$postgres" "$postgres_tag"
           test "$(docker image inspect "$postgres_tag" --format '{{.Id}}')" = "$(docker image inspect "$postgres" --format '{{.Id}}')"
           test "$(docker image inspect "$postgres_tag" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
-          for name in redis; do
-            digest=$(jq -er --arg name "$name" '.[$name].registryDigest' deploy/manual-mvp-infrastructure-pins.json)
-            tag=$(jq -er --arg name "$name" '.[$name].tag' deploy/manual-mvp-infrastructure-pins.json)
-            docker pull "$digest"
-            docker tag "$digest" "$tag"
-            test "$(docker image inspect "$tag" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
-            test "$(docker image inspect "$tag" --format '{{.Id}}')" = "$(docker image inspect "$digest" --format '{{.Id}}')"
-          done
       - name: Build the backend and frontend acceptance images once
         if: steps.reuse.outputs.reuse != 'true'
         run: node scripts/acceptance.mjs images --manifest release-images/manifest.json
@@ -292,7 +284,7 @@ jobs:
         if: steps.reuse.outputs.reuse != 'true'
         run: |
           set -euo pipefail
-          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | zstd -T0 -3 -q -o release-images/images.tar.zst
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance | zstd -T0 -3 -q -o release-images/images.tar.zst
           (cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
@@ -352,17 +344,14 @@ jobs:
             const tag = `capital-tracker-${name}:acceptance`;
             manifest[name] = { tag, imageId: execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
           }
-          manifest.infrastructure = {};
-          for (const name of ['postgres', 'redis']) {
-            const pin = pins[name];
-            manifest.infrastructure[name] = { ...pin, imageId: execFileSync('docker', ['image', 'inspect', pin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
-          }
+          const pin = pins.postgres;
+          manifest.infrastructure = { postgres: { ...pin, imageId: execFileSync('docker', ['image', 'inspect', pin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() } };
           const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
           validateLoadedImages(manifest, tag => JSON.parse(execFileSync('docker', ['image', 'inspect', tag], { encoding: 'utf8' }))[0]);
           fs.writeFileSync('candidate/manifest.json', JSON.stringify(manifest));
           NODE
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID" deploy/manual-mvp-infrastructure-pins.json
-          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | gzip > candidate/images.tar.gz
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance | gzip > candidate/images.tar.gz
           sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
       - name: Upload the release candidate
         if: github.event_name == 'push'
@@ -531,21 +520,6 @@ jobs:
           ignore-unfixed: false
           format: json
           output: frontend-image-security.json
-          exit-code: '0'
-          timeout: 10m
-      - name: Scan the Redis image
-        if: needs.release-images.outputs.reuse != 'true'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          cache: 'false'
-          version: v0.74.0
-          skip-setup-trivy: true
-          scan-type: image
-          image-ref: redis:8.10.2-alpine3.23
-          scanners: vuln,secret
-          ignore-unfixed: false
-          format: json
-          output: redis-image-security.json
           exit-code: '0'
           timeout: 10m
       - name: Save the vulnerability database

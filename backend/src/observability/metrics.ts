@@ -56,7 +56,7 @@ const walletDuration = new Histogram({
   registers: [registry],
 });
 
-/** Gauges that are read from the database or Redis when Prometheus scrapes. */
+/** Gauges that are read from the database when Prometheus scrapes. */
 export const sourceLastSuccess = new Gauge({
   name: 'ct_source_last_success_timestamp_seconds',
   help: 'Unix time of the last successful run of a price or rate source.',

@@ -129,7 +129,7 @@ class SnapBootstrapProcessAcceptance(unittest.TestCase):
         result = subprocess.run([
             BASH, str(script), account,
             "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
-            "redis@sha256:" + "e" * 64, str(self.base / "reviewed-receipt.json"),
+            str(self.base / "reviewed-receipt.json"),
         ], env={**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
                 "FIXTURE_ROOT": str(self.base)}, capture_output=True, text=True, timeout=15)
         return result

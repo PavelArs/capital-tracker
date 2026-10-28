@@ -41,7 +41,6 @@ def build_receipt(commit, run_id, installation, backend, frontend, postgres, roo
         'backend': backend,
         'frontend': frontend,
         'postgres': postgres,
-        'redis': pins['redis']['registryDigest'],
         'files': {name: hashlib.sha256((root / path).read_bytes()).hexdigest() for name, path in SOURCES.items()},
     }
     if installation == 'resume-fresh':
@@ -53,7 +52,7 @@ def build_receipt(commit, run_id, installation, backend, frontend, postgres, roo
     return dispatcher.validate_receipt(request, receipt)
 
 
-def validate_bootstrap_receipt(path, postgres, redis, expected_commit, root=ROOT, owner_uid=0, stop_at=None):
+def validate_bootstrap_receipt(path, postgres, expected_commit, root=ROOT, owner_uid=0, stop_at=None):
     """Read root-reviewed metadata before bootstrap; final deploy approval is separate."""
     _, content = dispatcher.check_trusted_file(pathlib.Path(path), owner_uid, stop_at)
     receipt = dispatcher.parse_json(content)
@@ -63,14 +62,11 @@ def validate_bootstrap_receipt(path, postgres, redis, expected_commit, root=ROOT
     dispatcher.validate_receipt(request, receipt)
     if receipt['commit'] != expected_commit:
         raise dispatcher.Refusal('bootstrap checkout differs from reviewed receipt')
-    if receipt['installation'] != 'fresh' or receipt['postgres'] != postgres or receipt['redis'] != redis:
+    if receipt['installation'] != 'fresh' or receipt['postgres'] != postgres:
         raise dispatcher.Refusal('bootstrap differs from reviewed fresh receipt')
     for name, source in SOURCES.items():
         if hashlib.sha256((pathlib.Path(root) / source).read_bytes()).hexdigest() != receipt['files'][name]:
             raise dispatcher.Refusal('bootstrap source differs from reviewed receipt')
-    pins = dispatcher.parse_json((pathlib.Path(root) / SOURCES['pins']).read_bytes())
-    if pins['redis']['registryDigest'] != redis:
-        raise dispatcher.Refusal('bootstrap Redis differs from reviewed pin')
     return receipt
 
 

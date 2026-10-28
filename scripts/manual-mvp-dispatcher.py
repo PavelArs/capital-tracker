@@ -61,14 +61,13 @@ APPLICATION_IMAGE = {
 }
 INFRASTRUCTURE_IMAGE = {
     'postgres': re.compile(r'ghcr\.io/' + REGISTRY_NAMESPACE + r'/capital-tracker-postgres@sha256:[a-f0-9]{64}'),
-    'redis': re.compile(r'redis@sha256:[a-f0-9]{64}'),
 }
 
 REQUEST_KEYS = {'version', 'operation', 'commit', 'runId'}
 APPROVED_REQUEST_KEYS = REQUEST_KEYS | {'receipt'}
 RECEIPT_KEYS = {
     'version', 'commit', 'runId', 'installation',
-    'backend', 'frontend', 'postgres', 'redis', 'files',
+    'backend', 'frontend', 'postgres', 'files',
 }
 RESUME_ORIGIN = {
     'commit': '0f479b3955aba1cf351a29e897c7ffbdc9909638',
@@ -339,10 +338,6 @@ def verify_installation(receipt, config):
                 raise Refusal('resume PostgreSQL differs from reviewed original')
             # The derived PostgreSQL digest comes from owner approval, never its base pin.
             # The hash above binds the separately reviewed source inputs.
-            for service in ('redis',):
-                entry = pins.get(service)
-                if not isinstance(entry, dict) or entry.get('registryDigest') != receipt[service]:
-                    raise Refusal('receipt infrastructure differs from reviewed pins')
 
 
 def check_snap_plugins(config):
@@ -420,7 +415,6 @@ def build_command(request, config, receipt=None):
         'RELEASE_BACKUP_KEY_FILE': str(config.runtime_dir / '.backup-key'),
         'RELEASE_INSTALLATION': receipt['installation'],
         'RELEASE_POSTGRES_IMAGE': receipt['postgres'],
-        'RELEASE_REDIS_IMAGE': receipt['redis'],
         'RELEASE_COMPOSE_FILE': str(_installed(config, 'compose')),
         'RELEASE_RESUME_HELPER': str(_installed(config, 'resume')),
         'RELEASE_PINS_FILE': str(_installed(config, 'pins')),

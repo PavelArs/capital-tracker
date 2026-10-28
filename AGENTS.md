@@ -1,6 +1,6 @@
 # Capital Tracker
 
-Personal, single-owner capital tracker (public repository): NestJS, TypeORM, PostgreSQL and Redis in `backend/`; React and Vite in `frontend/`; real HTTPS and PostgreSQL acceptance in `tests/e2e/`. Production is live: a green CI run on `main` deploys after the owner approves it in GitHub (`docs/manual-mvp-release.md`).
+Personal, single-owner capital tracker (public repository): NestJS, TypeORM and PostgreSQL in `backend/`; React and Vite in `frontend/`; real HTTPS and PostgreSQL acceptance in `tests/e2e/`. Production is live: a green CI run on `main` deploys after the owner approves it in GitHub (`docs/manual-mvp-release.md`).
 
 ## Commands
 

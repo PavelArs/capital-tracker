@@ -3,7 +3,6 @@ const { execFileSync } = require('node:child_process');
 const images = {
   backend: 'capital-tracker-backend:acceptance',
   frontend: 'capital-tracker-frontend:acceptance',
-  redis: 'redis:8.10.2-alpine3.23',
 };
 function checkReport(report, expectedImageId) {
   if (!report || report.SchemaVersion !== 2 || report.Metadata?.ImageID !== expectedImageId

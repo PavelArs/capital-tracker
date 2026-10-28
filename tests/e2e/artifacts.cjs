@@ -34,7 +34,7 @@ assert.ok(
   ),
   'External fixture cannot read the MFA key',
 );
-for (const name of ['backend', 'backend-replica', 'frontend', 'postgres', 'redis', 'providers']) {
+for (const name of ['backend', 'backend-replica', 'frontend', 'postgres', 'providers']) {
   const container = inspect(docker(...compose, 'ps', '-q', name));
   assert.deepEqual(
     container.HostConfig.PortBindings ?? {},
@@ -56,7 +56,6 @@ assert.equal(
   '172.30.91.2',
 );
 assert.ok(backend.Config.Env.includes('TRUSTED_PROXY_IPS=["172.30.91.2"]'));
-assert.ok(backend.Config.Env.includes('EXCHANGE_RATES_CACHE_TTL=86400000'));
 const replica = inspect(docker(...compose, 'ps', '-q', 'backend-replica'));
 assert.equal(replica.Image, backend.Image);
 assert.deepEqual([...replica.Config.Env].sort(), [...backend.Config.Env].sort());

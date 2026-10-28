@@ -33,11 +33,6 @@ const manifest = () => ({
       registryDigest: originalPostgres,
       originRevision,
     },
-    redis: {
-      imageId: `sha256:${'e'.repeat(64)}`,
-      tag: 'redis:8.10.2-alpine3.23',
-      registryDigest: `redis@sha256:${'e'.repeat(64)}`,
-    },
   },
 });
 const pins = () => ({
@@ -50,7 +45,6 @@ const pins = () => ({
     registryDigest: originalPostgres,
     originRevision,
   },
-  redis: { tag: 'redis:8.10.2-alpine3.23', registryDigest: `redis@sha256:${'e'.repeat(64)}` },
   resumeOrigin,
 });
 let validateRelease: (
@@ -162,7 +156,6 @@ describe('MVP-002: exact tested candidate manifest', () => {
       null,
       {},
       [],
-      { postgres: manifest().infrastructure.postgres },
       { ...manifest().infrastructure, additional: true },
     ]) {
       expect(() =>
@@ -170,35 +163,32 @@ describe('MVP-002: exact tested candidate manifest', () => {
       ).toThrow();
     }
   });
-  it.each(['postgres', 'redis'] as const)(
-    'requires the exact tested %s infrastructure identity',
-    (name) => {
-      const original = manifest().infrastructure[name];
-      for (const identity of [
-        null,
-        {},
-        { ...original, extra: true },
-        { ...original, tag: `${name}:latest` },
-        { ...original, imageId: `sha256:${'A'.repeat(64)}` },
-        { ...original, imageId: `sha256:${'a'.repeat(63)}` },
-        { ...original, registryDigest: `${name}@sha256:${'A'.repeat(64)}` },
-        { ...original, registryDigest: `foreign@sha256:${'a'.repeat(64)}` },
-        {
-          ...original,
-          registryDigest: original.registryDigest.slice(0, -1),
-        },
-      ]) {
-        expect(() =>
-          validateRelease(
-            { ...manifest(), infrastructure: { ...manifest().infrastructure, [name]: identity } },
-            commit,
-            runId,
-            pins(),
-          ),
-        ).toThrow();
-      }
-    },
-  );
+  it.each(['postgres'] as const)('requires the exact tested %s infrastructure identity', (name) => {
+    const original = manifest().infrastructure[name];
+    for (const identity of [
+      null,
+      {},
+      { ...original, extra: true },
+      { ...original, tag: `${name}:latest` },
+      { ...original, imageId: `sha256:${'A'.repeat(64)}` },
+      { ...original, imageId: `sha256:${'a'.repeat(63)}` },
+      { ...original, registryDigest: `${name}@sha256:${'A'.repeat(64)}` },
+      { ...original, registryDigest: `foreign@sha256:${'a'.repeat(64)}` },
+      {
+        ...original,
+        registryDigest: original.registryDigest.slice(0, -1),
+      },
+    ]) {
+      expect(() =>
+        validateRelease(
+          { ...manifest(), infrastructure: { ...manifest().infrastructure, [name]: identity } },
+          commit,
+          runId,
+          pins(),
+        ),
+      ).toThrow();
+    }
+  });
   it('rejects a self-asserted PostgreSQL source or official base final identity', () => {
     const original = manifest().infrastructure.postgres;
     for (const identity of [
@@ -270,7 +260,6 @@ describe('MVP-002: exact tested candidate manifest', () => {
         ...pins(),
         postgres: { ...pins().postgres, registryDigest: `postgres@sha256:${'f'.repeat(64)}` },
       },
-      { ...pins(), redis: { ...pins().redis, tag: 'redis:latest' } },
     ]) {
       expect(() => validateRelease(manifest(), commit, runId, infrastructurePins)).toThrow();
     }
@@ -283,7 +272,7 @@ describe('MVP-002: exact tested candidate manifest', () => {
       pinPath,
       JSON.stringify({
         ...pins(),
-        redis: { ...pins().redis, registryDigest: `redis@sha256:${'f'.repeat(64)}` },
+        postgres: { ...pins().postgres, dockerfileSha256: '0'.repeat(64) },
       }),
     );
     const result = spawnSync(process.execPath, [validatorPath, path, commit, runId, pinPath], {

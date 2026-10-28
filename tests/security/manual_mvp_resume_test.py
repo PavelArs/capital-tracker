@@ -14,10 +14,8 @@ spec = importlib.util.spec_from_file_location('manual_mvp_resume', SOURCE)
 resume = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(resume)
 POSTGRES = 'ghcr.io/pavelars/capital-tracker-postgres@sha256:' + 'a' * 64
-REDIS = 'redis@sha256:' + 'b' * 64
 NETWORK = resume.NETWORK
 PG = 'capital_tracker_db'
-RD = 'capital_tracker_redis'
 
 
 class ClusterProof(unittest.TestCase):
@@ -65,31 +63,27 @@ class InfrastructureProof(unittest.TestCase):
         self.settings = {'DB_USERNAME': 'capital_owner', 'DB_NAME': 'capital_tracker',
                          'DB_PASSWORD': 'c' * 64, 'POSTGRES_IMAGE': POSTGRES,
                          'POSTGRES_EXPECTED_MAJOR': '18', 'POSTGRES_VOLUME_TARGET': '/var/lib/postgresql',
-                         'REDIS_IMAGE': REDIS, 'FRONTEND_URL': 'https://capital.pavelars.ru',
+                         'FRONTEND_URL': 'https://capital.pavelars.ru',
                          'BACKEND_HOST_PORT': '3100', 'FRONTEND_HOST_PORT': '3101',
                          'MFA_KEY_FILE': str(self.root / '.mfa-key'), 'MFA_KEY_ID': 'capital-production-1',
                          'TRUSTED_PROXY_IPS': '["172.1.2.3"]', 'OWNER_EMAIL': 'owner@capital.pavelars.ru',
                          'BACKGROUND_JOBS_ENABLED': 'false', 'DISPLAY_FX_ENABLED': 'false'}
         self.write_settings()
         self.pg_id = 'a' * 64
-        self.redis_id = 'b' * 64
         self.net_id = 'n' * 64
         self.pg_image = 'sha256:' + 'd' * 64
-        self.redis_image = 'sha256:' + 'e' * 64
         self.metadata = {
             ('network', 'inspect', NETWORK): {'Name': NETWORK, 'Id': self.net_id,
                 'Created': 'old', 'Labels': {'com.docker.compose.project': resume.PROJECT,
                 'com.docker.compose.network': 'capital-tracker-network'},
-                'Containers': {self.pg_id: {}, self.redis_id: {}}},
+                'Containers': {self.pg_id: {}}},
         }
         for name, service, ref, image_id, container_id, volume, target in (
             (PG, 'postgres', POSTGRES, self.pg_image, self.pg_id,
              'capital-tracker_postgres_data', '/var/lib/postgresql'),
-            (RD, 'redis', REDIS, self.redis_image, self.redis_id,
-             'capital-tracker_redis_data', '/data'),
         ):
             environment = ['POSTGRES_USER=capital_owner', 'POSTGRES_DB=capital_tracker',
-                           'POSTGRES_PASSWORD=' + 'c' * 64] if service == 'postgres' else []
+                           'POSTGRES_PASSWORD=' + 'c' * 64]
             self.metadata[('inspect', name)] = {'Name': '/' + name, 'Id': container_id,
                 'Image': image_id, 'Config': {'Image': ref, 'Env': environment,
                 'Labels': {'com.docker.compose.project': resume.PROJECT,
@@ -115,9 +109,9 @@ class InfrastructureProof(unittest.TestCase):
         if args == ('ps', '-a', '--format', '{{.Names}}') or args == (
                 'ps', '-a', '--filter', 'label=com.docker.compose.project=capital-tracker',
                 '--format', '{{.Names}}'):
-            return PG + '\n' + RD
+            return PG
         if args[0:2] == ('volume', 'ls'):
-            return 'capital-tracker_postgres_data\ncapital-tracker_redis_data'
+            return 'capital-tracker_postgres_data'
         if args[0:2] == ('network', 'ls'):
             return NETWORK
         if args == ('exec', PG, 'sh', '-c', 'cat "$PGDATA/PG_VERSION"'):
@@ -130,16 +124,16 @@ class InfrastructureProof(unittest.TestCase):
     def check(self):
         with patch.object(resume, 'docker', side_effect=self.docker), \
                 patch.object(resume, 'docker_json', side_effect=self.inspected):
-            return resume.resources(POSTGRES, REDIS, self.root)
+            return resume.resources(POSTGRES, self.root)
 
     def test_exact_running_infrastructure_passes_and_drift_refuses(self):
         baseline = self.check()
-        self.assertEqual(set(baseline['containers']), {PG, RD})
+        self.assertEqual(set(baseline['containers']), {PG})
         for metadata, path, changed in (
             (('inspect', PG), ('State', 'Health', 'Status'), 'unhealthy'),
             (('inspect', PG), ('Mounts', 0, 'Name'), 'other_data'),
             (('inspect', PG), ('Image',), 'sha256:' + 'f' * 64),
-            (('inspect', RD), ('Config', 'Labels', 'com.docker.compose.project'), 'other'),
+            (('inspect', PG), ('Config', 'Labels', 'com.docker.compose.project'), 'other'),
             (('network', 'inspect', NETWORK), ('Id',), 'replacement'),
         ):
             node = self.metadata[metadata]
@@ -165,7 +159,6 @@ class InfrastructureProof(unittest.TestCase):
     def test_interrupted_residue_refuses_activation_unknown_file_and_schema_marker(self):
         pins = json.loads((SOURCE.parents[1] / 'deploy/manual-mvp-infrastructure-pins.json').read_text())
         pins['postgres']['registryDigest'] = POSTGRES
-        pins['redis']['registryDigest'] = REDIS
         origin = pins['resumeOrigin']['commit']
         for name in ('.backup-key', '.mfa-key', '.owner-password.json', '.release.lock'):
             (self.root / name).write_text('fixture')
@@ -201,13 +194,13 @@ class InfrastructureProof(unittest.TestCase):
             self.metadata[('network', 'inspect', NETWORK)]['Containers'][app_id] = {}
         def with_apps(*args):
             if args[0:2] == ('ps', '-a'):
-                return PG + '\n' + RD + '\n' + '\n'.join(app_ids)
+                return PG + '\n' + '\n'.join(app_ids)
             return self.docker(*args)
         with patch.object(resume, 'docker', side_effect=with_apps), \
                 patch.object(resume, 'docker_json', side_effect=self.inspected):
-            self.assertEqual(resume.resources(POSTGRES, REDIS, self.root, allow_apps=True), original)
+            self.assertEqual(resume.resources(POSTGRES, self.root, allow_apps=True), original)
             snapshot = json.dumps({**original, 'proxyPeer': '172.1.2.3'})
-            argv = ['resume', 'compare-active', str(self.root), 'pins', 'used', POSTGRES, REDIS, snapshot]
+            argv = ['resume', 'compare-active', str(self.root), 'pins', 'used', POSTGRES, snapshot]
             self.assertEqual(resume.main(argv), 0)
             self.metadata[('inspect', PG)]['Id'] = 'replacement'
             self.assertEqual(resume.main(argv), 1)
