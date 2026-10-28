@@ -367,16 +367,14 @@ async function readSeriesInputs(
 
 /** One asset's value and the known cost of what is held at one instant (ASSET-CHART). */
 function assetAt(
-  valuation: ValuationInputs,
+  held: readonly PortfolioAccountInput[],
   instrument: PortfolioInstrument,
   at: number,
   prices: PortfolioPrices,
   fx: FxConverter,
 ) {
   const instant = new Date(at);
-  const accounts = accountsAt(valuation, instant.toISOString(), {
-    emptyBeforeCoverage: true,
-  }).map((account) => ({
+  const accounts = held.map((account) => ({
     ...account,
     lots: account.lots.filter((lot) => lot.instrumentId === instrument.id),
     realizations: account.realizations.filter(
@@ -706,6 +704,7 @@ export class PortfolioSnapshotsService {
         at,
       ).filter((point) => point.at < at);
       const latest = await latestPortfolioPrices(manager, owner, [instrument], now);
+      const readAccounts = accountHistoryReader(inputs.valuation);
       return {
         instrumentId: id,
         period: query.period,
@@ -715,10 +714,16 @@ export class PortfolioSnapshotsService {
         at: now.toISOString(),
         points: [
           ...instants.map((point) =>
-            assetAt(inputs.valuation, instrument, point.at, pricesAt(inputs, point.at), fx),
+            assetAt(
+              readAccounts(iso(point.at)),
+              instrument,
+              point.at,
+              pricesAt(inputs, point.at),
+              fx,
+            ),
           ),
           // The current value closes the period with the live valuation's prices.
-          assetAt(inputs.valuation, instrument, at, latest, fx),
+          assetAt(readAccounts(iso(at)), instrument, at, latest, fx),
         ],
       };
     });
