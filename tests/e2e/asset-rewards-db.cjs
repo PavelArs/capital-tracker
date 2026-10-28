@@ -275,7 +275,7 @@ async function migrationPreservation() {
       ],
     );
     const before = await fingerprint(db, ['migrations'], true);
-    assert.match(migrate(predecessor), /Migrations applied: 54/);
+    assert.match(migrate(predecessor), /Migrations applied: 55/);
     assert.deepEqual(await db.query('SELECT * FROM retired_commands'), []);
     assert.deepEqual(await db.query('SELECT "consecutiveFailures" FROM owner_mfa'), [
       { consecutiveFailures: 0 },
