@@ -3,12 +3,18 @@
 Releases already dump the database before they migrate (`scripts/manual-mvp-release.sh`). This
 directory adds a daily dump between releases. `scripts/scheduled-backup.sh` uses the release's
 exact recipe: `pg_dump -Fc` in the `capital_tracker_db` container, piped straight into OpenSSL
-AES-256-CBC with PBKDF2 and 200000 iterations, keyed by the same `/opt/capital-tracker/.backup-key`.
+AES-256-CBC with PBKDF2 and 200000 iterations, keyed by the same `/var/snap/docker/common/capital-tracker/.backup-key`.
 No plaintext dump reaches the disk. Each run writes
-`/opt/capital-tracker/backups/scheduled-<UTC time>.dump.enc` with a `.sha256` file next to it,
+`/var/snap/docker/common/capital-tracker/backups/scheduled-<UTC time>.dump.enc` with a `.sha256` file next to it,
 checks the checksum, prunes old scheduled dumps and updates a Prometheus textfile metric. It takes
 the release lock (`.release.lock`) and waits up to an hour for a running release. On any failure
 it exits non-zero with a message in the journal and leaves no partial dump behind.
+
+`/var/snap/docker/common/capital-tracker` is the managed release directory that
+`scripts/manual-mvp-server-bootstrap.sh` creates and `scripts/manual-mvp-dispatcher.py` releases
+into; the service unit sets `RELEASE_ROOT` to it. The script's own default is the runner's
+unmanaged `/opt/capital-tracker`, so an installation that runs `scripts/manual-mvp-release.sh`
+directly from another directory sets `RELEASE_ROOT` in a `systemctl edit` drop-in instead.
 
 The release takes the same lock without waiting. A release that starts while the daily backup
 runs (the timer fires at 03:30 server time plus up to 30 minutes, and the dump takes as long as it
@@ -71,7 +77,7 @@ Verify the checksum (`sha256sum -c <dump>.sha256`), then decrypt into a NEW, iso
 PostgreSQL of the same major version, as the release's restore rehearsal does:
 
 ```sh
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/opt/capital-tracker/.backup-key -in <dump> \
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/var/snap/docker/common/capital-tracker/.backup-key -in <dump> \
   | docker exec -i <isolated container> pg_restore --exit-on-error --clean --if-exists --no-owner --no-privileges -U postgres -d postgres
 ```
 

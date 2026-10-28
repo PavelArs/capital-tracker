@@ -7,7 +7,7 @@ After=docker.service
 Type=oneshot
 User=root
 # Paths and retention; see deploy/backup/README.md.
-Environment=RELEASE_ROOT=/opt/capital-tracker
+Environment=RELEASE_ROOT=/var/snap/docker/common/capital-tracker
 Environment=BACKUP_RETENTION_DAYS=30
 Environment=BACKUP_KEEP_MIN=7
 Environment=BACKUP_METRICS_DIR=/var/lib/node_exporter/textfile_collector

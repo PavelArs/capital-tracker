@@ -80,6 +80,18 @@ exec '{shutil.which('mv')}' "$@"
         os.utime(path, (stamp, stamp))
         return path
 
+    def test_service_unit_points_at_the_managed_release_root(self):
+        repository = SCRIPT.parents[1]
+        bootstrap = (repository / 'scripts' / 'manual-mvp-server-bootstrap.sh').read_text()
+        managed_root = next(
+            line.split('=', 1)[1] for line in bootstrap.splitlines() if line.startswith('root=')
+        )
+        unit = (repository / 'deploy' / 'backup' / 'capital-tracker-backup.service').read_text()
+        self.assertIn(f'Environment=RELEASE_ROOT={managed_root}\n', unit)
+        readme = (repository / 'deploy' / 'backup' / 'README.md').read_text()
+        self.assertIn(managed_root, readme)
+        self.assertNotIn('/opt/capital-tracker', readme)
+
     def test_backup_is_encrypted_checksummed_and_decryptable(self):
         result = self.run_backup()
         self.assertEqual(result.returncode, 0, result.stderr)
