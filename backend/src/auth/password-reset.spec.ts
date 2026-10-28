@@ -238,20 +238,33 @@ describe('PR-AUTH-3 RESET-REQUEST answers before the email settles', () => {
       transaction: jest.fn((work: (manager: unknown) => unknown) => work({ query })),
     } as unknown as DataSource;
     const sessions = { origin } as unknown as SessionService;
-    let settled = false;
+    const order: string[] = [];
+    let deliver: () => void = () => undefined;
     const send = jest.fn(() =>
-      new Promise<void>(() => undefined).finally(() => {
-        settled = true;
+      new Promise<void>((resolve) => {
+        deliver = resolve;
+      }).then(() => {
+        order.push('mail settled');
       }),
     );
     const mailer = { sendPasswordReset: send } as unknown as PasswordResetMailer;
     const resets = new PasswordResetService(source, sessions, mailer);
-    await expect(resets.request(' Owner@Example.invalid ')).resolves.toBeUndefined();
+    // A request() that awaited the mailer would lose this race and fail on the assertion below.
+    const first = await Promise.race([
+      resets.request(' Owner@Example.invalid ').then((answer) => {
+        order.push('request answered');
+        return answer;
+      }),
+      new Promise<string>((resolve) => setTimeout(() => resolve('still waiting'), 100)),
+    ]);
+    expect(first).toBeUndefined();
     expect(send).toHaveBeenCalledWith(
       'owner@example.invalid',
       expect.stringMatching(/\/password-reset\/new#token=[A-Za-z0-9_-]{43}$/),
     );
-    expect(settled).toBe(false);
+    deliver();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual(['request answered', 'mail settled']);
   });
 });
 
@@ -363,7 +376,9 @@ describe('PasswordResetMailer (Yandex SMTP)', () => {
       ['451 local error', { responseCode: 451, code: 'EMESSAGE' }],
       ['a reset connection', { code: 'ECONNRESET' }],
       ['a timeout', { code: 'ETIMEDOUT' }],
-      ['a refused connection', { code: 'ECONNECTION' }],
+      ['a failed connection', { code: 'ECONNECTION' }],
+      ['a refused connection', { code: 'ECONNREFUSED' }],
+      ['452 insufficient storage', { responseCode: 452 }],
     ])('retries %s after 5 seconds and counts it as retried, then sent', async (_, fields) => {
       const [sent, retried] = [await mailCount('sent'), await mailCount('retried')];
       const sendMail = jest
