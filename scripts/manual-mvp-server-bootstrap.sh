@@ -87,7 +87,7 @@ private('.env.release',('\n'.join([
  'FRONTEND_URL=https://capital.pavelars.ru', 'BACKEND_HOST_PORT=3100','FRONTEND_HOST_PORT=3101',
  'MFA_KEY_FILE='+str(root/'.mfa-key'), 'MFA_KEY_ID=capital-production-1',
  'TRUSTED_PROXY_IPS=[]', 'OWNER_EMAIL=owner@capital.pavelars.ru',
- 'BACKGROUND_JOBS_ENABLED=false','DISPLAY_FX_ENABLED=false','']) ).encode())
+ 'DISPLAY_FX_ENABLED=false','']) ).encode())
 PY
 install -d -o 1000 -g 1000 -m 700 "$root/operator"
 # Preserve the old inactive target vhost; never modify apex or other service configurations.

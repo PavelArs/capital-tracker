@@ -171,9 +171,11 @@ non-root process can read it. Never place a production key in this fixture direc
 The synthetic key/TLS files can remain after Compose cleanup; they are not production
 secrets or database persistence.
 
-Periodic jobs are disabled with BACKGROUND_JOBS_ENABLED=false to avoid wall-clock
-races; startup fetches and explicit wallet refresh still use actual adapters.
-Production defaults keep cron enabled. This setting is not an authentication bypass.
+Periodic jobs do no work in the synthetic profile, which avoids wall-clock races:
+the six interval timers are always registered, but each tick returns early because
+the profile leaves PRICE_COLLECTION_ENABLED unset (it defaults to false). Startup
+fetches and explicit wallet refresh still use actual adapters. Production sets
+PRICE_COLLECTION_ENABLED=true. This setting is not an authentication bypass.
 The synthetic profile also sets the supported EXCHANGE_RATES_CACHE_TTL to86400000ms
 (one day), retaining rates loaded by the real application throughout the bounded
 suite. The production default remains ten minutes. This makes warm-cache restart

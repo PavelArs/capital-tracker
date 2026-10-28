@@ -59,7 +59,6 @@ function environment(value) {
     ...settings,
     PORT: String(startupPort),
     NODE_ENV: 'production',
-    BACKGROUND_JOBS_ENABLED: 'false',
     HTTP_STARTUP_SECRET_SENTINEL: sentinel,
   };
   delete env.TRUSTED_PROXY_IPS;
@@ -188,7 +187,6 @@ async function main() {
   for (const [name, expected] of Object.entries(settings)) {
     assert.equal(process.env[name], expected, `Allowlisted isolated fixture required: ${name}`);
   }
-  assert.equal(process.env.BACKGROUND_JOBS_ENABLED, 'false');
   assert.ok(
     process.env.MFA_KEY_FILE && existsSync(process.env.MFA_KEY_FILE),
     'Private synthetic key prerequisite',

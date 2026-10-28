@@ -26,7 +26,7 @@ RUNTIME_KEYS = {'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME', 'POSTGRES_IMAGE',
                 'POSTGRES_EXPECTED_MAJOR', 'POSTGRES_VOLUME_TARGET', 'REDIS_IMAGE',
                 'FRONTEND_URL', 'BACKEND_HOST_PORT', 'FRONTEND_HOST_PORT',
                 'MFA_KEY_FILE', 'MFA_KEY_ID', 'TRUSTED_PROXY_IPS', 'OWNER_EMAIL',
-                'BACKGROUND_JOBS_ENABLED', 'DISPLAY_FX_ENABLED'}
+                'DISPLAY_FX_ENABLED'}
 STATE_NAME = re.compile(r'\d{8}T\d{6}Z-\d+')
 BACKUP_NAME = re.compile(r'[a-f0-9]{40}-\d{8}T\d{6}Z\.dump\.enc')
 
@@ -106,7 +106,7 @@ def runtime_settings(root):
              'FRONTEND_URL': 'https://capital.pavelars.ru', 'BACKEND_HOST_PORT': '3100',
              'FRONTEND_HOST_PORT': '3101', 'MFA_KEY_FILE': str(pathlib.Path(root) / '.mfa-key'),
              'MFA_KEY_ID': 'capital-production-1', 'OWNER_EMAIL': 'owner@capital.pavelars.ru',
-             'BACKGROUND_JOBS_ENABLED': 'false', 'DISPLAY_FX_ENABLED': 'false'}
+             'DISPLAY_FX_ENABLED': 'false'}
     if set(settings) != RUNTIME_KEYS or any(settings.get(key) != value for key, value in fixed.items()) \
             or not re.fullmatch(r'[a-f0-9]{64}', settings.get('DB_PASSWORD', '')):
         raise Refusal('unexpected bootstrap database identity')

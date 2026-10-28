@@ -72,8 +72,7 @@ export class BrokerPriceSyncService {
     return this.config.get('PRICE_COLLECTION_ENABLED') === 'true';
   }
 
-  // Interval jobs stay registered when BACKGROUND_JOBS_ENABLED=false disables cron jobs;
-  // this one follows the collection switch above.
+  // Interval jobs are always registered; PRICE_COLLECTION_ENABLED gates each tick.
   @Interval(5 * 60_000)
   async scheduledTick(): Promise<void> {
     try {

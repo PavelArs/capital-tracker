@@ -101,7 +101,6 @@ compare_resume() {
   [[ ${1:-} != active ]] || operation=compare-active
   [[ $installation != resume-fresh ]] || /usr/bin/python3 -I "$RELEASE_RESUME_HELPER" "$operation" "$root" "$RELEASE_PINS_FILE" "$RELEASE_USED_RECEIPTS_DIR" "$postgres_ref" "$redis_ref" "$resume_snapshot"
 }
-[[ $(jq -er '.services.backend.environment.BACKGROUND_JOBS_ENABLED' <<<"$config") == false ]] || exit 1
 jq -e --arg installation "$installation" '.services.backend.environment.TRUSTED_PROXY_IPS | fromjson | type=="array" and (length>0 or $installation=="fresh")' <<<"$config" >/dev/null
 jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/null
 # Anonymous checks never authenticate with owner factors or expose private response bodies.

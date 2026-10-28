@@ -69,7 +69,7 @@ class InfrastructureProof(unittest.TestCase):
                          'BACKEND_HOST_PORT': '3100', 'FRONTEND_HOST_PORT': '3101',
                          'MFA_KEY_FILE': str(self.root / '.mfa-key'), 'MFA_KEY_ID': 'capital-production-1',
                          'TRUSTED_PROXY_IPS': '["172.1.2.3"]', 'OWNER_EMAIL': 'owner@capital.pavelars.ru',
-                         'BACKGROUND_JOBS_ENABLED': 'false', 'DISPLAY_FX_ENABLED': 'false'}
+                         'DISPLAY_FX_ENABLED': 'false'}
         self.write_settings()
         self.pg_id = 'a' * 64
         self.redis_id = 'b' * 64
