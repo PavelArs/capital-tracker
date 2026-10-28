@@ -67,6 +67,7 @@ describe('SNAP-REVISION: the inputs revision of an owner', () => {
         table,
       ),
     ).toHaveLength(1);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: source text with an interpolated table name must still match
     expect(inPlaceWrites('DELETE FROM ${table} WHERE id=$1', table)).toHaveLength(1);
     expect(
       inPlaceWrites(`INSERT INTO ${table}(id) VALUES ($1) ON CONFLICT DO NOTHING`, table),
