@@ -646,9 +646,10 @@ async function inputsRevision(db, s) {
   const deposited = await revision(owner);
   assert.notEqual(deposited, traded, 'A new deposit changes the revision');
   // Same row count, one value rewritten in place: only the row hash can see it.
-  const renamed = await db.query(
+  // TypeORM answers an UPDATE with [rows, rowCount].
+  const [renamed] = await db.query(
     `UPDATE bank_deposits SET name='Renamed revision deposit' WHERE "ownerId"=$1 RETURNING id`, [owner]);
-  assert.equal(renamed.length, 1);
+  assert.equal(renamed.length, 1, 'The owner has exactly one deposit to rename');
   assert.notEqual(await revision(owner), deposited, 'An in-place edit of a hashed table changes the revision');
   const settled = await revision(owner);
   const foreign = await instrument(s, other, { name: 'Other cash', symbol: 'USD', assetType: 'fiat' });
