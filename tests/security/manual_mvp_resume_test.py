@@ -162,6 +162,17 @@ class InfrastructureProof(unittest.TestCase):
         with self.assertRaises(resume.Refusal):
             self.check()
 
+    def test_legacy_background_jobs_line_is_accepted_only_as_false(self):
+        self.settings['BACKGROUND_JOBS_ENABLED'] = 'false'
+        self.write_settings()
+        self.assertNotIn('BACKGROUND_JOBS_ENABLED', resume.runtime_settings(self.root))
+        self.check()
+        for key, value in (('BACKGROUND_JOBS_ENABLED', 'true'), ('UNKNOWN_SETTING', 'false')):
+            settings = {**self.settings, key: value}
+            (self.root / '.env.release').write_text(''.join(k + '=' + v + '\n' for k, v in settings.items()))
+            with self.subTest(key=key, value=value), self.assertRaises(resume.Refusal):
+                resume.runtime_settings(self.root)
+
     def test_interrupted_residue_refuses_activation_unknown_file_and_schema_marker(self):
         pins = json.loads((SOURCE.parents[1] / 'deploy/manual-mvp-infrastructure-pins.json').read_text())
         pins['postgres']['registryDigest'] = POSTGRES

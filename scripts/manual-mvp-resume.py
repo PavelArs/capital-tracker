@@ -101,6 +101,9 @@ def runtime_settings(root):
         if not separator or key in settings:
             raise Refusal('invalid runtime configuration')
         settings[key] = value
+    # Bootstraps before the switch was removed wrote this no-op line; accept only its pinned value.
+    if settings.get('BACKGROUND_JOBS_ENABLED') == 'false':
+        del settings['BACKGROUND_JOBS_ENABLED']
     fixed = {'DB_USERNAME': 'capital_owner', 'DB_NAME': 'capital_tracker',
              'POSTGRES_EXPECTED_MAJOR': '18', 'POSTGRES_VOLUME_TARGET': '/var/lib/postgresql',
              'FRONTEND_URL': 'https://capital.pavelars.ru', 'BACKEND_HOST_PORT': '3100',
