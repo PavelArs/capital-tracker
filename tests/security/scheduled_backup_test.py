@@ -93,7 +93,7 @@ exec '{shutil.which('mv')}' "$@"
         unit = (repository / 'deploy' / 'backup' / 'capital-tracker-backup.service').read_text()
         self.assertIn(f'Environment=RELEASE_ROOT={managed_root}\n', unit)
         self.assertIn(f'Environment=PATH={safe_path}\n', unit)
-        self.assertIn('After=snap.docker.dockerd.service', unit)
+        self.assertRegex(unit, r'(?m)^After=.*\bsnap\.docker\.dockerd\.service\b')
         readme = (repository / 'deploy' / 'backup' / 'README.md').read_text()
         self.assertIn(f'{managed_root}/.backup-key', readme)
         self.assertIn(f'{managed_root}/backups/scheduled-', readme)
