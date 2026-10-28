@@ -35,6 +35,14 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
    Loki data sources when asked. Routing the alerts (mail, Telegram) is done in your
    Alertmanager or Grafana contact points.
 
+## Backup age
+
+`CapitalTrackerBackupStale` fires when the last verified scheduled backup is more than 36 hours
+old, and `CapitalTrackerBackupMissing` when `ct_backup_last_success_timestamp_seconds` has been
+absent for two hours. The metric does not come from the backend: the daily backup timer writes it
+for node_exporter's textfile collector. `deploy/backup/README.md` has the install steps and the
+`--collector.textfile.directory` flag.
+
 ## Using it
 
 - Every API response carries `X-Request-Id`; paste it into the dashboard's **Request id** box to

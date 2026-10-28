@@ -26,8 +26,21 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
     ]);
   });
 
-  it('OBS-ASSET-2 only query metrics the backend exports', async () => {
-    const exported = new Set((await registry.getMetricsAsJSON()).map((metric) => metric.name));
+  it('OBS-ASSET-2 only query metrics the backend or the backup script exports', async () => {
+    // The scheduled backup writes its metrics for node_exporter's textfile collector.
+    const backupScript = readFileSync(
+      resolve(__dirname, '../../../scripts/scheduled-backup.sh'),
+      'utf8',
+    );
+    const textfile = backupScript.match(/^ct_[a-z_]+(?= )/gm) ?? [];
+    expect(textfile).toEqual([
+      'ct_backup_last_success_timestamp_seconds',
+      'ct_backup_last_size_bytes',
+    ]);
+    const exported = new Set([
+      ...(await registry.getMetricsAsJSON()).map((metric) => metric.name),
+      ...textfile,
+    ]);
     const used = new Set(
       files
         .flatMap((file) => read(file).match(/\bct_[a-z_]+/g) ?? [])
