@@ -401,11 +401,12 @@ function etherscan(response, url) {
   const from = Number(query.get('startblock'));
   const to = Number(query.get('endblock'));
   const offset = Number(query.get('offset'));
+  const page = Number(query.get('page'));
   if (
     query.get('module') !== 'account' ||
     !list ||
     !/^0x[0-9a-f]{40}$/.test(address) ||
-    query.get('page') !== '1' ||
+    !Number.isSafeInteger(page) || page < 1 ||
     query.get('sort') !== 'asc' ||
     !Number.isSafeInteger(from) ||
     !Number.isSafeInteger(to) ||
@@ -434,7 +435,7 @@ function etherscan(response, url) {
         Number(item.blockNumber) <= to,
     )
     .sort((left, right) => Number(left.blockNumber) - Number(right.blockNumber))
-    .slice(0, offset);
+    .slice((page - 1) * offset, page * offset);
   // Blockscout words an empty range after what is missing; Etherscan always says "No transactions found".
   const empty = scout
     ? {
@@ -968,11 +969,11 @@ function respond(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-async function readJson(request) {
+async function readJson(request, limit = 16384) {
   let body = '';
   for await (const chunk of request) {
     body += chunk;
-    if (Buffer.byteLength(body) > 16384) throw new Error('Fixture body is too large');
+    if (Buffer.byteLength(body) > limit) throw new Error('Fixture body is too large');
   }
   return JSON.parse(body || '{}');
 }
@@ -1627,11 +1628,11 @@ const server = http.createServer(async (request, response) => {
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/ethereum') {
-      const data = await readJson(request);
+      const data = await readJson(request, 2 * 1024 * 1024);
       const items = (value) =>
         value === undefined ||
         (Array.isArray(value) &&
-          value.length <= 100 &&
+          value.length <= 2000 &&
           value.every(
             (item) =>
               item &&
@@ -1702,7 +1703,7 @@ const server = http.createServer(async (request, response) => {
     }
     // Transactions merge by signature, so a long history is posted in several calls.
     if (request.method === 'POST' && request.url === '/__control/solana') {
-      const data = await readJson(request);
+      const data = await readJson(request, 128 * 1024);
       const base58 = (value, min, max) =>
         typeof value === 'string' &&
         new RegExp(`^[1-9A-HJ-NP-Za-km-z]{${min},${max}}$`).test(value);

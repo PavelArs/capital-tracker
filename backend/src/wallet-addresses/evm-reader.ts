@@ -14,6 +14,7 @@ import type {
 export const FALLBACK_FOR_MS = 6 * 60 * 60_000;
 
 type Answer = { ok: true } | Failed;
+export type EvmSource = 'primary' | 'fallback';
 
 /**
  * BLOCKSCOUT: reads one chain's history from Etherscan and, when Etherscan's free plan does not
@@ -58,6 +59,35 @@ export class EvmReader {
 
   tokens(address: string, from: number, to: number): Promise<ListResult<TokenTransfer>> {
     return this.read((client) => client.tokens(address, from, to));
+  }
+
+  get fallbackAvailable(): boolean {
+    return this.fallback !== null;
+  }
+
+  get historySource(): EvmSource {
+    return this.fallback !== null &&
+      this.fallbackSince !== null &&
+      this.now() - this.fallbackSince < FALLBACK_FOR_MS
+      ? 'fallback'
+      : 'primary';
+  }
+
+  /** An unfinished block keeps one provider, even across the fallback expiry. */
+  async page(
+    source: EvmSource,
+    kind: 'normal' | 'internal' | 'tokens',
+    address: string,
+    block: number,
+    page: number,
+  ) {
+    const client = source === 'primary' ? this.primary : this.fallback;
+    const answer =
+      client === null
+        ? { ok: false as const, reason: 'unavailable' as const }
+        : await client[kind](address, block, block, page);
+    this.said = answer.ok ? null : (answer.detail ?? null);
+    return answer;
   }
 
   private async read<T extends Answer>(ask: (client: EtherscanClient) => Promise<T>): Promise<T> {

@@ -22,6 +22,7 @@ import {
   parseInternal,
   parseNormal,
 } from './etherscan-client';
+import { readEvmBlock, type EvmScan as ScanRow, sameEvmScan } from './evm-block-progress';
 import { type EvmChain, type EvmNetwork } from './evm-chains';
 import { EvmReader } from './evm-reader';
 
@@ -32,18 +33,7 @@ export const CONFIRMATIONS = 64;
 export const MAX_RANGES_PER_SYNC = 10;
 const SYNC_TIME_BUDGET_MS = 25_000;
 
-interface ScanRow {
-  id: string;
-  ownerId: string;
-  address: string;
-  scannedBlock: number | null;
-  /** TOKEN-BACKFILL: the last block of the history stored before every token was read. */
-  tokenBackfillTo: number | null;
-  /** TOKEN-BACKFILL: how far that history has been read again for the other tokens. */
-  tokenBackfillAt: number | null;
-}
-
-const scanColumns = `id, "ownerId", address, "scannedBlock", "tokenBackfillTo", "tokenBackfillAt"`;
+const scanColumns = `id, "ownerId", address, "scannedBlock", "tokenBackfillTo", "tokenBackfillAt", "evmSync"`;
 
 type Pools = { ok: true; pools: Set<string> } | { ok: false; reason: StepFailure };
 
@@ -100,6 +90,8 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     const tip = await this.etherscan.blockNumber();
     if (!tip.ok) return finish('provider_error', tip.reason);
     const target = tip.block - CONFIRMATIONS;
+    if (state.evmSync && state.evmSync.block > target)
+      return finish('provider_error', 'invalid_response');
     const backfill = this.stake ? await this.backfillStake(state, target) : null;
     if (backfill) return finish('provider_error', backfill);
     const started = Date.now();
@@ -124,15 +116,30 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
       if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS) {
         return finish('partial', null);
       }
-      const normal = await this.etherscan.normal(state.address, from, target);
+      let normal = state.evmSync
+        ? { ok: true as const, items: [] as ReturnType<typeof parseNormal>[] }
+        : await this.etherscan.normal(state.address, from, target);
       if (!normal.ok) return finish('provider_error', normal.reason);
-      const internal = await this.internalUpTo(state.address, from, target, started);
+      let internal = state.evmSync
+        ? { ok: true as const, items: [] as InternalTransfer[], end: target }
+        : await this.internalUpTo(state.address, from, target, started);
       if (!internal.ok) return finish('provider_error', internal.reason);
-      const read = await this.etherscan.tokens(state.address, from, target);
+      let read = state.evmSync
+        ? { ok: true as const, items: [] as Parameters<typeof ethereumLegs>[3] }
+        : await this.etherscan.tokens(state.address, from, target);
       if (!read.ok) return finish('provider_error', read.reason);
-      const end = rangeEnd(from, internal.end, [normal.items, internal.items, read.items]);
-      if (end === null) return finish('provider_error', 'invalid_response');
-      const within = <T extends { blockNumber: number }>(items: T[]) =>
+      let end = rangeEnd(from, internal.end, [normal.items, internal.items, read.items]);
+      if (end === null || state.evmSync) {
+        const staged = await readEvmBlock(this.source, this.etherscan, state, 'history', started);
+        if (!staged.ok) return finish('provider_error', staged.reason);
+        if (!staged.complete) return finish('partial', null);
+        state = staged.state;
+        end = staged.end;
+        normal = { ok: true, items: staged.normal };
+        internal = { ok: true, items: staged.internal, end };
+        read = { ok: true, items: staged.tokens };
+      }
+      const within = <T extends { blockNumber: number }>(items: readonly T[]) =>
         items.filter((item) => item.blockNumber >= from && item.blockNumber <= end);
       const transfers = within(read.items);
       const legs = ethereumLegs(
@@ -201,7 +208,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
   private async scan(owner: string, id: string): Promise<ScanRow> {
     const [row]: ScanRow[] = await this.source.query(
       `SELECT ${scanColumns}
-        FROM wallet_addresses WHERE "ownerId" = $1 AND id = $2 AND network = $3`,
+        FROM wallet_addresses WHERE "ownerId" = $1 AND id = $2 AND network = $3 AND "removedAt" IS NULL`,
       [owner, id, this.network],
     );
     if (!row) throw new NotFoundException();
@@ -220,22 +227,22 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     return this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
         `SELECT ${scanColumns} FROM wallet_addresses
-          WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
+          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
         [expected.ownerId, expected.id],
       );
-      if (!current || current.scannedBlock !== expected.scannedBlock) {
+      if (!sameEvmScan(current, expected)) {
         throw new ConflictException('Another sync advanced this address');
       }
       await this.insertStake(manager, current, moves);
       const inserted = await this.insertLegs(manager, current, legs, facts);
       // "completedAt" marks a history read up to a final block: the balance can be shown.
       await manager.query(
-        `UPDATE wallet_addresses SET "scannedBlock" = $3,
+        `UPDATE wallet_addresses SET "scannedBlock" = $3, "evmSync" = NULL,
           "completedAt" = CASE WHEN $4 THEN clock_timestamp() ELSE "completedAt" END
           WHERE "ownerId" = $1 AND id = $2`,
         [current.ownerId, current.id, end, caughtUp],
       );
-      return { inserted, state: { ...current, scannedBlock: end } };
+      return { inserted, state: { ...current, scannedBlock: end, evmSync: null } };
     });
   }
 
@@ -261,27 +268,33 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
         if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS)
           return result();
         ranges++;
-        const read = await this.etherscan.tokens(state.address, from, to);
+        const read = state.evmSync
+          ? { ok: true as const, items: [] as Parameters<typeof ethereumLegs>[3] }
+          : await this.etherscan.tokens(state.address, from, to);
         if (!read.ok) return result(read.reason);
         const last = rangeEnd(from, to, [read.items]);
-        if (last === null) return result('invalid_response');
-        end = last;
-        transfers = read.items.filter(
-          (item) => item.blockNumber >= from && item.blockNumber <= end,
-        );
+        if (last === null || state.evmSync) {
+          const staged = await readEvmBlock(this.source, this.etherscan, state, 'tokens', started);
+          if (!staged.ok) return result(staged.reason);
+          state = staged.state;
+          if (!staged.complete) return result();
+          end = staged.end;
+          transfers = staged.tokens;
+        } else {
+          end = last;
+          transfers = read.items.filter(
+            (item) => item.blockNumber >= from && item.blockNumber <= end,
+          );
+        }
       }
       const expected = state;
       const committed = await this.source.transaction('READ COMMITTED', async (manager) => {
         const [current]: ScanRow[] = await manager.query(
           `SELECT ${scanColumns} FROM wallet_addresses
-            WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
+            WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
           [expected.ownerId, expected.id],
         );
-        if (
-          !current ||
-          current.tokenBackfillTo !== expected.tokenBackfillTo ||
-          current.tokenBackfillAt !== expected.tokenBackfillAt
-        )
+        if (!sameEvmScan(current, expected))
           throw new ConflictException('Another sync advanced this address');
         const legs = ethereumLegs(current.address, [], [], transfers, this.network);
         const inserted = await this.insertLegs(
@@ -292,7 +305,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
         );
         const done = end === to;
         await manager.query(
-          `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4
+          `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4, "evmSync" = NULL
             WHERE "ownerId" = $1 AND id = $2`,
           [current.ownerId, current.id, done ? null : to, done ? null : end],
         );
@@ -302,6 +315,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
             ...current,
             tokenBackfillTo: done ? null : to,
             tokenBackfillAt: done ? null : end,
+            evmSync: null,
           },
         };
       });
@@ -337,33 +351,37 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
 
   private async insert(manager: EntityManager, address: ScanRow, legs: EthereumLeg[]) {
     if (legs.length === 0) return 0;
-    const values: unknown[] = [];
-    const rows = legs.map((leg) => {
-      const base = values.length;
-      values.push(
-        address.ownerId,
-        address.id,
-        leg.txid,
-        leg.blockHeight,
-        leg.blockHash,
-        leg.blockTime,
-        leg.receivedUnits.toString(),
-        leg.sentUnits.toString(),
-        leg.feeUnits.toString(),
-        leg.direction,
-        JSON.stringify(leg.raw),
-        leg.asset,
-      );
-      const slot = (offset: number) => `$${base + offset}`;
-      return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb,${slot(12)})`;
-    });
-    const inserted: { txid: string }[] = await manager.query(
-      `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
+    let count = 0;
+    for (let start = 0; start < legs.length; start += 1000) {
+      const values: unknown[] = [];
+      const rows = legs.slice(start, start + 1000).map((leg) => {
+        const base = values.length;
+        values.push(
+          address.ownerId,
+          address.id,
+          leg.txid,
+          leg.blockHeight,
+          leg.blockHash,
+          leg.blockTime,
+          leg.receivedUnits.toString(),
+          leg.sentUnits.toString(),
+          leg.feeUnits.toString(),
+          leg.direction,
+          JSON.stringify(leg.raw),
+          leg.asset,
+        );
+        const slot = (offset: number) => `$${base + offset}`;
+        return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb,${slot(12)})`;
+      });
+      const inserted: { txid: string }[] = await manager.query(
+        `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
         "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
         VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-      values,
-    );
-    return inserted.length;
+        values,
+      );
+      count += inserted.length;
+    }
+    return count;
   }
 
   /**
@@ -459,7 +477,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     await this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
         `SELECT ${scanColumns} FROM wallet_addresses
-          WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
+          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
         [state.ownerId, state.id],
       );
       if (!current) throw new NotFoundException();
@@ -527,7 +545,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     await this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
         `SELECT ${scanColumns} FROM wallet_addresses
-          WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
+          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
         [state.ownerId, state.id],
       );
       if (!current) throw new NotFoundException();

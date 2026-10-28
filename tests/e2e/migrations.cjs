@@ -194,6 +194,7 @@ const migrationNames = [
   'LinkBrokerAssets1797900000000',
   'AddShareSplits1798000000000',
   'AddBrokerPrices1798100000000',
+  'AddWalletSyncProgress1798200000000',
 ];
 
 function connection(database) {
@@ -367,7 +368,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-four migrations',
+      'Exactly seventy-five migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1429,6 +1430,13 @@ function mfaStreakAddition(kind, row) {
 // AddSessionDevice1792800000000 adds one nullable browser name to sessions, no constraint.
 function sessionDeviceAddition(kind, row) {
   return kind === 'columns' && row.table_name === 'auth_sessions' && row.column_name === 'device';
+}
+// AddWalletSyncProgress1798200000000 adds nullable provider staging only.
+function walletSyncAddition(kind, row) {
+  if (kind === 'columns')
+    return row.table_name === 'wallet_addresses' && ['evmSync', 'solanaSync'].includes(row.column_name);
+  return kind === 'constraints' && row.relname === 'wallet_addresses' &&
+    ['wallet_addresses_evmSync_check', 'wallet_addresses_solanaSync_check'].includes(row.conname);
 }
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
@@ -2545,6 +2553,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1797900000000',
           '1798000000000',
           '1798100000000',
+          '1798200000000',
         ][index - 11],
       );
     }
@@ -2568,6 +2577,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           !mfaStreakAddition(kind, row) &&
           !sessionDeviceAddition(kind, row) &&
           !walletKindAddition(kind, row) &&
+          !walletSyncAddition(kind, row) &&
           !manualPriceCurrencyAddition(kind, row) &&
           !depositKindAddition(kind, row) &&
           !capitalReturnAddition(kind, row) &&
