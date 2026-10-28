@@ -171,6 +171,12 @@ class InfrastructureProof(unittest.TestCase):
         checksum = hashlib.sha256(backup.read_bytes()).hexdigest()
         (backup.parent / (backup.name + '.sha256')).write_text(checksum + '  ' + str(backup) + '\n')
         self.assertEqual(resume.runtime_residue(self.root, pins, os.getuid()), '172.1.2.3')
+        runtime = self.root / '.env.release'
+        recorded = runtime.read_text()
+        runtime.write_text(recorded.replace('["172.1.2.3"]', '["172.1.2.03"]'))
+        with self.assertRaisesRegex(resume.Refusal, 'invalid recorded proxy peer'):
+            resume.runtime_residue(self.root, pins, os.getuid())
+        runtime.write_text(recorded)
         for path in (self.root / '.env.images', self.root / 'unrelated'):
             path.write_text('unexpected')
             with self.subTest(path=path), self.assertRaises(resume.Refusal):

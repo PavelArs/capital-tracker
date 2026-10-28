@@ -161,10 +161,15 @@ def runtime_residue(root, pins, owner_uid=0):
     except (KeyError, ValueError) as error:
         raise Refusal('missing recorded proxy peer') from error
     if (not isinstance(peers, list) or len(peers) != 1 or not isinstance(peers[0], str)
-            or not re.fullmatch(r'(?:::ffff:)?(?:\d{1,3}\.){3}\d{1,3}', peers[0])
-            or any(int(part) > 255 for part in peers[0].removeprefix('::ffff:').split('.'))):
+            or not re.fullmatch(r'(?:::ffff:)?(?:\d{1,3}\.){3}\d{1,3}', peers[0])):
         raise Refusal('invalid recorded proxy peer')
-    return peers[0]
+    prefix = '::ffff:' if peers[0].startswith('::ffff:') else ''
+    octets = [int(part) for part in peers[0].removeprefix('::ffff:').split('.')]
+    peer = prefix + '.'.join(str(octet) for octet in octets)
+    if any(octet > 255 for octet in octets) or peer != peers[0]:
+        raise Refusal('invalid recorded proxy peer')
+    # Rebuilt from the checked octets: the snapshot records an address, never the raw runtime file.
+    return peer
 
 
 def docker(*args):
