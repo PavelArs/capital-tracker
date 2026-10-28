@@ -8,15 +8,15 @@ first-time MFA setup route; a signed-in owner can set the authenticator up again
 Settings → Security after a fresh factor (see [Security settings](#security-settings)). The MFA implementation
 passed local release-image PostgreSQL and55 HTTPS Chromium checks. Consult the
 archived `enforce-owner-second-factor` verification record for exact execution
-evidence and limitations. Production rollout has not occurred.
+evidence and limitations.
 
-Production rollout remains disabled. The application Compose configuration requires
+Production is live and releases through the approved-release flow in
+[manual-mvp-release.md](manual-mvp-release.md). The application Compose configuration requires
 an explicit host `MFA_KEY_FILE` and `MFA_KEY_ID`, binds that existing file read-only
 at `/run/secrets/ct-mfa-key`, and passes the container path to the backend. Its bind
 uses `create_host_path: false`; it cannot create a missing key source. The operator
 must still arrange the private key, CLI access, exact HTTPS origin and explicit
-migration step as part of a separately reviewed release. This wiring does not mean
-that the production stack or full release pipeline has been run or verified.
+migration step as part of a separately reviewed release.
 The three authentication handlers use shared PostgreSQL request admission,
 verified through two actual release-image replicas and process restarts.
 Recent-MFA security settings, the full ASVS Level 2 matrix and security scans

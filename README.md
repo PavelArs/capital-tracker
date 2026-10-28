@@ -2,7 +2,8 @@
 
 > Brownfield refactor in progress. Read [the audit](docs/brownfield-audit.md) before
 > starting against existing data. Explicit migration preflight refuses unsafe legacy upgrades.
-> Production deployment is disabled by default and is not release-ready.
+> Production is live: a green CI run on `main` deploys after the owner approves it in GitHub
+> ([release guide](docs/manual-mvp-release.md)).
 > The target contract is [the refactor brief](capital-tracker-openspec-prompt.md).
 > The owner's current product target (2026-10-04) is the [business requirements](docs/business-requirements.md)
 > and the derived [product requirements and change order](docs/product-requirements.md).
@@ -109,8 +110,8 @@ origin is `https://127.0.0.1:8443`; `localhost` is a different origin.
 # Build and verify the disposable stack with release images, HTTPS and PostgreSQL
 pnpm test:e2e
 
-# Production rollout remains disabled pending release hardening.
-# Check the active change's verification record for actual results.
+# Releases: a green CI run on main deploys after the owner approves it in GitHub
+# (docs/manual-mvp-release.md). Check the verification record for actual results.
 ```
 
 The legacy `docker-compose.override.example.yml` is not compatible with the current
@@ -208,10 +209,8 @@ The app is designed to run on a personal server with:
    nginx -t && systemctl reload nginx
    ```
 
-4. Production rollout is disabled by default. Do not enable `PRODUCTION_ROLLOUT_ENABLED`
-   until the release-hardening change and isolated recovery tests are complete and
-   the owner explicitly authorizes rollout. The retained manual workflow is legacy
-   containment, not an approved release procedure.
+4. Releases run through `.github/workflows/cd.yml`: a green CI run on `main` deploys
+   after the owner approves it in GitHub ([release guide](docs/manual-mvp-release.md)).
 
 ### CI/CD Pipeline
 
