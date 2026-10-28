@@ -18,6 +18,7 @@ import { portfolioValuationApi } from './portfolio-valuation.api';
 import {
   forgetReads,
   generationNow,
+  outdateReads,
   recall,
   refreshFailed,
   remember,
@@ -46,7 +47,16 @@ function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => 
     return `${name}:${JSON.stringify(asked)}`;
   };
   // Answers of prefetch() waiting for the page that was about to open: when, by key.
-  const prefetched = new Map<string, number>();
+  const prefetched = new Map<string, { at: number; generation: number }>();
+  // A prefetched answer is handed over only while recent and asked since the last change or sync.
+  const warmFor = (id: string): boolean => {
+    const warm = prefetched.get(id);
+    return (
+      warm !== undefined &&
+      warm.generation === generationNow() &&
+      Date.now() - warm.at < PREFETCH_USE_MS
+    );
+  };
   // Prefetches still on their way that no page has joined yet, each with its own token so an
   // older one settling late cannot take the place of a newer one.
   const unclaimed = new Map<string, object>();
@@ -56,10 +66,9 @@ function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => 
       // A page that joins a prefetch on its way has had its answer.
       unclaimed.delete(id);
       // A page opened right after a prefetch uses its answer once; later loads ask again.
-      const warmAt = prefetched.get(id);
-      if (warmAt !== undefined) {
+      if (prefetched.has(id)) {
+        const warm = warmFor(id) ? recall<T>(id) : undefined;
         prefetched.delete(id);
-        const warm = Date.now() - warmAt < PREFETCH_USE_MS ? recall<T>(id) : undefined;
         if (warm !== undefined && !inFlight.has(id)) return Promise.resolve(warm);
       }
     }
@@ -98,8 +107,7 @@ function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => 
       const id = key(args);
       // An answer already waiting for a page is not asked for a second time (the same read is
       // behind two menu links).
-      const warmAt = prefetched.get(id);
-      if (warmAt !== undefined && Date.now() - warmAt < PREFETCH_USE_MS) {
+      if (warmFor(id)) {
         const warm = recall<T>(id);
         if (warm !== undefined) return Promise.resolve(warm);
       }
@@ -109,10 +117,11 @@ function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => 
       if (joined) return promise;
       const mine = {};
       unclaimed.set(id, mine);
+      const startedIn = generationNow();
       const settle = (answered: boolean) => {
         if (unclaimed.get(id) !== mine) return;
         unclaimed.delete(id);
-        if (answered) prefetched.set(id, Date.now());
+        if (answered) prefetched.set(id, { at: Date.now(), generation: startedIn });
       };
       promise.then(
         () => settle(true),
@@ -140,12 +149,12 @@ let lastSuccesses: string | null = null;
 
 /**
  * A background sync that finished since the last look brought new data: whatever was kept
- * before it is old, so the next page asks the server instead of reusing it.
+ * before it still paints the pages, but the next page asks the server instead of reusing it.
  */
 async function readSources(): Promise<SyncSource[]> {
   const sources = await syncStatusApi.get();
   const successes = JSON.stringify(sources.map((source) => [source.key, source.lastSuccessAt]));
-  if (lastSuccesses !== null && lastSuccesses !== successes) forgetReads();
+  if (lastSuccesses !== null && lastSuccesses !== successes) outdateReads();
   lastSuccesses = successes;
   return sources;
 }

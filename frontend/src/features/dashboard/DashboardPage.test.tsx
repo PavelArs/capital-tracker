@@ -1017,6 +1017,21 @@ describe('show-dashboard-top-assets', () => {
     expect(get).toHaveBeenCalledTimes(1);
     expect(settings).toHaveBeenCalledTimes(1);
   });
+
+  it('CACHE-ONCE asks for the valuation once when the dashboard opens in a switched currency', async () => {
+    render(
+      <MemoryRouter initialEntries={['/dashboard?currency=EUR']}>
+        <AttentionProvider>
+          <DashboardPage />
+        </AttentionProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('region', { name: 'Top assets' });
+    await waitFor(() => expect(sources).toHaveBeenCalled());
+    // The bell reads the same valuation as the page, in the page's currency.
+    expect(valued).toHaveBeenCalledTimes(1);
+    expect(valued).toHaveBeenCalledWith('EUR');
+  });
 });
 
 // VIEW-ONE: the profit to date in one reading at a time, under one switch.

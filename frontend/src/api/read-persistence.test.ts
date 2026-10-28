@@ -238,8 +238,10 @@ describe('a reload paints what the browser kept and still asks the server again'
   });
 
   async function reloaded(rows: Omit<StoredRead, 'owner'>[]) {
-    setReadStore(memoryStore(rows.map((row) => ({ ...row, owner: OWNER }))).store);
+    const kept = memoryStore(rows.map((row) => ({ ...row, owner: OWNER })));
+    setReadStore(kept.store);
     await hydrateReads(OWNER);
+    return kept.rows;
   }
 
   it('RELOAD-REFRESH paints the kept answer and still asks the server, so another session’s change shows', async () => {
@@ -346,7 +348,7 @@ describe('a reload paints what the browser kept and still asks the server again'
     expect(cachedReads.portfolio.failed('EUR')).toBe(false);
   });
 
-  it('drops what was kept when a background sync has finished since', async () => {
+  it('keeps showing what was kept when a background sync has finished since, and asks again', async () => {
     const source = (lastSuccessAt: string) => ({
       key: 'wallet:1',
       kind: 'wallet' as const,
@@ -361,14 +363,19 @@ describe('a reload paints what the browser kept and still asks the server again'
       .mockResolvedValueOnce([source('2026-10-11T08:00:00.000Z')])
       .mockResolvedValueOnce([source('2026-10-11T08:00:00.000Z')])
       .mockResolvedValueOnce([source('2026-10-11T09:00:00.000Z')]);
-    await reloaded([{ key: 'portfolio:[]', at: Date.now(), value: portfolio }]);
+    const rows = await reloaded([{ key: 'portfolio:[]', at: Date.now(), value: portfolio }]);
     await cachedReads.sources.load();
     // Nothing new: the kept answer stays.
     await cachedReads.sources.load();
     expect(recall('portfolio:[]')).toBe(portfolio);
-    // A sync landed at 09:00: nothing kept before it is current.
+    // A sync landed at 09:00: the kept answer still paints the page (in memory and in the
+    // browser) while the page asks the server again.
+    const before = generationNow();
     await cachedReads.sources.load();
-    expect(recall('portfolio:[]')).toBeUndefined();
+    expect(recall('portfolio:[]')).toBe(portfolio);
+    expect(generationNow()).not.toBe(before);
+    await settle();
+    expect(rows.get('portfolio:[]')?.value).toEqual(portfolio);
     expect(status).toHaveBeenCalledTimes(3);
   });
 });
