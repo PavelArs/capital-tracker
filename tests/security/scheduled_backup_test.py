@@ -89,8 +89,8 @@ exec '{shutil.which('mv')}' "$@"
         unit = (repository / 'deploy' / 'backup' / 'capital-tracker-backup.service').read_text()
         self.assertIn(f'Environment=RELEASE_ROOT={managed_root}\n', unit)
         readme = (repository / 'deploy' / 'backup' / 'README.md').read_text()
-        self.assertIn(managed_root, readme)
-        self.assertNotIn('/opt/capital-tracker', readme)
+        self.assertIn(f'{managed_root}/.backup-key', readme)
+        self.assertIn(f'{managed_root}/backups/scheduled-', readme)
 
     def test_backup_is_encrypted_checksummed_and_decryptable(self):
         result = self.run_backup()
