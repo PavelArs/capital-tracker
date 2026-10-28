@@ -1,12 +1,15 @@
 [Unit]
 Description=Capital Tracker scheduled encrypted PostgreSQL backup
-Wants=docker.service
-After=docker.service
+# The Snap host runs snap.docker.dockerd.service; a package install runs docker.service.
+Wants=docker.service snap.docker.dockerd.service
+After=docker.service snap.docker.dockerd.service
 
 [Service]
 Type=oneshot
 User=root
-# Paths and retention; see deploy/backup/README.md.
+# Paths and retention; see deploy/backup/README.md. PATH matches the bootstrap and the
+# dispatcher: systemd's default search path has no /snap/docker/current/bin.
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/docker/current/bin
 Environment=RELEASE_ROOT=/var/snap/docker/common/capital-tracker
 Environment=BACKUP_RETENTION_DAYS=30
 Environment=BACKUP_KEEP_MIN=7

@@ -86,8 +86,14 @@ exec '{shutil.which('mv')}' "$@"
         managed_root = next(
             line.split('=', 1)[1] for line in bootstrap.splitlines() if line.startswith('root=')
         )
+        safe_path = next(
+            line.split('=', 1)[1] for line in bootstrap.splitlines() if line.startswith('PATH=')
+        )
+        self.assertIn('/snap/docker/current/bin', safe_path)
         unit = (repository / 'deploy' / 'backup' / 'capital-tracker-backup.service').read_text()
         self.assertIn(f'Environment=RELEASE_ROOT={managed_root}\n', unit)
+        self.assertIn(f'Environment=PATH={safe_path}\n', unit)
+        self.assertIn('After=snap.docker.dockerd.service', unit)
         readme = (repository / 'deploy' / 'backup' / 'README.md').read_text()
         self.assertIn(f'{managed_root}/.backup-key', readme)
         self.assertIn(f'{managed_root}/backups/scheduled-', readme)
