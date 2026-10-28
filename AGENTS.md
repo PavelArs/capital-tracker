@@ -50,7 +50,6 @@ pnpm verify:baseline                          # lint + build + test, both packag
 
 - Before continuing, read `git status` and the Git diff, and preserve unrelated edits.
 - The owner decisions in §1 of `docs/product-requirements.md` override the brief (`capital-tracker-openspec-prompt.md`) where they differ; for example, D6 makes the UI English. The brief in turn overrides older MVP exclusions and stale architecture or status descriptions in other docs (for example `README.md` and `docs/post-mvp-backlog.md`). Read at least the brief sections your change touches.
-- Some docs still say production is disabled, not deployed or not release-ready (for example `README.md`, `docs/owner-authentication.md`, `docs/testing-and-migrations.md`). Those lines are stale: `.github/workflows/cd.yml` and the "Approved release" part of `docs/manual-mvp-release.md` are current.
 - `openspec/` and `CONTINUITY.md` are local-only. If they exist, read the active change and the ledger (goal, constraints, decisions, done/now/next, open questions, evidence) first, and never write secrets into them.
 - With `openspec/`, take each slice through propose, apply, independent review, verify and archive. Record verification in the change, and archive only verified work: specs describe implemented behaviour.
 - If `openspec/` and `CONTINUITY.md` are absent (fresh clone or cloud session), don't create them. Work from the task, `git log` and the docs linked here, and put your plan and evidence in the PR. Never rely on chat memory alone.

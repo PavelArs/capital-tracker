@@ -329,10 +329,10 @@ restoration test and reviewed data-preserving upgrade plan is required for those
 schemas. No existing owner database was accessed. There is no automatic migration
 revert command: image rollback cannot restore deleted data or reverse schema changes.
 
-The current manual CD workflow remains disabled by default and is not a supported
-production release procedure. Explicit migration deployment, artifact promotion,
-secrets, backups, rollback and server configuration remain in the release-hardening
-sequence documented in brownfield-audit.md.
+Releases run through `.github/workflows/cd.yml`: a green CI run on `main` deploys after
+the owner approves it in GitHub. Migration deployment, artifact promotion, secrets,
+backups, rollback and server configuration are documented in
+[manual-mvp-release.md](manual-mvp-release.md).
 
 Owner authentication acceptance invokes the production CLI for bootstrap and recovery,
 checks concurrent bootstrap and previous-schema preservation, and exercises real HTTPS
@@ -368,8 +368,7 @@ The application Compose file requires an explicit host `MFA_KEY_FILE` and non-se
 `create_host_path: false`, and passes that container path to the backend. The operator
 must provide a protected parent directory and a mode 0400/0600 raw 32-byte file
 readable by UID 1000. Direct CLI processes use their own absolute key path; a separate
-CLI container needs the corresponding mount. This configuration wiring has not
-operated production and does not complete or verify the disabled release pipeline.
+CLI container needs the corresponding mount.
 See [owner authentication](owner-authentication.md) for key permissions and mounting,
 private enrollment/recovery outputs, uncertain-commit handling, pending/full cookies,
 exact-origin requirements, replay limits and session expiry. No Docker command in
