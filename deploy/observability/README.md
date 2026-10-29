@@ -45,6 +45,11 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
 - A wallet whose network source is down for good (for example Zcash while no source is
   configured) keeps `CapitalTrackerWalletSyncFailing` firing; silence it in Alertmanager or
   change its `expr` to `ct_wallets{state="failed", network!="zcash"}`.
+- `ct_password_reset_mail_total{outcome}` counts password reset emails: `sent`, `retried` (a
+  transient SMTP refusal, retried once after 5 seconds), `failed` and `unconfigured` (no SMTP
+  credentials). `CapitalTrackerResetMailFailed` fires on any `failed` send in the last hour; if
+  the owner still gets no email, recover the password with the CLI `owner:recover`. The reset
+  page and endpoint never show whether an email went out.
 
 ## Privacy
 

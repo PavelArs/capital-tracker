@@ -1,5 +1,22 @@
 import { Logger } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
+import { recordResetMail } from '../observability/metrics';
+
+const RETRY_DELAY_MS = 5_000;
+const TRANSIENT_REPLIES = new Set([421, 450, 451, 452]);
+const TRANSIENT_CODES = new Set(['ECONNECTION', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED']);
+
+interface SmtpError {
+  code?: unknown;
+  responseCode?: unknown;
+}
+
+/** A refusal worth one more try: a dropped connection or a 4xx "try again later" reply. */
+function transient({ code, responseCode }: SmtpError): boolean {
+  if (code === 'EAUTH') return false;
+  if (typeof responseCode === 'number') return TRANSIENT_REPLIES.has(responseCode);
+  return typeof code === 'string' && TRANSIENT_CODES.has(code);
+}
 
 export interface ResetMailSettings {
   host: string;
@@ -49,7 +66,10 @@ export class PasswordResetMailer {
   private readonly transport: Transporter | null;
   private readonly from: string | null;
 
-  constructor(settings: ResetMailSettings) {
+  constructor(
+    settings: ResetMailSettings,
+    private readonly retryDelayMs = RETRY_DELAY_MS,
+  ) {
     this.from = settings.from ?? settings.user;
     this.transport =
       settings.user && settings.password
@@ -70,21 +90,38 @@ export class PasswordResetMailer {
     return this.transport !== null;
   }
 
+  /**
+   * Sends once and, after a transient refusal, once more. Never throws: the outcome is
+   * visible only in logs and `ct_password_reset_mail_total`, never to the reset request.
+   */
   async sendPasswordReset(to: string, link: string): Promise<void> {
     if (!this.transport || !this.from) {
+      recordResetMail('unconfigured');
       this.logger.warn('Password reset email is not configured; set SMTP_USER and SMTP_PASSWORD');
       return;
     }
     const { subject, text } = resetMessage(link);
-    try {
-      await this.transport.sendMail({ from: this.from, to, subject, text, textEncoding: 'base64' });
-    } catch (error) {
-      const code = (error as { code?: unknown; responseCode?: unknown }) ?? {};
-      this.logger.warn(
-        `Password reset email was not sent (${String(code.code ?? 'error')}${
-          code.responseCode ? ` ${String(code.responseCode)}` : ''
-        })`,
-      );
+    const mail = { from: this.from, to, subject, text, textEncoding: 'base64' as const };
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.transport.sendMail(mail);
+        recordResetMail('sent');
+        return;
+      } catch (error) {
+        const code: SmtpError = (error as SmtpError) ?? {};
+        const retry = attempt === 1 && transient(code);
+        this.logger.warn(
+          `Password reset email was not sent (${String(code.code ?? 'error')}${
+            code.responseCode ? ` ${String(code.responseCode)}` : ''
+          })${retry ? '; retrying once' : ''}`,
+        );
+        if (!retry) {
+          recordResetMail('failed');
+          return;
+        }
+        recordResetMail('retried');
+        await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+      }
     }
   }
 }

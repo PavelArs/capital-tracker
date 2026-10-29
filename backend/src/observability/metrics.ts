@@ -33,6 +33,17 @@ const jobRuns = new Counter({
   registers: [registry],
 });
 
+/** Password-reset email attempts; the reset endpoint never reveals delivery (PR-AUTH-3). */
+const resetMail = new Counter({
+  name: 'ct_password_reset_mail_total',
+  help: 'Password reset email sends by outcome: sent, retried (a transient refusal), failed, unconfigured.',
+  labelNames: ['outcome'] as const,
+  registers: [registry],
+});
+
+export const recordResetMail = (outcome: 'sent' | 'retried' | 'failed' | 'unconfigured') =>
+  resetMail.inc({ outcome });
+
 const jobDuration = new Histogram({
   name: 'ct_job_duration_seconds',
   help: 'Background job tick duration.',
