@@ -7,7 +7,6 @@ import {
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
 import { Public } from '../auth/public.decorator';
-import { RedisHealthIndicator } from './redis-health.indicator';
 
 @ApiTags('health')
 @Controller('health')
@@ -16,7 +15,6 @@ export class HealthController {
     private health: HealthCheckService,
     private db: TypeOrmHealthIndicator,
     private memory: MemoryHealthIndicator,
-    private redis: RedisHealthIndicator,
   ) {}
 
   @Public()
@@ -30,7 +28,7 @@ export class HealthController {
   @ApiOperation({
     summary: 'Health check',
     description:
-      'Check the health status of the application and its dependencies (database, Redis, memory)',
+      'Check the health status of the application and its dependencies (database, memory)',
   })
   @ApiResponse({
     status: 200,
@@ -42,7 +40,6 @@ export class HealthController {
           type: 'object',
           properties: {
             database: { type: 'object', properties: { status: { type: 'string' } } },
-            redis: { type: 'object', properties: { status: { type: 'string' } } },
             memory_heap: { type: 'object', properties: { status: { type: 'string' } } },
           },
         },
@@ -58,7 +55,6 @@ export class HealthController {
   check() {
     return this.health.check([
       () => this.db.pingCheck('database'),
-      () => this.redis.isHealthy('redis'),
       () => this.memory.checkHeap('memory_heap', 300 * 1024 * 1024), // 300MB
     ]);
   }

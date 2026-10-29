@@ -8,7 +8,7 @@ function exactKeys(value, keys) {
     && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
 }
 function validateInfrastructurePins(pins) {
-  if (!exactKeys(pins, ['postgres', 'redis', 'resumeOrigin'])) throw new Error('Invalid infrastructure pins');
+  if (!exactKeys(pins, ['postgres', 'resumeOrigin'])) throw new Error('Invalid infrastructure pins');
   const postgres = pins.postgres;
   if (!exactKeys(postgres, ['tag', 'dockerfile', 'dockerfileSha256', 'baseRegistryDigest', 'registryDigest', 'originRevision'])
     || postgres.tag !== 'capital-tracker-postgres:acceptance'
@@ -19,9 +19,6 @@ function validateInfrastructurePins(pins) {
     || postgres.originRevision !== ORIGINAL_COMMIT) {
     throw new Error('Invalid derived PostgreSQL source pin');
   }
-  const redis = pins.redis;
-  if (!exactKeys(redis, ['tag', 'registryDigest']) || redis.tag !== 'redis:8.10.2-alpine3.23'
-    || !/^redis@sha256:[a-f0-9]{64}$/.test(redis.registryDigest)) throw new Error('Invalid Redis pin');
   if (!exactKeys(pins.resumeOrigin, ['commit', 'ciRunId', 'usedReceiptSha256'])
     || pins.resumeOrigin.commit !== ORIGINAL_COMMIT
     || pins.resumeOrigin.ciRunId !== ORIGINAL_CI_RUN
@@ -41,8 +38,8 @@ function validateRelease(value, expectedCommit, expectedRunId, infrastructurePin
       || image.tag !== `capital-tracker-${name}:acceptance`) throw new Error('Invalid release image');
   }
   validateInfrastructurePins(infrastructurePins);
-  if (!exactKeys(value.infrastructure, ['postgres', 'redis'])) throw new Error('Invalid infrastructure images');
-  for (const name of ['postgres', 'redis']) {
+  if (!exactKeys(value.infrastructure, ['postgres'])) throw new Error('Invalid infrastructure images');
+  for (const name of ['postgres']) {
     const pin = infrastructurePins[name];
     const image = value.infrastructure[name];
     if (!exactKeys(image, ['imageId', ...Object.keys(pin)])

@@ -66,7 +66,7 @@ changes ship.
 
 ## Tech Stack
 
-- **Backend:** NestJS, TypeScript, TypeORM, PostgreSQL, Redis
+- **Backend:** NestJS, TypeScript, TypeORM, PostgreSQL
 - **Frontend:** React, Vite, TypeScript, Chart.js
 - **Tooling:** pnpm, Biome (lint + format), Jest/Vitest
 - **Infrastructure:** Docker Compose, GitHub Actions CI/CD, ghcr.io, nginx
@@ -79,7 +79,7 @@ changes ship.
 - **Financial Metrics** - Net worth, runway, FL-ratio (passive income coverage), category distributions
 - **Dashboard** - Charts, history (30 days), dynamic currency selector
 - **Auth** - CLI-only owner bootstrap/recovery and MFA enrollment, Argon2id, mandatory TOTP or single-use recovery codes, revocable PostgreSQL cookie sessions and CSRF protection
-- **Exchange Rates** - Auto-updated fiat and crypto rates, Redis-cached
+- **Exchange Rates** - Auto-updated fiat and crypto rates
 
 ## Quick Start
 
@@ -88,12 +88,12 @@ changes ship.
 - Node.js 26+
 - pnpm (`corepack enable`)
 - Docker and Docker Compose
-- PostgreSQL + Redis (or use Docker)
+- PostgreSQL (or use Docker)
 
 ### Development
 
 Use the disposable HTTPS acceptance stack below for complete authenticated checks.
-For source development, configure a separate disposable PostgreSQL/Redis instance,
+For source development, configure a separate disposable PostgreSQL instance,
 run explicit migrations and provision its owner as described in
 [owner authentication](docs/owner-authentication.md). The CLI requires all current migrations, a protected server MFA key and confirmed CLI
 enrollment; the additive accounting migrations preserve existing data.
@@ -150,10 +150,9 @@ backend/src/
   assets/         Asset CRUD (Stock/Flow types)
   liabilities/    Liability CRUD
   crypto/         Wallet tracking, balance updates, price fetching
-  currencies/     Exchange rates, currency preferences (Redis-cached)
+  currencies/     Exchange rates, currency preferences
   metrics/        Net worth, runway, FL-ratio calculations
-  cache/          Redis cache module
-  health/         Health check endpoint
+  health/         Health check endpoints (liveness; database and memory details)
   observability/  Prometheus metrics, JSON request logging with request ids
   entities/       TypeORM entities
   migrations/     Database migrations
@@ -173,7 +172,7 @@ frontend/src/
 The app is designed to run on a personal server with:
 
 - **nginx** on the host for TLS termination and reverse proxy
-- **Docker Compose** for services (postgres, redis, backend, frontend)
+- **Docker Compose** for services (postgres, backend, frontend)
 - **GitHub Actions** CI/CD with ghcr.io container registry
 
 ### Setup
@@ -235,7 +234,7 @@ Swagger/documentation endpoint is mounted, including in development.
 | Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id` (POST and PATCH take `accountId` or `newAccount` `{ requestId, name, kind? }`, which makes the wallet in the same transaction, so a refused address leaves no empty wallet; a retry with the same `requestId` uses the wallet it made, a changed one or a wallet removed since is 409), `DELETE /wallet-addresses/:id` (stop tracking an address; its history stays), `POST /wallet-addresses/:id/sync`, `GET /wallet-addresses/:id/sync-runs`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
 | Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
 | Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
-| Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |
+| Health      | Public `GET /health` (minimal liveness); private `GET /health/details` (database, memory)                                           |
 | Metrics     | Internal only: Prometheus `GET /metrics` on `METRICS_PORT` (default 9464), a separate listener that Compose publishes on the server's loopback only |
 
 Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.

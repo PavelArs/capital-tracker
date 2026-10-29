@@ -140,21 +140,6 @@ export class EnvironmentVariables {
 
   @IsString()
   MFA_KEY_ID!: string;
-
-  // Redis
-  @IsString()
-  @IsOptional()
-  REDIS_HOST = 'localhost';
-
-  @IsNumber()
-  @Transform(({ value }) => Number.parseInt(value, 10))
-  @IsOptional()
-  REDIS_PORT = 6379;
-
-  @IsNumber()
-  @Transform(({ value }) => (value ? Number.parseInt(value, 10) : 600000)) // 10 minutes in milliseconds
-  @IsOptional()
-  EXCHANGE_RATES_CACHE_TTL = 600000;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

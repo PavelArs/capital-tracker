@@ -19,8 +19,6 @@
     "owner:recover": "node dist/owner-cli.js recover"
   },
   "dependencies": {
-    "@keyv/redis": "^6.1.0",
-    "@nestjs/cache-manager": "12.0.1",
     "@nestjs/common": "12.3.2",
     "@nestjs/config": "12.0.1",
     "@nestjs/core": "12.3.2",
@@ -32,7 +30,6 @@
     "@nestjs/typeorm": "12.0.2",
     "argon2": "0.45.1",
     "axios": "1.20.0",
-    "cache-manager": "^7.2.9",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "csv-parse": "7.0.3",

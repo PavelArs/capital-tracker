@@ -1,6 +1,5 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { ExchangeRatesCacheService } from '../cache/exchange-rates-cache.service';
 import {
   databaseSize,
   dbPool,
@@ -34,20 +33,17 @@ interface PgPool {
 }
 
 /**
- * Fills the scrape-time gauges from the database and Redis. Everything here is read-only and
+ * Fills the scrape-time gauges from the database. Everything here is read-only and
  * aggregated: no wallet address, id or label ever becomes a metric label.
  */
 @Injectable()
 export class MetricsCollector {
   private readonly logger = new Logger(MetricsCollector.name);
 
-  constructor(
-    private readonly source: DataSource,
-    @Optional() private readonly cache?: ExchangeRatesCacheService,
-  ) {}
+  constructor(private readonly source: DataSource) {}
 
   async collect(): Promise<void> {
-    await Promise.all([this.collectDatabase(), this.collectRedis()]);
+    await this.collectDatabase();
     this.collectPool();
   }
 
@@ -112,11 +108,6 @@ export class MetricsCollector {
       dependencyUp.set({ dependency: 'postgres' }, 0);
       this.logger.warn(`Metrics could not read the database: ${(error as Error).name}`);
     }
-  }
-
-  private async collectRedis(): Promise<void> {
-    if (!this.cache) return;
-    dependencyUp.set({ dependency: 'redis' }, (await this.cache.isHealthy()) ? 1 : 0);
   }
 
   private collectPool(): void {

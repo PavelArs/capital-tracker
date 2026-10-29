@@ -11,19 +11,17 @@ import subprocess
 import sys
 
 PROJECT = 'capital-tracker'
-CONTAINERS = {'capital_tracker_db': 'postgres', 'capital_tracker_redis': 'redis'}
-VOLUMES = {'capital-tracker_postgres_data': 'postgres_data', 'capital-tracker_redis_data': 'redis_data'}
+CONTAINERS = {'capital_tracker_db': 'postgres'}
+VOLUMES = {'capital-tracker_postgres_data': 'postgres_data'}
 NETWORK = 'capital-tracker_capital-tracker-network'
 APP_CONTAINERS = {'capital_tracker_backend': 'backend', 'capital_tracker_frontend': 'frontend'}
-RECEIPT_FIELDS = {'version', 'commit', 'runId', 'installation', 'backend', 'frontend',
-                  'postgres', 'redis', 'files'}
 OLD_FILES = {'runner', 'inventory', 'normalizer', 'compose', 'pins'}
 ALLOWED_ROOT = {'.env.release', '.backup-key', '.mfa-key', '.owner-password.json',
                 'operator', 'capital-vhost-before.conf', '.release.lock', 'releases', 'backups'}
 REQUIRED_ROOT = {'.env.release', '.backup-key', '.mfa-key', '.owner-password.json',
                  'operator', '.release.lock', 'releases', 'backups'}
 RUNTIME_KEYS = {'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME', 'POSTGRES_IMAGE',
-                'POSTGRES_EXPECTED_MAJOR', 'POSTGRES_VOLUME_TARGET', 'REDIS_IMAGE',
+                'POSTGRES_EXPECTED_MAJOR', 'POSTGRES_VOLUME_TARGET',
                 'FRONTEND_URL', 'BACKEND_HOST_PORT', 'FRONTEND_HOST_PORT',
                 'MFA_KEY_FILE', 'MFA_KEY_ID', 'TRUSTED_PROXY_IPS', 'OWNER_EMAIL',
                 'DISPLAY_FX_ENABLED'}
@@ -79,12 +77,12 @@ def historical_receipt(used_dir, pins):
         receipt = json.loads(raw, object_pairs_hook=no_duplicate_keys)
     except (ValueError, UnicodeDecodeError) as error:
         raise Refusal('historical receipt malformed') from error
-    if (not isinstance(receipt, dict) or set(receipt) != RECEIPT_FIELDS
+    # The pinned hash fixes every field, including images this release no longer runs.
+    if (not isinstance(receipt, dict)
             or receipt['version'] != 1 or type(receipt['version']) is not int
             or receipt['commit'] != origin['commit'] or receipt['runId'] != origin['ciRunId']
             or receipt['installation'] != 'fresh'
             or receipt['postgres'] != pins['postgres']['registryDigest']
-            or receipt['redis'] != pins['redis']['registryDigest']
             or not isinstance(receipt['files'], dict) or set(receipt['files']) != OLD_FILES
             or any(not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{64}', value)
                    for value in receipt['files'].values())):
@@ -159,18 +157,22 @@ def runtime_residue(root, pins, owner_uid=0):
         if actual != digest:
             raise Refusal('encrypted backup checksum mismatch')
     settings = runtime_settings(root)
-    if (settings.get('POSTGRES_IMAGE') != pins['postgres']['registryDigest']
-            or settings.get('REDIS_IMAGE') != pins['redis']['registryDigest']):
+    if settings.get('POSTGRES_IMAGE') != pins['postgres']['registryDigest']:
         raise Refusal('runtime infrastructure references differ')
     try:
         peers = json.loads(settings['TRUSTED_PROXY_IPS'])
     except (KeyError, ValueError) as error:
         raise Refusal('missing recorded proxy peer') from error
     if (not isinstance(peers, list) or len(peers) != 1 or not isinstance(peers[0], str)
-            or not re.fullmatch(r'(?:::ffff:)?(?:\d{1,3}\.){3}\d{1,3}', peers[0])
-            or any(int(part) > 255 for part in peers[0].removeprefix('::ffff:').split('.'))):
+            or not re.fullmatch(r'(?:::ffff:)?(?:\d{1,3}\.){3}\d{1,3}', peers[0])):
         raise Refusal('invalid recorded proxy peer')
-    return peers[0]
+    prefix = '::ffff:' if peers[0].startswith('::ffff:') else ''
+    octets = [int(part) for part in peers[0].removeprefix('::ffff:').split('.')]
+    peer = prefix + '.'.join(str(octet) for octet in octets)
+    if any(octet > 255 for octet in octets) or peer != peers[0]:
+        raise Refusal('invalid recorded proxy peer')
+    # Rebuilt from the checked octets: the snapshot records an address, never the raw runtime file.
+    return peer
 
 
 def docker(*args):
@@ -191,7 +193,7 @@ def docker_json(*args):
     return value[0]
 
 
-def resources(postgres_ref, redis_ref, root, allow_apps=False):
+def resources(postgres_ref, root, allow_apps=False):
     expected_containers = set(CONTAINERS) | (set(APP_CONTAINERS) if allow_apps else set())
     if ({name for name in docker('ps', '-a', '--format', '{{.Names}}').splitlines()
          if name.startswith('capital_tracker_')} != expected_containers
@@ -214,28 +216,26 @@ def resources(postgres_ref, redis_ref, root, allow_apps=False):
     identities = {}
     for name, service in CONTAINERS.items():
         container = docker_json('inspect', name)
-        image_ref = postgres_ref if service == 'postgres' else redis_ref
-        image = docker_json('image', 'inspect', image_ref)
-        target = '/var/lib/postgresql' if service == 'postgres' else '/data'
+        image = docker_json('image', 'inspect', postgres_ref)
+        target = '/var/lib/postgresql'
         volume_name = 'capital-tracker_{}_data'.format(service)
         mounts = container.get('Mounts')
-        if service == 'postgres':
-            environment = container.get('Config', {}).get('Env', [])
-            if not isinstance(environment, list):
-                raise Refusal('PostgreSQL container environment is malformed')
-            actual_env = {}
-            for item in environment:
-                key, separator, value = item.partition('=')
-                if separator and key in ('POSTGRES_USER', 'POSTGRES_DB', 'POSTGRES_PASSWORD'):
-                    if key in actual_env:
-                        raise Refusal('duplicate PostgreSQL environment identity')
-                    actual_env[key] = value
-            settings = runtime_settings(root)
-            if actual_env != {'POSTGRES_USER': settings['DB_USERNAME'], 'POSTGRES_DB': settings['DB_NAME'],
-                              'POSTGRES_PASSWORD': settings['DB_PASSWORD']}:
-                raise Refusal('runtime and PostgreSQL environment identities differ')
+        environment = container.get('Config', {}).get('Env', [])
+        if not isinstance(environment, list):
+            raise Refusal('PostgreSQL container environment is malformed')
+        actual_env = {}
+        for item in environment:
+            key, separator, value = item.partition('=')
+            if separator and key in ('POSTGRES_USER', 'POSTGRES_DB', 'POSTGRES_PASSWORD'):
+                if key in actual_env:
+                    raise Refusal('duplicate PostgreSQL environment identity')
+                actual_env[key] = value
+        settings = runtime_settings(root)
+        if actual_env != {'POSTGRES_USER': settings['DB_USERNAME'], 'POSTGRES_DB': settings['DB_NAME'],
+                          'POSTGRES_PASSWORD': settings['DB_PASSWORD']}:
+            raise Refusal('runtime and PostgreSQL environment identities differ')
         if (container.get('Name') != '/' + name or container.get('Image') != image.get('Id')
-                or container.get('Config', {}).get('Image') != image_ref
+                or container.get('Config', {}).get('Image') != postgres_ref
                 or container.get('Config', {}).get('Labels', {}).get('com.docker.compose.project') != PROJECT
                 or container.get('Config', {}).get('Labels', {}).get('com.docker.compose.service') != service
                 or container.get('State', {}).get('Running') is not True
@@ -306,14 +306,13 @@ def clean_cluster(container, user, database):
             raise Refusal('PostgreSQL bootstrap database contains unexpected objects')
 
 
-def verify(root, pins_path, used_dir, postgres_ref, redis_ref):
+def verify(root, pins_path, used_dir, postgres_ref):
     pins = json.loads(pathlib.Path(pins_path).read_text())
-    if (pins['postgres']['registryDigest'] != postgres_ref
-            or pins['redis']['registryDigest'] != redis_ref):
+    if pins['postgres']['registryDigest'] != postgres_ref:
         raise Refusal('candidate infrastructure differs from reviewed original')
     historical_receipt(used_dir, pins)
     peer = runtime_residue(root, pins)
-    snapshot = resources(postgres_ref, redis_ref, root)
+    snapshot = resources(postgres_ref, root)
     settings = runtime_settings(root)
     clean_cluster('capital_tracker_db', settings['DB_USERNAME'], settings['DB_NAME'])
     snapshot['proxyPeer'] = peer
@@ -325,20 +324,20 @@ def main(argv):
         if len(argv) == 5 and argv[1] == 'cluster':
             clean_cluster(*argv[2:])
             return 0
-        if len(argv) not in (7, 8) or argv[1] not in ('preflight', 'compare', 'compare-active'):
-            raise Refusal('use preflight|compare|compare-active ROOT PINS USED_DIR POSTGRES REDIS [SNAPSHOT]')
-        _, operation, root, pins_path, used_dir, postgres_ref, redis_ref = argv[:7]
+        if len(argv) not in (6, 7) or argv[1] not in ('preflight', 'compare', 'compare-active'):
+            raise Refusal('use preflight|compare|compare-active ROOT PINS USED_DIR POSTGRES [SNAPSHOT]')
+        _, operation, root, pins_path, used_dir, postgres_ref = argv[:6]
         if operation == 'preflight':
-            if len(argv) != 7:
+            if len(argv) != 6:
                 raise Refusal('unexpected preflight snapshot')
-            print(json.dumps(verify(root, pins_path, used_dir, postgres_ref, redis_ref), sort_keys=True))
+            print(json.dumps(verify(root, pins_path, used_dir, postgres_ref), sort_keys=True))
         else:
-            if len(argv) != 8:
+            if len(argv) != 7:
                 raise Refusal('compare requires the earlier snapshot')
-            snapshot = json.loads(argv[7])
+            snapshot = json.loads(argv[6])
             if not isinstance(snapshot, dict) or set(snapshot) != {'network', 'containers', 'proxyPeer'}:
                 raise Refusal('invalid infrastructure snapshot')
-            if resources(postgres_ref, redis_ref, root, allow_apps=operation == 'compare-active') != \
+            if resources(postgres_ref, root, allow_apps=operation == 'compare-active') != \
                     {key: snapshot[key] for key in ('network', 'containers')}:
                 raise Refusal('infrastructure changed during continuation')
         return 0
