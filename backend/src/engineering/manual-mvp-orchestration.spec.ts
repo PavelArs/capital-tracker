@@ -40,13 +40,11 @@ if(tool==='jq'){
  fs.readFileSync(0);
  const q=a[a.length-1];let v='true';
  if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
- else if(q==='.services.redis.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-redis'?'redis@sha256:'+('e'.repeat(64)):'redis:7.4.2-alpine';
  else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major')?'18':'16';
  else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
  else if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
  else if(q.includes('FRONTEND_URL'))v='https://mvp.example.invalid';
  else if(q.includes('volumes[]'))v=path.join(root,'mfa-key');
- else if(q.includes('BACKGROUND_JOBS_ENABLED'))v='false';
  else if(q.includes('.proxyPeer'))v='172.18.0.3';
  process.stdout.write(v);
 }
@@ -58,7 +56,7 @@ if(tool==='docker'){
  if(a[0]==='images'&&mode==='old-images'){
   const id=(c)=>'sha256:'+c.repeat(64);
   const backendRepo='ghcr.io/pavelars/capital-tracker-backend',frontendRepo='ghcr.io/pavelars/capital-tracker-frontend';
-  process.stdout.write([[id('9'),backendRepo],[id('8'),frontendRepo],[id('b'),backendRepo],[id('c'),frontendRepo],[id('1'),backendRepo],[id('2'),backendRepo],[id('3'),frontendRepo],[id('4'),frontendRepo],[id('6'),backendRepo],[id('7'),frontendRepo],[id('a'),'ghcr.io/pavelars/capital-tracker-postgres'],[id('5'),'redis']].map(row=>row.join(' ')).join('\\n')+'\\n');
+  process.stdout.write([[id('9'),backendRepo],[id('8'),frontendRepo],[id('b'),backendRepo],[id('c'),frontendRepo],[id('1'),backendRepo],[id('2'),backendRepo],[id('3'),frontendRepo],[id('4'),frontendRepo],[id('6'),backendRepo],[id('7'),frontendRepo],[id('a'),'ghcr.io/pavelars/capital-tracker-postgres'],[id('5'),'postgres']].map(row=>row.join(' ')).join('\\n')+'\\n');
  }
  if(a[0]==='volume'&&a[1]==='ls'){
   const labeled=a.includes('--filter');
@@ -66,7 +64,7 @@ if(tool==='docker'){
   if(mode===(labeled?'fresh-labeled-volume':'fresh-named-volume'))process.stdout.write(labeled?'unexplained_owner_data':'capital_tracker_postgres_data');
  }
  if(a[0]==='image'&&a[1]==='inspect'){
-  const drift=(mode==='existing-postgres-drift'&&a[2].startsWith('postgres'))||(mode==='existing-redis-drift'&&a[2].startsWith('redis'));
+  const drift=mode==='existing-postgres-drift'&&a[2].startsWith('postgres');
   process.stdout.write('sha256:'+(drift?'f':'b').repeat(64));
  }
  if(a[0]==='inspect'){
@@ -180,7 +178,6 @@ function release(failure: string, installation = 'existing', action = 'deploy') 
       RELEASE_ROOT: directory,
       RELEASE_INSTALLATION: installation,
       RELEASE_POSTGRES_IMAGE: `ghcr.io/pavelars/capital-tracker-postgres@sha256:${'d'.repeat(64)}`,
-      RELEASE_REDIS_IMAGE: `redis@sha256:${'e'.repeat(64)}`,
       RELEASE_COMPOSE_FILE: join(directory, 'candidate.yml'),
       RELEASE_RUNTIME_FILE: join(directory, '.env.release'),
       RELEASE_BACKUP_KEY_FILE: join(directory, '.backup-key'),
@@ -215,6 +212,8 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
       `import json, os, sys
 with open(os.environ['FIXTURE_LOG'], 'a') as out:
     out.write(json.dumps({'tool':'resume-proof','args':sys.argv[1:]})+'\\n')
+if len(sys.argv) != (6 if sys.argv[1] == 'preflight' else 7):
+    raise SystemExit(2)
 if sys.argv[1] == 'preflight':
     print(json.dumps({'proxyPeer':'172.18.0.3','network':['old-network'],'containers':{}}))
 `,
@@ -222,25 +221,25 @@ if sys.argv[1] == 'preflight':
     writeFileSync(join(directory, '.env.release'), 'OWNER_EMAIL=owner@capital.pavelars.ru\n');
     const { result, calls } = release('resume-success', 'resume-fresh');
     expect(result.status).toBe(0);
-    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'preflight')).toBe(
-      true,
-    );
-    expect(
-      calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'compare-active'),
-    ).toBe(true);
+    const proof = [
+      directory,
+      join(directory, 'pins.json'),
+      join(directory, 'used'),
+      `ghcr.io/pavelars/capital-tracker-postgres@sha256:${'d'.repeat(64)}`,
+    ];
+    const snapshot = '{"proxyPeer": "172.18.0.3", "network": ["old-network"], "containers": {}}';
+    const proofCalls = calls.filter((call) => call.tool === 'resume-proof');
+    expect(proofCalls[0]?.args).toEqual(['preflight', ...proof]);
+    expect(proofCalls.some((call) => call.args[0] === 'compare-active')).toBe(true);
+    for (const call of proofCalls.slice(1))
+      expect(call.args).toEqual([expect.stringMatching(/^compare(-active)?$/), ...proof, snapshot]);
     expect(
       calls.some(
         (call) =>
-          call.tool === 'docker' &&
-          call.args.includes('pull') &&
-          (call.args.includes('postgres') || call.args.includes('redis')),
+          call.tool === 'docker' && call.args.includes('pull') && call.args.includes('postgres'),
       ),
     ).toBe(false);
-    expect(
-      calls.some(
-        (call) => appUp(call) && (call.args.includes('postgres') || call.args.includes('redis')),
-      ),
-    ).toBe(false);
+    expect(calls.some((call) => appUp(call) && call.args.includes('postgres'))).toBe(false);
     const restore = calls.findIndex(
       (call) => call.tool === 'docker' && call.args.includes('pg_restore'),
     );
@@ -396,6 +395,15 @@ if sys.argv[1] == 'preflight':
     ).toBe(true);
     expect(calls.some((call) => call.tool === 'docker' && call.args.includes('down'))).toBe(false);
   }, 20000);
+  it('an existing release inspects only the PostgreSQL infrastructure container', () => {
+    const { result, calls } = release('success');
+    expect(result.status).toBe(0);
+    const inspected = calls
+      .filter((call) => call.tool === 'docker' && call.args[0] === 'inspect')
+      .map((call) => call.args[1])
+      .filter((name) => !['capital_tracker_backend', 'capital_tracker_frontend'].includes(name));
+    expect(new Set(inspected)).toEqual(new Set(['capital_tracker_db', 'db']));
+  }, 20000);
 });
 
 describe('REL-IMG-001: old application images do not pile up on the server', () => {
@@ -505,7 +513,7 @@ describe('RAP-003: resume an interrupted activation', () => {
     call.tool === 'docker' &&
     call.args[0] === 'compose' &&
     (call.args.includes('pull') || call.args.includes('up')) &&
-    (call.args.includes('postgres') || call.args.includes('redis'));
+    call.args.includes('postgres');
   const stop = (call: Command) =>
     call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('stop');
   const dump = (call: Command) =>
@@ -622,7 +630,6 @@ describe('MVP-003: explicit fresh-install absence preflight', () => {
     expect(result.status).toBe(0);
     for (const query of [
       '.services.postgres.image',
-      '.services.redis.image',
       '.services.postgres.environment.CAPITAL_EXPECTED_MAJOR',
     ]) {
       expect(calls.some((call) => call.tool === 'jq' && call.args.at(-1) === query)).toBe(true);
@@ -655,9 +662,7 @@ describe('MVP-006: refuse implicit PostgreSQL major/layout changes', () => {
     ['fresh-old-major', 'fresh'],
     ['fresh-old-layout', 'fresh'],
     ['fresh-mutable-postgres', 'fresh'],
-    ['fresh-mutable-redis', 'fresh'],
     ['existing-postgres-drift', 'existing'],
-    ['existing-redis-drift', 'existing'],
   ])(
     'refuses %s before downtime, database creation, backup or migration',
     (failure, installation) => {
@@ -666,23 +671,21 @@ describe('MVP-006: refuse implicit PostgreSQL major/layout changes', () => {
         true,
       );
       expect(result.status).not.toBe(0);
-      const inspected = failure === 'existing-postgres-drift' ? 'postgres' : 'redis';
-      if (failure.startsWith('existing-') && failure.endsWith('-drift')) {
+      if (failure === 'existing-postgres-drift') {
         expect(
           calls.some(
             (call) =>
               call.tool === 'docker' &&
               call.args[0] === 'image' &&
               call.args[1] === 'inspect' &&
-              call.args[2]?.startsWith(inspected),
+              call.args[2]?.startsWith('postgres'),
           ),
         ).toBe(true);
       }
-      if (failure.startsWith('fresh-mutable-')) {
-        const service = failure === 'fresh-mutable-postgres' ? 'postgres' : 'redis';
+      if (failure === 'fresh-mutable-postgres') {
         expect(
           calls.some(
-            (call) => call.tool === 'jq' && call.args.at(-1) === `.services.${service}.image`,
+            (call) => call.tool === 'jq' && call.args.at(-1) === '.services.postgres.image',
           ),
         ).toBe(true);
       }

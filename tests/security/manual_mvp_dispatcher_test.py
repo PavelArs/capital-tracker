@@ -29,7 +29,6 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             "installation": "fresh", "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,
             "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
             "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
-            "redis": "redis@sha256:" + "e" * 64,
             "files": {name: "f" * 64 for name in dispatcher.FILES},
         }
 
@@ -69,9 +68,14 @@ class DispatcherRequestAcceptance(unittest.TestCase):
                 with self.assertRaises(dispatcher.Refusal):
                     dispatcher.validate_receipt(self.request, {**receipt, **replacement})
 
+    def test_rejects_receipt_naming_the_retired_cache_image(self):
+        retired = {**self.receipt(), "redis": "redis@sha256:" + "e" * 64}
+        with self.assertRaises(dispatcher.Refusal):
+            dispatcher.validate_receipt(self.request, retired)
+
     def test_rejects_unpinned_or_altered_images(self):
         receipt = self.receipt()
-        for field in ("backend", "frontend", "postgres", "redis"):
+        for field in ("backend", "frontend", "postgres"):
             with self.subTest(field=field):
                 with self.assertRaises(dispatcher.Refusal):
                     dispatcher.validate_receipt(self.request, {**receipt, field: "alpine:latest"})
@@ -141,7 +145,6 @@ class DispatcherRequestAcceptance(unittest.TestCase):
                 files[name] = path
                 receipt["files"][name] = __import__("hashlib").sha256(b"reviewed").hexdigest()
             pins = json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text())
-            pins["redis"]["registryDigest"] = receipt["redis"]
             files["pins"].write_text(json.dumps(pins))
             receipt["files"]["pins"] = __import__("hashlib").sha256(files["pins"].read_bytes()).hexdigest()
             config = dispatcher.Config(release_dir=directory, owner_uid=os.getuid(), stop_at=directory)
@@ -149,7 +152,7 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             files["compose"].write_bytes(b"attacker")
             self.assertRaises(dispatcher.Refusal, dispatcher.verify_installation, receipt, config)
             files["compose"].write_bytes(b"reviewed")
-            pins["redis"]["registryDigest"] = "redis@sha256:" + "0" * 64
+            pins["postgres"]["dockerfile"] = "attacker.Dockerfile"
             files["pins"].write_text(json.dumps(pins))
             receipt["files"]["pins"] = __import__("hashlib").sha256(files["pins"].read_bytes()).hexdigest()
             self.assertRaises(dispatcher.Refusal, dispatcher.verify_installation, receipt, config)
@@ -164,7 +167,6 @@ class EnvironmentApprovedRequestAcceptance(unittest.TestCase):
             "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,
             "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
             "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
-            "redis": "redis@sha256:" + "e" * 64,
             "files": {name: "f" * 64 for name in dispatcher.FILES},
         }
         self.request = {"version": 2, "operation": "deploy", "commit": "a" * 40, "runId": "123",

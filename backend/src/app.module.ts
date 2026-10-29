@@ -10,7 +10,6 @@ import { AppService } from './app.service';
 import { ApplicationThrottlerModule } from './auth/application-throttler.module';
 import { AuthModule } from './auth/auth.module';
 import { BrokersModule } from './brokers/brokers.module';
-import { RedisCacheModule } from './cache/cache.module';
 import { validateEnvironment } from './config/env.validation';
 import { TypeOrmConfigService } from './config/typeorm.config';
 import { DepositsModule } from './deposits/deposits.module';
@@ -49,8 +48,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     TypeOrmModule.forRootAsync({
       useClass: TypeOrmConfigService,
     }),
-    ScheduleModule.forRoot({ cronJobs: process.env.BACKGROUND_JOBS_ENABLED !== 'false' }),
-    RedisCacheModule,
+    ScheduleModule.forRoot(),
     AuthModule,
     AccountingModule,
     BrokersModule,

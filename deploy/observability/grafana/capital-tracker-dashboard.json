@@ -78,7 +78,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 5,
         "x": 0,
         "y": 1
       },
@@ -148,8 +148,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 5,
+        "x": 5,
         "y": 1
       },
       "targets": [
@@ -159,76 +159,6 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "min(ct_dependency_up{dependency=\"postgres\"})",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                },
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none"
-      }
-    },
-    {
-      "id": 4,
-      "type": "stat",
-      "title": "Redis",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "min(ct_dependency_up{dependency=\"redis\"})",
           "refId": "A",
           "instant": true
         }
@@ -288,8 +218,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
+        "w": 5,
+        "x": 10,
         "y": 1
       },
       "targets": [
@@ -348,8 +278,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 5,
+        "x": 15,
         "y": 1
       },
       "targets": [

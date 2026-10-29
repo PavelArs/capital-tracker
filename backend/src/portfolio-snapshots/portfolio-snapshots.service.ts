@@ -94,7 +94,7 @@ interface SeriesInputs {
 }
 
 // Every owner table a snapshot value depends on. A future operation source joins this list.
-const INPUT_TABLES = [
+export const INPUT_TABLES = [
   'accounting_instruments',
   // ASSET-HIDE: a hidden asset leaves every value and its history.
   'hidden_assets',
@@ -131,15 +131,36 @@ const INPUT_TABLES = [
   'bank_deposit_rates',
   'bank_deposit_movements',
 ] as const;
+// No code updates or deletes a row of these tables (an edit or a void is a new row), so the
+// number of an owner's rows changes with every write. A migration that rewrites their rows in
+// place must bump VALUATION_RULE. Every other input table is updated or deleted in place.
+export const APPEND_ONLY_INPUTS: ReadonlySet<string> = new Set([
+  'account_trade_versions',
+  'account_opening_snapshots',
+  'account_opening_positions',
+  'account_carry_in_lots',
+  'account_reward_versions',
+  'account_swap_versions',
+  'account_capital_return_versions',
+  'instrument_splits',
+  'owned_transfer_versions',
+  'manual_usd_price_versions',
+  'wallet_stake_moves',
+  'wallet_ether_stake_moves',
+  'wallet_ether_stake_rewards',
+  'wallet_tron_stake_moves',
+]);
+const digest = (row: string) => `coalesce(md5(string_agg(${row}, ',' ORDER BY ${row})), '')`;
 // Only which account an address belongs to; its sync progress changes no value.
 const INPUT_PARTS: readonly [string, string][] = [
-  ...INPUT_TABLES.map((table): [string, string] => [table, 't::text']),
-  ['wallet_addresses', `t.id::text || ':' || coalesce(t."accountId"::text, '')`],
+  ...INPUT_TABLES.map((table): [string, string] => [
+    table,
+    APPEND_ONLY_INPUTS.has(table) ? 'count(*)::text' : digest('t::text'),
+  ]),
+  ['wallet_addresses', digest(`t.id::text || ':' || coalesce(t."accountId"::text, '')`)],
 ];
-const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revision FROM (${INPUT_PARTS.map(
-  ([table, row]) =>
-    `SELECT '${table}:' || coalesce(md5(string_agg(${row}, ',' ORDER BY ${row})), '') AS part
-      FROM ${table} t WHERE t."ownerId"=$1`,
+export const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revision FROM (${INPUT_PARTS.map(
+  ([table, value]) => `SELECT '${table}:' || ${value} AS part FROM ${table} t WHERE t."ownerId"=$1`,
 ).join(' UNION ALL ')}) parts`;
 // Folded into the inputs revision, so a change to how a point is valued rebuilds every stored
 // snapshot once. Bump it with such a change. 2: a rate over 15 days old converts nothing.

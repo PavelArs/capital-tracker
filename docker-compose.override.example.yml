@@ -8,11 +8,6 @@ services:
       - "127.0.0.1:5432:5432"
     restart: "no"
 
-  redis:
-    ports:
-      - "127.0.0.1:6379:6379"
-    restart: "no"
-
   backend:
     image: capital-tracker-backend:local
     build:

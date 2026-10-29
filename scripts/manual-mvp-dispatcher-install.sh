@@ -84,7 +84,7 @@ request = {'version': 1, 'operation': 'deploy', 'commit': receipt.get('commit'),
 if not (d._full(d.COMMIT, request['commit']) and d._full(d.RUN_ID, request['runId'])):
     raise SystemExit('malformed receipt identity')
 d.validate_receipt(request, receipt)
-for key in ('commit', 'runId', 'installation', 'backend', 'frontend', 'postgres', 'redis'):
+for key in ('commit', 'runId', 'installation', 'backend', 'frontend', 'postgres'):
     print('{}={}'.format(key, receipt[key]))
 for name, digest in sorted(receipt['files'].items()):
     print('file.{}={}'.format(name, digest))

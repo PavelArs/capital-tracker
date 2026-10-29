@@ -28,7 +28,7 @@ class BootstrapImportBoundary(unittest.TestCase):
             result = subprocess.run([
                 "/bin/bash", str(ROOT / "scripts/manual-mvp-server-bootstrap.sh"), "capital-release",
                 "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
-                "redis@sha256:" + "e" * 64, str(base / "missing-receipt.json"),
+                str(base / "missing-receipt.json"),
             ], cwd=base, env=environment, capture_output=True, text=True, timeout=10)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(sentinel.exists(), result.stdout + result.stderr)

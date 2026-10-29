@@ -101,19 +101,18 @@ class ReceiptAcceptance(unittest.TestCase):
             path = base / "reviewed.json"
             path.write_text(json.dumps(receipt))
             path.chmod(0o600)
-            redis = receipt["redis"]
-            self.assertEqual(receipts.validate_bootstrap_receipt(path, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base), receipt)
+            self.assertEqual(receipts.validate_bootstrap_receipt(path, POSTGRES, COMMIT, owner_uid=os.getuid(), stop_at=base), receipt)
             for postgres in ("postgres@sha256:" + "d" * 64, POSTGRES[:-1] + "0"):
-                self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, postgres, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+                self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, postgres, COMMIT, owner_uid=os.getuid(), stop_at=base)
             path.chmod(0o666)
-            self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+            self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, POSTGRES, COMMIT, owner_uid=os.getuid(), stop_at=base)
             path.chmod(0o600)
             link = base / "linked.json"
             link.symlink_to(path)
-            self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, link, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+            self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, link, POSTGRES, COMMIT, owner_uid=os.getuid(), stop_at=base)
             for changes in ({"installation": "existing"}, {"commit": "invalid"}, {"commit": "0" * 40}, {"runId": "01"}, {"extra": True}, {"files": {**receipt["files"], "pins": "0" * 64}}):
                 path.write_text(json.dumps({**receipt, **changes}))
-                self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+                self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, POSTGRES, COMMIT, owner_uid=os.getuid(), stop_at=base)
 
     def test_receipt_rejects_official_base_and_foreign_final_postgres(self):
         for postgres in ("postgres@sha256:" + "d" * 64, "ghcr.io/other/capital-tracker-postgres@sha256:" + "d" * 64):

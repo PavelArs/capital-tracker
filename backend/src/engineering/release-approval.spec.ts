@@ -40,7 +40,6 @@ const receipt = {
   backend: `ghcr.io/pavelars/capital-tracker-backend@sha256:${'b'.repeat(64)}`,
   frontend: `ghcr.io/pavelars/capital-tracker-frontend@sha256:${'c'.repeat(64)}`,
   postgres: `ghcr.io/pavelars/capital-tracker-postgres@sha256:${'d'.repeat(64)}`,
-  redis: `redis@sha256:${'e'.repeat(64)}`,
   files: { runner: 'f'.repeat(64) },
 };
 

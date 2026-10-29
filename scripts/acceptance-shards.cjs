@@ -91,7 +91,7 @@ const CHECKS = [
 ];
 const HOST_CHECK = 'restore-readiness';
 const STARTUP_CHECK = 'client-source-startup';
-const IMAGE_NAMES = ['backend', 'frontend', 'postgres', 'redis'];
+const IMAGE_NAMES = ['backend', 'frontend', 'postgres'];
 const imagePattern = /^sha256:[a-f0-9]{64}$/;
 
 function parseShard(value) {
@@ -220,7 +220,6 @@ function imageIds(images) {
     backend: images.backend.imageId,
     frontend: images.frontend.imageId,
     postgres: images.infrastructure.postgres.imageId,
-    redis: images.infrastructure.redis.imageId,
   };
 }
 
@@ -232,9 +231,10 @@ function imageManifest(commit, runId, pins, inspectId) {
     manifest[name] = { tag, imageId: inspectId(tag) };
   }
   manifest.infrastructure = {};
-  for (const name of ['postgres', 'redis']) {
-    manifest.infrastructure[name] = { ...pins[name], imageId: inspectId(pins[name].tag) };
-  }
+  manifest.infrastructure.postgres = {
+    ...pins.postgres,
+    imageId: inspectId(pins.postgres.tag),
+  };
   return manifest;
 }
 

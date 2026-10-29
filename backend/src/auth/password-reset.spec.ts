@@ -6,6 +6,7 @@ import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-hos
 import { THROTTLER_SKIP } from '@nestjs/throttler/dist/throttler.constants';
 import { createTransport } from 'nodemailer';
 import { DataSource } from 'typeorm';
+import { registry } from '../observability/metrics';
 import { AUTH_CLIENT_SOURCE, AuthClientSourceService } from './client-source';
 import { ResetConfirmDto, ResetRequestDto, ResetTokenDto } from './dto/password-reset.dto';
 import { SessionGuard, SessionRequest } from './guards/session.guard';
@@ -36,6 +37,13 @@ function unexpected(): never {
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+const mailCount = async (outcome: string) => {
+  const metric = (await registry.getMetricsAsJSON()).find(
+    (entry) => entry.name === 'ct_password_reset_mail_total',
+  );
+  return metric?.values.find((entry) => entry.labels.outcome === outcome)?.value ?? 0;
+};
 
 describe('RESET-LIMIT reset routes share one admission policy', () => {
   it.each(routes)('%s is public, admitted as reset-ip and answers %i', (route, status) => {
@@ -219,6 +227,47 @@ describe('PasswordResetService refusals before any write', () => {
   );
 });
 
+describe('PR-AUTH-3 RESET-REQUEST answers before the email settles', () => {
+  it('resolves request() while the mailer promise is still pending', async () => {
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('FROM owner_auth')) return [{ userId: 'u', email: 'owner@example.invalid' }];
+      if (sql.includes('count(*)')) return [{ recent: 0 }];
+      return [];
+    });
+    const source = {
+      transaction: jest.fn((work: (manager: unknown) => unknown) => work({ query })),
+    } as unknown as DataSource;
+    const sessions = { origin } as unknown as SessionService;
+    const order: string[] = [];
+    let deliver: () => void = () => undefined;
+    const send = jest.fn(() =>
+      new Promise<void>((resolve) => {
+        deliver = resolve;
+      }).then(() => {
+        order.push('mail settled');
+      }),
+    );
+    const mailer = { sendPasswordReset: send } as unknown as PasswordResetMailer;
+    const resets = new PasswordResetService(source, sessions, mailer);
+    // A request() that awaited the mailer would lose this race and fail on the assertion below.
+    const first = await Promise.race([
+      resets.request(' Owner@Example.invalid ').then((answer) => {
+        order.push('request answered');
+        return answer;
+      }),
+      new Promise<string>((resolve) => setTimeout(() => resolve('still waiting'), 100)),
+    ]);
+    expect(first).toBeUndefined();
+    expect(send).toHaveBeenCalledWith(
+      'owner@example.invalid',
+      expect.stringMatching(/\/password-reset\/new#token=[A-Za-z0-9_-]{43}$/),
+    );
+    deliver();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual(['request answered', 'mail settled']);
+  });
+});
+
 describe('PasswordResetMailer (Yandex SMTP)', () => {
   const transport = createTransport as unknown as jest.Mock;
   beforeEach(() => transport.mockReset());
@@ -298,5 +347,80 @@ describe('PasswordResetMailer (Yandex SMTP)', () => {
     await expect(mailer.sendPasswordReset('owner@example.invalid', link)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith('Password reset email was not sent (EAUTH 535)');
     expect(JSON.stringify(warn.mock.calls)).not.toContain(token);
+  });
+
+  describe('RESET-MAIL-RETRY a transient refusal is retried once', () => {
+    const env: Record<string, string> = {
+      SMTP_USER: 'mailer@example.invalid',
+      SMTP_PASSWORD: 'synthetic-app-password',
+    };
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.spyOn(require('@nestjs/common').Logger.prototype, 'warn').mockReturnValue(undefined);
+    });
+    afterEach(() => jest.useRealTimers());
+
+    async function send(sendMail: jest.Mock) {
+      transport.mockReturnValue({ sendMail });
+      const mailer = new PasswordResetMailer(resetMailSettings((key) => env[key]));
+      const done = mailer.sendPasswordReset('owner@example.invalid', link);
+      await jest.advanceTimersByTimeAsync(4_999);
+      const callsBeforePause = sendMail.mock.calls.length;
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(done).resolves.toBeUndefined();
+      return callsBeforePause;
+    }
+
+    it.each([
+      ['421 service unavailable', { responseCode: 421, code: 'EENVELOPE' }],
+      ['451 local error', { responseCode: 451, code: 'EMESSAGE' }],
+      ['a reset connection', { code: 'ECONNRESET' }],
+      ['a timeout', { code: 'ETIMEDOUT' }],
+      ['a failed connection', { code: 'ECONNECTION' }],
+      ['a refused connection', { code: 'ECONNREFUSED' }],
+      ['452 insufficient storage', { responseCode: 452 }],
+    ])('retries %s after 5 seconds and counts it as retried, then sent', async (_, fields) => {
+      const [sent, retried] = [await mailCount('sent'), await mailCount('retried')];
+      const sendMail = jest
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error('transient'), fields))
+        .mockResolvedValueOnce({});
+      expect(await send(sendMail)).toBe(1);
+      expect(sendMail).toHaveBeenCalledTimes(2);
+      expect(await mailCount('retried')).toBe(retried + 1);
+      expect(await mailCount('sent')).toBe(sent + 1);
+    });
+
+    it('counts a second transient refusal as failed and still resolves', async () => {
+      const failed = await mailCount('failed');
+      const sendMail = jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('busy'), { responseCode: 450 }));
+      await send(sendMail);
+      expect(sendMail).toHaveBeenCalledTimes(2);
+      expect(await mailCount('failed')).toBe(failed + 1);
+    });
+
+    it.each([
+      ['550 mailbox unavailable', { responseCode: 550, code: 'EENVELOPE' }],
+      ['an authentication failure', { responseCode: 535, code: 'EAUTH' }],
+      ['a temporary authentication failure', { responseCode: 454, code: 'EAUTH' }],
+    ])('does not retry %s and counts it as failed', async (_, fields) => {
+      const [failed, retried] = [await mailCount('failed'), await mailCount('retried')];
+      const sendMail = jest.fn().mockRejectedValue(Object.assign(new Error('refused'), fields));
+      await send(sendMail);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      expect(await mailCount('failed')).toBe(failed + 1);
+      expect(await mailCount('retried')).toBe(retried);
+    });
+
+    it('counts a send without credentials as unconfigured', async () => {
+      const unconfigured = await mailCount('unconfigured');
+      await new PasswordResetMailer(resetMailSettings(() => undefined)).sendPasswordReset(
+        'owner@example.invalid',
+        link,
+      );
+      expect(await mailCount('unconfigured')).toBe(unconfigured + 1);
+    });
   });
 });

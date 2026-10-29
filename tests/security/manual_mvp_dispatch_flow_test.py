@@ -18,7 +18,6 @@ spec.loader.exec_module(dispatcher)
 COMMIT = "a" * 40
 RUN_ID = "123"
 POSTGRES = "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64
-REDIS = "redis@sha256:" + "e" * 64
 
 
 class Installation:
@@ -40,7 +39,7 @@ class Installation:
             "inventory": b"#!/usr/bin/env bash\necho inventory\n",
             "normalizer": b"{ print }\n",
             "compose": b"services: {}\n",
-            "pins": json.dumps({**json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text()), "redis": {"registryDigest": REDIS}}).encode(),
+            "pins": (SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_bytes(),
             "resume": b"#!/usr/bin/python3 -I\n",
         }
         self.hashes = {}
@@ -56,7 +55,7 @@ class Installation:
             "version": 1, "commit": COMMIT, "runId": RUN_ID, "installation": "fresh",
             "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,
             "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
-            "postgres": POSTGRES, "redis": REDIS, "files": dict(self.hashes),
+            "postgres": POSTGRES, "files": dict(self.hashes),
         }
         receipt.update(changes)
         return receipt
@@ -108,7 +107,7 @@ class DispatchFlowAcceptance(unittest.TestCase):
         ])
         self.assertEqual(environment["RELEASE_INSTALLATION"], "fresh")
         self.assertEqual(environment["RELEASE_POSTGRES_IMAGE"], POSTGRES)
-        self.assertEqual(environment["RELEASE_REDIS_IMAGE"], REDIS)
+        self.assertNotIn("RELEASE_REDIS_IMAGE", environment)
         self.assertEqual(environment["RELEASE_COMPOSE_FILE"], str(self.install.release / "docker-compose.yml"))
         self.assertNotIn("CAPITAL_DISPATCH_LEAK", environment)
         # Never fall back to root's general registry credentials.
@@ -164,9 +163,9 @@ class DispatchFlowAcceptance(unittest.TestCase):
                 path.write_bytes(original)
         self.assertEqual(self.calls, [])
 
-    def test_refuses_receipt_infrastructure_that_differs_from_pins(self):
-        other = "redis@sha256:" + "0" * 64
-        self.install.install_receipt(self.install.receipt(redis=other))
+    def test_refuses_receipt_naming_infrastructure_the_release_no_longer_runs(self):
+        retired = "redis@sha256:" + "0" * 64
+        self.install.install_receipt(self.install.receipt(redis=retired))
         self.assertRaises(dispatcher.Refusal, self.run_dispatch, "deploy")
         self.assertEqual(self.calls, [])
 
@@ -326,7 +325,7 @@ class EnvironmentApprovedFlowAcceptance(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_refuses_foreign_identity_or_infrastructure(self):
-        for changes in ({"commit": "b" * 40}, {"runId": "124"}, {"redis": "redis@sha256:" + "0" * 64}):
+        for changes in ({"commit": "b" * 40}, {"runId": "124"}, {"postgres": "postgres@sha256:" + "0" * 64}):
             with self.subTest(changes=changes):
                 self.assertRaises(dispatcher.Refusal, self.run_dispatch, "deploy", self.install.receipt(**changes))
         self.assertEqual(self.calls, [])

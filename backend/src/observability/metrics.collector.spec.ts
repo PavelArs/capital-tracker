@@ -1,5 +1,4 @@
 import type { DataSource } from 'typeorm';
-import type { ExchangeRatesCacheService } from '../cache/exchange-rates-cache.service';
 import { registry } from './metrics';
 import { MetricsCollector } from './metrics.collector';
 
@@ -18,7 +17,7 @@ const value = async (name: string, labels: Record<string, string>) => {
   return undefined;
 };
 
-function collector(rows: { sources: unknown[]; wallets: unknown[] } | Error, redisUp = true) {
+function collector(rows: { sources: unknown[]; wallets: unknown[] } | Error) {
   const source = {
     query: jest.fn(async (sql: string) => {
       if (rows instanceof Error) throw rows;
@@ -27,8 +26,7 @@ function collector(rows: { sources: unknown[]; wallets: unknown[] } | Error, red
     }),
     driver: { master: { totalCount: 4, idleCount: 3, waitingCount: 1 } },
   } as unknown as DataSource;
-  const cache = { isHealthy: async () => redisUp } as unknown as ExchangeRatesCacheService;
-  return new MetricsCollector(source, cache);
+  return new MetricsCollector(source);
 }
 
 describe('OBS-COLLECTOR', () => {
@@ -84,9 +82,12 @@ describe('OBS-COLLECTOR', () => {
     expect(await value('ct_dependency_up', { dependency: 'postgres' })).toBe(0);
   });
 
-  it('OBS-DEP-2 reports Redis and the connection pool', async () => {
-    await collector({ sources: [], wallets: [] }, false).collect();
-    expect(await value('ct_dependency_up', { dependency: 'redis' })).toBe(0);
+  it('OBS-DEP-2 reports the connection pool and only the PostgreSQL dependency', async () => {
+    await collector({ sources: [], wallets: [] }).collect();
+    const dependencies = (await registry.getMetricsAsJSON())
+      .filter((metric) => metric.name === 'ct_dependency_up')
+      .flatMap((metric) => metric.values.map((entry) => entry.labels.dependency));
+    expect(dependencies).toEqual(['postgres']);
     expect(await value('ct_db_pool_connections', { state: 'waiting' })).toBe(1);
     expect(await value('ct_db_pool_connections', { state: 'total' })).toBe(4);
   });

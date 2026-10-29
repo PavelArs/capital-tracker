@@ -59,7 +59,6 @@ function environment(value) {
     ...settings,
     PORT: String(startupPort),
     NODE_ENV: 'production',
-    BACKGROUND_JOBS_ENABLED: 'false',
     HTTP_STARTUP_SECRET_SENTINEL: sentinel,
   };
   delete env.TRUSTED_PROXY_IPS;
@@ -188,7 +187,6 @@ async function main() {
   for (const [name, expected] of Object.entries(settings)) {
     assert.equal(process.env[name], expected, `Allowlisted isolated fixture required: ${name}`);
   }
-  assert.equal(process.env.BACKGROUND_JOBS_ENABLED, 'false');
   assert.ok(
     process.env.MFA_KEY_FILE && existsSync(process.env.MFA_KEY_FILE),
     'Private synthetic key prerequisite',
@@ -236,12 +234,12 @@ async function main() {
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
     assert.equal(
       Number(state.migrations),
-      75,
-      'Run after the actual preserved seventy-five migrations',
+      76,
+      'Run after the actual preserved seventy-six migrations',
     );
     assert.equal(
       state.latest_migration,
-      'AddWalletSyncProgress1798200000000',
+      'AddFetchedAtIndexes1798300000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
@@ -275,7 +273,7 @@ async function main() {
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map(
       (row) => row.name,
     );
-    assert.equal(shownNames.length, 75);
+    assert.equal(shownNames.length, 76);
     assert.deepEqual(
       shownNames,
       appliedNames,

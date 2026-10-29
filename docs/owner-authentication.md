@@ -262,8 +262,8 @@ An exhausted source, account or capacity window returns generic 429 with
 `Cache-Control: no-store` and an integer `Retry-After` (1–60 seconds for source
 windows, 1–600 seconds for account or capacity). Connection, lock, query or
 commit failure returns generic 503 with `no-store`; there is no memory fallback,
-automatic retry or late admission after pool refusal. Admission uses PostgreSQL;
-Redis remains part of the existing application cache. The runtime
+automatic retry or late admission after pool refusal. Admission uses PostgreSQL,
+the only data store the application runs. The runtime
 `connectTimeoutMS=5000` bound applies to every runtime PostgreSQL pool checkout
 and new connection, not only admission. It does not bound total HTTP or Nest
 startup time or impose retry behavior outside the pool connection path. A finite
@@ -357,7 +357,11 @@ the backend stores only the SHA-256 digest of a new random 256-bit token
 `FRONTEND_URL/password-reset/new#token=…`. The token sits in the fragment, so it never
 reaches a server or proxy log; the page posts it back and removes it from the address
 bar once the link is spent. The answer never waits for SMTP, so neither its content nor
-its timing says whether an email went out, and an unknown email sends nothing.
+its timing says whether an email went out, and an unknown email sends nothing. A send
+that fails with a transient SMTP refusal (a dropped connection, a timeout or a 421/450/451/452
+reply) is retried once after 5 seconds; every outcome is counted in the protected metric
+`ct_password_reset_mail_total`, so delivery shows only in metrics and the
+`CapitalTrackerResetMailFailed` alert, never in the response.
 
 A link lives exactly 30 minutes (a table check) and works once. A newer link, a used
 link and CLI `recover` revoke every other outstanding link. Confirming sets the new

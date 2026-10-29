@@ -7,10 +7,6 @@
     "registryDigest": "ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f",
     "originRevision": "0f479b3955aba1cf351a29e897c7ffbdc9909638"
   },
-  "redis": {
-    "tag": "redis:8.10.2-alpine3.23",
-    "registryDigest": "redis@sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23"
-  },
   "resumeOrigin": {
     "commit": "0f479b3955aba1cf351a29e897c7ffbdc9909638",
     "ciRunId": "36900868365",

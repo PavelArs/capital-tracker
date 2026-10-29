@@ -45,7 +45,7 @@ else
   # An orphan volume is owner data until positively reviewed. Never attach it implicitly.
   containers=$(docker ps -a --format '{{.Names}}')
   volumes=$(docker volume ls --format '{{.Name}}')
-  [[ -z $(grep -E '^capital_tracker_(db|redis|backend|frontend)$' <<<"$containers" || true) ]] || { echo 'Fresh install refused: application containers already exist'; exit 1; }
+  [[ -z $(grep -E '^capital_tracker_(db|backend|frontend)$' <<<"$containers" || true) ]] || { echo 'Fresh install refused: application containers already exist'; exit 1; }
   [[ -z $(grep -Ei 'capital|tracker' <<<"$volumes" || true) ]] || { echo 'Fresh install refused: unexplained application data volume'; exit 1; }
   labeled_volumes=$(docker volume ls -q --filter label=com.docker.compose.project=capital-tracker)
   [[ -z $labeled_volumes ]] || exit 1
@@ -59,7 +59,6 @@ dc() { docker compose --project-directory "$root" -p "$project" "${base_env[@]}"
 # Never print rendered configuration, which contains passwords.
 config=$(dc config --format json)
 postgres_ref=$(jq -er '.services.postgres.image' <<<"$config")
-redis_ref=$(jq -er '.services.redis.image' <<<"$config")
 expected_major=$(jq -er '.services.postgres.environment.CAPITAL_EXPECTED_MAJOR' <<<"$config")
 candidate_target=$(jq -er '.services.postgres.volumes[] | select(.type=="volume" and .source=="postgres_data") | .target' <<<"$config")
 [[ $expected_major == 16 || $expected_major == 18 ]] || { echo 'Unsupported PostgreSQL major'; exit 1; }
@@ -70,15 +69,11 @@ if [[ $installation == existing || $installation == resume-fresh || $installatio
   volume=$(docker inspect "$db" | jq -er --arg target "$candidate_target" '.[0].Mounts[] | select(.Destination==$target and .Type=="volume") | .Name')
   # Resolve locally. Never pull or restart infrastructure during an application release.
   running_postgres=$(docker inspect "$db" --format '{{.Image}}')
-  running_redis=$(docker inspect capital_tracker_redis --format '{{.Image}}')
-  [[ $(docker image inspect "$postgres_ref" --format '{{.Id}}') == "$running_postgres" \
-    && $(docker image inspect "$redis_ref" --format '{{.Id}}') == "$running_redis" ]] || { echo 'Infrastructure image change refused'; exit 1; }
+  [[ $(docker image inspect "$postgres_ref" --format '{{.Id}}') == "$running_postgres" ]] || { echo 'Infrastructure image change refused'; exit 1; }
 else
   [[ $expected_major == 18 ]] || { echo 'Fresh installation requires PostgreSQL18'; exit 1; }
-  [[ $postgres_ref =~ ^ghcr\.io/pavelars/capital-tracker-postgres@sha256:[a-f0-9]{64}$ \
-    && $redis_ref =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Fresh infrastructure must use immutable reviewed digests'; exit 1; }
-  [[ $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" \
-    && $redis_ref == "${RELEASE_REDIS_IMAGE:-}" ]] || { echo 'Fresh infrastructure differs from reviewed candidate pins'; exit 1; }
+  [[ $postgres_ref =~ ^ghcr\.io/pavelars/capital-tracker-postgres@sha256:[a-f0-9]{64}$ ]] || { echo 'Fresh infrastructure must use immutable reviewed digests'; exit 1; }
+  [[ $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" ]] || { echo 'Fresh infrastructure differs from reviewed candidate pins'; exit 1; }
 fi
 origin=$(jq -er '.services.backend.environment.FRONTEND_URL' <<<"$config")
 [[ $origin =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo 'Invalid HTTPS origin'; exit 1; }
@@ -93,15 +88,14 @@ backup_key=${RELEASE_BACKUP_KEY_FILE:-$root/.backup-key}
 [[ $installation == fresh || $(jq -er '.volumes.postgres_data.name' <<<"$config") == "$volume" ]] || { echo 'Database volume identity mismatch'; exit 1; }
 resume_snapshot=''
 if [[ $installation == resume-fresh ]]; then
-  [[ $expected_major == 18 && $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" && $redis_ref == "${RELEASE_REDIS_IMAGE:-}" ]] || { echo 'Resume infrastructure differs from approved receipt'; exit 1; }
-  resume_snapshot=$(/usr/bin/python3 -I "${RELEASE_RESUME_HELPER:?}" preflight "$root" "${RELEASE_PINS_FILE:?}" "${RELEASE_USED_RECEIPTS_DIR:?}" "$postgres_ref" "$redis_ref")
+  [[ $expected_major == 18 && $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" ]] || { echo 'Resume infrastructure differs from approved receipt'; exit 1; }
+  resume_snapshot=$(/usr/bin/python3 -I "${RELEASE_RESUME_HELPER:?}" preflight "$root" "${RELEASE_PINS_FILE:?}" "${RELEASE_USED_RECEIPTS_DIR:?}" "$postgres_ref")
 fi
 compare_resume() {
   local operation=compare
   [[ ${1:-} != active ]] || operation=compare-active
-  [[ $installation != resume-fresh ]] || /usr/bin/python3 -I "$RELEASE_RESUME_HELPER" "$operation" "$root" "$RELEASE_PINS_FILE" "$RELEASE_USED_RECEIPTS_DIR" "$postgres_ref" "$redis_ref" "$resume_snapshot"
+  [[ $installation != resume-fresh ]] || /usr/bin/python3 -I "$RELEASE_RESUME_HELPER" "$operation" "$root" "$RELEASE_PINS_FILE" "$RELEASE_USED_RECEIPTS_DIR" "$postgres_ref" "$resume_snapshot"
 }
-[[ $(jq -er '.services.backend.environment.BACKGROUND_JOBS_ENABLED' <<<"$config") == false ]] || exit 1
 jq -e --arg installation "$installation" '.services.backend.environment.TRUSTED_PROXY_IPS | fromjson | type=="array" and (length>0 or $installation=="fresh")' <<<"$config" >/dev/null
 jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/null
 # Anonymous checks never authenticate with owner factors or expose private response bodies.
@@ -201,7 +195,7 @@ cleanup() {
 trap cleanup EXIT
 # Pull candidates before downtime; retain existing images and durable containers.
 BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc pull backend frontend
-if [[ $installation == fresh ]]; then dc pull postgres redis; fi
+if [[ $installation == fresh ]]; then dc pull postgres; fi
 # Maintenance window makes dump, restored fingerprint and migration one write-free boundary.
 apps_stopped=true
 if [[ $installation == existing || $installation == resume-fresh ]]; then
@@ -211,7 +205,7 @@ if [[ $installation == existing || $installation == resume-activation ]]; then
   dc stop backend frontend
 elif [[ $installation == fresh ]]; then
   # Fresh data creation follows explicit absence proof; never overwrite an existing project.
-  dc up -d --wait --wait-timeout 120 postgres redis
+  dc up -d --wait --wait-timeout 120 postgres
   db=$(docker inspect capital_tracker_db --format '{{.Id}}')
   [[ $(docker exec "$db" sh -c 'cat "$PGDATA/PG_VERSION"') == "$expected_major" ]] || { echo 'Initialized PostgreSQL major mismatch'; exit 1; }
   network=$(docker inspect "$db" | jq -er '.[0].NetworkSettings.Networks | keys | select(length==1) | .[0]')

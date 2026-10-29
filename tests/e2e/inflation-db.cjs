@@ -18,7 +18,7 @@ const settings = {
 };
 const database = 'capital_tracker_inflation_e2e';
 const modulePath = '/app/backend/dist/inflation/inflation.service.js';
-const MIGRATIONS = 75;
+const MIGRATIONS = 76;
 let stage = 'synthetic configuration';
 
 function source() {

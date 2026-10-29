@@ -52,7 +52,7 @@ Unknown or duplicate fields, trailing data and command-line arguments are refuse
 owner-approved receipt `/etc/capital-tracker/release-receipts/<commit>-<runId>.json`;
 image digests and installation mode come only from it. Before starting the runner it
 checks that the installed runner, inventory, normalizer, Compose and pin files match the
-receipt SHA256 values and that Redis equals its reviewed digest. PostgreSQL is the
+receipt SHA256 values. PostgreSQL is the
 owner-approved promoted derived-image digest; its official base digest and Dockerfile
 hash are separately reviewed source pins, not the final image identity. The dispatcher
 also checks that application images are `ghcr.io/pavelars/capital-tracker-{backend,frontend}` digests.
@@ -93,6 +93,19 @@ inventory, normalizer, Compose, pins or resume helper (the dispatcher refuses wi
 that commit `scripts/manual-mvp-dispatcher-install.sh update`, then re-run the
 release. `update` never touches the SSH principal, its key, the sudo rule, the
 registry login or receipts.
+
+Cache service removal (owner decision, 2026-10-28): no backend code read or wrote the
+Redis cache, so Compose, the pins, the receipt, the runner, the resume helper and the
+dispatcher no longer name it, and the backend no longer waits for it at startup. The
+first release after this change needs `update` as above, because the installed runner,
+Compose, pins, resume helper and dispatcher all differ from the reviewed receipt, and the
+updated dispatcher refuses receipts that still carry the retired `redis` field. The
+release neither stops nor removes the old `capital_tracker_redis` container or its
+`redis_data` volume: Compose reports the container as an orphan. Keep
+`capital_tracker_redis` running until the first release without it has succeeded,
+because a failed release rolls back to the previous backend, which still connects to it.
+After that, stopping the container and deleting the volume are the owner's decisions;
+the volume holds no application data. The `REDIS_IMAGE` line in the server's `.env.release` is no longer read.
 
 Interrupted first activation (production run 37001810387, 2026-10-02): migrations,
 owner and MFA succeeded, the frontend health check failed and both applications were
@@ -193,12 +206,12 @@ full suite on its final head (`Merged Pull Request CI`) and exports the candidat
 main images come from the same pinned Dockerfiles and lockfile as the tested ones but
 are a new build of the merged commit. CI exports the release images, their image IDs and
 commit/run schema-v3 manifest. The official PostgreSQL 18.6 Alpine3.24 digest
-(`postgres.baseRegistryDigest`) and the official Redis8.10.2 platform digest are in
+(`postgres.baseRegistryDigest`) is in
 `deploy/manual-mvp-infrastructure-pins.json`, separate from the candidate manifest. Since
-2026-10-24 (owner decision) CI pulls the official PostgreSQL digest, as it does Redis, and
+2026-10-24 (owner decision) CI pulls the official PostgreSQL digest and
 tags it `capital-tracker-postgres:acceptance`; it no longer builds `deploy/postgres.Dockerfile`
 (gosu replaced by su-exec) or checks a build revision label, and the image scan covers the
-backend, frontend and Redis images only. The pin's `registryDigest`, Dockerfile hash and
+backend and frontend images only. The pin's `registryDigest`, Dockerfile hash and
 `originRevision` remain the reviewed identity of the interrupted first release's derived
 image, which the dispatcher and the resume helper still check. A release promotes the tested
 PostgreSQL image, so new receipts and fresh installations carry the official image; an existing
@@ -212,10 +225,9 @@ registry digests, schema ledgers, backup path and verified health. Pinned Trivy 
 unresolved high/critical findings block the pull request. Complete finding identifiers and lower
 severities remain in sanitized reports; raw secret matches/image environment details are
 removed before upload. Fresh bootstrap checks PostgreSQL’s actual promoted GHCR digest against a root-reviewed
-fresh receipt; its official base digest is only a source input. Redis stays official and
-must match the reviewed pin. Existing releases compare the infrastructure references
-preserved in the server's `.env.release` to the running PostgreSQL and Redis image IDs
-before downtime. The fresh receipt's PostgreSQL digest does not authorize replacing
+fresh receipt; its official base digest is only a source input. Existing releases compare
+the PostgreSQL reference preserved in the server's `.env.release` to the running PostgreSQL
+image ID before downtime. The fresh receipt's PostgreSQL digest does not authorize replacing
 existing infrastructure. Fresh releases require the promoted/reviewed digest references. The isolated four-image scans and PostgreSQL18 backup/restore now
 passed; successful hosted main CI and the real server release's backup/restore remain
 separate required evidence.
@@ -226,7 +238,7 @@ A privileged operator uses a clean root-owned Git checkout, including `.git`, of
 exact promoted receipt commit and runs:
 
 ```sh
-scripts/manual-mvp-server-bootstrap.sh root POSTGRES_DIGEST REDIS_DIGEST /root/capital-release/COMMIT-RUN.json
+scripts/manual-mvp-server-bootstrap.sh root POSTGRES_DIGEST /root/capital-release/COMMIT-RUN.json
 ```
 
 Fresh bootstrap uses only `/var/snap/docker/common/capital-tracker`, accessible to
@@ -242,7 +254,7 @@ The bootstrap account argument is explicitly `root`: it owns the runtime directo
 belong to container uid1000. `capital-release` is the distinct restricted SSH principal,
 not the bootstrap/runtime owner. `POSTGRES_DIGEST` must be the receipt's promoted
 `ghcr.io/pavelars/capital-tracker-postgres@sha256:…` reference, never the official base
-pin. `REDIS_DIGEST` must be the receipt's reviewed official Redis digest.
+pin.
 
 The script refuses existing application data, occupied3100/3101/3102,
 and existing release secret files. It creates independent random MFA and backup keys,
@@ -252,9 +264,9 @@ failed configuration retains secrets for inspection and restores the prior targe
 First promote the successful exact candidate with `installation=fresh`. Privately
 review its receipt and place it under `/root/capital-release/` with root ownership,
 mode0600 and root-owned, non-writable, non-symlink ancestors. This is reviewed bootstrap
-metadata, not the final single-use deployment approval. Both digest arguments must
-match this strict receipt: PostgreSQL uses `ghcr.io/pavelars/capital-tracker-postgres@sha256:…`,
-Redis uses the reviewed official `redis@sha256:…`. Receipt identity and every reviewed
+metadata, not the final single-use deployment approval. The digest argument must
+match this strict receipt: PostgreSQL uses `ghcr.io/pavelars/capital-tracker-postgres@sha256:…`.
+Receipt identity and every reviewed
 server source hash must match before bootstrap changes any server file. Fresh PostgreSQL18 mounts `/var/lib/postgresql`,
 including its version-specific PGDATA directory. Existing PostgreSQL16 retains
 `/var/lib/postgresql/data`; a major or mount mismatch refuses the release before downtime.

@@ -64,7 +64,7 @@ const pins =
         readJson(join(root, 'deploy/manual-mvp-infrastructure-pins.json')),
       );
 
-// The official PostgreSQL image, pinned by digest like Redis (owner decision 2026-10-24).
+// The official PostgreSQL image, pinned by digest (owner decision 2026-10-24).
 function verifyPostgresPin() {
   const official = pins.postgres.baseRegistryDigest;
   execFileSync('docker', ['pull', '--quiet', '--platform', 'linux/amd64', official], {
@@ -231,7 +231,7 @@ if (command === 'down') {
       // A shard tests only the images of the build manifest, in its running containers too.
       const verifyTestedImages = () => {
         const expected = shards.verifyImages(built, releaseCommit, runId, pins, inspectImage);
-        const services = { postgres: 'postgres', redis: 'redis' };
+        const services = { postgres: 'postgres' };
         if (browserShard) {
           for (const service of ['backend', 'backend-replica', 'client-a', 'client-b']) {
             services[service] = 'backend';
@@ -280,7 +280,6 @@ if (command === 'down') {
             '--wait-timeout',
             '120',
             'postgres',
-            'redis',
             'providers',
           );
         } else if (kind === 'migrate' || kind === 'seed') {
