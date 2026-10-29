@@ -48,7 +48,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     TypeOrmModule.forRootAsync({
       useClass: TypeOrmConfigService,
     }),
-    ScheduleModule.forRoot({ cronJobs: process.env.BACKGROUND_JOBS_ENABLED !== 'false' }),
+    ScheduleModule.forRoot(),
     AuthModule,
     AccountingModule,
     BrokersModule,

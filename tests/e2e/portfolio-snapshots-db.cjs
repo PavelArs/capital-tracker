@@ -621,6 +621,44 @@ async function pricedSubset(db, s) {
   console.log('PASS DASH-PRICED-SUBSET exact matched value and invested money, exclusion stated, records preserved');
 }
 
+async function inputsRevision(db, s) {
+  stage = 'SNAP-REVISION an owner write changes the inputs revision; nothing else does';
+  const { INPUTS_REVISION } = require(modulePath);
+  const [{ id: owner }, { id: other }] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('revision-owner@example.invalid','synthetic-not-a-hash'),
+    ('revision-other@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const revision = async (id) => (await db.query(INPUTS_REVISION, [id]))[0].revision;
+  const cash = await instrument(s, owner, { name: 'Revision cash', symbol: 'USD', assetType: 'fiat' });
+  const target = await account(s, owner, 'Revision account', '2026-10-01T00:00:00Z');
+  await trade(s, owner, target, cash, 'buy', '2026-10-01T01:00:00Z', '10', '10');
+  const first = await revision(owner);
+  assert.match(first, /^[0-9a-f]{32}$/);
+  assert.equal(await revision(owner), first, 'An unchanged owner keeps its revision');
+  const versions = async () =>
+    (await db.query('SELECT count(*)::int AS n FROM account_trade_versions WHERE "ownerId"=$1', [owner]))[0].n;
+  const counted = await versions();
+  await trade(s, owner, target, cash, 'buy', '2026-10-01T02:00:00Z', '5', '5');
+  assert.equal(await versions(), counted + 1, 'The journal command appends a version row');
+  const traded = await revision(owner);
+  assert.notEqual(traded, first, 'An appended trade version changes the revision');
+  const { DepositsService } = require('/app/backend/dist/deposits/deposits.service.js');
+  await new DepositsService(db).create(owner, { requestId: randomUUID(), kind: 'account', name: 'Revision deposit', bank: 'Synthetic Bank', currency: 'RUB', startDate: '2026-10-01', endDate: null, payout: 'monthly', capitalized: false, dayBasis: 'actual-365', earlyClose: 'keeps-interest', ratePercent: '5', amount: '1000' });
+  const deposited = await revision(owner);
+  assert.notEqual(deposited, traded, 'A new deposit changes the revision');
+  // Same row count, one value rewritten in place: only the row hash can see it.
+  // TypeORM answers an UPDATE with [rows, rowCount].
+  const [renamed] = await db.query(
+    `UPDATE bank_deposits SET name='Renamed revision deposit' WHERE "ownerId"=$1 RETURNING id`, [owner]);
+  assert.equal(renamed.length, 1, 'The owner has exactly one deposit to rename');
+  assert.notEqual(await revision(owner), deposited, 'An in-place edit of a hashed table changes the revision');
+  const settled = await revision(owner);
+  const foreign = await instrument(s, other, { name: 'Other cash', symbol: 'USD', assetType: 'fiat' });
+  const elsewhere = await account(s, other, 'Other account', '2026-10-01T00:00:00Z');
+  await trade(s, other, elsewhere, foreign, 'buy', '2026-10-01T01:00:00Z', '1', '1');
+  assert.equal(await revision(owner), settled, "Another owner's writes leave this revision unchanged");
+  console.log('PASS SNAP-REVISION stable for an unchanged owner, changed by appended versions and in-place edits, isolated per owner');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -650,16 +688,16 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 75/);
+  assert.match(migrated.stdout, /Migrations applied: 76/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 75);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 76);
     assert.deepEqual(
       (await db.query('SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2')).map(
         ({ name }) => name,
       ),
-      ['AddWalletSyncProgress1798200000000', 'AddBrokerPrices1798100000000'],
+      ['AddFetchedAtIndexes1798300000000', 'AddWalletSyncProgress1798200000000'],
     );
     const [owner, other] = await db.query(`INSERT INTO users(email,password) VALUES
       ('snapshot-owner@example.invalid','synthetic-not-a-hash'),
@@ -671,6 +709,7 @@ async function main() {
     for (const check of [backfill, hourly, rebuild, assetHistory, reads]) await check(db, s, f);
     await schedule(db, f);
     await pricedSubset(db, s);
+    await inputsRevision(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

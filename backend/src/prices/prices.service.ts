@@ -75,8 +75,7 @@ export class PricesService {
     return this.config.get('PRICE_COLLECTION_ENABLED') === 'true';
   }
 
-  // Interval jobs stay registered when BACKGROUND_JOBS_ENABLED=false disables cron jobs;
-  // this one has its own explicit switch.
+  // Interval jobs are always registered; PRICE_COLLECTION_ENABLED gates each tick.
   @Interval(5 * 60_000)
   async scheduledTick(): Promise<void> {
     try {

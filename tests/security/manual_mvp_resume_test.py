@@ -67,7 +67,7 @@ class InfrastructureProof(unittest.TestCase):
                          'BACKEND_HOST_PORT': '3100', 'FRONTEND_HOST_PORT': '3101',
                          'MFA_KEY_FILE': str(self.root / '.mfa-key'), 'MFA_KEY_ID': 'capital-production-1',
                          'TRUSTED_PROXY_IPS': '["172.1.2.3"]', 'OWNER_EMAIL': 'owner@capital.pavelars.ru',
-                         'BACKGROUND_JOBS_ENABLED': 'false', 'DISPLAY_FX_ENABLED': 'false'}
+                         'DISPLAY_FX_ENABLED': 'false'}
         self.write_settings()
         self.pg_id = 'a' * 64
         self.net_id = 'n' * 64
@@ -155,6 +155,17 @@ class InfrastructureProof(unittest.TestCase):
         self.write_settings()
         with self.assertRaises(resume.Refusal):
             self.check()
+
+    def test_legacy_background_jobs_line_is_accepted_only_as_false(self):
+        self.settings['BACKGROUND_JOBS_ENABLED'] = 'false'
+        self.write_settings()
+        self.assertNotIn('BACKGROUND_JOBS_ENABLED', resume.runtime_settings(self.root))
+        self.check()
+        for key, value in (('BACKGROUND_JOBS_ENABLED', 'true'), ('UNKNOWN_SETTING', 'false')):
+            settings = {**self.settings, key: value}
+            (self.root / '.env.release').write_text(''.join(k + '=' + v + '\n' for k, v in settings.items()))
+            with self.subTest(key=key, value=value), self.assertRaises(resume.Refusal):
+                resume.runtime_settings(self.root)
 
     def test_interrupted_residue_refuses_activation_unknown_file_and_schema_marker(self):
         pins = json.loads((SOURCE.parents[1] / 'deploy/manual-mvp-infrastructure-pins.json').read_text())

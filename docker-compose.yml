@@ -31,7 +31,6 @@ services:
       PORT: 3000
       NODE_ENV: production
       FRONTEND_URL: ${FRONTEND_URL:?Set the exact production HTTPS origin}
-      BACKGROUND_JOBS_ENABLED: "false"
       DISPLAY_FX_ENABLED: "false"
       PRICE_COLLECTION_ENABLED: "true"
       # Free Etherscan key for Ethereum wallets (M14); without it they report a missing key.

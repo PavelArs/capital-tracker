@@ -195,6 +195,7 @@ const migrationNames = [
   'AddShareSplits1798000000000',
   'AddBrokerPrices1798100000000',
   'AddWalletSyncProgress1798200000000',
+  'AddFetchedAtIndexes1798300000000',
 ];
 
 function connection(database) {
@@ -368,7 +369,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-five migrations',
+      'Exactly seventy-six migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -416,6 +417,33 @@ async function verifyFresh() {
       for (const column of columns)
         assert.ok(!present.includes(column), `Unused column ${table}.${column} must be gone`);
     }
+    // The snapshot change detector's max("fetchedAt") reads end on these indexes.
+    assert.deepEqual(
+      (
+        await client.query(
+          `SELECT indexname, indexdef FROM pg_indexes
+          WHERE schemaname = 'public' AND indexname = ANY($1) ORDER BY indexname`,
+          [fetchedAtIndexes],
+        )
+      ).rows,
+      [
+        {
+          indexname: 'broker_price_observations_fetched',
+          indexdef:
+            'CREATE INDEX broker_price_observations_fetched ON public.broker_price_observations USING btree ("ownerId", "fetchedAt")',
+        },
+        {
+          indexname: 'fx_rates_fetched',
+          indexdef: 'CREATE INDEX fx_rates_fetched ON public.fx_rates USING btree ("fetchedAt")',
+        },
+        {
+          indexname: 'price_observations_fetched',
+          indexdef:
+            'CREATE INDEX price_observations_fetched ON public.price_observations USING btree ("fetchedAt")',
+        },
+      ],
+      'Fetched-at indexes',
+    );
     assert.equal(
       (await client.query('SELECT count(*)::int AS count FROM auth_request_limits')).rows[0].count,
       0,
@@ -784,7 +812,9 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
       ['indexes', 'tablename'],
     ]) {
       assert.deepEqual(
-        after[kind].filter((row) => !addedTables.includes(row[tableKey])),
+        after[kind].filter(
+          (row) => !addedTables.includes(row[tableKey]) && !fetchedAtAddition(kind, row),
+        ),
         keptBefore[kind].filter((row) => !addedTables.includes(row[tableKey])),
         `Preserve previous ${kind}`,
       );
@@ -1437,6 +1467,15 @@ function walletSyncAddition(kind, row) {
     return row.table_name === 'wallet_addresses' && ['evmSync', 'solanaSync'].includes(row.column_name);
   return kind === 'constraints' && row.relname === 'wallet_addresses' &&
     ['wallet_addresses_evmSync_check', 'wallet_addresses_solanaSync_check'].includes(row.conname);
+}
+// AddFetchedAtIndexes1798300000000 adds three indexes on when prices and rates were fetched.
+const fetchedAtIndexes = [
+  'price_observations_fetched',
+  'fx_rates_fetched',
+  'broker_price_observations_fetched',
+];
+function fetchedAtAddition(kind, row) {
+  return kind === 'indexes' && fetchedAtIndexes.includes(row.indexname);
 }
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
@@ -2554,6 +2593,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1798000000000',
           '1798100000000',
           '1798200000000',
+          '1798300000000',
         ][index - 11],
       );
     }
@@ -2578,6 +2618,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           !sessionDeviceAddition(kind, row) &&
           !walletKindAddition(kind, row) &&
           !walletSyncAddition(kind, row) &&
+          !fetchedAtAddition(kind, row) &&
           !manualPriceCurrencyAddition(kind, row) &&
           !depositKindAddition(kind, row) &&
           !capitalReturnAddition(kind, row) &&

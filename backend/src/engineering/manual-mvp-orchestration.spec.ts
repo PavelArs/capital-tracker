@@ -45,7 +45,6 @@ if(tool==='jq'){
  else if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
  else if(q.includes('FRONTEND_URL'))v='https://mvp.example.invalid';
  else if(q.includes('volumes[]'))v=path.join(root,'mfa-key');
- else if(q.includes('BACKGROUND_JOBS_ENABLED'))v='false';
  else if(q.includes('.proxyPeer'))v='172.18.0.3';
  process.stdout.write(v);
 }
