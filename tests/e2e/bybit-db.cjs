@@ -1057,6 +1057,13 @@ async function main() {
         ['bybit-earn-onchain-1002005', 'staking-reward', true],
       ],
     );
+    // M9: a USDT yield is worth its quantity in USD, though no USDT price is stored.
+    const [usdtReward] = await db.query(
+      `SELECT details FROM chain_transaction_classification_versions
+      WHERE "addressId"=$1 AND txid='bybit-earn-flexible-1002001'`,
+      [wallet],
+    );
+    assert.deepEqual(usdtReward.details, { type: 'staking-reward', valueUsd: '0.5' });
     const listedRewards = (await listOf()).filter((item) =>
       item.chain?.txid?.startsWith('bybit-earn-'),
     );

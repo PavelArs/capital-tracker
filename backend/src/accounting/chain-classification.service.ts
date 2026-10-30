@@ -297,13 +297,6 @@ const sameEntry = (left: Produced, right: Produced) =>
   left.rewardId === right.rewardId &&
   left.transferId === right.transferId &&
   left.swapId === right.swapId;
-/** quantity × price in USD, half up to whole cents (TRON-REWARD). */
-export function centsOf(quantity: string, priceUsd: string): string {
-  // Both carry 30 decimals: the product carries 60, a cent is 10^58 of it.
-  const product = canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(priceUsd);
-  const cents = (product + 5n * 10n ** 57n) / 10n ** 58n;
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
-}
 
 /**
  * What decides the produced entry: same answer, same account, same note keep it as it is. A
@@ -688,8 +681,9 @@ export class ChainClassificationService {
 
   /**
    * TRON-REWARD, BYBIT-EARN: records every Tron vote reward claim (a WithdrawBalance the wallet
-   * signed) and every Earn yield Bybit paid as a Staking reward without asking, valued at the
-   * stored price of its coin at its time when there is one, each in its own transaction. It
+   * signed) and every Earn yield Bybit paid as a Staking reward without asking, valued 1:1 for
+   * USDT and USDC (M9), else at the stored price of its coin at its time when there is one, each
+   * in its own transaction. It
    * needs the wallet's account; a reward the owner has answered is never touched.
    */
   async recognizeStakingRewards(ownerId: string): Promise<{ recognized: number }> {
@@ -723,7 +717,7 @@ export class ChainClassificationService {
             hidden: false,
             classification: {
               type: 'staking-reward',
-              valueUsd: price === null ? null : centsOf(quantity, price),
+              valueUsd: storedValueUsd(chainCoin(row).symbol, quantity, price),
             },
           };
           const payload = JSON.stringify({
