@@ -426,11 +426,10 @@ export class OwnerExportService {
       ...rewards.map(
         (row): ExportOperation => ({
           ...base(row, 'reward'),
-          // A recorded answer names an entry made by hand; the entry's own category types it.
-          type:
-            row.chainType && row.chainType !== 'recorded'
-              ? String(row.chainType)
-              : rewardType(row.category as Parameters<typeof rewardType>[0]),
+          // A reward a chain answer produced is listed under the answer's type, as the list does.
+          type: row.chainType
+            ? String(row.chainType)
+            : rewardType(row.category as Parameters<typeof rewardType>[0]),
           direction: 'in',
           source: chainOr(row, 'manual'),
           valueUsd: text(row.incomeValueUsd),
