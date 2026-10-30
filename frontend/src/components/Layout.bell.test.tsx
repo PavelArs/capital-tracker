@@ -1,9 +1,10 @@
+import { hiddenAssetsApi } from '@api/hidden-assets.api';
 import { operationsApi } from '@api/operations.api';
 import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { syncStatusApi } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
 import PageHeader from '@features/shell/PageHeader';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -98,6 +99,19 @@ describe('ATTN-BELL on a phone', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull();
     expect(bell).toHaveFocus();
+  });
+});
+
+describe('N4: the sidebar sync plate', () => {
+  it('counts what the bell counts', async () => {
+    phone(false);
+    // Every read the bell makes answers, so the plate has no failed refresh to report instead.
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);
+    const { container } = renderShell();
+    // Two operations wait to be classified: the bell and the plate both say so.
+    await screen.findByRole('button', { name: /need(s)? attention/ });
+    const plate = container.querySelector('[data-sync-status]');
+    await waitFor(() => expect(plate).toHaveTextContent(/need(s)? attention/));
   });
 });
 

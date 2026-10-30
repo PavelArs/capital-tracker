@@ -343,7 +343,8 @@ isolated(
       const status = page
         .getByRole('navigation', { name: 'Main navigation' })
         .locator('[data-sync-status]');
-      await expect(status).toContainText('1 source needs attention');
+      // N4: the plate counts what the bell counts, the failed source among them.
+      await expect(status).toContainText(/^\d+ needs? attention/);
       await expect(status).toContainText('Others synced 12 min ago');
       await expect(status).toHaveAttribute('href', '/wallets');
       expect(

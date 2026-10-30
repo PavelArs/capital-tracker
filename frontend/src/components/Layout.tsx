@@ -181,112 +181,115 @@ export default function Layout() {
     </NavLink>
   );
 
+  // N4: the providers wrap the sidebar too, so its sync plate counts what the bell counts.
   return (
-    <div className="shell">
-      <a className="skip-link" href="#main-content">
-        Skip to content
-      </a>
-      <nav className="shell-nav" aria-label="Main navigation">
-        <div className="shell-nav__header">
-          <div className="shell-brand">
-            <BrandMark />
-            Capital
-          </div>
-        </div>
-        <div id="application-menu" className="shell-nav__menu">
-          <ul className="shell-nav__sections" data-nav-group="sections">
-            {sections.map((section) => (
-              <li
-                key={section.path}
-                className={tabSections.includes(section.path) ? undefined : 'shell-nav__in-more'}
-              >
-                {sectionLink(section, followLink)}
-              </li>
-            ))}
-            <li className="shell-nav__more">
-              <button
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded={moreOpen}
-                aria-current={moreCurrent ? 'page' : undefined}
-                aria-label={moreCurrent ? `More, now on ${moreCurrent.label}` : 'More'}
-                onClick={() => setMoreOpen(true)}
-              >
-                <Icon name="more" />
-                <span className="shell-nav__label">More</span>
-              </button>
-            </li>
-          </ul>
-          <SyncIndicator onFollow={followLink} />
-        </div>
-        <div className="shell-owner">
-          <span className="shell-owner__avatar" aria-hidden="true">
-            {email.charAt(0).toUpperCase()}
-          </span>
-          <span className="shell-owner__who">
-            <span className="shell-owner__name" title={email}>
-              Owner
-            </span>
-            <small>2FA on</small>
-          </span>
-          <IconButton
-            label="Log out"
-            icon="logout"
-            className="shell-owner__logout"
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-          />
-        </div>
-        {moreOpen && (
-          <Modal
-            titleId="shell-more-title"
-            size="narrow"
-            className="shell-more"
-            onEscape={closeMore}
-            initialFocus={(root) =>
-              root.querySelector<HTMLElement>('a[aria-current="page"]') ??
-              root.querySelector<HTMLElement>('a')
-            }
-          >
-            <ModalHeader titleId="shell-more-title" title="More" onClose={closeMore} />
-            <ModalBody>
-              <ul className="shell-more__list">
-                {moreSections.map((section) => (
-                  <li key={section.path}>{sectionLink(section, followFromMore)}</li>
-                ))}
-              </ul>
-              <SyncIndicator onFollow={followFromMore} />
-              <div className="shell-more__owner">
-                <span className="shell-owner__avatar" aria-hidden="true">
-                  {email.charAt(0).toUpperCase()}
-                </span>
-                <span className="shell-more__who">
-                  Owner
-                  <small>2FA on</small>
-                </span>
-                <Button
-                  variant="ghost"
-                  destructive
-                  icon="logout"
-                  onClick={() => void handleLogout()}
-                  disabled={isLoggingOut}
-                >
-                  Log out
-                </Button>
+    <MainCurrencyProvider>
+      <AttentionProvider>
+        <div className="shell">
+          <a className="skip-link" href="#main-content">
+            Skip to content
+          </a>
+          <nav className="shell-nav" aria-label="Main navigation">
+            <div className="shell-nav__header">
+              <div className="shell-brand">
+                <BrandMark />
+                Capital
               </div>
-            </ModalBody>
-          </Modal>
-        )}
-      </nav>
-      <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
-        <MainCurrencyProvider>
-          <AttentionProvider>
+            </div>
+            <div id="application-menu" className="shell-nav__menu">
+              <ul className="shell-nav__sections" data-nav-group="sections">
+                {sections.map((section) => (
+                  <li
+                    key={section.path}
+                    className={
+                      tabSections.includes(section.path) ? undefined : 'shell-nav__in-more'
+                    }
+                  >
+                    {sectionLink(section, followLink)}
+                  </li>
+                ))}
+                <li className="shell-nav__more">
+                  <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-expanded={moreOpen}
+                    aria-current={moreCurrent ? 'page' : undefined}
+                    aria-label={moreCurrent ? `More, now on ${moreCurrent.label}` : 'More'}
+                    onClick={() => setMoreOpen(true)}
+                  >
+                    <Icon name="more" />
+                    <span className="shell-nav__label">More</span>
+                  </button>
+                </li>
+              </ul>
+              <SyncIndicator onFollow={followLink} />
+            </div>
+            <div className="shell-owner">
+              <span className="shell-owner__avatar" aria-hidden="true">
+                {email.charAt(0).toUpperCase()}
+              </span>
+              <span className="shell-owner__who">
+                <span className="shell-owner__name" title={email}>
+                  Owner
+                </span>
+                <small>2FA on</small>
+              </span>
+              <IconButton
+                label="Log out"
+                icon="logout"
+                className="shell-owner__logout"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+              />
+            </div>
+            {moreOpen && (
+              <Modal
+                titleId="shell-more-title"
+                size="narrow"
+                className="shell-more"
+                onEscape={closeMore}
+                initialFocus={(root) =>
+                  root.querySelector<HTMLElement>('a[aria-current="page"]') ??
+                  root.querySelector<HTMLElement>('a')
+                }
+              >
+                <ModalHeader titleId="shell-more-title" title="More" onClose={closeMore} />
+                <ModalBody>
+                  <ul className="shell-more__list">
+                    {moreSections.map((section) => (
+                      <li key={section.path}>{sectionLink(section, followFromMore)}</li>
+                    ))}
+                  </ul>
+                  <SyncIndicator onFollow={followFromMore} />
+                  <div className="shell-more__owner">
+                    <span className="shell-owner__avatar" aria-hidden="true">
+                      {email.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="shell-more__who">
+                      Owner
+                      <small>2FA on</small>
+                    </span>
+                    <Button
+                      variant="ghost"
+                      destructive
+                      icon="logout"
+                      onClick={() => void handleLogout()}
+                      disabled={isLoggingOut}
+                    >
+                      Log out
+                    </Button>
+                  </div>
+                </ModalBody>
+              </Modal>
+            )}
+          </nav>
+          <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
             <Fragment key={attempt}>
               <Outlet />
             </Fragment>
-          </AttentionProvider>
-        </MainCurrencyProvider>
-      </main>
-    </div>
+          </main>
+        </div>
+      </AttentionProvider>
+    </MainCurrencyProvider>
   );
 }
