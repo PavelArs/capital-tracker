@@ -3,11 +3,16 @@ import type { AccountingCurrency, AssetValuation } from '@api/portfolio-valuatio
 
 // Display only: exact decimal strings are rounded here and nowhere else (PV-5), and always down,
 // so a figure is never shown above the real one and a loss never smaller. The sign is added apart.
-const number = (value: string, minimum: number, maximum: number) =>
+const number = (
+  value: string,
+  minimum: number,
+  maximum: number,
+  roundingMode: 'floor' | 'ceil' = 'floor',
+) =>
   new Intl.NumberFormat('en-US', {
     minimumFractionDigits: minimum,
     maximumFractionDigits: maximum,
-    roundingMode: 'floor',
+    roundingMode,
     signDisplay: 'never',
   }).format(value as Intl.StringNumericLiteral);
 
@@ -84,7 +89,8 @@ export function money(
     if (whole !== null) return whole;
   }
   // A figure that is not a plain decimal (scientific notation) goes through the number format.
-  const shown = number(value, 2, 2);
+  // What is lost or missing rounds up, toward zero for a negative figure, as rubles() does.
+  const shown = number(value, 2, 2, rounding === 'up' ? 'ceil' : 'floor');
   return withSymbol(sign(value, signed, shown), shown, currency);
 }
 
