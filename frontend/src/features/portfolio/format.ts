@@ -1,8 +1,9 @@
 import type { PriceSource } from '@api/portfolio-assets.api';
 import type { AccountingCurrency, AssetValuation } from '@api/portfolio-valuation.api';
 
-// Display only: exact decimal strings are rounded here and nowhere else (PV-5), and always down,
-// so a figure is never shown above the real one and a loss never smaller. The sign is added apart.
+// Display only: exact decimal strings are rounded here and nowhere else (PV-5): down by default, so
+// a figure is never shown above the real one, and up when the caller shows what is lost or missing.
+// The sign is added apart.
 const number = (
   value: string,
   minimum: number,
@@ -34,7 +35,7 @@ export const currencySymbols: Record<AccountingCurrency, string> = {
 };
 
 /**
- * How a ruble sum is rounded (owner decision, 2026-10-15: whole rubles):
+ * How a sum is rounded, in every currency; rubles are whole (owner decision, 2026-10-15):
  * what the owner has rounds down, what is lost or missing rounds up, and an entered amount
  * is shown as entered, with its kopecks when it has any.
  */
