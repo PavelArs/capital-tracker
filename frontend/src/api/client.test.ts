@@ -366,6 +366,37 @@ describe('cookie session API client', () => {
     }
   });
 
+  it.each([
+    ['post', '/wallet-addresses'],
+    ['patch', '/wallet-addresses/w1/tokens'],
+    ['put', '/inflation/personal-rates/USD'],
+    ['put', '/owner-settings'],
+  ] as const)('leaves a refused %s of %s to the screen that reports it', async (method, url) => {
+    const onError = vi.fn();
+    setErrorHandler(onError);
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'synthetic-csrf' });
+      throw rejected(config, 422);
+    };
+
+    await expect(apiClient[method](url, {})).rejects.toMatchObject({ response: { status: 422 } });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it.each(['/wallet-addresses', '/inflation', '/owner-settings'])(
+    'still reports a failed background read of %s globally',
+    async (url) => {
+      const onError = vi.fn();
+      setErrorHandler(onError);
+      apiClient.defaults.adapter = async (config) => {
+        throw rejected(config, 422);
+      };
+
+      await expect(apiClient.get(url)).rejects.toMatchObject({ response: { status: 422 } });
+      expect(onError).toHaveBeenCalled();
+    },
+  );
+
   it('leaves a refused goal request to the goal dialog', async () => {
     const onError = vi.fn();
     setErrorHandler(onError);
