@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { exactProduct, sumDecimals } from './decimal';
+import { exactProduct, productDown, sumDecimals } from './decimal';
+
+describe('productDown', () => {
+  it('multiplies exactly and cuts the product down to the decimals asked for', () => {
+    expect(productDown('1.005', '85053.34', 2)).toBe('85478.6');
+    // A float rounds this to …467.82; the exact product is …467.8146.
+    expect(productDown('12345678.987654321', '85053.34', 2)).toBe('1050041232467.81');
+    expect(productDown('0.00000001', '85053.34', 2)).toBe('0');
+    expect(productDown('2', '0.0004', 18)).toBe('0.0008');
+  });
+});
 
 describe('sumDecimals', () => {
   it('adds decimal strings exactly, past 2^53 and with signs', () => {

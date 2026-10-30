@@ -18,7 +18,7 @@ import { Affix, Input, Select, Textarea } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { dayText } from '@/utils/dates';
-import { exactProduct } from '@/utils/decimal';
+import { exactProduct, productDown } from '@/utils/decimal';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import { hiddenTokenSymbols } from '../wallets/WalletParts';
@@ -36,6 +36,7 @@ import {
   isCashOf,
   isPurposeKind,
   MAX_COMMENT_LENGTH,
+  marketPriceFigure,
   needsRate,
   numberProblem,
   occurredAt,
@@ -52,7 +53,6 @@ import {
   type TransactionEntry,
   tradeFromEntry,
   transferFromEntry,
-  trimmed,
   usdTotal,
   valued,
   valueOptional,
@@ -624,11 +624,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   // The asset's latest market price in the price field's currency (prototype "Market today").
   const marketUsd = asset ? market.get(asset.id) : undefined;
   const rateShown = needsRate(entry.currency) ? positive(shown.rate) : '1';
-  const marketPrice =
-    marketUsd && rateShown ? priceFigure(Number(marketUsd) * Number(rateShown)) : null;
-  // What the amount is worth at today's market price, for the Value field.
-  const marketValue =
-    marketUsd && typedAmount ? trimmed(Number(marketUsd) * Number(typedAmount), 2) : null;
+  const marketPrice = marketUsd && rateShown ? marketPriceFigure(marketUsd, rateShown) : null;
+  // What the amount is worth at today's market price, for the Value field: cut down to the cent,
+  // never more than the coins are worth.
+  const marketValue = marketUsd && typedAmount ? productDown(marketUsd, typedAmount, 2) : null;
 
   // How much of the buy the account's cash pays; the rest is money from outside.
   const totalTyped = positive(shown.total);
@@ -1082,7 +1081,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           <span className="ui-field__hint">
                             {compareDecimal(fromCash, totalTyped) === 0
                               ? `Paid from the ${entry.currency} cash in ${accountName}.`
-                              : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
+                              : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(subtractDecimal(totalTyped, fromCash))} ${entry.currency} is new money.`}
                           </span>
                         )}
                   </div>
