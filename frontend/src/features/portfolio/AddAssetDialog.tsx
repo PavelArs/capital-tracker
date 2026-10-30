@@ -77,7 +77,8 @@ function balanceFailure(error: unknown): string {
   const code = status(error);
   const message = isAxiosError(error) ? String(error.response?.data?.message ?? '') : '';
   const saved = 'The asset was added, but its balance was not saved.';
-  if (code === undefined) return `${saved} Could not reach the server; try again.`;
+  if (code === undefined)
+    return 'The asset was added, but the server did not answer about its balance; reload the page to check it.';
   if (code === 409 && message.includes('Bank of Russia rate'))
     return `${saved} No Bank of Russia rate is stored yet; try again later.`;
   if (code === 409 || code === 422) return `${saved} The account was changed elsewhere; try again.`;

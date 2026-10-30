@@ -20,7 +20,7 @@ import { Affix, Input } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { moscowDate } from '@/utils/dates';
-import { requestFailure } from '@/utils/request-failure';
+import { answered, requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { ambiguousComma, numberProblem } from '../portfolio/add-transaction';
 import {
@@ -56,11 +56,6 @@ const cashNames: Record<ValuationCurrency, string> = {
   RUB: 'Russian ruble',
 };
 const status = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
-// Whether a failed request was answered for certain. No answer, a server error, an expired
-// session, a timeout or too many requests says nothing about what was saved.
-const UNANSWERED = [401, 403, 408, 429];
-const answered = (code: number | undefined): code is number =>
-  code !== undefined && code < 500 && !UNANSWERED.includes(code);
 
 const failure = (error: unknown, saved: string) => {
   const code = status(error);
@@ -364,7 +359,7 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
       } catch (caught) {
         const code = status(caught);
         done.accountUnsure = !answered(code);
-        setError(failure(caught, 'Nothing was saved. '));
+        setError(failure(caught, answered(code) ? 'Nothing was saved. ' : ''));
         setSaving(false);
         return;
       }

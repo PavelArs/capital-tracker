@@ -18,3 +18,10 @@ export function requestFailure(
   const body = error.response.data as { message?: unknown } | undefined;
   return reply(typeof body?.message === 'string' ? body.message : undefined);
 }
+
+// No answer, a server error, an expired session, a timeout or too many requests says nothing
+// about what was saved.
+const UNANSWERED = [401, 403, 408, 429];
+/** Whether a failed request was answered for certain, so it is known that nothing was saved. */
+export const answered = (code: number | undefined): code is number =>
+  code !== undefined && code < 500 && !UNANSWERED.includes(code);

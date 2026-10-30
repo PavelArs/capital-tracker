@@ -70,7 +70,7 @@ const ShownProblems = createContext<Problems>({});
 /** The server's own words for a refusal it explained, else a general line. */
 const failure = (error: unknown) =>
   requestFailure(error, {
-    unreachable: 'Could not reach the server. Nothing was saved; try again.',
+    unreachable: 'Could not reach the server. It may have been saved; saving it again is safe.',
     status: {
       400: 'Check the fields and try again.',
       404: 'This deposit no longer exists. Reload the page.',

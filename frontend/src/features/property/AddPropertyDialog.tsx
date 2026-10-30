@@ -15,7 +15,7 @@ import { Affix, Input } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { moscowDate } from '@/utils/dates';
-import { requestFailure } from '@/utils/request-failure';
+import { answered, requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { purchasePrice, unitPrice } from '../portfolio/add-asset';
 import { numberProblem } from '../portfolio/add-transaction';
@@ -144,7 +144,7 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
           ...propertyAsset(entry),
         });
     } catch (caught) {
-      setError(failure(caught, 'Nothing was saved. '));
+      setError(failure(caught, answered(status(caught)) ? 'Nothing was saved. ' : ''));
       setSaving(false);
       return;
     }

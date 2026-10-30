@@ -279,7 +279,7 @@ describe('PROPERTY-ADD Add property', () => {
     const { dialog, onAdded, onClose } = open();
     await fill(user, dialog, { 'Purchase price': '8500000' });
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Nothing was saved.');
+    expect(await within(dialog).findByRole('alert')).not.toHaveTextContent('Nothing was saved');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(removeAccount).toHaveBeenCalledWith(id(2));
     expect(onClose).toHaveBeenCalled();

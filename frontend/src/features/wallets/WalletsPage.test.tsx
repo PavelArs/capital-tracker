@@ -2296,14 +2296,17 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     expect(restore).toHaveBeenCalledWith(holder().id, ['T'], 'shown');
   });
 
-  it('keeps the drawer and says nothing changed when the server refuses', async () => {
+  it('keeps the drawer and says the change failed, without claiming nothing changed', async () => {
     setup([holder()], valuation());
     vi.spyOn(walletAddressesApi, 'tokens').mockRejectedValue(new Error('offline'));
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
     await user.click(within(drawer).getByRole('button', { name: 'Hide AAA' }));
-    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Nothing was changed');
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'Could not change the tokens. Try again.',
+    );
+    expect(within(drawer).getByRole('alert')).not.toHaveTextContent('Nothing was changed');
     expect(within(drawer).getByRole('button', { name: 'Hide AAA' })).toBeEnabled();
   });
 });

@@ -183,7 +183,7 @@ describe('INFL-UI Settings → Inflation', () => {
       within(input.closest('form') as HTMLElement).getByRole('button', { name: 'Save' }),
     );
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not reach the server; your EUR rate was not saved.',
+      'Could not reach the server; your EUR rate may have been saved. Saving it again is safe.',
     );
   });
 

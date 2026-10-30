@@ -16,7 +16,7 @@ interface Props {
 const removalFailure = (caught: unknown) => {
   const status = isAxiosError(caught) ? caught.response?.status : undefined;
   return status === undefined
-    ? 'Could not reach the server. Nothing was changed; try again.'
+    ? 'Could not reach the server. It may have been removed; reload the page to check.'
     : status === 404
       ? 'This address is no longer tracked. Reload the page.'
       : 'Could not remove it. Nothing was changed; try again.';

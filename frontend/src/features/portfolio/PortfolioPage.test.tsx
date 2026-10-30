@@ -2798,7 +2798,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.type(within(dialog).getByLabelText('Amount'), '100');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The asset was added, but its balance was not saved. Could not reach the server; try again.',
+      'The asset was added, but the server did not answer about its balance; reload the page to check it.',
     );
     // The saved asset is not asked for again and cannot change.
     expect(within(dialog).getByLabelText('Name')).toBeDisabled();

@@ -141,9 +141,7 @@ export default function TokensSection({
           </Button>
         </section>
       )}
-      {failed && (
-        <Banner tone="neg">Could not change the tokens. Nothing was changed; try again.</Banner>
-      )}
+      {failed && <Banner tone="neg">Could not change the tokens. Try again.</Banner>}
     </>
   );
 }

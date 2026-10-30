@@ -2136,7 +2136,9 @@ describe('classify-chain-transactions (M12)', () => {
     );
     await user.click(within(drawer).getByRole('button', { name: 'Save' }));
     await waitFor(() =>
-      expect(within(drawer).getByRole('alert')).toHaveTextContent('Nothing was saved'),
+      expect(within(drawer).getByRole('alert')).toHaveTextContent(
+        'Could not reach the server. The answer may have been saved; saving it again is safe.',
+      ),
     );
     // A retry of one answer reuses its request id, so it is recorded at most once.
     expect(classify.mock.calls[1][2].requestId).toBe(classify.mock.calls[0][2].requestId);
