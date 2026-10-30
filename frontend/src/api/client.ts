@@ -152,7 +152,13 @@ apiClient.interceptors.response.use(
       error.config?.url?.startsWith('/goals') === true ||
       error.config?.url?.startsWith('/auth/password-reset') === true ||
       error.config?.url?.startsWith('/auth/security') === true ||
-      error.config?.url?.startsWith('/export/') === true;
+      error.config?.url?.startsWith('/export/') === true ||
+      // Wallets, inflation and Settings say why a save failed themselves. Reads stay here: some
+      // (the main currency, the bell, token chains) swallow a failure, so this notice is their only one.
+      (isUnsafeRequest(error.config) &&
+        ['/wallet-addresses', '/inflation', '/owner-settings'].some(
+          (prefix) => error.config?.url?.startsWith(prefix) === true,
+        ));
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
