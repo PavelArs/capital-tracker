@@ -660,15 +660,20 @@ export default function AssetPage() {
   const [refreshFailed, setRefreshFailed] = useState(false);
   // A refresh after a change (a saved price) keeps the page and its focus on screen: the change
   // dropped the kept answer, and a skeleton would take the Update price button away (portfolio-02).
+  // Only the newest load may answer: a slower one for the previous currency is dropped.
+  const latestPortfolio = useRef(0);
   const load = useCallback(
     async (quiet = false) => {
+      const request = ++latestPortfolio.current;
       setFailed(false);
       setRefreshFailed(false);
       const kept = cachedReads.portfolio.last(asked);
       if (!quiet) setPortfolio(kept ?? null);
       try {
-        setPortfolio(await cachedReads.portfolio.load(asked));
+        const loaded = await cachedReads.portfolio.load(asked);
+        if (request === latestPortfolio.current) setPortfolio(loaded);
       } catch {
+        if (request !== latestPortfolio.current) return;
         // With an answer on screen (kept or quiet) the page stays and says it is not refreshed.
         if (quiet || kept) setRefreshFailed(true);
         else setFailed(true);
