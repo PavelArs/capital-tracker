@@ -972,6 +972,17 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(within(dialog).getByLabelText('Wallet or account')).toHaveValue(id(11));
   });
 
+  it('PR-OPS-2 suggests the market value exactly, rounded down to the cent', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Income' }));
+    await user.type(view.getByLabelText('Amount'), '1.005');
+    await user.click(view.getByRole('button', { name: 'Use' }));
+    // 1.005 × 85053.34 = 85478.6067: the cent below, never a cent more than the coins are worth.
+    expect(view.getByLabelText('Value')).toHaveValue('85478.6');
+  });
+
   it('transactions-25 names the More and Other asset buttons by their words alone', async () => {
     const user = userEvent.setup();
     const { dialog } = await open();

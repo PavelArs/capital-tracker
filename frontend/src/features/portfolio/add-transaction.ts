@@ -4,6 +4,7 @@ import type { Operation } from '@api/operations.api';
 import type { TransferCommand } from '@api/owned-transfers.api';
 import type { TradeCommand, TradePurpose } from '@api/trades.api';
 import { moscowDate } from '@/utils/dates';
+import { productDown } from '@/utils/decimal';
 
 // "Add transaction" from the accepted prototype: buys and sells, the currency they were paid in
 // (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8). The
@@ -122,8 +123,14 @@ export function trimmed(value: number, digits: number): string {
  * significant digits, so a $0.004 token never shows as 0.
  */
 export function priceFigure(value: number): string {
-  const places = value >= 1 || value <= 0 ? 2 : Math.min(18, Math.ceil(-Math.log10(value)) + 5);
-  return trimmed(value, places);
+  return trimmed(value, pricePlaces(value));
+}
+const pricePlaces = (value: number) =>
+  value >= 1 || value <= 0 ? 2 : Math.min(18, Math.ceil(-Math.log10(value)) + 5);
+
+/** A USD price times a rate, exact and cut down; the float only chooses how many places show. */
+export function marketPriceFigure(usd: string, rate: string): string {
+  return productDown(usd, rate, pricePlaces(Number(usd) * Number(rate)));
 }
 
 /** The Bank of Russia rate of the date as units per 1 USD, or null if none is stored. */
