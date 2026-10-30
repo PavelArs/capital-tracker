@@ -1052,6 +1052,31 @@ describe('PV-UI Portfolio values every asset', () => {
     expect(screen.queryByText(/couldn't load your portfolio/i)).toBeNull();
   });
 
+  it('PV-5 keeps the asked currency on an asset page when an older currency answers late', async () => {
+    // The ruble answer hangs, the euro one answers first, then the ruble one arrives late.
+    let resolveSlow: (value: PortfolioValuation) => void = () => {};
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([bitcoin]))
+      .mockImplementationOnce(
+        () =>
+          new Promise<PortfolioValuation>((resolve) => {
+            resolveSlow = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(portfolio([{ ...bitcoin, value: '88000' }], { currency: 'EUR' }));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${id(1)}?currency=USD`);
+    await screen.findByRole('heading', { level: 2, name: 'Bitcoin' });
+    const switcher = screen.getByRole('radiogroup', { name: 'Currency' });
+    await user.click(within(switcher).getByRole('radio', { name: 'RUB' }));
+    await user.click(within(switcher).getByRole('radio', { name: 'EUR' }));
+    expect((await screen.findAllByText(/€88,000/)).length).toBeGreaterThan(0);
+    resolveSlow(portfolio([{ ...bitcoin, value: '7000000' }], { currency: 'RUB' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText(/7,000,000/)).toBeNull();
+    expect(screen.getAllByText(/€88,000/).length).toBeGreaterThan(0);
+  });
+
   it('opens an asset with its numbers, price source and holdings', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
     const user = userEvent.setup();
