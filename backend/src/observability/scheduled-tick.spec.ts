@@ -76,3 +76,32 @@ describe.each([...jobs])('JOB-ERROR-LOG: the %s scheduled tick', (_name, Service
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('secret'));
   });
 });
+
+describe('ISO-005-B: the scheduled job locks', () => {
+  // The five jobs that serialise their own runs with one global transaction-scoped lock.
+  const locked = jobs.filter(([name]) => name !== 'snapshots');
+
+  it('give every job its own advisory lock key, so no job reports busy because of another', async () => {
+    const keys: unknown[] = [];
+    for (const [, Service] of locked) {
+      // The lock is refused, so each tick stops right after asking for it.
+      const runner = {
+        connect: async () => undefined,
+        startTransaction: async () => undefined,
+        rollbackTransaction: async () => undefined,
+        release: async () => undefined,
+        query: async (_sql: string, [key]: unknown[]) => {
+          keys.push(key);
+          return [{ locked: false }];
+        },
+      };
+      const service = Object.assign(Object.create(Service.prototype), {
+        config: { get: (key: string) => (key === 'PRICE_COLLECTION_ENABLED' ? 'true' : undefined) },
+        source: { createQueryRunner: () => runner },
+      }) as { tick(): Promise<unknown> };
+      await expect(service.tick()).resolves.toEqual({ outcome: 'busy' });
+    }
+    expect(keys).toHaveLength(locked.length);
+    expect(new Set(keys).size).toBe(locked.length);
+  });
+});
