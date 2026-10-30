@@ -43,7 +43,9 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
 old, and `CapitalTrackerBackupMissing` when `ct_backup_last_success_timestamp_seconds` has been
 absent for two hours. The metric does not come from the backend: the daily backup timer writes it
 for node_exporter's textfile collector. `deploy/backup/README.md` has the install steps and the
-`--collector.textfile.directory` flag.
+`--collector.textfile.directory` flag. The dashboard's **Health** row shows the same metric as
+**Backup age** (orange after 26 h, red after 36 h, "No backup metric" while nothing scrapes it)
+next to **Last backup size**.
 
 ## Using it
 
