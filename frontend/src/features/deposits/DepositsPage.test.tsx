@@ -1030,6 +1030,10 @@ describe('DEP-DETAIL: one deposit', () => {
     await user.type(within(dialog).getByLabelText('Amount, RUB'), '10');
     await user.click(within(dialog).getByRole('button', { name: 'Record' }));
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
+    // The lost answer may have saved it.
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. It may have been saved; saving it again is safe.',
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Record' }));
     await waitFor(() => expect(add).toHaveBeenCalledTimes(2));
     expect(add.mock.calls[1][1].requestId).toBe(add.mock.calls[0][1].requestId);
@@ -1174,6 +1178,19 @@ describe('DEP-DETAIL: one deposit', () => {
     await user.click(confirm);
     await waitFor(() => expect(remove).toHaveBeenCalledWith(savings.id));
     expect(await screen.findByRole('heading', { name: 'No deposits yet' })).toBeInTheDocument();
+  });
+
+  it('says a deletion that got no answer may have happened', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    vi.spyOn(depositsApi, 'remove').mockRejectedValue(new Error('Network Error'));
+    open(`/deposits/${savings.id}`);
+    await user.click(await screen.findByRole('button', { name: 'Delete deposit' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete this deposit?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete deposit' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server. It may have been deleted; reload the page to check.',
+    );
   });
 });
 

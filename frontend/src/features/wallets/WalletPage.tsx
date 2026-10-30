@@ -198,11 +198,13 @@ function WalletTransactions({
 /** WALLET-REMOVE: the reason the server gave, or a plain sentence for what went wrong. */
 const removalFailure = (error: unknown) =>
   requestFailure(error, {
-    unreachable: 'Could not reach the server. Nothing was changed; try again.',
+    unreachable:
+      'Could not reach the server. The wallet may have been removed; reload the page to check.',
     status: {
       409: (message) => message ?? 'Could not remove the wallet. Nothing was changed; try again.',
       404: 'This wallet no longer exists. Reload the page.',
     },
+    unsure: 'Could not remove the wallet. It may have been removed; reload the page to check.',
     fallback: 'Could not remove the wallet. Nothing was changed; try again.',
   });
 

@@ -15,7 +15,7 @@ import { Affix, Input } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { moscowDate } from '@/utils/dates';
-import { requestFailure } from '@/utils/request-failure';
+import { answered, requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { purchasePrice, unitPrice } from '../portfolio/add-asset';
 import { numberProblem } from '../portfolio/add-transaction';
@@ -52,7 +52,7 @@ const failure = (error: unknown, saved: string) => {
       400: 'Check the fields and try again.',
       401: 'Your session has ended. Sign in again.',
     },
-    fallback: 'Try again.',
+    fallback: 'Try again; the same request will not save it twice.',
   })}`;
 };
 
@@ -144,7 +144,9 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
           ...propertyAsset(entry),
         });
     } catch (caught) {
-      setError(failure(caught, 'Nothing was saved. '));
+      // The account may already be made: then only the property is known not to be saved.
+      const refused = done.accountId ? 'The property was not saved. ' : 'Nothing was saved. ';
+      setError(failure(caught, answered(status(caught)) ? refused : ''));
       setSaving(false);
       return;
     }
@@ -159,7 +161,14 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
         }),
       );
     } catch (caught) {
-      setError(failure(caught, 'The property was added, but its purchase was not saved. '));
+      setError(
+        failure(
+          caught,
+          answered(status(caught))
+            ? 'The property was added, but its purchase was not saved. '
+            : 'The property was added; its purchase may have been saved. ',
+        ),
+      );
       setSaving(false);
       return;
     }
@@ -189,8 +198,12 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
         });
         done.prices = index + 1;
       }
-    } catch {
-      setError('The property and its purchase were saved, but its value was not. Try again.');
+    } catch (caught) {
+      setError(
+        answered(status(caught))
+          ? 'The property and its purchase were saved, but its value was not. Try again.'
+          : 'The property and its purchase were saved; its value may have been saved too. Try again; the same request will not save it twice.',
+      );
       setSaving(false);
       return;
     }

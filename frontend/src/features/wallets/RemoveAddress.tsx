@@ -1,9 +1,9 @@
 import { announceSyncChange } from '@api/sync-status.api';
 import { walletAddressesApi } from '@api/wallet-addresses.api';
-import { isAxiosError } from 'axios';
 import { useState } from 'react';
 import { Button } from '@/ui/Button';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { requestFailure } from '@/utils/request-failure';
 
 interface Props {
   id: string;
@@ -13,14 +13,13 @@ interface Props {
 }
 
 /** WALLET-REMOVE: the reason a removal failed, in a plain sentence. */
-const removalFailure = (caught: unknown) => {
-  const status = isAxiosError(caught) ? caught.response?.status : undefined;
-  return status === undefined
-    ? 'Could not reach the server. Nothing was changed; try again.'
-    : status === 404
-      ? 'This address is no longer tracked. Reload the page.'
-      : 'Could not remove it. Nothing was changed; try again.';
-};
+const removalFailure = (caught: unknown) =>
+  requestFailure(caught, {
+    unreachable: 'Could not reach the server. It may have been removed; reload the page to check.',
+    status: { 404: 'This address is no longer tracked. Reload the page.' },
+    unsure: 'Could not remove it. It may have been removed; reload the page to check.',
+    fallback: 'Could not remove it. Nothing was changed; try again.',
+  });
 
 // WALLET-REMOVE: stops tracking one address after a plain statement of what happens to its
 // history. The confirmation covers the drawer (Cancel focused first); Escape closes it alone.

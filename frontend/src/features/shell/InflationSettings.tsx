@@ -72,7 +72,7 @@ function typedPercent(text: string, min: number, max: number): string | undefine
 
 const saveFailure = (what: string) => (error: unknown) =>
   requestFailure(error, {
-    unreachable: `Could not reach the server; ${what} was not saved. Try again.`,
+    unreachable: `Could not reach the server; ${what} may have been saved. Saving it again is safe.`,
     status: {
       400: `Check the figure and try again; ${what} was not saved.`,
       401: 'Your session has ended. Sign in again.',

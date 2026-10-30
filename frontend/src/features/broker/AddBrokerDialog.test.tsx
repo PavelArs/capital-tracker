@@ -404,8 +404,9 @@ describe('BROKER-ADD Add broker account', () => {
       'Price 1': '142.10',
     });
     await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    // A server error says nothing about whether the purchase was saved.
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The account was added, but not all it holds was saved.',
+      'The account was added, but some of what it holds may not have been saved. Try again.',
     );
     expect(within(dialog).getByLabelText('Quantity 1')).toBeDisabled();
     const firstTrade = createTrade.mock.calls[0][1].requestId;
@@ -594,6 +595,17 @@ describe('BROKER-ADD Add broker account', () => {
     expect(onAdded).toHaveBeenCalledWith(undefined, id(2));
   });
 
+  it('says nothing was saved when the account is refused', async () => {
+    createAccount.mockRejectedValueOnce(refused(400));
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Nothing was saved. Check the fields and try again.',
+    );
+  });
+
   it('removes an account whose creation answer was lost when closed', async () => {
     // Codex P2: a lost answer or a server error does not prove the account was not made.
     createAccount.mockRejectedValueOnce(refused(503));
@@ -601,7 +613,9 @@ describe('BROKER-ADD Add broker account', () => {
     const { dialog, onAdded, onClose } = open();
     await fill(user, dialog, { Broker: 'Sample Broker', 'Cash at the broker (optional)': '250' });
     await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
-    await within(dialog).findByRole('alert');
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent('Try again.');
+    expect(alert).not.toHaveTextContent('Nothing was saved');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(createAccount).toHaveBeenCalledTimes(2);

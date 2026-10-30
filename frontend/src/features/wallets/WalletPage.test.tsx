@@ -556,25 +556,71 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Addresses' })).toBeNull());
   });
 
-  it('WALLET-REMOVE tells a failed address removal and changes nothing', async () => {
+  it.each([
+    [
+      'no answer',
+      new Error('offline'),
+      'Could not reach the server. It may have been removed; reload the page to check.',
+    ],
+    [
+      'a server error',
+      new AxiosError('Unavailable', 'ERR_BAD_RESPONSE', undefined, undefined, {
+        status: 503,
+        statusText: 'Unavailable',
+        data: {},
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
+      'Could not remove it. It may have been removed; reload the page to check.',
+    ],
+  ])(
+    'WALLET-REMOVE tells a failed address removal after %s without claiming nothing changed',
+    async (_, error, text) => {
+      const user = userEvent.setup();
+      setup();
+      const addresses = await screen.findByRole('region', { name: 'Addresses' });
+      await user.click(
+        within(addresses).getByRole('button', { name: `Savings ${wallet(1).address}` }),
+      );
+      const drawer = await screen.findByRole('dialog');
+      vi.spyOn(walletAddressesApi, 'remove').mockRejectedValue(error);
+
+      await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
+      await user.click(
+        within(within(drawer).getByRole('alertdialog', { name: 'Remove this address?' })).getByRole(
+          'button',
+          { name: 'Remove address' },
+        ),
+      );
+      const failure = await within(drawer).findByText(text);
+      expect(failure).toBeVisible();
+      expect(failure).not.toHaveTextContent('Nothing was changed');
+      expect(screen.getByRole('dialog')).toBeVisible();
+    },
+  );
+
+  it('WALLET-REMOVE does not claim nothing changed when a wallet removal gets a server error', async () => {
     const user = userEvent.setup();
     setup();
-    const addresses = await screen.findByRole('region', { name: 'Addresses' });
-    await user.click(
-      within(addresses).getByRole('button', { name: `Savings ${wallet(1).address}` }),
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    vi.spyOn(accountingApi, 'removeAccount').mockRejectedValue(
+      new AxiosError('Bad gateway', 'ERR_BAD_RESPONSE', undefined, undefined, {
+        status: 502,
+        statusText: 'Bad gateway',
+        data: {},
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
     );
-    const drawer = await screen.findByRole('dialog');
-    vi.spyOn(walletAddressesApi, 'remove').mockRejectedValue(new Error('offline'));
 
-    await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
-    await user.click(
-      within(within(drawer).getByRole('alertdialog', { name: 'Remove this address?' })).getByRole(
-        'button',
-        { name: 'Remove address' },
-      ),
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Remove Trust Wallet?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Could not remove the wallet. It may have been removed; reload the page to check.',
     );
-    expect(await within(drawer).findByText(/Could not reach the server/)).toBeVisible();
-    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(alert).not.toHaveTextContent('Nothing was changed');
   });
 
   it('syncs every address of the wallet', async () => {

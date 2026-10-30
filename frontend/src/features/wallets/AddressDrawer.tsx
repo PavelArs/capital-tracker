@@ -244,7 +244,7 @@ export default function AddressDrawer({
         error: true,
         text:
           status === undefined
-            ? 'Could not reach the server. Nothing was changed; try again.'
+            ? 'Could not reach the server. The change may have been saved; saving it again is safe.'
             : status === 404
               ? 'This wallet or address no longer exists. Reload the page.'
               : 'Could not save. Check the name and try again.',

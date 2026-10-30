@@ -685,7 +685,7 @@ function failure(
   if (dependentOf(error))
     return 'A later transaction spends these coins, so this answer cannot change now. Change that transaction first.';
   if (!isAxiosError(error) || error.response === undefined)
-    return 'Could not reach the server. Nothing was saved; try again.';
+    return 'Could not reach the server. The answer may have been saved; saving it again is safe.';
   const status = error.response.status;
   const message = (error.response.data as { message?: unknown } | undefined)?.message;
   if (status === 422 && message === 'Choose the account of this wallet first')
