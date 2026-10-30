@@ -422,6 +422,10 @@ async function reward(db, s, owner, f) {
   const listedReward = await row(s, owner, legs.usdcReward);
   assert.deepEqual([listedReward.type, listedReward.status], ['pool-reward', 'recorded']);
   same(listedReward.valueUsd, '25');
+  const exportedReward = (await s.exports.operations(db.manager, owner)).find(
+    (operation) => operation.id === `reward:${saved.value.operation.id}`,
+  );
+  assert.equal(exportedReward.type, 'pool-reward', 'The export types it as the list does');
   assert.equal(await count(s, owner), 7);
   console.log('PASS POOL-REWARD');
 }
@@ -514,6 +518,10 @@ async function withdrawals(db, s, owner, f) {
     [exported.classificationType, exported.operationId],
     ['pool-withdrawal', `reward:${stored.rewardId}`],
   );
+  const income = (await s.exports.operations(db.manager, owner)).find(
+    (operation) => operation.id === `reward:${stored.rewardId}`,
+  );
+  assert.equal(income.type, 'pool-withdrawal', 'operations.csv types the income as the list does');
   console.log('PASS POOL-WITHDRAW');
   return stored.rewardId;
 }
