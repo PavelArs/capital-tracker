@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
@@ -397,7 +398,17 @@ export class TradeService {
       );
       if (!instrument) throw new NotFoundException();
       if (input.paid) {
-        const derived = derivePaidAmounts(input.paid, await readFxRates(manager), input.occurredAt);
+        const rates = await readFxRates(manager);
+        let derived: ReturnType<typeof derivePaidAmounts>;
+        try {
+          derived = derivePaidAmounts(input.paid, rates, input.occurredAt);
+        } catch (error) {
+          // An amount that rounds to nothing is the request's fault: a BadRequestException would
+          // leave as a history conflict (409) through the rethrow, as settle() explains below.
+          if (error instanceof BadRequestException)
+            throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+          throw error;
+        }
         if (!derived) throw noRate();
         nextExecution = place(execution({ ...input, ...derived }));
       } else nextExecution = place(execution(input));

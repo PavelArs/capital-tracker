@@ -792,6 +792,18 @@ async function paidInRublesAndEuros(db, owners) {
       ),
     400,
   );
+  // An amount whose USD value rounds to nothing is the request's fault, not a history conflict.
+  await rejected(
+    () =>
+      s.trades.create(
+        owner,
+        account,
+        body(0, 'buy', '2025-06-02T09:00:00.000Z', '0.01', {
+          paid: { currency: 'RUB', gross: '0.000000000000000000000000000001', fee: '0' },
+        }),
+      ),
+    400,
+  );
   assert.equal(await fingerprint(db), before, 'A refused paid trade writes nothing');
 
   // 80000 RUB at 80 RUB per USD on 2 June 2025.
