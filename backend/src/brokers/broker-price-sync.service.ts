@@ -31,7 +31,7 @@ export const BROKER_PRICES_KEY = 'prices:tbank';
 /** BPH-BACKFILL: when the day closes were last read in full; not shown to the owner itself. */
 export const BROKER_HISTORY_KEY = 'prices:tbank-history';
 // Arbitrary constant identifying the broker price refresh's session advisory lock.
-const LOCK_KEY = 7_340_600_021;
+const LOCK_KEY = 7_340_600_031;
 
 /** Why one account gave no prices, as a sync source error code. */
 function failureCode(error: unknown): string {
