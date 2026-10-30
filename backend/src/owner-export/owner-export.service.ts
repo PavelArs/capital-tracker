@@ -45,6 +45,10 @@ const lastContent = (versions: string, key: string) =>
 const producedBy = (column: string) =>
   `(SELECT x.txid FROM chain_transaction_classification_versions x
     WHERE x."ownerId"=h."ownerId" AND x."${column}"=h.id ORDER BY x."createdAt" DESC LIMIT 1)`;
+/** The answer that produced a reward: the Transactions list shows the reward under its type. */
+const producedType = (column: string) =>
+  `(SELECT x.type FROM chain_transaction_classification_versions x
+    WHERE x."ownerId"=h."ownerId" AND x."${column}"=h.id ORDER BY x."createdAt" DESC LIMIT 1)`;
 // CLS-SWAP: both legs of a chain swap name it; the receipt is the transaction it is listed under.
 const swapProducedBy = `(SELECT x.txid FROM chain_transaction_classification_versions x
     JOIN wallet_address_transactions t ON t."addressId"=x."addressId" AND t.txid=x.txid
@@ -317,7 +321,8 @@ export class OwnerExportService {
           v.category, ${exact('v.quantity')} AS quantity,
           ${exact('v."incomeValueUsd"')} AS "incomeValueUsd",
           ${exact('v."acquisitionBasisUsd"')} AS "acquisitionBasisUsd",
-          ${importedByBroker('rewardId')} AS broker, ${producedBy('rewardId')} AS "chainTxid", ${tokenNetwork('rewardId')} AS "assetNetwork"
+          ${importedByBroker('rewardId')} AS broker, ${producedBy('rewardId')} AS "chainTxid", ${tokenNetwork('rewardId')} AS "assetNetwork",
+          ${producedType('rewardId')} AS "chainType"
         FROM account_rewards h
         ${lastContent('account_reward_versions', 'rewardId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
@@ -421,7 +426,10 @@ export class OwnerExportService {
       ...rewards.map(
         (row): ExportOperation => ({
           ...base(row, 'reward'),
-          type: rewardType(row.category as Parameters<typeof rewardType>[0]),
+          // A reward a chain answer produced is listed under the answer's type, as the list does.
+          type: row.chainType
+            ? String(row.chainType)
+            : rewardType(row.category as Parameters<typeof rewardType>[0]),
           direction: 'in',
           source: chainOr(row, 'manual'),
           valueUsd: text(row.incomeValueUsd),
