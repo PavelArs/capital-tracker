@@ -68,9 +68,12 @@ const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean
 const ShownProblems = createContext<Problems>({});
 
 /** The server's own words for a refusal it explained, else a general line. */
-const failure = (error: unknown) =>
+const failure = (
+  error: unknown,
+  unreachable = 'Could not reach the server. It may have been saved; saving it again is safe.',
+) =>
   requestFailure(error, {
-    unreachable: 'Could not reach the server. It may have been saved; saving it again is safe.',
+    unreachable,
     status: {
       400: 'Check the fields and try again.',
       404: 'This deposit no longer exists. Reload the page.',
@@ -747,7 +750,12 @@ export function DeleteDepositDialog({
       title="Delete this deposit?"
       confirmLabel="Delete deposit"
       busyLabel="Deleting…"
-      failure={failure}
+      failure={(error) =>
+        failure(
+          error,
+          'Could not reach the server. It may have been deleted; reload the page to check.',
+        )
+      }
       onClose={onClose}
       onConfirm={async () => {
         await depositsApi.remove(id);

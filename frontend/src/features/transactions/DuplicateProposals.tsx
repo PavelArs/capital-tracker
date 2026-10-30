@@ -33,6 +33,7 @@ const failure = (error: unknown) =>
   requestFailure(error, {
     unreachable: 'Could not reach the server. It may have been saved; reload the page to check.',
     status: { 409: refused, 422: refused },
+    unsure: 'Could not replace it. It may have been replaced; reload the page to check.',
     fallback: 'Could not replace it. Nothing was saved; try again.',
   });
 

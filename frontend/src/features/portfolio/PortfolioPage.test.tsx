@@ -2813,8 +2813,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(within(dialog).getByLabelText('Amount')).toBeEnabled();
     expect(createTrade.mock.calls[1][1].requestId).toBe(createTrade.mock.calls[0][1].requestId);
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    // The lost answer may have saved the price.
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The asset and its balance were saved, but its price was not. Try again.',
+      'The asset and its balance were saved; its price may have been saved too. Try again; the same request will not save it twice.',
     );
     // A refused request saved nothing, so the next one has its own id.
     expect(createTrade.mock.calls[2][1].requestId).not.toBe(createTrade.mock.calls[1][1].requestId);
@@ -2889,7 +2890,12 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
 
     await user.type(within(dialog).getByLabelText('Wallet or account'), 'Home safe');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
-    await within(dialog).findByRole('alert');
+    // A server error says nothing about whether the balance was saved.
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'The asset was added, but the server did not answer about its balance; reload the page to check it.',
+    );
+    expect(alert).not.toHaveTextContent('was not saved');
     expect(createAccount).toHaveBeenCalledTimes(1);
     expect(createAccount.mock.calls[0][0]).toMatchObject({ name: 'Home safe' });
     expect(createTrade.mock.calls[0][0]).toBe(id(150));
@@ -2903,6 +2909,43 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(createTrade.mock.calls[1][0]).toBe(id(150));
     expect(createTrade.mock.calls[1][1].requestId).toBe(createTrade.mock.calls[0][1].requestId);
+  });
+
+  it('G1: does not say nothing was saved when the new account gets a server error', async () => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio([bitcoin]));
+    vi.spyOn(accountingApi, 'createAccount').mockRejectedValueOnce(httpError(503));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+    await user.type(within(dialog).getByLabelText('Wallet or account'), 'Home safe');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Could not make the account. Try again; the same request will not make it twice.',
+    );
+    expect(alert).not.toHaveTextContent('Nothing was saved');
+  });
+
+  it('keeps the balance as entered when its request was throttled', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio([bitcoin]));
+    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    createTrade.mockRejectedValueOnce(httpError(429));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Other' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The asset was added, but the server did not answer about its balance; reload the page to check it.',
+    );
+    // It may have been saved, so a retry must repeat the same request.
+    expect(within(dialog).getByLabelText('Amount')).toBeDisabled();
   });
 
   it('G1: offers a new account next to the existing ones', async () => {

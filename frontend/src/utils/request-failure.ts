@@ -5,15 +5,22 @@ type Reply = string | ((serverMessage: string | undefined) => string);
 
 /**
  * The sentence the owner reads when a request fails: no answer from the server first, then the
- * answer for the HTTP status, then the fallback.
+ * answer for the HTTP status, then `unsure` for a status that says nothing about what was saved
+ * (see `answered`), then the fallback.
  */
 export function requestFailure(
   error: unknown,
-  texts: { unreachable: string; fallback: string; status?: Partial<Record<number, Reply>> },
+  texts: {
+    unreachable: string;
+    fallback: string;
+    unsure?: string;
+    status?: Partial<Record<number, Reply>>;
+  },
 ): string {
   if (!isAxiosError(error) || error.response === undefined) return texts.unreachable;
   const reply = texts.status?.[error.response.status];
-  if (reply === undefined) return texts.fallback;
+  if (reply === undefined)
+    return (!answered(error.response.status) && texts.unsure) || texts.fallback;
   if (typeof reply === 'string') return reply;
   const body = error.response.data as { message?: unknown } | undefined;
   return reply(typeof body?.message === 'string' ? body.message : undefined);

@@ -15,7 +15,7 @@ import { Field } from '@/ui/Field';
 import { Affix, Input, Select, Textarea } from '@/ui/inputs';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
-import { requestFailure } from '@/utils/request-failure';
+import { answered, requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { type Account, journalAccounts } from './AddTransactionDialog';
 import {
@@ -77,12 +77,12 @@ function balanceFailure(error: unknown): string {
   const code = status(error);
   const message = isAxiosError(error) ? String(error.response?.data?.message ?? '') : '';
   const saved = 'The asset was added, but its balance was not saved.';
-  if (code === undefined)
+  if (code === 401) return 'Your session has ended. Sign in again.';
+  if (!answered(code))
     return 'The asset was added, but the server did not answer about its balance; reload the page to check it.';
   if (code === 409 && message.includes('Bank of Russia rate'))
     return `${saved} No Bank of Russia rate is stored yet; try again later.`;
   if (code === 409 || code === 422) return `${saved} The account was changed elsewhere; try again.`;
-  if (code === 401) return 'Your session has ended. Sign in again.';
   return `${saved} Check the amount and value and try again.`;
 }
 
@@ -195,7 +195,9 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         setError(
           status(caught) === undefined
             ? 'Could not reach the server. Try again; the same request will not make the account twice.'
-            : 'Could not make the account. Nothing was saved; try again.',
+            : answered(status(caught))
+              ? 'Could not make the account. Nothing was saved; try again.'
+              : 'Could not make the account. Try again; the same request will not make it twice.',
         );
         return null;
       }
@@ -287,7 +289,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
           const code = status(caught);
           setError(balanceFailure(caught));
           setSaving(false);
-          setBalanceUnsure(code === undefined || code >= 500);
+          setBalanceUnsure(!answered(code));
           // Nothing was saved under a refused request: the retry gets a new id and, when the
           // journal changed elsewhere, its new revision.
           if (code === 409) {
@@ -309,8 +311,12 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             ...purchasePrice(trade, asset.valuationCurrency),
             assertReviewed: true,
           });
-        } catch {
-          setError('The asset and its balance were saved, but its price was not. Try again.');
+        } catch (caught) {
+          setError(
+            answered(status(caught))
+              ? 'The asset and its balance were saved, but its price was not. Try again.'
+              : 'The asset and its balance were saved; its price may have been saved too. Try again; the same request will not save it twice.',
+          );
           setSaving(false);
           return;
         }

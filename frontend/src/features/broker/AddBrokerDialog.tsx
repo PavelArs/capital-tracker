@@ -412,7 +412,14 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
           step.priced = true;
         }
       } catch (caught) {
-        setError(failure(caught, partly));
+        setError(
+          failure(
+            caught,
+            answered(status(caught))
+              ? partly
+              : 'The account was added, but some of what it holds may not have been saved. ',
+          ),
+        );
         setSaving(false);
         return;
       }

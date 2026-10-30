@@ -204,6 +204,7 @@ const removalFailure = (error: unknown) =>
       409: (message) => message ?? 'Could not remove the wallet. Nothing was changed; try again.',
       404: 'This wallet no longer exists. Reload the page.',
     },
+    unsure: 'Could not remove the wallet. It may have been removed; reload the page to check.',
     fallback: 'Could not remove the wallet. Nothing was changed; try again.',
   });
 

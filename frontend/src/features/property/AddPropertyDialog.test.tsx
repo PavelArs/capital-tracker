@@ -259,8 +259,9 @@ describe('PROPERTY-ADD Add property', () => {
     const { dialog, onAdded } = open();
     await fill(user, dialog, { 'Purchase price': '8500000', 'Bought on': '2025-09-01' });
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    // A server error says nothing about whether the value was saved.
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The property and its purchase were saved, but its value was not. Try again.',
+      'The property and its purchase were saved; its value may have been saved too. Try again; the same request will not save it twice.',
     );
     expect(within(dialog).getByLabelText('Purchase price')).toBeDisabled();
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
@@ -286,6 +287,48 @@ describe('PROPERTY-ADD Add property', () => {
     expect(onAdded).not.toHaveBeenCalled();
   });
 
+  it('says nothing was saved only when the account itself was refused', async () => {
+    createAccount.mockRejectedValueOnce(refused(400));
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await fill(user, dialog, { 'Purchase price': '8500000' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Nothing was saved. Check the fields and try again.',
+    );
+  });
+
+  it('does not say nothing was saved once the account is made and the property is refused', async () => {
+    createAsset.mockRejectedValueOnce(refused(400));
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await fill(user, dialog, { 'Purchase price': '8500000' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent('The property was not saved. Check the fields and try again.');
+    expect(alert).not.toHaveTextContent('Nothing was saved');
+  });
+
+  it.each([
+    [
+      'no answer',
+      new AxiosError('offline'),
+      'Could not reach the server. Try again; the same request will not save it twice.',
+    ],
+    ['a server error', refused(503), 'Try again; the same request will not save it twice.'],
+  ])('does not say the purchase was not saved after %s', async (_, error, then) => {
+    createTrade.mockRejectedValueOnce(error);
+    const user = userEvent.setup();
+    const { dialog } = open();
+    await fill(user, dialog, { 'Purchase price': '8500000' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      `The property was added; its purchase may have been saved. ${then}`,
+    );
+    expect(alert).not.toHaveTextContent('was not saved');
+  });
+
   it('keeps the property and opens it when its purchase is refused', async () => {
     // As Add asset does: the property is saved and cannot be taken back, so its page opens.
     createTrade.mockRejectedValueOnce(refused(400));
@@ -303,12 +346,14 @@ describe('PROPERTY-ADD Add property', () => {
   });
 
   it('keeps everything once the purchase is saved, even if the value is not', async () => {
-    setPrice.mockRejectedValueOnce(refused(500));
+    setPrice.mockRejectedValueOnce(refused(400));
     const user = userEvent.setup();
     const { dialog, onAdded } = open();
     await fill(user, dialog, { 'Purchase price': '8500000' });
     await user.click(within(dialog).getByRole('button', { name: 'Add property' }));
-    await within(dialog).findByRole('alert');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The property and its purchase were saved, but its value was not. Try again.',
+    );
     // The footer's Cancel became Close: what is saved is kept.
     const [, footer] = within(dialog).getAllByRole('button', { name: 'Close' });
     await user.click(footer);

@@ -30,6 +30,7 @@ const failure = (error: unknown) =>
   requestFailure(error, {
     unreachable: 'Could not reach the server. It may have been saved; reload the page to check.',
     status: { 409: refused, 422: refused },
+    unsure: 'Could not join them. They may have been joined; reload the page to check.',
     fallback: 'Could not join them. Nothing was saved; try again.',
   });
 

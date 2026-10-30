@@ -4357,6 +4357,31 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(classify.mock.calls[2]).toEqual(classify.mock.calls[0]);
   });
 
+  it('XFER-PROPOSED a server error does not claim the pair was not joined', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('Unavailable', '503', undefined, undefined, {
+        status: 503,
+        statusText: 'Unavailable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {},
+      }),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    const alert = await within(card).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Could not join them. They may have been joined; reload the page to check.',
+    );
+    expect(alert).not.toHaveTextContent('Nothing was saved');
+  });
+
   it('says why a pair could not be joined and keeps the offer', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
@@ -4568,6 +4593,29 @@ describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', 
     await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
     await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
     expect(classify.mock.calls[1]).toEqual(classify.mock.calls[0]);
+  });
+
+  it('CLS-DUPLICATE a server error does not claim the record was not replaced', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue(found([proposal]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('Unavailable', '503', undefined, undefined, {
+        status: 503,
+        statusText: 'Unavailable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {},
+      }),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    const alert = await within(card).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Could not replace it. It may have been replaced; reload the page to check.',
+    );
+    expect(alert).not.toHaveTextContent('Nothing was saved');
   });
 
   it('says why it could not be replaced and keeps the offer', async () => {
