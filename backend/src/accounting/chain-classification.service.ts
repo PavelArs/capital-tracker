@@ -683,8 +683,8 @@ export class ChainClassificationService {
    * TRON-REWARD, BYBIT-EARN: records every Tron vote reward claim (a WithdrawBalance the wallet
    * signed) and every Earn yield Bybit paid as a Staking reward without asking, valued 1:1 for
    * USDT and USDC (M9), else at the stored price of its coin at its time when there is one, each
-   * in its own transaction. It
-   * needs the wallet's account; a reward the owner has answered is never touched.
+   * in its own transaction. It needs the wallet's account; a reward the owner has answered is
+   * never touched.
    */
   async recognizeStakingRewards(ownerId: string): Promise<{ recognized: number }> {
     const owner = parseUuid(ownerId);
