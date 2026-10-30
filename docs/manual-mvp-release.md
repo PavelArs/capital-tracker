@@ -326,7 +326,17 @@ For manual restore, first preserve current DB/new writes, verify the selected en
 backup checksum, and restore into a NEW isolated PostgreSQL instance using the same
 major version. Compare schema/data and confirm the intended data-loss boundary before
 any separately authorized switch. Never pipe recovery into the active owner database.
-Keep backup generations; these scripts never prune volumes or backups. After a verified deploy the
+Between releases, `scripts/scheduled-backup.sh` writes a daily encrypted dump with the same
+recipe and key to `$root/backups/scheduled-<UTC time>.dump.enc` (plus `.sha256`), so the restore
+steps above apply unchanged. It prunes only its own scheduled dumps (older than 30 days, always
+keeping the newest seven) and exports `ct_backup_last_success_timestamp_seconds` for the
+`CapitalTrackerBackupStale` alert. Releases do not install it: installing its systemd timer from
+`deploy/backup/` is a one-time owner step as root on the production host (`deploy/backup/README.md`).
+The backup holds the release lock while it dumps, and a release does not wait for that lock: a
+release that starts during the daily backup (03:30 server time plus up to 30 minutes, until the
+dump finishes) fails at once with `Another release holds the server lock` and changes nothing.
+Re-run it after the backup finishes.
+Keep backup generations; the release scripts never prune volumes or backups. After a verified deploy the
 script removes application images (`capital-tracker-{backend,frontend}`) older than the three newest
 pairs: the running one, the one it replaced and the one the previous successful release replaced
 (recorded in that release's `previous-images`). It runs without `-f`, so Docker refuses any image a

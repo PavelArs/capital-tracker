@@ -87,3 +87,18 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: The backend uses more than 1 GiB of memory.
+
+      # From node_exporter's textfile collector, written by scripts/scheduled-backup.sh (deploy/backup/).
+      - alert: CapitalTrackerBackupStale
+        expr: time() - ct_backup_last_success_timestamp_seconds > 36 * 3600
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: The last verified scheduled database backup is more than 36 hours old.
+
+      - alert: CapitalTrackerBackupMissing
+        expr: absent(ct_backup_last_success_timestamp_seconds)
+        for: 2h
+        labels: { severity: critical }
+        annotations:
+          summary: No scheduled backup metric is scraped; check the backup timer and node_exporter.

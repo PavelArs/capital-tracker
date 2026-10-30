@@ -26,8 +26,21 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
     ]);
   });
 
-  it('OBS-ASSET-2 only query metrics the backend exports', async () => {
-    const exported = new Set((await registry.getMetricsAsJSON()).map((metric) => metric.name));
+  it('OBS-ASSET-2 only query metrics the backend or the backup script exports', async () => {
+    // The scheduled backup writes its metrics for node_exporter's textfile collector.
+    const backupScript = readFileSync(
+      resolve(__dirname, '../../../scripts/scheduled-backup.sh'),
+      'utf8',
+    );
+    const textfile = backupScript.match(/^ct_[a-z_]+(?= )/gm) ?? [];
+    expect(textfile).toEqual([
+      'ct_backup_last_success_timestamp_seconds',
+      'ct_backup_last_size_bytes',
+    ]);
+    const exported = new Set([
+      ...(await registry.getMetricsAsJSON()).map((metric) => metric.name),
+      ...textfile,
+    ]);
     const used = new Set(
       files
         .flatMap((file) => read(file).match(/\bct_[a-z_]+/g) ?? [])
@@ -35,6 +48,20 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
     );
     expect(used.size).toBeGreaterThan(8);
     for (const name of used) expect(exported).toContain(name);
+  });
+
+  it('OBS-ASSET-4 alert on a stale or missing scheduled backup', () => {
+    const { groups } = parse(read(files[1])) as {
+      groups: { rules: { alert?: string; expr: string; for?: string }[] }[];
+    };
+    const rules = groups.flatMap((group) => group.rules);
+    expect(rules.find((rule) => rule.alert === 'CapitalTrackerBackupStale')).toMatchObject({
+      expr: 'time() - ct_backup_last_success_timestamp_seconds > 36 * 3600',
+    });
+    expect(rules.find((rule) => rule.alert === 'CapitalTrackerBackupMissing')).toMatchObject({
+      expr: 'absent(ct_backup_last_success_timestamp_seconds)',
+      for: '2h',
+    });
   });
 
   it('OBS-ASSET-3 name no server, address or credential', () => {
