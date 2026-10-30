@@ -96,9 +96,17 @@ describe('RUB-WHOLE rubles are whole, with the sign before the currency mark', (
     expect(money('0.999', 'RUB', false, 'up')).toBe(rub('1'));
   });
 
-  it('RUB-WHOLE leaves dollars and euros as they were', () => {
+  it('RUB-WHOLE keeps the cents of dollars and euros', () => {
     expect(money('1234.5', 'USD', false, 'exact')).toBe('$1,234.50');
-    expect(money('1234.567', 'EUR', false, 'up')).toBe('€1,234.56');
+    expect(money('1234.567', 'EUR', false, 'up')).toBe('€1,234.57');
+  });
+
+  it('rounds a lost or missing dollar or euro amount up, never showing it smaller', () => {
+    expect(money('0.125', 'EUR', false, 'up')).toBe('€0.13');
+    expect(money('0.001', 'USD', false, 'up')).toBe('$0.01');
+    // Up on a signed figure is toward zero for a negative one, as for rubles.
+    expect(money('-0.125', 'USD', true, 'up')).toBe('-$0.12');
+    expect(money('0.125', 'EUR', false, 'down')).toBe('€0.12');
   });
 
   it('RUB-WHOLE writes a price per unit with kopecks and the sign after', () => {
