@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { errorMessage, trackJob } from '../observability/metrics';
+import { presentSource, recordSource, type SourceRow } from '../sync-status/sync-source';
 import { type AnyTokenNetwork, anyTokenNetworks } from '../wallet-addresses/chain-assets';
 import { loadChainTokens } from '../wallet-addresses/chain-tokens';
 import { evmChain, isEvmNetwork } from '../wallet-addresses/evm-chains';
@@ -45,19 +46,7 @@ const BYBIT_MISS_TEXT: Record<BybitMarketMiss, string> = {
 };
 // Arbitrary constant identifying the price collector's session advisory lock.
 const LOCK_KEY = 7_340_600_001;
-const INTERRUPTED_AFTER_MS = 15 * 60_000;
 const INSERT_BATCH = 1000;
-
-interface SourceRow {
-  key: string;
-  state: string;
-  lastAttemptAt: Date | null;
-  lastSuccessAt: Date | null;
-  nextRunAt: Date | null;
-  errorCode: string | null;
-  errorMessage: string | null;
-}
-const iso = (date: Date | null) => date?.toISOString() ?? null;
 
 @Injectable()
 export class PricesService {
@@ -384,17 +373,7 @@ export class PricesService {
     now: Date,
     next: Date | null = nextRunAt(now),
   ): Promise<void> {
-    const succeeded = outcome.state === 'synced';
-    await manager.query(
-      `INSERT INTO sync_sources (key, state, "lastAttemptAt", "lastSuccessAt", "nextRunAt", "errorCode", "errorMessage")
-       VALUES ($1, $2, $3, CASE WHEN $4 THEN $3::timestamptz END, $5, $6, $7)
-       ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state,
-         "lastAttemptAt" = EXCLUDED."lastAttemptAt",
-         "lastSuccessAt" = COALESCE(EXCLUDED."lastSuccessAt", sync_sources."lastSuccessAt"),
-         "nextRunAt" = EXCLUDED."nextRunAt", "errorCode" = EXCLUDED."errorCode",
-         "errorMessage" = EXCLUDED."errorMessage"`,
-      [key, outcome.state, now, succeeded, next, outcome.errorCode, outcome.errorMessage],
-    );
+    await recordSource(manager, key, { ...outcome, nextRunAt: next }, now);
   }
 
   async read(now = new Date()) {
@@ -406,7 +385,7 @@ export class PricesService {
         ...(await extraMarketCodes(manager)),
       ];
       const latest = await latestMarketPrices(manager, codes, now);
-      const sources: SourceRow[] = await manager.query(
+      const sources: (SourceRow & { key: string })[] = await manager.query(
         `SELECT * FROM sync_sources WHERE key LIKE 'prices:%' ORDER BY key`,
       );
       const byAsset = new Map(latest.map((row) => [row.asset, row]));
@@ -424,21 +403,7 @@ export class PricesService {
             status: freshness(observedAt, now),
           };
         }),
-        sources: sources.map((row) => {
-          const interrupted =
-            row.state === 'syncing' &&
-            (!row.lastAttemptAt ||
-              now.getTime() - row.lastAttemptAt.getTime() > INTERRUPTED_AFTER_MS);
-          return {
-            key: row.key,
-            state: interrupted ? 'failed' : row.state,
-            lastAttemptAt: iso(row.lastAttemptAt),
-            lastSuccessAt: iso(row.lastSuccessAt),
-            nextRunAt: iso(row.nextRunAt),
-            errorCode: interrupted ? 'interrupted' : row.errorCode,
-            errorMessage: interrupted ? 'Collection stopped before it finished' : row.errorMessage,
-          };
-        }),
+        sources: sources.map((row) => ({ key: row.key, ...presentSource(row, now) })),
       };
     });
   }

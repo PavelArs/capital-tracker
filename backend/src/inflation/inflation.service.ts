@@ -5,6 +5,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { parseUuid } from '../accounting/input';
 import { type AccountingCurrency, accountingCurrencies } from '../fx-rates/fx-conversion';
 import { errorMessage, trackJob } from '../observability/metrics';
+import { presentSource, recordSource, type SourceRow } from '../sync-status/sync-source';
 import {
   parseCurrency,
   parseFactorQuery,
@@ -51,16 +52,7 @@ interface MonthRow {
   month: string;
   changePercent: string;
 }
-interface SourceRow {
-  state: string;
-  lastAttemptAt: Date | null;
-  lastSuccessAt: Date | null;
-  nextRunAt: Date | null;
-  errorCode: string | null;
-  errorMessage: string | null;
-}
 
-const iso = (date: Date | null) => date?.toISOString() ?? null;
 // numeric text without trailing zeros.
 const exact = (value: string) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
 
@@ -215,28 +207,21 @@ export class InflationService {
       }
       const state =
         failed.length === 0 ? 'synced' : failed.length === sourced.length ? 'failed' : 'delayed';
-      await manager.query(
-        `INSERT INTO sync_sources (key, state, "lastAttemptAt", "lastSuccessAt", "nextRunAt", "errorCode", "errorMessage")
-         VALUES ($1, $2, $3, CASE WHEN $4 THEN $3::timestamptz END, $5, $6, $7)
-         ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state,
-           "lastAttemptAt" = EXCLUDED."lastAttemptAt",
-           "lastSuccessAt" = COALESCE(EXCLUDED."lastSuccessAt", sync_sources."lastSuccessAt"),
-           "nextRunAt" = EXCLUDED."nextRunAt", "errorCode" = EXCLUDED."errorCode",
-           "errorMessage" = EXCLUDED."errorMessage"`,
-        [
-          INFLATION_SOURCE_KEY,
+      await recordSource(
+        manager,
+        INFLATION_SOURCE_KEY,
+        {
           state,
-          now,
-          failed.length === 0,
-          new Date(now.getTime() + (failed.length === 0 ? REFRESH_AFTER_MS : RETRY_AFTER_MS)),
-          reason,
-          failed.length === 0
-            ? null
-            : `Inflation data ${FAILURE_TEXT[reason as InflationFailure]} for ${failed.join(', ')}${detail ? ` (${detail})` : ''}`.slice(
-                0,
-                300,
-              ),
-        ],
+          errorCode: reason,
+          errorMessage:
+            failed.length === 0
+              ? null
+              : `Inflation data ${FAILURE_TEXT[reason as InflationFailure]} for ${failed.join(', ')}${detail ? ` (${detail})` : ''}`,
+          nextRunAt: new Date(
+            now.getTime() + (failed.length === 0 ? REFRESH_AFTER_MS : RETRY_AFTER_MS),
+          ),
+        },
+        now,
       );
       return stored;
     });
@@ -280,24 +265,9 @@ export class InflationService {
         'SELECT * FROM sync_sources WHERE key = $1',
         [INFLATION_SOURCE_KEY],
       );
-      const interrupted =
-        state?.state === 'syncing' &&
-        (!state.lastAttemptAt || now.getTime() - state.lastAttemptAt.getTime() > 15 * 60_000);
       return {
         currencies,
-        sync: state
-          ? {
-              key: INFLATION_SOURCE_KEY,
-              state: interrupted ? 'failed' : state.state,
-              lastAttemptAt: iso(state.lastAttemptAt),
-              lastSuccessAt: iso(state.lastSuccessAt),
-              nextRunAt: iso(state.nextRunAt),
-              errorCode: interrupted ? 'interrupted' : state.errorCode,
-              errorMessage: interrupted
-                ? 'Collection stopped before it finished'
-                : state.errorMessage,
-            }
-          : null,
+        sync: state ? { key: INFLATION_SOURCE_KEY, ...presentSource(state, now) } : null,
       };
     });
   }

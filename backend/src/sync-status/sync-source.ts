@@ -69,7 +69,8 @@ export async function recordSource(
       outcome.state === 'synced',
       outcome.nextRunAt,
       outcome.errorCode,
-      outcome.errorMessage,
+      // The column is varchar(300); a longer text would abort the run that records it.
+      outcome.errorMessage?.slice(0, 300) ?? null,
     ],
   );
 }
