@@ -4,6 +4,12 @@ import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
 import { errorMessage, trackJob } from '../observability/metrics';
 import { isDue, nextRunAt } from '../prices/price-collection';
+import {
+  presentSource,
+  type RecordedOutcome,
+  recordSource,
+  type SourceRow,
+} from '../sync-status/sync-source';
 import { CbrClient, type FxFailure } from './cbr-client';
 import {
   type FxRate,
@@ -27,7 +33,6 @@ const SOURCE = 'cbr';
 const OVERLAP_DAYS = 7;
 // Arbitrary constant identifying the rate collector's session advisory lock.
 const LOCK_KEY = 7_340_600_002;
-const INTERRUPTED_AFTER_MS = 15 * 60_000;
 const DAY_MS = 86_400_000;
 // One request per four years keeps an answer near 150 KB, well under the client's limit.
 const REQUEST_DAYS = 4 * 365;
@@ -51,21 +56,11 @@ interface RateRow {
   rateDate: string;
   rubPerUnit: string;
 }
-interface SourceRow {
-  key: string;
-  state: string;
-  lastAttemptAt: Date | null;
-  lastSuccessAt: Date | null;
-  nextRunAt: Date | null;
-  errorCode: string | null;
-  errorMessage: string | null;
-}
 
 const addDays = (date: string, days: number) =>
   new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 // numeric(78,30) text without trailing zeros.
 const exact = (value: string) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
-const iso = (date: Date | null) => date?.toISOString() ?? null;
 // A month earlier, so the rate in effect on 1 January 2009 (set before the holidays) is stored.
 const HISTORY_REQUEST_FROM = addDays(FX_HISTORY_FROM, -31);
 
@@ -269,38 +264,18 @@ export class FxRatesService {
             ],
           )
         : [];
-      const outcome =
+      const outcome: RecordedOutcome =
         failed.length === 0
-          ? { state: 'synced', errorCode: null, errorMessage: null }
+          ? { state: 'synced', errorCode: null, errorMessage: null, nextRunAt: nextRunAt(now) }
           : {
               state: ratedCurrencies.every((currency) => failed.includes(currency))
                 ? 'failed'
                 : 'delayed',
               errorCode: reason,
-              errorMessage:
-                `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}${detail ? ` (${detail})` : ''}`.slice(
-                  0,
-                  300,
-                ),
+              errorMessage: `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}${detail ? ` (${detail})` : ''}`,
+              nextRunAt: nextRunAt(now),
             };
-      await manager.query(
-        `INSERT INTO sync_sources (key, state, "lastAttemptAt", "lastSuccessAt", "nextRunAt", "errorCode", "errorMessage")
-         VALUES ($1, $2, $3, CASE WHEN $4 THEN $3::timestamptz END, $5, $6, $7)
-         ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state,
-           "lastAttemptAt" = EXCLUDED."lastAttemptAt",
-           "lastSuccessAt" = COALESCE(EXCLUDED."lastSuccessAt", sync_sources."lastSuccessAt"),
-           "nextRunAt" = EXCLUDED."nextRunAt", "errorCode" = EXCLUDED."errorCode",
-           "errorMessage" = EXCLUDED."errorMessage"`,
-        [
-          FX_SOURCE_KEY,
-          outcome.state,
-          now,
-          failed.length === 0,
-          nextRunAt(now),
-          outcome.errorCode,
-          outcome.errorMessage,
-        ],
-      );
+      await recordSource(manager, FX_SOURCE_KEY, outcome, now);
       return inserted.length;
     });
   }
@@ -317,15 +292,11 @@ export class FxRatesService {
          ORDER BY currency, "rateDate" DESC`,
         [SOURCE, today],
       );
-      const [state]: SourceRow[] = await manager.query(
+      const [state]: (SourceRow & { key: string })[] = await manager.query(
         'SELECT * FROM sync_sources WHERE key = $1',
         [FX_SOURCE_KEY],
       );
       const byCurrency = new Map(rows.map((row) => [row.currency, row]));
-      const interrupted =
-        state?.state === 'syncing' &&
-        (!state.lastAttemptAt ||
-          now.getTime() - state.lastAttemptAt.getTime() > INTERRUPTED_AFTER_MS);
       return {
         date: today,
         source: SOURCE,
@@ -337,19 +308,7 @@ export class FxRatesService {
             date: row?.rateDate ?? null,
           };
         }),
-        sync: state
-          ? {
-              key: state.key,
-              state: interrupted ? 'failed' : state.state,
-              lastAttemptAt: iso(state.lastAttemptAt),
-              lastSuccessAt: iso(state.lastSuccessAt),
-              nextRunAt: iso(state.nextRunAt),
-              errorCode: interrupted ? 'interrupted' : state.errorCode,
-              errorMessage: interrupted
-                ? 'Collection stopped before it finished'
-                : state.errorMessage,
-            }
-          : null,
+        sync: state ? { key: state.key, ...presentSource(state, now) } : null,
       };
     });
   }
