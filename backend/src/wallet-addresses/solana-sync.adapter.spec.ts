@@ -160,7 +160,7 @@ describe('SOL-SYNC-PROGRESS', () => {
         calls++;
         if (calls === 41 && refuseLast) {
           refuseLast = false;
-          return { ok: false, reason: 'rate_limited' };
+          return { ok: false, reason: 'rate_limited', detail: 'rpc.test limits requests' };
         }
         const raw = {
           slot: 5,
@@ -191,7 +191,12 @@ describe('SOL-SYNC-PROGRESS', () => {
       row.ownerId,
       row.id,
     );
-    expect(second).toEqual({ outcome: 'provider_error', reason: 'rate_limited', imported: 0 });
+    expect(second).toEqual({
+      outcome: 'provider_error',
+      reason: 'rate_limited',
+      imported: 0,
+      detail: 'rpc.test limits requests',
+    });
     expect(row.solanaSync?.staged).toHaveLength(40);
     expect(row.scannedBlock).toBeNull();
     expect(inserted).toBe(0);
@@ -242,5 +247,36 @@ describe('SOL-SYNC-PROGRESS', () => {
       new SolanaSyncAdapter(source as never, rpc as never).step(row.ownerId, row.id),
     ).rejects.toThrow('Another sync advanced this address');
     expect(locked).toHaveBeenCalledTimes(1);
+  });
+
+  it("SYNC-DETAIL fails the pass with the node's words when the first read, the slot, fails", async () => {
+    const source = {
+      query: jest.fn(async () => [
+        {
+          id: 'a',
+          ownerId: 'o',
+          address: 'wallet',
+          scannedBlock: null,
+          tokenBackfillTo: null,
+          tokenBackfillAt: null,
+          solanaSync: null,
+        },
+      ]),
+    };
+    const rpc = {
+      slot: async () => ({
+        ok: false,
+        reason: 'unavailable',
+        detail: 'rpc.test did not answer (ECONNRESET)',
+      }),
+    };
+    await expect(
+      new SolanaSyncAdapter(source as never, rpc as never).step('o', 'a'),
+    ).resolves.toEqual({
+      outcome: 'provider_error',
+      reason: 'unavailable',
+      imported: 0,
+      detail: 'rpc.test did not answer (ECONNRESET)',
+    });
   });
 });

@@ -789,7 +789,11 @@ async function main() {
     let listed = new Map((await s.addresses.list(owner)).map((item) => [item.id, item]));
     assert.deepEqual(
       [listed.get(busy).sync.status, listed.get(busy).sync.errorMessage],
-      ['delayed', 'The Solana data source is busy. The app tries again in a few minutes.'],
+      [
+        'delayed',
+        // SYNC-DETAIL: the node's host and what it did follow the reason's sentence.
+        'The Solana data source is busy. The app tries again in a few minutes. api.mainnet-beta.solana.com limits requests.',
+      ],
     );
     assert.equal(listed.get(btc).transactionCount, 2);
     const t1 = new Date(t0.getTime() + 15 * 60000);

@@ -46,7 +46,8 @@ export interface SolanaTransaction {
   raw: Record<string, unknown>;
 }
 
-type Failure = { ok: false; reason: StepFailure };
+/** SYNC-DETAIL: `detail` says which node answered and how, for the wallet's message and journal. */
+export type Failure = { ok: false; reason: StepFailure; detail?: string };
 export type SlotResult = { ok: true; slot: number } | Failure;
 export type AccountsResult = { ok: true; accounts: string[] } | Failure;
 export type SignaturesResult = { ok: true; items: SignatureInfo[] } | Failure;
@@ -62,9 +63,30 @@ export const SOLANA_ACCOUNTS_PER_CALL = 100;
 
 class InvalidResponse extends Error {}
 class Refused extends Error {
-  constructor(readonly reason: StepFailure) {
+  /** `said` follows the node's host in the detail: "said: …" or "no longer keeps …". */
+  constructor(
+    readonly reason: StepFailure,
+    readonly said?: string,
+  ) {
     super(reason);
   }
+}
+
+// A node's words as shown to the owner: one short line, with any key or signature cut out (a
+// whole one is 32 or more base58 characters; a hex form is cut too) and control characters
+// dropped, which the stored message refuses.
+const MAX_SAID = 160;
+function said(message: string): string {
+  return (
+    message
+      .replace(/(0x)?[0-9a-f]{32,}/gi, '…')
+      .replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, '…')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is stripped
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .trim()
+      .slice(0, MAX_SAID)
+      .trim()
+  );
 }
 
 function invalid(): never {
@@ -103,9 +125,11 @@ export function rpcResult(body: unknown): unknown {
   if (envelope.error !== undefined) {
     const error = record(envelope.error);
     const message = typeof error.message === 'string' ? error.message : '';
+    const cut = said(message);
+    const words = cut ? `said: ${cut}` : undefined;
     if (error.code === 429 || /rate limit|too many requests/i.test(message))
-      throw new Refused('rate_limited');
-    throw new Refused('unavailable');
+      throw new Refused('rate_limited', words);
+    throw new Refused('unavailable', words);
   }
   return 'result' in envelope ? envelope.result : invalid();
 }
@@ -199,12 +223,19 @@ export function parseAccountValues(result: unknown, count: number): unknown[] {
 
 export class SolanaRpcClient {
   private readonly url: string;
+  /** The node's host name, which names it in what the owner reads. */
+  private readonly host: string;
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
 
   constructor(options: { url?: string; timeoutMs?: number; pauseMs?: number } = {}) {
     this.url = options.url ?? DEFAULT_URL;
+    try {
+      this.host = new URL(this.url).hostname;
+    } catch {
+      this.host = 'The Solana node';
+    }
     this.timeoutMs = options.timeoutMs ?? 10_000;
     // At most 40 calls of one method in 10 seconds (docs/provider-feasibility.md).
     this.pauseMs = options.pauseMs ?? 300;
@@ -253,13 +284,13 @@ export class SolanaRpcClient {
     );
   }
 
-  /** A finalized transaction; one the node no longer keeps is unavailable, never empty. */
+  /** A finalized transaction; one the node has no record of is unavailable, never empty. */
   transaction(value: string): Promise<TransactionResult> {
     return this.call(
       'getTransaction',
       [value, { commitment: COMMITMENT, encoding: 'json', maxSupportedTransactionVersion: 0 }],
       (result) => {
-        if (result === null) throw new Refused('unavailable');
+        if (result === null) throw new Refused('unavailable', 'has no record of the transaction');
         return { ok: true, transaction: parseTransaction(result, value) };
       },
     );
@@ -320,18 +351,34 @@ export class SolanaRpcClient {
           headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         },
       );
-    } catch {
-      return { ok: false, reason: 'unavailable' };
+    } catch (error) {
+      const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
+      return { ok: false, reason: 'unavailable', detail: `${this.host} did not answer${code}` };
     } finally {
       this.lastRequestAt = Date.now();
     }
-    if (response.status === 429) return { ok: false, reason: 'rate_limited' };
-    if (response.status !== 200) return { ok: false, reason: 'unavailable' };
+    if (response.status === 429)
+      return { ok: false, reason: 'rate_limited', detail: `${this.host} limits requests` };
+    if (response.status !== 200)
+      return {
+        ok: false,
+        reason: 'unavailable',
+        detail: `${this.host} answered HTTP ${response.status}`,
+      };
     try {
       return parse(rpcResult(JSON.parse(response.data)));
     } catch (error) {
-      if (error instanceof Refused) return { ok: false, reason: error.reason };
-      return { ok: false, reason: 'invalid_response' };
+      if (error instanceof Refused)
+        return {
+          ok: false,
+          reason: error.reason,
+          ...(error.said ? { detail: `${this.host} ${error.said}` } : {}),
+        };
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `${this.host} sent an unexpected answer`,
+      };
     }
   }
 }

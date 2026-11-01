@@ -212,30 +212,105 @@ describe('SOL-SYNC Solana JSON-RPC client', () => {
     });
   });
 
-  it('treats a transaction the node no longer keeps as unavailable, never as empty', async () => {
+  it('treats a transaction the node has no record of as unavailable, never as empty', async () => {
     replies.push(ok(null));
     await expect(client().transaction(signature('one'))).resolves.toEqual({
       ok: false,
       reason: 'unavailable',
+      detail: '127.0.0.1 has no record of the transaction',
     });
   });
 
+  // SYNC-DETAIL: a failed read says which node answered and how, with keys and signatures cut out.
   it.each([
-    ['a rate limit error', { code: 429, message: 'Too many requests' }, 'rate_limited'],
-    ['a rate limit message', { code: -32005, message: 'Rate limit exceeded' }, 'rate_limited'],
-    ['another error', { code: -32009, message: 'Slot was skipped' }, 'unavailable'],
-  ] as const)('maps %s', async (_case, error, reason) => {
-    replies.push(json({ jsonrpc: '2.0', id: 1, error }));
-    await expect(client().slot()).resolves.toEqual({ ok: false, reason });
+    [
+      'a rate limit error',
+      { code: 429, message: 'Too many requests' },
+      'rate_limited',
+      'Too many requests',
+    ],
+    [
+      'a rate limit message',
+      { code: -32005, message: 'Rate limit exceeded' },
+      'rate_limited',
+      'Rate limit exceeded',
+    ],
+    [
+      'another error',
+      { code: -32009, message: 'Slot was skipped' },
+      'unavailable',
+      'Slot was skipped',
+    ],
+    [
+      'an error naming an account',
+      { code: -32602, message: `Invalid param: ${key('acct')}` },
+      'unavailable',
+      'Invalid param: …',
+    ],
+    [
+      'an error naming a signature',
+      { code: -32004, message: `Block not available for ${signature('one')}` },
+      'unavailable',
+      'Block not available for …',
+    ],
+    [
+      'an error naming a hex key',
+      { code: -32602, message: `bad key 0x${'ab'.repeat(32)} given` },
+      'unavailable',
+      'bad key … given',
+    ],
+    [
+      'an error with control characters',
+      { code: -32000, message: 'line one\nline\ttwo\u0000' },
+      'unavailable',
+      'line one line two',
+    ],
+    [
+      'a long error',
+      { code: -32000, message: 'word '.repeat(80) },
+      'unavailable',
+      'word '.repeat(32).trim(),
+    ],
+  ] as const)(
+    'maps %s to its reason, with the node named and its words cut short',
+    async (_case, error, reason, said) => {
+      replies.push(json({ jsonrpc: '2.0', id: 1, error }));
+      await expect(client().slot()).resolves.toEqual({
+        ok: false,
+        reason,
+        detail: `127.0.0.1 said: ${said}`,
+      });
+    },
+  );
+
+  it('SYNC-DETAIL says nothing beyond the reason when a node sends only blank words', async () => {
+    replies.push(json({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: ' \n ' } }));
+    await expect(client().slot()).resolves.toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it.each([
-    [429, 'rate_limited'],
-    [403, 'unavailable'],
-    [500, 'unavailable'],
-  ] as const)('maps HTTP %d to %s', async (status, reason) => {
-    replies.push(json({}, status));
-    await expect(client().signatures(wallet, null)).resolves.toEqual({ ok: false, reason });
+    [429, 'rate_limited', '127.0.0.1 limits requests'],
+    [403, 'unavailable', '127.0.0.1 answered HTTP 403'],
+    [500, 'unavailable', '127.0.0.1 answered HTTP 500'],
+  ] as const)(
+    'maps HTTP %d to %s, naming the node and the status',
+    async (status, reason, detail) => {
+      replies.push(json({}, status));
+      await expect(client().signatures(wallet, null)).resolves.toEqual({
+        ok: false,
+        reason,
+        detail,
+      });
+    },
+  );
+
+  it('SYNC-DETAIL names the node and the error when it does not answer', async () => {
+    const closed = new SolanaRpcClient({ url: 'http://127.0.0.1:1/', timeoutMs: 500, pauseMs: 0 });
+    await expect(closed.slot()).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      detail: expect.stringMatching(/^127\.0\.0\.1 did not answer \(E[A-Z]+\)$/),
+    });
   });
 
   const invalidTransactions: [string, unknown][] = [
@@ -293,6 +368,7 @@ describe('SOL-SYNC Solana JSON-RPC client', () => {
     await expect(client().transaction(signature('one'))).resolves.toEqual({
       ok: false,
       reason: 'invalid_response',
+      detail: '127.0.0.1 sent an unexpected answer',
     });
   });
 
@@ -315,6 +391,7 @@ describe('SOL-SYNC Solana JSON-RPC client', () => {
     await expect(client().signatures(wallet, null)).resolves.toEqual({
       ok: false,
       reason: 'invalid_response',
+      detail: '127.0.0.1 sent an unexpected answer',
     });
   });
 });
