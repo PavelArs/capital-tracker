@@ -948,6 +948,10 @@ async function main() {
       },
     });
     const yieldAt = ago(30 * DAY);
+    const idZero = [
+      paid('OnChain', 6, ago(9 * DAY), 'BTC', '0.00005', 'Success', '0'),
+      paid('OnChain', 7, ago(8 * DAY), 'BTC', '0.00005', 'Success', '0'),
+    ];
     await post('bybit', {
       keys: [readOnly, earnKey],
       balances: {
@@ -990,18 +994,31 @@ async function main() {
         paid('FlexibleSaving', 3, ago(2 * DAY), 'USDT', '0.25', 'Pending'),
         paid('FlexibleSaving', 4, ago(20 * DAY), 'W', '1'),
       ],
-      onchainYield: [
-        paid('OnChain', 5, ago(10 * DAY), 'BTC', '0.0001'),
-        paid('OnChain', 6, ago(9 * DAY), 'BTC', '0.00005', 'Success', '0'),
-        paid('OnChain', 7, ago(8 * DAY), 'BTC', '0.00005', 'Success', '0'),
-      ],
+      onchainYield: [paid('OnChain', 5, ago(10 * DAY), 'BTC', '0.0001'), ...idZero],
     });
+    // The first id-0 yield was stored under its former name before the upgrade: the same
+    // record is not written again under its new name, so it is never counted twice.
+    await db.query(
+      `INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockTime","receivedUnits","sentUnits","feeUnits",direction,raw,asset)
+      VALUES ($1,$2,'bybit-earn-onchain-0',0,$3,50000000000000,0,0,'in',$4,'BTC')`,
+      [
+        owner,
+        wallet,
+        new Date(idZero[0].at),
+        JSON.stringify({
+          kind: 'earn',
+          product: 'onchain',
+          record: idZero[0].row,
+          txid: 'bybit-earn-onchain-0',
+        }),
+      ],
+    );
     const earnPasses = await syncUntilComplete(s, owner, wallet);
     const earned = earnPasses.at(-1).result;
     assert.deepEqual([earned.outcome, earned.reason], ['complete', null]);
     assert.equal(
       earnPasses.reduce((sum, pass) => sum + pass.result.imported, 0),
-      4,
+      3,
     );
     const earnUrls = earnPasses.flatMap(({ urls: list }) => list);
     assert.ok(
@@ -1049,11 +1066,10 @@ async function main() {
       [
         ['bybit-earn-flexible-1002001', 'USDT', '500000000000000000', '0', 'in', 'flexible'],
         ['bybit-earn-onchain-1002005', 'BTC', '100000000000000', '0', 'in', 'onchain'],
-        ['bybit-earn-onchain-<facts>', 'BTC', '50000000000000', '0', 'in', 'onchain'],
+        ['bybit-earn-onchain-0', 'BTC', '50000000000000', '0', 'in', 'onchain'],
         ['bybit-earn-onchain-<facts>', 'BTC', '50000000000000', '0', 'in', 'onchain'],
       ],
     );
-    assert.equal(new Set(earnLegs.map((row) => row.txid)).size, 4, 'each id-0 yield is its own leg');
     // Each paid yield is recorded as a staking reward without asking.
     const rewards = await db.query(
       `SELECT txid, type, automatic FROM chain_transaction_classification_versions
@@ -1064,8 +1080,8 @@ async function main() {
       rewards.map((row) => [named(row.txid), row.type, row.automatic]).sort(),
       [
         ['bybit-earn-flexible-1002001', 'staking-reward', true],
+        ['bybit-earn-onchain-0', 'staking-reward', true],
         ['bybit-earn-onchain-1002005', 'staking-reward', true],
-        ['bybit-earn-onchain-<facts>', 'staking-reward', true],
         ['bybit-earn-onchain-<facts>', 'staking-reward', true],
       ],
     );
@@ -1143,7 +1159,7 @@ async function main() {
       { symbol: 'USDT', quantity: '299.5' },
     );
     console.log(
-      `PASS BYBIT-EARN without the Earn permission nothing of Earn is asked; once ticked on the same key, ${earnPasses.length} passes read three months of yield in seven-day windows: 0.5 USDT and 0.0001 BTC paid become automatic staking rewards (older, pending and untracked yield left out), and two On-Chain yields Bybit lists under id 0 are both kept, 300 USDT and 0.1 BTC in Earn count in Bybit's balance, which then matches the records; turned off, Earn no longer counts`,
+      `PASS BYBIT-EARN without the Earn permission nothing of Earn is asked; once ticked on the same key, ${earnPasses.length} passes read three months of yield in seven-day windows: 0.5 USDT and 0.0001 BTC paid become automatic staking rewards (older, pending and untracked yield left out), and two On-Chain yields Bybit lists under id 0 are both kept, the one stored under that id before the upgrade once, 300 USDT and 0.1 BTC in Earn count in Bybit's balance, which then matches the records; turned off, Earn no longer counts`,
     );
 
     // BYBIT-CONVERT: a key without the Exchange History permission reads no converts and says so.

@@ -415,6 +415,46 @@ export function withdrawalLeg(withdrawal: BybitWithdrawal): BybitLeg | null {
   );
 }
 
+/** A stored leg as `withoutStoredYields` compares it. */
+export interface StoredLeg {
+  txid: string;
+  asset: string | null;
+  blockTime: Date;
+  receivedUnits: string;
+}
+
+/**
+ * BYBIT-EARN-ID: the name a yield had while every yield was named by Bybit's id, when the leg
+ * is named by its facts now; null for any other leg.
+ */
+export function formerEarnTxid(leg: BybitLeg): string | null {
+  const record = leg.raw.record as Record<string, unknown> | undefined;
+  if (leg.kind !== 'earn' || typeof record?.id !== 'string') return null;
+  const former = `bybit-earn-${leg.raw.product}-${record.id}`;
+  return former === leg.txid ? null : former;
+}
+
+/**
+ * BYBIT-EARN-ID: the legs to store, without a yield the account already holds under its former
+ * name (the same coin, amount and time), so an upgrade never counts a yield twice. `stored` are
+ * the rows found under the former names.
+ */
+export function withoutStoredYields(legs: BybitLeg[], stored: StoredLeg[]): BybitLeg[] {
+  return legs.filter((leg) => {
+    const former = formerEarnTxid(leg);
+    return (
+      former === null ||
+      !stored.some(
+        (row) =>
+          row.txid === former &&
+          row.asset === leg.asset &&
+          row.blockTime.toISOString() === leg.blockTime &&
+          row.receivedUnits === leg.receivedUnits.toString(),
+      )
+    );
+  });
+}
+
 /**
  * BYBIT-COUNT-GAP: the difference between what Bybit reports and what the records hold, entered
  * by the owner as one more record of the account. It is an unanswered deposit (or withdrawal)
