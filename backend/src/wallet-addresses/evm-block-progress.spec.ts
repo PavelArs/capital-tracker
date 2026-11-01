@@ -101,6 +101,51 @@ describe('SYNC-PROGRESS EVM page boundaries', () => {
       expect(test.state().evmSync?.[kind]).toHaveLength(1000);
     },
   );
+  it('restarts the uncommitted block on fallback when the primary stops answering and the reader has moved there', async () => {
+    const test = setup();
+    const fallbackPages: number[] = [];
+    const reader = {
+      historySource: 'primary',
+      fallbackAvailable: true,
+      page: async (
+        source: string,
+        kind: string,
+        _address: string,
+        _block: number,
+        page: number,
+      ) => {
+        if (kind !== 'tokens') return { ok: true, items: [] };
+        if (source === 'fallback') {
+          fallbackPages.push(page);
+          return { ok: true, items: [parseToken(raw(2000))] };
+        }
+        if (page === 2) return { ok: false, reason: 'unavailable' };
+        return { ok: true, items: Array.from({ length: 1000 }, (_, i) => parseToken(raw(i))) };
+      },
+    };
+    // Staged on the primary source, which then stops answering: a retry, the block stays.
+    await readEvmBlock(
+      test.source,
+      reader as unknown as EvmReader,
+      test.state(),
+      'tokens',
+      Date.now(),
+    );
+    expect(test.state().evmSync?.source).toBe('primary');
+    expect(fallbackPages).toEqual([]);
+    // The next pass found Etherscan quiet again and the reader moved to the fallback.
+    reader.historySource = 'fallback';
+    const result = await readEvmBlock(
+      test.source,
+      reader as unknown as EvmReader,
+      test.state(),
+      'tokens',
+      Date.now(),
+    );
+    expect(result).toMatchObject({ ok: true, complete: true });
+    expect(fallbackPages).toEqual([1]);
+    expect(test.state().evmSync?.source).toBe('fallback');
+  });
   it.each(['history', 'tokens'] as const)(
     'restarts the uncommitted block on fallback after plan refusal (%s)',
     async (mode) => {

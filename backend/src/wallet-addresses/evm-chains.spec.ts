@@ -48,6 +48,20 @@ describe('EVM-MULTICHAIN: the Ethereum-like chains', () => {
     }
   });
 
+  it('BLOCKSCOUT names the explorer of every chain one is known for', () => {
+    expect(Object.fromEntries(evmChains.map((chain) => [chain.network, chain.blockscout]))).toEqual(
+      {
+        ethereum: 'https://eth.blockscout.com/api',
+        base: 'https://base.blockscout.com/api',
+        arbitrum: 'https://arbitrum.blockscout.com/api',
+        optimism: 'https://explorer.optimism.io/api',
+        polygon: 'https://polygon.blockscout.com/api',
+        bnb: undefined,
+        avalanche: undefined,
+      },
+    );
+  });
+
   it('names the coin of each chain, which the market prices', () => {
     expect(evmChains.map((chain) => chain.native.symbol)).toEqual([
       'ETH',

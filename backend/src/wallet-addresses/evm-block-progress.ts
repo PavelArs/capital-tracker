@@ -86,11 +86,13 @@ export async function readEvmBlock(
     const kind = kinds[progress.kind];
     const read = await reader.page(progress.source, kind, state.address, block, progress.page);
     if (!read.ok) {
-      if (
-        read.reason === 'plan_required' &&
-        progress.source === 'primary' &&
-        reader.fallbackAvailable
-      ) {
+      // A primary page that the plan refuses, or that gets no answer once the reader has settled
+      // on the fallback, moves the block there. A staged block pins its source, so one missed
+      // page alone is a retry on that source, not a move.
+      const moved =
+        read.reason === 'plan_required' ||
+        (read.reason === 'unavailable' && reader.historySource === 'fallback');
+      if (moved && progress.source === 'primary' && reader.fallbackAvailable) {
         // Restart the uncommitted block; provider-specific ordering must never mix.
         await save({
           ...progress,

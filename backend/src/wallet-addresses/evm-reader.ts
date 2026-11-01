@@ -9,16 +9,20 @@ import type {
   TokenTransfer,
 } from './etherscan-client';
 
-// How long a chain stays on its fallback source after Etherscan turned it away; then Etherscan
-// is asked again, in case the plan changed.
+// How long a chain stays on its fallback source after Etherscan turned it away or did not answer;
+// then Etherscan is asked again, in case the plan or the network changed.
 export const FALLBACK_FOR_MS = 6 * 60 * 60_000;
 
 type Answer = { ok: true } | Failed;
+// Refusals the fallback answers: the plan, or no answer at all. A rate limit or a bad key is
+// Etherscan's own and waits for Etherscan.
+const FALLBACK_ON: ReadonlySet<Failed['reason']> = new Set(['plan_required', 'unavailable']);
 export type EvmSource = 'primary' | 'fallback';
 
 /**
  * BLOCKSCOUT: reads one chain's history from Etherscan and, when Etherscan's free plan does not
- * serve that chain, from the chain's own Blockscout explorer. Both answer the same questions in
+ * serve that chain or Etherscan does not answer at all (its hosts may be unreachable from where
+ * the server runs), from the chain's own Blockscout explorer. Both answer the same questions in
  * the same shape, so a pass may start on one and continue on the other without gaps.
  */
 export class EvmReader {
@@ -104,7 +108,7 @@ export class EvmReader {
     }
     this.fallbackSince = null;
     const answer = await ask(this.primary);
-    if (answer.ok || answer.reason !== 'plan_required') return answer;
+    if (answer.ok || !FALLBACK_ON.has(answer.reason)) return answer;
     this.fallbackSince = this.now();
     return ask(fallback);
   }
