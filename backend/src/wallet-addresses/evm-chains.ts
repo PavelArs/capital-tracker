@@ -29,7 +29,8 @@ export interface EvmChain {
   chainId: number;
   /**
    * BLOCKSCOUT: the chain's keyless Blockscout API (Etherscan-compatible), read when Etherscan's
-   * free plan does not serve the chain. Absent where no Blockscout explorer is known.
+   * free plan does not serve the chain or Etherscan does not answer. Absent where no Blockscout
+   * explorer is known.
    */
   blockscout?: string;
   /** CoinGecko's asset platform id, for the price of a token by contract. */
@@ -48,6 +49,7 @@ export const evmChains: readonly EvmChain[] = [
     network: 'ethereum',
     name: 'Ethereum',
     chainId: 1,
+    blockscout: 'https://eth.blockscout.com/api',
     coingeckoPlatform: 'ethereum',
     native: eth,
     stablecoins: {
@@ -70,6 +72,7 @@ export const evmChains: readonly EvmChain[] = [
     network: 'arbitrum',
     name: 'Arbitrum One',
     chainId: 42161,
+    blockscout: 'https://arbitrum.blockscout.com/api',
     coingeckoPlatform: 'arbitrum-one',
     native: eth,
     // Native USDC; the bridged USDC.e is another token and shows under its own ticker.
@@ -94,6 +97,7 @@ export const evmChains: readonly EvmChain[] = [
     network: 'polygon',
     name: 'Polygon',
     chainId: 137,
+    blockscout: 'https://polygon.blockscout.com/api',
     coingeckoPlatform: 'polygon-pos',
     native: { symbol: 'POL', name: 'POL' },
     // Native USDC; the bridged USDC.e is another token and shows under its own ticker.

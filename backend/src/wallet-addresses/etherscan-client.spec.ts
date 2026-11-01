@@ -62,6 +62,7 @@ describe('ETH-SYNC Etherscan client', () => {
     headers?: Record<string, string>;
   }[];
   let requests: URL[];
+  let posted: { method: string; body: unknown }[];
   const client = (apiKey: string | null = key) =>
     new EtherscanClient({ apiKey, baseUrl, timeoutMs: 500, pauseMs: 0 });
   const json = (body: unknown, status = 200) => ({ status, body: JSON.stringify(body) });
@@ -70,6 +71,13 @@ describe('ETH-SYNC Etherscan client', () => {
   beforeAll(async () => {
     server = createServer((request, response) => {
       requests.push(new URL(request.url ?? '/', 'http://localhost'));
+      let received = '';
+      request.on('data', (chunk: Buffer) => {
+        received += chunk.toString();
+      });
+      request.on('end', () => {
+        if (received) posted.push({ method: request.method ?? '', body: JSON.parse(received) });
+      });
       const reply = replies.shift() ?? { status: 500, body: '' };
       response.writeHead(reply.status, {
         'content-type': 'application/json',
@@ -89,6 +97,7 @@ describe('ETH-SYNC Etherscan client', () => {
   beforeEach(() => {
     replies = [];
     requests = [];
+    posted = [];
   });
 
   it('asks nothing without a key and says what the server misses', async () => {
@@ -512,6 +521,29 @@ describe('ETH-SYNC Etherscan client', () => {
       ok: false,
       reason: 'invalid_response',
     });
+  });
+
+  it('BLOCKSCOUT calls a contract through the explorer JSON-RPC, which has no proxy module', async () => {
+    const word = `0x${'0'.repeat(48)}${'de0b6b3a7640000'.padStart(16, '0')}`;
+    replies.push(json({ jsonrpc: '2.0', id: 1, result: word }));
+    const data = `0x3af9e669${'0'.repeat(24)}${owned.slice(2)}`;
+    await expect(client(null).blockscout(baseUrl).call(other, data, 20_000_000)).resolves.toEqual({
+      ok: true,
+      data: word,
+    });
+    expect(requests[0].pathname).toBe('/v2/api/eth-rpc');
+    expect(requests[0].search).toBe('');
+    expect(posted).toEqual([
+      {
+        method: 'POST',
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_call',
+          params: [{ to: other, data }, '0x1312d00'],
+        },
+      },
+    ]);
   });
 
   it('calls a contract as of a block and reads its answer or its revert', async () => {

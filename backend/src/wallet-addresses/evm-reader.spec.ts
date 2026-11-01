@@ -15,6 +15,10 @@ const fake = (answers: unknown[]) => {
       calls.push('blockNumber');
       return answers.shift();
     },
+    call: async () => {
+      calls.push('call');
+      return answers.shift();
+    },
   };
   return { client: client as unknown as EtherscanClient, calls };
 };
@@ -78,6 +82,28 @@ describe('BLOCKSCOUT fallback reader', () => {
     const reader = new EvmReader(primary.client, fallback.client);
     await expect(reader.normal('0x', 1, 2)).resolves.toEqual({ ok: false, reason: 'rate_limited' });
     expect(fallback.calls).toEqual([]);
+  });
+
+  it('turns to the fallback when the primary does not answer, as when its hosts are unreachable', async () => {
+    const primary = fake([
+      {
+        ok: false,
+        reason: 'unavailable',
+        detail: 'api.etherscan.io did not answer (ERR_CANCELED)',
+      },
+    ]);
+    const fallback = fake([
+      { ok: true, items: [] },
+      { ok: true, data: '0x01' },
+    ]);
+    const reader = new EvmReader(primary.client, fallback.client);
+    await expect(reader.normal('0x', 1, 2)).resolves.toEqual({ ok: true, items: [] });
+    expect(reader.historySource).toBe('fallback');
+    expect(reader.detail).toBeNull();
+    // A contract call (staking) follows the same hold.
+    await expect(reader.call('0x', '0x', 2)).resolves.toEqual({ ok: true, data: '0x01' });
+    expect(primary.calls).toEqual(['normal']);
+    expect(fallback.calls).toEqual(['normal', 'call']);
   });
 
   it('reports what the fallback says when it fails too', async () => {

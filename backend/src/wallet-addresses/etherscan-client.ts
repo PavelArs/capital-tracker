@@ -263,6 +263,8 @@ interface ClientOptions {
   proUrl?: string;
   /** BLOCKSCOUT-KEY: parameters sent with every call of a keyless client (the chain and the key). */
   extraParams?: Record<string, string>;
+  /** BLOCKSCOUT: the explorer's JSON-RPC, which takes eth_call; Blockscout has no proxy module. */
+  rpcUrl?: string;
 }
 
 export class EtherscanClient {
@@ -275,6 +277,7 @@ export class EtherscanClient {
   private readonly blockscoutKey: string | null;
   private readonly proUrl: string;
   private readonly extraParams: Record<string, string> | null;
+  private readonly rpcUrl: string | null;
   // The key's rate limit is shared by every chain, so the views of one client share the pause.
   private readonly pace: { lastRequestAt: number };
 
@@ -289,6 +292,7 @@ export class EtherscanClient {
     this.blockscoutKey = options.blockscoutKey?.trim() || null;
     this.proUrl = options.proUrl ?? BLOCKSCOUT_PRO_URL;
     this.extraParams = options.extraParams ?? null;
+    this.rpcUrl = options.rpcUrl ?? null;
     this.pace = pace;
   }
 
@@ -303,6 +307,9 @@ export class EtherscanClient {
     return new EtherscanClient({
       baseUrl: pro ? this.proUrl : baseUrl,
       keyless: true,
+      // A contract call goes to the public explorer's JSON-RPC either way: that route is the one
+      // verified (eth.blockscout.com), and whether the PRO API has one is not.
+      rpcUrl: `${baseUrl}/eth-rpc`,
       timeoutMs: this.timeoutMs,
       pauseMs: this.pauseMs,
       // The PRO API names the chain `chain_id` in its own guide and `chainid` in some pages: both go.
@@ -347,12 +354,19 @@ export class EtherscanClient {
     }));
   }
 
-  /** A read-only call of `to` with `data` as of the given block (proxy eth_call). */
+  /**
+   * A read-only call of `to` with `data` as of the given block (proxy eth_call). A Blockscout
+   * explorer has no proxy module and takes the call as JSON-RPC at its /eth-rpc instead (`rpcUrl`).
+   */
   call(to: string, data: string, block: number): Promise<CallResult> {
-    return this.get(
-      { module: 'proxy', action: 'eth_call', to, data, tag: `0x${block.toString(16)}` },
-      (body) => ({ ok: true, data: parseCall(body) }),
-    );
+    const tag = `0x${block.toString(16)}`;
+    const parse = (body: unknown): CallResult => ({ ok: true, data: parseCall(body) });
+    if (this.rpcUrl !== null)
+      return this.get({}, parse, {
+        url: this.rpcUrl,
+        body: { jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, tag] },
+      });
+    return this.get({ module: 'proxy', action: 'eth_call', to, data, tag }, parse);
   }
 
   normal(
@@ -402,10 +416,10 @@ export class EtherscanClient {
     );
   }
 
-  /** The source's host name, which names it in what the owner reads. */
-  private get host(): string {
+  /** The host asked, which names the source in what the owner reads. */
+  private hostOf(url: string): string {
     try {
-      return new URL(this.baseUrl).hostname;
+      return new URL(url).hostname;
     } catch {
       return 'The data source';
     }
@@ -415,7 +429,7 @@ export class EtherscanClient {
    * RATE-LIMIT: what a 429 says. A public Blockscout explorer counts requests without a key and
    * names the time its limit lifts in x-ratelimit-reset (milliseconds); retry-after is in seconds.
    */
-  private limitDetail(headers: unknown): string {
+  private limitDetail(host: string, headers: unknown): string {
     const header = (name: string): number | null => {
       const value = (headers as Record<string, unknown> | undefined)?.[name];
       const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
@@ -430,12 +444,14 @@ export class EtherscanClient {
         : '';
     const key =
       this.keyless && this.extraParams === null ? ' without a key (BLOCKSCOUT_API_KEY)' : '';
-    return `${this.host} limits requests${key}${lifts}`;
+    return `${host} limits requests${key}${lifts}`;
   }
 
   private async get<T>(
     params: Record<string, string>,
     parse: (body: unknown) => T,
+    /** A JSON-RPC body posted to `url` instead of a query of `baseUrl`. */
+    rpc?: { url: string; body: unknown },
   ): Promise<T | Failed> {
     if (!this.configured) return { ok: false, reason: 'not_configured' };
     const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
@@ -444,13 +460,20 @@ export class EtherscanClient {
     // REDIRECT: an explorer may answer with a redirect (301) to the same address in another form.
     // Only one that stays on the same host and scheme is followed; a request carries the key in
     // its query, so it never goes to another host.
-    const origin = new URL(this.baseUrl);
+    const asked = rpc?.url ?? this.baseUrl;
+    const origin = new URL(asked);
+    const host = this.hostOf(asked);
     let movedTo: string | null = null;
     try {
-      response = await axios.get<string>(this.baseUrl, {
-        params: this.keyless
-          ? { ...this.extraParams, ...params }
-          : { chainid: String(this.chainId), ...params, apikey: this.apiKey },
+      response = await axios.request<string>({
+        url: asked,
+        method: rpc ? 'post' : 'get',
+        data: rpc?.body,
+        params: rpc
+          ? undefined
+          : this.keyless
+            ? { ...this.extraParams, ...params }
+            : { chainid: String(this.chainId), ...params, apikey: this.apiKey },
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
@@ -479,28 +502,32 @@ export class EtherscanClient {
     } catch (error) {
       if (movedTo !== null) {
         const target = said(movedTo);
-        return { ok: false, reason: 'unavailable', detail: `${this.host} moved to ${target}` };
+        return { ok: false, reason: 'unavailable', detail: `${host} moved to ${target}` };
       }
       const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
-      return { ok: false, reason: 'unavailable', detail: `${this.host} did not answer${code}` };
+      return { ok: false, reason: 'unavailable', detail: `${host} did not answer${code}` };
     } finally {
       this.pace.lastRequestAt = Date.now();
     }
     if (response.status === 429) {
-      return { ok: false, reason: 'rate_limited', detail: this.limitDetail(response.headers) };
+      return {
+        ok: false,
+        reason: 'rate_limited',
+        detail: this.limitDetail(host, response.headers),
+      };
     }
     if (response.status !== 200) {
       return {
         ok: false,
         reason: 'unavailable',
-        detail: `${this.host} answered HTTP ${response.status}`,
+        detail: `${host} answered HTTP ${response.status}`,
       };
     }
     try {
       return parse(JSON.parse(response.data));
     } catch (error) {
       if (error instanceof Refused) {
-        const detail = error.said ? `${this.host} said: ${error.said}` : undefined;
+        const detail = error.said ? `${host} said: ${error.said}` : undefined;
         return {
           ok: false,
           reason: error.reason,
@@ -511,7 +538,7 @@ export class EtherscanClient {
       return {
         ok: false,
         reason: 'invalid_response',
-        detail: `${this.host} sent an unexpected answer`,
+        detail: `${host} sent an unexpected answer`,
       };
     }
   }
