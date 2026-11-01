@@ -22,9 +22,12 @@ import {
   convertLeg,
   depositLeg,
   earnLeg,
+  formerEarnTxid,
+  type StoredLeg,
   tradeLeg,
   UnreadableAmount,
   withdrawalLeg,
+  withoutStoredYields,
 } from './bybit-records';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
 
@@ -478,7 +481,19 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     });
   }
 
-  private async insert(manager: EntityManager, account: AccountRow, legs: BybitLeg[]) {
+  private async insert(manager: EntityManager, account: AccountRow, read: BybitLeg[]) {
+    // BYBIT-EARN-ID: a yield stored under Bybit's id before yields without one were named by
+    // their facts is the same record; it is not written again under its new name.
+    const former = read.flatMap((leg) => formerEarnTxid(leg) ?? []);
+    const stored: StoredLeg[] =
+      former.length === 0
+        ? []
+        : await manager.query(
+            `SELECT txid, asset, "blockTime", "receivedUnits"::text AS "receivedUnits"
+              FROM wallet_address_transactions WHERE "addressId" = $1 AND txid = ANY($2::text[])`,
+            [account.id, former],
+          );
+    const legs = withoutStoredYields(read, stored);
     if (legs.length === 0) return 0;
     const values: unknown[] = [];
     const rows = legs.map((leg) => {
