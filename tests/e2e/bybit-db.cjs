@@ -1227,7 +1227,7 @@ async function main() {
       balances: {
         FUND: [
           { coin: 'USDT', walletBalance: '909.5', transferBalance: '909.5', bonus: '' },
-          { coin: 'BTC', walletBalance: '0.1901', transferBalance: '0.1901', bonus: '' },
+          { coin: 'BTC', walletBalance: '0.1902', transferBalance: '0.1902', bonus: '' },
           { coin: 'SOL', walletBalance: '0.6', transferBalance: '0.6', bonus: '' },
         ],
         UNIFIED: balances.UNIFIED,
@@ -1345,14 +1345,14 @@ async function main() {
     );
     // BYBIT-GAPS: the converts close the difference; Bybit's balance matches the records.
     assert.deepEqual(convertPass.result.address.balances, [
-      { symbol: 'BTC', quantity: '0.70009' },
+      { symbol: 'BTC', quantity: '0.70019' },
       { symbol: 'ETH', quantity: '0' },
       { symbol: 'SOL', quantity: '0.6' },
       { symbol: 'USDT', quantity: '1159.5' },
       { symbol: 'USDC', quantity: '0' },
     ]);
     assert.deepEqual(await held(db, owner, exchange), {
-      BTC: '0.70009',
+      BTC: '0.70019',
       SOL: '0.6',
       USDT: '1159.5',
     });
@@ -1466,7 +1466,7 @@ async function main() {
       balances: {
         FUND: [
           { coin: 'USDT', walletBalance: '909.5', transferBalance: '909.5', bonus: '' },
-          { coin: 'BTC', walletBalance: '0.1901', transferBalance: '0.1901', bonus: '' },
+          { coin: 'BTC', walletBalance: '0.1902', transferBalance: '0.1902', bonus: '' },
           { coin: 'SOL', walletBalance: '0.6', transferBalance: '0.6', bonus: '' },
           { coin: 'TON', walletBalance: '40', transferBalance: '40', bonus: '' },
         ],
@@ -1538,7 +1538,7 @@ async function main() {
     );
     // 1159.5 USDT − 30 for the XRP + 4 for the DOGE.
     assert.deepEqual(await held(db, owner, exchange), {
-      BTC: '0.70009',
+      BTC: '0.70019',
       NOPE: '7',
       SOL: '0.6',
       TON: '40',
@@ -1546,7 +1546,7 @@ async function main() {
       XRP: '15',
     });
     assert.deepEqual(counted.address.balances, [
-      { symbol: 'BTC', quantity: '0.70009' },
+      { symbol: 'BTC', quantity: '0.70019' },
       { symbol: 'ETH', quantity: '0' },
       { symbol: 'SOL', quantity: '0.6' },
       { symbol: 'USDT', quantity: '1159.5' },
@@ -1665,7 +1665,7 @@ async function main() {
     const gapBalances = {
       FUND: [
         { coin: 'USDT', walletBalance: '909.5', transferBalance: '909.5', bonus: '' },
-        { coin: 'BTC', walletBalance: '0.1901', transferBalance: '0.1901', bonus: '' },
+        { coin: 'BTC', walletBalance: '0.1902', transferBalance: '0.1902', bonus: '' },
         { coin: 'SOL', walletBalance: '0.6', transferBalance: '0.6', bonus: '' },
         { coin: 'TON', walletBalance: '35', transferBalance: '35', bonus: '' },
       ],
