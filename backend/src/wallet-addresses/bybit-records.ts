@@ -448,15 +448,30 @@ const earnProducts: Record<BybitEarnCategory, string> = {
 /**
  * BYBIT-EARN: a paid Earn yield adds its coin to the account; the app records it as a Staking
  * reward by itself. Bybit's yield ids are unique per product kind, so the kind is in the txid.
+ * BYBIT-EARN-ID: Bybit sends id "0" for every On-Chain yield, and a bonus paid beside the normal
+ * yield shares its id; such a record is named by its own facts instead, so none is lost.
  */
 export function earnLeg(paid: BybitEarnYield, category: BybitEarnCategory): BybitLeg | null {
   if (paid.state !== 'done' || !tracked(paid.coin)) return null;
   const units = toUnits(paid.amount);
   if (units === 0n) return null;
   const product = earnProducts[category];
+  const { productId, yieldType } = paid.raw;
+  const kind = typeof yieldType === 'string' ? yieldType : '';
+  const own = /^[1-9][0-9]*$/.test(paid.id) && (kind === '' || kind === 'Normal');
+  const identity = own
+    ? paid.id
+    : digest([
+        paid.id,
+        String(productId ?? ''),
+        paid.coin,
+        units.toString(),
+        kind,
+        String(paid.time),
+      ]);
   return leg(
     {
-      txid: `bybit-earn-${product}-${paid.id}`,
+      txid: `bybit-earn-${product}-${identity}`,
       kind: 'earn',
       asset: paid.coin,
       blockTime: iso(paid.time),

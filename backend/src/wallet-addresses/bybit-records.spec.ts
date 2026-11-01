@@ -224,6 +224,74 @@ describe('BYBIT-EARN: Earn yield as records', () => {
     expect(earnLeg(paid({ coin: 'SOL' }), 'OnChain')?.txid).toBe('bybit-earn-onchain-1002096');
   });
 
+  it('BYBIT-EARN-ID: names a yield by its own facts when Bybit gives it no id of its own', () => {
+    // Bybit sends id "0" for every On-Chain yield, so the id alone would store one record only.
+    const sol = earnLeg(
+      paid({
+        id: '0',
+        coin: 'SOL',
+        amount: '0.00005597',
+        raw: { productId: '31', yieldType: 'Normal' },
+      }),
+      'OnChain',
+    );
+    const ada = earnLeg(
+      paid({
+        id: '0',
+        coin: 'ADA',
+        amount: '0.0015',
+        raw: { productId: '32', yieldType: 'Normal' },
+      }),
+      'OnChain',
+    );
+    const next = earnLeg(
+      paid({
+        id: '0',
+        coin: 'SOL',
+        amount: '0.00005597',
+        time: Date.UTC(2026, 8, 2, 0, 30),
+        raw: { productId: '31', yieldType: 'Normal' },
+      }),
+      'OnChain',
+    );
+    for (const item of [sol, ada, next])
+      expect(item?.txid).toMatch(/^bybit-earn-onchain-[0-9a-f]{40}$/);
+    expect(new Set([sol?.txid, ada?.txid, next?.txid]).size).toBe(3);
+    // The same record again names the same leg.
+    expect(
+      earnLeg(
+        paid({
+          id: '0',
+          coin: 'SOL',
+          amount: '0.00005597',
+          raw: { productId: '31', yieldType: 'Normal' },
+        }),
+        'OnChain',
+      )?.txid,
+    ).toBe(sol?.txid);
+    // Each fact of the record is part of its name; the amount counts by value, not by spelling.
+    const facts = {
+      id: '0',
+      coin: 'SOL',
+      amount: '0.00005597',
+      raw: { productId: '31', yieldType: 'Normal' },
+    };
+    const variant = (change: Partial<BybitEarnYield>) =>
+      earnLeg(paid({ ...facts, ...change }), 'OnChain')?.txid;
+    expect(variant({ raw: { productId: '32', yieldType: 'Normal' } })).not.toBe(sol?.txid);
+    expect(variant({ raw: { productId: '31', yieldType: 'Bonus' } })).not.toBe(sol?.txid);
+    expect(variant({ amount: '0.000055970000' })).toBe(sol?.txid);
+    // A bonus paid beside the normal yield under the same id is a record of its own.
+    const bonus = earnLeg(
+      paid({ raw: { productId: '428', yieldType: 'Bonus' } }),
+      'FlexibleSaving',
+    );
+    expect(bonus?.txid).toMatch(/^bybit-earn-flexible-[0-9a-f]{40}$/);
+    expect(
+      earnLeg(paid({ raw: { productId: '428', yieldType: 'Normal' } }), 'FlexibleSaving')?.txid,
+    ).toBe('bybit-earn-flexible-1002096');
+  });
+
   it('leaves out yield not paid yet, failed, zero, or of an untracked coin', () => {
     expect(earnLeg(paid({ state: 'pending' }), 'FlexibleSaving')).toBeNull();
     expect(earnLeg(paid({ state: 'failed' }), 'FlexibleSaving')).toBeNull();
