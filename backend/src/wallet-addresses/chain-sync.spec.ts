@@ -48,6 +48,36 @@ describe('PR-SYN-1 wallet source state', () => {
     expect(failureMessage('Bitcoin', 'error')).toBe('The sync stopped unexpectedly.');
   });
 
+  it("SYNC-DETAIL appends the provider's words to a failure and keeps the whole within 300 characters", () => {
+    const short = outcomeOf(
+      'Solana',
+      {
+        outcome: 'provider_error',
+        reason: 'unavailable',
+        imported: 0,
+        detail: 'rpc.test answered HTTP 503',
+      },
+      now,
+    );
+    expect(short.errorMessage).toBe(
+      'Solana data is temporarily unavailable. rpc.test answered HTTP 503.',
+    );
+    const long = outcomeOf(
+      'Solana',
+      {
+        outcome: 'provider_error',
+        reason: 'unavailable',
+        imported: 0,
+        detail: `rpc.test said: ${'x'.repeat(400)}`,
+      },
+      now,
+    );
+    expect(long.errorMessage).toHaveLength(300);
+    expect(
+      long.errorMessage?.startsWith('Solana data is temporarily unavailable. rpc.test said: x'),
+    ).toBe(true);
+  });
+
   it('keeps every message within the stored limits', () => {
     for (const reason of [
       'rate_limited',

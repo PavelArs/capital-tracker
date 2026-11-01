@@ -66,7 +66,8 @@ interface SyncProgress {
 }
 
 const scanColumns = `id, "ownerId", address, "scannedBlock", "tokenBackfillTo", "tokenBackfillAt", "solanaSync"`;
-type Named = { ok: true; facts: TokenFacts[] } | { ok: false; reason: StepFailure };
+type Failed = { ok: false; reason: StepFailure; detail?: string };
+type Named = { ok: true; facts: TokenFacts[] } | Failed;
 
 /** One transaction's effect on the wallet's stake accounts (SOL-STAKE-MOVE). */
 interface StakeRecord {
@@ -107,14 +108,16 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
     let state = await this.scan(ownerId, addressId);
     await this.backfillStake(state);
     let imported = 0;
-    const failed = (reason: StepFailure): StepResult => ({
+    // SYNC-DETAIL: the node's own words travel with the failure to the wallet's message.
+    const failed = ({ reason, detail }: Omit<Failed, 'ok'>): StepResult => ({
       outcome: 'provider_error',
       reason,
       imported,
+      ...(detail ? { detail } : {}),
     });
     // The finalized slot first: every slot up to it is final in each list read below.
     const tip = await this.rpc.slot();
-    if (!tip.ok) return failed(tip.reason);
+    if (!tip.ok) return failed(tip);
     const started = Date.now();
     let fetched = 0;
     let pages = 0;
@@ -134,7 +137,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
         }
         if (Date.now() - started >= SYNC_TIME_BUDGET_MS) return partial();
         const found = await this.tokenAccounts(state.address);
-        if (!found.ok) return failed(found.reason);
+        if (!found.ok) return failed(found);
         progress = {
           revision: randomUUID(),
           mode,
@@ -177,7 +180,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
           solanaLegs(state.address, tokenAccounts, tx).filter((leg) => leg.asset !== null),
         );
         const named = await this.named(solanaTokenFacts(transactions, legs));
-        if (!named.ok) return failed(named.reason);
+        if (!named.ok) return failed(named);
         const last = rows.length < STAKE_BACKFILL_PAGE;
         const next = {
           ...progress,
@@ -202,7 +205,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
             return partial();
           const found = await this.rpc.signatures(accounts[progress.accountIndex], progress.before);
           pages++;
-          if (!found.ok) return failed(found.reason);
+          if (!found.ok) return failed(found);
           const pending = new Map(progress.signatures.map((item) => [item.signature, item]));
           let done = found.items.length < SOLANA_SIGNATURE_PAGE_SIZE;
           for (const item of found.items) {
@@ -213,7 +216,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
             if (item.slot <= progress.target) pending.set(item.signature, item);
           }
           const before = found.items.at(-1)?.signature ?? null;
-          if (!done && before === progress.before) return failed('invalid_response');
+          if (!done && before === progress.before) return failed({ reason: 'invalid_response' });
           state = await this.checkpoint(state, {
             ...progress,
             accountIndex: progress.accountIndex + (done ? 1 : 0),
@@ -262,8 +265,8 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
         const signature = progress.signatures[index].signature;
         const found = await this.rpc.transaction(signature);
         fetched++;
-        if (!found.ok) return failed(found.reason);
-        if (found.transaction.slot !== slot) return failed('invalid_response');
+        if (!found.ok) return failed(found);
+        if (found.transaction.slot !== slot) return failed({ reason: 'invalid_response' });
         state = await this.checkpoint(state, {
           ...progress,
           staged: [...progress.staged, { signature, raw: found.transaction.raw }],
@@ -275,7 +278,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
       const tokenAccounts = new Set(progress.accounts);
       const legs = read.flatMap((tx) => solanaLegs(state.address, tokenAccounts, tx));
       const named = await this.named(solanaTokenFacts(read, legs));
-      if (!named.ok) return failed(named.reason);
+      if (!named.ok) return failed(named);
       const done = next === progress.signatures.length;
       const nextProgress = done ? null : { ...progress, position: next, staged: [] };
       if (progress.mode === 'backfill') {
@@ -316,7 +319,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
   /** TOKEN-ANY: the wallet's token accounts of every mint, of both token programs. */
   private async tokenAccounts(
     address: string,
-  ): Promise<{ ok: true; accounts: Set<string> } | { ok: false; reason: StepFailure }> {
+  ): Promise<{ ok: true; accounts: Set<string> } | Failed> {
     const accounts = new Set<string>();
     for (const programId of [TOKEN_PROGRAM, TOKEN_2022_PROGRAM]) {
       const found = await this.rpc.tokenAccounts(address, { programId });
@@ -625,15 +628,15 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
     );
     if (known.length === 0) return null;
     const epoch = await this.rpc.epoch();
-    if (!epoch.ok) return epoch.reason;
+    if (!epoch.ok) return epoch;
     const states: StakeAccountState[] = [];
     for (let start = 0; start < known.length; start += SOLANA_ACCOUNTS_PER_CALL) {
       const keys = known.slice(start, start + SOLANA_ACCOUNTS_PER_CALL).map((row) => row.account);
       const read = await this.rpc.accounts(keys);
-      if (!read.ok) return read.reason;
+      if (!read.ok) return read;
       for (const [index, value] of read.values.entries()) {
         const parsed = parseStakeAccount(keys[index], value, epoch.epoch);
-        if (!parsed) return 'invalid_response' as const;
+        if (!parsed) return { ok: false as const, reason: 'invalid_response' as const };
         states.push(parsed);
       }
     }
@@ -642,7 +645,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
     for (const item of states) {
       if (item.lamports <= (explained.get(item.account) ?? 0n)) continue;
       const newest = await this.rpc.newestSlot(item.account);
-      if (!newest.ok) return newest.reason;
+      if (!newest.ok) return newest;
       if (newest.slot === null || newest.slot <= target) grown.add(item.account);
     }
     await this.source.transaction('READ COMMITTED', async (manager) => {
