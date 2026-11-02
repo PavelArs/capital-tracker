@@ -935,9 +935,9 @@ export function projectPortfolio(
       return {
         ...asset,
         allocationPercent:
-          allocation && subtotal > 0n && interestMissingDepositCount === 0
-            ? formatPercent(allocation.value, subtotal)
-            : null,
+          // NW-SHARE-ESTIMATE: of the known part while interest is missing; the allocation says
+          // it is incomplete.
+          allocation && subtotal > 0n ? formatPercent(allocation.value, subtotal) : null,
       };
     }),
     allocation: {

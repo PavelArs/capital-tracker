@@ -295,8 +295,13 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   expect(bankCreated.status()).toBe(201);
   const bank = (await bankCreated.json()) as { id: string };
   const withBank = (await api.result('GET', '/portfolio', 200)) as {
+    totalValue: string | null;
+    interestMissingDepositCount?: number;
     allocation: { byAsset: { key: string; value: string; percent: string | null }[] };
   };
+  // NW-SHARE-ESTIMATE: a share of a net worth that leaves something out is marked "≈".
+  const mark =
+    withBank.totalValue === null || (withBank.interestMissingDepositCount ?? 0) > 0 ? '≈' : '';
   const bankShare = withBank.allocation.byAsset.find((slice) => slice.key === `deposit:${bank.id}`);
   expect(bankShare?.value).toBe('5000');
   expect(bankShare?.percent).toMatch(/^\d+\.\d{2}$/);
@@ -305,7 +310,7 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await search.fill(bankName);
   const bankCells = main.getByRole('row', { name: new RegExp(`^${bankName}`) }).getByRole('cell');
   await expect(bankCells.nth(3)).toHaveText('$5,000.00');
-  await expect(bankCells.nth(4)).toHaveText(`${bankShare!.percent}%`);
+  await expect(bankCells.nth(4)).toHaveText(`${mark}${bankShare!.percent}%`);
   expect(await bankCells.nth(4).locator('.portfolio-share__bar i').evaluate(
     (element) => (element as HTMLElement).style.width,
   )).toBe(`${Number(bankShare!.percent)}%`);
