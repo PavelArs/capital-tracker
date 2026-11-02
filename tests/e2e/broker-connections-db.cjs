@@ -1112,8 +1112,11 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal((await imports.preview(owner, untouchedAccount, { opening: goldOpening })).canImport, true, 'Verified commodity metadata allows explicit opening lots');
   const withEarlierDollars = { ...goldOpening, lots: [...goldOpening.lots, { asset: 'cash:USD', acquiredAt: '2024-02-01T00:00:00Z', quantity: '1', costUsd: '1' }] };
   assert.equal((await imports.preview(owner, untouchedAccount, { opening: withEarlierDollars })).canImport, false, 'Opening cash cannot invent dollars absent from the current portfolio');
-  tbank.cash = [['RUB', '999']];
+  tbank.cash = [['RUB', '1001']];
   assert.equal((await imports.preview(owner, untouchedAccount, { opening: goldOpening })).canImport, false, 'Replayed ruble cash must match the provider too');
+  tbank.cash = [['RUB', '999']];
+  const shortCash = await imports.preview(owner, untouchedAccount, { opening: goldOpening });
+  assert.deepEqual([shortCash.canImport, shortCash.cashGaps], [true, [{ currency: 'rub', amount: '1', occurredAt: '2024-03-01T07:00:00.001Z' }]], 'BROKER-CASH-GAP ruble cash T-Bank reports below the history is paid out, never left as more cash');
   tbank.cash = [['RUB', '1000'], ['USD', '1']];
   assert.equal((await imports.preview(owner, untouchedAccount, { opening: goldOpening })).canImport, false, 'Earlier cash absent from operations must be declared');
   assert.equal((await imports.preview(owner, untouchedAccount, { opening: withEarlierDollars })).canImport, true, 'Matching explicit earlier cash restores the exact balance');
@@ -1194,6 +1197,34 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(await count('broker_instrument_links', `WHERE "providerInstrumentId" = '${oldMode}'`), 0);
   assert.equal(await count('broker_imported_operations', `WHERE "accountId" = '${modeAccount}'`), 3);
   console.log('PASS BROKER-POSITION-ID PostgreSQL trading-mode identity, exact cash, stale alias refusal and atomic replay');
+
+  stage = 'BROKER-CASH-GAP: cash T-Bank reports below what its listed history leaves';
+  const gapAccount = await account(db, owner, 'broker');
+  await takeOver(db, service, owner, gapAccount);
+  const cashBeforeGap = tbank.cash;
+  history = [operation('1550000001', 'INPUT', '200'),
+    operation('1550000002', 'BUY', '-190', share({ quantity: '2', occurredAt: '2024-03-02T07:00:00Z' })),
+    operation('1550000003', 'INPUT', '50', { occurredAt: '2024-03-03T07:00:00Z' })];
+  tbank.positions = [heldPosition(shareUid, '2')];
+  tbank.cash = [['RUB', '70']];
+  assert.equal((await imports.preview(owner, gapAccount)).canImport, false, 'More cash than the history leaves is never invented');
+  tbank.cash = [];
+  assert.equal((await imports.preview(owner, gapAccount)).canImport, false, 'A cash position T-Bank does not report is not a reported zero');
+  tbank.cash = [['RUB', '30']];
+  const gapPreview = await imports.preview(owner, gapAccount);
+  // Cash after each operation: 200, 10, 60. The 30 can only have left after the last one.
+  assert.deepEqual(gapPreview.cashGaps, [{ currency: 'rub', amount: '30', occurredAt: '2024-03-03T07:00:00.001Z' }]);
+  assert.equal(gapPreview.canImport, true);
+  assert.deepEqual(gapPreview.entries.at(-1), { record: 'trade', action: 'withdrawal', occurredAt: '2024-03-03T07:00:00.001Z', instrumentUid: '', ticker: '', instrumentType: '', quantity: '30', amount: '30', fee: '0', currency: 'rub', operationIds: ['cash-gap:RUB'] });
+  await imports.import(owner, gapAccount, { requestId: randomUUID(), previewHash: gapPreview.previewHash });
+  assert.equal((await trades.available(owner, gapAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '30');
+  const [gapRow] = await db.query(`SELECT "tradeId" FROM broker_imported_operations WHERE "accountId" = $1 AND "operationId" = 'cash-gap:RUB'`, [gapAccount]);
+  assert.ok(gapRow?.tradeId, 'The payment out is recorded as imported from the broker');
+  const [gapTrade] = await db.query(`SELECT side, "instrumentId", "occurredAt", quantity = 30 AS "exact" FROM account_trade_versions WHERE "accountId" = $1 AND "tradeId" = $2`, [gapAccount, gapRow.tradeId]);
+  assert.deepEqual([gapTrade.side, gapTrade.instrumentId, gapTrade.occurredAt.toISOString(), gapTrade.exact], ['sell', rubCash.id, '2024-03-03T07:00:00.001Z', true], 'The 30 rubles leave just after the last listed deposit');
+  tbank.positions = [];
+  tbank.cash = cashBeforeGap;
+  console.log('PASS BROKER-CASH-GAP PostgreSQL payment out of unlisted cash, dated no earlier than the history allows');
 
   stage = 'BROKER-POSITION-ID: later imports reuse a linked trading mode';
   const laterModeAccount = await account(db, owner, 'broker');

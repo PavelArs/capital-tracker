@@ -908,7 +908,11 @@ export class WalletAddressService {
         if (error instanceof UnreadableAmount) throw new ConflictException('Reload the balances');
         throw error;
       }
-      const leg = gapLeg(gap, new Date());
+      const leg = gapLeg(
+        gap,
+        new Date(),
+        row.exchange.balancesAt ? new Date(row.exchange.balancesAt) : null,
+      );
       await manager.query(
         `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight",
           "blockHash", "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)

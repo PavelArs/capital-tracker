@@ -97,6 +97,16 @@ export interface ImportPlan {
   fitsRewardLimit: boolean;
   /** False when the account's capital returns exceed what that journal keeps; never combined. */
   fitsCapitalReturnLimit: boolean;
+  /** Cash T-Bank reports below what its listed history leaves, paid out by the entries here. */
+  cashGaps: CashGap[];
+}
+
+/** Cash in one currency that left without an operation T-Bank lists, and when it is dated. */
+export interface CashGap {
+  /** T-Bank's lower-case currency code, such as rub. */
+  currency: string;
+  amount: string;
+  occurredAt: string;
 }
 
 const atoms = (value: string) =>
@@ -651,6 +661,70 @@ function buysFirst(sorted: PlanEntry[], hoist: boolean): PlanEntry[] {
   return result;
 }
 
+/** The cash an entry moves, by T-Bank currency code, as tbank-import-entries records it. */
+function cashMoves(entry: PlanEntry): [string, bigint][] {
+  const amount = atoms(entry.amount);
+  if (entry.record !== 'trade' || entry.action === 'deposit') return [[entry.currency, amount]];
+  if (entry.action !== 'buy' && entry.action !== 'sell') return [[entry.currency, -amount]];
+  const fee = atoms(entry.fee);
+  const moves: [string, bigint][] = entry.externalCash
+    ? []
+    : [[entry.currency, entry.action === 'buy' ? -(amount + fee) : amount - fee]];
+  if (entry.cash)
+    moves.push([entry.cash, (entry.action === 'buy' ? 1n : -1n) * atoms(entry.quantity)]);
+  return moves;
+}
+
+/**
+ * BROKER-CASH-GAP: cash that left without an operation T-Bank lists, paid out as money paid out
+ * just after the earliest instant from which the history always holds it. Earlier, the history
+ * holds less, so the money cannot have left by then as one payment, and dating it so never shows
+ * more cash than the account held. A gap the history never holds is not placed.
+ */
+function cashGapEntries(
+  list: PlanEntry[],
+  gaps: ReadonlyMap<string, string>,
+  initialHoldings: ReadonlyMap<string, bigint>,
+): { entries: PlanEntry[]; gaps: CashGap[] } {
+  const entries: PlanEntry[] = [];
+  const placed: CashGap[] = [];
+  for (const [currency, amount] of gaps) {
+    const gap = atoms(amount);
+    let balance = initialHoldings.get(`cash:${currency.toUpperCase()}`) ?? 0n;
+    const after = list.map((entry) => {
+      for (const [code, delta] of cashMoves(entry)) if (code === currency) balance += delta;
+      return balance;
+    });
+    let at: string | null = null;
+    let lowest = balance;
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (after[index] < lowest) lowest = after[index];
+      if (lowest < gap) break;
+      const time = timeKey(list[index].occurredAt);
+      // Only after the last entry of an instant, so it never splits one.
+      if (index === list.length - 1 || timeKey(list[index + 1].occurredAt) !== time)
+        at = list[index].occurredAt;
+    }
+    if (at === null) continue;
+    const occurredAt = new Date(Date.parse(at) + 1).toISOString();
+    placed.push({ currency, amount, occurredAt });
+    entries.push({
+      record: 'trade',
+      action: 'withdrawal',
+      occurredAt,
+      instrumentUid: '',
+      ticker: '',
+      instrumentType: '',
+      quantity: amount,
+      amount,
+      fee: '0',
+      currency,
+      operationIds: [`cash-gap:${currency.toUpperCase()}`],
+    });
+  }
+  return { entries, gaps: placed };
+}
+
 /**
  * The entries one account's operations would become. Each operation stays its own entry while
  * the account's trades leave room under the limit; otherwise entries of one kind and instrument
@@ -662,6 +736,8 @@ export function planImport(
     hoist?: boolean;
     initialHoldings?: ReadonlyMap<string, bigint>;
     splits?: readonly PlanSplit[];
+    /** By lower-case currency code: cash the history leaves above what T-Bank reports. */
+    cashGaps?: ReadonlyMap<string, string>;
   } = {},
 ): ImportPlan {
   const hoist = options.hoist ?? true;
@@ -686,6 +762,12 @@ export function planImport(
     grouping = 'month';
     list = combine(single, (time) => moscowDate(time).slice(0, 7), hoist, options.splits ?? []);
   }
+  const gaps = cashGapEntries(
+    ordered(list, hoist),
+    options.cashGaps ?? new Map(),
+    options.initialHoldings ?? new Map(),
+  );
+  list = [...list, ...gaps.entries];
   const trades = tradesIn(list);
   const capitalReturns = list.filter((entry) => entry.record === 'capital-return').length;
   const rewards = list.length - trades - capitalReturns;
@@ -699,5 +781,6 @@ export function planImport(
     fitsTradeLimit: trades <= ACCOUNT_TRADE_LIMIT,
     fitsRewardLimit: rewards <= REWARD_LIMITS.activeRewards,
     fitsCapitalReturnLimit: capitalReturns <= CAPITAL_RETURN_LIMITS.activeReturns,
+    cashGaps: gaps.gaps,
   };
 }

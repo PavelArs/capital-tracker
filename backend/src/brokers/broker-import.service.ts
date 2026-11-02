@@ -24,7 +24,7 @@ import { CarryInService } from '../accounting/carry-in.service';
 import { rethrowAccountingHistory } from '../accounting/connected-accounting.store';
 import type { FifoCarryInInput } from '../accounting/fifo';
 import { type Execution, FifoHistoryError } from '../accounting/fifo';
-import { canonicalDecimalToAtoms } from '../accounting/money';
+import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import {
   calculateOwnedTransfers,
   OwnedTransferCapacityError,
@@ -98,6 +98,11 @@ interface Review {
   problems: ImportProblem[];
   previewHash: string;
   canImport: boolean;
+  /**
+   * BROKER-CASH-GAP: by lower-case currency code, cash the replayed history leaves above what
+   * T-Bank reports for it.
+   */
+  cashGaps: Map<string, string>;
 }
 
 interface ImportRow {
@@ -439,39 +444,47 @@ export class BrokerImportService {
         ratio: BigInt(split.ratio),
       })),
     ];
-    const review = await this.reviewPlan(
-      manager,
-      owner,
-      account,
-      history,
-      write,
-      planImport(history.operations, {
-        initialHoldings: openingQuantities(opening),
-        splits: planSplits,
-      }),
-      created,
-      opening,
-      splits,
-    );
+    const reviewed = async (hoist: boolean) => {
+      const plan = (cashGaps?: ReadonlyMap<string, string>) =>
+        planImport(history.operations, {
+          hoist,
+          initialHoldings: openingQuantities(opening),
+          splits: planSplits,
+          cashGaps,
+        });
+      const first = await this.reviewPlan(
+        manager,
+        owner,
+        account,
+        history,
+        write,
+        plan(),
+        created,
+        opening,
+        splits,
+      );
+      if (first.cashGaps.size === 0) return first;
+      // BROKER-CASH-GAP: T-Bank reports less cash than its listed operations leave, so money left
+      // in an operation it does not list. The history is replayed again with that money paid
+      // out, and only a replay that then matches what T-Bank reports can be written.
+      return this.reviewPlan(
+        manager,
+        owner,
+        account,
+        history,
+        write,
+        plan(first.cashGaps),
+        created,
+        opening,
+        splits,
+      );
+    };
+    const review = await reviewed(true);
     if (!review.problems.some((problem) => problem.reason === 'not-held')) return review;
     // The planner places a buy ahead of a same-instant sale of its security, so the buy may spend
     // cash the sale has not yet brought in. The history in its operation order may replay where
     // the planned order does not, and a history that replays is the one to write.
-    const unhoisted = await this.reviewPlan(
-      manager,
-      owner,
-      account,
-      history,
-      write,
-      planImport(history.operations, {
-        hoist: false,
-        initialHoldings: openingQuantities(opening),
-        splits: planSplits,
-      }),
-      created,
-      opening,
-      splits,
-    );
+    const unhoisted = await reviewed(false);
     return unhoisted.problems.length === 0 ? unhoisted : review;
   }
 
@@ -492,6 +505,7 @@ export class BrokerImportService {
   ): Promise<Review> {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
     const problems: ImportProblem[] = [];
+    const cashGaps = new Map<string, string>();
     // Anything left out that moved money or shares would leave the records better off than the
     // account really is, so it stops the import; an operation that moved nothing does not.
     const left = plan.skipped.filter((item) => item.reason !== 'no-amount');
@@ -675,6 +689,10 @@ export class BrokerImportService {
           const expected = reported.get(key);
           if (quantity === 0n && (!expected || expected.quantity === 0n) && !expected?.invalid)
             continue;
+          // Only cash T-Bank names an amount for: an absent position is not a reported zero.
+          if (key.startsWith('cash:') && instrument && expected && !expected.invalid)
+            if (quantity > expected.quantity)
+              cashGaps.set(key.slice(5).toLowerCase(), formatAtoms(quantity - expected.quantity));
           if (!instrument || expected?.invalid || quantity !== (expected?.quantity ?? 0n))
             problems.push({
               reason: 'opening-holding',
@@ -792,6 +810,7 @@ export class BrokerImportService {
       previewHash,
       canImport:
         !accountHasEntries && plan.fitsTradeLimit && problems.length === 0 && entries.length > 0,
+      cashGaps,
     };
   }
 
