@@ -44,6 +44,7 @@ function services(db) {
     carry: make('carry-in.service', 'CarryInService'),
     flows: make('portfolio-flow.service', 'PortfolioFlowService'),
     operations: make('operation-list.service', 'OperationListService'),
+    prices: make('manual-price.service', 'ManualPriceService'),
   };
 }
 async function fingerprint(db) {
@@ -469,6 +470,36 @@ async function threeCurrencies(db, s, f) {
   console.log('PASS OPS-CURRENCY');
 }
 
+async function unpricedRows(db, s) {
+  stage = 'UNPRICED-FILTER marks a row whose asset had no stored price at its time';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+    VALUES('unpriced-rows@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const share = await instrument(s, owner, { name: 'Hand share', assetType: 'manual' });
+  const cash = await instrument(s, owner, { name: 'Dollar cash', symbol: 'USD', assetType: 'fiat' });
+  const place = await account(s, owner, 'Unpriced broker');
+  await trade(s, owner, place, cash, 'buy', '2025-06-01T00:00:00.000Z', '1000', '1000');
+  await trade(s, owner, place, share, 'buy', '2025-06-02T00:00:00.000Z', '2', '100');
+  await trade(s, owner, place, share, 'buy', '2025-06-07T00:00:00.000Z', '1', '50');
+  await trade(s, owner, place, share, 'sell', '2025-06-12T00:00:00.000Z', '1', '60');
+  // A hand value set and then voided prices nothing; the first one that stands is on 06-10.
+  const point = (expectedRevision, observedAt) => ({ requestId: randomUUID(), expectedRevision, observedAt, assertReviewed: true });
+  await s.prices.set(owner, share, { ...point(0, '2025-06-05T00:00:00.000Z'), priceUsd: '40' });
+  await s.prices.void(owner, share, point(1, '2025-06-05T00:00:00.000Z'));
+  await s.prices.set(owner, share, { ...point(2, '2025-06-10T00:00:00.000Z'), priceUsd: '55' });
+  const list = await read(s, owner);
+  assert.deepEqual(
+    list.operations.map((operation) => [operation.asset.name, operation.occurredAt, operation.unpriced]),
+    [
+      ['Hand share', '2025-06-12T00:00:00.000Z', false],
+      ['Hand share', '2025-06-07T00:00:00.000Z', true],
+      ['Hand share', '2025-06-02T00:00:00.000Z', true],
+      ['Dollar cash', '2025-06-01T00:00:00.000Z', false],
+    ],
+    'Before the first standing price is unpriced; cash needs no price',
+  );
+  console.log('PASS UNPRICED-FILTER rows before the first standing price are marked; cash never is');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -513,6 +544,7 @@ async function main() {
     const s = services(db);
     const f = { owner: owner.id, other: other.id, third: third.id };
     for (const check of [everyJournal, emptyOwner, threeCurrencies]) await check(db, s, f);
+    await unpricedRows(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

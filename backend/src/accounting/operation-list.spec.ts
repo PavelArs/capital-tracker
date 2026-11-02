@@ -1,6 +1,7 @@
 import { FxConverter } from '../fx-rates/fx-conversion';
 import {
   type ChainOperationInput,
+  markUnpriced,
   type OperationAsset,
   type OperationSources,
   projectOperations,
@@ -2143,5 +2144,46 @@ describe('list-all-operations projection', () => {
     // Paid in rubles, the amount stays exactly as paid even at another day's rate.
     const [inRub] = projectOperations(now, input, new FxConverter(rates, 'RUB')).operations;
     expect(inRub.value).toBe('7900');
+  });
+});
+
+describe('UNPRICED-FILTER marks an operation whose asset had no stored price at its time', () => {
+  const asset = (instrumentId: string | null, symbol: string) => ({
+    instrumentId,
+    symbol,
+    name: symbol,
+  });
+  const op = (occurredAt: string, held: string | null, counter: string | null = null) => ({
+    id: occurredAt,
+    occurredAt,
+    asset: asset(held, held ?? 'COIN'),
+    counterAsset: counter === null ? null : asset(counter, counter),
+  });
+  // Only assets that need a stored price are in the map: a fixed-price asset (cash) never is.
+  const first = new Map<string, string | null>([
+    ['share', '2026-10-15T00:00:00.000Z'],
+    ['never', null],
+  ]);
+
+  it('UNPRICED-FILTER before the first price, never priced, or traded for one', () => {
+    const marked = markUnpriced(
+      [
+        op('2026-10-02T00:00:00.000Z', 'share'),
+        op('2026-10-15T00:00:00.000Z', 'share'),
+        op('2026-10-16T00:00:00.000Z', 'never'),
+        op('2026-10-16T00:00:00.000Z', 'cash', 'share'),
+        op('2026-10-01T00:00:00.000Z', 'cash'),
+        op('2026-10-01T00:00:00.000Z', null),
+      ],
+      first,
+    );
+    expect(marked.map((item) => item.unpriced)).toEqual([true, false, true, false, false, false]);
+    expect(marked[0]).toMatchObject({ id: '2026-10-02T00:00:00.000Z', asset: { symbol: 'share' } });
+  });
+
+  it('UNPRICED-FILTER marks a trade paid with an asset that had no price yet', () => {
+    expect(markUnpriced([op('2026-10-02T00:00:00.000Z', 'cash', 'share')], first)[0].unpriced).toBe(
+      true,
+    );
   });
 });

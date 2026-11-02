@@ -4822,3 +4822,36 @@ describe('INFINITE: twenty transactions, twenty more as the end is reached', () 
     expect(within(rows).getAllByRole('button').length).toBe(40);
   });
 });
+
+describe('UNPRICED-FILTER', () => {
+  const unpriced = { ...manual, id: 'unpriced-buy', unpriced: true };
+
+  it('UNPRICED-FILTER lists only transactions whose asset had no price at their time', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced, receipt, manual]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    await user.click(screen.getByRole('button', { name: /^No price\s*1/ }));
+    expect(screen.getByRole('button', { name: /^No price/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(bodyRows()).toHaveLength(1);
+    expect(bodyRows()[0]).toHaveAttribute('data-operation', 'unpriced-buy');
+  });
+
+  it('UNPRICED-FILTER reads the filter from the address and hides the chip while none lacks a price', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([receipt, manual]));
+    const { unmount } = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /^No price/ })).toBeNull();
+    unmount();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([unpriced, receipt]));
+    renderPage('/transactions?status=unpriced');
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(screen.getByRole('button', { name: /^No price/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+});

@@ -263,6 +263,11 @@ export interface Operation {
   /** Null until the owner classifies a chain transaction (M12). */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';
+  /**
+   * UNPRICED-FILTER: the asset, or the one it was traded for, had no stored price at or before
+   * this time. Set by the list read; absent in a projection alone.
+   */
+  unpriced?: boolean;
   occurredAt: string;
   asset: OperationAsset;
   quantity: string;
@@ -1145,4 +1150,29 @@ export function projectOperations(
     dustThresholdUsd,
     operations,
   };
+}
+
+/**
+ * UNPRICED-FILTER: an operation is unpriced when its asset, or the asset it was traded for, had
+ * no stored price at or before its time, so a history from then leaves that asset out.
+ * `firstPriceAt` holds every asset that needs a stored price (null: none stored yet); one not in
+ * it, such as cash, needs none.
+ */
+export function markUnpriced<
+  T extends { occurredAt: string; asset: OperationAsset; counterAsset: OperationAsset | null },
+>(
+  operations: readonly T[],
+  firstPriceAt: ReadonlyMap<string, string | null>,
+): (T & { unpriced: boolean })[] {
+  const missing = (asset: OperationAsset | null, at: string) => {
+    if (!asset?.instrumentId || !firstPriceAt.has(asset.instrumentId)) return false;
+    const first = firstPriceAt.get(asset.instrumentId);
+    return first === null || first === undefined || first > at;
+  };
+  return operations.map((operation) => ({
+    ...operation,
+    unpriced:
+      missing(operation.asset, operation.occurredAt) ||
+      missing(operation.counterAsset, operation.occurredAt),
+  }));
 }
