@@ -436,6 +436,7 @@ describe('BROKERS the Brokers page', () => {
       accountHasEntries: false,
       problems: [],
       canImport: true,
+      cashGaps: [],
       previewHash: 'b'.repeat(64),
     });
     const write = vi.spyOn(brokersApi, 'importHistory').mockImplementation(async () => {
