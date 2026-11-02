@@ -259,6 +259,7 @@ it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for i
     contributions: '900',
     market: '-50',
     marketMissing: null,
+    estimated: false,
     total: '850',
   });
   expect(view.averages[6]).toBe('100');
@@ -310,6 +311,26 @@ it('FLOW-SPLIT-REASON GOAL-WIDGETS passes on why the market part is unknown', as
     contributions: '900',
     market: null,
     marketMissing: 'priced-later',
+  });
+});
+
+it('DASH-START-ESTIMATE GOAL-WIDGETS marks growth estimated when the start takes a later price', async () => {
+  const goals = service(false);
+  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+    value: '5000',
+    complete: false,
+    contributions: { months: [], averages: { 3: null, 6: null, 12: null } },
+    netFlow: '900',
+    marketEffect: '30',
+    marketMissing: null,
+    startEstimatedAssetCount: 1,
+    change: '930',
+    points: [{ at: '2025-10-18T00:00:00Z', value: '4070' }],
+  });
+  expect((await goals.insights(owner, row.id)).growth).toMatchObject({
+    market: '30',
+    marketMissing: null,
+    estimated: true,
   });
 });
 

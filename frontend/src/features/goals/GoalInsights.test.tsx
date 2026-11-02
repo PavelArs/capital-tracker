@@ -161,6 +161,18 @@ it('FLOW-SPLIT-REASON GOAL-GROWTH says why the market part is unknown', async ()
   expect(screen.getByRole('region', { name: 'Where the growth came from' })).toContainElement(why);
 });
 
+it('DASH-START-ESTIMATE GOAL-GROWTH marks the market part estimated', async () => {
+  vi.spyOn(goalsApi, 'insights').mockResolvedValue({
+    ...ready,
+    growth: { ...ready.growth, estimated: true },
+  });
+  render(<GoalInsights goal={goal} />);
+  const note = await screen.findByText(
+    'Market is estimated: an asset you held at the start had no price then, so its first later price is used.',
+  );
+  expect(screen.getByRole('region', { name: 'Where the growth came from' })).toContainElement(note);
+});
+
 it('GOAL-WIDGETS keeps both cards visible during loading and failure, then retries', async () => {
   const read = vi
     .spyOn(goalsApi, 'insights')

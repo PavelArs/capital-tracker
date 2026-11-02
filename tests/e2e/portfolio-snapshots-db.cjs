@@ -621,6 +621,37 @@ async function pricedSubset(db, s) {
   console.log('PASS DASH-PRICED-SUBSET exact matched value and invested money, exclusion stated, records preserved');
 }
 
+async function estimatedStart(db, s) {
+  stage = 'DASH-START-ESTIMATE values an asset held at the start at its first later price';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+    VALUES('estimated-start@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const cash = await instrument(s, owner, { name: 'Estimate cash', symbol: 'USD', assetType: 'fiat' });
+  const share = await instrument(s, owner, { name: 'Priced later share', assetType: 'manual' });
+  const target = await account(s, owner, 'Estimate account', '2026-10-01T00:00:00Z');
+  await trade(s, owner, target, cash, 'buy', '2026-10-02T01:00:00Z', '1000', '1000');
+  await trade(s, owner, target, share, 'buy', '2026-10-02T02:00:00Z', '1', '100');
+  // The share's prices begin after the 7D period starts: 120 first, 150 now.
+  for (const [observedAt, priceUsd] of [['2026-10-15T00:00:00Z', '120'], ['2026-10-18T06:00:00Z', '150']])
+    await s.prices.set(owner, share, { requestId: randomUUID(), expectedRevision: 0, observedAt, priceUsd, assertReviewed: true });
+  const at = new Date('2026-10-18T10:00:00Z');
+  let week = await s.snapshots.history(owner, { period: '7D', currency: 'USD' }, at);
+  assert.equal(week.value, '1150');
+  assert.equal(week.marketMissing, null, 'A later price stands in for the missing start price');
+  assert.equal(week.startEstimatedAssetCount, 1, 'The estimate is stated');
+  assert.deepEqual([week.netFlow, week.marketEffect, week.change], ['0', '30', '30'],
+    'The first later price (120) values the start, not the latest (150)');
+  const day = await s.snapshots.history(owner, { period: '24H', currency: 'USD' }, at);
+  assert.deepEqual([day.startEstimatedAssetCount, day.marketEffect], [0, '30'], 'A start with a price needs no estimate');
+  // An asset that never had a price is excluded at both ends; the estimate still holds.
+  const never = await instrument(s, owner, { name: 'Never priced', assetType: 'manual' });
+  await trade(s, owner, target, never, 'buy', '2026-10-02T03:00:00Z', '1', '50');
+  week = await s.snapshots.history(owner, { period: '7D', currency: 'USD' }, at);
+  assert.equal(week.excludedAssetCount, 1);
+  assert.deepEqual([week.marketMissing, week.startEstimatedAssetCount, week.marketEffect], [null, 1, '30'],
+    'The same estimate over the priced subset');
+  console.log('PASS DASH-START-ESTIMATE start valued at the first later price, stated, priced subset kept');
+}
+
 async function inputsRevision(db, s) {
   stage = 'SNAP-REVISION an owner write changes the inputs revision; nothing else does';
   const { INPUTS_REVISION } = require(modulePath);
@@ -709,6 +740,7 @@ async function main() {
     for (const check of [backfill, hourly, rebuild, assetHistory, reads]) await check(db, s, f);
     await schedule(db, f);
     await pricedSubset(db, s);
+    await estimatedStart(db, s);
     await inputsRevision(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();

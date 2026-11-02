@@ -201,6 +201,12 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
         {data.growth.market === null && marketMissingText(data.growth.marketMissing) && (
           <p className="ui-sub">{marketMissingText(data.growth.marketMissing)}</p>
         )}
+        {data.growth.estimated && (
+          <p className="ui-sub">
+            Market is estimated: an asset you held at the start had no price then, so its first
+            later price is used.
+          </p>
+        )}
         <p className="ui-sub">
           Nominal growth over the available history
           {data.growth.from ? ` since ${monthYear(data.growth.from.slice(0, 10))}` : ''}. Market

@@ -87,7 +87,7 @@ interface StoredRow {
   value: string | null;
   complete: boolean;
 }
-interface SeriesInputs {
+export interface SeriesInputs {
   valuation: ValuationInputs;
   market: Map<string, PricePoint[]>;
   manual: Map<string, PricePoint[]>;
@@ -186,12 +186,28 @@ function parseQuery(query: unknown): {
   return { period: period as HistoryPeriod, currency };
 }
 
-/** Each stored price at the instant, as the live valuation would have read it then. */
-function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
-  const stored = (series: Map<string, PricePoint[]>) => {
+/**
+ * Each stored price at the instant, as the live valuation would have read it then. With
+ * `laterIfNone` (DASH-START-ESTIMATE), a series whose first price comes after the instant gives
+ * that first price instead, unless a share split falls between the two: units would differ.
+ */
+export function pricesAt(inputs: SeriesInputs, at: number, laterIfNone = false): PortfolioPrices {
+  // Every ledger carries the owner's splits; one is enough.
+  const [ledger] = inputs.valuation.ledgers.values();
+  const splits = ledger?.splits ?? [];
+  const splitBefore = (ids: readonly string[], until: number) =>
+    splits.some((split) => {
+      const effective = Date.parse(split.effectiveAt);
+      return ids.includes(split.instrumentId) && effective > at && effective <= until;
+    });
+  const stored = (series: Map<string, PricePoint[]>, idsOf: (key: string) => string[]) => {
     const prices = new Map<string, StoredPrice>();
     for (const [key, points] of series) {
-      const point = latestAtOrBefore(points, at);
+      let point = latestAtOrBefore(points, at);
+      if (!point && laterIfNone) {
+        const later = points.find((candidate) => candidate.at > at);
+        if (later && !splitBefore(idsOf(key), later.at)) point = later;
+      }
       if (point)
         prices.set(key, {
           priceUsd: point.price,
@@ -203,12 +219,15 @@ function pricesAt(inputs: SeriesInputs, at: number): PortfolioPrices {
     }
     return prices;
   };
-  // Every ledger carries the owner's splits; one is enough.
-  const [ledger] = inputs.valuation.ledgers.values();
   return {
-    market: stored(inputs.market),
-    manual: stored(inputs.manual),
-    splits: ledger?.splits ?? [],
+    // Market prices are keyed by symbol, hand and broker prices by the asset's id.
+    market: stored(inputs.market, (symbol) =>
+      inputs.valuation.instruments
+        .filter((instrument) => instrument.symbol?.toUpperCase() === symbol)
+        .map((instrument) => instrument.id),
+    ),
+    manual: stored(inputs.manual, (id) => [id]),
+    splits,
   };
 }
 
@@ -627,12 +646,15 @@ export class PortfolioSnapshotsService {
         invested: invested[index],
       }));
       let start = firstValuedPoint(series);
+      let seriesInputs: Promise<SeriesInputs> | undefined;
+      const startInputs = () =>
+        (seriesInputs ??= readSeriesInputs(manager, owner, { valuation: original, since: from }));
       const leftOut = [...current.held.values()].some((asset) => asset.value === null);
       if (start && start.held === undefined && (!start.complete || leftOut)) {
         // A stored snapshot is incomplete for a held asset without a price and for accounts
         // not yet started; only the first leaves out value, so that is read again, with what
         // it held. A coin now without a price also needs what it was worth at the start.
-        const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
+        const inputs = await startInputs();
         const [again] = valuesAt(
           inputs.valuation,
           start.at,
@@ -641,6 +663,39 @@ export class PortfolioSnapshotsService {
           readAccounts(iso(start.at)),
         );
         start = { ...start, unpriced: again.unpriced, unrated: again.unrated, held: again.held };
+      }
+      // DASH-START-ESTIMATE: an asset held at the start whose prices begin later is valued at
+      // its first later price, so the period's change and market are estimates, not unknown.
+      let startEstimatedAssetCount = 0;
+      if (start?.unpriced === true && start.held !== undefined) {
+        const inputs = await startInputs();
+        const scoped = {
+          ...inputs.valuation,
+          hidden: valuation.hidden,
+          deposits: valuation.deposits,
+          instruments: inputs.valuation.instruments.filter((asset) => !excluded.has(asset.id)),
+        };
+        const [guess] = valuesAt(
+          scoped,
+          start.at,
+          pricesAt(inputs, start.at, true),
+          [fx],
+          readAccounts(iso(start.at)),
+        );
+        const before = start.held;
+        const estimated = [...guess.held].filter(
+          ([id, asset]) => asset.value !== null && before.get(id)?.value === null,
+        ).length;
+        if (estimated > 0 && guess.value !== null) {
+          startEstimatedAssetCount = estimated;
+          start = {
+            ...start,
+            value: guess.value,
+            unpriced: guess.unpriced,
+            unrated: guess.unrated,
+            held: guess.held,
+          };
+        }
       }
       return {
         period: query.period,
@@ -652,6 +707,9 @@ export class PortfolioSnapshotsService {
         complete: points.every((point) => point.complete),
         excludedAssetCount: excluded.size,
         excludedDepositCount: excludedDeposits.size,
+        // Assets held at the period's start valued at their first later price: when above 0, the
+        // change and the market part are estimates.
+        startEstimatedAssetCount,
         contributions: monthlyContributions(
           flows,
           contributionStart(valuation, moscowDate(now)),

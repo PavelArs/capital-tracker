@@ -109,6 +109,8 @@ export class GoalsService {
         contributions: history.netFlow,
         market: history.marketEffect,
         marketMissing: history.marketMissing,
+        // DASH-START-ESTIMATE: the start values an asset at its first later price.
+        estimated: history.startEstimatedAssetCount > 0,
         total: history.change,
       },
     };

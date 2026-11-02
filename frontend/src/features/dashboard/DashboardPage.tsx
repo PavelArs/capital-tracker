@@ -71,6 +71,7 @@ function ChangeSplit({
   const market = tone(marketEffect);
   const unknown = unknownCostCoins(portfolio);
   const why = marketEffect === null ? marketMissingText(marketMissing) : null;
+  const estimated = history.startEstimatedAssetCount ?? 0;
   return (
     <div className="dashboard-split" aria-label="What changed">
       <span className="dashboard-split__period">{sentence(periodLabels[history.period])}</span>
@@ -98,6 +99,14 @@ function ChangeSplit({
         <span className="dashboard-split__item dashboard-split__unknown">
           <Icon name="info" className="shell-icon shell-icon--sm" />
           {why}
+        </span>
+      )}
+      {estimated > 0 && (
+        <span className="dashboard-split__item dashboard-split__unknown">
+          <Icon name="info" className="shell-icon shell-icon--sm" />
+          {estimated === 1
+            ? 'Estimated: an asset you held at the start had no price then, so its first later price is used'
+            : `Estimated: ${estimated} assets you held at the start had no price then, so their first later price is used`}
         </span>
       )}
       {/* Coins without a purchase price leave the cost basis and the profit incomplete: said

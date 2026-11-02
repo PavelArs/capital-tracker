@@ -9,7 +9,12 @@ import {
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
 import { type DepositHolding, depositValuesAt } from '../deposits/deposit-valuation';
 import { accountingCurrencies, FxConverter, type FxRates } from '../fx-rates/fx-conversion';
-import { PortfolioSnapshotsService, valuesAt } from './portfolio-snapshots.service';
+import {
+  PortfolioSnapshotsService,
+  pricesAt,
+  type SeriesInputs,
+  valuesAt,
+} from './portfolio-snapshots.service';
 import { seriesInstants } from './snapshot-series';
 
 // Synthetic instruments, holdings and rates only.
@@ -352,3 +357,43 @@ it.each(accountingCurrencies)(
     }
   },
 );
+
+describe('a period that starts before an asset had a price', () => {
+  const day = (iso: string) => Date.parse(iso);
+  const inputs = (splits: { instrumentId: string; effectiveAt: string; ratio: number }[] = []) =>
+    ({
+      valuation: { instruments: [], ledgers: new Map([['ledger', { splits }]]) },
+      market: new Map(),
+      manual: new Map([
+        [
+          'asset-1',
+          [
+            { at: day('2026-10-15T00:00:00Z'), price: '120', source: 'manual' },
+            { at: day('2026-10-18T06:00:00Z'), price: '150', source: 'manual' },
+          ],
+        ],
+      ]),
+    }) as unknown as SeriesInputs;
+
+  it('DASH-START-ESTIMATE takes the first later price only when asked', () => {
+    const start = day('2026-10-12T00:00:00Z');
+    expect(pricesAt(inputs(), start).manual.get('asset-1')).toBeUndefined();
+    expect(pricesAt(inputs(), start, true).manual.get('asset-1')).toMatchObject({
+      priceUsd: '120',
+      observedAt: '2026-10-15T00:00:00.000Z',
+    });
+  });
+
+  it('DASH-START-ESTIMATE keeps the latest earlier price when one exists', () => {
+    expect(
+      pricesAt(inputs(), day('2026-10-16T00:00:00Z'), true).manual.get('asset-1'),
+    ).toMatchObject({ priceUsd: '120' });
+  });
+
+  it('DASH-START-ESTIMATE makes no estimate across a share split', () => {
+    const split = [{ instrumentId: 'asset-1', effectiveAt: '2026-10-14T00:00:00.000Z', ratio: 2 }];
+    expect(
+      pricesAt(inputs(split), day('2026-10-12T00:00:00Z'), true).manual.get('asset-1'),
+    ).toBeUndefined();
+  });
+});
