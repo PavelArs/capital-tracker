@@ -1201,6 +1201,7 @@ async function importing(db, service, imports, tbank, owner, other) {
   stage = 'BROKER-CASH-GAP: cash T-Bank reports below what its listed history leaves';
   const gapAccount = await account(db, owner, 'broker');
   await takeOver(db, service, owner, gapAccount);
+  const cashBeforeGap = tbank.cash;
   history = [operation('1550000001', 'INPUT', '200'),
     operation('1550000002', 'BUY', '-190', share({ quantity: '2', occurredAt: '2024-03-02T07:00:00Z' })),
     operation('1550000003', 'INPUT', '50', { occurredAt: '2024-03-03T07:00:00Z' })];
@@ -1222,6 +1223,7 @@ async function importing(db, service, imports, tbank, owner, other) {
   const [gapTrade] = await db.query(`SELECT side, "instrumentId", "occurredAt", quantity = 30 AS "exact" FROM account_trade_versions WHERE "accountId" = $1 AND "tradeId" = $2`, [gapAccount, gapRow.tradeId]);
   assert.deepEqual([gapTrade.side, gapTrade.instrumentId, gapTrade.occurredAt.toISOString(), gapTrade.exact], ['sell', rubCash.id, '2024-03-03T07:00:00.001Z', true], 'The 30 rubles leave just after the last listed deposit');
   tbank.positions = [];
+  tbank.cash = cashBeforeGap;
   console.log('PASS BROKER-CASH-GAP PostgreSQL payment out of unlisted cash, dated no earlier than the history allows');
 
   stage = 'BROKER-POSITION-ID: later imports reuse a linked trading mode';
