@@ -263,6 +263,11 @@ export interface Operation {
   /** Null until the owner classifies a chain transaction (M12). */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';
+  /**
+   * UNPRICED-FILTER: the asset, or the one it was traded for, had no stored price at or before
+   * this time. Set by the list read; absent in a projection alone.
+   */
+  unpriced?: boolean;
   occurredAt: string;
   asset: OperationAsset;
   quantity: string;
@@ -1145,4 +1150,35 @@ export function projectOperations(
     dustThresholdUsd,
     operations,
   };
+}
+
+/**
+ * UNPRICED-FILTER: an operation is unpriced when its asset, or the asset it was traded for, had
+ * no stored price at or before its time, so a history from then leaves that asset out.
+ * `firstPriceAt` holds every asset that needs a stored price (null: none stored yet); one not in
+ * it, such as cash, needs none. A blockchain row not yet recorded as an asset is read by its
+ * coin's first market price in `firstBySymbol`, under the same rule.
+ */
+export function markUnpriced<
+  T extends { occurredAt: string; asset: OperationAsset; counterAsset: OperationAsset | null },
+>(
+  operations: readonly T[],
+  firstPriceAt: ReadonlyMap<string, string | null>,
+  firstBySymbol: ReadonlyMap<string, string | null> = new Map(),
+): (T & { unpriced: boolean })[] {
+  const missing = (asset: OperationAsset | null, at: string) => {
+    if (!asset) return false;
+    const [known, key] = asset.instrumentId
+      ? [firstPriceAt, asset.instrumentId]
+      : [firstBySymbol, asset.symbol?.toUpperCase() ?? ''];
+    if (!known.has(key)) return false;
+    const first = known.get(key);
+    return first === null || first === undefined || first > at;
+  };
+  return operations.map((operation) => ({
+    ...operation,
+    unpriced:
+      missing(operation.asset, operation.occurredAt) ||
+      missing(operation.counterAsset, operation.occurredAt),
+  }));
 }

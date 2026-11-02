@@ -65,6 +65,11 @@ export interface Operation {
   /** Null for a blockchain transaction nobody has classified yet. */
   type: OperationType | null;
   direction: 'in' | 'out' | 'internal';
+  /**
+   * UNPRICED-FILTER: the asset, or the one it was traded for, had no stored price at or before
+   * this time. Absent in an answer saved before it was added.
+   */
+  unpriced?: boolean;
   occurredAt: string;
   asset: OperationAsset;
   quantity: string;

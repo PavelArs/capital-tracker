@@ -58,23 +58,33 @@ import FilterSheet from '@/ui/FilterSheet';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import PageIntro from '@/ui/PageIntro';
 
-type StatusView = 'needs-classification' | 'hidden' | 'dust';
+type StatusView = 'needs-classification' | 'hidden' | 'dust' | 'unpriced';
 type View = 'all' | StatusView | Operation['source'];
 const views: [View, string][] = [
   ['all', 'All'],
   ['needs-classification', 'Needs classification'],
   ['hidden', 'Hidden'],
   ['dust', 'Dust'],
+  ['unpriced', 'No price'],
   ['chain', 'Blockchain'],
   ['manual', 'Manual'],
   ['csv', 'CSV'],
   ['broker', 'Broker'],
 ];
 const isStatusView = (value: string | null): value is StatusView =>
-  value === 'needs-classification' || value === 'hidden' || value === 'dust';
+  value === 'needs-classification' ||
+  value === 'hidden' ||
+  value === 'dust' ||
+  value === 'unpriced';
 
 // Dust is filtered out of every view but its own (CLS-DUST).
 function inView(operation: Operation, view: View): boolean {
+  // UNPRICED-FILTER: a counted row whose asset had no stored price at its time; hidden and
+  // dust rows count in no balance, so they stay out of it, as of every view but their own.
+  if (view === 'unpriced')
+    return (
+      operation.unpriced === true && operation.status !== 'hidden' && operation.status !== 'dust'
+    );
   if (isStatusView(view)) return operation.status === view;
   if (operation.status === 'dust') return false;
   return view === 'all' || operation.source === view;
@@ -862,6 +872,8 @@ export default function TransactionsPage() {
                 // The Dust chip appears once a threshold is set or something is dust.
                 if (key === 'dust' && count === 0 && list.dustThresholdUsd === null && view !== key)
                   return null;
+                // The No price chip appears once a row lacks a price.
+                if (key === 'unpriced' && count === 0 && view !== key) return null;
                 return (
                   <Chip
                     key={key}
