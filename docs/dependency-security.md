@@ -1,5 +1,12 @@
 # Production dependency security record
 
+## Axios 1.21.0 patch-group update — 2026-11-02
+
+The Dependabot minor-and-patch group moves backend and frontend to exact
+**Axios 1.21.0**. The release-image provider probe (`tests/e2e/provider-proxy.cjs`)
+now asserts 1.21.0, and `node tests/transport/axios-http-characterization.cjs 1.21.0`
+passed 5/5 backend adapter checks. The 2026-10-01 record below is kept as history.
+
 ## Axios release remediation — 2026-10-01
 
 Backend and frontend now pin exact **Axios 1.20.0**. The targeted lock diff changes

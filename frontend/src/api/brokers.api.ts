@@ -92,6 +92,11 @@ export interface TBankImportPreview {
   fitsRewardLimit: boolean;
   accountHasEntries: boolean;
   problems: TBankImportProblem[];
+  /**
+   * BROKER-CASH-GAP: cash T-Bank reports below what its listed operations leave, recorded as
+   * money paid out at `occurredAt` (one of `entries`).
+   */
+  cashGaps: { currency: string; amount: string; occurredAt: string }[];
   canImport: boolean;
   previewHash: string;
 }

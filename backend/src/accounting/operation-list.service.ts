@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { importedByBroker } from '../brokers/broker-provenance';
 import {
   type AccountingCurrency,
@@ -9,6 +9,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices, priceAt, storedPricesAt } from '../prices/market-price.store';
+import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import { chainFacts } from '../wallet-addresses/bybit-records';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import { evmNetworks } from '../wallet-addresses/evm-chains';
@@ -19,6 +20,7 @@ import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
 import {
   type ChainOperationInput,
+  markUnpriced,
   type OperationAsset,
   type OperationFee,
   type OperationList,
@@ -433,7 +435,7 @@ export class OperationListService {
       const currency = asked ?? (await readMainCurrency(manager, owner));
       const fx = new FxConverter(await readFxRates(manager), currency);
 
-      return projectOperations(
+      const list = projectOperations(
         now,
         {
           trades: trades.map((row) => ({
@@ -594,6 +596,74 @@ export class OperationListService {
         fx,
         range,
       );
+      const legs = list.operations.flatMap((operation) =>
+        operation.counterAsset ? [operation.asset, operation.counterAsset] : [operation.asset],
+      );
+      const ids = [...new Set(legs.flatMap((leg) => (leg.instrumentId ? [leg.instrumentId] : [])))];
+      // A blockchain row not yet recorded as an asset: its coin, unless it is cash.
+      const symbols = [
+        ...new Set(
+          legs.flatMap((leg) => {
+            const symbol = leg.symbol?.toUpperCase();
+            return !leg.instrumentId && symbol && !isAccountingCurrency(symbol) ? [symbol] : [];
+          }),
+        ),
+      ];
+      return {
+        ...list,
+        operations: markUnpriced(
+          list.operations,
+          await firstPrices(manager, owner, ids),
+          await firstMarketPrices(manager, symbols),
+        ),
+      };
     });
   }
+}
+
+/**
+ * UNPRICED-FILTER: when each asset's first stored price is, as the history reads prices: a market
+ * price of its symbol, or a hand value or broker price of the asset. Null: none stored yet. An
+ * asset with a fixed price (cash) needs none and is left out.
+ */
+async function firstPrices(
+  manager: EntityManager,
+  owner: string,
+  ids: readonly string[],
+): Promise<Map<string, string | null>> {
+  if (ids.length === 0) return new Map();
+  const rows: { id: string; first: Date | null }[] = await manager.query(
+    `SELECT i.id,
+        CASE WHEN i."priceSource"='market' THEN (
+          SELECT min(p."observedAt") FROM price_observations p
+          WHERE p.asset=upper(i.symbol) AND p."quoteCurrency"=$3)
+        ELSE LEAST(
+          -- A hand value voided later no longer prices its point.
+          (SELECT min(h."observedAt") FROM (
+            SELECT DISTINCT ON (v."observedAt") v."observedAt", v.kind
+            FROM manual_usd_price_versions v WHERE v."ownerId"=$1 AND v."instrumentId"=i.id
+            ORDER BY v."observedAt", v.revision DESC) h WHERE h.kind='set'),
+          (SELECT min(b."observedAt") FROM broker_price_observations b
+            WHERE b."ownerId"=$1 AND b."instrumentId"=i.id))
+        END AS first
+      FROM accounting_instruments i
+      WHERE i."ownerId"=$1 AND i.id=ANY($2::uuid[]) AND i."priceSource"<>'fixed'`,
+    [owner, ids, QUOTE_CURRENCY],
+  );
+  return new Map(rows.map((row) => [row.id, row.first?.toISOString() ?? null]));
+}
+
+/** UNPRICED-FILTER: when each coin's first market price is; null: none stored yet. */
+async function firstMarketPrices(
+  manager: EntityManager,
+  symbols: readonly string[],
+): Promise<Map<string, string | null>> {
+  if (symbols.length === 0) return new Map();
+  const rows: { symbol: string; first: Date | null }[] = await manager.query(
+    `SELECT s.symbol, (SELECT min(p."observedAt") FROM price_observations p
+        WHERE p.asset=s.symbol AND p."quoteCurrency"=$2) AS first
+      FROM unnest($1::text[]) s(symbol)`,
+    [symbols, QUOTE_CURRENCY],
+  );
+  return new Map(rows.map((row) => [row.symbol, row.first?.toISOString() ?? null]));
 }

@@ -456,6 +456,28 @@ export function withoutStoredYields(legs: BybitLeg[], stored: StoredLeg[]): Bybi
 }
 
 /**
+ * BYBIT-GAP-COVERED: a counted difference is Bybit's balance less the records at the moment it
+ * was counted, so it already holds every yield and deposit of its coin credited before then. Such
+ * a record read later (Bybit lists it late, or a list is read again) is left out, so it is never
+ * counted twice. `countedAt` is the latest counted difference of each coin, in milliseconds.
+ * A withdrawal is dated when it was asked for and a trade also moves its quote coin, so both are
+ * always kept.
+ */
+export function withoutCountedLegs(
+  legs: BybitLeg[],
+  countedAt: ReadonlyMap<string, number>,
+): BybitLeg[] {
+  return legs.filter((leg) => {
+    const counted = countedAt.get(leg.asset);
+    return (
+      counted === undefined ||
+      (leg.kind !== 'earn' && leg.kind !== 'deposit') ||
+      Date.parse(leg.blockTime) > counted
+    );
+  });
+}
+
+/**
  * BYBIT-COUNT-GAP: the difference between what Bybit reports and what the records hold, entered
  * by the owner as one more record of the account. It is an unanswered deposit (or withdrawal)
  * that counts at once, without a purchase price, and can be answered like any other record.
@@ -463,6 +485,7 @@ export function withoutStoredYields(legs: BybitLeg[], stored: StoredLeg[]): Bybi
 export function gapLeg(
   gap: { requestId: string; coin: string; direction: 'in' | 'out'; quantity: string },
   at: Date,
+  coveredTo: Date | null = null,
 ): BybitLeg {
   const incoming = gap.direction === 'in';
   const kind = incoming ? 'deposit' : 'withdrawal';
@@ -474,7 +497,13 @@ export function gapLeg(
       asset: gap.coin,
       blockTime: at.toISOString(),
       feeUnits: 0n,
-      raw: { kind, internal: false, balanceGap: true },
+      // BYBIT-GAP-COVERED: when Bybit reported the balance the difference was counted from.
+      raw: {
+        kind,
+        internal: false,
+        balanceGap: true,
+        ...(coveredTo ? { coveredTo: coveredTo.toISOString() } : {}),
+      },
     },
     incoming ? units : -units,
   );

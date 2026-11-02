@@ -297,6 +297,11 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
                 {`Trades are combined by Moscow ${preview.grouping} to stay within the account's 1,000 trades.`}
               </Banner>
             )}
+            {preview.cashGaps.map((gap) => (
+              <Banner key={gap.currency} tone="info" role="none">
+                {`T-Bank reports ${gap.amount} ${gap.currency.toUpperCase()} less cash than its listed operations leave. It lists no operation that took it, so the import records it as money paid out on ${dayText(moscowDate(gap.occurredAt))}, the earliest day the history allows.`}
+              </Banner>
+            ))}
             {skipped.size > 0 && (
               <>
                 <p className="ui-soft">Not included in this broker account:</p>

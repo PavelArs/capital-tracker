@@ -1,4 +1,6 @@
+import { canonicalDecimalToAtoms } from '../accounting/money';
 import type { TBankOperation } from './tbank-client';
+import { journalEntries } from './tbank-import-entries';
 import { planImport } from './tbank-import-plan';
 
 // BROKER-SYNC: synthetic T-Bank operations only; never an owner's account.
@@ -1352,5 +1354,141 @@ describe('SPLIT-IMPORT: the import plan counts a share split', () => {
     const split = { uid: share, effectiveAt: '2026-04-16T21:00:00.000Z', ratio: 10n };
     expect(planImport([buy, sale], { splits: [split] }).skipped).toEqual([]);
     expect(planImport([buy, sale]).skipped).toMatchObject([{ reason: 'not-held' }]);
+  });
+});
+
+describe('BROKER-CASH-GAP: cash T-Bank reports below what its listed history leaves', () => {
+  const history = () => [
+    cash('OPERATION_TYPE_INPUT', '100', { occurredAt: '2024-03-01T10:00:00Z' }),
+    op({ payment: '-90', quantity: '1', occurredAt: '2024-03-02T10:00:00Z' }),
+    cash('OPERATION_TYPE_INPUT', '30', { occurredAt: '2024-03-03T10:00:00Z' }),
+    cash('OPERATION_TYPE_TAX', '-1', { occurredAt: '2024-03-03T10:00:00Z' }),
+    op({
+      type: 'OPERATION_TYPE_SELL',
+      payment: '50',
+      quantity: '1',
+      occurredAt: '2024-03-04T10:00:00Z',
+    }),
+  ];
+
+  it('BROKER-CASH-GAP pays the gap out just after the last instant the history could not cover it', () => {
+    // Cash after each instant: 100, 10, 39, 89. A 35 gap fits from the third instant on.
+    const plan = planImport(history(), { cashGaps: new Map([['rub', '35']]) });
+    expect(plan.cashGaps).toEqual([
+      { currency: 'rub', amount: '35', occurredAt: '2024-03-03T10:00:00.001Z' },
+    ]);
+    expect(plan.entries.map((entry) => [entry.action, entry.amount, entry.occurredAt])).toEqual([
+      ['deposit', '100', '2024-03-01T10:00:00Z'],
+      ['buy', '90', '2024-03-02T10:00:00Z'],
+      ['deposit', '30', '2024-03-03T10:00:00Z'],
+      ['tax', '1', '2024-03-03T10:00:00Z'],
+      ['withdrawal', '35', '2024-03-03T10:00:00.001Z'],
+      ['sell', '50', '2024-03-04T10:00:00Z'],
+    ]);
+    expect(plan.entries[4]).toMatchObject({
+      record: 'trade',
+      instrumentUid: '',
+      quantity: '35',
+      fee: '0',
+      currency: 'rub',
+      operationIds: ['cash-gap:RUB'],
+    });
+    expect(plan.trades).toBe(planImport(history()).trades + 1);
+  });
+
+  it('BROKER-CASH-GAP counts opening cash and pays out a gap the whole history covers after its first instant', () => {
+    // Without the 5 opening, cash falls to 10 after the buy and the 12 could only leave later.
+    expect(planImport(history(), { cashGaps: new Map([['rub', '12']]) }).cashGaps).toMatchObject([
+      { occurredAt: '2024-03-03T10:00:00.001Z' },
+    ]);
+    const plan = planImport(history(), {
+      cashGaps: new Map([['rub', '12']]),
+      initialHoldings: new Map([['cash:RUB', canonicalDecimalToAtoms('5')]]),
+    });
+    expect(plan.cashGaps).toEqual([
+      { currency: 'rub', amount: '12', occurredAt: '2024-03-01T10:00:00.001Z' },
+    ]);
+  });
+
+  it('BROKER-CASH-GAP reads the cash each kind of entry moves as the journal records it', () => {
+    const at = (minute: number) => `2024-03-01T10:${String(minute).padStart(2, '0')}:00Z`;
+    const bought = op({ payment: '-450', quantity: '3', occurredAt: at(1) });
+    const sold = op({
+      type: 'OPERATION_TYPE_SELL',
+      payment: '300',
+      quantity: '1',
+      occurredAt: at(3),
+    });
+    const operations = [
+      cash('OPERATION_TYPE_INPUT', '1000', { occurredAt: at(0) }),
+      bought,
+      cash('OPERATION_TYPE_BROKER_FEE', '-9', { parentId: bought.id, occurredAt: at(1) }),
+      op({
+        ticker: 'USD000UTSTOM',
+        instrumentUid: '00000000-0000-4000-8000-0000000000aa',
+        instrumentType: 'currency',
+        payment: '-180',
+        quantity: '2',
+        occurredAt: at(2),
+      }),
+      sold,
+      cash('OPERATION_TYPE_BROKER_FEE', '-3', { parentId: sold.id, occurredAt: at(3) }),
+      op({ type: 'OPERATION_TYPE_SELL_CARD', payment: '100', quantity: '1', occurredAt: at(4) }),
+      cash('OPERATION_TYPE_DIVIDEND', '20', { ticker: 'SYNTH', occurredAt: at(5) }),
+      cash('OPERATION_TYPE_TAX', '-2', { occurredAt: at(6) }),
+    ];
+    const plan = planImport(operations);
+    expect(plan.skipped).toEqual([]);
+    const ids: Record<string, string> = { rub: 'cash-rub', usd: 'cash-usd' };
+    const { entries, problems } = journalEntries(
+      plan.entries,
+      {
+        cash: {
+          RUB: { id: ids.rub, name: 'Russian ruble', symbol: 'RUB' },
+          USD: { id: ids.usd, name: 'US dollar', symbol: 'USD' },
+          EUR: { id: 'cash-eur', name: 'Euro', symbol: 'EUR' },
+        },
+        securities: new Map([[share, { id: 'share', name: 'SYNTH', symbol: 'SYNTH' }]]),
+      },
+      { USD: [{ date: '2024-03-01', rubPerUnit: '90' }], EUR: [] },
+    );
+    expect(problems).toEqual([]);
+    const held = new Map<string, bigint>();
+    const move = (instrument: string, quantity: string, sign: bigint) =>
+      held.set(instrument, (held.get(instrument) ?? 0n) + sign * canonicalDecimalToAtoms(quantity));
+    for (const { trade, reward } of entries) {
+      if (reward) move(reward.instrumentId, reward.quantity, 1n);
+      if (!trade) continue;
+      move(trade.instrumentId, trade.quantity, trade.side === 'buy' ? 1n : -1n);
+      if (trade.settlement)
+        move(
+          trade.settlement.instrumentId,
+          trade.settlement.quantity,
+          trade.side === 'buy' ? -1n : 1n,
+        );
+    }
+    // 1000 - 459 - 180 + 297 + 20 - 2 rubles, and the 2 dollars bought; the card sale moves none.
+    expect([held.get(ids.rub), held.get(ids.usd)]).toEqual([
+      canonicalDecimalToAtoms('676'),
+      canonicalDecimalToAtoms('2'),
+    ]);
+    // A gap of all the cash the journal leaves is placed; a cent more is not.
+    for (const [currency, all, over] of [
+      ['rub', '676', '676.01'],
+      ['usd', '2', '2.01'],
+    ]) {
+      expect(
+        planImport(operations, { cashGaps: new Map([[currency, all]]) }).cashGaps,
+      ).toHaveLength(1);
+      expect(planImport(operations, { cashGaps: new Map([[currency, over]]) }).cashGaps).toEqual(
+        [],
+      );
+    }
+  });
+
+  it('BROKER-CASH-GAP places no payment the history never holds the gap for', () => {
+    const plan = planImport(history(), { cashGaps: new Map([['rub', '90']]) });
+    expect(plan.cashGaps).toEqual([]);
+    expect(plan.entries.some((entry) => entry.operationIds[0].startsWith('cash-gap:'))).toBe(false);
   });
 });

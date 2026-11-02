@@ -1860,6 +1860,42 @@ async function main() {
       "PASS BYBIT-COUNT-GAP a difference between Bybit's balance and the records is counted as one more record of the account: 3 DOT Bybit holds without a record become a deposit, 5 TON it holds fewer a withdrawal, both counting at once without a purchase price and with a market-priced asset; the same request stores one record; a balance Bybit no longer reports, a difference larger than the balance and bad input store nothing",
     );
 
+    // BYBIT-GAP-COVERED: the TON difference counted above was counted from the balance Bybit
+    // reported on the sync before it, so it already holds every TON record credited by then. When
+    // the deposit list is read again from a day back (as after a fix that reads a list again), a
+    // TON deposit credited before that balance is not stored a second time; one credited after it,
+    // even before the owner counted, is. The DOT difference was deleted: it covers nothing.
+    const [{ countedAt, coveredTo }] = await db.query(
+      `SELECT "blockTime" AS "countedAt", raw->>'coveredTo' AS "coveredTo"
+        FROM wallet_address_transactions WHERE "addressId"=$1 AND txid=$2`,
+      [wallet, `bybit-withdrawal-gap-${tonGap.requestId}`],
+    );
+    const [{ balancesAt }] = await db.query(
+      'SELECT "balancesAt" FROM bybit_accounts WHERE "walletId"=$1',
+      [wallet],
+    );
+    const gapAt = Date.parse(coveredTo);
+    assert.equal(gapAt, balancesAt.getTime(), 'The count names the balance it was counted from');
+    assert.ok(countedAt.getTime() > gapAt + 1, 'Counted after that balance was read');
+    const tonBefore = deposit(gapAt - 60_000, { coin: 'TON', amount: '2', txID: `0x${txid(41)}` });
+    const tonAfter = deposit(gapAt + 1, { coin: 'TON', amount: '1', txID: `0x${txid(42)}` });
+    const dotBefore = deposit(gapAt - 60_000, { coin: 'DOT', amount: '4', txID: `0x${txid(43)}` });
+    await post('bybit', { append: true, deposits: [tonBefore, tonAfter, dotBefore] });
+    await db.query(`UPDATE bybit_accounts SET "depositsReadTo" = $2 WHERE "walletId"=$1`, [
+      wallet,
+      new Date(gapAt - DAY),
+    ]);
+    const reread = await syncUntilComplete(s, owner, wallet);
+    assert.equal(reread.at(-1).result.outcome, 'complete');
+    const rereadLegs = (await legsOf(db, wallet)).map((row) => row.txid);
+    const hashOf = (item) => item.row.txID.slice(2);
+    assert.equal(rereadLegs.includes(hashOf(tonBefore)), false, 'Counted before: left out');
+    assert.equal(rereadLegs.includes(hashOf(tonAfter)), true, 'Credited after the count');
+    assert.equal(rereadLegs.includes(hashOf(dotBefore)), true, 'A deleted count covers nothing');
+    console.log(
+      'PASS BYBIT-GAP-COVERED a deposit list read again from a day back stores a TON deposit credited after the balance a TON difference was counted from (even before the count), leaves out one credited before that balance (the count already holds it), and still stores a DOT deposit before a deleted counted difference',
+    );
+
     // BYBIT-KEY on every pass: a key the owner later lets withdraw (or trade) in Bybit is
     // deleted at the next sync before anything else is asked; a read-only key added again resumes.
     const widened = {

@@ -1,4 +1,4 @@
-FROM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS dependencies
+FROM node:26.13.0-alpine3.24@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS dependencies
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN pnpm --dir backend build
 FROM dependencies AS production-dependencies
 RUN pnpm --filter capital-tracker-backend... install --prod --frozen-lockfile
 
-FROM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS release
+FROM node:26.13.0-alpine3.24@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS release
 
 # The compiled application and operational CLIs need Node, not package managers.
 RUN rm -rf /usr/local/lib/node_modules /opt/yarn-v* \
