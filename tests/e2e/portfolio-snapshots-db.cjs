@@ -632,8 +632,9 @@ async function estimatedStart(db, s) {
   await trade(s, owner, target, cash, 'buy', '2026-10-02T01:00:00Z', '1000', '1000');
   await trade(s, owner, target, share, 'buy', '2026-10-02T02:00:00Z', '1', '100');
   // The share's prices begin after the 7D period starts: 120 first, 150 now.
-  for (const [observedAt, priceUsd] of [['2026-10-15T00:00:00Z', '120'], ['2026-10-18T06:00:00Z', '150']])
-    await s.prices.set(owner, share, { requestId: randomUUID(), expectedRevision: 0, observedAt, priceUsd, assertReviewed: true });
+  // Price revisions count per asset: the second price expects the first one's revision.
+  for (const [expectedRevision, observedAt, priceUsd] of [[0, '2026-10-15T00:00:00Z', '120'], [1, '2026-10-18T06:00:00Z', '150']])
+    await s.prices.set(owner, share, { requestId: randomUUID(), expectedRevision, observedAt, priceUsd, assertReviewed: true });
   const at = new Date('2026-10-18T10:00:00Z');
   let week = await s.snapshots.history(owner, { period: '7D', currency: 'USD' }, at);
   assert.equal(week.value, '1150');
