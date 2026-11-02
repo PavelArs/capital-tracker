@@ -28,6 +28,9 @@ function service(complete = true) {
     history: async () => {
       throw new Error('goals read the portfolio now, not its history');
     },
+    growth: async () => {
+      throw new Error('goals read the portfolio now, not its history');
+    },
   };
   return new GoalsService(source as unknown as DataSource, snapshots as never);
 }
@@ -242,7 +245,7 @@ describe('goals service', () => {
 
 it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for its pace', async () => {
   const goals = service(false);
-  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+  (goals as unknown as { snapshots: { growth: unknown } }).snapshots.growth = async () => ({
     value: '5000',
     complete: false,
     contributions: { months: [], averages: { 3: '80', 6: '100', 12: null } },
@@ -251,7 +254,7 @@ it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for i
     marketEffect: '-50',
     marketMissing: null,
     change: '850',
-    points: [{ at: '2025-10-18T00:00:00Z', value: '4150' }],
+    startAt: '2025-10-18T00:00:00Z',
   });
   const view = await goals.insights(owner, row.id);
   expect(view.growth).toEqual({
@@ -267,37 +270,9 @@ it('GOAL-WIDGETS uses net flows for growth and the exact six-month average for i
   expect(view.paceReachedOn).not.toBeNull();
 });
 
-it.each([
-  {
-    points: [
-      { at: '2025-10-18T00:00:00Z', value: null },
-      { at: '2026-01-01T00:00:00Z', value: '0' },
-      { at: '2026-02-01T00:00:00Z', value: '5000' },
-    ],
-    from: '2026-01-01T00:00:00Z',
-  },
-  { points: [{ at: '2025-10-18T00:00:00Z', value: null }], from: null },
-  { points: [], from: null },
-])(
-  'GOAL-WIDGETS dates growth from its first available valuation: $from',
-  async ({ points, from }) => {
-    const goals = service(false);
-    (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
-      value: '5000',
-      complete: false,
-      contributions: { months: [], averages: { 3: null, 6: null, 12: null } },
-      netFlow: null,
-      marketEffect: null,
-      change: null,
-      points,
-    });
-    expect((await goals.insights(owner, row.id)).growth.from).toBe(from);
-  },
-);
-
 it('FLOW-SPLIT-REASON GOAL-WIDGETS passes on why the market part is unknown', async () => {
   const goals = service(false);
-  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+  (goals as unknown as { snapshots: { growth: unknown } }).snapshots.growth = async () => ({
     value: '5000',
     complete: false,
     contributions: { months: [], averages: { 3: null, 6: null, 12: null } },
@@ -305,7 +280,7 @@ it('FLOW-SPLIT-REASON GOAL-WIDGETS passes on why the market part is unknown', as
     marketEffect: null,
     marketMissing: 'priced-later',
     change: '850',
-    points: [{ at: '2025-10-18T00:00:00Z', value: '4150' }],
+    startAt: '2025-10-18T00:00:00Z',
   });
   expect((await goals.insights(owner, row.id)).growth).toMatchObject({
     contributions: '900',
@@ -316,7 +291,7 @@ it('FLOW-SPLIT-REASON GOAL-WIDGETS passes on why the market part is unknown', as
 
 it('DASH-START-ESTIMATE GOAL-WIDGETS marks growth estimated when the start takes a later price', async () => {
   const goals = service(false);
-  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+  (goals as unknown as { snapshots: { growth: unknown } }).snapshots.growth = async () => ({
     value: '5000',
     complete: false,
     contributions: { months: [], averages: { 3: null, 6: null, 12: null } },
@@ -325,7 +300,7 @@ it('DASH-START-ESTIMATE GOAL-WIDGETS marks growth estimated when the start takes
     marketMissing: null,
     startEstimatedAssetCount: 1,
     change: '930',
-    points: [{ at: '2025-10-18T00:00:00Z', value: '4070' }],
+    startAt: '2025-10-18T00:00:00Z',
   });
   expect((await goals.insights(owner, row.id)).growth).toMatchObject({
     market: '30',
@@ -336,14 +311,14 @@ it('DASH-START-ESTIMATE GOAL-WIDGETS marks growth estimated when the start takes
 
 it('GOAL-WIDGETS keeps missing current value distinct from an unreachable pace', async () => {
   const goals = service(false);
-  (goals as unknown as { snapshots: { history: unknown } }).snapshots.history = async () => ({
+  (goals as unknown as { snapshots: { growth: unknown } }).snapshots.growth = async () => ({
     value: null,
     complete: false,
     contributions: { months: [], averages: { 3: '0', 6: '0', 12: '0' } },
     netFlow: '0',
     marketEffect: null,
     change: null,
-    points: [],
+    startAt: null,
   });
   const view = await goals.insights(owner, row.id);
   expect(view.paceStatus).toBe('missing-value');

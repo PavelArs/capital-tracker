@@ -186,6 +186,7 @@ function parseQuery(query: unknown): {
   return { period: period as HistoryPeriod, currency };
 }
 
+/** Each stored price at the instant, as the live valuation would have read it then. */
 /**
  * Each stored price at the instant, as the live valuation would have read it then. With
  * `laterIfNone` (DASH-START-ESTIMATE), a series whose first price comes after the instant gives
@@ -333,15 +334,22 @@ function scopedValue(
  * Valuation inputs and every stored price series they use. With `instrumentId`, only that
  * instrument's prices are read. With `since`, the earliest instant that will be valued, market and
  * broker prices are read from then on plus each one's last price before it: the latest price at
- * or before any later instant is then the same as with every price read.
+ * or before any later instant is then the same as with every price read. With `until` as well,
+ * the latest instant that will be valued, no later price is read.
  */
 async function readSeriesInputs(
   manager: EntityManager,
   owner: string,
-  options: { instrumentId?: string; valuation?: ValuationInputs; since?: number } = {},
+  options: {
+    instrumentId?: string;
+    valuation?: ValuationInputs;
+    since?: number;
+    until?: number;
+  } = {},
 ): Promise<SeriesInputs> {
   const { instrumentId } = options;
   const since = options.since === undefined ? null : new Date(options.since);
+  const until = options.until === undefined ? null : new Date(options.until);
   const valuation = options.valuation ?? (await readValuationInputs(manager, owner));
   const priced = valuation.instruments.filter(
     (instrument) => instrumentId === undefined || instrument.id === instrumentId,
@@ -362,6 +370,7 @@ async function readSeriesInputs(
       : await manager.query(
           `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
             WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND "observedAt" >= $3
+              AND ($4::timestamptz IS NULL OR "observedAt" <= $4)
           UNION ALL
           SELECT p.asset, p."observedAt", p.price::text, p.source, p.kind
             FROM unnest($1::text[]) a(asset)
@@ -369,7 +378,7 @@ async function readSeriesInputs(
               WHERE asset = a.asset AND "quoteCurrency" = $2 AND "observedAt" < $3) last
             JOIN price_observations p ON p.asset = a.asset AND p."quoteCurrency" = $2
               AND p."observedAt" = last.at`,
-          [marketCodes(priced), QUOTE_CURRENCY, since],
+          [marketCodes(priced), QUOTE_CURRENCY, since, until],
         );
   const manual: {
     instrumentId: string;
@@ -401,6 +410,7 @@ async function readSeriesInputs(
           `SELECT "instrumentId","observedAt",price::text AS price,"quoteCurrency",provider,"fetchedAt"
             FROM broker_price_observations
             WHERE "ownerId"=$1 AND "instrumentId" = ANY($2) AND "observedAt" >= $3
+              AND ($4::timestamptz IS NULL OR "observedAt" <= $4)
           UNION ALL
           SELECT b."instrumentId",b."observedAt",b.price::text,b."quoteCurrency",b.provider,b."fetchedAt"
             FROM unnest($2::uuid[]) i(id)
@@ -408,7 +418,7 @@ async function readSeriesInputs(
               WHERE "ownerId"=$1 AND "instrumentId"=i.id AND "observedAt" < $3) last
             JOIN broker_price_observations b ON b."ownerId"=$1 AND b."instrumentId"=i.id
               AND b."observedAt"=last.at`,
-          [owner, priced.map((instrument) => instrument.id), since],
+          [owner, priced.map((instrument) => instrument.id), since, until],
         );
   return {
     valuation,
@@ -552,89 +562,17 @@ export class PortfolioSnapshotsService {
     await this.refresh(owner, now);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const mainCurrency = await readMainCurrency(manager, owner);
-      const currency = query.currency ?? mainCurrency;
-      const { from } = periodStart(query.period, now.getTime());
-      const rows: StoredRow[] = await manager.query(
-        `SELECT "takenAt", value::text AS value, complete FROM portfolio_snapshots
-          WHERE "ownerId"=$1 AND currency=$2 AND "takenAt">=$3 AND "takenAt"<=$4
-          ORDER BY "takenAt"`,
-        [owner, currency, new Date(from), now],
-      );
-      let stored = periodPoints(
-        rows.map((row) => ({
-          at: row.takenAt.getTime(),
-          value: row.value,
-          complete: row.complete,
-        })),
-        query.period,
-        now.getTime(),
-      );
-      // The current value closes the period with the same rules as the snapshots.
-      const original = await readValuationInputs(manager, owner);
-      const readAccounts = accountHistoryReader(original);
-      const currentAccounts = readAccounts(now.toISOString());
-      const prices = await latestPortfolioPrices(manager, owner, original.instruments, now);
-      const fx = new FxConverter(await readFxRates(manager), currency);
-      const [whole] = valuesAt(original, now.getTime(), prices, [fx], currentAccounts);
-      const scope = pricedInputs(original, whole.held, depositValuesAt(original.deposits, now, fx));
-      const { valuation, excluded, excludedDeposits } = scope;
-      const excludedCount = excluded.size + excludedDeposits.size;
-      const [priced] = valuesAt(valuation, now.getTime(), prices, [fx], currentAccounts);
-      const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
-      if (excludedCount > 0) {
-        // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
-        const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
-        const subset = {
-          ...inputs.valuation,
-          hidden: valuation.hidden,
-          deposits: valuation.deposits,
-          instruments: inputs.valuation.instruments.filter((asset) => !excluded.has(asset.id)),
-        };
-        primeDepositBalances(
-          original.deposits,
-          stored.map((point) => point.at),
-        );
-        stored = stored.map((point) =>
-          scopedValue(
-            valuesAt(
-              subset,
-              point.at,
-              pricesAt(inputs, point.at),
-              [fx],
-              readAccounts(iso(point.at)),
-            )[0],
-            valuesAt(
-              original,
-              point.at,
-              pricesAt(inputs, point.at),
-              [fx],
-              readAccounts(iso(point.at)),
-            )[0],
-            subset,
-            excludedCount,
-            new Date(point.at),
-            fx,
-          ),
-        );
-      }
-      const series: (SplitPoint & { complete: boolean })[] = [
-        ...stored,
-        {
-          at: now.getTime(),
-          value: current.value,
-          complete: current.complete,
-          unpriced: current.unpriced,
-          unrated: current.unrated,
-          held: current.held,
-        },
-      ];
-      // Deposits and withdrawals come from the operations themselves, in this currency at the
-      // rate of each one's date (split-market-and-flows).
-      const flows = [
-        ...stateFlows(capitalFlows(valuation), fx),
-        ...depositFlows(valuation.deposits, fx),
-      ].sort((left, right) => left.at - right.at);
+      const {
+        mainCurrency,
+        currency,
+        from,
+        current,
+        scope,
+        series,
+        flows,
+        start,
+        startEstimatedAssetCount,
+      } = await this.period(manager, owner, query, now, true);
       const invested = investedAt(
         flows,
         series.map((point) => point.at),
@@ -645,59 +583,6 @@ export class PortfolioSnapshotsService {
         complete: point.complete,
         invested: invested[index],
       }));
-      let start = firstValuedPoint(series);
-      let seriesInputs: Promise<SeriesInputs> | undefined;
-      const startInputs = () =>
-        (seriesInputs ??= readSeriesInputs(manager, owner, { valuation: original, since: from }));
-      const leftOut = [...current.held.values()].some((asset) => asset.value === null);
-      if (start && start.held === undefined && (!start.complete || leftOut)) {
-        // A stored snapshot is incomplete for a held asset without a price and for accounts
-        // not yet started; only the first leaves out value, so that is read again, with what
-        // it held. A coin now without a price also needs what it was worth at the start.
-        const inputs = await startInputs();
-        const [again] = valuesAt(
-          inputs.valuation,
-          start.at,
-          pricesAt(inputs, start.at),
-          [fx],
-          readAccounts(iso(start.at)),
-        );
-        start = { ...start, unpriced: again.unpriced, unrated: again.unrated, held: again.held };
-      }
-      // DASH-START-ESTIMATE: an asset held at the start whose prices begin later is valued at
-      // its first later price, so the period's change and market are estimates, not unknown.
-      let startEstimatedAssetCount = 0;
-      if (start?.unpriced === true && start.held !== undefined) {
-        const inputs = await startInputs();
-        const scoped = {
-          ...inputs.valuation,
-          hidden: valuation.hidden,
-          deposits: valuation.deposits,
-          instruments: inputs.valuation.instruments.filter((asset) => !excluded.has(asset.id)),
-        };
-        const [guess] = valuesAt(
-          scoped,
-          start.at,
-          pricesAt(inputs, start.at, true),
-          [fx],
-          readAccounts(iso(start.at)),
-        );
-        const before = start.held;
-        const estimated = [...guess.held].filter(
-          ([id, asset]) => asset.value !== null && before.get(id)?.value === null,
-        ).length;
-        // Only a start the estimate prices in full: otherwise the market stays unknown anyway.
-        if (estimated > 0 && guess.value !== null && !guess.unpriced) {
-          startEstimatedAssetCount = estimated;
-          start = {
-            ...start,
-            value: guess.value,
-            unpriced: guess.unpriced,
-            unrated: guess.unrated,
-            held: guess.held,
-          };
-        }
-      }
       return {
         period: query.period,
         currency,
@@ -706,14 +591,14 @@ export class PortfolioSnapshotsService {
         at: now.toISOString(),
         value: current.value,
         complete: points.every((point) => point.complete),
-        excludedAssetCount: excluded.size,
-        excludedDepositCount: excludedDeposits.size,
+        excludedAssetCount: scope.excluded.size,
+        excludedDepositCount: scope.excludedDeposits.size,
         // Assets held at the period's start valued at their first later price: when above 0, the
         // change and the market part are estimates.
         startEstimatedAssetCount,
         contributions: monthlyContributions(
           flows,
-          contributionStart(valuation, moscowDate(now)),
+          contributionStart(scope.valuation, moscowDate(now)),
           moscowDate(now),
         ),
         ...periodChange(start?.unpriced ? null : (start?.value ?? null), current.value),
@@ -729,6 +614,222 @@ export class PortfolioSnapshotsService {
         points,
       };
     });
+  }
+
+  /**
+   * GOAL-WIDGETS: what `history` answers for the value, completeness, monthly contributions and
+   * the period's change with its split, without what only the chart and profit need. A priced
+   * subset's stored points are valued again only up to the first one with a value, where the
+   * change starts.
+   */
+  async growth(ownerId: string, rawQuery: unknown, now = new Date()) {
+    const owner = parseUuid(ownerId);
+    const query = parseQuery(rawQuery);
+    await this.refresh(owner, now);
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const { current, scope, series, flows, start, storedComplete, startEstimatedAssetCount } =
+        await this.period(manager, owner, query, now, false);
+      return {
+        value: current.value,
+        // With a priced subset the value now is incomplete, as `history` marks every point.
+        complete: storedComplete && current.complete,
+        contributions: monthlyContributions(
+          flows,
+          contributionStart(scope.valuation, moscowDate(now)),
+          moscowDate(now),
+        ),
+        ...periodChange(start?.unpriced ? null : (start?.value ?? null), current.value),
+        ...splitChange(start, series.at(-1)!, flows),
+        // The first point with a value, as `history` lists it.
+        startAt: start ? iso(start.at) : null,
+        // DASH-START-ESTIMATE: as `history` says it.
+        startEstimatedAssetCount,
+      };
+    });
+  }
+
+  /**
+   * A period's stored points, closed by the value now, with the exact flows and the point the
+   * change starts from. Without `everyPoint`, a priced subset's points are valued again only up
+   * to the first one with a value, and the series ends there before the value now.
+   */
+  private async period(
+    manager: EntityManager,
+    owner: string,
+    query: ReturnType<typeof parseQuery>,
+    now: Date,
+    everyPoint: boolean,
+  ) {
+    const mainCurrency = await readMainCurrency(manager, owner);
+    const currency = query.currency ?? mainCurrency;
+    const { from } = periodStart(query.period, now.getTime());
+    const rows: StoredRow[] = await manager.query(
+      `SELECT "takenAt", value::text AS value, complete FROM portfolio_snapshots
+        WHERE "ownerId"=$1 AND currency=$2 AND "takenAt">=$3 AND "takenAt"<=$4
+        ORDER BY "takenAt"`,
+      [owner, currency, new Date(from), now],
+    );
+    let stored = periodPoints(
+      rows.map((row) => ({
+        at: row.takenAt.getTime(),
+        value: row.value,
+        complete: row.complete,
+      })),
+      query.period,
+      now.getTime(),
+    );
+    const storedComplete = stored.every((point) => point.complete);
+    // The current value closes the period with the same rules as the snapshots.
+    const original = await readValuationInputs(manager, owner);
+    const readAccounts = accountHistoryReader(original);
+    const currentAccounts = readAccounts(now.toISOString());
+    const prices = await latestPortfolioPrices(manager, owner, original.instruments, now);
+    const fx = new FxConverter(await readFxRates(manager), currency);
+    const [whole] = valuesAt(original, now.getTime(), prices, [fx], currentAccounts);
+    const scope = pricedInputs(original, whole.held, depositValuesAt(original.deposits, now, fx));
+    const { valuation, excluded, excludedDeposits } = scope;
+    const excludedCount = excluded.size + excludedDeposits.size;
+    const [priced] = valuesAt(valuation, now.getTime(), prices, [fx], currentAccounts);
+    const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
+    if (excludedCount > 0) {
+      // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
+      const subset = {
+        ...original,
+        hidden: valuation.hidden,
+        deposits: valuation.deposits,
+        instruments: original.instruments.filter((asset) => !excluded.has(asset.id)),
+      };
+      const revalue = (inputs: SeriesInputs, point: { at: number }) =>
+        scopedValue(
+          valuesAt(
+            subset,
+            point.at,
+            pricesAt(inputs, point.at),
+            [fx],
+            readAccounts(iso(point.at)),
+          )[0],
+          valuesAt(
+            original,
+            point.at,
+            pricesAt(inputs, point.at),
+            [fx],
+            readAccounts(iso(point.at)),
+          )[0],
+          subset,
+          excludedCount,
+          new Date(point.at),
+          fx,
+        );
+      primeDepositBalances(
+        original.deposits,
+        stored.map((point) => point.at),
+      );
+      if (everyPoint) {
+        const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
+        stored = stored.map((point) => revalue(inputs, point));
+      } else {
+        const valued: typeof stored = [];
+        let inputs: SeriesInputs | undefined;
+        for (const point of stored) {
+          // The first point usually has a value, and its own prices are few to read.
+          if (valued.length < 2)
+            inputs = await readSeriesInputs(manager, owner, {
+              valuation: original,
+              since: from,
+              ...(valued.length === 0 ? { until: point.at } : {}),
+            });
+          const again = revalue(inputs as SeriesInputs, point);
+          valued.push(again);
+          if (again.value !== null) break;
+        }
+        stored = valued;
+      }
+    }
+    const series: (SplitPoint & { complete: boolean })[] = [
+      ...stored,
+      {
+        at: now.getTime(),
+        value: current.value,
+        complete: current.complete,
+        unpriced: current.unpriced,
+        unrated: current.unrated,
+        held: current.held,
+      },
+    ];
+    // Deposits and withdrawals come from the operations themselves, in this currency at the
+    // rate of each one's date (split-market-and-flows).
+    const flows = [
+      ...stateFlows(capitalFlows(valuation), fx),
+      ...depositFlows(valuation.deposits, fx),
+    ].sort((left, right) => left.at - right.at);
+    let start = firstValuedPoint(series);
+    const leftOut = [...current.held.values()].some((asset) => asset.value === null);
+    if (start && start.held === undefined && (!start.complete || leftOut)) {
+      // A stored snapshot is incomplete for a held asset without a price and for accounts
+      // not yet started; only the first leaves out value, so that is read again, with what
+      // it held. A coin now without a price also needs what it was worth at the start.
+      const inputs = await readSeriesInputs(manager, owner, {
+        valuation: original,
+        since: from,
+        until: start.at,
+      });
+      const [again] = valuesAt(
+        inputs.valuation,
+        start.at,
+        pricesAt(inputs, start.at),
+        [fx],
+        readAccounts(iso(start.at)),
+      );
+      start = { ...start, unpriced: again.unpriced, unrated: again.unrated, held: again.held };
+    }
+    // DASH-START-ESTIMATE: an asset held at the start whose prices begin later is valued at its
+    // first later price, so the period's change and market are estimates, not unknown.
+    let startEstimatedAssetCount = 0;
+    if (start?.unpriced === true && start.held !== undefined) {
+      // Prices after the start are needed here: no `until`.
+      const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
+      const scoped = {
+        ...inputs.valuation,
+        hidden: valuation.hidden,
+        deposits: valuation.deposits,
+        instruments: inputs.valuation.instruments.filter((asset) => !excluded.has(asset.id)),
+      };
+      const [guess] = valuesAt(
+        scoped,
+        start.at,
+        pricesAt(inputs, start.at, true),
+        [fx],
+        readAccounts(iso(start.at)),
+      );
+      const before = start.held;
+      const estimated = [...guess.held].filter(
+        ([id, asset]) => asset.value !== null && before.get(id)?.value === null,
+      ).length;
+      // Only a start the estimate prices in full: otherwise the market stays unknown anyway.
+      if (estimated > 0 && guess.value !== null && !guess.unpriced) {
+        startEstimatedAssetCount = estimated;
+        start = {
+          ...start,
+          value: guess.value,
+          unpriced: guess.unpriced,
+          unrated: guess.unrated,
+          held: guess.held,
+        };
+      }
+    }
+    return {
+      mainCurrency,
+      currency,
+      from,
+      current,
+      scope,
+      series,
+      flows,
+      start,
+      storedComplete,
+      startEstimatedAssetCount,
+    };
   }
 
   /**
