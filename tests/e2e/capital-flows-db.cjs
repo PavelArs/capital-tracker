@@ -407,8 +407,15 @@ async function rates(db, s, f) {
   const usd = await s.snapshots.history(early, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(usd.points.every((entry) => entry.invested === '40000'));
   // BTC was held at the first point but has no stored price before 2025-01-02, so the start
-  // leaves it out and the market effect is unknown, not the whole value.
-  assert.deepEqual([usd.netFlow, usd.marketEffect, usd.change], ['0', null, null]);
+  // values it at its first later price (DASH-START-ESTIMATE): the change is all market, and an
+  // estimate, never the whole value.
+  const [{ first }] = await db.query(`SELECT price::text AS first FROM price_observations
+    WHERE asset='BTC' AND "quoteCurrency"='USD' ORDER BY "observedAt" LIMIT 1`);
+  const estimated = minus(usd.value, first);
+  assert.deepEqual(
+    [usd.netFlow, usd.marketEffect, usd.change, usd.marketMissing, usd.startEstimatedAssetCount],
+    ['0', estimated, estimated, null, 1],
+  );
   const rub = await s.snapshots.history(early, { period: 'ALL', currency: 'RUB' }, now);
   // The owner's choice: money without a rate is left out of the money put in, and the profit
   // to date stays value minus what is left, so it reads higher than it is.
