@@ -596,18 +596,26 @@ export class OperationListService {
         fx,
         range,
       );
-      const ids = [
+      const legs = list.operations.flatMap((operation) =>
+        operation.counterAsset ? [operation.asset, operation.counterAsset] : [operation.asset],
+      );
+      const ids = [...new Set(legs.flatMap((leg) => (leg.instrumentId ? [leg.instrumentId] : [])))];
+      // A blockchain row not yet recorded as an asset: its coin, unless it is cash.
+      const symbols = [
         ...new Set(
-          list.operations.flatMap((operation) =>
-            [operation.asset.instrumentId, operation.counterAsset?.instrumentId].filter(
-              (id): id is string => typeof id === 'string',
-            ),
-          ),
+          legs.flatMap((leg) => {
+            const symbol = leg.symbol?.toUpperCase();
+            return !leg.instrumentId && symbol && !isAccountingCurrency(symbol) ? [symbol] : [];
+          }),
         ),
       ];
       return {
         ...list,
-        operations: markUnpriced(list.operations, await firstPrices(manager, owner, ids)),
+        operations: markUnpriced(
+          list.operations,
+          await firstPrices(manager, owner, ids),
+          await firstMarketPrices(manager, symbols),
+        ),
       };
     });
   }
@@ -643,4 +651,19 @@ async function firstPrices(
     [owner, ids, QUOTE_CURRENCY],
   );
   return new Map(rows.map((row) => [row.id, row.first?.toISOString() ?? null]));
+}
+
+/** UNPRICED-FILTER: when each coin's first market price is; null: none stored yet. */
+async function firstMarketPrices(
+  manager: EntityManager,
+  symbols: readonly string[],
+): Promise<Map<string, string | null>> {
+  if (symbols.length === 0) return new Map();
+  const rows: { symbol: string; first: Date | null }[] = await manager.query(
+    `SELECT s.symbol, (SELECT min(p."observedAt") FROM price_observations p
+        WHERE p.asset=s.symbol AND p."quoteCurrency"=$2) AS first
+      FROM unnest($1::text[]) s(symbol)`,
+    [symbols, QUOTE_CURRENCY],
+  );
+  return new Map(rows.map((row) => [row.symbol, row.first?.toISOString() ?? null]));
 }

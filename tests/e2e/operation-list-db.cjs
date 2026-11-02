@@ -486,18 +486,33 @@ async function unpricedRows(db, s) {
   await s.prices.set(owner, share, { ...point(0, '2025-06-05T00:00:00.000Z'), priceUsd: '40' });
   await s.prices.void(owner, share, point(1, '2025-06-05T00:00:00.000Z'));
   await s.prices.set(owner, share, { ...point(2, '2025-06-10T00:00:00.000Z'), priceUsd: '55' });
+  // A market coin's first price comes from its symbol; a broker fund's from the broker's prices.
+  const ether = await instrument(s, owner, { name: 'Ether', symbol: 'ETH', assetType: 'crypto' });
+  const fund = await instrument(s, owner, { name: 'Broker fund', assetType: 'manual' });
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('ETH','USD','kraken','2025-06-09T00:00:00.000Z','2500','daily-close')`);
+  await db.query(`INSERT INTO broker_price_observations("ownerId","instrumentId",provider,"observedAt",price,"quoteCurrency")
+    VALUES ($1,$2,'tbank','2025-06-08T00:00:00.000Z','10','USD')`, [owner, fund]);
+  await trade(s, owner, place, ether, 'buy', '2025-06-03T00:00:00.000Z', '1', '2400');
+  await trade(s, owner, place, ether, 'buy', '2025-06-11T00:00:00.000Z', '1', '2500');
+  await trade(s, owner, place, fund, 'buy', '2025-06-04T00:00:00.000Z', '5', '50');
+  await trade(s, owner, place, fund, 'buy', '2025-06-09T00:00:00.000Z', '5', '50');
   const list = await read(s, owner);
   assert.deepEqual(
     list.operations.map((operation) => [operation.asset.name, operation.occurredAt, operation.unpriced]),
     [
       ['Hand share', '2025-06-12T00:00:00.000Z', false],
+      ['Ether', '2025-06-11T00:00:00.000Z', false],
+      ['Broker fund', '2025-06-09T00:00:00.000Z', false],
       ['Hand share', '2025-06-07T00:00:00.000Z', true],
+      ['Broker fund', '2025-06-04T00:00:00.000Z', true],
+      ['Ether', '2025-06-03T00:00:00.000Z', true],
       ['Hand share', '2025-06-02T00:00:00.000Z', true],
       ['Dollar cash', '2025-06-01T00:00:00.000Z', false],
     ],
-    'Before the first standing price is unpriced; cash needs no price',
+    'Before the first standing hand, market or broker price is unpriced; cash needs no price',
   );
-  console.log('PASS UNPRICED-FILTER rows before the first standing price are marked; cash never is');
+  console.log('PASS UNPRICED-FILTER rows before the first hand, market or broker price are marked; cash never is');
 }
 
 async function main() {

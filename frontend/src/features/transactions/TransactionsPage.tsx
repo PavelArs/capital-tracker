@@ -79,7 +79,8 @@ const isStatusView = (value: string | null): value is StatusView =>
 
 // Dust is filtered out of every view but its own (CLS-DUST).
 function inView(operation: Operation, view: View): boolean {
-  // UNPRICED-FILTER: a counted row whose asset had no stored price at its time.
+  // UNPRICED-FILTER: a counted row whose asset had no stored price at its time; hidden and
+  // dust rows count in no balance, so they stay out of it, as of every view but their own.
   if (view === 'unpriced')
     return (
       operation.unpriced === true && operation.status !== 'hidden' && operation.status !== 'dust'

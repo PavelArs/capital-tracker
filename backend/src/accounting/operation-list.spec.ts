@@ -2181,6 +2181,24 @@ describe('UNPRICED-FILTER marks an operation whose asset had no stored price at 
     expect(marked[0]).toMatchObject({ id: '2026-10-02T00:00:00.000Z', asset: { symbol: 'share' } });
   });
 
+  it("UNPRICED-FILTER marks a blockchain row by its coin before the coin's first market price", () => {
+    const bySymbol = new Map<string, string | null>([
+      ['BTC', '2026-10-10T00:00:00.000Z'],
+      ['ZZZ', null],
+    ]);
+    const marked = markUnpriced(
+      [
+        op('2026-10-02T00:00:00.000Z', null),
+        op('2026-10-11T00:00:00.000Z', null),
+        { ...op('2026-10-11T00:00:00.000Z', null), asset: asset(null, 'ZZZ') },
+        { ...op('2026-10-02T00:00:00.000Z', null), asset: asset(null, 'USD') },
+      ].map((item, index) => (index < 2 ? { ...item, asset: asset(null, 'BTC') } : item)),
+      first,
+      bySymbol,
+    );
+    expect(marked.map((item) => item.unpriced)).toEqual([true, false, true, false]);
+  });
+
   it('UNPRICED-FILTER marks a trade paid with an asset that had no price yet', () => {
     expect(markUnpriced([op('2026-10-02T00:00:00.000Z', 'cash', 'share')], first)[0].unpriced).toBe(
       true,

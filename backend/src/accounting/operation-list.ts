@@ -1156,17 +1156,23 @@ export function projectOperations(
  * UNPRICED-FILTER: an operation is unpriced when its asset, or the asset it was traded for, had
  * no stored price at or before its time, so a history from then leaves that asset out.
  * `firstPriceAt` holds every asset that needs a stored price (null: none stored yet); one not in
- * it, such as cash, needs none.
+ * it, such as cash, needs none. A blockchain row not yet recorded as an asset is read by its
+ * coin's first market price in `firstBySymbol`, under the same rule.
  */
 export function markUnpriced<
   T extends { occurredAt: string; asset: OperationAsset; counterAsset: OperationAsset | null },
 >(
   operations: readonly T[],
   firstPriceAt: ReadonlyMap<string, string | null>,
+  firstBySymbol: ReadonlyMap<string, string | null> = new Map(),
 ): (T & { unpriced: boolean })[] {
   const missing = (asset: OperationAsset | null, at: string) => {
-    if (!asset?.instrumentId || !firstPriceAt.has(asset.instrumentId)) return false;
-    const first = firstPriceAt.get(asset.instrumentId);
+    if (!asset) return false;
+    const [known, key] = asset.instrumentId
+      ? [firstPriceAt, asset.instrumentId]
+      : [firstBySymbol, asset.symbol?.toUpperCase() ?? ''];
+    if (!known.has(key)) return false;
+    const first = known.get(key);
     return first === null || first === undefined || first > at;
   };
   return operations.map((operation) => ({
