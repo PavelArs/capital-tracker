@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { MarketMissing } from './portfolio-history.api';
+import { HISTORY_TIMEOUT_MS, type MarketMissing } from './portfolio-history.api';
 import type { AccountingCurrency } from './portfolio-valuation.api';
 
 // GOAL-TERMS, GOAL-FORECAST: savings goals measured against the whole portfolio. The server
@@ -117,8 +117,11 @@ export interface GoalInsights {
 }
 
 export const goalsApi = {
+  // The server reads the portfolio history for these, so they wait for the same rebuild.
   insights: (id: string) =>
-    apiClient.get<GoalInsights>(`/goals/${id}/insights`).then((response) => response.data),
+    apiClient
+      .get<GoalInsights>(`/goals/${id}/insights`, { timeout: HISTORY_TIMEOUT_MS })
+      .then((response) => response.data),
   list: async (): Promise<GoalList> => (await apiClient.get<GoalList>(path)).data,
 
   get: async (id: string): Promise<Goal> => (await apiClient.get<Goal>(one(id))).data,
