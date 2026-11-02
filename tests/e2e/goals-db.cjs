@@ -342,6 +342,172 @@ async function stale(db, service, owner) {
   console.log('PASS GOAL-STALE-PRICES');
 }
 
+// Synthetic ether closes at every UTC midnight: 2,000 until 200 days ago, then 3,000. One close at
+// the current hour keeps the value now fresh. Rates: 90 RUB per USD, 100 RUB per EUR.
+async function insightsPrices(db) {
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    SELECT 'ETH','USD','kraken',d, CASE WHEN d < now() - interval '200 days' THEN 2000 ELSE 3000 END,
+      'daily-close'
+    FROM generate_series(date_trunc('day', now() - interval '800 days'), now(), interval '1 day') d
+    UNION ALL SELECT 'ETH','USD','kraken',date_trunc('hour', now()),3000,'hourly-close'`);
+  await db.query(`INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit")
+    SELECT c.currency,'cbr',d::date,c.rate FROM (VALUES ('USD',90),('EUR',100)) c(currency,rate)
+    CROSS JOIN generate_series(current_date - 800, current_date, interval '1 day') d
+    ON CONFLICT DO NOTHING`);
+}
+
+/**
+ * GOAL-WIDGETS: the insights answer is the goal-currency 1Y history's contributions and growth,
+ * with the pace worked out from its value. Pinned against the full history read.
+ */
+async function sameAsHistory(service, snapshots, owner, goalId) {
+  const view = await service.insights(owner, goalId);
+  const history = await snapshots.history(owner, { period: '1Y', currency: view.currency });
+  const [row] = await service.rows(service.source.manager, owner, goalId);
+  const { goalView } = require('/app/backend/dist/goals/goal-view.js');
+  const average = history.contributions.averages[6];
+  const reachedOn =
+    average === null
+      ? null
+      : (goalView(
+          { ...row, monthlyContribution: average },
+          { value: history.value, complete: history.complete, stalePrices: 0 },
+          view.asOf,
+        ).scenarios.find((scenario) => scenario.key === 'base')?.reachedOn ?? null);
+  assert.deepEqual(view, {
+    currency: row.currency,
+    asOf: view.asOf,
+    complete: history.complete,
+    ...history.contributions,
+    paceStatus:
+      average === null
+        ? 'insufficient-history'
+        : history.value === null
+          ? 'missing-value'
+          : reachedOn
+            ? 'projected'
+            : 'beyond-horizon',
+    paceReachedOn: reachedOn,
+    growth: {
+      from: history.points.find((point) => point.value !== null)?.at ?? null,
+      contributions: history.netFlow,
+      market: history.marketEffect,
+      marketMissing: history.marketMissing,
+      total: history.change,
+    },
+  });
+  return { view, history };
+}
+
+async function insights(db, service, snapshots, owners) {
+  stage = 'GOAL-WIDGETS synthetic year of ether closes for the insights cards';
+  await insightsPrices(db);
+  const make = (file, name) => new (require(`/app/backend/dist/accounting/${file}.js`)[name])(db);
+  const accounting = make('accounting.service', 'AccountingService');
+  const trades = make('trade.service', 'TradeService');
+  const daysAgo = (days) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const holdings = async (owner, coverageDays, buys) => {
+    const ids = {};
+    for (const [asset] of buys)
+      ids[asset] ??= (
+        await accounting.createInstrument(owner, {
+          requestId: randomUUID(),
+          name: asset,
+          ...(asset === 'UNPRICED'
+            ? { assetType: 'manual' }
+            : { symbol: asset, assetType: 'crypto' }),
+        })
+      ).value.id;
+    const account = (
+      await accounting.createAccount(owner, { requestId: randomUUID(), name: 'Insights' })
+    ).value.id;
+    await trades.initialize(owner, account, {
+      requestId: randomUUID(),
+      coverageFrom: daysAgo(coverageDays),
+      assertEmpty: true,
+    });
+    for (const [index, [asset, days, grossUsd]] of buys.entries())
+      await trades.create(owner, account, {
+        requestId: randomUUID(),
+        expectedJournalRevision: index,
+        instrumentId: ids[asset],
+        side: 'buy',
+        occurredAt: daysAgo(days),
+        orderWithinTimestamp: 0,
+        quantity: '1',
+        grossUsd,
+        feeUsd: '0',
+      });
+    return (await service.create(owner, { ...reserve(), targetAmount: '100000' })).id;
+  };
+
+  stage = 'GOAL-WIDGETS ether and an unpriced holding before the year: the year starts valued';
+  const [early, late, started, unpricedOnly] = owners;
+  const earlyGoal = await holdings(early, 600, [
+    ['ETH', 500, '1500'],
+    ['UNPRICED', 400, '900'],
+    ['ETH', 100, '3000'],
+  ]);
+  const first = await sameAsHistory(service, snapshots, early, earlyGoal);
+  assert.equal(first.history.excludedAssetCount, 1);
+  assert.equal(first.view.complete, false, 'An unpriced holding leaves the figures incomplete');
+  assert.deepEqual(first.view.growth, {
+    from: first.history.points[0].at,
+    contributions: '3000',
+    market: '1000',
+    marketMissing: null,
+    total: '4000',
+  });
+
+  stage = 'GOAL-WIDGETS only an unpriced holding when the year starts: growth from the first ether';
+  const lateGoal = await holdings(late, 600, [
+    ['UNPRICED', 500, '900'],
+    ['ETH', 150, '3000'],
+  ]);
+  const second = await sameAsHistory(service, snapshots, late, lateGoal);
+  assert.equal(second.history.points[0].value, null, 'Only the unpriced holding: no value, not 0');
+  assert.ok(second.view.growth.from > second.history.points[0].at);
+  assert.deepEqual(
+    { ...second.view.growth, from: null },
+    { from: null, contributions: '0', market: '0', marketMissing: null, total: '0' },
+  );
+
+  stage = 'GOAL-WIDGETS a coin bought before its prices begin: the start of the year is read again';
+  // Synthetic solana closes only for the last 100 days.
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    SELECT 'SOL','USD','kraken',d,150,'daily-close'
+    FROM generate_series(date_trunc('day', now() - interval '100 days'), now(), interval '1 day') d
+    UNION ALL SELECT 'SOL','USD','kraken',date_trunc('hour', now()),150,'hourly-close'`);
+  const startedGoal = await holdings(started, 600, [
+    ['ETH', 500, '1500'],
+    ['SOL', 400, '120'],
+  ]);
+  const third = await sameAsHistory(service, snapshots, started, startedGoal);
+  assert.equal(third.history.excludedAssetCount, 0);
+  assert.equal(third.history.points[0].complete, false, 'The stored start has no solana price');
+  assert.equal(third.view.complete, false);
+  assert.deepEqual(third.view.growth, {
+    from: third.history.points[0].at,
+    contributions: '0',
+    market: null,
+    marketMissing: 'priced-later',
+    total: null,
+  });
+
+  stage = 'GOAL-WIDGETS only an unpriced holding bought within the year: no value, never zero';
+  const unpricedGoal = await holdings(unpricedOnly, 600, [['UNPRICED', 300, '900']]);
+  const fourth = await sameAsHistory(service, snapshots, unpricedOnly, unpricedGoal);
+  assert.equal(fourth.history.value, null);
+  assert.deepEqual(fourth.view.growth, {
+    from: fourth.history.points[0].at,
+    contributions: '0',
+    market: null,
+    marketMissing: 'value-unknown',
+    total: null,
+  });
+  console.log('PASS GOAL-WIDGETS insights equal the 1Y history in the goal currency');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -378,21 +544,32 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    const [owner, other, third, fourth, fifth] = await db.query(`INSERT INTO users(email,password) VALUES
+    const [owner, other, third, fourth, fifth, ...rest] = await db.query(`INSERT INTO users(email,password) VALUES
       ('goal-owner@example.invalid','synthetic-not-a-hash'),
       ('goal-other@example.invalid','synthetic-not-a-hash'),
       ('goal-third@example.invalid','synthetic-not-a-hash'),
       ('goal-fourth@example.invalid','synthetic-not-a-hash'),
-      ('goal-fifth@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('goal-fifth@example.invalid','synthetic-not-a-hash'),
+      ('goal-insights-early@example.invalid','synthetic-not-a-hash'),
+      ('goal-insights-late@example.invalid','synthetic-not-a-hash'),
+      ('goal-insights-started@example.invalid','synthetic-not-a-hash'),
+      ('goal-insights-unpriced@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { GoalsService } = require(modulePath);
     const {
       PortfolioSnapshotsService,
     } = require('/app/backend/dist/portfolio-snapshots/portfolio-snapshots.service.js');
-    const service = new GoalsService(db, new PortfolioSnapshotsService(db, new ConfigService({})));
+    const snapshots = new PortfolioSnapshotsService(db, new ConfigService({}));
+    const service = new GoalsService(db, snapshots);
     await terms(db, service, owner.id, other.id);
     await limit(service, third.id);
     await forecast(db, service, fourth.id);
     await stale(db, service, fifth.id);
+    await insights(
+      db,
+      service,
+      snapshots,
+      rest.map((user) => user.id),
+    );
   } finally {
     if (db.isInitialized) await db.destroy();
   }
