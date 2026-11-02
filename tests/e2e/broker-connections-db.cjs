@@ -1216,10 +1216,11 @@ async function importing(db, service, imports, tbank, owner, other) {
   assert.equal(gapPreview.canImport, true);
   assert.deepEqual(gapPreview.entries.at(-1), { record: 'trade', action: 'withdrawal', occurredAt: '2024-03-03T07:00:00.001Z', instrumentUid: '', ticker: '', instrumentType: '', quantity: '30', amount: '30', fee: '0', currency: 'rub', operationIds: ['cash-gap:RUB'] });
   await imports.import(owner, gapAccount, { requestId: randomUUID(), previewHash: gapPreview.previewHash });
-  assert.equal((await trades.available(owner, gapAccount, { instrumentId: rubCash.id, at: '2024-03-03T07:00:00.000Z' })).quantity, '60');
   assert.equal((await trades.available(owner, gapAccount, { instrumentId: rubCash.id, at: atEnd })).quantity, '30');
   const [gapRow] = await db.query(`SELECT "tradeId" FROM broker_imported_operations WHERE "accountId" = $1 AND "operationId" = 'cash-gap:RUB'`, [gapAccount]);
   assert.ok(gapRow?.tradeId, 'The payment out is recorded as imported from the broker');
+  const [gapTrade] = await db.query(`SELECT side, "instrumentId", "occurredAt", quantity = 30 AS "exact" FROM account_trade_versions WHERE "accountId" = $1 AND "tradeId" = $2`, [gapAccount, gapRow.tradeId]);
+  assert.deepEqual([gapTrade.side, gapTrade.instrumentId, gapTrade.occurredAt.toISOString(), gapTrade.exact], ['sell', rubCash.id, '2024-03-03T07:00:00.001Z', true], 'The 30 rubles leave just after the last listed deposit');
   tbank.positions = [];
   console.log('PASS BROKER-CASH-GAP PostgreSQL payment out of unlisted cash, dated no earlier than the history allows');
 
