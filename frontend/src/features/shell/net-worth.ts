@@ -23,7 +23,7 @@ export function netWorthUnknown(portfolio: PortfolioValuation): string | null {
     portfolio.unratedDepositCount > 0 &&
       `${plural(portfolio.unratedDepositCount, 'deposit')} without an exchange rate`,
     portfolio.unavailableAccountCount > 0 &&
-      `${plural(portfolio.unavailableAccountCount, 'account')} that could not be read`,
+      `${plural(portfolio.unavailableAccountCount, 'account')} whose history starts later`,
   ].filter(Boolean);
   return reasons.length ? `Net worth unknown: ${reasons.join(', ')}.` : 'Net worth unknown.';
 }
@@ -52,7 +52,7 @@ export function shareBase(
       `${plural(portfolio.unratedDepositCount, 'deposit')} without an exchange rate`,
     unknown &&
       portfolio.unavailableAccountCount > 0 &&
-      `${plural(portfolio.unavailableAccountCount, 'account')} that could not be read`,
+      `${plural(portfolio.unavailableAccountCount, 'account')} whose history starts later`,
     interest > 0 && `interest on ${plural(interest, 'account')} without an interest rate`,
   ].filter(Boolean);
   const estimated =

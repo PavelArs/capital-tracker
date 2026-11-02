@@ -530,16 +530,16 @@ describe('PV-UI Portfolio values every asset', () => {
       within(allocation)
         .getAllByRole('listitem')
         .map((item) => (item.querySelector('.portfolio-swatch') as HTMLElement).style.background);
-    expect(slices()).toEqual(['Bitcoin BTC$96,000.0096.00%', 'US dollar USD$4,000.004.00%']);
+    expect(slices()).toEqual(['Bitcoin BTC$96,000.00≈96.00%', 'US dollar USD$4,000.00≈4.00%']);
     expect(swatches()).toEqual(['var(--c-btc)', 'var(--c-cash)']);
     expect(
       within(rowOf('Bitcoin')).getAllByRole('cell')[0].querySelector('.asset-icon'),
     ).toHaveAttribute('data-glyph', '₿');
     await user.click(within(grouping).getByRole('radio', { name: 'Classes' }));
-    expect(slices()).toEqual(['Crypto$96,000.0096.00%', 'Cash$4,000.004.00%']);
+    expect(slices()).toEqual(['Crypto$96,000.00≈96.00%', 'Cash$4,000.00≈4.00%']);
     expect(swatches()).toEqual(['var(--c-eth)', 'var(--c-cash)']);
     await user.click(within(grouping).getByRole('radio', { name: 'Accounts' }));
-    expect(slices()).toEqual(['Trust Wallet$80,000.0080.00%', 'Bybit$20,000.0020.00%']);
+    expect(slices()).toEqual(['Trust Wallet$80,000.00≈80.00%', 'Bybit$20,000.00≈20.00%']);
     expect(allocation).toHaveTextContent('Assets without a price are not included.');
   });
 
