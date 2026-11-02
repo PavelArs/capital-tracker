@@ -221,6 +221,7 @@ async function backfill(db, s, f) {
       'profit',
       'profitPercent',
       'real',
+      'startEstimatedAssetCount',
       'value',
       'withdrawals',
     ].sort(),

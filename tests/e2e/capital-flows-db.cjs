@@ -571,7 +571,7 @@ async function unpricedEnd(db, s, f) {
 
 async function unpricedStart(db, s, f) {
   stage =
-    'HIST-START-UNPRICED a period that starts before an asset has a price gives no market effect';
+    'HIST-START-UNPRICED DASH-START-ESTIMATE a period that starts before an asset has a price takes its first later price';
   const { unpriced } = f;
   const eth = (
     await s.accounting.createInstrument(unpriced, {
@@ -595,19 +595,17 @@ async function unpricedStart(db, s, f) {
     'The start left out ETH, which had no price then',
   );
   assert.equal(history.value, '5000', 'The end is priced');
+  // The start values ETH at its first later price, 2500, and says it is an estimate.
   assert.deepEqual(
     [history.change, history.changePercent, history.marketEffect, history.marketReturnPercent],
-    [null, null, null, null],
-    'No change from a start that left out a held asset',
+    ['0', '0.00', '0', '0.00'],
+    'The change and market effect are estimated from the first later price',
   );
-  assert.equal(
-    history.marketMissing,
-    'priced-later',
-    'FLOW-SPLIT-REASON the asset held at the start had no price then',
-  );
+  assert.equal(history.marketMissing, null, 'The market effect is known, as an estimate');
+  assert.equal(history.startEstimatedAssetCount, 1, 'The estimate is stated');
   assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
   console.log(
-    'PASS HIST-START-UNPRICED an incomplete start with a missing price gives no change or market effect; the flows stay',
+    'PASS HIST-START-UNPRICED DASH-START-ESTIMATE a start with a missing price takes the first later price, stated as an estimate; the flows stay',
   );
 }
 

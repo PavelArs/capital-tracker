@@ -686,7 +686,8 @@ export class PortfolioSnapshotsService {
         const estimated = [...guess.held].filter(
           ([id, asset]) => asset.value !== null && before.get(id)?.value === null,
         ).length;
-        if (estimated > 0 && guess.value !== null) {
+        // Only a start the estimate prices in full: otherwise the market stays unknown anyway.
+        if (estimated > 0 && guess.value !== null && !guess.unpriced) {
           startEstimatedAssetCount = estimated;
           start = {
             ...start,
