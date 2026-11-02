@@ -31,6 +31,7 @@ const preview = (changes: Partial<TBankImportPreview> = {}): TBankImportPreview 
   fitsRewardLimit: true,
   accountHasEntries: false,
   problems: [],
+  cashGaps: [],
   canImport: true,
   previewHash: HASH,
   ...changes,
@@ -97,6 +98,29 @@ it('BROKER-DIAG identifies the actual deficient currency and exact amounts rathe
   expect(
     await screen.findByText(/RUB.*available 100.*required 150.01.*short 50.01/),
   ).toBeInTheDocument();
+});
+
+it('BROKER-CASH-GAP says cash T-Bank does not account for is recorded as paid out, and when', async () => {
+  vi.spyOn(brokersApi, 'importPreview').mockResolvedValue(
+    preview({
+      entries: [
+        entry('deposit', 1),
+        { ...entry('withdrawal', 2), amount: '45.5', operationIds: ['cash-gap:RUB'] },
+      ],
+      trades: 2,
+      rewards: 0,
+      cashGaps: [{ currency: 'rub', amount: '45.5', occurredAt: '2026-03-02T10:00:00.001Z' }],
+    }),
+  );
+  open();
+  expect(
+    await within(dialog()).findByText(
+      'T-Bank reports 45.5 RUB less cash than its listed operations leave. It lists no operation that took it, so the import records it as money paid out on Mar 2, 2026, the earliest day the history allows.',
+    ),
+  ).toBeInTheDocument();
+  expect(within(dialog()).getByLabelText('Entries to record')).toHaveTextContent(
+    /^Money paid in1Money paid out1$/,
+  );
 });
 
 describe('BROKER-IMPORT-UI the Import history dialog', () => {
