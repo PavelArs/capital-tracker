@@ -511,6 +511,12 @@ I know where its value comes from.
 - BYBIT-GAPS: **Given** an operation the API does not return (for example a P2P RUB
   purchase) **then** the owner enters it by hand, and the balance check against
   Bybit's reported balance shows any remaining difference.
+- BYBIT-GAP-COVERED: **Given** the owner counted a coin's difference from the balance Bybit
+  reported at a moment (it then holds everything of that coin Bybit had credited by then) **when**
+  a later sync reads an Earn yield or a deposit of that coin credited before that moment (Bybit
+  listed it late, or a list is read again) **then** it is not stored, so it never counts twice; one
+  credited after that balance is stored even if it came before the owner counted; a deleted counted
+  difference covers nothing, and withdrawals and trades are always stored.
 
 **US-3.4 / US-3.5** Ethereum and Solana wallets. Same criteria as US-3.1–3.3 with
 network-specific identity:

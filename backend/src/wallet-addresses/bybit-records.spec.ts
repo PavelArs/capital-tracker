@@ -24,6 +24,7 @@ import {
   tradeLeg,
   UnreadableAmount,
   withdrawalLeg,
+  withoutCountedLegs,
   withoutStoredYields,
 } from './bybit-records';
 
@@ -508,6 +509,71 @@ describe('BYBIT-COUNT-GAP: a difference the owner counts as a record', () => {
       0n,
     ]);
     expect(chainTxidPattern.test(leg.txid)).toBe(true);
+  });
+
+  it('BYBIT-GAP-COVERED: keeps when Bybit reported the balance the difference was counted from', () => {
+    const read = new Date('2026-10-09T21:00:00Z');
+    const leg = gapLeg({ requestId, coin: 'SOL', direction: 'in', quantity: '1' }, at, read);
+    expect(leg.blockTime).toBe(at.toISOString());
+    expect(leg.raw.coveredTo).toBe(read.toISOString());
+  });
+});
+
+describe('BYBIT-GAP-COVERED: a counted difference already holds what came before it', () => {
+  // The owner counted the SOL difference on 11 October; nothing of ADA was counted.
+  const counted = new Map([['SOL', Date.UTC(2026, 9, 11, 8, 33)]]);
+  const yieldOf = (coin: string, time: number, id: string) =>
+    earnLeg(
+      { id, coin, amount: '0.00002694', state: 'done', time, raw: { productId: '31' } },
+      'OnChain',
+    ) as BybitLeg;
+  const before = Date.UTC(2026, 9, 1);
+  const after = Date.UTC(2026, 9, 12);
+
+  it('leaves out a yield or deposit of the coin dated before the difference was counted', () => {
+    const early = yieldOf('SOL', before, '11');
+    const same = yieldOf('SOL', Date.UTC(2026, 9, 11, 8, 33), '12');
+    const late = yieldOf('SOL', after, '13');
+    const ada = yieldOf('ADA', before, '14');
+    const deposit = depositLeg({
+      internal: true,
+      id: 'internal-1',
+      coin: 'SOL',
+      chain: '',
+      amount: '0.5',
+      txID: '',
+      state: 'done',
+      time: before,
+      raw: {},
+    }) as BybitLeg;
+    expect(withoutCountedLegs([early, same, late, ada, deposit], counted)).toEqual([late, ada]);
+  });
+
+  it('keeps a withdrawal and a trade: their time is not when the balance alone changed', () => {
+    // A withdrawal is dated when it was asked for, and may leave after the count.
+    const withdrawal = withdrawalLeg({
+      withdrawId: '77',
+      txID: '',
+      internal: true,
+      coin: 'SOL',
+      chain: 'SOL',
+      amount: '0.1',
+      withdrawFee: '0',
+      state: 'done',
+      time: before,
+      raw: {},
+    }) as BybitLeg;
+    // A trade moves its quote coin too, which the count of SOL says nothing about.
+    const trade = tradeLeg(fill({ symbol: 'SOLUSDT', feeCurrency: 'SOL', execTime: before }));
+    expect(withoutCountedLegs([withdrawal, trade as BybitLeg], counted)).toEqual([
+      withdrawal,
+      trade,
+    ]);
+  });
+
+  it('keeps everything when no difference was counted', () => {
+    const legs = [yieldOf('SOL', before, '21')];
+    expect(withoutCountedLegs(legs, new Map())).toEqual(legs);
   });
 });
 
