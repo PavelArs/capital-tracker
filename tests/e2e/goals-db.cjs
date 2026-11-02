@@ -361,6 +361,11 @@ async function insightsPrices(db) {
  * with the pace worked out from its value. Pinned against the full history read.
  */
 async function sameAsHistory(service, snapshots, owner, goalId) {
+  // Both reads take their own instant: keep them off a UTC midnight (the period's first point)
+  // and a Moscow midnight at 21:00 UTC (the contribution months).
+  const day = 86_400_000;
+  const near = (offset) => (Date.now() - offset + day) % day > day - 30_000;
+  while (near(0) || near(21 * 3_600_000)) await new Promise((done) => setTimeout(done, 5_000));
   const view = await service.insights(owner, goalId);
   const history = await snapshots.history(owner, { period: '1Y', currency: view.currency });
   const [row] = await service.rows(service.source.manager, owner, goalId);
@@ -442,7 +447,7 @@ async function insights(db, service, snapshots, owners) {
   };
 
   stage = 'GOAL-WIDGETS ether and an unpriced holding before the year: the year starts valued';
-  const [early, late, started, unpricedOnly] = owners;
+  const [early, late, started, unpricedOnly, neverValued] = owners;
   const earlyGoal = await holdings(early, 600, [
     ['ETH', 500, '1500'],
     ['UNPRICED', 400, '900'],
@@ -505,6 +510,18 @@ async function insights(db, service, snapshots, owners) {
     marketMissing: 'value-unknown',
     total: null,
   });
+
+  stage = 'GOAL-WIDGETS only an unpriced holding all year: no start, never zero';
+  const neverGoal = await holdings(neverValued, 600, [['UNPRICED', 500, '900']]);
+  const fifth = await sameAsHistory(service, snapshots, neverValued, neverGoal);
+  assert.ok(fifth.history.points.every((point) => point.value === null));
+  assert.deepEqual(fifth.view.growth, {
+    from: null,
+    contributions: null,
+    market: null,
+    marketMissing: 'no-start',
+    total: null,
+  });
   console.log('PASS GOAL-WIDGETS insights equal the 1Y history in the goal currency');
 }
 
@@ -553,7 +570,8 @@ async function main() {
       ('goal-insights-early@example.invalid','synthetic-not-a-hash'),
       ('goal-insights-late@example.invalid','synthetic-not-a-hash'),
       ('goal-insights-started@example.invalid','synthetic-not-a-hash'),
-      ('goal-insights-unpriced@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('goal-insights-unpriced@example.invalid','synthetic-not-a-hash'),
+      ('goal-insights-never@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const { GoalsService } = require(modulePath);
     const {
       PortfolioSnapshotsService,
