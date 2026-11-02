@@ -398,6 +398,8 @@ async function sameAsHistory(service, snapshots, owner, goalId) {
       contributions: history.netFlow,
       market: history.marketEffect,
       marketMissing: history.marketMissing,
+      // DASH-START-ESTIMATE: as the history says it.
+      estimated: history.startEstimatedAssetCount > 0,
       total: history.change,
     },
   });
@@ -461,6 +463,7 @@ async function insights(db, service, snapshots, owners) {
     contributions: '3000',
     market: '1000',
     marketMissing: null,
+    estimated: false,
     total: '4000',
   });
 
@@ -474,10 +477,10 @@ async function insights(db, service, snapshots, owners) {
   assert.ok(second.view.growth.from > second.history.points[0].at);
   assert.deepEqual(
     { ...second.view.growth, from: null },
-    { from: null, contributions: '0', market: '0', marketMissing: null, total: '0' },
+    { from: null, contributions: '0', market: '0', marketMissing: null, estimated: false, total: '0' },
   );
 
-  stage = 'GOAL-WIDGETS a coin bought before its prices begin: the start of the year is read again';
+  stage = 'GOAL-WIDGETS a coin bought before its prices begin: the start takes its first later price';
   // Synthetic solana closes only for the last 100 days.
   await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
     SELECT 'SOL','USD','kraken',d,150,'daily-close'
@@ -491,12 +494,17 @@ async function insights(db, service, snapshots, owners) {
   assert.equal(third.history.excludedAssetCount, 0);
   assert.equal(third.history.points[0].complete, false, 'The stored start has no solana price');
   assert.equal(third.view.complete, false);
+  // DASH-START-ESTIMATE: solana is valued at its first later price, so the growth is known, all
+  // market (nothing put in), and marked estimated.
+  assert.equal(third.history.startEstimatedAssetCount, 1);
+  assert.notEqual(third.view.growth.market, null);
   assert.deepEqual(third.view.growth, {
     from: third.history.points[0].at,
     contributions: '0',
-    market: null,
-    marketMissing: 'priced-later',
-    total: null,
+    market: third.view.growth.total,
+    marketMissing: null,
+    estimated: true,
+    total: third.history.change,
   });
 
   stage = 'GOAL-WIDGETS only an unpriced holding bought within the year: no value, never zero';
@@ -508,6 +516,7 @@ async function insights(db, service, snapshots, owners) {
     contributions: '0',
     market: null,
     marketMissing: 'value-unknown',
+    estimated: false,
     total: null,
   });
 
@@ -520,6 +529,7 @@ async function insights(db, service, snapshots, owners) {
     contributions: null,
     market: null,
     marketMissing: 'no-start',
+    estimated: false,
     total: null,
   });
   console.log('PASS GOAL-WIDGETS insights equal the 1Y history in the goal currency');
