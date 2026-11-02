@@ -27,6 +27,7 @@ import {
   tradeLeg,
   UnreadableAmount,
   withdrawalLeg,
+  withoutCountedLegs,
   withoutStoredYields,
 } from './bybit-records';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
@@ -493,7 +494,27 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
               FROM wallet_address_transactions WHERE "addressId" = $1 AND txid = ANY($2::text[])`,
             [account.id, former],
           );
-    const legs = withoutStoredYields(read, stored);
+    // BYBIT-GAP-COVERED: of each coin, when Bybit reported the balance of the latest counted
+    // difference the owner has not deleted (a difference counted before that was stored: then).
+    const counted: { asset: string; countedAt: Date }[] =
+      read.length === 0
+        ? []
+        : await manager.query(
+            `SELECT t.asset,
+                max(coalesce((t.raw->>'coveredTo')::timestamptz, t."blockTime")) AS "countedAt"
+              FROM wallet_address_transactions t
+              WHERE t."addressId" = $1 AND t.raw->>'balanceGap' = 'true'
+                AND NOT EXISTS (SELECT 1 FROM chain_transaction_classifications h
+                  JOIN chain_transaction_classification_versions v ON v."addressId" = h."addressId"
+                    AND v.txid = h.txid AND v.version = h."currentVersion"
+                  WHERE h."addressId" = t."addressId" AND h.txid = t.txid AND v.status = 'deleted')
+              GROUP BY t.asset`,
+            [account.id],
+          );
+    const legs = withoutCountedLegs(
+      withoutStoredYields(read, stored),
+      new Map(counted.map((row) => [row.asset, row.countedAt.getTime()])),
+    );
     if (legs.length === 0) return 0;
     const values: unknown[] = [];
     const rows = legs.map((leg) => {
