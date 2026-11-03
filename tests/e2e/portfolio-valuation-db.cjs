@@ -38,6 +38,7 @@ function services(db) {
     transfers: make('owned-transfer.service', 'OwnedTransferService'),
     portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
     hidden: make('hidden-asset.service', 'HiddenAssetService'),
+    rewards: make('asset-reward.service', 'AssetRewardService'),
   };
 }
 async function fingerprint(db) {
@@ -195,6 +196,7 @@ async function wholePortfolio(db, s, f) {
       'costBasis',
       'knownCostSubtotal',
       'unknownCostCount',
+      'estimatedCostCount',
       'missingRateCount',
       'unrealizedPnl',
       'unrealizedReturnPercent',
@@ -660,6 +662,53 @@ async function propertyUnrealized(db, s) {
   console.log('PASS PV-PROPERTY-PNL PostgreSQL account class, exact mixed holdings and denominator');
 }
 
+async function estimatedCost(db, s) {
+  stage = 'COST-ESTIMATE a held lot without a purchase price is costed at its price on arrival';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password) VALUES
+    ('estimated-cost@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const coin = await instrument(s, owner, { name: 'Synthetic coin', symbol: 'XLM', assetType: 'crypto' });
+  const bond = await instrument(s, owner, { name: 'Synthetic bond', assetType: 'manual' });
+  const wallet = await account(s, owner, 'Rewards');
+  const reward = async (instrumentId, occurredAt, quantity) => {
+    await s.rewards.create(owner, wallet.id, {
+      requestId: randomUUID(),
+      expectedJournalRevision: wallet.revision,
+      assertReward: true,
+      instrumentId,
+      category: 'staking',
+      occurredAt,
+      orderWithinTimestamp: 0,
+      quantity,
+      acquisitionBasisUsd: null,
+      incomeValueUsd: null,
+    });
+    wallet.revision++;
+  };
+  // XLM: 2 USD before the reward and 3 now; the bond's only price is a hand value after its reward.
+  await observe(db, 'XLM', '2', '2025-01-03T00:00:00.000Z');
+  await observe(db, 'XLM', '3', ago(30).toISOString());
+  await reward(coin, '2025-01-05T00:00:00.000Z', '100');
+  await reward(bond, '2025-01-10T00:00:00.000Z', '2');
+  await s.prices.set(owner, bond, { requestId: randomUUID(), expectedRevision: 0,
+    observedAt: '2025-02-01T00:00:00.000Z', priceUsd: '100', assertReviewed: true });
+  const report = await read(s, owner);
+  assert.deepEqual(
+    [asset(report, coin).costBasis, asset(report, coin).unknownCostQuantity, asset(report, coin).estimatedCostQuantity],
+    ['200', '0', '100'],
+    'The latest price before the reward (2) costs it',
+  );
+  assert.deepEqual(
+    [asset(report, bond).costBasis, asset(report, bond).estimatedCostQuantity],
+    ['200', '2'],
+    'With none before, the first hand value after it (100) costs it',
+  );
+  assert.deepEqual([report.costBasis, report.unknownCostCount, report.estimatedCostCount], ['400', 0, 2]);
+  assert.equal(report.unrealizedPnl, '100', 'XLM 300 - 200, the bond at cost');
+  const lots = await s.portfolio.lots(owner, coin, {}, now);
+  assert.deepEqual(lots.lots.map((lot) => [lot.paid, lot.paidEstimated]), [['200', true]]);
+  console.log('PASS COST-ESTIMATE lots without a purchase price costed at the nearest stored price, stated');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -709,6 +758,7 @@ async function main() {
     await handValueCurrency(db, s);
     await nativeLotProvenance(db, s);
     await propertyUnrealized(db, s);
+    await estimatedCost(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

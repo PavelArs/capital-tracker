@@ -587,6 +587,9 @@ function Summary({
                       : NO_REAL_ACCOUNT}
                 </span>
               )}
+              {!showReal && (portfolio.estimatedCostCount ?? 0) > 0 && (
+                <span className="ui-sub">includes estimated purchase prices</span>
+              )}
               {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
             </>
           }

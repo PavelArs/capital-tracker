@@ -578,6 +578,22 @@ function AssetDetails({
             )}
           </Banner>
         )}
+        {Number(asset.estimatedCostQuantity ?? 0) > 0 && (
+          <Banner
+            tone="info"
+            action={
+              <ButtonLink
+                size="sm"
+                to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
+              >
+                Review transactions
+              </ButtonLink>
+            }
+          >
+            {quantity(asset.estimatedCostQuantity ?? '0')} {unit} has no purchase price, so its
+            price when it came in is used: cost basis and unrealized P&amp;L are estimated.
+          </Banner>
+        )}
         {missingRate && (
           <Banner tone="warn">
             {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia

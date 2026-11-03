@@ -26,6 +26,7 @@ import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
 import { useValueView } from '../shell/value-view';
+import { assetKey } from '../transactions/operation-format';
 import DashboardLoading, { AllocationLoading } from './DashboardLoading';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
@@ -69,7 +70,8 @@ function ChangeSplit({
   const { currency, marketEffect, marketMissing, marketReturnPercent, netFlow } = history;
   // Only the market part is a gain or a loss; money added is neither.
   const market = tone(marketEffect);
-  const unknown = unknownCostCoins(portfolio);
+  const unknown = costCoins(portfolio, 'unknownCostQuantity');
+  const estimatedCost = costCoins(portfolio, 'estimatedCostQuantity');
   const why = marketEffect === null ? marketMissingText(marketMissing) : null;
   const estimated = history.startEstimatedAssetCount ?? 0;
   return (
@@ -110,14 +112,64 @@ function ChangeSplit({
         </span>
       )}
       {/* Coins without a purchase price leave the cost basis and the profit incomplete: said
-          in words here, not only in the note beside the profit. */}
-      {unknown !== null && (
+          in words here, not only in the note beside the profit. Each links to its rows. */}
+      {unknown.length > 0 && (
         <span className="dashboard-split__item dashboard-split__unknown">
           <Icon name="info" className="shell-icon shell-icon--sm" />
-          {unknown} without purchase price
+          <CostCoins coins={unknown} /> without purchase price
+        </span>
+      )}
+      {/* COST-ESTIMATE: costed at their price when they came in. */}
+      {estimatedCost.length > 0 && (
+        <span className="dashboard-split__item dashboard-split__unknown">
+          <Icon name="info" className="shell-icon shell-icon--sm" />
+          <CostCoins coins={estimatedCost} /> with estimated purchase price
         </span>
       )}
     </div>
+  );
+}
+
+type CostCoin = { key: string; text: string; to: string };
+
+/** The held coins with that much of their quantity: unknown or estimated purchase price. */
+function costCoins(
+  portfolio: PortfolioValuation | null,
+  field: 'unknownCostQuantity' | 'estimatedCostQuantity',
+): CostCoin[] {
+  return (portfolio?.assets ?? [])
+    .filter((asset) => Number(asset[field] ?? 0) > 0)
+    .map((asset) => ({
+      key: asset.instrumentId,
+      text: `${quantity(asset[field] ?? '0')} ${asset.symbol ?? asset.name}`,
+      // COST-UNKNOWN: the Transactions rows that bring this coin in without a purchase price.
+      to: `/transactions?asset=${encodeURIComponent(assetKey(asset))}&cost=unknown`,
+    }));
+}
+
+/** Two coins as links to their rows, then how many more, linked to the Portfolio. */
+function CostCoins({ coins }: { coins: CostCoin[] }) {
+  const shown = coins.slice(0, 2);
+  const more = coins.length - shown.length;
+  return (
+    <>
+      {shown.map((coin, index) => (
+        <span key={coin.key}>
+          {index > 0 && ', '}
+          <Link className="ui-link" to={coin.to}>
+            {coin.text}
+          </Link>
+        </span>
+      ))}
+      {more > 0 && (
+        <>
+          {' and '}
+          <Link className="ui-link" to="/portfolio">
+            {more} more
+          </Link>
+        </>
+      )}
+    </>
   );
 }
 

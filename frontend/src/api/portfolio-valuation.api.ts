@@ -55,6 +55,8 @@ export interface LotAfterInflation {
   paidCurrency?: AccountingCurrency;
   /** True only for the full entered payment in this response currency. */
   paidExact?: boolean;
+  /** COST-ESTIMATE: no purchase price was entered; `paid` is its price when it came in. */
+  paidEstimated?: true;
   value: string | null;
   nominalPnl: string | null;
   real: {
@@ -91,6 +93,8 @@ export interface AssetValuation {
   costBasis: string | null;
   knownCostSubtotal: string;
   unknownCostQuantity: string;
+  /** COST-ESTIMATE: quantity costed at its price when it came in. Absent from older answers. */
+  estimatedCostQuantity?: string;
   missingRateQuantity: string;
   /** The quantity whose cost is known, the part that known-part figures below cover. */
   knownCostQuantity: string;
@@ -143,6 +147,8 @@ export interface PortfolioValuation {
   costBasis: string | null;
   knownCostSubtotal: string;
   unknownCostCount: number;
+  /** COST-ESTIMATE: held assets part of whose cost is estimated. Absent from older answers. */
+  estimatedCostCount?: number;
   missingRateCount: number;
   unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;

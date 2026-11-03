@@ -1694,3 +1694,30 @@ describe('Dashboard design alignment: the number and what it carries', () => {
     await waitFor(() => expect(split).toHaveTextContent('0.0087 BTC without purchase price'));
   });
 });
+
+describe('COST-ESTIMATE dashboard', () => {
+  it('COST-ESTIMATE links each coin without or with an estimated purchase price to its transactions', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({
+        currency: currency ?? 'USD',
+        assets: [
+          asset(1, 'Bitcoin', 'BTC', '4200', { unknownCostQuantity: '0.0087' }),
+          asset(2, 'Ethereum', 'ETH', '2000', { estimatedCostQuantity: '1.5' }),
+        ],
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const split = within(hero).getByLabelText('What changed');
+    await waitFor(() => expect(split).toHaveTextContent('0.0087 BTC without purchase price'));
+    expect(split).toHaveTextContent('1.5 ETH with estimated purchase price');
+    expect(within(split).getByRole('link', { name: '0.0087 BTC' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=BTC&cost=unknown',
+    );
+    expect(within(split).getByRole('link', { name: '1.5 ETH' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=ETH&cost=unknown',
+    );
+  });
+});
