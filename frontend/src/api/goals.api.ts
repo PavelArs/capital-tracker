@@ -112,7 +112,7 @@ export interface GoalInsights {
     market: string | null;
     // Why market is unknown; absent in an answer saved before it was added.
     marketMissing?: MarketMissing | null;
-    // The start values an asset at its first later price; absent in an answer saved before it.
+    // The start values an asset at its nearest trade or later price; absent in an answer saved before it.
     estimated?: boolean;
     total: string | null;
   };

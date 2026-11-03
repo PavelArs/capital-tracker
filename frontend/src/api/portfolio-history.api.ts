@@ -50,7 +50,7 @@ export interface PortfolioHistory {
   /** Current unpriced assets excluded consistently from value, flows and P&L. */
   excludedAssetCount?: number;
   excludedDepositCount?: number;
-  // Assets held at the start with no price then, valued at their first later price: the change
+  // Assets held at the start with no price then, valued at their nearest trade or later price: the change
   // and the market part are estimates when above 0. Absent in an answer saved before it.
   startEstimatedAssetCount?: number;
   change: string | null;

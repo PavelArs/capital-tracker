@@ -203,8 +203,8 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
         )}
         {data.growth.estimated && (
           <p className="ui-sub">
-            Market is estimated: an asset you held at the start had no price then, so its first
-            later price is used.
+            Market is estimated: an asset you held at the start had no price then, so its nearest
+            trade or later price is used.
           </p>
         )}
         <p className="ui-sub">
