@@ -622,9 +622,10 @@ export class OperationListService {
 }
 
 /**
- * UNPRICED-FILTER: when each asset's first stored price is, as the history reads prices: a market
- * price of its symbol, or a hand value or broker price of the asset. Null: none stored yet. An
- * asset with a fixed price (cash) needs none and is left out.
+ * UNPRICED-FILTER: when each asset's first price is, as the history reads prices: a market price
+ * of its symbol, or a hand value or broker price of the asset, or its own first buy or sale for
+ * money (DASH-TRADE-ESTIMATE). Null: none yet. An asset with a fixed price (cash) needs none and
+ * is left out.
  */
 async function firstPrices(
   manager: EntityManager,
@@ -633,7 +634,7 @@ async function firstPrices(
 ): Promise<Map<string, string | null>> {
   if (ids.length === 0) return new Map();
   const rows: { id: string; first: Date | null }[] = await manager.query(
-    `SELECT i.id,
+    `SELECT i.id, LEAST(
         CASE WHEN i."priceSource"='market' THEN (
           SELECT min(p."observedAt") FROM price_observations p
           WHERE p.asset=upper(i.symbol) AND p."quoteCurrency"=$3)
@@ -645,7 +646,15 @@ async function firstPrices(
             ORDER BY v."observedAt", v.revision DESC) h WHERE h.kind='set'),
           (SELECT min(b."observedAt") FROM broker_price_observations b
             WHERE b."ownerId"=$1 AND b."instrumentId"=i.id))
-        END AS first
+        END,
+        -- DASH-TRADE-ESTIMATE: the asset's own buy or sale for money prices it from then on.
+        (SELECT min(v."occurredAt") FROM account_trades t
+          JOIN account_trade_versions v ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId"
+            AND v."tradeId"=t.id AND v.version=t."currentVersion"
+          LEFT JOIN account_trade_version_purposes u ON u."ownerId"=v."ownerId"
+            AND u."accountId"=v."accountId" AND u."tradeId"=v."tradeId" AND u.version=v.version
+          WHERE t."ownerId"=$1 AND v."instrumentId"=i.id AND v.kind<>'void' AND u.purpose IS NULL
+            AND v."grossUsd">0 AND v.quantity>0)) AS first
       FROM accounting_instruments i
       WHERE i."ownerId"=$1 AND i.id=ANY($2::uuid[]) AND i."priceSource"<>'fixed'`,
     [owner, ids, QUOTE_CURRENCY],

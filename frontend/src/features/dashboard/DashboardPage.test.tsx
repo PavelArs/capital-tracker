@@ -710,7 +710,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     expect(within(hero).getByLabelText('What changed')).toHaveTextContent(
-      'Estimated: 2 assets you held at the start had no price then, so their first later price is used',
+      'Estimated: 2 assets you held at the start had no price then, so their nearest trade or later prices are used',
     );
     cleanup();
     get.mockResolvedValue(history({ startEstimatedAssetCount: 0 }));

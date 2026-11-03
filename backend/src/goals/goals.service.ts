@@ -104,7 +104,7 @@ export class GoalsService {
         contributions: year.netFlow,
         market: year.marketEffect,
         marketMissing: year.marketMissing,
-        // DASH-START-ESTIMATE: the start values an asset at its first later price.
+        // DASH-START-ESTIMATE: the start values an asset at its nearest trade or later price.
         estimated: year.startEstimatedAssetCount > 0,
         total: year.change,
       },

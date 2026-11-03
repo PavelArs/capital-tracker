@@ -407,11 +407,9 @@ async function rates(db, s, f) {
   const usd = await s.snapshots.history(early, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(usd.points.every((entry) => entry.invested === '40000'));
   // BTC was held at the first point but has no stored price before 2025-01-02, so the start
-  // values it at its first later price (DASH-START-ESTIMATE): the change is all market, and an
-  // estimate, never the whole value.
-  const [{ first }] = await db.query(`SELECT price::text AS first FROM price_observations
-    WHERE asset='BTC' AND "quoteCurrency"='USD' ORDER BY "observedAt" LIMIT 1`);
-  const estimated = minus(usd.value, first);
+  // values it at its own purchase price, 40000 (DASH-TRADE-ESTIMATE): the change is all market,
+  // and an estimate, never the whole value.
+  const estimated = minus(usd.value, '40000');
   assert.deepEqual(
     [usd.netFlow, usd.marketEffect, usd.change, usd.marketMissing, usd.startEstimatedAssetCount],
     ['0', estimated, estimated, null, 1],

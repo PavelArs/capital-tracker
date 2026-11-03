@@ -168,7 +168,7 @@ it('DASH-START-ESTIMATE GOAL-GROWTH marks the market part estimated', async () =
   });
   render(<GoalInsights goal={goal} />);
   const note = await screen.findByText(
-    'Market is estimated: an asset you held at the start had no price then, so its first later price is used.',
+    'Market is estimated: an asset you held at the start had no price then, so its nearest trade or later price is used.',
   );
   expect(screen.getByRole('region', { name: 'Where the growth came from' })).toContainElement(note);
 });

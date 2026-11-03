@@ -13,6 +13,7 @@ import {
   PortfolioSnapshotsService,
   pricesAt,
   type SeriesInputs,
+  tradeSeries,
   valuesAt,
 } from './portfolio-snapshots.service';
 import { seriesInstants } from './snapshot-series';
@@ -364,6 +365,7 @@ describe('a period that starts before an asset had a price', () => {
     ({
       valuation: { instruments: [], ledgers: new Map([['ledger', { splits }]]) },
       market: new Map(),
+      trades: new Map(),
       manual: new Map([
         [
           'asset-1',
@@ -395,5 +397,100 @@ describe('a period that starts before an asset had a price', () => {
     expect(
       pricesAt(inputs(split), day('2026-10-12T00:00:00Z'), true).manual.get('asset-1'),
     ).toBeUndefined();
+  });
+});
+
+describe('DASH-TRADE-ESTIMATE an asset without a stored price takes its own trade prices', () => {
+  const day = (iso: string) => Date.parse(iso);
+  const bond = { id: 'bond-1', name: 'Bond', symbol: null, priceSource: 'manual' };
+  const trade = (at: string) => ({ at: day(at), price: '1000', source: 'trade', currency: 'RUB' });
+  const inputs = (manual = new Map<string, unknown[]>()) =>
+    ({
+      valuation: { instruments: [bond], ledgers: new Map([['ledger', { splits: [] }]]) },
+      market: new Map(),
+      manual,
+      trades: new Map([['bond-1', [trade('2026-09-20T10:00:00Z'), trade('2026-10-07T15:39:00Z')]]]),
+    }) as unknown as SeriesInputs;
+
+  it('DASH-TRADE-ESTIMATE values a never-priced asset at its latest trade, only when asked', () => {
+    const start = day('2026-10-03T00:00:00Z');
+    expect(pricesAt(inputs(), start).manual.get('bond-1')).toBeUndefined();
+    expect(pricesAt(inputs(), start, true).manual.get('bond-1')).toEqual({
+      priceUsd: '1000',
+      observedAt: '2026-09-20T10:00:00.000Z',
+      source: 'trade',
+      currency: 'RUB',
+    });
+  });
+
+  it('DASH-TRADE-ESTIMATE takes the first later trade or price when none comes before', () => {
+    const stored = new Map([
+      ['bond-1', [{ at: day('2026-10-15T00:00:00Z'), price: '1050', source: 'tbank' }]],
+    ]);
+    expect(
+      pricesAt(inputs(stored), day('2026-09-01T00:00:00Z'), true).manual.get('bond-1'),
+    ).toMatchObject({ priceUsd: '1000', observedAt: '2026-09-20T10:00:00.000Z', source: 'trade' });
+  });
+
+  it('DASH-TRADE-ESTIMATE prefers an earlier trade to a later stored price, and a stored one to a trade', () => {
+    const later = new Map([
+      ['bond-1', [{ at: day('2026-10-15T00:00:00Z'), price: '1050', source: 'tbank' }]],
+    ]);
+    expect(
+      pricesAt(inputs(later), day('2026-10-03T00:00:00Z'), true).manual.get('bond-1'),
+    ).toMatchObject({ observedAt: '2026-09-20T10:00:00.000Z', source: 'trade' });
+    const earlier = new Map([
+      ['bond-1', [{ at: day('2026-09-25T00:00:00Z'), price: '990', source: 'tbank' }]],
+    ]);
+    expect(
+      pricesAt(inputs(earlier), day('2026-10-03T00:00:00Z'), true).manual.get('bond-1'),
+    ).toMatchObject({ priceUsd: '990', source: 'tbank' });
+  });
+
+  it('DASH-TRADE-ESTIMATE reads a price from each buy or sale as paid, and none from other entries', () => {
+    const entry = (over: Record<string, unknown>) => ({
+      instrumentId: 'bond-1',
+      side: 'buy',
+      occurredAt: '2026-09-20T10:00:00.000Z',
+      quantity: '7',
+      grossUsd: '81.66',
+      ...over,
+    });
+    const valuation = {
+      ledgers: new Map([
+        [
+          'ledger',
+          {
+            accounts: new Map([
+              [
+                'account',
+                {
+                  trades: [
+                    entry({ paid: { currency: 'RUB', gross: '7000' } }),
+                    entry({
+                      side: 'sell',
+                      occurredAt: '2026-10-07T15:39:00.000Z',
+                      quantity: '3',
+                      grossUsd: '1',
+                    }),
+                    entry({ purpose: 'income', occurredAt: '2026-10-08T00:00:00.000Z' }),
+                    entry({ grossUsd: '0', occurredAt: '2026-10-09T00:00:00.000Z' }),
+                  ],
+                },
+              ],
+            ]),
+          },
+        ],
+      ]),
+    } as unknown as ValuationInputs;
+    expect(tradeSeries(valuation).get('bond-1')).toEqual([
+      { at: day('2026-09-20T10:00:00Z'), price: '1000', source: 'trade', currency: 'RUB' },
+      {
+        at: day('2026-10-07T15:39:00Z'),
+        price: '0.333333333333333333333333333333',
+        source: 'trade',
+        currency: 'USD',
+      },
+    ]);
   });
 });
