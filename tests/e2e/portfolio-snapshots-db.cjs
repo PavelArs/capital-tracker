@@ -44,6 +44,7 @@ function services(db, env = {}) {
     accounting: make('accounting.service', 'AccountingService'),
     trades: make('trade.service', 'TradeService'),
     prices: make('manual-price.service', 'ManualPriceService'),
+    rewards: make('asset-reward.service', 'AssetRewardService'),
     snapshots: new PortfolioSnapshotsService(db, new ConfigService(env)),
   };
 }
@@ -623,7 +624,7 @@ async function pricedSubset(db, s) {
 }
 
 async function estimatedStart(db, s) {
-  stage = 'DASH-START-ESTIMATE values an asset held at the start at its first later price';
+  stage = 'DASH-START-ESTIMATE DASH-TRADE-ESTIMATE values an asset held at the start without a price';
   const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
     VALUES('estimated-start@example.invalid','synthetic-not-a-hash') RETURNING id`);
   const cash = await instrument(s, owner, { name: 'Estimate cash', symbol: 'USD', assetType: 'fiat' });
@@ -638,20 +639,39 @@ async function estimatedStart(db, s) {
   const at = new Date('2026-10-18T10:00:00Z');
   let week = await s.snapshots.history(owner, { period: '7D', currency: 'USD' }, at);
   assert.equal(week.value, '1150');
-  assert.equal(week.marketMissing, null, 'A later price stands in for the missing start price');
+  assert.equal(week.marketMissing, null, 'An estimate stands in for the missing start price');
   assert.equal(week.startEstimatedAssetCount, 1, 'The estimate is stated');
-  assert.deepEqual([week.netFlow, week.marketEffect, week.change], ['0', '30', '30'],
-    'The first later price (120) values the start, not the latest (150)');
+  assert.deepEqual([week.netFlow, week.marketEffect, week.change], ['0', '50', '50'],
+    'DASH-TRADE-ESTIMATE: its own purchase before the start (100) values it, not a later price');
   const day = await s.snapshots.history(owner, { period: '24H', currency: 'USD' }, at);
   assert.deepEqual([day.startEstimatedAssetCount, day.marketEffect], [0, '30'], 'A start with a price needs no estimate');
+  // A coin that came in as a reward has no trade: the start takes its first later price (70).
+  const staked = await instrument(s, owner, { name: 'Staked coin', assetType: 'manual' });
+  await s.rewards.create(owner, target.id, {
+    requestId: randomUUID(),
+    expectedJournalRevision: target.revision,
+    assertReward: true,
+    instrumentId: staked,
+    category: 'staking',
+    occurredAt: '2026-10-03T00:00:00Z',
+    orderWithinTimestamp: 0,
+    quantity: '1',
+    acquisitionBasisUsd: null,
+    incomeValueUsd: '60',
+  });
+  target.revision++;
+  await s.prices.set(owner, staked, { requestId: randomUUID(), expectedRevision: 0, observedAt: '2026-10-15T00:00:00Z', priceUsd: '70', assertReviewed: true });
+  week = await s.snapshots.history(owner, { period: '7D', currency: 'USD' }, at);
+  assert.deepEqual([week.value, week.startEstimatedAssetCount, week.marketEffect], ['1220', 2, '50'],
+    'DASH-START-ESTIMATE: the reward coin at its first later price (70) at both ends');
   // An asset that never had a price is excluded at both ends; the estimate still holds.
   const never = await instrument(s, owner, { name: 'Never priced', assetType: 'manual' });
   await trade(s, owner, target, never, 'buy', '2026-10-02T03:00:00Z', '1', '50');
   week = await s.snapshots.history(owner, { period: '7D', currency: 'USD' }, at);
   assert.equal(week.excludedAssetCount, 1);
-  assert.deepEqual([week.marketMissing, week.startEstimatedAssetCount, week.marketEffect], [null, 1, '30'],
-    'The same estimate over the priced subset');
-  console.log('PASS DASH-START-ESTIMATE start valued at the first later price, stated, priced subset kept');
+  assert.deepEqual([week.marketMissing, week.startEstimatedAssetCount, week.marketEffect], [null, 2, '50'],
+    'The same estimates over the priced subset');
+  console.log('PASS DASH-START-ESTIMATE DASH-TRADE-ESTIMATE start valued at the latest trade or first later price, stated, priced subset kept');
 }
 
 async function inputsRevision(db, s) {

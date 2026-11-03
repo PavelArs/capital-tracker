@@ -107,8 +107,8 @@ function ChangeSplit({
         <span className="dashboard-split__item dashboard-split__unknown">
           <Icon name="info" className="shell-icon shell-icon--sm" />
           {estimated === 1
-            ? 'Estimated: an asset you held at the start had no price then, so its first later price is used'
-            : `Estimated: ${estimated} assets you held at the start had no price then, so their first later price is used`}
+            ? 'Estimated: an asset you held at the start had no price then, so its nearest trade or later price is used'
+            : `Estimated: ${estimated} assets you held at the start had no price then, so their nearest trade or later prices are used`}
         </span>
       )}
       {/* Coins without a purchase price leave the cost basis and the profit incomplete: said

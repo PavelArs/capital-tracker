@@ -91,6 +91,8 @@ export interface SeriesInputs {
   valuation: ValuationInputs;
   market: Map<string, PricePoint[]>;
   manual: Map<string, PricePoint[]>;
+  /** DASH-TRADE-ESTIMATE: each asset's own buy and sale prices, by asset id, oldest first. */
+  trades: Map<string, PricePoint[]>;
 }
 
 // Every owner table a snapshot value depends on. A future operation source joins this list.
@@ -186,11 +188,38 @@ function parseQuery(query: unknown): {
   return { period: period as HistoryPeriod, currency };
 }
 
-/** Each stored price at the instant, as the live valuation would have read it then. */
+/**
+ * DASH-TRADE-ESTIMATE: each asset's own buy and sale prices, as paid (RUB or EUR when paid so,
+ * else USD), oldest first. Other entries (income, gifts and the like) and a trade for nothing
+ * give no price. Rounded down at 30 places.
+ */
+export function tradeSeries(valuation: ValuationInputs): Map<string, PricePoint[]> {
+  const series = new Map<string, PricePoint[]>();
+  for (const ledger of new Set(valuation.ledgers.values()))
+    for (const account of ledger.accounts.values())
+      for (const trade of account.trades) {
+        if (trade.purpose) continue;
+        const amount = canonicalDecimalToAtoms(trade.paid?.gross ?? trade.grossUsd);
+        const units = canonicalDecimalToAtoms(trade.quantity);
+        if (amount <= 0n || units <= 0n) continue;
+        const points = series.get(trade.instrumentId) ?? [];
+        points.push({
+          at: Date.parse(trade.occurredAt),
+          price: formatAtoms((amount * 10n ** 30n) / units),
+          source: 'trade',
+          currency: trade.paid?.currency ?? 'USD',
+        });
+        series.set(trade.instrumentId, points);
+      }
+  for (const points of series.values()) points.sort((left, right) => left.at - right.at);
+  return series;
+}
+
 /**
  * Each stored price at the instant, as the live valuation would have read it then. With
- * `laterIfNone` (DASH-START-ESTIMATE), a series whose first price comes after the instant gives
- * that first price instead, unless a share split falls between the two: units would differ.
+ * `laterIfNone`, an asset with no stored price at or before the instant is estimated: from its
+ * own latest trade at or before it (DASH-TRADE-ESTIMATE), else from its first later stored price
+ * or trade (DASH-START-ESTIMATE), unless a share split falls between: units would differ.
  */
 export function pricesAt(inputs: SeriesInputs, at: number, laterIfNone = false): PortfolioPrices {
   // Every ledger carries the owner's splits; one is enough.
@@ -201,35 +230,56 @@ export function pricesAt(inputs: SeriesInputs, at: number, laterIfNone = false):
       const effective = Date.parse(split.effectiveAt);
       return ids.includes(split.instrumentId) && effective > at && effective <= until;
     });
+  const estimate = (points: readonly PricePoint[], ids: readonly string[]) => {
+    const trades = ids
+      .flatMap((id) => inputs.trades.get(id) ?? [])
+      .sort((left, right) => left.at - right.at);
+    const before = latestAtOrBefore(trades, at);
+    if (before) return before;
+    const later = [...points, ...trades]
+      .filter((candidate) => candidate.at > at)
+      .sort((left, right) => left.at - right.at)[0];
+    return later && !splitBefore(ids, later.at) ? later : undefined;
+  };
+  const price = (point: PricePoint): StoredPrice => ({
+    priceUsd: point.price,
+    observedAt: iso(point.at),
+    source: point.source,
+    ...(point.currency ? { currency: point.currency } : {}),
+    ...(point.unitsAt === undefined ? {} : { unitsAt: iso(point.unitsAt) }),
+  });
+  // Market prices are keyed by symbol, hand and broker prices by the asset's id.
+  // A market price is the symbol's; a hand-priced asset with that symbol is another asset.
+  const symbolIds = (symbol: string) =>
+    inputs.valuation.instruments
+      .filter(
+        (instrument) =>
+          instrument.priceSource === 'market' && instrument.symbol?.toUpperCase() === symbol,
+      )
+      .map((instrument) => instrument.id);
   const stored = (series: Map<string, PricePoint[]>, idsOf: (key: string) => string[]) => {
     const prices = new Map<string, StoredPrice>();
     for (const [key, points] of series) {
-      let point = latestAtOrBefore(points, at);
-      if (!point && laterIfNone) {
-        const later = points.find((candidate) => candidate.at > at);
-        if (later && !splitBefore(idsOf(key), later.at)) point = later;
-      }
-      if (point)
-        prices.set(key, {
-          priceUsd: point.price,
-          observedAt: iso(point.at),
-          source: point.source,
-          ...(point.currency ? { currency: point.currency } : {}),
-          ...(point.unitsAt === undefined ? {} : { unitsAt: iso(point.unitsAt) }),
-        });
+      const point =
+        latestAtOrBefore(points, at) ?? (laterIfNone ? estimate(points, idsOf(key)) : undefined);
+      if (point) prices.set(key, price(point));
     }
     return prices;
   };
-  return {
-    // Market prices are keyed by symbol, hand and broker prices by the asset's id.
-    market: stored(inputs.market, (symbol) =>
-      inputs.valuation.instruments
-        .filter((instrument) => instrument.symbol?.toUpperCase() === symbol)
-        .map((instrument) => instrument.id),
-    ),
-    manual: stored(inputs.manual, (id) => [id]),
-    splits,
-  };
+  const market = stored(inputs.market, symbolIds);
+  const manual = stored(inputs.manual, (id) => [id]);
+  // An asset with no stored price at all can still be estimated from its own trades.
+  if (laterIfNone)
+    for (const instrument of inputs.valuation.instruments) {
+      if (instrument.priceSource === 'fixed') continue;
+      const byMarket = instrument.priceSource === 'market';
+      const key = byMarket ? instrument.symbol?.toUpperCase() : instrument.id;
+      const [prices, series] = byMarket ? [market, inputs.market] : [manual, inputs.manual];
+      if (!key || prices.has(key) || series.has(key)) continue;
+      const point = estimate([], byMarket ? symbolIds(key) : [key]);
+      if (point) prices.set(key, price(point));
+    }
+  return { market, manual, splits };
 }
 
 /** Portfolio value at one instant in every accounting currency at that day's rate. */
@@ -429,6 +479,7 @@ async function readSeriesInputs(
         price: parseDecimal(row.price, false),
       })),
     ),
+    trades: tradeSeries(valuation),
     manual: withBrokerPrices(
       manualSeries(
         manual.map((row) => ({
@@ -593,7 +644,7 @@ export class PortfolioSnapshotsService {
         complete: points.every((point) => point.complete),
         excludedAssetCount: scope.excluded.size,
         excludedDepositCount: scope.excludedDeposits.size,
-        // Assets held at the period's start valued at their first later price: when above 0, the
+        // Assets held at the period's start valued at their nearest trade or later price: when above 0, the
         // change and the market part are estimates.
         startEstimatedAssetCount,
         contributions: monthlyContributions(
@@ -783,8 +834,9 @@ export class PortfolioSnapshotsService {
       );
       start = { ...start, unpriced: again.unpriced, unrated: again.unrated, held: again.held };
     }
-    // DASH-START-ESTIMATE: an asset held at the start whose prices begin later is valued at its
-    // first later price, so the period's change and market are estimates, not unknown.
+    // DASH-START-ESTIMATE: an asset held at the start with no stored price then is valued at its
+    // own latest trade before it, else its first later price or trade (DASH-TRADE-ESTIMATE), so
+    // the period's change and market are estimates, not unknown.
     let startEstimatedAssetCount = 0;
     if (start?.unpriced === true && start.held !== undefined) {
       // Prices after the start are needed here: no `until`.
