@@ -576,7 +576,7 @@ async function unpricedEnd(db, s, f) {
 
 async function unpricedStart(db, s, f) {
   stage =
-    'HIST-START-UNPRICED DASH-START-ESTIMATE a period that starts before an asset has a price takes its first later price';
+    'HIST-START-UNPRICED DASH-TRADE-ESTIMATE a period that starts before an asset has a price takes its purchase price';
   const { unpriced } = f;
   const eth = (
     await s.accounting.createInstrument(unpriced, {
@@ -588,9 +588,10 @@ async function unpricedStart(db, s, f) {
   ).value.id;
   const wallet = await account(s, unpriced, 'Unpriced wallet', '2026-08-01T00:00:00.000Z');
   await trade(db, s, unpriced, wallet, eth, 'buy', '2026-08-10T10:00:00.000Z', '2', '5000');
-  // The first ETH price arrives after the period has started: 2026-09-10.
+  // The first ETH price arrives after the period has started: 2026-09-10, at 2600, above the
+  // 2500 a unit the purchase paid.
   await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-    SELECT 'ETH','USD','kraken',d, 2500, 'daily-close'
+    SELECT 'ETH','USD','kraken',d, 2600, 'daily-close'
     FROM generate_series(timestamptz '2026-09-10 00:00+00', timestamptz '2026-10-04 00:00+00', interval '1 day') d`);
   const history = await s.snapshots.history(unpriced, { period: '1M', currency: 'USD' }, now);
   assert.equal(history.points[0].at, '2026-09-05T00:00:00.000Z');
@@ -599,18 +600,19 @@ async function unpricedStart(db, s, f) {
     false,
     'The start left out ETH, which had no price then',
   );
-  assert.equal(history.value, '5000', 'The end is priced');
-  // The start values ETH at its first later price, 2500, and says it is an estimate.
+  assert.equal(history.value, '5200', 'The end is priced');
+  // The start values ETH at its own purchase price, 2500, not the first later price (2600), and
+  // says it is an estimate.
   assert.deepEqual(
     [history.change, history.changePercent, history.marketEffect, history.marketReturnPercent],
-    ['0', '0.00', '0', '0.00'],
-    'The change and market effect are estimated from the first later price',
+    ['200', '4.00', '200', '4.00'],
+    'The change and market effect are estimated from the purchase price',
   );
   assert.equal(history.marketMissing, null, 'The market effect is known, as an estimate');
   assert.equal(history.startEstimatedAssetCount, 1, 'The estimate is stated');
   assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
   console.log(
-    'PASS HIST-START-UNPRICED DASH-START-ESTIMATE a start with a missing price takes the first later price, stated as an estimate; the flows stay',
+    'PASS HIST-START-UNPRICED DASH-TRADE-ESTIMATE a start with a missing price takes the purchase price, stated as an estimate; the flows stay',
   );
 }
 

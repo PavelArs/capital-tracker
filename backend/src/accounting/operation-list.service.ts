@@ -653,7 +653,11 @@ async function firstPrices(
             AND v."tradeId"=t.id AND v.version=t."currentVersion"
           LEFT JOIN account_trade_version_purposes u ON u."ownerId"=v."ownerId"
             AND u."accountId"=v."accountId" AND u."tradeId"=v."tradeId" AND u.version=v.version
-          WHERE t."ownerId"=$1 AND v."instrumentId"=i.id AND v.kind<>'void' AND u.purpose IS NULL
+          -- A market price is the symbol's, so is a trade of any asset with that symbol.
+          WHERE t."ownerId"=$1 AND v.kind<>'void' AND u.purpose IS NULL
+            AND v."instrumentId" IN (SELECT j.id FROM accounting_instruments j WHERE j."ownerId"=$1
+              AND (j.id=i.id OR (i."priceSource"='market' AND j."priceSource"='market'
+                AND upper(j.symbol)=upper(i.symbol))))
             AND v."grossUsd">0 AND v.quantity>0)) AS first
       FROM accounting_instruments i
       WHERE i."ownerId"=$1 AND i.id=ANY($2::uuid[]) AND i."priceSource"<>'fixed'`,

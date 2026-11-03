@@ -447,6 +447,48 @@ describe('DASH-TRADE-ESTIMATE an asset without a stored price takes its own trad
     ).toMatchObject({ priceUsd: '990', source: 'tbank' });
   });
 
+  it('DASH-TRADE-ESTIMATE prices a market coin with no stored price from a trade of either asset with its symbol', () => {
+    const coin = (id: string) => ({ id, name: 'Tether', symbol: 'usdt', priceSource: 'market' });
+    const market = {
+      valuation: {
+        instruments: [coin('usdt-tron'), coin('usdt-eth')],
+        ledgers: new Map([['ledger', { splits: [] }]]),
+      },
+      market: new Map(),
+      manual: new Map(),
+      trades: new Map([
+        [
+          'usdt-eth',
+          [{ at: day('2026-09-20T10:00:00Z'), price: '1', source: 'trade', currency: 'USD' }],
+        ],
+      ]),
+    } as unknown as SeriesInputs;
+    expect(pricesAt(market, day('2026-10-03T00:00:00Z'), true).market.get('USDT')).toMatchObject({
+      priceUsd: '1',
+      source: 'trade',
+    });
+  });
+
+  it('DASH-TRADE-ESTIMATE takes no later trade across a share split', () => {
+    const split = {
+      ...inputs(),
+      valuation: {
+        instruments: [bond],
+        ledgers: new Map([
+          [
+            'ledger',
+            {
+              splits: [
+                { instrumentId: 'bond-1', effectiveAt: '2026-09-10T00:00:00.000Z', ratio: 2 },
+              ],
+            },
+          ],
+        ]),
+      },
+    } as unknown as SeriesInputs;
+    expect(pricesAt(split, day('2026-09-01T00:00:00Z'), true).manual.get('bond-1')).toBeUndefined();
+  });
+
   it('DASH-TRADE-ESTIMATE reads a price from each buy or sale as paid, and none from other entries', () => {
     const entry = (over: Record<string, unknown>) => ({
       instrumentId: 'bond-1',
