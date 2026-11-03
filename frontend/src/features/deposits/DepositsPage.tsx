@@ -18,7 +18,7 @@ import { DASH } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import { useInflationBasis } from '../shell/inflation-basis';
 import { useMainCurrency } from '../shell/main-currency';
-import { netWorthUnknown } from '../shell/net-worth';
+import { estimateMark, netWorthUnknown, shareBase } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
@@ -245,9 +245,10 @@ export default function DepositsPage() {
   const net = portfolio?.currency === shown ? portfolio : null;
   // Why there is no share of it: unknown, zero or below zero. Missing is not zero.
   const unknown = net && netWorthUnknown(net);
-  // Display only: the share is a ratio of two exact totals in the same currency, both known.
-  const share =
-    total !== null && net && !unknown ? (Number(total) / Number(net.totalValue)) * 100 : null;
+  // Display only: a ratio of two exact totals in the same currency, estimated against the known
+  // net worth while it leaves something out (NW-SHARE-ESTIMATE).
+  const base = net && shareBase(net);
+  const share = total !== null && base ? (Number(total) / base.value) * 100 : null;
 
   return (
     <div className="shell-page">
@@ -290,8 +291,12 @@ export default function DepositsPage() {
               {(share !== null || (total !== null && unknown)) && (
                 <Stat
                   label="Share of net worth"
-                  value={share === null ? DASH : `${shareFormat.format(share)}%`}
-                  hint={share === null && unknown ? unknown : undefined}
+                  value={
+                    share === null
+                      ? DASH
+                      : `${estimateMark(base?.estimated)}${shareFormat.format(share)}%`
+                  }
+                  hint={(share === null ? unknown : base?.estimated) || undefined}
                 />
               )}
             </Stats>

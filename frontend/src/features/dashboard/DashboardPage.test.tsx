@@ -801,6 +801,16 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(screen.queryByRole('region', { name: 'Net worth' })).toBeNull();
   });
 
+  it('NW-SHARE-ESTIMATE marks the shares estimated while net worth leaves something out', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({ currency: currency ?? 'USD', interestMissingDepositCount: 1 }),
+    );
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    const [first] = within(top).getAllByRole('row').slice(1);
+    expect(first.textContent).toBe('Bitcoin0.05 BTC$2,100.00-0.80%$4,200.00≈42.00%');
+  });
+
   it('DASH-TOP-BUSY says the Top assets card is busy while the valuation loads', async () => {
     valued.mockReturnValue(new Promise(() => {}));
     renderPage();

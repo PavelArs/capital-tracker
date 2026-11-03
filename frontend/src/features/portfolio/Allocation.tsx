@@ -206,7 +206,11 @@ export default function Allocation({
                 <span className="portfolio-slices__value">
                   {money(slice.value, portfolio.currency)}
                 </span>
-                <span className="portfolio-slices__percent">{shareText(slice.percent)}</span>
+                <span className="portfolio-slices__percent">
+                  {/* NW-SHARE-ESTIMATE: of a net worth that leaves out what the note below says. */}
+                  {!portfolio.allocation.complete && slice.percent !== null ? '≈' : ''}
+                  {shareText(slice.percent)}
+                </span>
               </li>
             ))}
           </ul>

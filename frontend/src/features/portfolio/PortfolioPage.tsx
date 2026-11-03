@@ -22,6 +22,7 @@ import { type AccountClasses, heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
+import { estimateMark, shareBase } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
@@ -94,13 +95,17 @@ export function groupSubtotal(rows: readonly AssetValuation[]): {
   };
 }
 
-/** A group's share of the portfolio, display-only; none while the group or the total is partial. */
-function groupShare(subtotal: ReturnType<typeof groupSubtotal>, total: string | null) {
-  if (subtotal.value === null || subtotal.missing > 0 || total === null) return null;
-  const whole = Number(total);
-  if (!(whole > 0)) return null;
-  const share = (Number(subtotal.value) / whole) * 100;
-  return share > 0 && share < 0.05 ? '<0.1%' : `${share.toFixed(1)}%`;
+/**
+ * A group's share of the portfolio, display-only; none while the group is partial. Against a net
+ * worth that leaves something out it is of the known part, marked "≈" (NW-SHARE-ESTIMATE).
+ */
+function groupShare(
+  subtotal: ReturnType<typeof groupSubtotal>,
+  base: ReturnType<typeof shareBase>,
+) {
+  if (subtotal.value === null || subtotal.missing > 0 || base === null) return null;
+  const share = (Number(subtotal.value) / base.value) * 100;
+  return `${estimateMark(base.estimated)}${share > 0 && share < 0.05 ? '<0.1%' : `${share.toFixed(1)}%`}`;
 }
 
 type GroupHead = ReturnType<typeof groupSubtotal> & {
@@ -115,6 +120,8 @@ type AssetGroup = {
   deposits: BankHolding[];
   remaining: number;
   expanded: boolean;
+  /** The shares are of a net worth that leaves something out. */
+  estimated: boolean;
 };
 
 function MoreInGroup({
@@ -140,13 +147,16 @@ function MoreInGroup({
   ) : null;
 }
 
-function AllocationShare({ value }: { value: string | null }) {
+function AllocationShare({ value, estimated }: { value: string | null; estimated: boolean }) {
   return (
     <span className="portfolio-share">
       <span className="portfolio-share__bar" aria-hidden="true">
         <i style={{ width: `${Math.min(Number(value ?? 0), 100)}%` }} />
       </span>
-      <span className="portfolio-share__text">{shareText(value)}</span>
+      <span className="portfolio-share__text">
+        {value !== null && estimated ? '≈' : ''}
+        {shareText(value)}
+      </span>
     </span>
   );
 }
@@ -155,11 +165,13 @@ function BankAsset({
   deposit,
   currency,
   asked,
+  estimated,
   phone = false,
 }: {
   deposit: BankHolding;
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
+  estimated: boolean;
   phone?: boolean;
 }) {
   const link = (
@@ -199,7 +211,7 @@ function BankAsset({
       <td className="ui-num">{DASH}</td>
       <td className="ui-num ui-strong">{money(deposit.values[currency], currency)}</td>
       <td className="ui-num">
-        <AllocationShare value={deposit.allocationPercent} />
+        <AllocationShare value={deposit.allocationPercent} estimated={estimated} />
       </td>
       <td className="ui-num">{DASH}</td>
       <td className="ui-num">{DASH}</td>
@@ -745,7 +757,7 @@ function AssetsTable({
                   </td>
                   <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
                   <td className="ui-num">
-                    <AllocationShare value={asset.allocationPercent} />
+                    <AllocationShare value={asset.allocationPercent} estimated={group.estimated} />
                   </td>
                   <td className="ui-num">
                     {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
@@ -768,7 +780,13 @@ function AssetsTable({
                 </tr>
               ))}
               {group.deposits.map((deposit) => (
-                <BankAsset key={deposit.id} deposit={deposit} currency={currency} asked={asked} />
+                <BankAsset
+                  key={deposit.id}
+                  deposit={deposit}
+                  currency={currency}
+                  asked={asked}
+                  estimated={group.estimated}
+                />
               ))}
               {(group.remaining > 0 || group.expanded) && (
                 <tr className="portfolio-more">
@@ -867,7 +885,14 @@ function AssetsList({
             </li>
           ))}
           {group.deposits.map((deposit) => (
-            <BankAsset key={deposit.id} deposit={deposit} currency={currency} asked={asked} phone />
+            <BankAsset
+              key={deposit.id}
+              deposit={deposit}
+              currency={currency}
+              asked={asked}
+              estimated={group.estimated}
+              phone
+            />
           ))}
         </ul>
         <MoreInGroup group={group} onToggle={onToggle} />
@@ -972,13 +997,13 @@ export default function PortfolioPage() {
     shown,
     portfolio?.currency ?? 'USD',
   );
+  // What every share is of: the net worth, or its known part as an estimate.
+  const base = portfolio && shareBase(portfolio);
   // A group's subtotal counts all its rows shown, not only the loaded page.
   const heads = new Map(
     classOrder.map((key): [AssetClassFilter, GroupHead] => {
       const subtotal = groupSubtotal(visible.filter((asset) => classOf(asset) === key));
-      // A net worth that is a floor for want of an account's interest overstates every share.
-      const floor = (portfolio?.interestMissingDepositCount ?? 0) > 0;
-      const share = groupShare(subtotal, floor ? null : (portfolio?.totalValue ?? null));
+      const share = groupShare(subtotal, base);
       return [key, { key, label: classLabels[key], share, ...subtotal }];
     }),
   );
@@ -1016,12 +1041,7 @@ export default function PortfolioPage() {
             key,
             label: 'Bank',
             ...subtotal,
-            share: groupShare(
-              subtotal,
-              (portfolio?.interestMissingDepositCount ?? 0) > 0
-                ? null
-                : (portfolio?.totalValue ?? null),
-            ),
+            share: groupShare(subtotal, base),
           }
         : heads.get(key)!;
     const open = expanded.has(key);
@@ -1032,14 +1052,12 @@ export default function PortfolioPage() {
         deposits: (open ? banks : banks.slice(0, 5)).map((deposit) => ({
           ...deposit,
           allocationPercent:
-            (portfolio?.interestMissingDepositCount ?? 0) > 0
-              ? null
-              : (portfolio?.allocation.byAsset.find(
-                  (slice) => slice.key === `deposit:${deposit.id}`,
-                )?.percent ?? null),
+            portfolio?.allocation.byAsset.find((slice) => slice.key === `deposit:${deposit.id}`)
+              ?.percent ?? null,
         })),
         remaining: open ? 0 : Math.max(0, rows.length + banks.length - 5),
         expanded: open,
+        estimated: !!base?.estimated,
       },
     ];
   });

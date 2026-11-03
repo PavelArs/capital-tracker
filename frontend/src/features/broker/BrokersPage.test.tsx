@@ -517,7 +517,7 @@ describe('BROKERS the Brokers page', () => {
     expect(get).toHaveBeenCalledTimes(2);
   });
 
-  it('DEP-ACCOUNT-SHARE gives no share of a net worth that is a floor for want of an account rate', async () => {
+  it('NW-SHARE-ESTIMATE DEP-ACCOUNT-SHARE estimates the share of a net worth that is a floor for want of an account rate', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
       ...valuation(held, '40000'),
       completeness: 'incomplete',
@@ -526,14 +526,14 @@ describe('BROKERS the Brokers page', () => {
     renderPage();
     const summary = await screen.findByRole('region', { name: 'Total at brokers' });
     expect(summary).toHaveTextContent(
-      'Share of net worth—Net worth is a floor: 1 account without an interest rate.',
+      'Share of net worth≈14.8%Estimated against the known net worth, which leaves out interest on 1 account without an interest rate.',
     );
-    expect(summary).not.toHaveTextContent('%');
   });
 
-  it('classes-22 says why the share of net worth is unknown, with no number made up', async () => {
+  it('NW-SHARE-ESTIMATE classes-22 estimates the share against the known net worth and says what it leaves out', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
       ...valuation(held, null),
+      pricedSubtotal: '30000',
       completeness: 'incomplete',
       missingPriceCount: 2,
       unratedDepositCount: 1,
@@ -542,8 +542,7 @@ describe('BROKERS the Brokers page', () => {
     renderPage();
     const summary = await screen.findByRole('region', { name: 'Total at brokers' });
     expect(summary).toHaveTextContent(
-      'Share of net worth—Net worth unknown: 2 assets without a price or exchange rate, 1 deposit without an exchange rate.',
+      'Share of net worth≈19.8%Estimated against the known net worth, which leaves out 2 assets without a price or exchange rate, 1 deposit without an exchange rate.',
     );
-    expect(summary).not.toHaveTextContent('%');
   });
 });

@@ -18,7 +18,7 @@ import { money, price, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { Icon } from '../shell/icons';
-import { netWorthUnknown } from '../shell/net-worth';
+import { estimateMark, netWorthUnknown, shareBase } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { useAccountClasses } from '../shell/useAccountClasses';
@@ -250,6 +250,7 @@ export default function BrokersPage() {
   // Nothing valued yet is "—", never zero, and no share is worked out from it.
   const share = portfolio && valued.length > 0 ? brokerShare(total, portfolio) : null;
   const unknown = portfolio && netWorthUnknown(portfolio);
+  const estimated = portfolio && shareBase(portfolio)?.estimated;
   const missing = brokerGaps(sum('unpriced'), sum('unrated'), sum('pending'));
 
   useEffect(() => {
@@ -318,9 +319,9 @@ export default function BrokersPage() {
                 value={
                   share === null
                     ? '—'
-                    : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share)}%`
+                    : `${estimateMark(estimated)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share.percent)}%`
                 }
-                hint={share === null && unknown ? unknown : undefined}
+                hint={(share === null ? unknown : estimated) || undefined}
               />
             </Stats>
             {missing && <p className="ui-sub broker-summary__note">{missing}</p>}

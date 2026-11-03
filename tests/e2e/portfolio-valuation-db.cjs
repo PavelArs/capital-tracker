@@ -428,6 +428,8 @@ async function gapsAndInvalidHistory(db, s, f) {
   assert.equal(asset(report, sol).value, null);
   assert.equal(asset(report, rub).missingPrice, 'no-rate');
   assert.equal(asset(report, rub).allocationPercent, null);
+  // NW-SHARE-ESTIMATE: a priced asset's share is of the known part while net worth is unknown.
+  assert.equal(asset(report, usd).allocationPercent, '100.00');
   assert.equal(report.allocation.complete, false);
   assert.deepEqual(shares(report.allocation.byAsset), [['Cash', '100.00']]);
   await account(s, third, 'Starts later', new Date(now.getTime() + 86_400_000).toISOString());

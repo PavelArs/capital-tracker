@@ -1,6 +1,7 @@
 import type { AccountSummary } from '@api/accounting.api';
 import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { sumDecimals } from '@/utils/decimal';
+import { shareBase } from '../shell/net-worth';
 
 export interface BrokerPosition {
   asset: AssetValuation;
@@ -75,13 +76,17 @@ export function brokerAccountsOf(
 }
 
 /**
- * The share of net worth held at brokers, or null while the net worth is unknown or only a floor
- * (an account without a rate leaves its interest out, so any share of it would read too high).
+ * The share of net worth held at brokers, display only. While net worth leaves something out it
+ * is of the known part and estimated (NW-SHARE-ESTIMATE); null when that part is not above zero.
  */
-export function brokerShare(total: string, portfolio: PortfolioValuation): number | null {
-  if ((portfolio.interestMissingDepositCount ?? 0) > 0) return null;
-  const worth = Number(portfolio.totalValue ?? Number.NaN);
-  return worth > 0 ? (Number(total) / worth) * 100 : null;
+export function brokerShare(
+  total: string,
+  portfolio: PortfolioValuation,
+): { percent: number; estimated: boolean } | null {
+  const base = shareBase(portfolio);
+  return (
+    base && { percent: (Number(total) / base.value) * 100, estimated: base.estimated !== null }
+  );
 }
 
 /** "1 position", "2 positions". */

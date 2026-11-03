@@ -1819,7 +1819,7 @@ describe('classes-19: deposits grouped by bank', () => {
     expect(screen.queryByText('10.0%')).toBeNull();
   });
 
-  it('deposits-share says why the share of net worth is missing', async () => {
+  it('NW-SHARE-ESTIMATE deposits-share estimates the share of an unknown net worth, and says why none is given below zero', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
     const worth = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(netWorth(null));
     open('/deposits?currency=RUB');
@@ -1827,7 +1827,7 @@ describe('classes-19: deposits grouped by bank', () => {
     const share = (await within(summary).findByText('Share of net worth'))
       .parentElement as HTMLElement;
     expect(share).toHaveTextContent(
-      'Share of net worth—Net worth unknown: 1 asset without a price or exchange rate.',
+      'Share of net worth≈10.0%Estimated against the known net worth, which leaves out 1 asset without a price or exchange rate.',
     );
     cleanup();
     forgetReads();
@@ -1839,7 +1839,7 @@ describe('classes-19: deposits grouped by bank', () => {
     );
   });
 
-  it('DEP-ACCOUNT-SHARE gives no share of a net worth that is a floor for want of an account rate', async () => {
+  it('NW-SHARE-ESTIMATE DEP-ACCOUNT-SHARE estimates the share of a net worth that is a floor for want of an account rate', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
       ...netWorth('5550150.70'),
@@ -1851,9 +1851,8 @@ describe('classes-19: deposits grouped by bank', () => {
     const share = (await within(summary).findByText('Share of net worth'))
       .parentElement as HTMLElement;
     expect(share).toHaveTextContent(
-      'Share of net worth—Net worth is a floor: 2 accounts without an interest rate.',
+      'Share of net worth≈10.0%Estimated against the known net worth, which leaves out interest on 2 accounts without an interest rate.',
     );
-    expect(summary).not.toHaveTextContent('%');
   });
 
   it('deposits-bank-total a bank whose deposits are all closed and settled holds 0.00, not a dash', async () => {

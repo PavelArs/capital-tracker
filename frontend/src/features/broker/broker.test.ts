@@ -257,9 +257,13 @@ describe('BROKERS the page figures', () => {
     ]);
   });
 
-  it('gives the share of net worth only while the net worth is known', () => {
-    expect(brokerShare('5000', portfolio)).toBe(25);
-    expect(brokerShare('5000', { ...portfolio, totalValue: null })).toBeNull();
+  it('NW-SHARE-ESTIMATE gives the share of net worth, estimated against its known part while it is unknown', () => {
+    expect(brokerShare('5000', portfolio)).toEqual({ percent: 25, estimated: false });
+    expect(
+      brokerShare('5000', { ...portfolio, totalValue: null, pricedSubtotal: '10000' }),
+    ).toEqual({ percent: 50, estimated: true });
+    expect(brokerShare('5000', { ...portfolio, totalValue: null, pricedSubtotal: '0' })).toBeNull();
+    expect(brokerShare('5000', { ...portfolio, totalValue: '-1' })).toBeNull();
   });
 
   it('adds values exactly', () => {

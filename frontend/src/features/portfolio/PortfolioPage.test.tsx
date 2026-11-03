@@ -477,7 +477,8 @@ describe('PV-UI Portfolio values every asset', () => {
       '1.2',
       '$80,000.00Market price · 30 min ago',
       '$96,000.00',
-      '96.00%',
+      // NW-SHARE-ESTIMATE: net worth leaves out an asset without a price.
+      '≈96.00%',
       '$55,000.00',
       '+$30,000.00+45.45%',
       '-1.40%',
@@ -487,7 +488,7 @@ describe('PV-UI Portfolio values every asset', () => {
       '4,000',
       '$1.00Fixed',
       '$4,000.00',
-      '4.00%',
+      '≈4.00%',
       '$1.00',
       '$0.000.00%',
       '0.00%',
@@ -529,16 +530,16 @@ describe('PV-UI Portfolio values every asset', () => {
       within(allocation)
         .getAllByRole('listitem')
         .map((item) => (item.querySelector('.portfolio-swatch') as HTMLElement).style.background);
-    expect(slices()).toEqual(['Bitcoin BTC$96,000.0096.00%', 'US dollar USD$4,000.004.00%']);
+    expect(slices()).toEqual(['Bitcoin BTC$96,000.00≈96.00%', 'US dollar USD$4,000.00≈4.00%']);
     expect(swatches()).toEqual(['var(--c-btc)', 'var(--c-cash)']);
     expect(
       within(rowOf('Bitcoin')).getAllByRole('cell')[0].querySelector('.asset-icon'),
     ).toHaveAttribute('data-glyph', '₿');
     await user.click(within(grouping).getByRole('radio', { name: 'Classes' }));
-    expect(slices()).toEqual(['Crypto$96,000.0096.00%', 'Cash$4,000.004.00%']);
+    expect(slices()).toEqual(['Crypto$96,000.00≈96.00%', 'Cash$4,000.00≈4.00%']);
     expect(swatches()).toEqual(['var(--c-eth)', 'var(--c-cash)']);
     await user.click(within(grouping).getByRole('radio', { name: 'Accounts' }));
-    expect(slices()).toEqual(['Trust Wallet$80,000.0080.00%', 'Bybit$20,000.0020.00%']);
+    expect(slices()).toEqual(['Trust Wallet$80,000.00≈80.00%', 'Bybit$20,000.00≈20.00%']);
     expect(allocation).toHaveTextContent('Assets without a price are not included.');
   });
 
@@ -4174,7 +4175,7 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
     expect(names()).toEqual(['# Cash4.0%$4,000.00', 'US dollar']);
   });
 
-  it('PF-GROUP-INCOMPLETE never counts a missing value as zero and drops the share', async () => {
+  it('NW-SHARE-ESTIMATE PF-GROUP-INCOMPLETE never counts a missing value as zero; a complete class gets an estimated share', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin, cash, rubles], {
         completeness: 'incomplete',
@@ -4186,7 +4187,7 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(names()).toEqual([
-      '# Crypto$96,000.00',
+      '# Crypto≈96.0%$96,000.00',
       'Bitcoin',
       '# Cash$4,000.001 without a price',
       'US dollar',
@@ -4194,7 +4195,7 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
     ]);
   });
 
-  it('DEP-ACCOUNT-SHARE drops the class share while the net worth is a floor for want of an account rate', async () => {
+  it('NW-SHARE-ESTIMATE DEP-ACCOUNT-SHARE estimates the class share while the net worth is a floor for want of an account rate', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
       ...complete(),
       completeness: 'incomplete',
@@ -4202,7 +4203,7 @@ describe('PF-GROUPS the assets are grouped by class with exact subtotals', () =>
     });
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
-    expect(names().slice(0, 2)).toEqual(['# Crypto$96,000.05', 'Bitcoin']);
+    expect(names().slice(0, 2)).toEqual(['# Crypto≈96.0%$96,000.05', 'Bitcoin']);
   });
 
   it('PF-GROUPS heads the phone rows the same way', async () => {
@@ -4336,7 +4337,8 @@ describe('PORTFOLIO-BANK-ALLOCATION', () => {
     ['USD', '12.50', 0, '12.50%'],
     ['EUR', '25.00', 0, '25.00%'],
     ['USD', null, 0, '—'],
-    ['USD', '12.50', 1, '—'],
+    // NW-SHARE-ESTIMATE: of the floor net worth, marked as an estimate.
+    ['USD', '12.50', 1, '≈12.50%'],
   ] as const)(
     'uses the valuation share in %s (%s, missing interest %s)',
     async (currency, share, interestMissing, expected) => {

@@ -28,6 +28,7 @@ import {
 } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
+import { estimateMark, shareBase } from '../shell/net-worth';
 import { onlyChain, type TokenChains, withChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
 import { useCachedRead } from '../shell/useCachedRead';
@@ -125,10 +126,13 @@ function AssetCells({
   asset,
   currency,
   now,
+  mark,
 }: {
   asset: AssetValuation;
   currency: AccountingCurrency;
   now: Date;
+  /** "≈" while the shares are of a net worth that leaves something out. */
+  mark: string;
 }) {
   const stale = staleNote(asset, now);
   return (
@@ -153,7 +157,10 @@ function AssetCells({
         )}
       </td>
       <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
-      <td className="ui-num">{percent(asset.allocationPercent, false)}</td>
+      <td className="ui-num">
+        {asset.allocationPercent === null ? '' : mark}
+        {percent(asset.allocationPercent, false)}
+      </td>
     </>
   );
 }
@@ -163,11 +170,13 @@ function Table({
   currency,
   asked,
   chains,
+  mark,
 }: {
   holdings: TopHolding[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   chains: TokenChains;
+  mark: string;
 }) {
   const navigate = useNavigate();
   const classes = useAccountClasses();
@@ -240,10 +249,13 @@ function Table({
                       <span title="Interest accrues daily">{DASH}</span>
                     </td>
                     <td className="ui-num ui-strong">{money(holding.deposit.value, currency)}</td>
-                    <td className="ui-num">{percent(holding.deposit.share, false)}</td>
+                    <td className="ui-num">
+                      {holding.deposit.share === null ? '' : mark}
+                      {percent(holding.deposit.share, false)}
+                    </td>
                   </>
                 ) : (
-                  <AssetCells asset={holding.asset} currency={currency} now={now} />
+                  <AssetCells asset={holding.asset} currency={currency} now={now} mark={mark} />
                 )}
               </tr>
             );
@@ -373,7 +385,13 @@ export default function TopAssets({
       ) : phone ? (
         <List holdings={holdings} currency={portfolio.currency} asked={asked} chains={chains} />
       ) : (
-        <Table holdings={holdings} currency={portfolio.currency} asked={asked} chains={chains} />
+        <Table
+          holdings={holdings}
+          currency={portfolio.currency}
+          asked={asked}
+          chains={chains}
+          mark={estimateMark(shareBase(portfolio)?.estimated)}
+        />
       )}
     </Card>
   );

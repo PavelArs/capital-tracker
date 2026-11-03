@@ -704,6 +704,8 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
       unratedDepositCount: 1,
     });
     expect(result.allocation.complete).toBe(false);
+    // NW-SHARE-ESTIMATE: shares are of the known part, 80000 of 95000.
+    expect(assetOf(result, btc).allocationPercent).toBe('84.21');
   });
 
   it('DEP-ACCOUNT-ZERO keeps a zero lower bound incomplete while interest is missing', () => {
@@ -735,7 +737,8 @@ describe('DEP-VALUE bank deposits in the portfolio', () => {
     const without = projectPortfolio(now, [btc], wallet(), priced(), undefined, undefined, [
       bank(1, 'First Bank', worth(15_000)),
     ]);
-    expect(assetOf(result, btc).allocationPercent).toBeNull();
+    // NW-SHARE-ESTIMATE: the share is of that floor, marked by the incomplete allocation.
+    expect(assetOf(result, btc).allocationPercent).toBe('80.00');
     expect(assetOf(without, btc).allocationPercent).toBe('84.21');
     expect(without.interestMissingDepositCount).toBe(0);
     expect(without.allocation.complete).toBe(true);
