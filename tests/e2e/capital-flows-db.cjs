@@ -407,8 +407,15 @@ async function rates(db, s, f) {
   const usd = await s.snapshots.history(early, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(usd.points.every((entry) => entry.invested === '40000'));
   // BTC was held at the first point but has no stored price before 2025-01-02, so the start
-  // leaves it out and the market effect is unknown, not the whole value.
-  assert.deepEqual([usd.netFlow, usd.marketEffect, usd.change], ['0', null, null]);
+  // values it at its first later price (DASH-START-ESTIMATE): the change is all market, and an
+  // estimate, never the whole value.
+  const [{ first }] = await db.query(`SELECT price::text AS first FROM price_observations
+    WHERE asset='BTC' AND "quoteCurrency"='USD' ORDER BY "observedAt" LIMIT 1`);
+  const estimated = minus(usd.value, first);
+  assert.deepEqual(
+    [usd.netFlow, usd.marketEffect, usd.change, usd.marketMissing, usd.startEstimatedAssetCount],
+    ['0', estimated, estimated, null, 1],
+  );
   const rub = await s.snapshots.history(early, { period: 'ALL', currency: 'RUB' }, now);
   // The owner's choice: money without a rate is left out of the money put in, and the profit
   // to date stays value minus what is left, so it reads higher than it is.
@@ -571,7 +578,7 @@ async function unpricedEnd(db, s, f) {
 
 async function unpricedStart(db, s, f) {
   stage =
-    'HIST-START-UNPRICED a period that starts before an asset has a price gives no market effect';
+    'HIST-START-UNPRICED DASH-START-ESTIMATE a period that starts before an asset has a price takes its first later price';
   const { unpriced } = f;
   const eth = (
     await s.accounting.createInstrument(unpriced, {
@@ -595,19 +602,17 @@ async function unpricedStart(db, s, f) {
     'The start left out ETH, which had no price then',
   );
   assert.equal(history.value, '5000', 'The end is priced');
+  // The start values ETH at its first later price, 2500, and says it is an estimate.
   assert.deepEqual(
     [history.change, history.changePercent, history.marketEffect, history.marketReturnPercent],
-    [null, null, null, null],
-    'No change from a start that left out a held asset',
+    ['0', '0.00', '0', '0.00'],
+    'The change and market effect are estimated from the first later price',
   );
-  assert.equal(
-    history.marketMissing,
-    'priced-later',
-    'FLOW-SPLIT-REASON the asset held at the start had no price then',
-  );
+  assert.equal(history.marketMissing, null, 'The market effect is known, as an estimate');
+  assert.equal(history.startEstimatedAssetCount, 1, 'The estimate is stated');
   assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
   console.log(
-    'PASS HIST-START-UNPRICED an incomplete start with a missing price gives no change or market effect; the flows stay',
+    'PASS HIST-START-UNPRICED DASH-START-ESTIMATE a start with a missing price takes the first later price, stated as an estimate; the flows stay',
   );
 }
 

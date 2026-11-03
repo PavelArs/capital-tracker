@@ -705,6 +705,20 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(within(hero).getByLabelText('What changed')).toHaveTextContent(text);
   });
 
+  it('DASH-START-ESTIMATE marks the market part estimated when the start takes a later price', async () => {
+    get.mockResolvedValue(history({ startEstimatedAssetCount: 2 }));
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(hero).getByLabelText('What changed')).toHaveTextContent(
+      'Estimated: 2 assets you held at the start had no price then, so their first later price is used',
+    );
+    cleanup();
+    get.mockResolvedValue(history({ startEstimatedAssetCount: 0 }));
+    renderPage();
+    const exact = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(exact).getByLabelText('What changed')).not.toHaveTextContent(/estimated/i);
+  });
+
   it('draws the net invested line and reads it with each point', async () => {
     const user = userEvent.setup();
     renderPage();
