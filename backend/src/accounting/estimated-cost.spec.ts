@@ -102,10 +102,34 @@ describe('COST-ESTIMATE a lot without a purchase price is costed at its price wh
     expect(withEstimatedCosts(account([held]), [btc], near, [], usd)[0].lots).toEqual([
       { ...held, costUsd: '800', costEstimated: true },
     ]);
-    // A return above the estimate leaves nothing of it, never a negative cost.
-    const more = { ...held, returned: [{ costUsd: '1500', at: '2026-07-01T00:00:00.000Z' }] };
+    // Returns above the estimate leave nothing of it, never a negative cost, and only what they
+    // took off it stays returned: each keeps its day, and its native amount in the same share.
+    const more = {
+      ...held,
+      returned: [
+        { costUsd: '600', at: '2026-07-01T00:00:00.000Z' },
+        {
+          costUsd: '900',
+          at: '2026-08-01T00:00:00.000Z',
+          native: { currency: 'RUB' as const, amount: '90000' },
+        },
+        { costUsd: '50', at: '2026-09-01T00:00:00.000Z' },
+      ],
+    };
     expect(withEstimatedCosts(account([more]), [btc], near, [], usd)[0].lots).toEqual([
-      { ...more, costUsd: '0', costEstimated: true },
+      {
+        ...more,
+        costUsd: '0',
+        returned: [
+          { costUsd: '600', at: '2026-07-01T00:00:00.000Z' },
+          {
+            costUsd: '400',
+            at: '2026-08-01T00:00:00.000Z',
+            native: { currency: 'RUB', amount: '40000' },
+          },
+        ],
+        costEstimated: true,
+      },
     ]);
   });
 

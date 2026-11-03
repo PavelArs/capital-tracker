@@ -6,6 +6,7 @@ import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
+  type ReturnedCost,
   resolvePrice,
   type StoredPrice,
 } from './portfolio-valuation';
@@ -76,10 +77,42 @@ export function withEstimatedCosts(
       );
       const product = canonicalDecimalToAtoms(lot.quantity) * canonicalDecimalToAtoms(price.value);
       const scale = ATOM * ratio;
-      // A capital return since paid part of it back; one above the estimate leaves nothing.
+      // A capital return since paid part of it back. Returns above the estimate leave nothing of
+      // it, and only what they took off it stays returned, so no later reading adds back more.
       let cost = (product + scale - 1n) / scale;
-      for (const part of lot.returned ?? []) cost -= canonicalDecimalToAtoms(part.costUsd);
-      return { ...lot, costUsd: formatAtoms(cost > 0n ? cost : 0n), costEstimated: true };
+      const returned: ReturnedCost[] = [];
+      for (const part of lot.returned ?? []) {
+        if (cost === 0n) break;
+        const whole = canonicalDecimalToAtoms(part.costUsd);
+        let taken = whole;
+        if (taken > cost) taken = cost;
+        cost -= taken;
+        returned.push(
+          taken === whole
+            ? part
+            : {
+                ...part,
+                costUsd: formatAtoms(taken),
+                // Rounded down: less paid back counted keeps the cost from reading lower.
+                ...(part.native
+                  ? {
+                      native: {
+                        currency: part.native.currency,
+                        amount: formatAtoms(
+                          (canonicalDecimalToAtoms(part.native.amount) * taken) / whole,
+                        ),
+                      },
+                    }
+                  : {}),
+              },
+        );
+      }
+      return {
+        ...lot,
+        costUsd: formatAtoms(cost),
+        ...(lot.returned ? { returned } : {}),
+        costEstimated: true,
+      };
     }),
   }));
 }
