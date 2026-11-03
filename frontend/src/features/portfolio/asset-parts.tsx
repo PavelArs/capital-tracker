@@ -36,15 +36,19 @@ export function Signed({
   currency,
   ratio,
   inline,
+  estimated,
 }: {
   value: string | null;
   currency: AccountingCurrency;
   ratio?: string | null;
   /** The percentage beside the amount, on one line, as in a table row. */
   inline?: boolean;
+  /** COST-ESTIMATE: "≈" before a profit over an estimated purchase price. */
+  estimated?: boolean;
 }) {
   return (
     <span className={toneClass(value)}>
+      {estimated && value !== null && '≈'}
       {money(value, currency, true)}
       {ratio !== undefined && value !== null && ratio !== null && (
         <span className={inline ? 'ui-sub portfolio-ratio--inline' : 'ui-sub'}>

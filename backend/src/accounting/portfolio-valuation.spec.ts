@@ -904,3 +904,32 @@ describe('BPR-STALE a T-Bank price is fresh for two hours, then stale', () => {
     expect(resolvePrice(share, hand, now, rub).price?.status).toBe('manual');
   });
 });
+
+describe('COST-ESTIMATE the portfolio says which cost is estimated', () => {
+  it('COST-ESTIMATE counts an estimated lot in the cost basis and names its quantity', () => {
+    const estimated = { ...position(btc, '0.5', '30000'), costEstimated: true as const };
+    const result = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Wallet', [position(btc, '1', '50000'), estimated])],
+      prices({ BTC: ['60000', minutesAgo(5)] }),
+    );
+    expect(result).toMatchObject({
+      costBasis: '80000',
+      unknownCostCount: 0,
+      estimatedCostCount: 1,
+    });
+    expect(assetOf(result, btc)).toMatchObject({
+      costBasis: '80000',
+      unknownCostQuantity: '0',
+      estimatedCostQuantity: '0.5',
+    });
+    const exact = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Wallet', [position(btc, '1', '50000')])],
+      prices({ BTC: ['60000', minutesAgo(5)] }),
+    );
+    expect([exact.estimatedCostCount, assetOf(exact, btc).estimatedCostQuantity]).toEqual([0, '0']);
+  });
+});

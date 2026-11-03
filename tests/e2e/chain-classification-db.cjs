@@ -348,10 +348,12 @@ async function provisional(db, s) {
     [
       Number(asset.quantity),
       Number(asset.value),
-      asset.costBasis,
+      Number(asset.costBasis),
       Number(asset.unknownCostQuantity),
+      Number(asset.estimatedCostQuantity),
     ],
-    [0.01, 800, null, 0.01],
+    // COST-ESTIMATE: no price is stored before the receipt, so its cost is the first after it.
+    [0.01, 800, 800, 0, 0.01],
   );
   assert.deepEqual(await flows(), [], 'No deposit before the receipt is classified');
   assert.equal(await count(s, owner), 1);

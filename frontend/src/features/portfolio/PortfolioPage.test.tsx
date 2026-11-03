@@ -4436,3 +4436,37 @@ it('PORTFOLIO-BANK-ZERO keeps a bank-read error visible when aggregate holdings 
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load bank products');
   expect(screen.queryByText('No assets yet')).toBeNull();
 });
+
+describe('COST-ESTIMATE portfolio', () => {
+  it('COST-ESTIMATE says the cost basis includes estimated purchase prices', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, estimatedCostQuantity: '0.5' }], { estimatedCostCount: 1 }),
+    );
+    renderAt('/portfolio');
+    const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('includes estimated purchase prices');
+    // Every figure resting on the estimate reads "≈": cost, profit, and the row's cost and profit.
+    expect(summary).toHaveTextContent(/Cost basis≈\$/);
+    expect(summary).toHaveTextContent(/Unrealized P&L≈[+-]?\$/);
+    const [, , , , , avg, pnl] = cells(rowOf('Bitcoin'));
+    expect([avg?.startsWith('≈'), pnl?.startsWith('≈')]).toEqual([true, true]);
+  });
+
+  it('COST-ESTIMATE says on the asset which part of the cost is its price when it came in', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([{ ...bitcoin, estimatedCostQuantity: '0.5' }], { estimatedCostCount: 1 }),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const position = await screen.findByRole('region', { name: 'Position' });
+    expect(position).toHaveTextContent(
+      '0.5 BTC has no purchase price, so its price when it came in is used: cost basis and unrealized P&L are estimated.',
+    );
+    expect(position).toHaveTextContent(/Average cost≈\$/);
+    expect(position).toHaveTextContent(/Cost basis≈\$/);
+    expect(position).toHaveTextContent(/Unrealized P&L≈[+-]?\$/);
+    expect(within(position).getByRole('link', { name: 'Review transactions' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=BTC&cost=unknown',
+    );
+  });
+});

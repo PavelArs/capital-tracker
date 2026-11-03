@@ -84,6 +84,8 @@ export interface PortfolioLot {
   returned?: readonly ReturnedCost[];
   /** Set on a lot bought or carried in as a purchase; a reward, swap or received coin is not. */
   purchase?: true;
+  /** COST-ESTIMATE: no purchase price was entered; `costUsd` is its price when it came in. */
+  costEstimated?: true;
 }
 export interface ConsumedCost {
   costUsd: string | null;
@@ -533,6 +535,8 @@ interface CostTotals {
   knownCost: bigint;
   unknownQuantity: bigint;
   missingRateQuantity: bigint;
+  /** COST-ESTIMATE: quantity costed at its price on arrival. */
+  estimatedQuantity: bigint;
 }
 
 function addLotCost(totals: Map<string, CostTotals>, instrumentId: string, lot: CostTotals) {
@@ -541,11 +545,13 @@ function addLotCost(totals: Map<string, CostTotals>, instrumentId: string, lot: 
     knownCost: 0n,
     unknownQuantity: 0n,
     missingRateQuantity: 0n,
+    estimatedQuantity: 0n,
   };
   total.quantity += lot.quantity;
   total.knownCost += lot.knownCost;
   total.unknownQuantity += lot.unknownQuantity;
   total.missingRateQuantity += lot.missingRateQuantity;
+  total.estimatedQuantity += lot.estimatedQuantity;
   totals.set(instrumentId, total);
 }
 interface RealizedTotals {
@@ -645,6 +651,7 @@ export function projectPortfolio(
         knownCost: cost ?? 0n,
         unknownQuantity: lot.costUsd === null ? quantity : 0n,
         missingRateQuantity: lot.costUsd !== null && cost === null ? quantity : 0n,
+        estimatedQuantity: lot.costEstimated ? quantity : 0n,
       };
       addLotCost(totals, lot.instrumentId, amounts);
       if (account.assetClass !== 'property')
@@ -733,6 +740,7 @@ export function projectPortfolio(
   let stalePriceCount = 0;
   let knownCost = 0n;
   let unknownCostCount = 0;
+  let estimatedCostCount = 0;
   let missingRateCount = 0;
   let unrealized = 0n;
   let unrealizedCost = 0n;
@@ -752,6 +760,7 @@ export function projectPortfolio(
       knownCost: 0n,
       unknownQuantity: 0n,
       missingRateQuantity: 0n,
+      estimatedQuantity: 0n,
     };
     const held = total.quantity > 0n;
     const knownQuantity = total.quantity - total.unknownQuantity - total.missingRateQuantity;
@@ -776,6 +785,7 @@ export function projectPortfolio(
       if (price?.status === 'stale') stalePriceCount++;
       knownCost += total.knownCost;
       if (total.unknownQuantity > 0n) unknownCostCount++;
+      if (total.estimatedQuantity > 0n) estimatedCostCount++;
       const investment = investmentTotals.get(instrument.id);
       if (investment) {
         const investmentValue = valueAt(instrument.id, investment.quantity);
@@ -822,6 +832,8 @@ export function projectPortfolio(
       costBasis: cost === null ? null : formatAtoms(cost),
       knownCostSubtotal: formatAtoms(total.knownCost),
       unknownCostQuantity: formatAtoms(total.unknownQuantity),
+      // COST-ESTIMATE: of the quantity with a cost, how much is costed at its price on arrival.
+      estimatedCostQuantity: formatAtoms(total.estimatedQuantity),
       missingRateQuantity: formatAtoms(total.missingRateQuantity),
       knownCostQuantity: formatAtoms(knownQuantity),
       averageBuyPrice: knownQuantity > 0n ? quotient(total.knownCost, knownQuantity) : null,
@@ -912,6 +924,8 @@ export function projectPortfolio(
     costBasis: costComplete ? formatAtoms(knownCost) : null,
     knownCostSubtotal: formatAtoms(knownCost),
     unknownCostCount,
+    // COST-ESTIMATE: held assets part of whose cost is an estimate.
+    estimatedCostCount,
     missingRateCount,
     unrealizedPnl:
       investmentAvailable && unrealizedComplete ? formatSignedProduct(unrealized) : null,

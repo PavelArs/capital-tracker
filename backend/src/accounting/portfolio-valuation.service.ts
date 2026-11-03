@@ -36,6 +36,7 @@ import {
   readConnectedLedgers,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
+import { estimatedAccounts } from './estimated-cost';
 import { parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms } from './money';
 import type { OwnedProjection } from './owned-transfer-fifo';
@@ -608,10 +609,20 @@ export class PortfolioValuationService {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
       const inputs = await readValuationInputs(manager, owner, at);
-      const accounts = accountsAt(inputs, at);
       const prices = await latestPortfolioPrices(manager, owner, inputs.instruments, now);
+      const rates = await readFxRates(manager);
+      // COST-ESTIMATE: a held lot with no purchase price is costed at its price on arrival.
+      const accounts = await estimatedAccounts(
+        manager,
+        owner,
+        inputs.instruments,
+        accountsAt(inputs, at),
+        prices.splits ?? [],
+        rates,
+        at,
+      );
       const mainCurrency = await readMainCurrency(manager, owner);
-      const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
+      const fx = new FxConverter(rates, asked ?? mainCurrency);
       // The prices stored a day earlier give each price's 24-hour change.
       const previous = await latestPortfolioPrices(
         manager,
@@ -672,8 +683,9 @@ export class PortfolioValuationService {
       const inputs = await readValuationInputs(manager, owner, at);
       const instrument = inputs.instruments.find((item) => item.id === instrumentId);
       if (!instrument) throw new NotFoundException('Not found');
-      const accounts = accountsAt(inputs, at);
       const prices = await latestPortfolioPrices(manager, owner, [instrument], now);
+      // Purchases only: a lot without a purchase price is never one, so none is estimated here.
+      const accounts = accountsAt(inputs, at);
       const mainCurrency = await readMainCurrency(manager, owner);
       const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
       const factors = await inflationFactors(manager, owner, fx, now);

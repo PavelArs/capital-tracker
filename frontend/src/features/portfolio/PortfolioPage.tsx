@@ -298,6 +298,10 @@ export function phoneSort(sort: AssetSort): AssetSort {
  * The asset's unrealized P&L: over the coins whose purchase price is known when others have
  * none, instead of a dash (PV-KNOWN-PART).
  */
+/** COST-ESTIMATE: "≈" before a figure that rests on an estimated purchase price. */
+const costMark = (asset: AssetValuation) =>
+  Number(asset.estimatedCostQuantity ?? 0) > 0 ? '≈' : '';
+
 export function shownProfit(asset: AssetValuation): { pnl: string | null; ratio: string | null } {
   return asset.unrealizedPnl === null && asset.knownUnrealizedPnl !== null
     ? { pnl: asset.knownUnrealizedPnl, ratio: asset.knownUnrealizedReturnPercent }
@@ -428,6 +432,8 @@ function Summary({
   const summaryTitle = useId();
   const classes = useAccountClasses();
   const reading: RealReading | null = portfolio.real?.[basis] ?? null;
+  // COST-ESTIMATE: "≈" before cost and profit while part of the cost is a price on arrival.
+  const estimatedCost = (portfolio.estimatedCostCount ?? 0) > 0 ? '≈' : '';
   // No held lots need inflation data, unless a later account history may hide some.
   const nothingHeld =
     portfolio.unavailableAccountCount === 0 &&
@@ -570,12 +576,12 @@ function Summary({
                     </span>
                   </>
                 ) : (
-                  amount(reading.costBasis)
+                  `${estimatedCost}${amount(reading.costBasis)}`
                 )
               ) : partialCost ? (
-                amount(portfolio.knownCostSubtotal)
+                `${estimatedCost}${amount(portfolio.knownCostSubtotal)}`
               ) : (
-                amount(portfolio.costBasis)
+                `${estimatedCost}${amount(portfolio.costBasis)}`
               )}
               {!showReal && portfolio.costBasis === null && !partialCost && (
                 <span className="ui-sub">
@@ -587,6 +593,7 @@ function Summary({
                       : NO_REAL_ACCOUNT}
                 </span>
               )}
+              {estimatedCost && <span className="ui-sub">includes estimated purchase prices</span>}
               {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
             </>
           }
@@ -600,18 +607,21 @@ function Summary({
                   value={nothingHeld ? '0' : (reading?.unrealizedPnl ?? null)}
                   currency={currency}
                   ratio={reading?.unrealizedReturnPercent ?? null}
+                  estimated={estimatedCost !== ''}
                 />
               ) : partialProfit ? (
                 <Signed
                   value={portfolio.knownUnrealizedPnl}
                   currency={currency}
                   ratio={portfolio.knownUnrealizedReturnPercent}
+                  estimated={estimatedCost !== ''}
                 />
               ) : (
                 <Signed
                   value={portfolio.unrealizedPnl}
                   currency={currency}
                   ratio={portfolio.unrealizedReturnPercent}
+                  estimated={estimatedCost !== ''}
                 />
               )}
               {profitExclusions && <span className="ui-sub">{profitExclusions}</span>}
@@ -760,7 +770,9 @@ function AssetsTable({
                     <AllocationShare value={asset.allocationPercent} estimated={group.estimated} />
                   </td>
                   <td className="ui-num">
-                    {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
+                    {asset.averageBuyPrice === null
+                      ? DASH
+                      : `${costMark(asset)}${price(asset.averageBuyPrice, currency)}`}
                   </td>
                   <td className="ui-num">
                     <Signed
@@ -768,6 +780,7 @@ function AssetsTable({
                       currency={currency}
                       ratio={(real === null ? shownProfit(asset) : realProfit(asset, real)).ratio}
                       inline
+                      estimated={costMark(asset) !== ''}
                     />
                   </td>
                   <td className="ui-num">
@@ -820,6 +833,7 @@ function Profit({
   if (pnl === null) return DASH;
   return (
     <span className={toneClass(pnl)}>
+      {costMark(asset)}
       {money(pnl, currency, true)}
       {real !== null && ' real'}
       {ratio !== null && ` · ${percent(ratio)}`}
