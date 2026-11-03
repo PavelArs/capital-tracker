@@ -6,7 +6,6 @@ import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
-  type PortfolioPrices,
   resolvePrice,
   type StoredPrice,
 } from './portfolio-valuation';
@@ -21,9 +20,9 @@ export const nearKey = (instrumentId: string, at: string) =>
 /**
  * COST-ESTIMATE: a held lot with no purchase price is costed at the price stored nearest the time
  * it came in (`near`: the latest at or before it, else the first after), in USD at that day's
- * Bank of Russia rate, rounded up at 30 places so the profit never reads higher, and marked
- * `costEstimated`. A price after a share split that falls between, or a missing price or rate,
- * leaves the cost unknown.
+ * Bank of Russia rate, in the units held now (a split after the price divides it), rounded up at
+ * 30 places so the profit never reads higher, and marked `costEstimated`. A missing price or rate
+ * leaves the cost unknown; so do cash (its face value is no estimate) and a property.
  */
 export function withEstimatedCosts(
   accounts: readonly PortfolioAccountInput[],
@@ -37,28 +36,41 @@ export function withEstimatedCosts(
     ...account,
     lots: account.lots.map((lot) => {
       const instrument = byId.get(lot.instrumentId);
-      if (lot.costUsd !== null || !instrument) return lot;
+      // Cash has its face value, and a property's price is the owner's own estimate of it now.
+      if (
+        lot.costUsd !== null ||
+        !instrument ||
+        instrument.priceSource === 'fixed' ||
+        account.assetClass === 'property'
+      )
+        return lot;
+      const stored = near.get(nearKey(lot.instrumentId, lot.acquiredAt));
+      if (!stored) return lot;
       const market = new Map<string, StoredPrice>();
       const manual = new Map<string, StoredPrice>();
-      const prices: PortfolioPrices = { market, manual, splits };
-      if (instrument.priceSource !== 'fixed') {
-        const stored = near.get(nearKey(lot.instrumentId, lot.acquiredAt));
-        if (!stored) return lot;
-        const acrossSplit = splits.some(
-          (split) =>
-            split.instrumentId === lot.instrumentId &&
-            Date.parse(split.effectiveAt) > Date.parse(lot.acquiredAt) &&
-            Date.parse(split.effectiveAt) <= Date.parse(stored.observedAt),
-        );
-        if (acrossSplit) return lot;
-        if (instrument.priceSource === 'market')
-          market.set(instrument.symbol?.toUpperCase() ?? '', stored);
-        else manual.set(instrument.id, stored);
-      }
-      const { price } = resolvePrice(instrument, prices, new Date(lot.acquiredAt), usd);
+      if (instrument.priceSource === 'market')
+        market.set(instrument.symbol?.toUpperCase() ?? '', stored);
+      else manual.set(instrument.id, stored);
+      // The price comes per unit of its own day, or of the arrival when it is earlier.
+      const { price } = resolvePrice(
+        instrument,
+        { market, manual, splits },
+        new Date(lot.acquiredAt),
+        usd,
+      );
       if (!price) return lot;
+      // The lot's quantity is in units held now: a later split divides that price.
+      const unitsAt = Math.max(Date.parse(lot.acquiredAt), Date.parse(stored.observedAt));
+      const ratio = splits.reduce(
+        (units, split) =>
+          split.instrumentId === lot.instrumentId && Date.parse(split.effectiveAt) > unitsAt
+            ? units * BigInt(split.ratio)
+            : units,
+        1n,
+      );
       const product = canonicalDecimalToAtoms(lot.quantity) * canonicalDecimalToAtoms(price.value);
-      return { ...lot, costUsd: formatAtoms((product + ATOM - 1n) / ATOM), costEstimated: true };
+      const scale = ATOM * ratio;
+      return { ...lot, costUsd: formatAtoms((product + scale - 1n) / scale), costEstimated: true };
     }),
   }));
 }
@@ -70,6 +82,8 @@ interface NearRow {
   observedAt: Date;
   source: string;
   currency: AccountingCurrency;
+  /** BPH-SPLIT: when a broker price was read; its units are of that instant. */
+  fetchedAt: Date | null;
 }
 
 /**
@@ -87,13 +101,14 @@ export async function readNearPrices(
   const side = (before: boolean) => {
     const [compare, order] = before ? ['<=', 'DESC'] : ['>', 'ASC'];
     return `
-      (SELECT p.price::text AS price, p."observedAt", p.source, 'USD' AS currency
+      (SELECT p.price::text AS price, p."observedAt", p.source, 'USD' AS currency,
+          NULL::timestamptz AS "fetchedAt"
         FROM price_observations p
         WHERE i."priceSource"='market' AND p.asset=upper(i.symbol) AND p."quoteCurrency"=$4
           AND p."observedAt"${compare}r.at
         ORDER BY p."observedAt" ${order} LIMIT 1)
       UNION ALL
-      (SELECT h."priceUsd"::text, h."observedAt", 'manual', h."quoteCurrency"
+      (SELECT h."priceUsd"::text, h."observedAt", 'manual', h."quoteCurrency", NULL::timestamptz
         FROM (SELECT DISTINCT ON (v."observedAt") v."observedAt", v.kind, v."priceUsd", v."quoteCurrency"
           FROM manual_usd_price_versions v
           WHERE i."priceSource"='manual' AND v."ownerId"=$1 AND v."instrumentId"=i.id
@@ -101,14 +116,15 @@ export async function readNearPrices(
         WHERE h.kind='set' AND h."observedAt"${compare}r.at
         ORDER BY h."observedAt" ${order} LIMIT 1)
       UNION ALL
-      (SELECT b.price::text, b."observedAt", b.provider, b."quoteCurrency"
+      (SELECT b.price::text, b."observedAt", b.provider, b."quoteCurrency", b."fetchedAt"
         FROM broker_price_observations b
         WHERE i."priceSource"='manual' AND b."ownerId"=$1 AND b."instrumentId"=i.id
           AND b."observedAt"${compare}r.at
         ORDER BY b."observedAt" ${order} LIMIT 1)`;
   };
   const rows: NearRow[] = await manager.query(
-    `SELECT r.id AS "instrumentId", r.at, c.price, c."observedAt", c.source, c.currency
+    `SELECT r.id AS "instrumentId", r.at, c.price, c."observedAt", c.source, c.currency,
+        c."fetchedAt"
       FROM unnest($2::uuid[], $3::timestamptz[]) AS r(id, at)
       JOIN accounting_instruments i ON i."ownerId"=$1 AND i.id=r.id
       CROSS JOIN LATERAL (${side(true)} UNION ALL ${side(false)}) c`,
@@ -141,6 +157,7 @@ export async function readNearPrices(
         observedAt: row.observedAt.toISOString(),
         source: row.source,
         currency: row.currency,
+        ...(row.fetchedAt ? { unitsAt: row.fetchedAt.toISOString() } : {}),
       },
     ]),
   );
@@ -158,12 +175,19 @@ export async function estimatedAccounts(
   const priced = new Map(instruments.map((instrument) => [instrument.id, instrument]));
   const requests = new Map<string, { instrumentId: string; at: string }>();
   for (const account of accounts)
-    for (const lot of account.lots)
-      if (lot.costUsd === null && priced.get(lot.instrumentId)?.priceSource !== 'fixed')
+    for (const lot of account.lots) {
+      const source = priced.get(lot.instrumentId)?.priceSource;
+      if (
+        lot.costUsd === null &&
+        source !== undefined &&
+        source !== 'fixed' &&
+        account.assetClass !== 'property'
+      )
         requests.set(nearKey(lot.instrumentId, lot.acquiredAt), {
           instrumentId: lot.instrumentId,
           at: lot.acquiredAt,
         });
+    }
   const near = await readNearPrices(manager, owner, [...requests.values()]);
   return withEstimatedCosts(accounts, instruments, near, splits, new FxConverter(rates, 'USD'));
 }

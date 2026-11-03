@@ -4445,6 +4445,11 @@ describe('COST-ESTIMATE portfolio', () => {
     renderAt('/portfolio');
     const summary = await screen.findByRole('region', { name: 'Portfolio summary' });
     expect(summary).toHaveTextContent('includes estimated purchase prices');
+    // Every figure resting on the estimate reads "≈": cost, profit, and the row's cost and profit.
+    expect(summary).toHaveTextContent(/Cost basis≈\$/);
+    expect(summary).toHaveTextContent(/Unrealized P&L≈[+-]?\$/);
+    const [, , , , , avg, pnl] = cells(rowOf('Bitcoin'));
+    expect([avg?.startsWith('≈'), pnl?.startsWith('≈')]).toEqual([true, true]);
   });
 
   it('COST-ESTIMATE says on the asset which part of the cost is its price when it came in', async () => {
@@ -4456,6 +4461,9 @@ describe('COST-ESTIMATE portfolio', () => {
     expect(position).toHaveTextContent(
       '0.5 BTC has no purchase price, so its price when it came in is used: cost basis and unrealized P&L are estimated.',
     );
+    expect(position).toHaveTextContent(/Average cost≈\$/);
+    expect(position).toHaveTextContent(/Cost basis≈\$/);
+    expect(position).toHaveTextContent(/Unrealized P&L≈[+-]?\$/);
     expect(within(position).getByRole('link', { name: 'Review transactions' })).toHaveAttribute(
       'href',
       '/transactions?asset=BTC&cost=unknown',

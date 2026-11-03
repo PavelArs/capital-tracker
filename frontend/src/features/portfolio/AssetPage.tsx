@@ -371,6 +371,8 @@ function AssetDetails({
   const classes = useAccountClasses();
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
   const unknown = Number(asset.unknownCostQuantity) > 0;
+  // COST-ESTIMATE: "≈" before cost and profit while part of the cost is a price on arrival.
+  const estimatedCost = Number(asset.estimatedCostQuantity ?? 0) > 0 ? '≈' : '';
   const missingRate = Number(asset.missingRateQuantity) > 0;
   // Part of the coins has no cost: show the rest on its own, marked as the known part.
   const partial =
@@ -457,7 +459,11 @@ function AssetDetails({
           <Stat label="Current value" value={amount(asset.value)} />
           <Stat
             label="Average cost"
-            value={asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
+            value={
+              asset.averageBuyPrice === null
+                ? '—'
+                : `${estimatedCost}${price(asset.averageBuyPrice, currency)}`
+            }
           />
           {showReal ? (
             <>
@@ -487,7 +493,7 @@ function AssetDetails({
                       </>
                     )
                   ) : (
-                    amount(reading.costBasis)
+                    `${estimatedCost}${amount(reading.costBasis)}`
                   )
                 }
               />
@@ -498,6 +504,7 @@ function AssetDetails({
                     value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
                     currency={currency}
                     ratio={reading?.unrealizedReturnPercent ?? null}
+                    estimated={estimatedCost !== ''}
                   />
                 }
               />
@@ -506,7 +513,7 @@ function AssetDetails({
             <>
               <Stat
                 label="Cost basis"
-                value={amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
+                value={`${estimatedCost}${amount(partial ? asset.knownCostSubtotal : asset.costBasis)}`}
               />
               <Stat
                 label="Unrealized P&L"
@@ -517,6 +524,7 @@ function AssetDetails({
                     ratio={
                       partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
                     }
+                    estimated={estimatedCost !== ''}
                   />
                 }
               />

@@ -66,19 +66,53 @@ describe('COST-ESTIMATE a lot without a purchase price is costed at its price wh
     ]);
   });
 
-  it('COST-ESTIMATE leaves a known cost, an asset with no price and a price across a split alone', () => {
+  it('COST-ESTIMATE leaves a known cost, an asset with no price, cash and a property alone', () => {
     const at = '2026-06-02T10:00:00.000Z';
+    const cash: PortfolioInstrument = {
+      ...btc,
+      id: 'cash',
+      symbol: 'USD',
+      assetType: 'fiat',
+      priceSource: 'fixed',
+    };
     const near = new Map([
-      [nearKey(bond.id, at), price('1000', '2026-06-20T00:00:00.000Z', 'RUB')],
+      [nearKey(bond.id, at), price('1000', '2026-06-01T00:00:00.000Z', 'RUB')],
     ]);
-    const split = [
-      { splitId: 's', instrumentId: bond.id, effectiveAt: '2026-06-10T00:00:00.000Z', ratio: 2 },
-    ];
     const lots = [
       lot(btc.id, '1', '50000', at),
       lot(btc.id, '1', null, at),
-      lot(bond.id, '3', null, at),
+      lot('cash', '5', null, at),
     ];
-    expect(withEstimatedCosts(account(lots), [btc, bond], near, split, usd)[0].lots).toEqual(lots);
+    expect(withEstimatedCosts(account(lots), [btc, bond, cash], near, [], usd)[0].lots).toEqual(
+      lots,
+    );
+    const property = [
+      { ...account([lot(bond.id, '3', null, at)])[0], assetClass: 'property' as const },
+    ];
+    expect(withEstimatedCosts(property, [bond], near, [], usd)[0].lots).toEqual([
+      lot(bond.id, '3', null, at),
+    ]);
+  });
+
+  it('COST-ESTIMATE costs the units held now when a split followed the price', () => {
+    const at = '2026-06-02T10:00:00.000Z';
+    const split = [
+      { splitId: 's', instrumentId: bond.id, effectiveAt: '2026-06-10T00:00:00.000Z', ratio: 2 },
+    ];
+    // 3 units now were 1.5 when they came in, at 1000 RUB (10 USD) each before the split.
+    const before = new Map([
+      [nearKey(bond.id, at), price('1000', '2026-06-01T00:00:00.000Z', 'RUB')],
+    ]);
+    expect(
+      withEstimatedCosts(account([lot(bond.id, '3', null, at)]), [bond], before, split, usd)[0]
+        .lots,
+    ).toEqual([{ ...lot(bond.id, '3', '15', at), costEstimated: true }]);
+    // A price after the split is already per unit held now.
+    const after = new Map([
+      [nearKey(bond.id, at), price('1000', '2026-06-20T00:00:00.000Z', 'RUB')],
+    ]);
+    expect(
+      withEstimatedCosts(account([lot(bond.id, '3', null, at)]), [bond], after, split, usd)[0].lots,
+    ).toEqual([{ ...lot(bond.id, '3', '30', at), costEstimated: true }]);
   });
 });

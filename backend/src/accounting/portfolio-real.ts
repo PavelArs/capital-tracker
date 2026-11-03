@@ -76,8 +76,7 @@ function grownCost(
   const bought = convertAmount(fx, formatAtoms(gross), lot.acquiredAt, lot.native);
   if (bought === null) return null;
   let cost = (bought * scaled) / FACTOR_SCALE;
-  // COST-ESTIMATE: a cost taken from the price on arrival keeps its readings estimated.
-  let estimated = factor.estimated || lot.costEstimated === true;
+  let estimated = factor.estimated;
   for (const part of lot.returned ?? []) {
     const returned = convertAmount(fx, part.costUsd, part.at, part.native);
     const back = factorOf(moscowDate(part.at));
