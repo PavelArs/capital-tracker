@@ -447,11 +447,16 @@ describe('DASH-TRADE-ESTIMATE an asset without a stored price takes its own trad
     ).toMatchObject({ priceUsd: '990', source: 'tbank' });
   });
 
-  it('DASH-TRADE-ESTIMATE prices a market coin with no stored price from a trade of either asset with its symbol', () => {
-    const coin = (id: string) => ({ id, name: 'Tether', symbol: 'usdt', priceSource: 'market' });
+  it('DASH-TRADE-ESTIMATE prices a market coin with no stored price from a trade of either market asset with its symbol, never a hand-priced one', () => {
+    const coin = (id: string, priceSource = 'market') => ({
+      id,
+      name: 'Tether',
+      symbol: 'usdt',
+      priceSource,
+    });
     const market = {
       valuation: {
-        instruments: [coin('usdt-tron'), coin('usdt-eth')],
+        instruments: [coin('usdt-tron'), coin('usdt-eth'), coin('usdt-hand', 'manual')],
         ledgers: new Map([['ledger', { splits: [] }]]),
       },
       market: new Map(),
@@ -460,6 +465,11 @@ describe('DASH-TRADE-ESTIMATE an asset without a stored price takes its own trad
         [
           'usdt-eth',
           [{ at: day('2026-09-20T10:00:00Z'), price: '1', source: 'trade', currency: 'USD' }],
+        ],
+        // A hand-priced asset sharing the symbol is another asset: its later trade must not count.
+        [
+          'usdt-hand',
+          [{ at: day('2026-10-01T10:00:00Z'), price: '10', source: 'trade', currency: 'USD' }],
         ],
       ]),
     } as unknown as SeriesInputs;

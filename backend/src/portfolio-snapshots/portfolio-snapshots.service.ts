@@ -249,9 +249,13 @@ export function pricesAt(inputs: SeriesInputs, at: number, laterIfNone = false):
     ...(point.unitsAt === undefined ? {} : { unitsAt: iso(point.unitsAt) }),
   });
   // Market prices are keyed by symbol, hand and broker prices by the asset's id.
+  // A market price is the symbol's; a hand-priced asset with that symbol is another asset.
   const symbolIds = (symbol: string) =>
     inputs.valuation.instruments
-      .filter((instrument) => instrument.symbol?.toUpperCase() === symbol)
+      .filter(
+        (instrument) =>
+          instrument.priceSource === 'market' && instrument.symbol?.toUpperCase() === symbol,
+      )
       .map((instrument) => instrument.id);
   const stored = (series: Map<string, PricePoint[]>, idsOf: (key: string) => string[]) => {
     const prices = new Map<string, StoredPrice>();
