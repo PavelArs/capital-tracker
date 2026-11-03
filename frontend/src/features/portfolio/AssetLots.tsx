@@ -33,9 +33,7 @@ function keyed(lots: readonly LotAfterInflation[]): [string, LotAfterInflation][
 const readingOf = (lot: LotAfterInflation, basis: InflationBasis): LotReading | null =>
   lot.real[basis];
 
-// COST-ESTIMATE: "≈" before a price that is the coin's price when it came in.
 const paidText = (lot: LotAfterInflation, currency: AccountingCurrency) =>
-  (lot.paidEstimated ? '≈' : '') +
   money(
     lot.paid,
     currency,

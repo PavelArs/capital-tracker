@@ -210,8 +210,6 @@ export interface LotAfterInflation {
   paidCurrency: AccountingCurrency;
   /** The full entered payment in the report currency, never a prorated lot cost. */
   paidExact: boolean;
-  /** COST-ESTIMATE: no purchase price was entered; `paid` is the price when it came in. */
-  paidEstimated?: true;
   /** The lot's quantity at today's price; null without a price. */
   value: string | null;
   nominalPnl: string | null;
@@ -268,8 +266,6 @@ export function lotsAfterInflation(input: {
           lot.native?.entered === true &&
           lot.native.currency === fx.currency &&
           paid === canonicalDecimalToAtoms(lot.native.amount),
-        // COST-ESTIMATE: no purchase price was entered; `paid` is its price when it came in.
-        ...(lot.costEstimated ? { paidEstimated: true } : {}),
         value: value === null ? null : formatProduct(value),
         nominalPnl:
           value === null || paid === null ? null : formatSignedProduct(value - paid * ATOM_SCALE),

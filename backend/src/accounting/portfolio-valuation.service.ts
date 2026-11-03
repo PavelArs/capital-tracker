@@ -619,6 +619,7 @@ export class PortfolioValuationService {
         accountsAt(inputs, at),
         prices.splits ?? [],
         rates,
+        at,
       );
       const mainCurrency = await readMainCurrency(manager, owner);
       const fx = new FxConverter(rates, asked ?? mainCurrency);
@@ -683,18 +684,10 @@ export class PortfolioValuationService {
       const instrument = inputs.instruments.find((item) => item.id === instrumentId);
       if (!instrument) throw new NotFoundException('Not found');
       const prices = await latestPortfolioPrices(manager, owner, [instrument], now);
-      const rates = await readFxRates(manager);
-      // COST-ESTIMATE: as the portfolio costs them.
-      const accounts = await estimatedAccounts(
-        manager,
-        owner,
-        [instrument],
-        accountsAt(inputs, at),
-        prices.splits ?? [],
-        rates,
-      );
+      // Purchases only: a lot without a purchase price is never one, so none is estimated here.
+      const accounts = accountsAt(inputs, at);
       const mainCurrency = await readMainCurrency(manager, owner);
-      const fx = new FxConverter(rates, asked ?? mainCurrency);
+      const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
       const factors = await inflationFactors(manager, owner, fx, now);
       return {
         instrumentId,

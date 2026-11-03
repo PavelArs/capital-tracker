@@ -30,7 +30,10 @@ export function withEstimatedCosts(
   near: ReadonlyMap<string, StoredPrice>,
   splits: readonly FifoSplit[],
   usd: FxConverter,
+  /** The valuation instant: the lots are in the units held then. */
+  at: string = new Date().toISOString(),
 ): PortfolioAccountInput[] {
+  const valuedAt = Date.parse(at);
   const byId = new Map(instruments.map((instrument) => [instrument.id, instrument]));
   return accounts.map((account) => ({
     ...account,
@@ -59,11 +62,13 @@ export function withEstimatedCosts(
         usd,
       );
       if (!price) return lot;
-      // The lot's quantity is in units held now: a later split divides that price.
+      // The lot's quantity is in the units held at the valuation: a split between divides it.
       const unitsAt = Math.max(Date.parse(lot.acquiredAt), Date.parse(stored.observedAt));
       const ratio = splits.reduce(
         (units, split) =>
-          split.instrumentId === lot.instrumentId && Date.parse(split.effectiveAt) > unitsAt
+          split.instrumentId === lot.instrumentId &&
+          Date.parse(split.effectiveAt) > unitsAt &&
+          Date.parse(split.effectiveAt) <= valuedAt
             ? units * BigInt(split.ratio)
             : units,
         1n,
@@ -171,6 +176,7 @@ export async function estimatedAccounts(
   accounts: readonly PortfolioAccountInput[],
   splits: readonly FifoSplit[],
   rates: FxRates,
+  at: string,
 ): Promise<PortfolioAccountInput[]> {
   const priced = new Map(instruments.map((instrument) => [instrument.id, instrument]));
   const requests = new Map<string, { instrumentId: string; at: string }>();
@@ -189,5 +195,5 @@ export async function estimatedAccounts(
         });
     }
   const near = await readNearPrices(manager, owner, [...requests.values()]);
-  return withEstimatedCosts(accounts, instruments, near, splits, new FxConverter(rates, 'USD'));
+  return withEstimatedCosts(accounts, instruments, near, splits, new FxConverter(rates, 'USD'), at);
 }

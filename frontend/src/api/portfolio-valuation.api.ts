@@ -55,8 +55,6 @@ export interface LotAfterInflation {
   paidCurrency?: AccountingCurrency;
   /** True only for the full entered payment in this response currency. */
   paidExact?: boolean;
-  /** COST-ESTIMATE: no purchase price was entered; `paid` is its price when it came in. */
-  paidEstimated?: true;
   value: string | null;
   nominalPnl: string | null;
   real: {

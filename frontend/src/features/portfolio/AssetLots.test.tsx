@@ -73,18 +73,3 @@ describe('INFL-REAL-LOTS card header', () => {
     expect(within(region).getByText("In today's USD, at your own rate")).toBeVisible();
   });
 });
-
-describe('COST-ESTIMATE lots', () => {
-  it('COST-ESTIMATE marks a purchase whose price is its price when it came in', async () => {
-    vi.spyOn(portfolioValuationApi, 'lots').mockResolvedValue({
-      ...answer('USD'),
-      lots: [{ ...lot, paidEstimated: true }],
-    });
-    render(
-      <AssetLotsCard instrumentId={answer('USD').instrumentId} asked={undefined} values="a" />,
-    );
-    const region = await screen.findByRole('region', { name: 'Purchases after inflation' });
-    await waitFor(() => expect(within(region).queryByRole('status')).toBeNull());
-    expect(region).toHaveTextContent('≈$12,000.00');
-  });
-});

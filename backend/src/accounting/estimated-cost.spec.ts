@@ -107,6 +107,18 @@ describe('COST-ESTIMATE a lot without a purchase price is costed at its price wh
       withEstimatedCosts(account([lot(bond.id, '3', null, at)]), [bond], before, split, usd)[0]
         .lots,
     ).toEqual([{ ...lot(bond.id, '3', '15', at), costEstimated: true }]);
+    // A split recorded for later than the valuation is not in the units held yet.
+    const future = [{ ...split[0], effectiveAt: '2026-12-01T00:00:00.000Z' }];
+    expect(
+      withEstimatedCosts(
+        account([lot(bond.id, '3', null, at)]),
+        [bond],
+        before,
+        future,
+        usd,
+        '2026-11-03T00:00:00.000Z',
+      )[0].lots,
+    ).toEqual([{ ...lot(bond.id, '3', '30', at), costEstimated: true }]);
     // A price after the split is already per unit held now.
     const after = new Map([
       [nearKey(bond.id, at), price('1000', '2026-06-20T00:00:00.000Z', 'RUB')],

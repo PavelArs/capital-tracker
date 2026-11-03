@@ -704,8 +704,9 @@ async function estimatedCost(db, s) {
   );
   assert.deepEqual([report.costBasis, report.unknownCostCount, report.estimatedCostCount], ['400', 0, 2]);
   assert.equal(report.unrealizedPnl, '100', 'XLM 300 - 200, the bond at cost');
+  // The purchases list holds purchases only: a reward stays out of it, estimated or not.
   const lots = await s.portfolio.lots(owner, coin, {}, now);
-  assert.deepEqual(lots.lots.map((lot) => [lot.paid, lot.paidEstimated]), [['200', true]]);
+  assert.deepEqual(lots.lots, [], 'A reward is not a purchase');
   console.log('PASS COST-ESTIMATE lots without a purchase price costed at the nearest stored price, stated');
 }
 
