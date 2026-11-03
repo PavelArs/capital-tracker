@@ -21,8 +21,9 @@ export const nearKey = (instrumentId: string, at: string) =>
  * COST-ESTIMATE: a held lot with no purchase price is costed at the price stored nearest the time
  * it came in (`near`: the latest at or before it, else the first after), in USD at that day's
  * Bank of Russia rate, in the units held now (a split after the price divides it), rounded up at
- * 30 places so the profit never reads higher, and marked `costEstimated`. A missing price or rate
- * leaves the cost unknown; so do cash (its face value is no estimate) and a property.
+ * 30 places so the profit never reads higher, less what capital returns paid back since, and
+ * marked `costEstimated`. A missing price or rate leaves the cost unknown; so do cash (its face
+ * value is no estimate) and a property.
  */
 export function withEstimatedCosts(
   accounts: readonly PortfolioAccountInput[],
@@ -75,7 +76,10 @@ export function withEstimatedCosts(
       );
       const product = canonicalDecimalToAtoms(lot.quantity) * canonicalDecimalToAtoms(price.value);
       const scale = ATOM * ratio;
-      return { ...lot, costUsd: formatAtoms((product + scale - 1n) / scale), costEstimated: true };
+      // A capital return since paid part of it back; one above the estimate leaves nothing.
+      let cost = (product + scale - 1n) / scale;
+      for (const part of lot.returned ?? []) cost -= canonicalDecimalToAtoms(part.costUsd);
+      return { ...lot, costUsd: formatAtoms(cost > 0n ? cost : 0n), costEstimated: true };
     }),
   }));
 }

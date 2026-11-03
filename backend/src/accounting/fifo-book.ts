@@ -360,7 +360,7 @@ export class FifoBook {
    * Part of what the held units cost came back as cash. Every fragment of the asset takes a
    * share by its units, to the last atom; a share above a fragment's remaining cost is realized
    * at once and leaves its cost at zero. A fragment of unknown cost stays unknown (missing is
-   * not zero), and so does the result of the return.
+   * not zero), and so does the result of the return; it keeps its whole share as returned.
    */
   applyCapitalReturn(capitalReturn: FifoCapitalReturn): CapitalReturnAllocation {
     this.occupy(capitalReturn.occurredAt, capitalReturn.orderWithinTimestamp);
@@ -401,6 +401,20 @@ export class FifoBook {
           appliedUsd: null,
           excessUsd: null,
         });
+        // The cost stays unknown, but the units keep their share of the return: a cost
+        // estimated later is lowered by it.
+        if (share > 0n || nativeShare > 0n)
+          fragment.returns = [
+            ...fragment.returns,
+            {
+              capitalReturnId: capitalReturn.capitalReturnId,
+              version: capitalReturn.version,
+              occurredAt: capitalReturn.occurredAt,
+              currency,
+              usd: lotInterval(length, share),
+              native: currency === null ? null : lotInterval(length, nativeShare),
+            },
+          ];
         continue;
       }
       const taken = share < cost ? share : cost;

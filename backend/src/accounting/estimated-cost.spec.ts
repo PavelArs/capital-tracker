@@ -94,6 +94,21 @@ describe('COST-ESTIMATE a lot without a purchase price is costed at its price wh
     ]);
   });
 
+  it('COST-ESTIMATE lowers the estimate by what a capital return already paid back', () => {
+    const at = '2026-06-02T10:00:00.000Z';
+    const near = new Map([[nearKey(btc.id, at), price('100', '2026-06-02T09:00:00.000Z')]]);
+    const returned = [{ costUsd: '200', at: '2026-07-01T00:00:00.000Z' }];
+    const held = { ...lot(btc.id, '10', null, at), returned };
+    expect(withEstimatedCosts(account([held]), [btc], near, [], usd)[0].lots).toEqual([
+      { ...held, costUsd: '800', costEstimated: true },
+    ]);
+    // A return above the estimate leaves nothing of it, never a negative cost.
+    const more = { ...held, returned: [{ costUsd: '1500', at: '2026-07-01T00:00:00.000Z' }] };
+    expect(withEstimatedCosts(account([more]), [btc], near, [], usd)[0].lots).toEqual([
+      { ...more, costUsd: '0', costEstimated: true },
+    ]);
+  });
+
   it('COST-ESTIMATE costs the units held now when a split followed the price', () => {
     const at = '2026-06-02T10:00:00.000Z';
     const split = [

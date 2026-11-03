@@ -284,8 +284,13 @@ describe('CAPRET-FIFO-003 missing cost stays missing', () => {
       [],
     );
     const state = result.accounts.get(a)!;
+    // The units' share of the return stays on them, so an estimated cost can be lowered by it.
     expect(bondLots(state.lots)).toEqual([
-      expect.objectContaining({ remainingCostUsd: null, remainingQuantity: '10' }),
+      expect.objectContaining({
+        remainingCostUsd: null,
+        remainingQuantity: '10',
+        returned: [{ capitalReturnId: id(5), version: 1, occurredAt: at(4), usd: '100' }],
+      }),
     ]);
     expect(state.capitalReturnSummary).toMatchObject({
       appliedUsd: null,
