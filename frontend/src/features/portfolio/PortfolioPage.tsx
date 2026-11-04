@@ -214,9 +214,43 @@ function BankAsset({
         <AllocationShare value={deposit.allocationPercent} estimated={estimated} />
       </td>
       <td className="ui-num">{DASH}</td>
-      <td className="ui-num">{DASH}</td>
+      <td className="ui-num">
+        <BankInterest deposit={deposit} />
+      </td>
       <td className="ui-num">{DASH}</td>
     </tr>
+  );
+}
+
+/**
+ * PORTFOLIO-BANK-INTEREST (prototype v8 Portfolio): where an asset shows its P&L, a bank product
+ * shows the interest it earned, in its own currency since no rate converts it here. Under Real it
+ * is the interest left after inflation, never the nominal figure; uncounted interest is a dash.
+ */
+function BankInterest({ deposit }: { deposit: Deposit }) {
+  const [view] = useValueView();
+  const [basis] = useInflationBasis();
+  if (view === 'real' && deposit.real !== undefined) {
+    const real = deposit.real[basis];
+    if (real?.gain == null) return <>{DASH}</>;
+    return (
+      <>
+        <span className={toneClass(real.gain)}>
+          {real.estimated ? '≈' : ''}
+          {money(real.gain, deposit.currency, true)}
+        </span>
+        <span className="ui-sub">after inflation</span>
+      </>
+    );
+  }
+  if (deposit.interestMissing || deposit.interestEarned == null) return <>{DASH}</>;
+  return (
+    <>
+      <span className={toneClass(deposit.interestEarned)}>
+        {money(deposit.interestEarned, deposit.currency, true)}
+      </span>
+      <span className="ui-sub">interest</span>
+    </>
   );
 }
 

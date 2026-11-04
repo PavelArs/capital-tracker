@@ -4388,6 +4388,71 @@ describe('PORTFOLIO-BANK-ALLOCATION', () => {
   );
 });
 
+describe('PORTFOLIO-BANK-INTEREST: a bank product shows its interest where an asset shows P&L', () => {
+  const product = (over: Partial<Deposit> = {}): Deposit => ({
+    id: id(998),
+    kind: 'term-deposit',
+    name: 'Ruble deposit',
+    bank: 'Synthetic Bank',
+    currency: 'RUB',
+    startDate: '2026-04-15',
+    endDate: '2027-04-15',
+    payout: 'monthly',
+    capitalized: true,
+    dayBasis: 'actual-365',
+    earlyClose: 'forfeits-interest',
+    ratePercent: '16',
+    status: 'active',
+    closedOn: null,
+    principal: '400000',
+    accrued: '0',
+    due: '0',
+    balance: '430947.12',
+    interestEarned: '30947.12',
+    real: {
+      official: { inflationPercent: '6.3', ratePercent: '9.1', gain: '17946.50', estimated: true },
+      personal: null,
+    },
+    values: { USD: '5177.78', EUR: '4450.10', RUB: '430947.12' },
+    nextPayout: null,
+    atMaturity: null,
+    lastCheck: null,
+    ...over,
+  });
+  const pnlCell = async (deposit: Deposit) => {
+    vi.mocked(depositsApi.list).mockResolvedValue({
+      asOf: '2026-10-18',
+      items: [deposit],
+      totals: deposit.values,
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { depositsValue: '5177.78' }),
+    );
+    renderAt('/portfolio');
+    const row = await screen.findByRole('row', { name: /^Ruble deposit/ });
+    return within(row).getAllByRole('cell')[6];
+  };
+  afterEach(() => setValueView('nominal'));
+
+  it('Nominal: the interest earned, in the product currency', async () => {
+    setValueView('nominal');
+    expect(await pnlCell(product())).toHaveTextContent('+₽30,947interest');
+  });
+
+  it('Real: the interest after inflation, marked estimated, with no nominal figure', async () => {
+    setValueView('real');
+    const cell = await pnlCell(product());
+    expect(cell).toHaveTextContent('≈+₽17,946after inflation');
+    expect(cell).not.toHaveTextContent('30,947');
+  });
+
+  it('a product whose interest is not counted shows a dash, not zero', async () => {
+    setValueView('nominal');
+    const cell = await pnlCell(product({ interestMissing: true, interestEarned: null }));
+    expect(cell).toHaveTextContent(/^—$/);
+  });
+});
+
 it('PORTFOLIO-BANK-ZERO lists an existing zero-balance product instead of the empty state', async () => {
   vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([]));
   vi.mocked(depositsApi.list).mockResolvedValue({
