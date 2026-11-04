@@ -28,6 +28,8 @@ import { PortfolioFlowController } from './portfolio-flow.controller';
 import { PortfolioFlowService } from './portfolio-flow.service';
 import { PortfolioValuationController } from './portfolio-valuation.controller';
 import { PortfolioValuationService } from './portfolio-valuation.service';
+import { PropertyDetailsController } from './property-details.controller';
+import { PropertyDetailsService } from './property-details.service';
 import { TradeController } from './trade.controller';
 import { TradeService } from './trade.service';
 import { ValuationHistoryService } from './valuation-history.service';
@@ -47,6 +49,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     AuditHistoryController,
     ChainClassificationController,
     HiddenAssetController,
+    PropertyDetailsController,
   ],
   providers: [
     AccountingService,
@@ -57,6 +60,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     HistoricalAccountingService,
     PortfolioFlowService,
     ManualPriceService,
+    PropertyDetailsService,
     HistoricalValuationService,
     ValuationHistoryService,
     ManualPortfolioValuationService,

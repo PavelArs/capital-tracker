@@ -338,6 +338,7 @@ async function migrationPreservation() {
           'inflation_personal_rates',
           'instrument_splits',
           'broker_price_observations',
+          'property_details',
         ],
         true,
       ),
@@ -974,7 +975,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 76/);
+  assert.match(migrate(database), /Migrations applied: 77/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

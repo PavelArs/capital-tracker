@@ -65,6 +65,7 @@ const walletTables = [
   'inflation_personal_rates',
   'instrument_splits',
   'broker_price_observations',
+  'property_details',
 ];
 const marketPriceTables = ['price_observations', 'sync_sources'];
 const threeCurrencyTables = ['fx_rates', 'owner_settings'];
@@ -196,6 +197,7 @@ const migrationNames = [
   'AddBrokerPrices1798100000000',
   'AddWalletSyncProgress1798200000000',
   'AddFetchedAtIndexes1798300000000',
+  'AddPropertyDetails1798400000000',
 ];
 
 function connection(database) {
@@ -369,7 +371,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-six migrations',
+      'Exactly seventy-seven migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -2594,6 +2596,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1798100000000',
           '1798200000000',
           '1798300000000',
+          '1798400000000',
         ][index - 11],
       );
     }
