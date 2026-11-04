@@ -4,6 +4,7 @@
 **Date:** 2026-10-28
 **Deciders:** owner
 **Source commit:** `c1bfad55` (main after PR #366)
+**Follow-up:** [ADR-002](architecture-boundaries-and-tenancy.md) covers module boundaries, a background worker and readiness for more than one owner.
 
 ## Context
 
