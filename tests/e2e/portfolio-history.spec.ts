@@ -141,6 +141,19 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
     expect(difference(now!, was!), `${at} rebuilt`).toBe(added);
   }
 
+  // SECTION-CHART: only the four sections can be read alone, an answer names its section, and
+  // the wallets' share of the capital holds this case's coin and is no more than the whole.
+  expect((await api.send('GET', '/portfolio/history?section=cash')).status()).toBe(400);
+  for (const section of ['wallet', 'bank', 'broker', 'property'])
+    expect(await history(`period=1M&currency=USD&section=${section}`)).toMatchObject({
+      section,
+      transfersAcross: expect.any(Number),
+    });
+  const wallets = await history('period=ALL&currency=USD&section=wallet');
+  expect(wallets.points).toHaveLength(after.points.length);
+  expect(Number(wallets.points[probe].value)).toBeGreaterThanOrEqual(1000);
+  expect(Number(wallets.points[probe].value)).toBeLessThanOrEqual(Number(after.points[probe].value));
+
   // DASH-MAIN: the dashboard opens on one month and shows exactly what the backend returned.
   await forgetBrowserReads(page);
   const first = historyResponse(page, '1M');
