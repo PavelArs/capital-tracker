@@ -9,7 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AddTransactionDialog from './AddTransactionDialog';
-import { type ConvertEntry, convertProblems, convertTrade, impliedRate } from './convert';
+import { type ConvertEntry, convertProblems, convertTrade, impliedRate, rateText } from './convert';
 
 // Synthetic accounts, assets, dates and amounts only (CASH-CONVERT).
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -107,6 +107,17 @@ describe('CASH-CONVERT the entry becomes one sale of the cash given up', () => {
     expect(impliedRate({ amount: '3', received: '100' })).toBe('33.333333333333333333');
     expect(impliedRate({ amount: '', received: '100' })).toBeNull();
     expect(impliedRate({ amount: '0', received: '100' })).toBeNull();
+  });
+
+  it('shows no rate and refuses an amount finer than 18 places instead of failing on it', () => {
+    const tiny = '0.0000000000000000001';
+    expect(impliedRate({ amount: tiny, received: '100' })).toBeNull();
+    expect(impliedRate({ amount: '100', received: tiny })).toBeNull();
+    expect(rateText({ ...entry, amount: tiny })).toBeNull();
+    expect(rateText({ ...entry, received: tiny })).toBeNull();
+    expect([...convertProblems({ ...entry, amount: tiny }, '2026-03-02')]).toEqual(['amount']);
+    expect([...convertProblems({ ...entry, received: tiny }, '2026-03-02')]).toEqual(['received']);
+    expect(rateText(entry)).toBe('1 USD = 90 RUB');
   });
 
   it('refuses the same currency twice, empty amounts, a future date and a long comment', () => {
@@ -226,6 +237,23 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
       settlementCurrency: 'USD',
       expectedJournalRevision: 4,
     });
+  });
+
+  it('asks what the account holds only for a complete date', async () => {
+    const { user, view } = await open();
+    await user.click(currency(view, 'From', 'RUB'));
+    await view.findByText(/Available in Home safe/);
+    available.mockClear();
+    await user.clear(view.getByLabelText('Date'));
+    await user.tab();
+    expect(available).not.toHaveBeenCalled();
+  });
+
+  it('moves the keyboard to the chosen type when the body is swapped', async () => {
+    const { user, view } = await open();
+    expect(view.getByRole('radio', { name: 'Convert' })).toHaveFocus();
+    await user.click(view.getByRole('radio', { name: 'Fee' }));
+    expect(view.getByRole('radio', { name: 'Fee' })).toHaveFocus();
   });
 
   it('turns the other currency around when the same one is picked twice', async () => {

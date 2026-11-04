@@ -150,7 +150,10 @@ export default function ConvertForm({
   }, [accounts, fromAsset, holderOf]);
 
   const moment = occurredAt(withDefaultTime(entry, new Date()));
-  const availableKey = fromAsset && accountId ? `${accountId}|${fromAsset.id}|${moment}` : null;
+  // A half-typed date or time asks nothing: the server would refuse the instant.
+  const validMoment = /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && /^(\d{2}:\d{2})?$/.test(entry.time);
+  const availableKey =
+    fromAsset && accountId && validMoment ? `${accountId}|${fromAsset.id}|${moment}` : null;
   useEffect(() => {
     if (!availableKey || !fromAsset) return;
     let live = true;
@@ -368,8 +371,9 @@ export default function ConvertForm({
             </div>
             <p className="ui-field__hint">
               The cash you give up leaves {account?.name ?? 'the account'} and the cash you receive
-              arrives there. Nothing counts as money added or taken out; only a change in the
-              exchange rate since you got the cash shows as profit or loss.
+              arrives there. Nothing counts as money added or taken out. Any difference between the
+              cost of the cash you give up and the value of what you receive, in USD, shows as
+              profit or loss.
             </p>
             <details
               className="ui-more"

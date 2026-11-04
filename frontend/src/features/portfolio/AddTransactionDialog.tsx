@@ -797,6 +797,17 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     (instrumentId: string) => holderOf(accounts ?? [], instrumentId),
     [accounts],
   );
+  // Switching to or from Convert swaps the whole body, so the Type choice is made anew: give the
+  // keyboard back to the type that was just chosen.
+  const firstKind = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of type moves the focus.
+  useEffect(() => {
+    if (firstKind.current) {
+      firstKind.current = false;
+      return;
+    }
+    document.querySelector<HTMLInputElement>(`input[name="${id}-kind"]:checked`)?.focus();
+  }, [kind === 'convert']);
   const typeField = (
     <div className="ui-field">
       <span id={`${id}-type`} className="ui-field__label">

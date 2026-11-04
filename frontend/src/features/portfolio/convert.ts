@@ -29,11 +29,17 @@ export interface ConvertEntry {
 
 export type ConvertProblem = 'currency' | 'amount' | 'received' | 'date' | 'time' | 'comment';
 
+/** A positive amount with at most 18 decimal places, the precision the rate is worked out at. */
+const fits = (value: string) => {
+  const text = positive(value);
+  return text !== null && (text.split('.')[1] ?? '').length <= 18;
+};
+
 export function convertProblems(entry: ConvertEntry, today: string): Set<ConvertProblem> {
   const found = new Set<ConvertProblem>();
   if (entry.from === entry.to) found.add('currency');
-  if (positive(entry.amount) === null) found.add('amount');
-  if (positive(entry.received) === null) found.add('received');
+  if (!fits(entry.amount)) found.add('amount');
+  if (!fits(entry.received)) found.add('received');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date) || entry.date > today) found.add('date');
   if (entry.time && !/^\d{2}:\d{2}$/.test(entry.time)) found.add('time');
   if ([...entry.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
@@ -42,18 +48,23 @@ export function convertProblems(entry: ConvertEntry, today: string): Set<Convert
 
 const PLACES = 18;
 
-/** `numerator / denominator` of two positive decimal strings, rounded to 18 places and trimmed. */
-function quotient(numerator: string, denominator: string): string {
+/**
+ * `numerator / denominator` of two positive decimal strings, rounded to 18 places and trimmed;
+ * null when the divisor has no digit within 18 places.
+ */
+function quotient(numerator: string, denominator: string): string | null {
   const atoms = (value: string) => {
     const [whole, fraction = ''] = value.split('.');
     return BigInt(whole + fraction.padEnd(PLACES, '0').slice(0, PLACES));
   };
   const divisor = atoms(denominator);
+  if (divisor === 0n) return null;
   const scaled = (atoms(numerator) * 10n ** BigInt(PLACES) * 2n + divisor) / (divisor * 2n);
   const padded = String(scaled).padStart(PLACES + 1, '0');
   const fraction = padded.slice(-PLACES).replace(/0+$/, '');
   const whole = padded.slice(0, -PLACES);
-  return fraction ? `${whole}.${fraction}` : whole;
+  const text = fraction ? `${whole}.${fraction}` : whole;
+  return text === '0' ? null : text;
 }
 
 /**
@@ -85,7 +96,7 @@ export function rateText(entry: ConvertEntry): string | null {
 /**
  * The sale as the server takes it. USD received is the sale's USD amount itself. EUR or RUB
  * received go as paid: when the cash given up is USD the owner's two amounts are the rate, so
- * the sale is worth exactly the dollars handed over; between EUR and RUB the server values the
+ * the sale is worth the dollars handed over, to the 18 places the rate is kept at; between EUR and RUB the server values the
  * amount at the Bank of Russia rate of the day.
  */
 export function convertTrade(
