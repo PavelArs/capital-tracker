@@ -27,6 +27,26 @@ export interface GoalScenario {
   projectedIn10Years?: string | null;
 }
 
+/**
+ * GOAL-REAL: the goal read in today's money. The target keeps its value and the contribution
+ * stays as entered, and each case's return is the nominal one corrected by the yearly inflation
+ * of the goal's currency.
+ */
+export interface GoalReal {
+  /** The yearly inflation the returns were corrected by, in percent. */
+  inflationPercent: string;
+  /** The base case's return after that inflation, in percent; known even with no cases. */
+  returnPercent: string;
+  status: GoalStatus;
+  scenarios: GoalScenario[];
+}
+
+/** One reading per inflation basis; null: that basis has no inflation figure for the currency. */
+export interface GoalRealReadings {
+  official: GoalReal | null;
+  personal: GoalReal | null;
+}
+
 export interface Goal {
   id: string;
   name: string;
@@ -54,6 +74,8 @@ export interface Goal {
   status: GoalStatus;
   /** Empty while the portfolio has no value in the goal's currency. */
   scenarios: GoalScenario[];
+  /** Absent in an answer kept from before the server sent it. */
+  real?: GoalRealReadings;
 }
 
 export interface GoalList {
@@ -87,8 +109,12 @@ export interface GoalForecast {
   complete: boolean;
   /** Held assets valued at a stored market price older than 2 hours, as the forecast valued them. */
   stalePrices?: number;
-  points: ({ on: string } & Record<ScenarioKey, string | null>)[];
+  points: GoalForecastPoint[];
+  /** GOAL-REAL: the same cases in today's money, per basis; null without an inflation figure. */
+  real?: { official: GoalForecastPoint[] | null; personal: GoalForecastPoint[] | null };
 }
+
+export type GoalForecastPoint = { on: string } & Record<ScenarioKey, string | null>;
 
 export interface NewGoal extends GoalTerms {
   /** One per attempt; a retry of the same attempt returns the goal it made. */
@@ -106,6 +132,11 @@ export interface GoalInsights {
   averages: Record<3 | 6 | 12, string | null>;
   paceStatus: 'insufficient-history' | 'missing-value' | 'projected' | 'beyond-horizon';
   paceReachedOn: string | null;
+  /** GOAL-REAL: the same pace judged in today's money, per basis. */
+  real?: {
+    official: { paceStatus: GoalInsights['paceStatus']; paceReachedOn: string | null } | null;
+    personal: { paceStatus: GoalInsights['paceStatus']; paceReachedOn: string | null } | null;
+  };
   growth: {
     from: string | null;
     contributions: string | null;

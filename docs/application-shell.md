@@ -50,7 +50,7 @@ already say what needs attention). **Skip to content** jumps to the main area. D
 and 1280 show the full sidebar. On phones (under 560 px) a page header is the title, then the
 currency switch with **Add transaction** on one row, then the page's own buttons.
 
-Pages that show values after inflation (the Dashboard, the Portfolio and an asset's page so far)
+Pages that show values after inflation (the Dashboard, the Portfolio, an asset's page, the Banks list and a deposit's page, the Goals list and a goal's page)
 add a **Nominal / Real** switch beside the currency switch, one choice for all of them, kept in
 this browser and Nominal on the first visit. **One reading at a time:** Nominal means the figures
 as counted, with no inflation figure, label or note anywhere on the page; Real means the figures
@@ -66,6 +66,20 @@ what it cost, the inflation since its day, the cost in today's money, its value 
 profit. The card follows the chosen rate, shows a dash for a purchase it cannot read, and warns
 while an account whose history starts later may hold more purchases than are listed. It is read
 on its own from `GET /accounting/portfolio/assets/:instrumentId/lots`; phones get two-line rows.
+
+Goals (GOAL-REAL) read the plan the same way. A goal's target is a sum in today's money and the
+monthly sum stays as entered; under Real every case's yearly return is the entered one corrected by
+the yearly inflation of the goal's currency (the last twelve months of the official series, or the
+owner's own rate, whichever Settings picks), and the status, the monthly sum a date needs, the
+forecast, the date a case gets there, the chart's forecast fan and the 6-month pace row follow. The
+list, the goal's page, the nearest goal on the Dashboard and the plan under the Add/Edit dialog show
+only the chosen reading; a goal that cannot be read in Real (no inflation figure for the currency
+or no rate of the owner's own) shows "Not known" with the reason, never the nominal verdict. A goal
+that has reached its sum stays reached in both. The chart shows only the forecast under Real: its
+history is money as it was and is not carried to today's money. The contributions and growth
+figures are money movements and stay as they were in both modes. The server answers both readings
+(`real.official` and `real.personal` on a goal, on its forecast and on its insights); the browser
+only picks one.
 
 The bell in every page header (between the currency switch and **Add transaction**) holds what
 needs the owner: old prices or rates, blockchain transactions to classify, wallets that failed

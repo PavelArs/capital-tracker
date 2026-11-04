@@ -198,3 +198,37 @@ it('GOAL-WIDGETS keeps both cards visible during loading and failure, then retri
   );
   expect(read).toHaveBeenCalledTimes(2);
 });
+
+it("GOAL-REAL-PACE judges the 6-month pace in today's money under Real, and not otherwise", async () => {
+  vi.spyOn(goalsApi, 'insights').mockResolvedValue({
+    currency: 'USD',
+    asOf: '2026-10-18',
+    complete: true,
+    months: [],
+    averages: { 3: '100', 6: '100', 12: '100' },
+    paceStatus: 'projected',
+    paceReachedOn: '2030-02-18',
+    real: {
+      official: { paceStatus: 'projected', paceReachedOn: '2031-06-18' },
+      personal: null,
+    },
+    growth: { from: null, contributions: '1000', market: '50', total: '1050' },
+  });
+  const pace = () => screen.getByText('At your 6-month pace').parentElement as HTMLElement;
+  const real = render(<GoalInsights goal={goal} mode={{ real: true, basis: 'official' }} />);
+  await screen.findByText('Last 6 months');
+  expect(pace()).toHaveTextContent('Jun 2031');
+  expect(pace()).not.toHaveTextContent('Feb 2030');
+  expect(screen.getByText(/expected return after inflation/)).toBeVisible();
+  expect(screen.queryByText(/nominal/i)).toBeNull();
+  real.unmount();
+  render(<GoalInsights goal={goal} mode={{ real: true, basis: 'personal' }} />);
+  await screen.findByText('Last 6 months');
+  expect(pace()).toHaveTextContent(/No real figure: no USD inflation rate of your own/);
+  expect(pace()).not.toHaveTextContent('Feb 2030');
+  cleanup();
+  render(<GoalInsights goal={goal} mode={{ real: false }} />);
+  await screen.findByText('Last 6 months');
+  expect(pace()).toHaveTextContent('Feb 2030');
+  expect(screen.queryByText(/inflation/i)).toBeNull();
+});

@@ -8,7 +8,13 @@ import {
   type ScenarioKey,
   scenarioReturns,
 } from './goal-forecast';
-import { expected, type GoalRow, type PortfolioNow } from './goal-view';
+import {
+  expected,
+  type GoalRow,
+  type PortfolioNow,
+  realReturnPercent,
+  type YearlyInflation,
+} from './goal-view';
 
 /** Without a deadline the chart runs a year past the month the base case gets there. */
 const AFTER_REACHED = 12;
@@ -26,22 +32,49 @@ export type GoalForecastPoint = { on: string } & Record<ScenarioKey, string | nu
  * and payment days as the goal's forecast, so the last point of a goal with a deadline is its
  * projection at the deadline. Empty while the portfolio has no priced value in the goal's
  * currency or once the deadline has passed. Says how many held prices are stale, as the value did.
+ * With the yearly inflation it carries the same cases in today's money too (GOAL-REAL), one
+ * reading per basis, each running as far as its own base case needs.
  */
-export function goalForecast(row: GoalRow, now: PortfolioNow, today: string) {
-  const empty = {
+export function goalForecast(
+  row: GoalRow,
+  now: PortfolioNow,
+  today: string,
+  inflation?: YearlyInflation,
+) {
+  const nominal = scenarioReturns(Number(row.expectedReturnPercent));
+  const reading = (rate: number | null | undefined): GoalForecastPoint[] | null => {
+    if (rate === null || rate === undefined || !Number.isFinite(rate) || rate <= -100) return null;
+    return pointsOf(
+      row,
+      now,
+      today,
+      Object.fromEntries(
+        Object.entries(nominal).map(([key, yearly]) => [key, realReturnPercent(yearly, rate)]),
+      ) as Record<ScenarioKey, number>,
+    );
+  };
+  return {
     currency: row.currency,
     asOf: today,
     complete: now.complete,
     // The forecast's own valuation: the page's goal read may have seen other prices.
     stalePrices: now.stalePrices,
-    points: [] as GoalForecastPoint[],
+    points: pointsOf(row, now, today, nominal),
+    real: { official: reading(inflation?.official), personal: reading(inflation?.personal) },
   };
+}
+
+function pointsOf(
+  row: GoalRow,
+  now: PortfolioNow,
+  today: string,
+  returns: Record<ScenarioKey, number>,
+): GoalForecastPoint[] {
   // Forecast the priced subset; completeness still identifies the excluded value.
-  if (now.value === null) return empty;
+  if (now.value === null) return [];
   const current = Number(now.value);
   const target = Number(row.targetAmount);
   const plan = row.monthlyContribution === null ? 0 : Number(row.monthlyContribution);
-  const returns = scenarioReturns(Number(row.expectedReturnPercent));
   const rates = Object.entries(returns).map(
     ([key, yearly]) => [key as ScenarioKey, monthlyRate(yearly)] as const,
   );
@@ -50,7 +83,7 @@ export function goalForecast(row: GoalRow, now: PortfolioNow, today: string) {
   let end: { on: string; months: number; payments: number } | null = null;
   if (row.deadline !== null) {
     const months = monthsBetween(today, row.deadline);
-    if (months <= 0) return empty;
+    if (months <= 0) return [];
     const payments = paymentsBetween(today, row.deadline);
     anniversaries = payments;
     // A deadline between two payment days closes the chart with its own point.
@@ -76,5 +109,5 @@ export function goalForecast(row: GoalRow, now: PortfolioNow, today: string) {
     ]) as GoalForecastPoint;
   const points = months.map((month) => point(addMonths(today, month), month, month));
   if (end) points.push(point(end.on, end.months, end.payments));
-  return { ...empty, points };
+  return points;
 }

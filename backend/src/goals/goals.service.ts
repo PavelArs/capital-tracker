@@ -12,6 +12,7 @@ import { moscowDate } from '../fx-rates/fx-conversion';
 import { PortfolioSnapshotsService } from '../portfolio-snapshots/portfolio-snapshots.service';
 import { goalForecast } from './goal-chart';
 import { addMonths, MAX_MONTHS } from './goal-forecast';
+import { yearlyInflation } from './goal-inflation';
 import {
   type GoalPreviewInput,
   parseGoal,
@@ -19,7 +20,7 @@ import {
   parseGoalUpdate,
   parseUuid,
 } from './goal-input';
-import { type GoalRow, goalView, type PortfolioNow } from './goal-view';
+import { type GoalRow, goalView, type PortfolioNow, type YearlyInflation } from './goal-view';
 
 /** The most goals one owner keeps; a personal list never needs more. */
 export const MAX_GOALS = 20;
@@ -65,7 +66,8 @@ export class GoalsService {
     // One instant for the value and its day, so a read across Moscow midnight keeps them together.
     const at = new Date();
     const now = await this.snapshots.current(owner, row.currency, at);
-    return goalForecast(row, now, moscowDate(at));
+    const inflation = await yearlyInflation(this.source.manager, owner, row.currency);
+    return goalForecast(row, now, moscowDate(at), inflation);
   }
 
   /** Contributions and growth use the same priced subset and exact flows as the dashboard. */
@@ -77,28 +79,48 @@ export class GoalsService {
     const at = new Date();
     const year = await this.snapshots.growth(owner, { period: '1Y', currency: row.currency }, at);
     const average = year.contributions.averages[6];
-    const pace =
+    const inflation = await yearlyInflation(this.source.manager, owner, row.currency);
+    type Reading = { scenarios: { key: string; reachedOn: string | null }[] } | null;
+    const reachedOn = (reading: Reading) =>
+      reading?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn ?? null;
+    const pace = (reading: Reading) =>
+      average === null
+        ? ('insufficient-history' as const)
+        : year.value === null
+          ? ('missing-value' as const)
+          : reachedOn(reading)
+            ? ('projected' as const)
+            : ('beyond-horizon' as const);
+    const planned =
       average === null
         ? null
         : goalView(
             { ...row, monthlyContribution: average },
             { value: year.value, complete: year.complete, stalePrices: 0 },
             moscowDate(at),
+            inflation,
           );
+    // GOAL-REAL: the same pace judged in today's money, one reading per basis.
+    const real = (basis: keyof YearlyInflation) => {
+      // Without a monthly average there is no plan to judge, but a basis that has an
+      // inflation figure still owes the same "not enough history" answer.
+      if (planned === null)
+        return inflation?.[basis] == null
+          ? null
+          : { paceStatus: 'insufficient-history' as const, paceReachedOn: null };
+      const reading = planned.real[basis];
+      return reading === null
+        ? null
+        : { paceStatus: pace(reading), paceReachedOn: reachedOn(reading) };
+    };
     return {
       currency: row.currency,
       asOf: moscowDate(at),
       complete: year.complete,
       ...year.contributions,
-      paceStatus:
-        average === null
-          ? ('insufficient-history' as const)
-          : year.value === null
-            ? ('missing-value' as const)
-            : pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn
-              ? ('projected' as const)
-              : ('beyond-horizon' as const),
-      paceReachedOn: pace?.scenarios.find((scenario) => scenario.key === 'base')?.reachedOn ?? null,
+      paceStatus: pace(planned),
+      paceReachedOn: reachedOn(planned),
+      real: { official: real('official'), personal: real('personal') },
       growth: {
         from: year.startAt,
         contributions: year.netFlow,
@@ -266,8 +288,18 @@ export class GoalsService {
   private async views(owner: string, rows: GoalRow[], at = new Date()) {
     const today = moscowDate(at);
     const now = new Map<string, PortfolioNow>();
-    for (const currency of new Set(rows.map((row) => row.currency)))
+    const inflation = new Map<string, YearlyInflation>();
+    for (const currency of new Set(rows.map((row) => row.currency))) {
       now.set(currency, await this.snapshots.current(owner, currency, at));
-    return rows.map((row) => goalView(row, now.get(row.currency) as PortfolioNow, today));
+      inflation.set(currency, await yearlyInflation(this.source.manager, owner, currency));
+    }
+    return rows.map((row) =>
+      goalView(
+        row,
+        now.get(row.currency) as PortfolioNow,
+        today,
+        inflation.get(row.currency) as YearlyInflation,
+      ),
+    );
   }
 }

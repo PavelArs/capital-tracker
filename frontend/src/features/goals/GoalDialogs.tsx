@@ -26,15 +26,8 @@ import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { useAttempt } from '../accounting/feedback';
-import {
-  addMonths,
-  bannerTone,
-  enteredInput,
-  flooredText,
-  rateText,
-  today,
-  verdict,
-} from './goal-format';
+import { addMonths, bannerTone, enteredInput, flooredText, rateText, today } from './goal-format';
+import { readGoal, useGoalMode, verdictOf } from './goal-reading';
 import './goals.css';
 
 // What the server accepts (goal-input.ts): a sum with up to two decimals, a yearly return below
@@ -301,6 +294,7 @@ function PlanPreview({
   failed: unknown;
   pending: boolean;
 }) {
+  const mode = useGoalMode();
   // The server refused these terms: saving them would be refused the same way.
   const refusal =
     isAxiosError<{ message?: unknown }>(failed) &&
@@ -327,11 +321,12 @@ function PlanPreview({
         </Banner>
       </div>
     );
-  const tone = bannerTone[preview.status];
+  const reading = readGoal(preview, mode);
+  const tone = bannerTone[reading.goal.status];
   return (
     <div className="goal-preview" role="status" aria-label="Plan" aria-busy={pending}>
       <Banner tone={tone} icon={tone === 'warn' || tone === 'neg' ? 'alert' : 'info'} role="none">
-        {verdict(preview)} A projection, not a promise.
+        {verdictOf(reading)} A projection, not a promise.
       </Banner>
     </div>
   );

@@ -410,3 +410,78 @@ describe('GOAL-CHART goal chart', () => {
     expect(invested).not.toContain('L');
   });
 });
+
+describe('GOAL-REAL-CHART the chart in the mode that is chosen', () => {
+  const real = {
+    inflationPercent: '9.5',
+    returnPercent: '4.1096',
+    status: 'behind' as const,
+    scenarios: (['pessimistic', 'base', 'optimistic'] as const).map((key, index) => ({
+      key,
+      returnPercent: ['0.4566', '4.1096', '7.7625'][index],
+      requiredMonthly: '4000000.00',
+      monthsToTarget: 90,
+      reachedOn: '2034-04-13',
+      projectedAtDeadline: ['5800000.00', '5900000.00', '6000000.00'][index],
+      gap: '16000000.00',
+    })),
+  };
+  const withReal: Goal = { ...goal, real: { official: real, personal: null } };
+  const realForecast: GoalForecast = {
+    ...forecast,
+    real: {
+      official: [
+        {
+          on: '2026-10-13',
+          pessimistic: '5500000.00',
+          base: '5500000.00',
+          optimistic: '5500000.00',
+        },
+        {
+          on: '2027-01-28',
+          pessimistic: '5800000.00',
+          base: '5900000.00',
+          optimistic: '6000000.00',
+        },
+      ],
+      personal: null,
+    },
+  };
+
+  it("GOAL-REAL-CHART-ONE-REAL draws only the real forecast, in today's money", async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(realForecast);
+    render(<GoalChart goal={withReal} mode={{ real: true, basis: 'official' }} />);
+    const chart = await screen.findByRole('group', { name: /Use the arrow keys/ });
+    const legend = await screen.findByLabelText('Chart legend');
+    expect(await within(legend).findByText('Forecast at 4.1%')).toBeInTheDocument();
+    expect(within(legend).getByText('0.4% to 7.7%')).toBeInTheDocument();
+    // The history is money as it was, not in today's money, so it is not drawn.
+    expect(within(legend).queryByText('Portfolio')).toBeNull();
+    expect(within(legend).queryByText('Money put in')).toBeNull();
+    expect(chart.querySelector('.goal-chart__line')).toBeNull();
+    expect(chart.querySelector('.goal-chart__forecast')).not.toBeNull();
+    expect(screen.getByText("In today's money · RUB")).toBeInTheDocument();
+    expect(screen.queryByText(/nominal/i)).toBeNull();
+  });
+
+  it('GOAL-REAL-CHART-ONE-NOMINAL keeps the history and the nominal forecast, with no word of inflation', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(realForecast);
+    render(<GoalChart goal={withReal} mode={{ real: false }} />);
+    const legend = await screen.findByLabelText('Chart legend');
+    expect(await within(legend).findByText('Forecast at 14%')).toBeInTheDocument();
+    expect(within(legend).getByText('Portfolio')).toBeInTheDocument();
+    expect(screen.queryByText(/inflation|today's money/i)).toBeNull();
+  });
+
+  it('GOAL-REAL-CHART-UNKNOWN draws nothing and says why, not the nominal forecast', async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(realForecast);
+    render(<GoalChart goal={withReal} mode={{ real: true, basis: 'personal' }} />);
+    expect(
+      await screen.findByText('There is no forecast to draw without a real figure.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Use the arrow keys/ })).toBeNull();
+  });
+});

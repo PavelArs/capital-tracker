@@ -5,7 +5,8 @@ import { Card } from '@/ui/Card';
 import { Icon } from '../shell/icons';
 import { useCachedRead } from '../shell/useCachedRead';
 import { GoalBar, GoalFigures } from './GoalProgress';
-import { monthYear, ordered, statusText, statusTone, verdict } from './goal-format';
+import { monthYear, ordered, statusText, statusTone } from './goal-format';
+import { readGoal, useGoalMode, verdictOf } from './goal-reading';
 import '../shell/shell-page.css';
 import './goals.css';
 
@@ -13,9 +14,12 @@ import './goals.css';
 // no goals or only reached ones leave the dashboard as it was: this card is never what it waits for.
 export default function NearestGoal() {
   const { data } = useCachedRead(cachedReads.goals);
+  const mode = useGoalMode();
   if (data === null) return null;
-  const goal = ordered(data.items).find((item) => item.status !== 'reached');
-  if (!goal) return null;
+  const stored = ordered(data.items).find((item) => item.status !== 'reached');
+  if (!stored) return null;
+  const reading = readGoal(stored, mode);
+  const goal = reading.goal;
   return (
     <Card className="goal-dash" label="Nearest goal">
       <div className="goal-dash__head">
@@ -30,14 +34,14 @@ export default function NearestGoal() {
         </div>
       </div>
       <div className="goal-dash__progress">
-        <GoalFigures goal={goal} />
+        <GoalFigures goal={goal} real={mode.real} />
         <GoalBar goal={goal} />
       </div>
       <div className="goal-dash__verdict">
         <Badge tone={statusTone[goal.status]} dot>
           {statusText[goal.status]}
         </Badge>
-        <span>{verdict(goal)}</span>
+        <span>{verdictOf(reading)}</span>
         <span className="goal-dash__links">
           <Link to={`/goals/${goal.id}`} className="ui-link ui-link--target">
             Open goal
