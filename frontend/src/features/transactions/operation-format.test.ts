@@ -12,6 +12,8 @@ import {
   sourceLabel,
   statusLabel,
   transactionHash,
+  typeKey,
+  typeLabel,
   walletLabel,
 } from './operation-format';
 
@@ -214,4 +216,37 @@ describe('RUB-LOSS-VALUE', () => {
       expect(rounding({ type, direction: 'out', paid: null } as Operation, 'RUB')).toBe('down');
     },
   );
+});
+
+describe('CASH-CONVERT a sale or buy of one currency settled in another is a conversion', () => {
+  const trade = (type: 'buy' | 'sell', asset: string, settlement: string | null): Operation =>
+    ({
+      type,
+      direction: type === 'buy' ? 'in' : 'out',
+      asset: { instrumentId: 'a', symbol: asset, name: asset },
+      settlement: settlement && {
+        asset: { instrumentId: 'b', symbol: settlement, name: settlement },
+        quantity: '1',
+      },
+    }) as unknown as Operation;
+
+  it('is named Convert and kept apart from sales in the type filter', () => {
+    for (const operation of [trade('sell', 'RUB', 'USD'), trade('buy', 'EUR', 'RUB')]) {
+      expect(typeLabel(operation)).toBe('Convert');
+      expect(typeKey(operation)).toBe('convert');
+    }
+  });
+
+  it('leaves a sale of a coin, or of cash for a stablecoin or without cash, as it was', () => {
+    for (const [operation, label, key] of [
+      [trade('sell', 'BTC', 'USD'), 'Sell', 'sell'],
+      [trade('sell', 'USD', 'USDT'), 'Sell', 'sell'],
+      [trade('sell', 'RUB', null), 'Sell', 'sell'],
+      [trade('sell', 'USD', 'USD'), 'Sell', 'sell'],
+      [trade('buy', 'BTC', 'RUB'), 'Buy', 'buy'],
+    ] as const) {
+      expect(typeLabel(operation)).toBe(label);
+      expect(typeKey(operation)).toBe(key);
+    }
+  });
 });

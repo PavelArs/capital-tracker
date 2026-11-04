@@ -45,12 +45,14 @@ export interface TransactionEntry {
 
 /**
  * The window's types (M9, PR-OPS-2): Buy, Sell, Transfer, Income and Expense, and under More
- * Reward, Airdrop, Gift and Fee. A gift is received or sent.
+ * Reward, Airdrop, Gift, Fee and Convert (cash in one currency becomes cash in another). A gift
+ * is received or sent.
  */
 export type EntryKind =
   | 'buy'
   | 'sell'
   | 'transfer'
+  | 'convert'
   | 'income'
   | 'expense'
   | 'reward'

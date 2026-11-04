@@ -83,7 +83,29 @@ export function sourceLabel(operation: Operation): string {
     : sourceLabels[operation.source];
 }
 
+const cashSymbols: readonly (string | null)[] = ['USD', 'EUR', 'RUB'];
+
+/**
+ * CASH-CONVERT: a buy or sale of one currency's cash settled in another's is a conversion, however
+ * it was entered (the Convert type, or a broker's currency exchange).
+ */
+export function isConversion(operation: Operation): boolean {
+  const given = operation.asset.symbol;
+  const received = operation.settlement?.asset.symbol;
+  return (
+    (operation.type === 'buy' || operation.type === 'sell') &&
+    cashSymbols.includes(given) &&
+    cashSymbols.includes(received ?? null) &&
+    given !== received
+  );
+}
+
+/** What the type filter and the type column group an operation under. */
+export const typeKey = (operation: Operation) =>
+  isConversion(operation) ? 'convert' : (operation.type ?? `direction:${operation.direction}`);
+
 export function typeLabel(operation: Operation): string {
+  if (isConversion(operation)) return 'Convert';
   return operation.type ? typeLabels[operation.type] : directionLabels[operation.direction];
 }
 

@@ -799,6 +799,52 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     });
   });
 
+  it('CASH-CONVERT a recorded conversion is corrected as the sale it is; Convert is for new ones', async () => {
+    const user = userEvent.setup();
+    const rubles = asset(5, 'Russian ruble', 'RUB', 'fiat');
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, dollars, rubles]);
+    const conversion: Operation = {
+      ...recorded,
+      type: 'sell',
+      direction: 'out',
+      asset: { instrumentId: rubles.id, symbol: 'RUB', name: 'Russian ruble' },
+      quantity: '72000',
+      valueUsd: '800',
+      value: '800',
+      comment: null,
+      settlement: {
+        asset: { instrumentId: dollars.id, symbol: 'USD', name: 'US dollar' },
+        quantity: '800',
+      },
+    };
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '80000',
+    }));
+    const { dialog, onSaved } = await open(conversion);
+    const view = within(dialog);
+    await user.click(view.getByRole('button', { name: 'More' }));
+    expect(view.getByRole('radio', { name: 'Convert' })).toBeDisabled();
+    expect(view.getByLabelText('Amount')).toHaveValue('72000');
+    await user.clear(view.getByLabelText('Total received'));
+    await user.type(view.getByLabelText('Total received'), '810');
+    await user.click(view.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(correct).toHaveBeenCalledWith(
+      id(11),
+      id(30),
+      expect.objectContaining({
+        instrumentId: rubles.id,
+        side: 'sell',
+        quantity: '72000',
+        grossUsd: '810',
+        settlementCurrency: 'USD',
+      }),
+    );
+  });
+
   it('PR-OPS-2 corrects a transfer in place; other kinds of record stay unavailable', async () => {
     const user = userEvent.setup();
     const correctTransfer = vi

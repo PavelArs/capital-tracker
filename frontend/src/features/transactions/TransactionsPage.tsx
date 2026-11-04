@@ -43,6 +43,7 @@ import {
   statusLabels,
   ticker,
   transactionHash,
+  typeKey,
   typeLabel,
   walletLabel,
 } from './operation-format';
@@ -125,9 +126,6 @@ function placeKeys(operation: Operation): string[] {
     ...accounts.map((account) => account?.id),
   ].filter((key): key is string => key !== undefined);
 }
-
-/** Filter key of a row's type; a wallet transaction nobody classified is told by its direction. */
-const typeKey = (operation: Operation) => operation.type ?? `direction:${operation.direction}`;
 
 function assetKeys(operation: Operation): string[] {
   return [operation.asset, operation.counterAsset].flatMap((asset) =>
