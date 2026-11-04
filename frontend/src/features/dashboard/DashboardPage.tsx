@@ -524,11 +524,17 @@ export default function DashboardPage() {
     chosen !== null &&
     sectionHistory !== null &&
     sectionHistory.section === chosen &&
-    sectionHistory.period === period &&
-    (asked === undefined || sectionHistory.currency === asked)
+    sectionHistory.currency === shown?.currency
       ? sectionHistory
       : null;
-  const charted = chosen === null ? shown : ofSection;
+  // As with the whole, another period keeps the last chart until its answer comes; a failed
+  // read of it does not pass the old period's chart off as the new one.
+  const charted =
+    chosen === null
+      ? shown
+      : ofSection !== null && (ofSection.period === period || !sectionFailed)
+        ? ofSection
+        : null;
   const chartLabel = charted
     ? `${chosen === null ? 'Portfolio' : chosenLabel} value, ${periodLabels[charted.period]}, from ${money(
         charted.points.find((point) => point.value !== null)?.value ?? null,
@@ -635,11 +641,11 @@ export default function DashboardPage() {
                 </p>
               )}
             </div>
-            {!!ofSection?.transfersAcross && (
+            {!!charted?.transfersAcross && (
               <p className="dashboard-chart__note" role="note">
-                {ofSection.transfersAcross === 1
-                  ? '1 transfer between sections is'
-                  : `${ofSection.transfersAcross} transfers between sections are`}{' '}
+                {charted.transfersAcross === 1
+                  ? '1 transfer between sections (made at any time) is'
+                  : `${charted.transfersAcross} transfers between sections (made at any time) are`}{' '}
                 not counted as money put in, so Net invested here can read low or high.
               </p>
             )}

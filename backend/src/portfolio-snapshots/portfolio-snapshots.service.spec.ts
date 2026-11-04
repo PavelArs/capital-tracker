@@ -546,3 +546,22 @@ describe('DASH-TRADE-ESTIMATE an asset without a stored price takes its own trad
     ]);
   });
 });
+
+describe('SECTION-CHART which reads take a section', () => {
+  const owner = '00000000-0000-4000-8000-000000000001';
+  const asset = '00000000-0000-4000-8000-000000000002';
+  // These answer before any read of the database, so none is needed.
+  const snapshots = new PortfolioSnapshotsService({} as never, {} as never);
+
+  it('rejects a section the chart does not have', async () => {
+    for (const section of ['cash', '', ['wallet']])
+      await expect(snapshots.history(owner, { section })).rejects.toThrow('Invalid');
+  });
+
+  it('only the history reads one section: the growth and an asset history reject it', async () => {
+    await expect(snapshots.growth(owner, { section: 'wallet' })).rejects.toThrow('Invalid');
+    await expect(snapshots.assetHistory(owner, asset, { section: 'wallet' })).rejects.toThrow(
+      'Invalid',
+    );
+  });
+});

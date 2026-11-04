@@ -1883,7 +1883,7 @@ describe('SECTION-CHART dashboard', () => {
     await user.click(group.getByRole('button', { name: 'Wallets' }));
     const note = await screen.findByRole('note');
     expect(note).toHaveTextContent(
-      '2 transfers between sections are not counted as money put in, so Net invested here can read low or high.',
+      '2 transfers between sections (made at any time) are not counted as money put in, so Net invested here can read low or high.',
     );
   });
 
@@ -1896,5 +1896,31 @@ describe('SECTION-CHART dashboard', () => {
     await user.click(group.getByRole('button', { name: 'Wallets' }));
     await screen.findByRole('img', { name: /^Wallets value/ });
     expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('SECTION-CHART keeps the last chart of a section while another period loads', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (period === '3M') await new Promise<void>((resolve) => (release = resolve));
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    await within(chart).findByRole('img', { name: /^Brokers value, past month/ });
+    await user.click(within(chart).getByRole('tab', { name: '3M' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('3M', undefined, 'broker'));
+    expect(within(chart).getByRole('img', { name: /^Brokers value, past month/ })).toBeVisible();
+    expect(screen.queryByText(/Loading the Brokers chart/)).toBeNull();
+    release();
+    expect(
+      await within(chart).findByRole('img', { name: /^Brokers value, past 3 months/ }),
+    ).toBeInTheDocument();
   });
 });
