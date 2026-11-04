@@ -1,6 +1,12 @@
 import type { AssetLots, AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { describe, expect, it } from 'vitest';
-import { estimateOverdue, firstBought, propertiesOf, propertyTotal } from './real-estate';
+import {
+  estimateOverdue,
+  firstBought,
+  propertiesOf,
+  propertyShare,
+  propertyTotal,
+} from './real-estate';
 
 // Synthetic names, ids and amounts only.
 const house = '00000000-0000-4000-8000-000000000011';
@@ -74,5 +80,22 @@ describe('PROPERTY-LIST real estate figures', () => {
     expect(firstBought(lots(false, [house, '2025-09-01T00:00:00.000Z']), classes)).toBeNull();
     expect(firstBought(lots(true, [safe, '2025-09-01T00:00:00.000Z']), classes)).toBeNull();
     expect(firstBought(null, classes)).toBeNull();
+  });
+
+  it('NW-SHARE-ESTIMATE gives the share of net worth, estimated against its known part while it is unknown', () => {
+    const worth = (changes: Partial<PortfolioValuation>) =>
+      ({
+        totalValue: '20000',
+        pricedSubtotal: '20000',
+        ...changes,
+      }) as unknown as PortfolioValuation;
+    expect(propertyShare('5000', worth({}))).toEqual({ percent: 25, estimated: false });
+    expect(propertyShare('5000', worth({ totalValue: null, pricedSubtotal: '10000' }))).toEqual({
+      percent: 50,
+      estimated: true,
+    });
+    // A net worth that is not above zero carries no share.
+    expect(propertyShare('5000', worth({ totalValue: null, pricedSubtotal: '0' }))).toBeNull();
+    expect(propertyShare('5000', worth({ totalValue: '-1' }))).toBeNull();
   });
 });

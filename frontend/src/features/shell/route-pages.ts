@@ -13,6 +13,7 @@ export const pages = {
   deposit: lazyPage(() => import('@features/deposits/DepositPage')),
   brokers: lazyPage(() => import('@features/broker/BrokersPage')),
   realEstate: lazyPage(() => import('@features/property/RealEstatePage')),
+  property: lazyPage(() => import('@features/property/PropertyPage')),
   goals: lazyPage(() => import('@features/goals/GoalsPage')),
   goal: lazyPage(() => import('@features/goals/GoalPage')),
   settings: lazyPage(() => import('@features/shell/SettingsPage')),
@@ -43,5 +44,6 @@ export const warmedPages: Array<() => Promise<unknown>> = [
   pages.asset.preload,
   pages.wallet.preload,
   pages.deposit.preload,
+  pages.property.preload,
   pages.goal.preload,
 ];

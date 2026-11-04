@@ -33,6 +33,8 @@ interface Props {
   name: string;
   /** The currency the asset is valued in; the price is entered and kept in it. */
   currency: ValuationCurrency;
+  /** A property: the value is the owner's estimate of the whole property, not a price of a unit. */
+  estimate?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -45,6 +47,7 @@ export default function UpdatePriceDialog({
   instrumentId,
   name,
   currency,
+  estimate = false,
   onClose,
   onSaved,
 }: Props) {
@@ -67,7 +70,13 @@ export default function UpdatePriceDialog({
   const toast = useToast();
 
   const price = positive(value);
-  const problem = price === null ? numberProblem(value, 'Enter a price greater than 0') : null;
+  const problem =
+    price === null
+      ? numberProblem(
+          value,
+          estimate ? 'Enter an estimate greater than 0' : 'Enter a price greater than 0',
+        )
+      : null;
   const shown = problem !== null && (tried || left);
 
   const save = async (event: FormEvent) => {
@@ -100,8 +109,8 @@ export default function UpdatePriceDialog({
       });
       toast.show({
         tone: 'success',
-        title: 'Price updated',
-        detail: `${name} uses the new price from now on.`,
+        title: estimate ? 'Estimate updated' : 'Price updated',
+        detail: `${name} uses the new ${estimate ? 'estimate' : 'price'} from now on.`,
       });
       onSaved();
     } catch (caught) {
@@ -125,15 +134,23 @@ export default function UpdatePriceDialog({
       <form ref={form} onSubmit={save} noValidate>
         <ModalHeader
           titleId={`${id}-title`}
-          title="Update price"
+          title={estimate ? 'Update estimate' : 'Update price'}
           onClose={onClose}
           closeDisabled={saving}
-          intro={`${name} is valued by hand. The new price applies from now on; earlier days keep the price they had.`}
+          intro={
+            estimate
+              ? `${name} is valued at your own estimate. The new estimate applies from now on and counts as market movement, not money put in; earlier days keep the estimate they had.`
+              : `${name} is valued by hand. The new price applies from now on; earlier days keep the price they had.`
+          }
         />
         <ModalBody>
           <Field
             id={`${id}-price`}
-            label={`Price of one unit, ${currency}`}
+            label={
+              estimate
+                ? `Estimate of the whole property, ${currency}`
+                : `Price of one unit, ${currency}`
+            }
             error={shown ? problem : null}
           >
             {(control) => (
@@ -157,7 +174,7 @@ export default function UpdatePriceDialog({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save price'}
+            {saving ? 'Saving…' : estimate ? 'Save estimate' : 'Save price'}
           </Button>
         </ModalFooter>
       </form>
