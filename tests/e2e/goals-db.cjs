@@ -393,6 +393,8 @@ async function sameAsHistory(service, snapshots, owner, goalId) {
             ? 'projected'
             : 'beyond-horizon',
     paceReachedOn: reachedOn,
+    // GOAL-REAL: this probe seeds no inflation figure, so neither basis has a reading.
+    real: { official: null, personal: null },
     growth: {
       from: history.points.find((point) => point.value !== null)?.at ?? null,
       contributions: history.netFlow,
