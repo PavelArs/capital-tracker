@@ -105,7 +105,7 @@ export default function PropertyDetailsDialog({
           <Field
             id={`${id}-rent`}
             label={`Rent a month, ${currency}`}
-            hint="Leave empty when the property brings no rent."
+            hint="The rent of the whole property, as you enter it. Leave empty when it brings no rent."
             error={shown ? problem : null}
           >
             {(control) => (

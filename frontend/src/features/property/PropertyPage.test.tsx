@@ -349,6 +349,16 @@ describe('PROPERTY-PAGE the page of one property', () => {
     expect(await screen.findByText('Details saved')).toBeInTheDocument();
   });
 
+  it('PROPERTY-DETAILS-UNREAD Edit stays off while the stored details could not be read', async () => {
+    // Saving sends the whole record: an unread rent or note must not be overwritten as empty.
+    vi.spyOn(propertyDetailsApi, 'list').mockRejectedValue(new Error('offline'));
+    await open();
+    const card = await screen.findByRole('region', { name: 'Rent and notes' });
+    await waitFor(() => expect(propertyDetailsApi.list).toHaveBeenCalled());
+    expect(within(card).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(await within(card).findAllByText('Could not be read')).toHaveLength(2);
+  });
+
   it('PROPERTY-DETAILS empty fields clear the record', async () => {
     const user = userEvent.setup();
     const dialog = await openDetails(user);

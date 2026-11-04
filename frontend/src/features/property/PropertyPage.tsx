@@ -265,19 +265,29 @@ function PropertyDetailsView({
           id="property-notes"
           title="Rent and notes"
           actions={
-            <Button size="sm" icon="edit" onClick={() => setEditing(true)}>
+            // Saving replaces the whole record, so what is stored must have been read first.
+            <Button
+              size="sm"
+              icon="edit"
+              disabled={mine === 'loading' || mine === undefined}
+              onClick={() => setEditing(true)}
+            >
               Edit
             </Button>
           }
         />
         <KeyValue>
           <KeyValueRow term="Rent">
-            {mine === 'loading' || mine === undefined || mine === null || mine.monthlyRent === null
-              ? rent.value
-              : `${money(mine.monthlyRent, mine.currency, false, 'exact')} a month`}
+            {mine === undefined
+              ? 'Could not be read'
+              : mine === 'loading' || mine === null || mine.monthlyRent === null
+                ? rent.value
+                : `${money(mine.monthlyRent, mine.currency, false, 'exact')} a month`}
           </KeyValueRow>
           <KeyValueRow term="Notes">
-            {mine && mine !== 'loading' && mine.note ? (
+            {mine === undefined ? (
+              'Could not be read'
+            ) : mine && mine !== 'loading' && mine.note ? (
               <span className="property-note">{mine.note}</span>
             ) : (
               'None'
