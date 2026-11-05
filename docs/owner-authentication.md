@@ -287,7 +287,7 @@ its `/api` prefix.
 
 | Operation | Contract |
 |---|---|
-| `GET /auth/csrf` | Returns `{ csrfToken }`; reuses a valid session or creates an anonymous one. A supplied Origin must match. The frontend keeps the token only in memory. |
+| `GET /auth/csrf` | Returns `{ csrfToken }`; reuses a valid session or creates an anonymous one. A supplied Origin must match, and a supplied `Sec-Fetch-Site` must be `same-origin` or `none`: a request that a page of another site (or a sibling subdomain) caused is refused with 403 before any session or cookie exists, because the browser leaves the SameSite=Strict cookie out of it and a new anonymous session would replace the owner's cookie. A client that sends no `Sec-Fetch-Site` is judged by Origin alone. The frontend keeps the token only in memory. |
 | `POST /auth/login` | Requires exact Origin, a session cookie and bound `X-CSRF-Token`. Correct owner credentials and confirmed enrollment consume the old session and issue a five-minute pending cookie with `{ mfaRequired: true, csrfToken }`. There is no user or private access yet. Unenrolled owners receive generic 401. |
 | `POST /auth/mfa` | Requires a password-derived pending cookie, exact Origin and its CSRF token, plus `{ kind: 'totp' \| 'recovery', code: string }`. Success consumes pending state and issues a new full cookie with `{ user, csrfToken }`. |
 | `GET /auth/me` | Requires full authentication. Pending/anonymous cookies cannot restore a profile. Browser startup removes the obsolete localStorage `token` key. |
