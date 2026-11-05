@@ -2078,8 +2078,9 @@ describe('DASH-LAYOUT dashboard', () => {
     holdFlatAndDeposit();
     renderPage();
     const top = await screen.findByRole('region', { name: 'Top assets' });
-    const row = await within(top).findByRole('link', { name: /Studio apartment/ });
-    expect(row).toHaveTextContent('Estimate Aug 1, 2026');
+    // The class of the account arrives after the row does; the row waits for it to say so.
+    await within(top).findByText('Estimate Aug 1, 2026');
+    const row = within(top).getByRole('link', { name: /Studio apartment/ });
     expect(row.querySelector('.asset-icon')?.getAttribute('data-glyph')).toBe('⌂');
   });
 
