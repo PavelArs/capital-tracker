@@ -225,9 +225,9 @@ function ValueCell({
 }
 
 // Fixed widths: a chip or filter that shows other rows never moves the columns.
-const columns = ['type', 'asset', 'amount', 'value', 'place', 'status'];
+const columns = ['type', 'asset', 'amount', 'value', 'place', 'status', 'source'];
 
-/** Status, then where the row came from on a second line: "To classify / Blockchain". */
+/** The status of a row on one line; phones say "To classify", the table the whole question. */
 function StatusCell({ operation }: { operation: Operation }) {
   const needs = operation.status === 'needs-classification';
   const muted = operation.status === 'hidden' || operation.status === 'dust';
@@ -235,7 +235,7 @@ function StatusCell({ operation }: { operation: Operation }) {
     <td>
       {needs || muted ? (
         <Badge tone={needs ? 'warn' : 'muted'} dot={needs}>
-          {needs ? 'To classify' : statusLabels[operation.status]}
+          {statusLabels[operation.status]}
         </Badge>
       ) : (
         <span className="transactions-status">
@@ -243,7 +243,15 @@ function StatusCell({ operation }: { operation: Operation }) {
           {statusLabel(operation)}
         </span>
       )}
-      <span className="ui-sub transactions-source">
+    </td>
+  );
+}
+
+/** Where the row came from, a column of its own: "Blockchain", "Manual", "CSV". */
+function SourceCell({ operation }: { operation: Operation }) {
+  return (
+    <td>
+      <span className="transactions-status">
         {operation.source === 'chain' && <Glyph name="chain" />}
         {sourceLabel(operation)}
       </span>
@@ -299,7 +307,7 @@ function OperationRow({
       </td>
       <td className="transactions-wrap">
         <span
-          className="transactions-asset"
+          className={`transactions-asset${operation.counterAsset ? '' : ' transactions-asset--single'}`}
           title={[operation.asset.name, operation.counterAsset?.name].filter(Boolean).join(' → ')}
         >
           <AssetIcon
@@ -334,6 +342,7 @@ function OperationRow({
         )}
       </td>
       <StatusCell operation={operation} />
+      <SourceCell operation={operation} />
     </tr>
   );
 }
@@ -705,6 +714,18 @@ export default function TransactionsPage() {
     });
   };
   const empty = operations.length === 0 && !period;
+  // Wide screens: the search closes the chip row (the prototype); phones: beside Filters.
+  const searchBox = (
+    <Input
+      size="sm"
+      className="ui-search"
+      type="search"
+      placeholder="Search asset, account, type"
+      aria-label="Search transactions"
+      value={search}
+      onChange={(event) => setSearch(event.target.value)}
+    />
+  );
   const addButton = (
     <Button variant="primary" icon="plus" onClick={() => setDialog({})}>
       Add transaction
@@ -888,6 +909,7 @@ export default function TransactionsPage() {
                 );
               })}
             </ChipGroup>
+            {!narrow && searchBox}
             <FilterSheet
               active={[asset, place, kind, period].filter(Boolean).length}
               onReset={() =>
@@ -899,17 +921,7 @@ export default function TransactionsPage() {
                   ? `Show ${visible.length} ${visible.length === 1 ? 'transaction' : 'transactions'}`
                   : 'Show transactions'
               }
-              search={
-                <Input
-                  size="sm"
-                  className="ui-search"
-                  type="search"
-                  placeholder="Search asset, account, type"
-                  aria-label="Search transactions"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              }
+              search={narrow ? searchBox : undefined}
             >
               <label className="ui-filter">
                 <span>Asset</span>
@@ -1053,6 +1065,7 @@ export default function TransactionsPage() {
                     </th>
                     <th scope="col">Account</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Source</th>
                   </tr>
                 </thead>
                 {days.map((group) => (

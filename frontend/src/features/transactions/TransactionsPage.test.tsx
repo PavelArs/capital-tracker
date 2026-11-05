@@ -268,7 +268,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       within(table())
         .getAllByRole('columnheader')
         .map((cell) => cell.textContent),
-    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status']);
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status', 'Source']);
     // Grouped under day headings as in the prototype; the time sits under the type.
     expect(dayHeadings()).toEqual([
       'Jun 21, 2025',
@@ -285,7 +285,8 @@ describe('TransactionsPage (list-all-operations)', () => {
       '+0.00918359',
       '≈ $780.10',
       'Bitcoin wallet bc1qsy…f3t4',
-      'To classifyBlockchain',
+      'Needs classification',
+      'Blockchain',
     ]);
     expect(rows[0]).toEqual([
       'Outgoing08:00',
@@ -293,7 +294,8 @@ describe('TransactionsPage (list-all-operations)', () => {
       '-0.0005',
       '—',
       'Bitcoin wallet bc1qsy…f3t4',
-      'To classifyBlockchain',
+      'Needs classification',
+      'Blockchain',
     ]);
     // A transaction entered without a time says so instead of showing midnight.
     expect(rows[2]).toEqual([
@@ -302,16 +304,18 @@ describe('TransactionsPage (list-all-operations)', () => {
       '0.005',
       '—',
       'Bybit → Cold storage',
-      'RecordedManual',
+      'Recorded',
+      'Manual',
     ]);
-    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'RecordedCSV']);
+    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'Recorded', 'CSV']);
     expect(rows[5]).toEqual([
       'BuyNo time',
       'BTC',
       '+0.00918359',
       '$1,000.00',
       'Bybit',
-      'RecordedManual',
+      'Recorded',
+      'Manual',
     ]);
     expect(screen.getByRole('button', { name: /Needs classification\s*2/ })).toBeInTheDocument();
   });
@@ -380,7 +384,7 @@ describe('TransactionsPage (list-all-operations)', () => {
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     await user.click(screen.getByRole('button', { name: /^CSV/ }));
-    expect(bodyRows().map((row) => cellTexts(row)[5])).toEqual(['RecordedCSV']);
+    expect(bodyRows().map((row) => cellTexts(row)[6])).toEqual(['CSV']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     // A transfer belongs to both of its accounts.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), cold.id);
@@ -1834,7 +1838,8 @@ describe('classify-chain-transactions (M12)', () => {
       '+0.00918359',
       '$1,000.00',
       'Cold storage · bc1qsy…f3t4',
-      'RecordedBlockchain',
+      'Recorded',
+      'Blockchain',
     ]);
   });
 
@@ -2093,7 +2098,7 @@ describe('classify-chain-transactions (M12)', () => {
       within(again).getByRole('button', { name: 'Include in calculations' }),
     ).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(cellTexts(bodyRows()[0])).toContain('HiddenBlockchain');
+    expect(cellTexts(bodyRows()[0]).slice(5)).toEqual(['Hidden', 'Blockchain']);
     await user.click(screen.getByRole('button', { name: /^Hidden\s*1/ }));
     expect(bodyRows()).toHaveLength(1);
   });
@@ -2169,7 +2174,8 @@ describe('chain dust threshold (CLS-DUST)', () => {
         '+0.00000546',
         '≈ $0.54',
         'Bitcoin wallet bc1qsy…f3t4',
-        'DustBlockchain',
+        'Dust',
+        'Blockchain',
       ],
     ]);
     expect(
@@ -2324,7 +2330,7 @@ describe('link-own-transfers (M13)', () => {
     const user = userEvent.setup();
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(1));
-    expect(cellTexts(bodyRows()[0]).at(-1)).toBe('Auto: Earn yieldBybit');
+    expect(cellTexts(bodyRows()[0]).slice(-2)).toEqual(['Auto: Earn yield', 'Bybit']);
     await user.click(within(bodyRows()[0]).getByRole('button'));
     expect(within(screen.getByRole('dialog')).getByRole('note')).toHaveTextContent(
       "Recognised automatically from Bybit's Earn yield history: counts as staking income at the coin's price when Bybit paid it. Change the classification if it is wrong.",
@@ -2537,7 +2543,8 @@ describe('link-own-transfers (M13)', () => {
       '0.5',
       '≈ $30,000.00',
       'Cold storage → Bybit',
-      'Auto: own walletsBlockchain',
+      'Auto: own wallets',
+      'Blockchain',
     ]);
     expect(within(drawer).getByRole('note')).toHaveTextContent(
       'Recognised automatically: both addresses belong to your wallets and Bybit received the same amount minus the network fee. Counts as a transfer, not a sale or a deposit.',
@@ -2969,7 +2976,8 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       '-1,000+0.0125 BTC',
       '$1,000.00',
       'Trust Wallet',
-      'RecordedBlockchain',
+      'Recorded',
+      'Blockchain',
     ]);
     const facts = within(drawer).getByRole('region', { name: 'Details' });
     const fact = (label: string) =>
@@ -3759,7 +3767,7 @@ describe('transactions-page-polish', () => {
     ]);
   });
 
-  it('OPS-COMPACT: status and source share one column, the source under the status', async () => {
+  it('OPS-SOURCE-COLUMN: the source has a column of its own and the status stays on one line', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
@@ -3767,12 +3775,26 @@ describe('transactions-page-polish', () => {
       within(table())
         .getAllByRole('columnheader')
         .map((cell) => cell.textContent),
-    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status']);
-    const status = within(bodyRows()[1]).getAllByRole('cell')[5];
-    expect(within(status).getByText('To classify')).toBeInTheDocument();
-    expect(within(status).getByText('Blockchain')).toBeInTheDocument();
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status', 'Source']);
+    const cells = within(bodyRows()[1]).getAllByRole('cell');
+    // The desktop table names the status in full, as the prototype does; phones say "To classify".
+    expect(cells[5]).toHaveTextContent(/^Needs classification$/);
+    expect(cells[6]).toHaveTextContent(/^Blockchain$/);
     // Fixed column widths: a chip that shows other rows never moves the columns.
-    expect(table().querySelectorAll('colgroup col')).toHaveLength(6);
+    expect(table().querySelectorAll('colgroup col')).toHaveLength(7);
+  });
+
+  it('OPS-TOOLBAR: on a wide screen the search sits in the chip row, the filters in a row under it', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    const chips = screen.getByRole('group', { name: 'Filter transactions' });
+    const search = screen.getByRole('searchbox', { name: 'Search transactions' });
+    // The chips and the search are children of one toolbar row ...
+    expect(search.parentElement).toBe(chips.parentElement);
+    // ... not in the row of filter selects below it.
+    expect(search.closest('.ui-filters')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Asset' }).closest('.ui-filters')).not.toBeNull();
   });
 
   it('OPS-DELETE keeps the rows on screen while the list reloads', async () => {
