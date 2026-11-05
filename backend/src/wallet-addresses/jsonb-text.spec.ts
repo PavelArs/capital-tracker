@@ -30,9 +30,22 @@ describe('WAL-JSONB jsonbText', () => {
     });
   });
 
-  it('keeps both keys when two become alike', () => {
-    const parsed = JSON.parse(jsonbText({ 'a\u0000': 1, 'a\\u0000': 2 }));
-    expect(Object.values(parsed).sort()).toEqual([1, 2]);
+  it('keeps both keys when two become alike, without renaming a key that had no rival', () => {
+    const parsed = JSON.parse(jsonbText({ 'a\u0000': 1, 'a\\u0000': 2, 'a\\u0000#2': 3 }));
+    expect(parsed).toEqual({ 'a\\u0000': 1, 'a\\u0000#3': 2, 'a\\u0000#2': 3 });
+  });
+
+  it('keeps a __proto__ key and its value, as JSON.stringify does', () => {
+    const raw = JSON.parse('{"__proto__":{"a":1},"x":2,"deep":{"__proto__":"s"}}');
+    expect(jsonbText(raw)).toBe(JSON.stringify(raw));
+  });
+
+  it('leaves boxed primitives and class instances to JSON.stringify', () => {
+    class Token {
+      readonly symbol = 'T';
+    }
+    const raw = { a: Object('hi'), b: Object(5), c: new Token(), d: new Map([[1, 2]]) };
+    expect(jsonbText(raw)).toBe(JSON.stringify(raw));
   });
 
   it('leaves a text without such characters untouched', () => {
@@ -42,19 +55,23 @@ describe('WAL-JSONB jsonbText', () => {
 });
 
 describe('WAL-JSONB every provider object reaches jsonb through jsonbText', () => {
-  it('leaves no JSON.stringify of a raw leg or of sync progress in the wallet sources', () => {
-    const directory = __dirname;
-    const offenders = readdirSync(directory)
-      .filter((name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'))
-      .flatMap((name) =>
-        readFileSync(join(directory, name), 'utf8')
-          .split('\n')
-          .map((line, index) => ({ at: `${name}:${index + 1}`, line }))
-          .filter(({ line }) =>
-            /JSON\.stringify\([^)]*(\.raw|solanaSync|evmSync|next\b|progress)/.test(line),
-          )
-          .map(({ at }) => at),
-      );
-    expect(offenders).toEqual([]);
+  // Every JSON.stringify left in the wallet sources, by file. None of them holds provider text:
+  // a content hash, the Tron balance summary (numbers as text), a sealed credential. A new one
+  // fails here until it is read and either routed through jsonbText or listed with its reason.
+  const allowed: Record<string, number> = {
+    'bybit-records.ts': 1,
+    'jsonb-text.ts': 1,
+    'tron-sync.adapter.ts': 1,
+    'wallet-address.service.ts': 1,
+  };
+
+  it('leaves no unlisted JSON.stringify in the wallet sources', () => {
+    const found: Record<string, number> = {};
+    for (const name of readdirSync(__dirname)) {
+      if (!name.endsWith('.ts') || name.endsWith('.spec.ts')) continue;
+      const count = readFileSync(join(__dirname, name), 'utf8').split('JSON.stringify(').length - 1;
+      if (count > 0) found[name] = count;
+    }
+    expect(found).toEqual(allowed);
   });
 });

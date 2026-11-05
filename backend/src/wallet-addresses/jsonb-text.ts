@@ -33,13 +33,24 @@ export function jsonbSafeText(text: string): string {
 function safeValue(value: unknown): unknown {
   if (typeof value === 'string') return jsonbSafeText(value);
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
-  // A key is text too; two keys that become alike keep both, the later one numbered.
-  const clean: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    let name = jsonbSafeText(key);
-    for (let copy = 2; Object.hasOwn(clean, name); copy++) name = `${jsonbSafeText(key)}#${copy}`;
+  // Only plain objects have keys to clean; JSON.stringify unwraps a boxed primitive itself.
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  const entries = Object.entries(value);
+  const names = entries.map(([key]) => jsonbSafeText(key));
+  // A key with no companion keeps its name. Two keys that become alike keep both, the later
+  // one numbered with a number no key of this object already uses. The result has no prototype,
+  // so a key such as "__proto__" stays an ordinary key.
+  const taken = new Set(names);
+  const clean: Record<string, unknown> = Object.create(null);
+  const used = new Set<string>();
+  entries.forEach(([, item], at) => {
+    let name = names[at];
+    for (let copy = 2; used.has(name) || (name !== names[at] && taken.has(name)); copy++)
+      name = `${names[at]}#${copy}`;
+    used.add(name);
     clean[name] = item;
-  }
+  });
   return clean;
 }
 
