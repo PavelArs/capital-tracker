@@ -73,6 +73,11 @@ Decisions taken without asking, open to correction:
   covering up to two years. Whether the two RUB purchases (likely P2P) are visible
   is unverified: Bybit's P2P API is documented as a separate API. Anything the API
   cannot return stays manual. Change M22 verifies this against Pavel's own read-only key.
+- **D9 What needs attention lives in the header bell** (owner, 2026-11-04). The
+  prototype's "Needs your attention" block beside the dashboard total is not built: the
+  bell in every page header (`docs/application-shell.md`) shows the count and lists
+  each problem with its one action, on every page rather than on the dashboard only.
+  Wherever the scenarios below say "attention list", they mean the bell's panel.
 
 ## 2. Principles
 
@@ -429,8 +434,8 @@ I know where its value comes from.
   **then** one observation exists.
 - PRC-OUTAGE (E2E): **Given** a stored BTC price from 3 hours ago and a failing
   provider **when** the owner opens the dashboard **then** value uses the stored
-  price, the price is marked "updated 3 h ago", **and** the attention block says
-  prices are delayed.
+  price, the price is marked "updated 3 h ago", **and** the attention list in the
+  header bell says prices are delayed (D9).
 - PRC-NONE: **Given** an asset with no observation **when** the portfolio is valued
   **then** the asset shows "No price", the total is marked incomplete and nothing is 0.
 
@@ -481,7 +486,7 @@ I know where its value comes from.
   readable reason.
 - SYNC-RECONCILE: **Given** the chain reports 0.0100 BTC and operations compute 0.0098
   BTC **when** the wallet is shown **then** it shows "Balance differs by 0.0002 BTC"
-  and the dashboard attention block lists it.
+  and the attention list in the header bell lists it (D9).
 
 **US-3.3** As the owner I see when data was last updated.
 
@@ -826,11 +831,12 @@ take back out, and the rewards it pays.
 
 - DASH-MAIN (E2E): **Given** priced holdings and snapshots **when** the owner signs in
   **then** the dashboard shows total net worth, change for the selected period
-  (default 1M) in amount and percent, the chart, allocation, top assets **and** the
-  attention block.
+  (default 1M) in amount and percent, the chart, allocation **and** top assets; what
+  needs attention is in the header bell (D9).
 - DASH-ATTENTION: **Given** 3 unclassified transactions, a failed Ethereum sync and
-  prices 2 hours old **then** the attention block lists exactly these three items;
-  **given** none of them **then** the block is collapsed to one quiet line.
+  prices 2 hours old **then** the header bell shows a count **and** its panel lists
+  exactly these three items, each with its action; **given** none of them **then** the
+  bell shows no count and its panel says "Everything is up to date" (D9).
 - DASH-EMPTY (E2E): **Given** a new owner with no accounts **then** the dashboard says
   "Your portfolio is empty" with "Add wallet" and "Add asset".
 
@@ -953,7 +959,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M13 | `link-own-transfers` | automatic transfers between known wallets (D7), manual links; network fee as Fee | M12 | — |
 | M14 | `track-ethereum-wallets` | ETH + USDT/USDC history and balance | M11, M12 | Q6, Q7 |
 | M15 | `track-solana-wallets` | SOL + USDT/USDC history and balance | M11, M12 | Q7 |
-| M16 | `show-dashboard-attention` | attention block, allocation and top assets on the dashboard | M6, M11, M12 | — |
+| M16 | `show-dashboard-attention` | allocation and top assets on the dashboard; what needs attention in the header bell (D9) | M6, M11, M12 | — |
 | M17 | `reset-password-by-email` | reset request, email via Yandex SMTP, link, pages | — | Q5 |
 | M18 | `manage-security-settings` | recovery-code regeneration, sessions, log out everywhere | M1 | — |
 | M19 | `export-owner-data` | CSV archive and JSON backup in Settings | M8 | — |
