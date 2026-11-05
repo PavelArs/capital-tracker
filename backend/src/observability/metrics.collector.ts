@@ -53,6 +53,8 @@ export class MetricsCollector {
         `SELECT key, state, "lastSuccessAt" FROM sync_sources
           WHERE key IN ('prices:kraken', 'prices:coingecko', 'fx:cbr')`,
       );
+      // WALLET-SYNC-OFF: a switched-off wallet is not syncing on purpose or already reported to
+      // the owner, so it neither fails nor goes stale here.
       const wallets: WalletRow[] = await this.source.query(
         `SELECT a.network,
             CASE WHEN s.key IS NULL THEN 'pending'
@@ -65,7 +67,7 @@ export class MetricsCollector {
             min(s."lastSuccessAt") AS oldest
           FROM wallet_addresses a
           LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
-          WHERE a."removedAt" IS NULL
+          WHERE a."removedAt" IS NULL AND a."syncDisabledAt" IS NULL
           GROUP BY 1, 2`,
       );
       const [{ bytes }]: { bytes: string }[] = await this.source.query(

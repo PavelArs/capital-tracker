@@ -91,7 +91,14 @@ export class WalletSyncService {
         );
         const wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] = [];
         for (const wallet of due) {
-          const result = await this.run(wallet, now);
+          // WALLET-SYNC-OFF: the owner may have switched this wallet off while earlier ones ran.
+          const [still] = await this.source.query(
+            `SELECT 1 FROM wallet_addresses
+              WHERE id = $1 AND "removedAt" IS NULL AND "syncDisabledAt" IS NULL`,
+            [wallet.id],
+          );
+          if (!still) continue;
+          const result = await this.run(wallet, now, true);
           wallets.push({ id: wallet.id, state: result === 'busy' ? 'busy' : result.state });
         }
         return { outcome: 'ran', wallets };
@@ -110,9 +117,11 @@ export class WalletSyncService {
   async run(
     wallet: DueWallet,
     now = new Date(),
+    /** WALLET-SYNC-OFF: only the scheduler's own passes add to the run of failures. */
+    background = false,
   ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
     const startedAt = startTimer();
-    const result = await this.runPass(wallet, now);
+    const result = await this.runPass(wallet, now, background);
     recordWalletSync(wallet.network, result === 'busy' ? 'busy' : result.state, startedAt);
     return result;
   }
@@ -120,6 +129,7 @@ export class WalletSyncService {
   private async runPass(
     wallet: DueWallet,
     now: Date,
+    background: boolean,
   ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
     const key = walletSourceKey(wallet.id);
     const adapter = this.adapters.get(wallet.network);
@@ -129,7 +139,7 @@ export class WalletSyncService {
       const outcome = outcomeOf(name, { failure: 'unsupported' }, now);
       await this.record(key, outcome, now);
       await this.journal(wallet, outcome, null, now);
-      await this.countPass(wallet, outcome, null, now);
+      await this.countPass(wallet, outcome, null, now, background);
       return { ...outcome, step: null };
     }
     // Leased while it runs: the scheduler leaves it alone until the pass ends or dies.
@@ -152,13 +162,13 @@ export class WalletSyncService {
       const outcome = outcomeOf(name, { failure: 'error' }, now);
       await this.record(key, outcome, now);
       await this.journal(wallet, outcome, null, now);
-      await this.countPass(wallet, outcome, null, now);
+      await this.countPass(wallet, outcome, null, now, background);
       return { ...outcome, step: null };
     }
     const outcome = outcomeOf(name, step, now);
     await this.record(key, outcome, now);
     await this.journal(wallet, outcome, step, now);
-    await this.countPass(wallet, outcome, step, now);
+    await this.countPass(wallet, outcome, step, now, background);
     // D7, XFER-AUTO: what this pass stored may complete a transfer between own wallets, also when
     // it then stopped on a refusal after committing some ranges.
     if (step.outcome !== 'provider_error' || step.imported > 0) {
@@ -181,9 +191,20 @@ export class WalletSyncService {
     outcome: SourceOutcome,
     step: StepResult | null,
     now: Date,
+    background: boolean,
   ): Promise<void> {
     try {
-      if (await recordPass(this.source, wallet.id, passKind(outcome, step), now))
+      // The owner pressing "Retry now" in a short outage must not switch the sync off: a manual
+      // failure leaves the run as it is; a manual success still clears it.
+      const kind = passKind(outcome, step);
+      if (
+        await recordPass(
+          this.source,
+          wallet.id,
+          kind === 'failed' && !background ? 'neutral' : kind,
+          now,
+        )
+      )
         this.logger.warn(`${wallet.network} wallet sync switched off after repeated failures`);
     } catch {
       this.logger.warn('The wallet sync failure count could not be written');

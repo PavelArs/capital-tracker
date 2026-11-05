@@ -1214,7 +1214,7 @@ async function main() {
       wallets: [{ id: flaky, state: 'synced' }],
     });
     // A good pass clears the run: two failures, a success, two failures leave the sync on.
-    const pass = (at) => job.run({ id: flaky, ownerId: owner, network: 'arbitrum' }, at);
+    const pass = (at) => job.run({ id: flaky, ownerId: owner, network: 'arbitrum' }, at, true);
     const failure = { outcome: 'provider_error', reason: 'unavailable', imported: 0 };
     const stored = { outcome: 'provider_error', reason: 'unavailable', imported: 2 };
     const finished = { outcome: 'complete', reason: null, imported: 0 };
@@ -1226,6 +1226,16 @@ async function main() {
       [(await switchRow(flaky)).failures, (await switchRow(flaky)).reason],
       [1, null],
       'A pass that finished, or stored rows before the refusal, clears the failures',
+    );
+    // A pass the owner starts never adds a failure, however often "Retry now" is pressed.
+    answer = failure;
+    const before = (await switchRow(flaky)).failures;
+    for (let index = 0; index < 4; index++)
+      await job.run({ id: flaky, ownerId: owner, network: 'arbitrum' }, minutes(9 * 24 * 60 + index));
+    assert.deepEqual(
+      [(await switchRow(flaky)).failures, (await switchRow(flaky)).reason],
+      [before, null],
+      'Manual failures neither count nor switch the sync off',
     );
     // Stopping tracking and adding the address again starts it afresh.
     await db.query(

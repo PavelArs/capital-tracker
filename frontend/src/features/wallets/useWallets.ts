@@ -152,16 +152,23 @@ export function useWallets() {
         if (!mounted.current) return;
         // wallets-20: only a request that got no answer could not reach the server.
         const status = isAxiosError(error) ? error.response?.status : undefined;
+        // A switched-off address is refused with 409 too, but nothing else is syncing it.
+        const off =
+          isAxiosError(error) &&
+          status === 409 &&
+          /switched off/.test(String(error.response?.data?.message ?? ''));
         setRun(id, {
           state: 'failed',
           message: failureMessage(
             status === undefined
               ? 'server'
-              : status === 409
-                ? 'busy'
-                : status === 401
-                  ? 'session'
-                  : 'failed',
+              : off
+                ? 'off'
+                : status === 409
+                  ? 'busy'
+                  : status === 401
+                    ? 'session'
+                    : 'failed',
           ),
         });
       } finally {
@@ -181,6 +188,8 @@ export function useWallets() {
         const address = await walletAddressesApi.setSyncEnabled(id, enabled);
         if (!mounted.current) return;
         replace(address);
+        // What an earlier attempt of this page said no longer describes the address.
+        if (enabled) setRun(id, null);
         toast.show({
           tone: 'success',
           title: `Sync is ${enabled ? 'on' : 'off'} for ${address.label ?? networkOf(address).name}`,
@@ -195,7 +204,7 @@ export function useWallets() {
         announceSyncChange();
       }
     },
-    [load, replace, toast],
+    [load, replace, setRun, toast],
   );
 
   // The background job is loading a history: show its progress without a reload. A switched-off

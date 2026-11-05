@@ -756,7 +756,13 @@ export class WalletAddressService {
           historyFrom,
         ],
       );
-      // A new key for an account whose key stopped working is tried at the next tick.
+      // A new key for an account whose key stopped working is tried at the next tick, also when
+      // the failures had switched its sync off (WALLET-SYNC-OFF). An owner's own "off" stays.
+      await manager.query(
+        `UPDATE wallet_addresses SET "syncDisabledAt" = NULL, "syncDisabledReason" = NULL,
+          "syncFailures" = 0 WHERE id = $1 AND "syncDisabledReason" = 'failures'`,
+        [wallet.id],
+      );
       await manager.query(
         `UPDATE sync_sources SET "nextRunAt" = clock_timestamp() WHERE key = $1`,
         [walletSourceKey(wallet.id)],

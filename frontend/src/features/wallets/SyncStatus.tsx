@@ -8,7 +8,7 @@ export type SyncRun = { state: 'running' } | { state: 'failed'; message: string 
 
 /** Why the page's own sync stopped, naming the network's data ("Bitcoin data …"). */
 export function failureMessage(
-  reason: ProviderFailure | 'server' | 'failed' | 'session' | 'busy',
+  reason: ProviderFailure | 'server' | 'failed' | 'session' | 'busy' | 'off',
   address?: Pick<WalletAddress, 'network'>,
 ): string {
   const network = address ? networkOf(address).name : 'Blockchain';
@@ -37,6 +37,8 @@ export function failureMessage(
       return 'The server could not finish the sync. Try again.';
     case 'session':
       return 'Your session has ended. Sign in again.';
+    case 'off':
+      return 'Sync is switched off for this address. Turn it on to read it again.';
     case 'busy':
       return 'Another sync of this address is running. Try again in a moment.';
   }

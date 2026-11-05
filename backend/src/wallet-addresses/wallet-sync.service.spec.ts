@@ -71,7 +71,7 @@ function counted(step: StepResult) {
 describe('WALLET-SYNC-OFF counting in a pass', () => {
   it('adds a failure for a pass that ended in an error', async () => {
     const { service, failures } = counted({ ...refused, imported: 0 });
-    await service.run(wallet);
+    await service.run(wallet, new Date(), true);
     expect(failures()).toEqual([true]);
   });
 
@@ -82,7 +82,7 @@ describe('WALLET-SYNC-OFF counting in a pass', () => {
       imported: 0,
       detail: null,
     });
-    await service.run(wallet);
+    await service.run(wallet, new Date(), true);
     expect(failures()).toEqual([false]);
   });
 
@@ -92,14 +92,23 @@ describe('WALLET-SYNC-OFF counting in a pass', () => {
       reason: 'rate_limited',
       imported: 0,
     });
-    await service.run(wallet);
+    await service.run(wallet, new Date(), true);
     expect(failures()).toEqual([]);
   });
 
   it('adds a failure for a wallet whose network has no adapter', async () => {
     const { service, failures } = counted({ ...refused, imported: 0 });
-    await service.run({ ...wallet, network: 'bitcoin' });
+    await service.run({ ...wallet, network: 'bitcoin' }, new Date(), true);
     expect(failures()).toEqual([true]);
+  });
+
+  it('does not add a failure for a pass the owner started, but still clears the run on success', async () => {
+    const failed = counted({ ...refused, imported: 0 });
+    await failed.service.run(wallet);
+    expect(failed.failures()).toEqual([]);
+    const good = counted({ outcome: 'complete', reason: null, imported: 0, detail: null });
+    await good.service.run(wallet);
+    expect(good.failures()).toEqual([false]);
   });
 
   it('still reports the pass when the count cannot be written', async () => {
@@ -114,7 +123,7 @@ describe('WALLET-SYNC-OFF counting in a pass', () => {
       { get: () => 'true' } as unknown as ConfigService,
       [adapter as unknown as ChainSyncAdapter],
     );
-    const result = await service.run({ ...wallet });
+    const result = await service.run({ ...wallet }, new Date(), true);
     expect(result).not.toBe('busy');
     expect(result === 'busy' ? null : result.state).toBe('failed');
   });
