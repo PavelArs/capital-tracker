@@ -491,12 +491,34 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
   it('W1 shows how each wallet is held in its header', async () => {
     setup([wallet(1, {})], portfolio(), { [trust]: 'hardware' });
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
-    await waitFor(() =>
-      expect(trustCard).toHaveTextContent('Hardware wallet · Bitcoin · 1 address'),
-    );
+    // As in the prototype: the kind alone; the rows name the networks and addresses.
+    expect(await within(trustCard).findByText('Hardware wallet')).toBeInTheDocument();
+    expect(trustCard).not.toHaveTextContent('Bitcoin · 1 address');
     // A wallet the owner has not described keeps the plain line.
     expect(card('Cold storage')).toHaveTextContent('Tracked by hand');
     expect(card('Cold storage')).not.toHaveTextContent(/wallet · Tracked|Exchange · Tracked/);
+  });
+
+  it('WALLETS-HEAD says a described wallet with no address is tracked by hand', async () => {
+    setup([wallet(1, {})], portfolio(), { [trust]: 'software', [cold]: 'exchange' });
+    const coldCard = await screen.findByRole('region', { name: 'Cold storage' });
+    expect(await within(coldCard).findByText('Exchange · tracked by hand')).toBeInTheDocument();
+    expect(within(coldCard).getByText('Manual balances')).toBeInTheDocument();
+  });
+
+  it('WALLETS-HEAD counts the networks a wallet tracks, each network once', async () => {
+    const second = wallet(2, { address: addresses.loose, label: 'Second BTC' });
+    setup([wallet(1, {}), second], portfolio());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    // Two Bitcoin addresses are one tracked network.
+    expect(await within(trustCard).findByText('1 tracked network')).toBeInTheDocument();
+    cleanup();
+    forgetReads();
+    const ether = wallet(3, { network: 'ethereum', address: `0x${'1f'.repeat(20)}`, label: 'ETH' });
+    setup([wallet(1, {}), ether], portfolio());
+    const both = await screen.findByRole('region', { name: 'Trust Wallet' });
+    expect(await within(both).findByText('2 tracked networks')).toBeInTheDocument();
+    expect(both).not.toHaveTextContent(/\d assets?\b/);
   });
 
   it('W1 sends the chosen kind with a new wallet; a changed kind is a new request', async () => {
@@ -2183,7 +2205,7 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     expect(row).not.toHaveTextContent('USDC');
   });
 
-  it('does not list a hidden token again as a coin tracked by hand, nor count it', async () => {
+  it('does not list a hidden token again as a coin tracked by hand', async () => {
     const base = valuation();
     const withSpam = {
       ...base,
@@ -2206,7 +2228,6 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
     expect(trustCard).toHaveTextContent('BTC tracked by hand');
     expect(trustCard).not.toHaveTextContent('USDT1A2B');
-    expect(within(trustCard).getByText('2 assets')).toBeInTheDocument();
   });
 
   it('shows no toggle for two coins or fewer', async () => {

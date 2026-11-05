@@ -812,10 +812,25 @@ function place(address: WalletAddress): string {
   return networkOf(address).exchange ? `UID ${address.address}` : shortAddress(address.address);
 }
 
-/** W1: "Hardware wallet · Bitcoin · 2 addresses"; the kind is left out until the owner says. */
+/**
+ * W1, as in the prototype: "Hardware wallet" under the name, the rows below listing the networks
+ * and addresses; "Exchange · tracked by hand" for a wallet with no address. Until the owner says
+ * how the wallet is held, the line names its networks and addresses instead.
+ */
 export function subtitle(addresses: WalletAddress[], kind?: WalletKind | null): string {
-  const what = addressesSubtitle(addresses);
-  return kind ? `${kindLabels[kind]} · ${what}` : what;
+  if (!kind) return addressesSubtitle(addresses);
+  return addresses.length === 0 ? `${kindLabels[kind]} · tracked by hand` : kindLabels[kind];
+}
+
+/** WALLETS-HEAD: the networks a wallet's addresses are on, each counted once. */
+export const networkCount = (addresses: WalletAddress[]): number =>
+  new Set(addresses.map((address) => address.network)).size;
+
+/** WALLETS-HEAD (prototype): "3 tracked networks", or "Manual balances" with no address. */
+export function networksText(addresses: WalletAddress[]): string {
+  const count = networkCount(addresses);
+  if (count === 0) return 'Manual balances';
+  return count === 1 ? '1 tracked network' : `${count} tracked networks`;
 }
 
 function addressesSubtitle(addresses: WalletAddress[]): string {
