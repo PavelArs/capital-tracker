@@ -55,6 +55,7 @@ function DepositTile({
   const showReal = view === 'real' && deposit.real !== undefined;
   const real = realOf(deposit, basis);
   const rate = showReal ? realRateText(real) : null;
+  const differs = deposit.lastCheck?.difference ?? null;
   // Missing is not zero: an account whose interest is not counted says so on its row.
   const notes = [
     rate && (
@@ -69,6 +70,10 @@ function DepositTile({
       rate === null &&
       'Real rate —, no inflation figures yet',
     endText(deposit),
+    // The last bank check found a difference: the one thing a reconciled row does not say.
+    differs !== null &&
+      Number(differs) !== 0 &&
+      `Differs from the bank by ${money(differs, deposit.currency)}`,
     deposit.interestMissing &&
       (deposit.ratePercent === null ? 'Interest not counted' : 'Earlier interest not counted'),
   ].filter(Boolean);
@@ -99,6 +104,7 @@ function DepositTile({
           )}
         </span>
         <span className="deposit-product__balance ui-num">
+          <span className="ui-sr">Balance </span>
           {money(deposit.balance, deposit.currency)}
           {deposit.nextPayout && (
             <small>

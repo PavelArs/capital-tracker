@@ -1451,7 +1451,7 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     expect(within(card).getByText('Real +1.82% a year after 10.00% inflation')).toBeInTheDocument();
   });
 
-  it('INFL-DEPOSIT-LIST-UNKNOWN under Real shows a dash for the interest it cannot read, not the nominal interest', async () => {
+  it('INFL-DEPOSIT-LIST-UNKNOWN under Real says the real rate has no figure, and shows no nominal interest', async () => {
     setValueView('real');
     const unknown = { ...official, inflationPercent: null, ratePercent: null, gain: null };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(
@@ -2059,6 +2059,33 @@ describe('BANKS-LAYOUT: the Banks list as the prototype lays it out', () => {
     expect(within(card).queryByRole('status')).toBeNull();
   });
 
+  it('BANKS-ROW-CHECK says on the row when the last bank check found a difference, and nothing for a match', async () => {
+    const differing: Deposit = {
+      ...savings,
+      lastCheck: {
+        checkedOn: '2026-10-04',
+        bankBalance: '100330.45',
+        calculated: '100329.22',
+        difference: '1.23',
+      },
+    };
+    const matching: Deposit = {
+      ...dollars,
+      lastCheck: {
+        checkedOn: '2026-10-04',
+        bankBalance: '5052.07',
+        calculated: '5052.07',
+        difference: '0.00',
+      },
+    };
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([differing, matching]));
+    open('/deposits?currency=RUB');
+    expect(
+      within(await row(/Savings A/)).getByText(/Differs from the bank by ₽1\b/),
+    ).toBeInTheDocument();
+    expect(within(await row(/Dollar B/)).queryByText(/Differs from the bank/)).toBeNull();
+  });
+
   it('BANKS-HEAD gives the bank the head a broker has: a framed icon, a 16 px name and the total', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
     open('/deposits');
@@ -2151,6 +2178,43 @@ describe('DEPOSIT-LAYOUT: the deposit page as the prototype lays it out', () => 
     open(`/deposits/${savings.id}`);
     await screen.findByRole('heading', { level: 2, name: 'Savings A' });
     expect(screen.queryByRole('tablist', { name: 'Chart period' })).toBeNull();
+  });
+
+  it('DEPOSIT-CHART-PERIODS cuts to six months and to a year, a month-end day clamped to a shorter month', async () => {
+    const user = userEvent.setup();
+    // Monthly points on the 31st or the last day: Jan 31 2026 back 3 months is Oct 31, 6 months Jul 31.
+    const ends = [
+      '2025-06-30',
+      '2025-07-31',
+      '2025-08-31',
+      '2025-09-30',
+      '2025-10-31',
+      '2025-11-30',
+      '2025-12-31',
+      '2026-01-31',
+    ];
+    const points: DepositChartPoint[] = ends.map((date, index) => ({
+      date,
+      balance: `${100000 + index * 1000}.00`,
+      invested: '100000.00',
+      real: { official: null, personal: null },
+    }));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail({ ...savings, real: { official: null, personal: null } }, { chart: points }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const tabs = screen.getByRole('tablist', { name: 'Chart period' });
+    await user.click(within(tabs).getByRole('tab', { name: '6M' }));
+    const plot = screen.getByRole('group', { name: /Use the arrow keys/ });
+    act(() => plot.focus());
+    await user.keyboard('{Home}');
+    // Six months before Jan 31, 2026 is Jul 31, 2025, and that day is kept.
+    expect(within(plot).getByText('Jul 31, 2025')).toBeInTheDocument();
+    await user.click(within(tabs).getByRole('tab', { name: 'ALL' }));
+    act(() => plot.focus());
+    await user.keyboard('{Home}');
+    expect(within(plot).getByText('Jun 30, 2025')).toBeInTheDocument();
   });
 
   it('DEPOSIT-INTEREST-LIST lists the interest of each period as a two-line row on a wide screen too', async () => {
