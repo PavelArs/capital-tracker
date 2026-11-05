@@ -976,7 +976,14 @@ async function main() {
     );
     const rerun = await tick(new Date(t2.getTime() + 120000));
     assert.deepEqual(rerun.result.wallets, [{ id: throws, state: 'failed' }]);
-    const healthy = await scheduler(true).tick(new Date(t2.getTime() + 120000 + 900000));
+    // This is the third failed scheduler pass in a row for the wallet (SYNC-BG twice, now once more),
+    // so it is switched off and waits for the owner. Everything after this line is unchanged.
+    assert.equal(
+      (await service.list(owner)).find((item) => item.id === throws).sync.off.reason,
+      'failures',
+    );
+    await service.setSyncEnabled(owner, throws, { enabled: true });
+    const healthy =await scheduler(true).tick(new Date(t2.getTime() + 120000 + 900000));
     assert.deepEqual(healthy.wallets, [{ id: throws, state: 'synced' }]);
     assertStored(await rows(db, throws), addresses.throws, 2);
     console.log(
