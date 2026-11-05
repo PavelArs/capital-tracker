@@ -167,7 +167,8 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     '-0.000513',
     /^(≈ \$[\d,]+\.\d{2}|—)$/,
     new RegExp(`^${accountName}`),
-    'HiddenBlockchain',
+    'Hidden',
+    'Blockchain',
   ]);
   await expect(cells(rows.nth(1))).toHaveText([
     'Buy22:13',
@@ -175,7 +176,8 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     '+0.001',
     '$1,000.00',
     new RegExp(`^${accountName}`),
-    'RecordedBlockchain',
+    'Recorded',
+    'Blockchain',
   ]);
   await page.screenshot({ path: testInfo.outputPath('classified-list-1440-dark.png') });
 

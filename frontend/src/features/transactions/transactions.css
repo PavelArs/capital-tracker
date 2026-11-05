@@ -14,36 +14,46 @@
   background: transparent;
 }
 
+/* Chips and search share the top row; the filters (Asset, Account, Type, Period) take the one under it. */
+.transactions-card .ui-toolbar > .ui-filters {
+  flex: 1 0 100%;
+}
+
 .transactions-table tbody tr {
   cursor: pointer;
 }
 
-/* Six columns of fixed shares fit 1280 px: a chip or filter that shows other rows never
-   moves them (OPS-STABLE). Long types, assets and accounts wrap; narrower screens scroll. */
+/* Seven columns of fixed shares fit 1280 px: a chip or filter that shows other rows never
+   moves them (OPS-STABLE). A long asset or account wraps inside its cell (the type cell is two
+   lines already, so the row keeps its height); narrower screens scroll. */
 .transactions-table {
-  min-width: 820px;
+  min-width: 940px;
   table-layout: fixed;
 }
 
 .transactions-col--type {
-  width: 19%;
+  width: 15%;
 }
 
 .transactions-col--asset {
-  width: 12%;
+  width: 15%;
 }
 
 .transactions-col--amount,
 .transactions-col--value {
-  width: 14%;
+  width: 11%;
 }
 
 .transactions-col--place {
-  width: 24%;
+  width: 18%;
 }
 
 .transactions-col--status {
-  width: 17%;
+  width: 18%;
+}
+
+.transactions-col--source {
+  width: 12%;
 }
 
 .transactions-table th,
@@ -155,23 +165,11 @@
 
 .transactions-status {
   display: inline-flex;
+  min-height: 15px;
   align-items: center;
   gap: 6px;
   color: var(--ink-2);
   font-size: var(--fs-sm);
-}
-
-/* The source sits under the status (OPS-COMPACT). */
-.transactions-source {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 3px;
-}
-
-.transactions-source .transactions-glyph {
-  width: 12px;
-  height: 12px;
 }
 
 /* CLS-NEXT: the open row stands above the drawer's scrim, so the list shows which it is. */
