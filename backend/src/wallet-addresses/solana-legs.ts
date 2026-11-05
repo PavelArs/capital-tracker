@@ -50,6 +50,34 @@ export function tokenLegNumber(mint: string): number {
   return 3 + (createHash('sha256').update(mint).digest().readUInt32BE(0) % 999_999_996);
 }
 
+const MAX_LEG_NUMBER = 999_999_999;
+
+/**
+ * The number each mint of one transaction adds to the signature. It is the mint's own
+ * tokenLegNumber unless another mint of the same transaction has the same one (a 30-bit number
+ * can be made to collide on purpose, and the second leg would then be dropped as already
+ * stored): the mints are taken in order of that number, then of their text, and one that finds
+ * its number taken takes the next free one. Both wallets of a transfer between own wallets see
+ * the same mints, so they name a leg alike; a transaction without a collision keeps the
+ * numbers it has always had.
+ */
+export function tokenLegNumbers(mints: readonly string[]): Map<string, number> {
+  const natural = new Map([...new Set(mints)].map((mint) => [mint, tokenLegNumber(mint)]));
+  const order = [...natural.keys()].sort(
+    (left, right) =>
+      (natural.get(left) as number) - (natural.get(right) as number) || (left < right ? -1 : 1),
+  );
+  const taken = new Set<number>();
+  const numbers = new Map<string, number>();
+  for (const mint of order) {
+    let number = natural.get(mint) as number;
+    while (taken.has(number)) number = number >= MAX_LEG_NUMBER ? 3 : number + 1;
+    taken.add(number);
+    numbers.set(mint, number);
+  }
+  return numbers;
+}
+
 /** TOKEN-ANY: the decimals each token other than USDT and USDC shows in the transactions. */
 export function solanaTokenFacts(
   transactions: readonly SolanaTransaction[],
@@ -123,15 +151,18 @@ export function solanaLegs(
   const owns = (balance: TokenBalance) =>
     balance.owner === address ||
     (balance.owner === null && tokenAccounts.has(tx.accounts[balance.accountIndex]));
-  const mints = [
-    ...new Set([...tx.preTokenBalances, ...tx.postTokenBalances].map((item) => item.mint)),
-  ].sort((left, right) => tokenLegNumber(left) - tokenLegNumber(right));
+  const numbers = tokenLegNumbers(
+    [...tx.preTokenBalances, ...tx.postTokenBalances].map((item) => item.mint),
+  );
+  const mints = [...numbers.keys()].sort(
+    (left, right) => (numbers.get(left) as number) - (numbers.get(right) as number),
+  );
   const after = heldByMint(tx.postTokenBalances, owns);
   const before = heldByMint(tx.preTokenBalances, owns);
   for (const mint of mints) {
     const delta = (after.get(mint) ?? 0n) - (before.get(mint) ?? 0n);
     if (delta === 0n) continue;
-    const txid = `${tx.signature}-${tokenLegNumber(mint)}`;
+    const txid = `${tx.signature}-${numbers.get(mint)}`;
     legs.push({
       txid,
       asset: solanaTokenAsset(mint),

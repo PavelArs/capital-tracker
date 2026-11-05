@@ -5,6 +5,7 @@ import {
   solanaMints,
   solanaTokenFacts,
   tokenLegNumber,
+  tokenLegNumbers,
 } from './solana-legs';
 import type { SolanaTransaction, TokenBalance } from './solana-rpc-client';
 
@@ -287,5 +288,42 @@ describe('SOL-IDENTITY: legs of a Solana wallet', () => {
     expect(solanaTokenFacts([swap, swap], legs)).toEqual([
       { network: 'solana', contract: otherMint, symbol: null, name: null, decimals: 9 },
     ]);
+  });
+
+  // Two synthetic mints whose tokenLegNumber is the same (found by a search, never real tokens).
+  const clashA = '7BsH9BAffAGxF18Rh9TfKM1dRpHkH5wwdFUpHp8FZrBe';
+  const clashB = '51DyALxfu9o4ggf63iyzWoHgxSwjhNWRE1BAzVFHmpyj';
+
+  it('TOKEN-ANY keeps two mints of one transaction apart when their numbers are alike', () => {
+    expect(tokenLegNumber(clashA)).toBe(tokenLegNumber(clashB));
+    const airdrop = (first: string, second: string, owner: string) =>
+      tx({
+        accounts: [other, walletUsdc, wallet, token],
+        preBalances: [SOL, 1n, 0n, 1n],
+        postBalances: [SOL - 5000n, 1n, 0n, 1n],
+        preTokenBalances: [balance(1, first, owner, 0n), balance(2, second, owner, 0n)],
+        postTokenBalances: [balance(1, first, owner, 7n), balance(2, second, owner, 9n)],
+      });
+    const legs = solanaLegs(wallet, new Set(), airdrop(clashA, clashB, wallet));
+    expect(legs).toHaveLength(2);
+    expect(new Set(legs.map((leg) => leg.txid)).size).toBe(2);
+    const byMint = new Map(legs.map((leg) => [leg.asset, leg]));
+    expect(byMint.get(clashA)?.receivedUnits).toBe(7n);
+    expect(byMint.get(clashB)?.receivedUnits).toBe(9n);
+    // The same transaction read in the other order, or by the other wallet, names the legs alike.
+    const reversed = solanaLegs(wallet, new Set(), airdrop(clashB, clashA, wallet));
+    const named = (list: SolanaLeg[]) => new Map(list.map((leg) => [leg.asset, leg.txid]));
+    expect(named(reversed)).toEqual(named(legs));
+    // The mint that sorts first keeps the number it always had; the other takes the next one.
+    const signatureOf = legs[0].txid.split('-')[0];
+    expect(byMint.get(clashB)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashB)}`);
+    expect(byMint.get(clashA)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashA) + 1}`);
+    for (const leg of legs) expect(leg.txid).toMatch(/^[1-9A-HJ-NP-Za-km-z]+-[0-9]{1,9}$/);
+  });
+
+  it('TOKEN-ANY leaves the numbers of a transaction without a clash as they were', () => {
+    const mints = [key('m1'), key('m2'), key('m3'), USDT, USDC];
+    for (const mint of mints)
+      expect(tokenLegNumbers([mint, ...mints]).get(mint)).toBe(tokenLegNumber(mint));
   });
 });
