@@ -336,6 +336,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
       `/portfolio/${id(1)}`,
     );
     expect(within(assets).queryByText(/Tether/)).toBeNull();
+    expect(within(assets).queryByRole('button', { name: /^Show/ })).toBeNull();
 
     const transactions = screen.getByRole('region', { name: /^Transactions/ });
     await waitFor(() => expect(within(transactions).getAllByRole('listitem')).toHaveLength(3));
@@ -344,9 +345,79 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     expect(rows[0]).toHaveTextContent('Needs classification');
     expect(rows[1]).toHaveTextContent('Cold storage → Trust Wallet');
     expect(rows[2]).toHaveTextContent('Buy');
+    expect(within(transactions).queryByRole('navigation')).toBeNull();
     expect(
       within(transactions).getByRole('link', { name: 'Open in Transactions' }),
     ).toHaveAttribute('href', `/transactions?account=${trust}`);
+  });
+
+  it('WALLET-ASSETS-MORE lists five assets and keeps the rest behind Show N more', async () => {
+    const base = portfolio();
+    // Seven coins in this wallet, the largest first: 700, 600, … 100.
+    const coins = Array.from({ length: 7 }, (_, index) =>
+      asset({
+        instrumentId: id(60 + index),
+        name: `Coin ${index + 1}`,
+        symbol: `C${index + 1}`,
+        quantity: '1',
+        value: String(700 - index * 100),
+        holdings: [
+          {
+            accountId: trust,
+            accountName: 'Trust Wallet',
+            quantity: '1',
+            value: String(700 - index * 100),
+          },
+        ],
+      }),
+    );
+    setup({ valuation: { ...base, assets: coins } });
+    const assets = await screen.findByRole('region', { name: 'Assets' });
+    const names = () =>
+      within(assets)
+        .getAllByRole('link')
+        .map((link) => link.textContent?.match(/^Coin \d/)?.[0]);
+    expect(names()).toEqual(['Coin 1', 'Coin 2', 'Coin 3', 'Coin 4', 'Coin 5']);
+
+    const more = within(assets).getByRole('button', { name: 'Show 2 more' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(more);
+    expect(names()).toEqual(['Coin 1', 'Coin 2', 'Coin 3', 'Coin 4', 'Coin 5', 'Coin 6', 'Coin 7']);
+
+    const less = within(assets).getByRole('button', { name: 'Show less' });
+    expect(less).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(less);
+    expect(names()).toHaveLength(5);
+    // The figures above the cards still count every asset.
+    const summary = screen.getByRole('region', { name: 'Summary' });
+    expect(within(summary).getByText('Assets').nextElementSibling).toHaveTextContent(/^7$/);
+  });
+
+  it('WALLET-TX-PAGES shows five transactions a page, newest first, with Previous and Next', async () => {
+    // Eight buys on June 11–18, 2025.
+    const buys = Array.from({ length: 8 }, (_, index) =>
+      operation(10 + index, { occurredAt: `2025-06-${11 + index}T00:00:00.000Z` }),
+    );
+    setup({ items: buys });
+    const transactions = await screen.findByRole('region', { name: /^Transactions/ });
+    await waitFor(() => expect(within(transactions).getAllByRole('listitem')).toHaveLength(5));
+    const pages = within(transactions).getByRole('navigation', { name: 'Pages of transactions' });
+    expect(within(pages).getByRole('status')).toHaveTextContent('1–5 of 8 transactions');
+    expect(within(pages).getByRole('button', { name: 'Previous' })).toBeDisabled();
+    let rows = within(transactions).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Jun 18, 2025');
+    expect(rows[4]).toHaveTextContent('Jun 14, 2025');
+
+    await userEvent.click(within(pages).getByRole('button', { name: 'Next' }));
+    rows = within(transactions).getAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent('Jun 13, 2025');
+    expect(rows[2]).toHaveTextContent('Jun 11, 2025');
+    expect(within(pages).getByRole('status')).toHaveTextContent('6–8 of 8 transactions');
+    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
+    // The count in the card's head is every transaction, not the page.
+    expect(within(transactions).getByRole('heading', { name: /Transactions/ })).toBeVisible();
+    expect(transactions).toHaveTextContent(/Transactions\s*8/);
   });
 
   it('WAL-OPEN: each transaction row opens that transaction in Transactions', async () => {
