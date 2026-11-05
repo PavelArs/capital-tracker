@@ -307,7 +307,7 @@ function OperationRow({
       </td>
       <td className="transactions-wrap">
         <span
-          className={`transactions-asset${operation.counterAsset ? '' : ' transactions-asset--single'}`}
+          className="transactions-asset"
           title={[operation.asset.name, operation.counterAsset?.name].filter(Boolean).join(' → ')}
         >
           <AssetIcon

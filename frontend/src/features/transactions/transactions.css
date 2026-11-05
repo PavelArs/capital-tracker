@@ -24,15 +24,15 @@
 }
 
 /* Seven columns of fixed shares fit 1280 px: a chip or filter that shows other rows never
-   moves them (OPS-STABLE). The asset and the status stay on one line (the prototype's rows are
-   one height); long accounts wrap and narrower screens scroll. */
+   moves them (OPS-STABLE). A long asset or account wraps inside its cell (the type cell is two
+   lines already, so the row keeps its height); narrower screens scroll. */
 .transactions-table {
-  min-width: 900px;
+  min-width: 940px;
   table-layout: fixed;
 }
 
 .transactions-col--type {
-  width: 17%;
+  width: 15%;
 }
 
 .transactions-col--asset {
@@ -45,15 +45,15 @@
 }
 
 .transactions-col--place {
-  width: 20%;
+  width: 18%;
 }
 
 .transactions-col--status {
-  width: 16%;
+  width: 18%;
 }
 
 .transactions-col--source {
-  width: 10%;
+  width: 12%;
 }
 
 .transactions-table th,
@@ -161,11 +161,6 @@
   align-items: center;
   gap: var(--sp-2);
   font-weight: 600;
-}
-
-/* One asset keeps its name on one line ("ETH (Ethereum)"); a swap's two may wrap. */
-.transactions-asset--single {
-  white-space: nowrap;
 }
 
 .transactions-status {

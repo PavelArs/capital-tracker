@@ -3767,7 +3767,7 @@ describe('transactions-page-polish', () => {
     ]);
   });
 
-  it('OPS-SOURCE-COLUMN: the source has a column of its own and the status stays on one line', async () => {
+  it('OPS-SOURCE-COLUMN: the source has a column of its own, apart from the status', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
