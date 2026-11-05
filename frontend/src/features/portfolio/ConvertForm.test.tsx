@@ -200,9 +200,10 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
   const open = async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
+    const onClose = vi.fn();
     render(
       <MemoryRouter>
-        <AddTransactionDialog onClose={vi.fn()} onSaved={onSaved} />
+        <AddTransactionDialog onClose={onClose} onSaved={onSaved} />
       </MemoryRouter>,
     );
     const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
@@ -210,7 +211,7 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
     const view = within(dialog);
     await user.click(view.getByRole('button', { name: 'More' }));
     await user.click(view.getByRole('radio', { name: 'Convert' }));
-    return { user, view, onSaved };
+    return { user, view, onSaved, onClose };
   };
   // Both currency rows list the same three codes: the first radio of a code is "From", the second "To".
   const currency = (view: ReturnType<typeof within>, group: 'From' | 'To', code: string) =>
@@ -290,6 +291,44 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
     expect(view.getByText(/You hold no RUB cash yet/)).toBeInTheDocument();
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('keeps the request id and the instant when a time-less save is retried a minute later', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-03-02T10:00:20.000Z') });
+    try {
+      create.mockRejectedValueOnce(new Error('offline'));
+      const { user, view, onSaved } = await open();
+      await user.click(currency(view, 'From', 'RUB'));
+      await user.click(currency(view, 'To', 'USD'));
+      await user.type(view.getByLabelText('Amount given'), '9000');
+      await user.type(view.getByLabelText('Amount received'), '100');
+      await user.click(view.getByRole('button', { name: 'Save transaction' }));
+      expect(await view.findByText(/Could not reach the server/)).toBeInTheDocument();
+      vi.setSystemTime(new Date('2026-03-02T10:01:20.000Z'));
+      await user.click(view.getByRole('button', { name: 'Save transaction' }));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(create.mock.calls[0][1].occurredAt).toBe('2026-03-02T10:00:00.000Z');
+      expect(create.mock.calls[1][1].occurredAt).toBe('2026-03-02T10:00:00.000Z');
+      expect(create.mock.calls[1][1].requestId).toBe(create.mock.calls[0][1].requestId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not close on Escape while a conversion is being saved', async () => {
+    let finish: (receipt: TradeReceipt) => void = () => undefined;
+    create.mockReturnValueOnce(new Promise<TradeReceipt>((resolve) => (finish = resolve)));
+    const { user, view, onSaved, onClose } = await open();
+    await user.click(currency(view, 'From', 'RUB'));
+    await user.click(currency(view, 'To', 'USD'));
+    await user.type(view.getByLabelText('Amount given'), '9000');
+    await user.type(view.getByLabelText('Amount received'), '100');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    await user.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    finish({} as TradeReceipt);
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
   it('keeps one request id when a failed save is tried again', async () => {

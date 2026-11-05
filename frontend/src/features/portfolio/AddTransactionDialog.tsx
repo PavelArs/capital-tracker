@@ -377,6 +377,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [settled, setSettled] = useState(() => ({ date: initial.date, time: initial.time }));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The Convert body saves on its own; the window still must not close under it.
+  const [convertSaving, setConvertSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
   const { form, refused } = useFocusFirstProblem();
@@ -863,7 +865,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     <Modal
       titleId={`${id}-title`}
       size="wide"
-      onEscape={saving ? undefined : onClose}
+      onEscape={saving || convertSaving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input[type="radio"]:checked')}
     >
       {kind === 'convert' ? (
@@ -876,6 +878,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           holderOf={holderOfCash}
           onClose={onClose}
           onSaved={onSaved}
+          onSaving={setConvertSaving}
         />
       ) : (
         <form ref={form} onSubmit={submit} noValidate>

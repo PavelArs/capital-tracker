@@ -76,6 +76,8 @@ interface Props {
   holderOf: (instrumentId: string) => Promise<string | null>;
   onClose: () => void;
   onSaved: () => void;
+  /** Tells the window a save is in flight, so Escape does not close it meanwhile. */
+  onSaving: (saving: boolean) => void;
 }
 
 /**
@@ -93,6 +95,7 @@ export default function ConvertForm({
   holderOf,
   onClose,
   onSaved,
+  onSaving,
 }: Props) {
   const id = useId();
   const toast = useToast();
@@ -115,8 +118,12 @@ export default function ConvertForm({
   const [left, setLeft] = useState<ReadonlySet<ConvertProblem>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  useEffect(() => onSaving(saving), [saving, onSaving]);
+  useEffect(() => () => onSaving(false), [onSaving]);
   // The same typed conversion keeps its request id, so a retry never saves it twice.
-  const attempt = useRef<{ body: string; requestId: string } | null>(null);
+  // The instant a time-less entry dated today resolved to is kept with it, so a retry after the
+  // minute changed is the same request.
+  const attempt = useRef<{ inputs: string; requestId: string; sale: ConvertEntry } | null>(null);
 
   const update = (changes: Partial<ConvertEntry>) =>
     setEntry((current) => ({ ...current, ...changes }));
@@ -193,14 +200,19 @@ export default function ConvertForm({
     setSaving(true);
     setError(null);
     try {
-      const sale = withDefaultTime(entry, new Date());
+      const inputs = JSON.stringify({ accountId, revision: account.journalRevision, entry });
+      if (attempt.current?.inputs !== inputs)
+        attempt.current = {
+          inputs,
+          requestId: newRequestId(),
+          sale: withDefaultTime(entry, new Date()),
+        };
+      const { requestId, sale } = attempt.current;
       const command = convertTrade(sale, fromAsset.id, {
-        requestId: '',
+        requestId,
         expectedJournalRevision: account.journalRevision,
       });
-      const key = JSON.stringify({ accountId, ...command });
-      if (attempt.current?.body !== key) attempt.current = { body: key, requestId: newRequestId() };
-      await tradesApi.create(accountId, { ...command, requestId: attempt.current.requestId });
+      await tradesApi.create(accountId, command);
       toast.show({
         tone: 'success',
         title: 'Transaction added',
