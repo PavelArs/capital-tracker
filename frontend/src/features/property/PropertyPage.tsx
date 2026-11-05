@@ -116,10 +116,32 @@ export default function PropertyPage() {
     );
   }
 
+  // A cached answer that could not be refreshed stays on screen, so it says it may be old.
+  const refreshFailed = !failed && loaded && (portfolio.stale || accounts.stale);
   return (
     <div className="shell-page">
       <PageHeader title="Real estate" currency={portfolio.data?.currency} />
       <Crumb to={back}>Real estate</Crumb>
+      {refreshFailed && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button
+              size="sm"
+              icon="refresh"
+              onClick={() => {
+                portfolio.reload(true);
+                accounts.reload(true);
+              }}
+            >
+              Refresh
+            </Button>
+          }
+        >
+          Could not refresh the values; showing the last loaded ones.
+        </Banner>
+      )}
       {body}
     </div>
   );
@@ -164,6 +186,7 @@ function PropertyDetailsView({
       ? undefined
       : 'loading';
   const rent = rentFigure(mine);
+  const heldElsewhere = asset.holdings.some((holding) => classes[holding.accountId] !== 'property');
   const estimateButton = (
     <Button icon="edit" onClick={() => setPricing(true)}>
       Update estimate
@@ -220,13 +243,22 @@ function PropertyDetailsView({
           <Stat label="Rent" value={rent.value} hint={rent.hint} />
         </Stats>
       </Card>
-      <ValueChart
-        asset={asset}
-        currency={currency}
-        asked={asked}
-        operations={operations.data ?? (operations.error ? 'failed' : 'loading')}
-        names={{ value: 'Estimated value', cost: 'Money put in' }}
-      />
+      {heldElsewhere ? (
+        <Card label="Value over time">
+          <p className="ui-sub">
+            The chart covers every account that holds this property, so it is not shown while part
+            of it is held outside property accounts.
+          </p>
+        </Card>
+      ) : (
+        <ValueChart
+          asset={asset}
+          currency={currency}
+          asked={asked}
+          operations={operations.data ?? (operations.error ? 'failed' : 'loading')}
+          names={{ value: 'Estimated value', cost: 'Money put in' }}
+        />
+      )}
       <Card labelledBy="property-estimates">
         <CardHeader
           id="property-estimates"

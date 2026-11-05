@@ -328,6 +328,36 @@ describe('PROPERTY-PAGE the page of one property', () => {
     expect(vi.mocked(portfolioValuationApi.get).mock.calls.length).toBeGreaterThan(1);
   });
 
+  it('PROPERTY-STALE warns and offers a refresh when the values could not be read again after a save', async () => {
+    const user = userEvent.setup();
+    await open();
+    vi.mocked(portfolioValuationApi.get).mockRejectedValue(new Error('offline'));
+    const [header] = screen.getAllByRole('button', { name: 'Update estimate' });
+    await user.click(header);
+    const dialog = screen.getByRole('dialog', { name: 'Update estimate' });
+    await user.type(within(dialog).getByLabelText('Estimate of the whole property, USD'), '95000');
+    await user.click(within(dialog).getByRole('button', { name: 'Save estimate' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not refresh the values; showing the last loaded ones.');
+    expect(within(alert).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it('PROPERTY-CHART-SCOPE shows no value chart for a property also held outside property accounts', async () => {
+    const mixed = {
+      ...flat,
+      holdings: [
+        { accountId: studio, accountName: 'Studio', quantity: '0.25', value: '23000' },
+        { accountId: safe, accountName: 'Home safe', quantity: '0.25', value: '23000' },
+      ],
+    } as AssetValuation;
+    vi.mocked(portfolioValuationApi.get).mockResolvedValue(valuation([mixed, coins]));
+    await open();
+    expect(
+      await screen.findByText(/chart covers every account that holds this property/i),
+    ).toBeInTheDocument();
+    expect(assetHistoryApi.get).not.toHaveBeenCalled();
+  });
+
   it('PROPERTY-DETAILS Edit saves the rent and the note as typed, trimmed', async () => {
     const user = userEvent.setup();
     const dialog = await openDetails(user);
