@@ -24,7 +24,7 @@ env:
 jobs:
   new-commits:
     name: New commits since the last run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
@@ -65,7 +65,7 @@ jobs:
     name: Acceptance shard ${{ matrix.index }}
     needs: new-commits
     if: needs.new-commits.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -114,7 +114,7 @@ jobs:
     name: Full acceptance
     needs: [new-commits, acceptance-shard]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - env:
