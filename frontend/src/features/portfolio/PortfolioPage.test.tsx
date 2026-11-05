@@ -4388,7 +4388,7 @@ describe('PORTFOLIO-BANK-ALLOCATION', () => {
   );
 });
 
-describe('PORTFOLIO-BANK-INTEREST: a bank product shows its interest where an asset shows P&L', () => {
+describe('PORTFOLIO-BANK-ROW: a bank product row reads as in the prototype', () => {
   const product = (over: Partial<Deposit> = {}): Deposit => ({
     id: id(998),
     kind: 'term-deposit',
@@ -4419,7 +4419,7 @@ describe('PORTFOLIO-BANK-INTEREST: a bank product shows its interest where an as
     lastCheck: null,
     ...over,
   });
-  const pnlCell = async (deposit: Deposit) => {
+  const bankCells = async (deposit: Deposit) => {
     vi.mocked(depositsApi.list).mockResolvedValue({
       asOf: '2026-10-18',
       items: [deposit],
@@ -4430,23 +4430,55 @@ describe('PORTFOLIO-BANK-INTEREST: a bank product shows its interest where an as
     );
     renderAt('/portfolio');
     const row = await screen.findByRole('row', { name: /^Ruble deposit/ });
-    return within(row).getAllByRole('cell')[6];
+    return within(row).getAllByRole('cell');
   };
+  const pnlCell = async (deposit: Deposit) => (await bankCells(deposit))[6];
   afterEach(() => setValueView('nominal'));
 
-  it('Nominal: the interest earned, in the product currency', async () => {
+  it('PORTFOLIO-BANK-ROW shows the balance as money in its currency, and the bank, rate and end under the name', async () => {
+    setValueView('nominal');
+    const [name, amount] = await bankCells(product());
+    expect(name).toHaveTextContent(/^Ruble depositSynthetic Bank · 16% · until Apr 15, 2027$/);
+    // Rubles are whole and rounded down, with the sign before the number (owner, 10-16).
+    expect(amount).toHaveTextContent(/^₽430,947$/);
+  });
+
+  it('PORTFOLIO-BANK-ROW names an account with no term by its rate, and says when no rate is entered', async () => {
+    setValueView('nominal');
+    const [name, amount] = await bankCells(
+      product({
+        kind: 'account',
+        endDate: null,
+        ratePercent: null,
+        currency: 'EUR',
+        balance: '1000',
+        interestEarned: '0',
+        values: { USD: '1170.00', EUR: '1000', RUB: '97000' },
+      }),
+    );
+    expect(name).toHaveTextContent(/^Ruble depositSynthetic Bank · No rate entered$/);
+    expect(amount).toHaveTextContent(/^€1,000\.00$/);
+  });
+
+  it('PORTFOLIO-BANK-ROW says when a term deposit has no rate or no end date entered', async () => {
+    setValueView('nominal');
+    const [name] = await bankCells(product({ endDate: null, ratePercent: null }));
+    expect(name).toHaveTextContent(/^Ruble depositSynthetic Bank · No rate entered · no end date$/);
+  });
+
+  it('PORTFOLIO-BANK-INTEREST Nominal: the interest earned, in the product currency', async () => {
     setValueView('nominal');
     expect(await pnlCell(product())).toHaveTextContent('+₽30,947interest');
   });
 
-  it('Real: the interest after inflation, marked estimated, with no nominal figure', async () => {
+  it('PORTFOLIO-BANK-INTEREST Real: the interest after inflation, marked estimated, with no nominal figure', async () => {
     setValueView('real');
     const cell = await pnlCell(product());
     expect(cell).toHaveTextContent('≈+₽17,946after inflation');
     expect(cell).not.toHaveTextContent('30,947');
   });
 
-  it('a product whose interest is not counted shows a dash, not zero', async () => {
+  it('PORTFOLIO-BANK-INTEREST a product whose interest is not counted shows a dash, not zero', async () => {
     setValueView('nominal');
     const cell = await pnlCell(product({ interestMissing: true, interestEarned: null }));
     expect(cell).toHaveTextContent(/^—$/);

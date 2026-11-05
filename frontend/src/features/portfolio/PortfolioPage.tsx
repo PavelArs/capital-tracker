@@ -14,7 +14,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
-import { accountsWithoutRate } from '../deposits/deposit-format';
+import { accountsWithoutRate, dateText, rateText as depositRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import { estimateOverdue, propertiesOf, propertyTotal } from '../property/real-estate';
 import AssetIcon from '../shell/AssetIcon';
@@ -179,7 +179,21 @@ function BankAsset({
       {deposit.name}
     </Link>
   );
-  const detail = `${deposit.bank} · ${deposit.kind === 'account' ? 'Savings account' : 'Term deposit'}`;
+  // As in the prototype: the bank, the rate and, for a term deposit, when it ends (DEP-ACCOUNT).
+  const end = deposit.endDate ? `until ${dateText(deposit.endDate)}` : 'no end date';
+  // A long bank name wraps as it needs to; the rate and the date never split across lines.
+  const detail = (
+    <>
+      {deposit.bank} · <span className="portfolio-asset__part">{depositRate(deposit)}</span>
+      {deposit.kind !== 'account' && (
+        <>
+          {' · '}
+          <span className="portfolio-asset__part">{end}</span>
+        </>
+      )}
+    </>
+  );
+  const balance = money(deposit.balance, deposit.currency);
   if (phone)
     return (
       <li>
@@ -187,9 +201,9 @@ function BankAsset({
           <Icon name="bank" />
           <ListRowText
             title={link}
-            detail={detail}
+            detail={<span className="ui-row__detail">{detail}</span>}
             amount={money(deposit.values[currency], currency)}
-            value={`${quantity(deposit.balance)} ${deposit.currency}`}
+            value={balance}
           />
         </div>
       </li>
@@ -201,13 +215,11 @@ function BankAsset({
           <Icon name="bank" />
           <span className="portfolio-asset__text">
             {link}
-            <span className="portfolio-asset__ticker">{detail}</span>
+            <span className="portfolio-asset__ticker portfolio-asset__ticker--wrap">{detail}</span>
           </span>
         </span>
       </td>
-      <td className="ui-num">
-        {quantity(deposit.balance)} {deposit.currency}
-      </td>
+      <td className="ui-num">{balance}</td>
       <td className="ui-num">{DASH}</td>
       <td className="ui-num ui-strong">{money(deposit.values[currency], currency)}</td>
       <td className="ui-num">
