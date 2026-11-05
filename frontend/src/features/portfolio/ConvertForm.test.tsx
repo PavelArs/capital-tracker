@@ -331,6 +331,19 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
+  it('dates a conversion by the UTC day its time is entered in, also in the Moscow evening', async () => {
+    // 22:30 UTC is already the next day in Moscow, but the date and time here are one UTC instant:
+    // the next Moscow day would be a moment that has not come yet.
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-03-02T22:30:00.000Z') });
+    try {
+      const { view } = await open();
+      expect(view.getByLabelText('Date')).toHaveValue('2026-03-02');
+      expect(view.getByLabelText('Date')).toHaveAttribute('max', '2026-03-02');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the Type choices still while a conversion is being saved', async () => {
     let finish: (receipt: TradeReceipt) => void = () => undefined;
     create.mockReturnValueOnce(new Promise<TradeReceipt>((resolve) => (finish = resolve)));
