@@ -331,6 +331,56 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
+  it('keeps the Type choices still while a conversion is being saved', async () => {
+    let finish: (receipt: TradeReceipt) => void = () => undefined;
+    create.mockReturnValueOnce(new Promise<TradeReceipt>((resolve) => (finish = resolve)));
+    const { user, view, onSaved } = await open();
+    await user.click(currency(view, 'From', 'RUB'));
+    await user.click(currency(view, 'To', 'USD'));
+    await user.type(view.getByLabelText('Amount given'), '9000');
+    await user.type(view.getByLabelText('Amount received'), '100');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(view.getByRole('radio', { name: 'Fee' })).toBeDisabled();
+    expect(view.getByRole('radio', { name: 'Convert' })).toBeDisabled();
+    finish({} as TradeReceipt);
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('replays an unchanged retry even when the refreshed balance already includes it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-03-02T10:00:20.000Z') });
+    try {
+      // The server saved the conversion, the answer was lost, and the next minute's balance read
+      // already shows the rubles gone: the retry must still reach the server to be replayed.
+      create.mockImplementationOnce(async () => {
+        vi.setSystemTime(new Date('2026-03-02T10:01:20.000Z'));
+        available.mockImplementation(async (accountId, query) => ({
+          accountId,
+          ...query,
+          journalRevision: 4,
+          quantity: '500',
+        }));
+        throw new Error('offline');
+      });
+      const { user, view, onSaved } = await open();
+      await user.click(currency(view, 'From', 'RUB'));
+      await user.click(currency(view, 'To', 'USD'));
+      await user.type(view.getByLabelText('Amount given'), '9000');
+      await user.type(view.getByLabelText('Amount received'), '100');
+      await user.click(view.getByRole('button', { name: 'Save transaction' }));
+      expect(await view.findByText(/Could not reach the server/)).toBeInTheDocument();
+      expect(
+        await view.findByText(/Only 500 RUB is available in Home safe on/),
+      ).toBeInTheDocument();
+      await user.click(view.getByRole('button', { name: 'Save transaction' }));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(create.mock.calls[1][1].requestId).toBe(create.mock.calls[0][1].requestId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps one request id when a failed save is tried again', async () => {
     create.mockRejectedValueOnce(new Error('offline'));
     const { user, view, onSaved } = await open();

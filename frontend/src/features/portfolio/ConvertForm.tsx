@@ -193,14 +193,17 @@ export default function ConvertForm({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (all.size || !account || !fromAsset || over) {
+    const inputs = JSON.stringify({ accountId, revision: account?.journalRevision, entry });
+    // An unchanged retry is replayed as it was: if the first try was saved but its answer was lost,
+    // the balance now read already includes it, and only the server can tell it is the same request.
+    const retry = attempt.current !== null && attempt.current.inputs === inputs;
+    if (all.size || !account || !fromAsset || (over && !retry)) {
       refused();
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const inputs = JSON.stringify({ accountId, revision: account.journalRevision, entry });
       if (attempt.current?.inputs !== inputs)
         attempt.current = {
           inputs,

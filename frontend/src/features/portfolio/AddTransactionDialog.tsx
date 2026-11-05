@@ -821,7 +821,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           labelledBy={`${id}-type`}
           options={mainKinds}
           value={kind}
-          disabled={(value) => editLocked(Boolean(editing), value, kind)}
+          disabled={(value) => convertSaving || editLocked(Boolean(editing), value, kind)}
           onChange={choose}
         />
         <Button
@@ -845,7 +845,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           isChecked={(value) =>
             value === 'gift-received' ? kind.startsWith('gift') : kind === value
           }
-          disabled={(value) => editLocked(Boolean(editing), value, kind)}
+          disabled={(value) => convertSaving || editLocked(Boolean(editing), value, kind)}
           onChange={choose}
         />
       )}
