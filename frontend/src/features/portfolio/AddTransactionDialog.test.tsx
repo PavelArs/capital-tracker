@@ -320,6 +320,22 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     });
   });
 
+  it('CASH-CONVERT does not swap in the Convert form while another type is being saved', async () => {
+    const user = userEvent.setup();
+    let finish: (receipt: TradeReceipt) => void = () => undefined;
+    create.mockReturnValueOnce(new Promise<TradeReceipt>((resolve) => (finish = resolve)));
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '0.01');
+    await user.type(view.getByLabelText('Total paid'), '1000');
+    await user.click(view.getByRole('button', { name: 'More' }));
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(view.getByRole('radio', { name: 'Convert' })).toBeDisabled();
+    finish({} as TradeReceipt);
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
   it('asks for the rate of a typed date only when the date field loses focus', async () => {
     const user = userEvent.setup();
     const { dialog } = await open();

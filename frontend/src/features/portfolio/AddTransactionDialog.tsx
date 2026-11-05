@@ -810,6 +810,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     }
     document.querySelector<HTMLInputElement>(`input[name="${id}-kind"]:checked`)?.focus();
   }, [kind === 'convert']);
+  // The body under a running save stays, so its answer lands in the form that asked.
+  const typeLocked = saving || convertSaving;
   const typeField = (
     <div className="ui-field">
       <span id={`${id}-type`} className="ui-field__label">
@@ -821,7 +823,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           labelledBy={`${id}-type`}
           options={mainKinds}
           value={kind}
-          disabled={(value) => convertSaving || editLocked(Boolean(editing), value, kind)}
+          disabled={(value) => typeLocked || editLocked(Boolean(editing), value, kind)}
           onChange={choose}
         />
         <Button
@@ -845,7 +847,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           isChecked={(value) =>
             value === 'gift-received' ? kind.startsWith('gift') : kind === value
           }
-          disabled={(value) => convertSaving || editLocked(Boolean(editing), value, kind)}
+          disabled={(value) => typeLocked || editLocked(Boolean(editing), value, kind)}
           onChange={choose}
         />
       )}
