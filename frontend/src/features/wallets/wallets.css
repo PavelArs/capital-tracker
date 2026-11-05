@@ -357,11 +357,12 @@ button.wallets-source__open:focus-visible {
 }
 
 /* Assets and transactions side by side (prototype .two-col): the list of transactions wider,
-   one under the other below 1100 px. */
+   both cards as tall as the taller one so they end on one line; one under the other below
+   1100 px. */
 .wallets-split {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  align-items: start;
+  align-items: stretch;
   gap: var(--sp-4);
 }
 
