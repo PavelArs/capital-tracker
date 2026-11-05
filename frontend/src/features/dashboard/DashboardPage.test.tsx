@@ -809,7 +809,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage();
     const top = await screen.findByRole('region', { name: 'Top assets' });
     const [first] = within(top).getAllByRole('row').slice(1);
-    expect(first.textContent).toBe('Bitcoin0.05 BTC$2,100.00-0.80%$4,200.00≈42.00%');
+    expect(first.textContent).toBe('Bitcoin0.05 BTC$2,100.00-0.80%$4,200.00≈42.0%');
   });
 
   it('DASH-TOP-BUSY says the Top assets card is busy while the valuation loads', async () => {
@@ -899,12 +899,12 @@ describe('show-dashboard-top-assets', () => {
     expect(valued).toHaveBeenCalledWith(undefined);
     const rows = within(top).getAllByRole('row').slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([
-      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.00%',
-      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.00%',
+      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.0%',
+      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.0%',
       // dashboard-06: a fixed price is no market quote, so its 24h says so as on phones.
-      'US Dollar1,500 USD$1.00Fixed$1,500.0015.00%',
-      'Solana2 SOL$450.00+1.25%$900.009.00%',
-      'Zcash2 ZEC$300.00+1.25%$600.006.00%',
+      'US Dollar1,500 USD$1.00Fixed$1,500.0015.0%',
+      'Solana2 SOL$450.00+1.25%$900.009.0%',
+      'Zcash2 ZEC$300.00+1.25%$600.006.0%',
     ]);
     expect(within(rows[0]).getByText('-0.80%')).toHaveClass('ui-neg');
     expect(within(rows[0]).getByRole('link', { name: 'Bitcoin' })).toHaveAttribute(
@@ -926,17 +926,17 @@ describe('show-dashboard-top-assets', () => {
         .getAllByRole('listitem')
         .map((item) => item.textContent);
     expect(shares()).toEqual([
-      'Bitcoin BTC$4,200.0042.00%',
-      'Ethereum ETH$2,000.0020.00%',
-      'US Dollar USD$1,500.0015.00%',
-      'Solana SOL$900.009.00%',
-      'Zcash ZEC$600.006.00%',
-      'Other 2 assets$800.008.00%',
+      'Bitcoin BTC$4,200.0042.0%',
+      'Ethereum ETH$2,000.0020.0%',
+      'US Dollar USD$1,500.0015.0%',
+      'Solana SOL$900.009.0%',
+      'Zcash ZEC$600.006.0%',
+      'Other 2 assets$800.008.0%',
     ]);
     await user.click(within(allocation).getByRole('radio', { name: 'Classes' }));
-    expect(shares()).toEqual(['Crypto$8,500.0085.00%', 'Cash$1,500.0015.00%']);
+    expect(shares()).toEqual(['Crypto$8,500.0085.0%', 'Cash$1,500.0015.0%']);
     await user.click(within(allocation).getByRole('radio', { name: 'Accounts' }));
-    expect(shares()).toEqual(['Trust Wallet$7,000.0070.00%', 'Cold storage$3,000.0030.00%']);
+    expect(shares()).toEqual(['Trust Wallet$7,000.0070.0%', 'Cold storage$3,000.0030.0%']);
   });
 
   it('PHONE-LIST shows top assets as two-line rows with the 24h change', async () => {
@@ -1320,11 +1320,11 @@ describe('Dashboard UI audit', () => {
     await within(top).findByText('Synthetic Bank · 12% · until Dec 1, 2026');
     const rows = within(top).getAllByRole('row').slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([
-      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.00%',
-      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.00%',
-      'Savings ASynthetic Bank · 12% · until Dec 1, 2026——$1,800.0018.00%',
-      'US Dollar1,500 USD$1.00Fixed$1,500.0015.00%',
-      'Solana2 SOL$450.00+1.25%$900.009.00%',
+      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.0%',
+      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.0%',
+      'Savings ASynthetic Bank · 12% · until Dec 1, 2026——$1,800.0018.0%',
+      'US Dollar1,500 USD$1.00Fixed$1,500.0015.0%',
+      'Solana2 SOL$450.00+1.25%$900.009.0%',
     ]);
     expect(within(rows[2]).getByRole('link', { name: 'Savings A' })).toHaveAttribute(
       'href',
@@ -1950,5 +1950,189 @@ describe('SECTION-CHART dashboard', () => {
     failing = false;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.queryByText(note)).toBeNull());
+  });
+});
+
+// DASH-LAYOUT: the dashboard as the prototype draws it. Synthetic data only.
+describe('DASH-LAYOUT dashboard', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const flatAccount = id(50);
+  const term: Deposit = {
+    id: id(70),
+    name: 'Savings A',
+    bank: 'Synthetic Bank',
+    currency: 'USD',
+    startDate: '2026-07-01',
+    endDate: '2026-12-01',
+    payout: 'monthly',
+    capitalized: false,
+    dayBasis: 'actual-365',
+    earlyClose: 'forfeits-interest',
+    ratePercent: '12',
+    status: 'active',
+    closedOn: null,
+    principal: '1780.00',
+    accrued: '20.00',
+    due: '0.00',
+    balance: '1800.00',
+    values: { USD: '1800.00', EUR: '1620.00', RUB: '162000.00' },
+    nextPayout: { date: '2026-11-01', interest: '18.00', treatment: 'payable' },
+    atMaturity: { date: '2026-12-01', balance: '1836.00', interest: '36.00' },
+    lastCheck: null,
+  };
+  const flat = (quantity: string, changes: Partial<AssetValuation> = {}) =>
+    asset(99, 'Studio apartment', '', '3000', {
+      assetType: 'manual',
+      priceSource: 'manual',
+      quantity,
+      price: {
+        value: '3000',
+        source: 'manual',
+        status: 'manual',
+        observedAt: '2026-08-01T09:00:00.000Z',
+      },
+      priceChange24hPercent: null,
+      holdings: [
+        { accountId: flatAccount, accountName: 'Studio account', quantity, value: '3000' },
+      ],
+      ...changes,
+    });
+
+  // A flat, a deposit and the crypto, ranked by value.
+  function holdFlatAndDeposit(quantity = '1') {
+    accounts.mockResolvedValue({
+      items: [account(flatAccount, 'Studio account', 'property'), account(trust, 'Trust Wallet')],
+      nextCursor: null,
+    });
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [term],
+      totals: term.values,
+    });
+    const base = valuation({ depositsValue: '1800', assets: [flat(quantity), ...assets] });
+    valued.mockImplementation(async (currency?: AccountingCurrency) => ({
+      ...base,
+      currency: currency ?? 'USD',
+      allocation: {
+        ...base.allocation,
+        byAsset: [
+          slice(id(99), 'Studio apartment', '3000'),
+          slice(`deposit:${term.id}`, 'Savings A', '1800'),
+          ...base.allocation.byAsset.slice(0, 3),
+        ],
+      },
+    }));
+  }
+
+  const topRows = async () => {
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    await within(top).findByText('Synthetic Bank · 12% · until Dec 1, 2026');
+    return within(top).getAllByRole('row').slice(1);
+  };
+  const glyph = (row: HTMLElement) => row.querySelector('.asset-icon')?.getAttribute('data-glyph');
+
+  it('DASH-LAYOUT draws a bank deposit with the % of every bank product and a flat with a house', async () => {
+    holdFlatAndDeposit();
+    renderPage();
+    const [flatRow, depositRow] = await topRows();
+    expect(glyph(flatRow)).toBe('⌂');
+    expect(glyph(depositRow)).toBe('%');
+  });
+
+  it('DASH-LAYOUT draws a savings account with the sign of its currency', async () => {
+    holdFlatAndDeposit();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [{ ...term, kind: 'account', currency: 'EUR', endDate: null, atMaturity: null }],
+      totals: term.values,
+    });
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    await within(top).findByText('Synthetic Bank · 12%');
+    const [, depositRow] = within(top).getAllByRole('row').slice(1);
+    expect(glyph(depositRow)).toBe('€');
+  });
+
+  it('DASH-LAYOUT says when a flat was last valued instead of counting it as one unit', async () => {
+    holdFlatAndDeposit();
+    renderPage();
+    const [flatRow] = await topRows();
+    expect(flatRow).toHaveTextContent('Studio apartmentEstimate Aug 1, 2026');
+    expect(flatRow).not.toHaveTextContent('Studio apartment1');
+  });
+
+  it('DASH-LAYOUT adds the owner’s share to the estimate of a flat held in part', async () => {
+    holdFlatAndDeposit('0.5');
+    renderPage();
+    const [flatRow] = await topRows();
+    expect(flatRow).toHaveTextContent('Studio apartment50% yours · estimate Aug 1, 2026');
+  });
+
+  it('DASH-LAYOUT says the same on phones', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    holdFlatAndDeposit();
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    // The class of the account arrives after the row does; the row waits for it to say so.
+    await within(top).findByText('Estimate Aug 1, 2026');
+    const row = within(top).getByRole('link', { name: /Studio apartment/ });
+    expect(row.querySelector('.asset-icon')?.getAttribute('data-glyph')).toBe('⌂');
+  });
+
+  it('DASH-LAYOUT keeps the quantity of a coin and the terms of a deposit', async () => {
+    holdFlatAndDeposit();
+    renderPage();
+    const [, depositRow, bitcoinRow] = await topRows();
+    expect(depositRow).toHaveTextContent('Savings ASynthetic Bank · 12% · until Dec 1, 2026');
+    expect(bitcoinRow).toHaveTextContent('Bitcoin0.05 BTC');
+  });
+
+  it('DASH-LAYOUT shows a share to one decimal in the top assets and the allocation', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) => {
+      const base = valuation({ currency: currency ?? 'USD' });
+      return {
+        ...base,
+        allocation: {
+          ...base.allocation,
+          byAsset: [
+            { ...base.allocation.byAsset[0], percent: '62.49' },
+            { ...base.allocation.byAsset[1], percent: '0.04' },
+          ],
+        },
+        assets: base.assets.map((item, index) =>
+          index === 0
+            ? { ...item, allocationPercent: '62.49' }
+            : index === 1
+              ? { ...item, allocationPercent: '0.04' }
+              : item,
+        ),
+      };
+    });
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    const [bitcoin, ethereum] = within(top).getAllByRole('row').slice(1);
+    // Rounded down like every other figure: the share is never shown larger than it is.
+    expect(bitcoin).toHaveTextContent('62.4%');
+    expect(bitcoin).not.toHaveTextContent('62.49%');
+    // A share too small for one decimal never reads as nothing held.
+    expect(ethereum).toHaveTextContent('<0.1%');
+    const allocation = screen.getByRole('region', { name: 'Allocation' });
+    const items = within(allocation).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('62.4%');
+    expect(items[1]).toHaveTextContent('<0.1%');
+  });
+
+  it('DASH-LAYOUT keeps the chart title for assistive technology and the note on how it is made', async () => {
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Portfolio value over time' });
+    const title = within(chart).getByRole('heading', { name: 'Capital' });
+    expect(title).toHaveClass('ui-sr');
+    await userEvent.setup().click(within(chart).getByRole('button', { name: 'About this chart' }));
+    expect(within(chart).getByRole('note')).toHaveTextContent('Net invested is the money put in');
   });
 });

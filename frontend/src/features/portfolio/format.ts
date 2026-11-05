@@ -118,9 +118,9 @@ export function quantity(value: string): string {
   return `${sign(value, false, shown)}${shown}`;
 }
 
-export function percent(value: string | null, signed = true): string {
+export function percent(value: string | null, signed = true, places = 2): string {
   if (value === null) return DASH;
-  const shown = number(value, 2, 2);
+  const shown = number(value, places, places);
   return `${sign(value, signed, shown)}${shown}%`;
 }
 

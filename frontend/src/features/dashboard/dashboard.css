@@ -213,10 +213,6 @@
   cursor: pointer;
 }
 
-.dashboard-assets__deposit {
-  background: var(--c-deposit);
-}
-
 /* A top asset: its icon, the name that opens it and a muted line under it. */
 .dashboard-asset {
   display: flex;
@@ -226,8 +222,15 @@
 
 .dashboard-asset__name {
   display: block;
+  color: var(--ink);
   font-weight: 600;
   line-height: 1.2;
+  text-decoration: none;
+}
+
+/* The whole row opens, so the name reads as text and underlines only under the pointer. */
+.dashboard-asset__name:hover {
+  text-decoration: underline;
 }
 
 .dashboard-asset__detail {
