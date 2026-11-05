@@ -9,6 +9,7 @@ import {
   type StellarPayment,
   type StellarTransaction,
 } from './horizon-client';
+import { jsonbText } from './jsonb-text';
 import { type StellarLeg, type StellarOperation, stellarLeg } from './stellar-legs';
 
 // Bounds for one pass; the next pass continues from the committed transaction. A transaction
@@ -215,7 +216,7 @@ export class StellarSyncAdapter implements ChainSyncAdapter {
         leg.sentUnits.toString(),
         leg.feeUnits.toString(),
         leg.direction,
-        JSON.stringify(leg.raw),
+        jsonbText(leg.raw),
       );
       const slot = (offset: number) => `$${base + offset}`;
       return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},NULL,${slot(5)},${slot(6)}::numeric,${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)},${slot(10)}::jsonb,NULL)`;

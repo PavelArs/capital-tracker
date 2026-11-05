@@ -25,6 +25,7 @@ import {
 import { readEvmBlock, type EvmScan as ScanRow, sameEvmScan } from './evm-block-progress';
 import { type EvmChain, type EvmNetwork } from './evm-chains';
 import { EvmReader } from './evm-reader';
+import { jsonbText } from './jsonb-text';
 
 // Blocks this deep are final; a shallower one could still be replaced and its rows are
 // never rewritten, so they wait for the next pass.
@@ -367,7 +368,7 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
           leg.sentUnits.toString(),
           leg.feeUnits.toString(),
           leg.direction,
-          JSON.stringify(leg.raw),
+          jsonbText(leg.raw),
           leg.asset,
         );
         const slot = (offset: number) => `$${base + offset}`;
