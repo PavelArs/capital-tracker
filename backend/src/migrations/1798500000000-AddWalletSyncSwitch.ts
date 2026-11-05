@@ -8,7 +8,7 @@ export class AddWalletSyncSwitch1798500000000 implements MigrationInterface {
     // after repeated failures. Every existing wallet keeps syncing (the columns start empty).
     await runner.query(`ALTER TABLE wallet_addresses
       ADD COLUMN "syncDisabledAt" timestamptz,
-      ADD COLUMN "syncDisabledReason" varchar(16)
+      ADD COLUMN "syncDisabledReason" text
         CHECK ("syncDisabledReason" IN ('manual', 'failures')),
       ADD COLUMN "syncFailures" integer NOT NULL DEFAULT 0 CHECK ("syncFailures" >= 0),
       ADD CONSTRAINT "wallet_addresses_syncDisabled_check"
