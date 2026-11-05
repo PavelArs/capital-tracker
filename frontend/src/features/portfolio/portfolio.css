@@ -228,11 +228,12 @@ a.portfolio-asset__name:hover {
   color: var(--warn);
 }
 
-/* Holdings and the asset's transactions side by side (prototype .two-col). */
+/* Holdings and the asset's transactions side by side (prototype .two-col), both cards as tall as
+   the taller one so they end on one line. */
 .portfolio-split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: var(--sp-4);
 }
 
