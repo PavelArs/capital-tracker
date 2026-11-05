@@ -2,15 +2,13 @@ import { cachedReads } from '@api/cached-reads';
 import type { Deposit } from '@api/deposits.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useToast } from '@contexts/ToastContext';
-import { useId, useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Badge from '@/ui/Badge';
-import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
 import { ErrorState } from '@/ui/ErrorState';
-import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import { Stat, Stats } from '@/ui/Stats';
 import { sumDecimals } from '@/utils/decimal';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
@@ -24,18 +22,18 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { useValueView } from '../shell/value-view';
 import { AddDepositDialog } from './DepositDialogs';
+import DepositIcon from './DepositIcon';
 import {
   accountsWithoutRate,
-  attention,
   dateText,
+  endsSoonText,
+  endText,
+  interestTermsText,
   money,
-  NO_REAL_GAIN,
-  noRealEndReason,
   realOf,
   realRateText,
   statusText,
   statusTone,
-  termText,
   toneClass,
 } from './deposit-format';
 import '../shell/shell-page.css';
@@ -55,24 +53,50 @@ function DepositTile({
   const [view] = useValueView();
   // One reading at a time; an answer saved before real figures existed stays nominal.
   const showReal = view === 'real' && deposit.real !== undefined;
-  const note = attention(deposit, asOf);
-  const check = deposit.lastCheck;
-  const inOwn = shown === deposit.currency;
   const real = realOf(deposit, basis);
   const rate = showReal ? realRateText(real) : null;
+  // Missing is not zero: an account whose interest is not counted says so on its row.
+  const notes = [
+    rate && (
+      <span key="rate" className={toneClass(real?.ratePercent ?? null)}>
+        {rate}
+      </span>
+    ),
+    // Real with no figure shows a dash and why, as everywhere (an account without a rate says so below).
+    showReal &&
+      deposit.status === 'active' &&
+      deposit.ratePercent !== null &&
+      rate === null &&
+      'Real rate —, no inflation figures yet',
+    endText(deposit),
+    deposit.interestMissing &&
+      (deposit.ratePercent === null ? 'Interest not counted' : 'Earlier interest not counted'),
+  ].filter(Boolean);
+  const endsSoon = endsSoonText(deposit, asOf);
   return (
     <li className="deposit-product">
       <Link className="deposit-product__row" to={withCurrency(`/deposits/${deposit.id}`, asked)}>
         <span className="deposit-product__identity">
-          <Icon name="bank" />
+          <DepositIcon deposit={deposit} size="sm" />
           <span>
             <strong>{deposit.name}</strong>
             <small>{deposit.kind === 'account' ? 'Savings account' : 'Term deposit'}</small>
           </span>
         </span>
         <span className="deposit-product__terms">
-          {termText(deposit)}
-          {rate && <small className={toneClass(real?.ratePercent ?? null)}>{rate}</small>}
+          {interestTermsText(deposit)}
+          {notes.length > 0 && (
+            <small>
+              {notes.map((note, index) => (
+                // The notes are fixed by the deposit, so their place is their identity.
+                // biome-ignore lint/suspicious/noArrayIndexKey: see above
+                <Fragment key={index}>
+                  {index > 0 && ' · '}
+                  {note}
+                </Fragment>
+              ))}
+            </small>
+          )}
         </span>
         <span className="deposit-product__balance ui-num">
           {money(deposit.balance, deposit.currency)}
@@ -83,81 +107,16 @@ function DepositTile({
             </small>
           )}
         </span>
-        {!inOwn && (
-          <strong className="deposit-product__value ui-num">
-            {money(deposit.values[shown], shown)}
-          </strong>
-        )}
-        <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
+        <span className="deposit-product__value ui-num">{money(deposit.values[shown], shown)}</span>
+        <span className="deposit-product__status">
+          <Badge tone={endsSoon ? 'warn' : statusTone[deposit.status]}>
+            {endsSoon ?? statusText[deposit.status]}
+          </Badge>
+        </span>
       </Link>
-      <details className="deposit-product__details">
-        <summary>Interest and balance details</summary>
-        <KeyValue>
-          {deposit.interestMissing && (
-            <KeyValueRow term="Interest">
-              {deposit.ratePercent === null
-                ? 'Not counted, no rate entered'
-                : 'Not counted before the first rate'}
-            </KeyValueRow>
-          )}
-          {deposit.interestEarned != null &&
-            (showReal ? (
-              <KeyValueRow term="Interest after inflation">
-                <span className={toneClass(real?.gain ?? null)}>
-                  {real?.gain != null ? money(real.gain, deposit.currency, true) : DASH}
-                </span>
-                {real?.gain != null && real.estimated && ESTIMATED}
-                {real?.gain == null && <span className="ui-sub"> {NO_REAL_GAIN}</span>}
-              </KeyValueRow>
-            ) : (
-              <KeyValueRow term="Interest earned">
-                {money(deposit.interestEarned, deposit.currency)}
-              </KeyValueRow>
-            ))}
-          {deposit.nextPayout && (
-            <KeyValueRow term="Next interest">
-              {money(deposit.nextPayout.interest, deposit.currency)} on{' '}
-              {dateText(deposit.nextPayout.date)}
-            </KeyValueRow>
-          )}
-          {deposit.atMaturity &&
-            (showReal ? (
-              <KeyValueRow term="At the end, in today's money">
-                {deposit.atMaturity.inTodaysMoney?.[basis]
-                  ? money(deposit.atMaturity.inTodaysMoney[basis].amount, deposit.currency)
-                  : DASH}
-                {deposit.atMaturity.inTodaysMoney?.[basis]?.estimated && ESTIMATED}
-                {!deposit.atMaturity.inTodaysMoney?.[basis] && (
-                  <span className="ui-sub"> {noRealEndReason(deposit.atMaturity.date, asOf)}</span>
-                )}
-              </KeyValueRow>
-            ) : (
-              <KeyValueRow term="At the end of the term">
-                {money(deposit.atMaturity.balance, deposit.currency)}
-              </KeyValueRow>
-            ))}
-          {check && (
-            <KeyValueRow term="Last check">
-              {dateText(check.checkedOn)},{' '}
-              {check.difference === null
-                ? 'not compared, the interest is missing'
-                : Number(check.difference) === 0
-                  ? 'matches the bank'
-                  : `differs by ${money(check.difference, deposit.currency)}`}
-            </KeyValueRow>
-          )}
-        </KeyValue>
-      </details>
-      {note && (
-        <Banner tone="warn" role="none">
-          {note}
-        </Banner>
-      )}
     </li>
   );
 }
-
-const ESTIMATED = ' (estimated)';
 
 const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;
 
@@ -199,10 +158,11 @@ function Bank({
             <Icon name="bank" />
           </span>
           <div className="deposit-bank__identity">
-            <h2 id={`${id}-bank`}>{bank}</h2>
+            <h2 id={`${id}-bank`} className="deposit-bank__name">
+              {bank}
+            </h2>
             <small>Bank · deposits and savings accounts</small>
           </div>
-
           <div className="deposit-bank__total">
             <strong className="ui-num">{money(total, shown)}</strong>
             <small>{plural(deposits.length, 'product')}</small>

@@ -20,7 +20,6 @@ import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { DASH } from '../portfolio/format';
 import { basisText } from '../shell/basis-text';
-import { Icon } from '../shell/icons';
 import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
@@ -29,6 +28,7 @@ import { useCachedRead } from '../shell/useCachedRead';
 import { useValueView } from '../shell/value-view';
 import DepositChart from './DepositChart';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
+import DepositIcon from './DepositIcon';
 import {
   attention,
   capitalizedInterest,
@@ -67,80 +67,35 @@ function InterestPeriods({
 }) {
   // One reading at a time: Real shows the interest after inflation instead of the bank's figure,
   // a dash where a period has none (an answer saved before the figure existed).
-  const inflated = showReal;
   const missingReason = interestMissing
     ? 'Earlier interest is missing'
     : 'No inflation figures for this period';
   const paged = usePages([...periods].reverse(), (period) => period.to);
-  const narrow = useNarrowScreen();
   const treatment = (period: DepositDetail['periods'][number]) =>
     period.treatment === 'capitalized' ? 'Added to the deposit' : 'Payable';
-  if (narrow)
-    return (
-      <>
-        <ol className="ui-rows deposit-rows" aria-label="Interest by period">
-          {paged.rows.map((period) => {
-            const real = period.afterInflation?.[basis] ?? null;
-            return (
-              <li key={period.to} className={rowClass()}>
-                <ListRowText
-                  title={treatment(period)}
-                  detail={`${dateText(period.from)} – ${dateText(period.to)}`}
-                  amount={
-                    inflated ? (
-                      <span className={toneClass(real)}>{money(real, currency, true)}</span>
-                    ) : (
-                      money(period.interest, currency)
-                    )
-                  }
-                  value={inflated ? (real === null ? missingReason : 'after inflation') : undefined}
-                />
-              </li>
-            );
-          })}
-        </ol>
-        {paged.pager && <Pager {...paged.pager} label="periods" />}
-      </>
-    );
   return (
     <>
-      <div className="ui-table-wrap">
-        <table className="ui-table">
-          <thead>
-            <tr>
-              <th>From</th>
-              <th>To</th>
-              <th>What happened to it</th>
-              {inflated ? (
-                <th className="ui-num">After inflation</th>
-              ) : (
-                <th className="ui-num">Interest</th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {paged.rows.map((period) => (
-              <tr key={period.to}>
-                <td>{dateText(period.from)}</td>
-                <td>{dateText(period.to)}</td>
-                <td>{treatment(period)}</td>
-                {inflated ? (
-                  <td
-                    className={`ui-num ${toneClass(period.afterInflation?.[basis] ?? null) ?? ''}`}
-                  >
-                    {money(period.afterInflation?.[basis] ?? null, currency, true)}
-                    {period.afterInflation?.[basis] == null && (
-                      <small className="ui-muted"> · {missingReason}</small>
-                    )}
-                  </td>
-                ) : (
-                  <td className="ui-num">{money(period.interest, currency)}</td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ol className="ui-rows deposit-rows" aria-label="Interest by period">
+        {paged.rows.map((period) => {
+          const real = period.afterInflation?.[basis] ?? null;
+          return (
+            <li key={period.to} className={rowClass()}>
+              <ListRowText
+                title={`${dateText(period.from)} – ${dateText(period.to)}`}
+                detail={treatment(period)}
+                amount={
+                  showReal ? (
+                    <span className={toneClass(real)}>{money(real, currency, true)}</span>
+                  ) : (
+                    money(period.interest, currency)
+                  )
+                }
+                value={showReal ? (real === null ? missingReason : 'after inflation') : undefined}
+              />
+            </li>
+          );
+        })}
+      </ol>
       {paged.pager && <Pager {...paged.pager} label="periods" />}
     </>
   );
@@ -348,7 +303,7 @@ export default function DepositPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Banks" valueSwitch />
+      <PageHeader title={deposit?.name ?? 'Banks'} valueSwitch />
       <Crumb to={back}>Banks</Crumb>
       {failed ? (
         <ErrorState what="this deposit" onRetry={() => reload()} />
@@ -357,7 +312,7 @@ export default function DepositPage() {
       ) : (
         <>
           <PageHead
-            icon={<Icon name="archive" />}
+            icon={<DepositIcon deposit={deposit} size="lg" />}
             title={deposit.name}
             subtitle={
               <>
@@ -430,9 +385,18 @@ export default function DepositPage() {
                     }
                   />
                 ) : (
-                  <Stat label="Interest earned" value={money(deposit.interestEarned, own)} />
+                  <Stat
+                    label="Interest earned"
+                    value={money(deposit.interestEarned, own)}
+                    hint={
+                      deposit.accrued !== null && /[1-9]/.test(deposit.accrued)
+                        ? `${money(deposit.accrued, own)} not posted yet`
+                        : undefined
+                    }
+                  />
                 ))}
-              {deposit.accrued !== null && (
+              {/* An answer saved before the interest earned was a figure still shows what it has not posted. */}
+              {deposit.interestEarned == null && deposit.accrued !== null && (
                 <Stat
                   label="Earned, not posted yet"
                   value={money(deposit.accrued, own)}
