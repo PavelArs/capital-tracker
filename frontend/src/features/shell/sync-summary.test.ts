@@ -57,6 +57,36 @@ describe('SYNC-STATUS sidebar summary', () => {
     expect(summarizeSync([prices, delayed, failed], now).title).toBe('2 sources need attention');
   });
 
+  it('WALLET-SYNC-OFF: counts a wallet the app switched off, and ignores one the owner switched off', () => {
+    const appOff = wallet({
+      state: 'failed',
+      errorMessage: 'Arbitrum One data is temporarily unavailable.',
+      disabledReason: 'failures',
+    });
+    expect(summarizeSync([prices, appOff], now)).toEqual({
+      tone: 'warn',
+      title: '1 source needs attention',
+      detail: 'Others synced 12 min ago',
+      problems: [
+        'Trust Wallet BTC: Sync switched off after failures. Arbitrum One data is temporarily unavailable.',
+      ],
+    });
+    const ownerOff = wallet({
+      state: 'failed',
+      errorMessage: 'old failure',
+      disabledReason: 'manual',
+    });
+    expect(summarizeSync([prices, ownerOff], now)).toEqual({
+      tone: 'pos',
+      title: 'All synced',
+      detail: 'Prices and wallets 12 min ago',
+      problems: [],
+    });
+    expect(
+      summarizeSync([prices, wallet({ state: 'syncing', disabledReason: 'manual' })], now).title,
+    ).toBe('All synced');
+  });
+
   it('gives the reason when nothing else has synced', () => {
     const failed = source({
       state: 'failed',

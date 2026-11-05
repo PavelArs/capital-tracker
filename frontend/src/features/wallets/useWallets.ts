@@ -172,9 +172,38 @@ export function useWallets() {
     [load, replace, setRun, toast],
   );
 
-  // The background job is loading a history: show its progress without a reload.
+  // WALLET-SYNC-OFF: switches one address's background sync on or off. The answer is the address
+  // as it now is; nothing it stored is touched. A failure is said, not thrown, so a button can
+  // stay a plain click handler.
+  const setSyncEnabled = useCallback(
+    async (id: string, enabled: boolean) => {
+      try {
+        const address = await walletAddressesApi.setSyncEnabled(id, enabled);
+        if (!mounted.current) return;
+        replace(address);
+        toast.show({
+          tone: 'success',
+          title: `Sync is ${enabled ? 'on' : 'off'} for ${address.label ?? networkOf(address).name}`,
+        });
+        void load(true);
+      } catch {
+        toast.show({
+          tone: 'error',
+          title: `Could not turn sync ${enabled ? 'on' : 'off'}. Try again.`,
+        });
+      } finally {
+        announceSyncChange();
+      }
+    },
+    [load, replace, toast],
+  );
+
+  // The background job is loading a history: show its progress without a reload. A switched-off
+  // address is not loading, whatever its last pass said.
   const backgroundSyncing =
-    addresses?.some((address) => address.sync.status === 'syncing' && !runs[address.id]) ?? false;
+    addresses?.some(
+      (address) => address.sync.status === 'syncing' && !address.sync.off && !runs[address.id],
+    ) ?? false;
   useEffect(() => {
     if (!backgroundSyncing) return;
     const timer = window.setInterval(() => void load(true), BACKGROUND_REFRESH_MS);
@@ -197,6 +226,7 @@ export function useWallets() {
     forget,
     runs,
     sync,
+    setSyncEnabled,
     asked,
   };
 }

@@ -27,7 +27,7 @@ import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
 import RemoveAddress from './RemoveAddress';
 import SyncJournal from './SyncJournal';
-import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
+import { SyncBadge, type SyncRun, syncAge, syncOffNote, syncProblem } from './SyncStatus';
 import TokensSection from './TokensSection';
 import {
   addressValue,
@@ -89,6 +89,8 @@ interface Props {
   prices: Prices;
   run: SyncRun | undefined;
   onSync: () => void;
+  /** WALLET-SYNC-OFF: switches the address's background sync on (true) or off (false). */
+  onSyncEnabled: (enabled: boolean) => Promise<void>;
   onSaved: (address: WalletAddress, newAccount: boolean) => void;
   /** WALLET-REMOVE: the address stopped being tracked. */
   onRemoved: (address: WalletAddress) => void;
@@ -104,10 +106,21 @@ export default function AddressDrawer({
   prices,
   run,
   onSync,
+  onSyncEnabled,
   onSaved,
   onRemoved,
   onClose,
 }: Props) {
+  const [switching, setSwitching] = useState(false);
+  const switchSync = async (enabled: boolean) => {
+    setSwitching(true);
+    try {
+      await onSyncEnabled(enabled);
+    } finally {
+      setSwitching(false);
+    }
+  };
+  const offNote = syncOffNote(address);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [choice, setChoice] = useState(address.accountId ?? NONE);
   const [newName, setNewName] = useState('');
@@ -348,7 +361,9 @@ export default function AddressDrawer({
           </KeyValueRow>
           <KeyValueRow term="Transactions">{count}</KeyValueRow>
           <KeyValueRow term="Data source">{network.source}</KeyValueRow>
-          <KeyValueRow term="Updates">Every hour in the background</KeyValueRow>
+          <KeyValueRow term="Updates">
+            {address.sync.off ? 'Not updated: sync is off' : 'Every hour in the background'}
+          </KeyValueRow>
         </KeyValue>
         {key && key.alsoTracked.length > 0 && (
           <Banner tone="warn">
@@ -379,6 +394,12 @@ export default function AddressDrawer({
         )}
         {exchange && <EarnSection exchange={exchange} />}
         {exchange && <ConvertNote exchange={exchange} />}
+        {offNote && (
+          // WALLET-SYNC-OFF: why nothing is read any more, and that the found transactions stay.
+          <Banner tone={offNote.tone} role="note">
+            {offNote.text}
+          </Banner>
+        )}
         {syncProblem(address, run) && (
           // wallets-13: an amber note with an alert icon, as on the Wallets row. A sync the owner
           // just ran is said aloud (wallets-02); a failure the background job stored is a note.
@@ -538,10 +559,27 @@ export default function AddressDrawer({
         <RemoveAddress id={address.id} exchange={!!exchange} onRemoved={() => onRemoved(address)} />
       </div>
       <DrawerFooter>
+        {/* WALLET-SYNC-OFF: switching off keeps every transaction found so far. */}
+        {address.sync.off ? (
+          <Button icon="refresh" busy={switching} onClick={() => void switchSync(true)}>
+            {switching ? 'Turning on…' : 'Turn sync on'}
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            busy={switching}
+            disabled={running}
+            onClick={() => void switchSync(false)}
+          >
+            {switching ? 'Turning off…' : 'Turn sync off'}
+          </Button>
+        )}
         <span className="ui-grow" />
-        <Button icon="refresh" disabled={running} onClick={onSync}>
-          {running ? 'Syncing…' : 'Sync now'}
-        </Button>
+        {!address.sync.off && (
+          <Button icon="refresh" disabled={running} onClick={onSync}>
+            {running ? 'Syncing…' : 'Sync now'}
+          </Button>
+        )}
       </DrawerFooter>
     </Drawer>
   );

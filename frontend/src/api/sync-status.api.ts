@@ -12,6 +12,8 @@ export interface SyncSource {
   lastAttemptAt: string | null;
   lastSuccessAt: string | null;
   errorMessage: string | null;
+  /** WALLET-SYNC-OFF, wallets only: set while the wallet's background sync is switched off. */
+  disabledReason?: 'manual' | 'failures';
 }
 
 export const syncStatusApi = {

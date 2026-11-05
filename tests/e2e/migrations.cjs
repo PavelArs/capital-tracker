@@ -196,6 +196,7 @@ const migrationNames = [
   'AddBrokerPrices1798100000000',
   'AddWalletSyncProgress1798200000000',
   'AddFetchedAtIndexes1798300000000',
+  'AddWalletSyncSwitch1798500000000',
 ];
 
 function connection(database) {
@@ -369,7 +370,7 @@ async function verifyFresh() {
     assert.deepEqual(
       ledger.map((row) => row.name),
       migrationNames,
-      'Exactly seventy-six migrations',
+      'Exactly seventy-seven migrations',
     );
     const tables = (
       await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
@@ -1476,6 +1477,23 @@ const fetchedAtIndexes = [
 ];
 function fetchedAtAddition(kind, row) {
   return kind === 'indexes' && fetchedAtIndexes.includes(row.indexname);
+}
+// AddWalletSyncSwitch1798500000000 adds three columns and two checks to wallet_addresses: the
+// switch that stops one address's background sync, who set it and the failures counted so far.
+const walletSwitchColumns = ['syncDisabledAt', 'syncDisabledReason', 'syncFailures'];
+const walletSwitchChecks = [
+  'wallet_addresses_syncDisabled_check',
+  'wallet_addresses_syncDisabledReason_check',
+  'wallet_addresses_syncFailures_check',
+];
+function walletSwitchAddition(kind, row) {
+  if (kind === 'columns')
+    return row.table_name === 'wallet_addresses' && walletSwitchColumns.includes(row.column_name);
+  return (
+    kind === 'constraints' &&
+    row.relname === 'wallet_addresses' &&
+    walletSwitchChecks.includes(row.conname)
+  );
 }
 // KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts;
 // StopTrackingWallets1796300000000 adds one nullable removedAt column to it and to wallet_addresses;
@@ -2594,6 +2612,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           '1798100000000',
           '1798200000000',
           '1798300000000',
+          '1798500000000',
         ][index - 11],
       );
     }
@@ -2618,6 +2637,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           !sessionDeviceAddition(kind, row) &&
           !walletKindAddition(kind, row) &&
           !walletSyncAddition(kind, row) &&
+          !walletSwitchAddition(kind, row) &&
           !fetchedAtAddition(kind, row) &&
           !manualPriceCurrencyAddition(kind, row) &&
           !depositKindAddition(kind, row) &&

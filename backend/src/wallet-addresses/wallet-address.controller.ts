@@ -56,6 +56,15 @@ export class WalletAddressController {
     return this.addresses.sync(owner.userId, id);
   }
 
+  @Patch(':id/sync-enabled')
+  syncEnabled(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('id') id: string,
+    @Body() input: unknown,
+  ) {
+    return this.addresses.setSyncEnabled(owner.userId, id, input);
+  }
+
   @Get(':id/sync-runs')
   syncRuns(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
     return this.addresses.syncRuns(owner.userId, id);

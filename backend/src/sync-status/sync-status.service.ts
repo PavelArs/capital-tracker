@@ -13,6 +13,8 @@ export interface SourceSummary {
   lastAttemptAt: string | null;
   lastSuccessAt: string | null;
   errorMessage: string | null;
+  /** WALLET-SYNC-OFF, wallets only: why the wallet's background sync is switched off, if it is. */
+  disabledReason?: 'manual' | 'failures';
 }
 
 interface KeyedRow extends SourceRow {
@@ -22,6 +24,7 @@ interface WalletRow {
   id: string;
   network: string;
   label: string | null;
+  syncDisabledReason: 'manual' | 'failures' | null;
 }
 
 const NETWORK_NAMES: Record<string, string> = {
@@ -34,6 +37,9 @@ const NETWORK_NAMES: Record<string, string> = {
 export function walletSourceName(wallet: Pick<WalletRow, 'network' | 'label'>): string {
   return wallet.label ?? NETWORK_NAMES[wallet.network] ?? wallet.network;
 }
+// WALLET-SYNC-OFF: named only for a wallet whose background sync is switched off.
+const switchedOff = (wallet: Pick<WalletRow, 'syncDisabledReason'>) =>
+  wallet.syncDisabledReason ? { disabledReason: wallet.syncDisabledReason } : {};
 const latest = (dates: (string | null)[]) =>
   dates
     .filter((date): date is string => date !== null)
@@ -94,7 +100,7 @@ export class SyncStatusService {
       );
       broker.sort((a, b) => a.key.localeCompare(b.key));
       const wallets: (WalletRow & { source: KeyedRow | null })[] = await manager.query(
-        `SELECT a.id, a.network, a.label, s.key, s.state, s."lastAttemptAt", s."lastSuccessAt",
+        `SELECT a.id, a.network, a.label, a."syncDisabledReason", s.key, s.state, s."lastAttemptAt", s."lastSuccessAt",
             s."nextRunAt", s."errorCode", s."errorMessage"
           FROM wallet_addresses a LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
           WHERE a."ownerId" = $1 AND a."removedAt" IS NULL ORDER BY a."createdAt", a.id`,
@@ -132,8 +138,9 @@ export class SyncStatusService {
                 lastAttemptAt: null,
                 lastSuccessAt: null,
                 errorMessage: null,
+                ...switchedOff(wallet),
               }
-            : summary({ ...row, key }, 'wallet', name, now),
+            : { ...summary({ ...row, key }, 'wallet', name, now), ...switchedOff(wallet) },
         );
       }
       return { sources };

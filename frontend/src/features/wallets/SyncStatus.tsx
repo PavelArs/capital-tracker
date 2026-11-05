@@ -42,11 +42,17 @@ export function failureMessage(
   }
 }
 
+/** WALLET-SYNC-OFF: three failed passes in a row make the app switch a wallet's sync off. */
+export const SYNC_OFF_AFTER = 3;
+
 type SyncState = { label: string; tone: 'pos' | 'info' | 'warn' | 'neg' | 'neutral' };
 
 /** The background job's view first (M11), then what the page itself is doing. */
 export function syncBadge(address: WalletAddress, run: SyncRun | undefined): SyncState {
   if (run?.state === 'running') return { label: 'Syncing', tone: 'info' };
+  // A switched-off wallet reads nothing, so what its last pass said no longer describes it.
+  if (address.sync.off)
+    return { label: 'Sync off', tone: address.sync.off.reason === 'failures' ? 'warn' : 'neutral' };
   if (run?.state === 'failed') return { label: 'Sync failed', tone: 'neg' };
   const { status, state } = address.sync;
   if (status === 'syncing') return { label: 'Syncing', tone: 'info' };
@@ -79,7 +85,14 @@ function lastSynced(address: WalletAddress): string | null {
 export function syncAge(address: WalletAddress, run: SyncRun | undefined, now = new Date()) {
   const last = lastSynced(address);
   const { status } = address.sync;
-  if (run || status === 'syncing' || status === 'failed' || status === 'delayed' || !last) {
+  if (
+    address.sync.off ||
+    run ||
+    status === 'syncing' ||
+    status === 'failed' ||
+    status === 'delayed' ||
+    !last
+  ) {
     return '';
   }
   return age(last, now);
@@ -94,7 +107,7 @@ export function syncProblem(
   run: SyncRun | undefined,
   now = new Date(),
 ): string | null {
-  if (run?.state === 'running') return null;
+  if (run?.state === 'running' || address.sync.off) return null;
   const reason =
     run?.state === 'failed'
       ? run.message
@@ -106,4 +119,27 @@ export function syncProblem(
   return last && address.chainBalance !== null
     ? `${reason} Balances shown are from ${age(last, now)}.`
     : reason;
+}
+
+/**
+ * WALLET-SYNC-OFF: why a wallet is not read any more, how old the shown balance is, and that the
+ * transactions found so far stay. Null while the sync is on.
+ */
+export function syncOffNote(
+  address: WalletAddress,
+  now = new Date(),
+): { tone: 'warn' | 'info'; text: string } | null {
+  const { off } = address.sync;
+  if (!off) return null;
+  const last = lastSynced(address);
+  const stale =
+    last && address.chainBalance !== null ? ` Balances shown are from ${age(last, now)}.` : '';
+  const kept = ' The transactions found so far stay.';
+  if (off.reason === 'manual')
+    return { tone: 'info', text: `Sync is switched off.${stale}${kept}` };
+  const cause = address.sync.errorMessage ? ` ${address.sync.errorMessage}` : '';
+  return {
+    tone: 'warn',
+    text: `Sync was switched off after ${SYNC_OFF_AFTER} failed attempts in a row.${cause}${stale}${kept}`,
+  };
 }

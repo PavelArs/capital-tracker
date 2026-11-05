@@ -86,6 +86,9 @@ function LastSync({
 }) {
   const order = (address: WalletAddress) => {
     const run = runs[address.id];
+    // WALLET-SYNC-OFF: one the app switched off needs a look first; one the owner switched off
+    // is on purpose and shows last.
+    if (address.sync.off) return address.sync.off.reason === 'failures' ? 0 : 6;
     if (run?.state === 'failed' || (!run && address.sync.status === 'failed')) return 0;
     if (run?.state === 'running' || address.sync.status === 'syncing') return 1;
     if (address.sync.status === 'delayed') return 2;
@@ -226,6 +229,7 @@ export default function WalletPage() {
     forget,
     runs,
     sync,
+    setSyncEnabled,
     asked,
   } = useWallets();
   const toast = useToast();
@@ -283,7 +287,8 @@ export default function WalletPage() {
     void loadOperations();
   };
   const syncAll = async () => {
-    for (const address of own) await sync(address.id);
+    // WALLET-SYNC-OFF: an address switched off is not read, also not by "Sync now".
+    for (const address of own) if (!address.sync.off) await sync(address.id);
     void loadOperations();
   };
 
@@ -323,7 +328,7 @@ export default function WalletPage() {
                 <Button variant="ghost" destructive onClick={() => setRemoving(true)}>
                   Remove
                 </Button>
-                {own.length > 0 && (
+                {own.some((address) => !address.sync.off) && (
                   // wallets-02: the button stays focusable while it runs, so the keyboard stays on it.
                   <Button
                     icon="refresh"
@@ -382,6 +387,7 @@ export default function WalletPage() {
                     currency={currency}
                     onOpen={() => setOpenId(address.id)}
                     onSync={() => void sync(address.id)}
+                    onSyncEnabled={(enabled) => setSyncEnabled(address.id, enabled)}
                   />
                 ))}
               </ul>
@@ -545,6 +551,7 @@ export default function WalletPage() {
           prices={prices}
           run={runs[open.id]}
           onSync={() => void sync(open.id)}
+          onSyncEnabled={(enabled) => setSyncEnabled(open.id, enabled)}
           onSaved={(address, newAccount) => {
             replace(address);
             if (newAccount || address.accountId !== accountId) refresh();

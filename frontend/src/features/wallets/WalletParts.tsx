@@ -27,7 +27,14 @@ import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { CopyButton } from '../shell/CopyValue';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
-import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
+import {
+  SyncBadge,
+  type SyncRun,
+  syncAge,
+  syncBadge,
+  syncOffNote,
+  syncProblem,
+} from './SyncStatus';
 import {
   chainBalances,
   keyAddresses,
@@ -475,6 +482,7 @@ export function AddressRow({
   currency,
   onOpen,
   onSync,
+  onSyncEnabled,
 }: {
   address: WalletAddress;
   run: SyncRun | undefined;
@@ -483,12 +491,24 @@ export function AddressRow({
   currency: AccountingCurrency;
   onOpen: () => void;
   onSync: () => void;
+  /** WALLET-SYNC-OFF: switches the address's background sync on (true) or off (false). */
+  onSyncEnabled: (enabled: boolean) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const network = networkOf(address);
   const name = address.label ?? network.name;
   const when = syncAge(address, run);
   const problem = syncProblem(address, run);
+  const offNote = syncOffNote(address);
+  const [switching, setSwitching] = useState(false);
+  const turnOn = async () => {
+    setSwitching(true);
+    try {
+      await onSyncEnabled(true);
+    } finally {
+      setSwitching(false);
+    }
+  };
   // wallets-02: the button that starts a sync goes away while it runs, so the keyboard moves to
   // the row first; the row then says "Syncing".
   const openRef = useRef<HTMLButtonElement>(null);
@@ -504,7 +524,22 @@ export function AddressRow({
     (run?.state === 'running' || (run === undefined && address.sync.status === 'syncing'));
   // The row's messages have no role of their own (a card of synced rows has no notes), except a
   // failed sync the owner just ran.
-  const message = loading ? (
+  const message = offNote ? (
+    // WALLET-SYNC-OFF: the wallet is not read until the owner turns the sync on; the note comes
+    // before any "Load history", which could not run.
+    <Banner
+      tone={offNote.tone}
+      role="none"
+      className="wallets-inset"
+      action={
+        <Button size="sm" icon="refresh" busy={switching} onClick={() => void turnOn()}>
+          {switching ? 'Turning on…' : 'Turn sync on'}
+        </Button>
+      }
+    >
+      {offNote.text}
+    </Banner>
+  ) : loading ? (
     <Banner tone="info" role="none" className="wallets-inset">
       Loading the transaction history. A long history takes a few minutes; it keeps loading in the
       background, so you can leave this page.

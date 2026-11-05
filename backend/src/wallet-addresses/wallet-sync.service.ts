@@ -15,6 +15,7 @@ import {
   walletSourceKey,
 } from './chain-sync';
 import { journalSync } from './sync-journal';
+import { passKind, recordPass } from './sync-switch';
 
 export type WalletTickResult =
   | { outcome: 'ran'; wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] }
@@ -83,7 +84,7 @@ export class WalletSyncService {
         const due: DueWallet[] = await this.source.query(
           `SELECT a.id, a."ownerId", a.network FROM wallet_addresses a
             LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
-            WHERE a."removedAt" IS NULL
+            WHERE a."removedAt" IS NULL AND a."syncDisabledAt" IS NULL
               AND (s.key IS NULL OR s."nextRunAt" IS NULL OR s."nextRunAt" <= $1)
             ORDER BY s."nextRunAt" ASC NULLS FIRST, a."createdAt", a.id LIMIT $2`,
           [now, WALLETS_PER_TICK],
@@ -128,6 +129,7 @@ export class WalletSyncService {
       const outcome = outcomeOf(name, { failure: 'unsupported' }, now);
       await this.record(key, outcome, now);
       await this.journal(wallet, outcome, null, now);
+      await this.countPass(wallet, outcome, null, now);
       return { ...outcome, step: null };
     }
     // Leased while it runs: the scheduler leaves it alone until the pass ends or dies.
@@ -150,11 +152,13 @@ export class WalletSyncService {
       const outcome = outcomeOf(name, { failure: 'error' }, now);
       await this.record(key, outcome, now);
       await this.journal(wallet, outcome, null, now);
+      await this.countPass(wallet, outcome, null, now);
       return { ...outcome, step: null };
     }
     const outcome = outcomeOf(name, step, now);
     await this.record(key, outcome, now);
     await this.journal(wallet, outcome, step, now);
+    await this.countPass(wallet, outcome, step, now);
     // D7, XFER-AUTO: what this pass stored may complete a transfer between own wallets, also when
     // it then stopped on a refusal after committing some ranges.
     if (step.outcome !== 'provider_error' || step.imported > 0) {
@@ -166,6 +170,24 @@ export class WalletSyncService {
   /** Links the owner's certain own transfers; a failure never fails the sync. */
   async linkOwnTransfers(ownerId: string): Promise<void> {
     await this.classifications?.linkQuietly(ownerId);
+  }
+
+  /**
+   * WALLET-SYNC-OFF: three failed passes in a row switch the wallet's sync off until the owner
+   * switches it on. A failed write here never fails the sync it describes.
+   */
+  private async countPass(
+    wallet: DueWallet,
+    outcome: SourceOutcome,
+    step: StepResult | null,
+    now: Date,
+  ): Promise<void> {
+    try {
+      if (await recordPass(this.source, wallet.id, passKind(outcome, step), now))
+        this.logger.warn(`${wallet.network} wallet sync switched off after repeated failures`);
+    } catch {
+      this.logger.warn('The wallet sync failure count could not be written');
+    }
   }
 
   private record(key: string, outcome: SourceOutcome, now: Date): Promise<void> {

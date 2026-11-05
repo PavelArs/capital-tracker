@@ -175,8 +175,16 @@ export interface WalletAddress {
     nextRunAt: string | null;
     /** Why the last sync failed or was delayed, in plain words. */
     errorMessage: string | null;
+    /**
+     * WALLET-SYNC-OFF: present while the background sync skips this address. "failures": the app
+     * switched it off after three failed passes in a row; "manual": the owner did. The stored
+     * transactions stay either way.
+     */
+    off?: { reason: SyncOffReason; at: string };
   };
 }
+
+export type SyncOffReason = 'manual' | 'failures';
 
 /**
  * WAL-INVALID: a wallet made together with its first address, in the same request, so an address
@@ -305,6 +313,16 @@ export const walletAddressesApi = {
   countGap: async (id: string, gap: BalanceGap): Promise<WalletAddress> =>
     (await apiClient.post<WalletAddress>(`${path}/${encodeURIComponent(id)}/balance-gap`, gap))
       .data,
+  /**
+   * WALLET-SYNC-OFF: switches the address's background sync on or off. Nothing is deleted; asking
+   * for the state the address is already in changes nothing.
+   */
+  setSyncEnabled: async (id: string, enabled: boolean): Promise<WalletAddress> =>
+    (
+      await apiClient.patch<WalletAddress>(`${path}/${encodeURIComponent(id)}/sync-enabled`, {
+        enabled,
+      })
+    ).data,
   /** The newest passes of the address's sync, newest first. */
   syncRuns: async (id: string): Promise<SyncRunEntry[]> =>
     (await apiClient.get<{ items: SyncRunEntry[] }>(`${path}/${encodeURIComponent(id)}/sync-runs`))

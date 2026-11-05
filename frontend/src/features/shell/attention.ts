@@ -3,6 +3,7 @@ import type { SyncSource } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { age, quantity } from '../portfolio/format';
 import { networkOf } from '../wallets/networks';
+import { SYNC_OFF_AFTER } from '../wallets/SyncStatus';
 import { hiddenSymbolsOf, reconcile } from '../wallets/wallets';
 
 /** What the shell knows; null where it could not be read. */
@@ -108,26 +109,48 @@ const walletPath = (accountId: string | null) => (accountId ? `/wallets/${accoun
 
 // SYNC-ISOLATION: each wallet that failed or waits for its source, with the readable reason.
 function walletItems(wallets: readonly WalletAddress[], now: Date): AttentionItem[] {
-  return wallets
-    .filter((wallet) => failing(wallet.sync.status))
-    .map((wallet) => {
-      const network = networkOf(wallet);
-      const failed = wallet.sync.status === 'failed';
-      const reason = sentence(
-        wallet.sync.errorMessage ?? `${network.name} data is temporarily unavailable`,
-      );
-      const last = wallet.sync.lastSuccessAt
-        ? `Last success ${age(wallet.sync.lastSuccessAt, now)}.`
-        : 'Never synced.';
-      return {
-        key: `wallet:${wallet.id}`,
-        tone: failed ? 'neg' : 'warn',
-        icon: 'alert',
-        title: `${network.name} wallet sync ${failed ? 'failed' : 'delayed'}`,
-        detail: `${wallet.label ?? network.defaultWallet} · ${reason} ${last}`,
-        action: { label: 'Open', to: walletPath(wallet.accountId) },
-      } satisfies AttentionItem;
-    });
+  return (
+    wallets
+      // WALLET-SYNC-OFF: a wallet the owner switched off is on purpose; one the app switched off
+      // after repeated failures needs a decision, and says so below.
+      .filter((wallet) =>
+        wallet.sync.off ? wallet.sync.off.reason === 'failures' : failing(wallet.sync.status),
+      )
+      .map((wallet) => {
+        const network = networkOf(wallet);
+        if (wallet.sync.off) {
+          const reason = sentence(
+            wallet.sync.errorMessage ?? `${network.name} data was not readable`,
+          );
+          const last = wallet.sync.lastSuccessAt
+            ? `Last success ${age(wallet.sync.lastSuccessAt, now)}.`
+            : 'Never synced.';
+          return {
+            key: `wallet:${wallet.id}`,
+            tone: 'warn',
+            icon: 'alert',
+            title: `${network.name} wallet sync switched off`,
+            detail: `${wallet.label ?? network.defaultWallet} · Switched off after ${SYNC_OFF_AFTER} failed attempts in a row. ${reason} ${last} Turn it on again when the problem is fixed.`,
+            action: { label: 'Open', to: walletPath(wallet.accountId) },
+          } satisfies AttentionItem;
+        }
+        const failed = wallet.sync.status === 'failed';
+        const reason = sentence(
+          wallet.sync.errorMessage ?? `${network.name} data is temporarily unavailable`,
+        );
+        const last = wallet.sync.lastSuccessAt
+          ? `Last success ${age(wallet.sync.lastSuccessAt, now)}.`
+          : 'Never synced.';
+        return {
+          key: `wallet:${wallet.id}`,
+          tone: failed ? 'neg' : 'warn',
+          icon: 'alert',
+          title: `${network.name} wallet sync ${failed ? 'failed' : 'delayed'}`,
+          detail: `${wallet.label ?? network.defaultWallet} · ${reason} ${last}`,
+          action: { label: 'Open', to: walletPath(wallet.accountId) },
+        } satisfies AttentionItem;
+      })
+  );
 }
 
 // SYNC-RECONCILE: an account whose addresses hold other amounts than its transactions say.

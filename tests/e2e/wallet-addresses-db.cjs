@@ -199,7 +199,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 76/);
+  assert.match(migrate(database), /Migrations applied: 77/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -1057,6 +1057,190 @@ async function main() {
     await refusal(() => status.read('not-a-uuid'), 400);
     console.log(
       'PASS SYNC-STATUS prices synced 12 min ago, FX delayed and a failed wallet each report their own state and reason; owner-scoped',
+    );
+
+    // WALLET-SYNC-OFF: three failed passes in a row, or the owner, switch one wallet's sync off.
+    // Its stored transactions stay and its chain is not read again until the owner switches it on.
+    const later = new Date(t2.getTime() + 10 * 86400000);
+    const minutes = (count) => new Date(later.getTime() + count * 60000);
+    // Every other wallet is checked far in the future, so only the ones made here are due.
+    await db.query(
+      `INSERT INTO sync_sources (key, state, "lastAttemptAt", "nextRunAt")
+      SELECT 'wallet:' || id, 'synced', now(), $1 FROM wallet_addresses
+      ON CONFLICT (key) DO UPDATE SET "nextRunAt" = EXCLUDED."nextRunAt"`,
+      [new Date(later.getTime() + 400 * 86400000)],
+    );
+    const calls = { bitcoin: 0, arbitrum: 0 };
+    let answer = { outcome: 'provider_error', reason: 'unavailable', imported: 0 };
+    const adapters = [
+      {
+        network: 'bitcoin',
+        name: 'Bitcoin',
+        step: async () => {
+          calls.bitcoin++;
+          return { outcome: 'complete', reason: null, imported: 0 };
+        },
+      },
+      {
+        network: 'arbitrum',
+        name: 'Arbitrum One',
+        step: async () => {
+          calls.arbitrum++;
+          return answer;
+        },
+      },
+    ];
+    const job = scheduler(true, adapters);
+    const switchRow = async (id) =>
+      (
+        await db.query(
+          `SELECT "syncFailures" AS failures, "syncDisabledReason" AS reason,
+          "syncDisabledAt" AS at FROM wallet_addresses WHERE id = $1`,
+          [id],
+        )
+      )[0];
+    const listedWallet = async (id) => (await service.list(owner)).find((item) => item.id === id);
+    const offBody = (enabled) => ({ enabled });
+
+    // The owner switches a wallet off: its 4 transactions stay, the job leaves it alone, and
+    // switching it on makes it due at once.
+    const storedBefore = (await rows(db, background)).length;
+    await db.query(`UPDATE sync_sources SET "nextRunAt" = $2 WHERE key = $1`, [
+      `wallet:${background}`,
+      new Date(later.getTime() - 3600000),
+    ]);
+    const manual = await service.setSyncEnabled(owner, background, offBody(false));
+    assert.deepEqual(manual.sync.off, { reason: 'manual', at: manual.sync.off.at });
+    assert.equal(Number.isNaN(Date.parse(manual.sync.off.at)), false);
+    assert.equal((await rows(db, background)).length, storedBefore, 'Nothing is deleted');
+    assert.equal(manual.transactionCount, (await listedWallet(background)).transactionCount);
+    const skipped = await job.tick(minutes(0));
+    assert.deepEqual(skipped, { outcome: 'ran', wallets: [] });
+    assert.equal(calls.bitcoin, 0, 'A switched-off wallet is not read');
+    await refusal(() => service.sync(owner, background), 409);
+    assert.equal(calls.bitcoin, 0);
+    const repeated = await service.setSyncEnabled(owner, background, offBody(false));
+    assert.deepEqual(repeated.sync.off, manual.sync.off, 'Switching off twice changes nothing');
+    const resumed = await service.setSyncEnabled(owner, background, offBody(true));
+    assert.equal('off' in resumed.sync, false);
+    assert.equal((await rows(db, background)).length, storedBefore);
+    assert.deepEqual(await job.tick(minutes(1)), {
+      outcome: 'ran',
+      wallets: [{ id: background, state: 'synced' }],
+    });
+    assert.equal(calls.bitcoin, 1, 'Switching on makes the wallet due at once');
+    await db.query(`UPDATE sync_sources SET "nextRunAt" = $2 WHERE key = $1`, [
+      `wallet:${background}`,
+      new Date(later.getTime() + 400 * 86400000),
+    ]);
+    await refusal(() => service.setSyncEnabled(stranger, background, offBody(false)), 404);
+    for (const body of [{}, { enabled: 'yes' }, { enabled: true, extra: 1 }, null])
+      await refusal(() => service.setSyncEnabled(owner, background, body), 400);
+    await refusal(() => service.setSyncEnabled(owner, 'not-a-uuid', offBody(true)), 400);
+    assert.equal((await switchRow(background)).reason, null, 'Refused requests change nothing');
+
+    // The app switches an Arbitrum wallet off after its third failed pass in a row.
+    const arbitrum = `0x${'a1'.repeat(20)}`;
+    const [{ id: flaky }] = await db.query(
+      `INSERT INTO wallet_addresses (id, "ownerId", network, address)
+      VALUES (gen_random_uuid(), $1, 'arbitrum', $2) RETURNING id`,
+      [owner, arbitrum],
+    );
+    const ran = (at) => job.tick(at);
+    assert.deepEqual(await ran(minutes(10)), {
+      outcome: 'ran',
+      wallets: [{ id: flaky, state: 'failed' }],
+    });
+    assert.equal((await switchRow(flaky)).failures, 1);
+    assert.deepEqual(await ran(minutes(25)), {
+      outcome: 'ran',
+      wallets: [{ id: flaky, state: 'failed' }],
+    });
+    assert.equal((await switchRow(flaky)).failures, 2);
+    // A provider that only asks to wait is neither a failure nor a recovery.
+    answer = { outcome: 'provider_error', reason: 'rate_limited', imported: 0 };
+    assert.deepEqual(await ran(minutes(40)), {
+      outcome: 'ran',
+      wallets: [{ id: flaky, state: 'delayed' }],
+    });
+    assert.equal((await switchRow(flaky)).failures, 2, 'A rate limit does not count');
+    answer = { outcome: 'provider_error', reason: 'unavailable', imported: 0 };
+    assert.equal(
+      (await listedWallet(flaky)).sync.off,
+      undefined,
+      'Two failures leave the sync on',
+    );
+    await ran(minutes(55));
+    const tripped = await switchRow(flaky);
+    assert.deepEqual(
+      [tripped.failures, tripped.reason, tripped.at.toISOString()],
+      [3, 'failures', minutes(55).toISOString()],
+    );
+    assert.deepEqual((await listedWallet(flaky)).sync.off, {
+      reason: 'failures',
+      at: minutes(55).toISOString(),
+    });
+    assert.equal(calls.arbitrum, 4);
+    // Off: no later tick reads it, and "Sync now" says why it cannot.
+    for (const at of [minutes(70), minutes(24 * 60), minutes(7 * 24 * 60)])
+      assert.deepEqual(await ran(at), { outcome: 'ran', wallets: [] });
+    await refusal(() => service.sync(owner, flaky), 409);
+    assert.equal(calls.arbitrum, 4, 'A switched-off wallet is not read again');
+    // The owner's own "off" keeps the reason that came first; the wallet stays listed.
+    const kept = await service.setSyncEnabled(owner, flaky, offBody(false));
+    assert.equal(kept.sync.off.reason, 'failures');
+    const report = await new SyncStatusService(db).read(owner, minutes(70));
+    const source = report.sources.find((item) => item.key === `wallet:${flaky}`);
+    assert.deepEqual(
+      [source.name, source.state, source.disabledReason],
+      ['arbitrum', 'failed', 'failures'],
+    );
+    assert.equal(
+      report.sources.find((item) => item.key === `wallet:${background}`).disabledReason,
+      undefined,
+    );
+    // Only the owner switches it on again; a retry that follows is quiet.
+    await refusal(() => service.setSyncEnabled(stranger, flaky, offBody(true)), 404);
+    answer = { outcome: 'complete', reason: null, imported: 0 };
+    const back = await service.setSyncEnabled(owner, flaky, offBody(true));
+    assert.equal('off' in back.sync, false);
+    assert.deepEqual(
+      [(await switchRow(flaky)).failures, (await switchRow(flaky)).reason],
+      [0, null],
+      'Switching on starts the count over',
+    );
+    assert.deepEqual(await ran(minutes(7 * 24 * 60 + 5)), {
+      outcome: 'ran',
+      wallets: [{ id: flaky, state: 'synced' }],
+    });
+    // A good pass clears the run: two failures, a success, two failures leave the sync on.
+    const pass = (at) => job.run({ id: flaky, ownerId: owner, network: 'arbitrum' }, at);
+    const failure = { outcome: 'provider_error', reason: 'unavailable', imported: 0 };
+    const stored = { outcome: 'provider_error', reason: 'unavailable', imported: 2 };
+    const finished = { outcome: 'complete', reason: null, imported: 0 };
+    for (const [index, step] of [failure, failure, finished, failure, stored, failure].entries()) {
+      answer = step;
+      await pass(minutes(8 * 24 * 60 + index));
+    }
+    assert.deepEqual(
+      [(await switchRow(flaky)).failures, (await switchRow(flaky)).reason],
+      [1, null],
+      'A pass that finished, or stored rows before the refusal, clears the failures',
+    );
+    // Stopping tracking and adding the address again starts it afresh.
+    await db.query(
+      `UPDATE wallet_addresses SET "syncFailures" = 3, "syncDisabledAt" = now(),
+      "syncDisabledReason" = 'failures' WHERE id = $1`,
+      [flaky],
+    );
+    await service.remove(owner, flaky);
+    const readded = await service.register(owner, { network: 'arbitrum', address: arbitrum });
+    assert.deepEqual(
+      [readded.value.id, 'off' in readded.value.sync, (await switchRow(flaky)).failures],
+      [flaky, false, 0],
+    );
+    console.log(
+      'PASS WALLET-SYNC-OFF three failed passes in a row switch a wallet off (a rate limit does not count, a good pass clears the run); the owner switches it off or on, transactions stay, the job and Sync now leave it alone, re-adding starts afresh',
     );
 
     // ADDR-MIGRATION down refusal
