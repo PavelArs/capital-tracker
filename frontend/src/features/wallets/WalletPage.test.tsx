@@ -320,7 +320,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
       within(summary).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(stat('Total value')).toBe('$800.00');
     expect(stat('Assets')).toBe('1');
-    expect(stat('Tracked addresses')).toBe('1');
+    expect(stat('Tracked networks')).toBe('1');
     expect(stat('Last sync')).toContain('Synced');
     // 0.01 BTC on the chain and 0.01 BTC recorded: nothing to reconcile.
     expect(within(summary).queryByRole('note')).toBeNull();
@@ -394,16 +394,18 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     expect(screen.queryByRole('dialog', { name: 'Edit wallet' })).toBeNull();
   });
 
-  it('W1 shows how the wallet is held next to its addresses, once the owner said', async () => {
+  it('W1 shows how the wallet is held under its name, once the owner said', async () => {
     setup({ kind: 'hardware' });
     await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
-    expect(await screen.findByText('Hardware wallet · Bitcoin · 1 address')).toBeVisible();
+    // As in the prototype: the kind alone; the addresses are listed below.
+    expect(await screen.findByText('Hardware wallet')).toBeVisible();
+    expect(screen.queryByText(/Bitcoin · 1 address/)).toBeNull();
   });
 
   it('W1 changes how the wallet is held without touching its name, and can take it back', async () => {
     const user = userEvent.setup();
     setup({ kind: 'software' });
-    await screen.findByText('Software wallet · Bitcoin · 1 address');
+    await screen.findByText('Software wallet');
     const update = vi.spyOn(accountingApi, 'updateAccount').mockResolvedValue({
       id: trust,
       name: 'Trust Wallet',
@@ -438,7 +440,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     await user.selectOptions(within(dialog).getByLabelText('How you hold it'), 'hardware');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(update).toHaveBeenCalledWith(trust, { kind: 'hardware' });
-    expect(await screen.findByText('Hardware wallet · Bitcoin · 1 address')).toBeVisible();
+    expect(await screen.findByText('Hardware wallet')).toBeVisible();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({
       items: [
@@ -458,6 +460,84 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(update).toHaveBeenLastCalledWith(trust, { kind: null });
     expect(await screen.findByText('Bitcoin · 1 address')).toBeVisible();
+  });
+
+  it('WALLET-STATS counts the networks a wallet tracks, each network once', async () => {
+    setup({ list: [wallet(1), wallet(2, { address: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2' })] });
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    const labels = [...summary.querySelectorAll('dt')].map((label) => label.textContent);
+    expect(labels).toEqual(['Total value', 'Assets', 'Tracked networks', 'Last sync']);
+    // Two Bitcoin addresses are one network.
+    expect(within(summary).getByText('Tracked networks').nextElementSibling).toHaveTextContent(
+      /^1$/,
+    );
+  });
+
+  it('TOKEN-HIDE counts only the assets the wallet shows, not a hidden token', async () => {
+    const base = portfolio();
+    const ether = wallet(2, {
+      network: 'ethereum',
+      address: `0x${'5e'.repeat(20)}`,
+      label: 'Main ETH',
+      chainBalance: '0',
+      balances: [{ symbol: 'ETH', quantity: '0' }],
+      hiddenTokens: [{ symbol: 'USDT1A2B', name: 'Tether', quantity: '-40', reason: 'lookalike' }],
+    });
+    setup({
+      list: [wallet(1), ether],
+      valuation: {
+        ...base,
+        assets: [
+          ...base.assets,
+          asset({
+            instrumentId: id(5),
+            name: 'Tether',
+            symbol: 'USDT1A2B',
+            price: null,
+            quantity: '40',
+            value: null,
+            holdings: [
+              { accountId: trust, accountName: 'Trust Wallet', quantity: '40', value: null },
+            ],
+          }),
+        ],
+      },
+    });
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    // Bitcoin only: the lookalike token the address leaves out is not one of its assets.
+    expect(within(summary).getByText('Assets').nextElementSibling).toHaveTextContent(/^1$/);
+    expect(screen.getByRole('region', { name: 'Assets' })).not.toHaveTextContent('USDT1A2B');
+    expect(within(summary).getByText('Tracked networks').nextElementSibling).toHaveTextContent(
+      /^2$/,
+    );
+  });
+
+  it('WALLET-STATS names the connection of an exchange account: its read-only API', async () => {
+    setup({
+      kind: 'exchange',
+      list: [
+        wallet(1, {
+          network: 'bybit',
+          address: '123456789',
+          label: 'Bybit',
+          balances: [{ symbol: 'BTC', quantity: '0.01' }],
+          exchange: {
+            keyHint: '0001',
+            ipBound: false,
+            keyExpiresAt: '2027-01-01T00:00:00.000Z',
+            reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            untracked: [],
+            historyFrom: '2024-10-10T00:00:00.000Z',
+          },
+        }),
+      ],
+    });
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    // "Connection", not "Connected": the key may have expired; Last sync says how it went.
+    expect(within(summary).getByText('Connection').nextElementSibling).toHaveTextContent(
+      'API, read-only',
+    );
+    expect(within(summary).queryByText('Tracked networks')).toBeNull();
   });
 
   it('keeps the dialog open with the reason when the rename is refused', async () => {

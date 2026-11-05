@@ -36,6 +36,7 @@ import {
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import EditWalletDialog from './EditWalletDialog';
+import { networkOf } from './networks';
 
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
@@ -43,6 +44,7 @@ import {
   AddressRow,
   connectsBybit,
   holdingsOf,
+  networkCount,
   ReconcileNote,
   subtitle,
   withoutHiddenTokens,
@@ -332,10 +334,17 @@ export default function WalletPage() {
             }
           />
           <Card className="wallet-overview" label="Summary">
-            <Stats size="lg">
-              <Stat lead label="Total value" value={money(total, currency)} />
+            {/* Four figures spread over the card, as in the prototype. */}
+            <Stats>
+              <Stat label="Total value" value={money(total, currency)} />
               <Stat label="Assets" value={holdings.length} />
-              <Stat label="Tracked addresses" value={own.length || 'None'} />
+              {own.length > 0 && own.every((address) => networkOf(address).exchange) ? (
+                // The backend refuses a key that can trade, so the connection only reads. Whether
+                // it works now is the last sync's to say.
+                <Stat label="Connection" value="API, read-only" />
+              ) : (
+                <Stat label="Tracked networks" value={networkCount(own) || 'None'} />
+              )}
               <Stat label="Last sync" value={<LastSync addresses={own} runs={runs} />} />
             </Stats>
             <ReconcileNote
