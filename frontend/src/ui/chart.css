@@ -94,6 +94,16 @@
   text-align: center;
 }
 
+.dashboard-chart__note {
+  margin: var(--sp-3) 0 0;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.dashboard-chart-card .ui-chips {
+  margin-bottom: var(--sp-3);
+}
+
 .dashboard-tip {
   position: absolute;
   z-index: 5;

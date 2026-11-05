@@ -80,10 +80,12 @@ const signed = (value: string) =>
  * flows never change holdings, so counting them would invent market effect: they are not
  * flows here.
  */
-export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
+export function capitalFlows(inputs: ValuationInputs, only?: ReadonlySet<string>): CapitalFlow[] {
   const flows: CapitalFlow[] = [];
   for (const ledger of new Set(inputs.ledgers.values()))
-    for (const account of ledger.accounts.values()) {
+    for (const [accountId, account] of ledger.accounts) {
+      // SECTION-CHART: a section's chart counts the money of its own accounts only.
+      if (only && !only.has(accountId)) continue;
       const start = Date.parse(account.coverageFrom);
       for (const lot of account.initialLots) {
         // ASSET-HIDE: a hidden asset's money is out of the figures, as its holdings are.

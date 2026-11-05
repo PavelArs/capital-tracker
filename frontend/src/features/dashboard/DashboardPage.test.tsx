@@ -8,6 +8,7 @@ import { operationsApi } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
   type HistoryPeriod,
+  type HistorySection,
   type PortfolioHistory,
   portfolioHistoryApi,
 } from '@api/portfolio-history.api';
@@ -1719,5 +1720,235 @@ describe('COST-ESTIMATE dashboard', () => {
       'href',
       '/transactions?asset=ETH&cost=unknown',
     );
+  });
+});
+
+describe('SECTION-CHART dashboard', () => {
+  const brokerAccount = id(60);
+  const houseAccount = id(61);
+  // Wallets, a broker account, a property and bank deposits: every section the chart can show.
+  const holdsAllSections = () => {
+    accounts.mockResolvedValue({
+      items: [
+        account(trust, 'Trust Wallet'),
+        account(brokerAccount, 'Broker account', 'broker'),
+        account(houseAccount, 'Studio', 'property'),
+      ],
+      nextCursor: null,
+    });
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({ currency: currency ?? 'USD', depositsValue: '12500' }),
+    );
+  };
+  // The part of the capital in one section: smaller than the whole, with its own money put in.
+  const sectionHistory = (section: HistorySection, changes: Partial<PortfolioHistory> = {}) =>
+    history({
+      section,
+      transfersAcross: 0,
+      value: '30000',
+      invested: '25000',
+      points: [
+        { at: '2026-09-05T00:00:00.000Z', value: '28000', complete: true, invested: '25000' },
+        { at: '2026-10-04T12:30:00.000Z', value: '30000', complete: true, invested: '25000' },
+      ],
+      ...changes,
+    });
+  const answerSections = (changes: Partial<PortfolioHistory> = {}) =>
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) =>
+        section
+          ? sectionHistory(section, { period, currency: currency ?? 'USD', ...changes })
+          : history({ period, currency: currency ?? 'USD' }),
+    );
+  const chips = async () => within(await screen.findByRole('group', { name: 'Show on the chart' }));
+
+  it('SECTION-CHART offers Everything and a chip for each section the owner holds', async () => {
+    holdsAllSections();
+    renderPage();
+    const group = await chips();
+    expect(group.getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      'Everything',
+      'Wallets',
+      'Banks',
+      'Brokers',
+      'Real estate',
+    ]);
+    expect(group.getByRole('button', { name: 'Everything' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(group.getByRole('button', { name: 'Brokers' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('SECTION-CHART leaves out the section the owner holds nothing of', async () => {
+    accounts.mockResolvedValue({
+      items: [account(trust, 'Trust Wallet'), account(brokerAccount, 'Broker account', 'broker')],
+      nextCursor: null,
+    });
+    renderPage();
+    const group = await chips();
+    expect(group.getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      'Everything',
+      'Wallets',
+      'Brokers',
+    ]);
+  });
+
+  it('SECTION-CHART offers no filter to an owner with one section only', async () => {
+    renderPage();
+    await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('region', { name: 'Allocation' });
+    expect(screen.queryByRole('group', { name: 'Show on the chart' })).toBeNull();
+  });
+
+  it('SECTION-CHART draws the chosen section alone and keeps the net worth whole', async () => {
+    holdsAllSections();
+    answerSections();
+    const user = userEvent.setup();
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    expect(
+      await within(chart).findByRole('img', {
+        name: 'Brokers value, past month, from $28,000.00 to $30,000.00',
+      }),
+    ).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('1M', undefined, 'broker');
+    expect(group.getByRole('button', { name: 'Brokers' })).toHaveAttribute('aria-pressed', 'true');
+    expect(group.getByRole('button', { name: 'Everything' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    const hero = screen.getByRole('region', { name: 'Net worth' });
+    expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
+    await user.click(group.getByRole('button', { name: 'Everything' }));
+    expect(
+      await within(chart).findByRole('img', {
+        name: 'Portfolio value, past month, from $100,000.00 to $115,000.00',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('SECTION-CHART reads the section again for another period and currency', async () => {
+    holdsAllSections();
+    answerSections();
+    const user = userEvent.setup();
+    renderPage('/dashboard?currency=EUR');
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Wallets' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('1M', 'EUR', 'wallet'));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    await user.click(within(chart).getByRole('tab', { name: '3M' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('3M', 'EUR', 'wallet'));
+    expect(group.getByRole('button', { name: 'Wallets' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('SECTION-CHART says so when a section cannot be read, and tries again', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let failing = true;
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (failing) throw new Error('offline');
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Real estate' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("Couldn't load the Real estate chart.");
+    // The whole portfolio stays on screen.
+    expect(heroValue(screen.getByRole('region', { name: 'Net worth' }))).toHaveTextContent(
+      /^\$115,000\.00$/,
+    );
+    failing = false;
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(
+      await screen.findByRole('img', {
+        name: 'Real estate value, past month, from $28,000.00 to $30,000.00',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('SECTION-CHART says how many transfers across the border its money put in leaves out', async () => {
+    holdsAllSections();
+    answerSections({ transfersAcross: 2 });
+    const user = userEvent.setup();
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Wallets' }));
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(
+      '2 transfers between sections (made at any time) are not counted as money put in, so Net invested here can read low or high.',
+    );
+  });
+
+  it('SECTION-CHART writes no note when no transfer crosses the border', async () => {
+    holdsAllSections();
+    answerSections();
+    const user = userEvent.setup();
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Wallets' }));
+    await screen.findByRole('img', { name: /^Wallets value/ });
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('SECTION-CHART keeps the last chart of a section while another period loads', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (period === '3M') await new Promise<void>((resolve) => (release = resolve));
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    await within(chart).findByRole('img', { name: /^Brokers value, past month/ });
+    await user.click(within(chart).getByRole('tab', { name: '3M' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('3M', undefined, 'broker'));
+    expect(within(chart).getByRole('img', { name: /^Brokers value, past month/ })).toBeVisible();
+    expect(screen.queryByText(/Loading the Brokers chart/)).toBeNull();
+    release();
+    expect(
+      await within(chart).findByRole('img', { name: /^Brokers value, past 3 months/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('SECTION-CHART says so when a section it already shows cannot be read again, and tries again', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let failing = false;
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (failing) throw new Error('offline');
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    await screen.findByRole('img', { name: /^Brokers value, past month/ });
+    await user.click(group.getByRole('button', { name: 'Everything' }));
+    await screen.findByRole('img', { name: /^Portfolio value, past month/ });
+    failing = true;
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    // The last answer stays, and the page says it is not current.
+    const note = 'Could not update the Brokers chart. Showing the last loaded figures.';
+    await screen.findByText(note);
+    expect(screen.getByRole('img', { name: /^Brokers value, past month/ })).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText(note)).toBeNull());
   });
 });

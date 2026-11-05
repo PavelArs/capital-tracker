@@ -678,3 +678,39 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(profitToDate('50000', '50000', false)).toEqual({ profit: '0', profitPercent: '0.00' });
   });
 });
+
+describe('SECTION-CHART capital flows of some accounts only', () => {
+  const two = () =>
+    inputs([
+      {
+        id: 'wallet',
+        coverageFrom: '2025-06-01T00:00:00.000Z',
+        trades: [trade('buy', '2025-06-13T10:00:00.000Z', '25000')],
+      },
+      {
+        id: 'broker',
+        coverageFrom: '2025-06-01T00:00:00.000Z',
+        trades: [trade('buy', '2025-07-01T10:00:00.000Z', '1000')],
+        initialLots: [carryIn('2025-05-01T00:00:00.000Z', '4000', '1')],
+      },
+    ]);
+
+  it('counts every account when none is named, as before', () => {
+    expect(capitalFlows(two()).map((flow) => flow.usd)).toEqual([
+      BigInt(units(2000)),
+      BigInt(units(25000)),
+      BigInt(units(1000)),
+    ]);
+  });
+
+  it('counts only the named accounts', () => {
+    expect(capitalFlows(two(), new Set(['broker'])).map((flow) => flow.usd)).toEqual([
+      BigInt(units(2000)),
+      BigInt(units(1000)),
+    ]);
+    expect(capitalFlows(two(), new Set(['wallet'])).map((flow) => flow.usd)).toEqual([
+      BigInt(units(25000)),
+    ]);
+    expect(capitalFlows(two(), new Set())).toEqual([]);
+  });
+});
