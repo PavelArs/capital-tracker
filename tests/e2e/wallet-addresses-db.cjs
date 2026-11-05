@@ -1121,8 +1121,8 @@ async function main() {
     assert.equal(calls.bitcoin, 0);
     const repeated = await service.setSyncEnabled(owner, background, offBody(false));
     assert.deepEqual(repeated.sync.off, manual.sync.off, 'Switching off twice changes nothing');
-    const resumed = await service.setSyncEnabled(owner, background, offBody(true));
-    assert.equal('off' in resumed.sync, false);
+    const switchedBackOn = await service.setSyncEnabled(owner, background, offBody(true));
+    assert.equal('off' in switchedBackOn.sync, false);
     assert.equal((await rows(db, background)).length, storedBefore);
     assert.deepEqual(await job.tick(minutes(1)), {
       outcome: 'ran',
@@ -1189,14 +1189,14 @@ async function main() {
     // The owner's own "off" keeps the reason that came first; the wallet stays listed.
     const kept = await service.setSyncEnabled(owner, flaky, offBody(false));
     assert.equal(kept.sync.off.reason, 'failures');
-    const report = await new SyncStatusService(db).read(owner, minutes(70));
-    const source = report.sources.find((item) => item.key === `wallet:${flaky}`);
+    const syncReport = await new SyncStatusService(db).read(owner, minutes(70));
+    const source = syncReport.sources.find((item) => item.key === `wallet:${flaky}`);
     assert.deepEqual(
       [source.name, source.state, source.disabledReason],
       ['arbitrum', 'failed', 'failures'],
     );
     assert.equal(
-      report.sources.find((item) => item.key === `wallet:${background}`).disabledReason,
+      syncReport.sources.find((item) => item.key === `wallet:${background}`).disabledReason,
       undefined,
     );
     // Only the owner switches it on again; a retry that follows is quiet.
@@ -1216,9 +1216,9 @@ async function main() {
     // A good pass clears the run: two failures, a success, two failures leave the sync on.
     const pass = (at) => job.run({ id: flaky, ownerId: owner, network: 'arbitrum' }, at, true);
     const failure = { outcome: 'provider_error', reason: 'unavailable', imported: 0 };
-    const stored = { outcome: 'provider_error', reason: 'unavailable', imported: 2 };
+    const storedOnFailure = { outcome: 'provider_error', reason: 'unavailable', imported: 2 };
     const finished = { outcome: 'complete', reason: null, imported: 0 };
-    for (const [index, step] of [failure, failure, finished, failure, stored, failure].entries()) {
+    for (const [index, step] of [failure, failure, finished, failure, storedOnFailure, failure].entries()) {
       answer = step;
       await pass(minutes(8 * 24 * 60 + index));
     }
@@ -1229,12 +1229,12 @@ async function main() {
     );
     // A pass the owner starts never adds a failure, however often "Retry now" is pressed.
     answer = failure;
-    const before = (await switchRow(flaky)).failures;
+    const beforeOff = (await switchRow(flaky)).failures;
     for (let index = 0; index < 4; index++)
       await job.run({ id: flaky, ownerId: owner, network: 'arbitrum' }, minutes(9 * 24 * 60 + index));
     assert.deepEqual(
       [(await switchRow(flaky)).failures, (await switchRow(flaky)).reason],
-      [before, null],
+      [beforeOff, null],
       'Manual failures neither count nor switch the sync off',
     );
     // Stopping tracking and adding the address again starts it afresh.
