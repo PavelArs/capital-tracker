@@ -4486,7 +4486,12 @@ describe('PORTFOLIO-BANK-ROW: a bank product row reads as in the prototype', () 
 
   it('PORTFOLIO-BANK-INTEREST orders the products by the interest shown, in the table currency, uncounted last', async () => {
     // ₽30,947 is about $372 at the deposit's own rate; €500 is $585; the third is not counted.
-    const ruble = product();
+    const ruble = product({
+      real: {
+        official: { inflationPercent: '6.3', ratePercent: '9.1', gain: '-1000', estimated: true },
+        personal: null,
+      },
+    });
     const euro = product({
       id: id(997),
       kind: 'account',
@@ -4496,7 +4501,7 @@ describe('PORTFOLIO-BANK-ROW: a bank product row reads as in the prototype', () 
       balance: '10000',
       interestEarned: '500',
       real: {
-        official: { inflationPercent: '2.1', ratePercent: null, gain: '-50', estimated: false },
+        official: { inflationPercent: '2.1', ratePercent: null, gain: '-500', estimated: false },
         personal: null,
       },
       values: { USD: '11700', EUR: '10000', RUB: '970000' },
@@ -4537,7 +4542,8 @@ describe('PORTFOLIO-BANK-ROW: a bank product row reads as in the prototype', () 
     expect(order()).toEqual(['Ruble deposit', 'Savings account', 'Another deposit']);
     cleanup();
 
-    // Real: ₽17,946 after inflation (about $216) above −€50 (−$58.50); still uncounted last.
+    // Real: −₽1,000 after inflation (about −$12) above −€500 (−$585), though −500 is the larger
+    // number as entered; still uncounted last.
     setValueView('real');
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Ruble deposit/ });

@@ -386,7 +386,8 @@ function sortBankProducts(
     a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
   const direction = sort.direction === 'asc' ? 1 : -1;
   // P&L: the interest shown, in the table's currency at the rate the product's value uses, so
-  // rubles and euros compare. The float only orders the rows; it is never shown.
+  // rubles and euros compare. The float only orders the rows; it is never shown. A product in
+  // another currency with no balance gives no rate, so it sorts with the uncounted ones.
   const interest = (deposit: Deposit) => {
     const amount = shownInterest(deposit, real).amount;
     if (amount === null || deposit.currency === currency) return amount;
