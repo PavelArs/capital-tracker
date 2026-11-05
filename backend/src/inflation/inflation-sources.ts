@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { AccountingCurrency } from '../fx-rates/fx-conversion';
-import { nextMonth, previousMonth } from './inflation-math';
+import { isMonth, nextMonth, previousMonth } from './inflation-math';
 
 // `bls` is the stored key of the US CPI-U series (the publisher the data comes from); the client
 // reads it through the OECD, because the BLS website refuses the owner's server.
@@ -59,7 +59,12 @@ export function levelsToChanges(levels: readonly Level[]): MonthlyChange[] {
     const before = levels[i - 1];
     const after = levels[i];
     let steps = 1;
-    for (let month = nextMonth(before.month); month < after.month; month = nextMonth(month))
+    // Counting stops once the gap is too long to fill, however far apart the months are.
+    for (
+      let month = nextMonth(before.month);
+      month < after.month && steps <= MAX_FILLED_GAP + 1;
+      month = nextMonth(month)
+    )
       steps++;
     if (steps > MAX_FILLED_GAP + 1) continue;
     const percent = ((after.value / before.value) ** (1 / steps) - 1) * 100;
@@ -135,7 +140,7 @@ export function parseOecdCpiLevels(body: string): Level[] {
     if ((area >= 0 && row[area] !== 'USA') || (unit >= 0 && row[unit] !== 'IX'))
       invalid(`another series ${excerpt(`${row[area] ?? ''} ${row[unit] ?? ''}`)}`);
     const month = row[time];
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) invalid(`month ${excerpt(month)}`);
+    if (!isMonth(month)) invalid(`month ${excerpt(month)}`);
     if (seen.has(month)) invalid(`${month} twice`);
     seen.add(month);
     if (row[value] === '') continue;
@@ -178,11 +183,7 @@ export function parseEurostatHicp(body: string): MonthlyChange[] {
   if (!values || typeof values !== 'object' || Array.isArray(values)) invalid('no values');
   const positions = new Map<number, string>();
   for (const [month, position] of Object.entries(index as Record<string, unknown>)) {
-    if (
-      !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
-      !Number.isInteger(position) ||
-      (position as number) < 0
-    )
+    if (!isMonth(month) || !Number.isInteger(position) || (position as number) < 0)
       invalid(`month ${excerpt(month)}`);
     positions.set(position as number, month);
   }
@@ -236,6 +237,7 @@ export function parseCbrInflation(html: string): YearOverYear[] {
     const date = CBR_DATE.exec(row[0]);
     if (!date) invalid(`date ${excerpt(row[0])}`);
     const month = `${date[2]}-${date[1]}`;
+    if (!isMonth(month)) invalid(`date ${excerpt(row[0])}`);
     if (seen.has(month)) invalid(`${month} twice`);
     seen.add(month);
     if (!CBR_PERCENT.test(row[column])) invalid(`value ${excerpt(row[column])} on ${month}`);

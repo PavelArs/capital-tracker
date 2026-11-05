@@ -11,7 +11,11 @@ import {
 import {
   buildSeries,
   formatFactor,
+  isDay,
+  isMonth,
   levelOn,
+  MAX_YEAR,
+  MIN_YEAR,
   officialFactor,
   personalFactor,
   trailingYearEstimated,
@@ -608,5 +612,64 @@ describe('INFL-INPUT owner input', () => {
       {},
     ])
       expect(() => parseFactorQuery(query)).toThrow(BadRequestException);
+  });
+});
+
+describe('INFL-DOMAIN the dates the month arithmetic supports', () => {
+  it('accepts months and days from 1900 to 2200 and nothing beyond', () => {
+    expect([isMonth(`${MIN_YEAR}-01`), isMonth(`${MAX_YEAR}-12`)]).toEqual([true, true]);
+    expect([isMonth(`${MIN_YEAR - 1}-12`), isMonth(`${MAX_YEAR + 1}-01`)]).toEqual([false, false]);
+    expect([isMonth('0000-01'), isMonth('9999-12'), isMonth('2026-13')]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect([isDay(`${MIN_YEAR}-01-01`), isDay(`${MAX_YEAR}-12-31`)]).toEqual([true, true]);
+    expect([isDay('9999-12-31'), isDay('0000-01-01'), isDay('2026-02-30')]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it.each([
+    ['0001-01', 'a month long before any index'],
+    ['9999-12', 'a month in the far future'],
+  ])('refuses %s (%s) in an OECD answer, a Eurostat answer and a Bank of Russia table', (month) => {
+    expect(() =>
+      parseOecdCpiLevels(
+        oecd([
+          ['2025-01', '100'],
+          [month, '101'],
+        ]),
+      ),
+    ).toThrow('month');
+    expect(() =>
+      parseEurostatHicp(
+        JSON.stringify({
+          version: '2.0',
+          class: 'dataset',
+          id: ['freq', 'unit', 'coicop18', 'geo', 'time'],
+          size: [1, 1, 1, 1, 1],
+          value: { '0': 100 },
+          dimension: { time: { category: { index: { [month]: 0 } } } },
+        }),
+      ),
+    ).toThrow('month');
+    const [year, mm] = month.split('-');
+    expect(() =>
+      parseCbrInflation(
+        `<table class="data"><tr><th>Дата</th><th>Инфляция, % г/г</th></tr><tr><td>${mm}.${year}</td><td>6,35</td></tr></table>`,
+      ),
+    ).toThrow('date');
+  });
+
+  it('stops counting a gap between published months as soon as it is too long to fill', () => {
+    expect(
+      levelsToChanges([
+        { month: '1900-01', value: 100 },
+        { month: '2200-12', value: 110 },
+      ]),
+    ).toEqual([]);
   });
 });

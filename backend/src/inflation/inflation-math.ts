@@ -14,12 +14,26 @@ const MONTH_DAYS = 30.4375;
 // statistics office has not published yet.
 const TREND_MONTHS = 12;
 
+/**
+ * The years the month arithmetic supports. A month text has a four-digit year, and "10000-01"
+ * sorts before "9999-12" as text, so a month outside the range could keep a loop walking
+ * months without ever passing its end. Every month and day from a provider or a request is
+ * checked against it (isMonth, isDay) before any month is counted.
+ */
+export const MIN_YEAR = 1900;
+export const MAX_YEAR = 2200;
+const inRange = (value: string) => {
+  const year = Number(value.slice(0, 4));
+  return year >= MIN_YEAR && year <= MAX_YEAR;
+};
+
 export const isMonth = (value: unknown): value is string =>
-  typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+  typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && inRange(value);
 
 export const isDay = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  inRange(value) &&
   new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 const monthNumber = (month: string) =>
