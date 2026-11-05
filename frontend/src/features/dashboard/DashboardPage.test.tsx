@@ -1923,4 +1923,32 @@ describe('SECTION-CHART dashboard', () => {
       await within(chart).findByRole('img', { name: /^Brokers value, past 3 months/ }),
     ).toBeInTheDocument();
   });
+
+  it('SECTION-CHART says so when a section it already shows cannot be read again, and tries again', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let failing = false;
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (failing) throw new Error('offline');
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    await screen.findByRole('img', { name: /^Brokers value, past month/ });
+    await user.click(group.getByRole('button', { name: 'Everything' }));
+    await screen.findByRole('img', { name: /^Portfolio value, past month/ });
+    failing = true;
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    // The last answer stays, and the page says it is not current.
+    const note = 'Could not update the Brokers chart. Showing the last loaded figures.';
+    await screen.findByText(note);
+    expect(screen.getByRole('img', { name: /^Brokers value, past month/ })).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText(note)).toBeNull());
+  });
 });

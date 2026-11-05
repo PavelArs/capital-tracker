@@ -624,6 +624,19 @@ export default function DashboardPage() {
                 ))}
               </ChipGroup>
             )}
+            {/* A chart kept from before is not passed off as current (STALE-STATE). */}
+            {chosen !== null && sectionFailed && charted !== null && (
+              <Banner
+                tone="neg"
+                action={
+                  <Button size="sm" icon="refresh" onClick={() => void loadSection()}>
+                    Try again
+                  </Button>
+                }
+              >
+                Could not update the {chosenLabel} chart. Showing the last loaded figures.
+              </Banner>
+            )}
             <div {...panelProps}>
               {charted !== null ? (
                 <HistoryChart
