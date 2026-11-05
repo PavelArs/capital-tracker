@@ -498,6 +498,19 @@ describe('XFER-PROPOSED: a withdrawal and a receipt that name different transact
     }
   });
 
+  it('proposes a receipt at exactly the window edge and none a minute beyond', () => {
+    expect(proposeTransferPairs([out(), into({ blockTime: later(24 * 60) })])).toHaveLength(1);
+    expect(proposeTransferPairs([out(), into({ blockTime: later(24 * 60 + 1) })])).toEqual([]);
+  });
+
+  it('prefers the receipt that lost less at the same distance, and leaves an exact tie', () => {
+    const cheaper = into({ txid: txid(3), addressId: id(4), receivedUnits: '100400000' });
+    const pairs = proposeTransferPairs([out(), into(), cheaper]);
+    expect(pairs.map((pair) => pair.incoming.txid)).toEqual([txid(3)]);
+    const twin = into({ txid: txid(4), addressId: id(5), receivedUnits: '100400000' });
+    expect(proposeTransferPairs([out(), cheaper, twin])).toEqual([]);
+  });
+
   it('XFER-PROPOSED-BOUND: a coin with a dense open history offers nothing and the others still do', () => {
     // 800 withdrawals and 800 receipts of one coin inside one window: 640 000 candidate pairs,
     // above the bound. A clean pair of another coin is still proposed.

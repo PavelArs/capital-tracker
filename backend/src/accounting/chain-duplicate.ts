@@ -42,10 +42,10 @@ export function duplicateFits(leg: Movement, record: Movement): boolean {
  * more candidate pairs than the work bound allows (proposal-matching.ts) offer none; the owner
  * classifies those transactions by hand.
  */
-export function proposeDuplicates<L extends Movement, R extends Movement>(
+export function proposeDuplicatesBounded<L extends Movement, R extends Movement>(
   legs: readonly L[],
   records: readonly R[],
-): { leg: L; record: R }[] {
+): { proposals: { leg: L; record: R }[]; limitedGroups: number } {
   type Edge = { leg: L; record: R; amount: bigint; time: number };
   const keyOf = (item: Movement) => `${item.accountId}|${item.coin}|${item.inbound}`;
   const at = (record: R) => record.at.getTime();
@@ -75,8 +75,12 @@ export function proposeDuplicates<L extends Movement, R extends Movement>(
     left.amount !== right.amount ? (left.amount < right.amount ? -1 : 1) : left.time - right.time;
   const ofLeg = new ClosestEdges<L, Edge>(closer);
   const ofRecord = new ClosestEdges<R, Edge>(closer);
+  let limitedGroups = 0;
   groups.forEach((group, index) => {
-    if (!allowed[index]) return;
+    if (!allowed[index]) {
+      if (group.work > 0) limitedGroups++;
+      return;
+    }
     for (const leg of group.legs) {
       const [from, to] = range(group.sorted, leg);
       for (let position = from; position < to; position++) {
@@ -93,10 +97,24 @@ export function proposeDuplicates<L extends Movement, R extends Movement>(
       }
     }
   });
-  return [...ofLeg.unique()]
+  // Newest first; transactions at one moment keep the order they were given in.
+  const position = new Map<L, number>(legs.map((leg, index) => [leg, index]));
+  const proposals = [...ofLeg.unique()]
     .filter((edge) => ofRecord.closest(edge.record) === edge)
-    .sort((left, right) => right.leg.at.getTime() - left.leg.at.getTime())
+    .sort(
+      (left, right) =>
+        right.leg.at.getTime() - left.leg.at.getTime() ||
+        (position.get(left.leg) as number) - (position.get(right.leg) as number),
+    )
     .map(({ leg, record }) => ({ leg, record }));
+  return { proposals, limitedGroups };
+}
+
+export function proposeDuplicates<L extends Movement, R extends Movement>(
+  legs: readonly L[],
+  records: readonly R[],
+): { leg: L; record: R }[] {
+  return proposeDuplicatesBounded(legs, records).proposals;
 }
 
 /** A trade of the owner's as far as the answer to a transaction is concerned. */

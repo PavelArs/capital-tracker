@@ -51,7 +51,7 @@ import {
   DUPLICATE_AMOUNT_PERCENT,
   DUPLICATE_WINDOW_HOURS,
   duplicateFits,
-  proposeDuplicates,
+  proposeDuplicatesBounded,
 } from './chain-duplicate';
 import { type OwnRecord, readOwnRecords } from './chain-duplicate.store';
 import { isDust } from './chain-dust';
@@ -924,10 +924,15 @@ export class ChainClassificationService {
     const records = await readOwnRecords(this.source.manager, owner, [
       ...new Set(legs.map((leg) => leg.accountId)),
     ]);
+    const { proposals, limitedGroups } = proposeDuplicatesBounded(legs, records);
+    if (limitedGroups > 0)
+      this.logger.warn(
+        `Duplicate proposals skipped for ${limitedGroups} group(s) with too many open candidates`,
+      );
     return {
       windowHours: DUPLICATE_WINDOW_HOURS,
       amountPercent: Number(DUPLICATE_AMOUNT_PERCENT),
-      proposals: proposeDuplicates(legs, records).map(({ leg, record }) => ({
+      proposals: proposals.map(({ leg, record }) => ({
         coin: leg.coin,
         direction: leg.inbound ? ('in' as const) : ('out' as const),
         transaction: { ...placed(leg), quantity: leg.quantity },
