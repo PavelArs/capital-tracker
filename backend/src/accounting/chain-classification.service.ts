@@ -51,7 +51,7 @@ import {
   DUPLICATE_AMOUNT_PERCENT,
   DUPLICATE_WINDOW_HOURS,
   duplicateFits,
-  proposeDuplicates,
+  proposeDuplicatesBounded,
 } from './chain-duplicate';
 import { type OwnRecord, readOwnRecords } from './chain-duplicate.store';
 import { isDust } from './chain-dust';
@@ -92,7 +92,7 @@ import {
   pairAmounts,
   pairFits,
   planTransfer,
-  proposeTransferPairs,
+  proposeTransferPairsBounded,
   sameTransaction,
   type TimedLeg,
 } from './chain-transfer';
@@ -880,10 +880,15 @@ export class ChainClassificationService {
   async transferProposals(ownerId: string) {
     const owner = parseUuid(ownerId);
     const rows = await this.openLegs(this.source.manager, owner);
+    const { proposals, limited } = proposeTransferPairsBounded(rows);
+    if (limited.length > 0)
+      this.logger.warn(
+        `Transfer proposals skipped for ${limited.length} coin(s) with too many open candidates`,
+      );
     return {
       windowHours: PAIR_WINDOW_HOURS,
       feePercent: Number(PAIR_FEE_PERCENT),
-      proposals: proposeTransferPairs(rows).map((proposal) => ({
+      proposals: proposals.map((proposal) => ({
         ...pairAmounts(proposal),
         outgoing: placed(proposal.outgoing),
         incoming: placed(proposal.incoming),
@@ -919,10 +924,15 @@ export class ChainClassificationService {
     const records = await readOwnRecords(this.source.manager, owner, [
       ...new Set(legs.map((leg) => leg.accountId)),
     ]);
+    const { proposals, limitedGroups } = proposeDuplicatesBounded(legs, records);
+    if (limitedGroups > 0)
+      this.logger.warn(
+        `Duplicate proposals skipped for ${limitedGroups} group(s) with too many open candidates`,
+      );
     return {
       windowHours: DUPLICATE_WINDOW_HOURS,
       amountPercent: Number(DUPLICATE_AMOUNT_PERCENT),
-      proposals: proposeDuplicates(legs, records).map(({ leg, record }) => ({
+      proposals: proposals.map(({ leg, record }) => ({
         coin: leg.coin,
         direction: leg.inbound ? ('in' as const) : ('out' as const),
         transaction: { ...placed(leg), quantity: leg.quantity },

@@ -3,9 +3,11 @@ import {
   duplicateFits,
   type Movement,
   proposeDuplicates,
+  proposeDuplicatesBounded,
   rewardAnswer,
   tradeAnswer,
 } from './chain-duplicate';
+import { MAX_GROUP_COMPARISONS, withinBudget } from './proposal-matching';
 
 const unit = 10n ** 30n;
 const hour = 3_600_000;
@@ -188,5 +190,138 @@ describe('CLS-DUPLICATE what a record says as an answer', () => {
     expect(
       rewardAnswer({ category: 'unclassified', acquisitionBasisUsd: '1', incomeValueUsd: null }),
     ).toBeNull();
+  });
+});
+
+describe('CLS-DUPLICATE-BOUND the work a proposal read does', () => {
+  const leg = (id: string, over: Partial<Movement> = {}) => ({ ...move(over), id });
+
+  it('offers nothing for an account, coin and way whose candidate pairs exceed the bound', () => {
+    // 800 transactions against 800 records inside one window: 640 000 candidates.
+    const legs = Array.from({ length: 800 }, (_unused, n) => leg(`l${n}`));
+    const records = Array.from({ length: 800 }, (_unused, n) => leg(`r${n}`));
+    expect(proposeDuplicates(legs, records)).toEqual([]);
+    // Another coin of the same account is still read.
+    const clean = proposeDuplicates(
+      [...legs, leg('lx', { coin: 'ETH' })],
+      [...records, leg('rx', { coin: 'ETH', at: at(1) })],
+    );
+    expect(clean.map((pair) => [pair.leg.id, pair.record.id])).toEqual([['lx', 'rx']]);
+  });
+
+  it('keeps the closest-match rule when records lie on both sides of the window', () => {
+    const legs = [leg('l1'), leg('l2', { at: at(100), atoms: 50n * unit })];
+    const records = [
+      leg('far', { at: at(-DUPLICATE_WINDOW_HOURS - 5) }),
+      leg('near', { at: at(2) }),
+      leg('other', { at: at(101), atoms: 50n * unit }),
+    ];
+    const found = proposeDuplicates(legs, records);
+    expect(found.map((pair) => [pair.leg.id, pair.record.id])).toEqual([
+      ['l2', 'other'],
+      ['l1', 'near'],
+    ]);
+  });
+
+  // The previous algorithm, kept as the oracle: every edge, sorted, top two compared.
+  function reference<L extends Movement, R extends Movement>(legs: L[], records: R[]) {
+    type Edge = { leg: L; record: R; amount: bigint; time: number };
+    const edges: Edge[] = [];
+    for (const l of legs)
+      for (const r of records)
+        if (duplicateFits(l, r))
+          edges.push({
+            leg: l,
+            record: r,
+            amount: l.atoms > r.atoms ? l.atoms - r.atoms : r.atoms - l.atoms,
+            time: Math.abs(l.at.getTime() - r.at.getTime()),
+          });
+    const order = (a: Edge, b: Edge) =>
+      a.amount !== b.amount ? (a.amount < b.amount ? -1 : 1) : a.time - b.time;
+    const bestOf = <K extends 'leg' | 'record'>(side: K) => {
+      const best = new Map<Edge[K], Edge>();
+      for (const item of new Set(edges.map((edge) => edge[side]))) {
+        const [first, second] = edges.filter((edge) => edge[side] === item).sort(order);
+        if (!second || order(first, second) !== 0) best.set(item, first);
+      }
+      return best;
+    };
+    const ofLeg = bestOf('leg');
+    const ofRecord = bestOf('record');
+    return edges
+      .filter((edge) => ofLeg.get(edge.leg) === edge && ofRecord.get(edge.record) === edge)
+      .sort((a, b) => b.leg.at.getTime() - a.leg.at.getTime())
+      .map(
+        (edge) =>
+          `${(edge.leg as unknown as { id: string }).id}>${(edge.record as unknown as { id: string }).id}`,
+      );
+  }
+
+  it('keeps the proposals of the unbounded algorithm on varied synthetic histories', () => {
+    let seed = 11;
+    const random = (limit: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % limit;
+    };
+    const accounts = ['account-a', 'account-b'];
+    const coins = ['TRX', 'ETH'];
+    for (let round = 0; round < 60; round++) {
+      const make = (prefix: string, n: number) =>
+        leg(`${prefix}${n}`, {
+          accountId: accounts[random(2)],
+          coin: coins[random(2)],
+          inbound: random(2) === 0,
+          atoms: (98n + BigInt(random(5))) * unit,
+          // Whole hours, the window edge (±48 h) included.
+          at: at(random(21) * 6 - 60),
+        });
+      const legs = Array.from({ length: 10 }, (_unused, n) => make('l', n));
+      const records = Array.from({ length: 10 }, (_unused, n) => make('r', n));
+      const found = proposeDuplicates(legs, records).map(
+        (pair) => `${pair.leg.id}>${pair.record.id}`,
+      );
+      expect(found).toEqual(reference(legs, records));
+    }
+  });
+
+  it('matches a record at exactly the window edge and not an hour beyond', () => {
+    const edge = proposeDuplicates([leg('l')], [leg('r', { at: at(DUPLICATE_WINDOW_HOURS) })]);
+    expect(edge).toHaveLength(1);
+    expect(
+      proposeDuplicates([leg('l')], [leg('r', { at: at(-DUPLICATE_WINDOW_HOURS) })]),
+    ).toHaveLength(1);
+    expect(
+      proposeDuplicates([leg('l')], [leg('r', { at: at(DUPLICATE_WINDOW_HOURS + 1) })]),
+    ).toEqual([]);
+  });
+
+  it('lists transactions at one moment in the order they were given, whatever their account', () => {
+    const legs = [leg('l1', { accountId: 'account-b' }), leg('l2', { accountId: 'account-a' })];
+    const records = [leg('ra', { accountId: 'account-a' }), leg('rb', { accountId: 'account-b' })];
+    expect(proposeDuplicates(legs, records).map((pair) => pair.leg.id)).toEqual(['l1', 'l2']);
+  });
+
+  it('reports the groups it left out', () => {
+    const legs = Array.from({ length: 800 }, (_unused, n) => leg(`l${n}`));
+    const records = Array.from({ length: 800 }, (_unused, n) => leg(`r${n}`));
+    expect(proposeDuplicatesBounded(legs, records)).toEqual({ proposals: [], limitedGroups: 1 });
+  });
+});
+
+describe('CLS-DUPLICATE-BOUND the work bound itself', () => {
+  it('takes the cheapest groups first until the total would be exceeded', () => {
+    expect(withinBudget([400_000, 400_000, 400_000, 400_000, 400_000, 400_000])).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    // Cheapest first, whatever the order given; a group over its own bound stops the rest.
+    expect(withinBudget([MAX_GROUP_COMPARISONS + 1, 5, 0])).toEqual([false, true, true]);
+    expect(withinBudget([MAX_GROUP_COMPARISONS])).toEqual([true]);
+    expect(withinBudget([MAX_GROUP_COMPARISONS + 1])).toEqual([false]);
+    expect(withinBudget([0, 0])).toEqual([true, true]);
   });
 });
