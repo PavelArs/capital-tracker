@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import EmptyState from '@/ui/EmptyState';
 import { ErrorState } from '@/ui/ErrorState';
 import { Crumb, PageHead } from '@/ui/PageHead';
+import Pager, { SHORT_PAGE, usePages } from '@/ui/Pager';
 import { Stat, Stats } from '@/ui/Stats';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
 import { requestFailure } from '@/utils/request-failure';
@@ -36,6 +37,7 @@ import {
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import EditWalletDialog from './EditWalletDialog';
+import { networkOf } from './networks';
 
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
@@ -43,6 +45,7 @@ import {
   AddressRow,
   connectsBybit,
   holdingsOf,
+  networkCount,
   ReconcileNote,
   subtitle,
   withoutHiddenTokens,
@@ -116,8 +119,8 @@ function WalletTransactions({
 }) {
   const own =
     typeof operations === 'object' ? accountOperations(operations.operations, accountId) : [];
-  // PAGES: twenty transactions a page.
-  const pagedOwn = useInfinite(own);
+  // WALLET-TX-PAGES: five transactions a page, with Previous and Next under them.
+  const pagedOwn = usePages(own, (operation) => operation.id);
   return (
     <Card labelledBy="wallet-transactions">
       <CardHeader
@@ -182,7 +185,7 @@ function WalletTransactions({
               </li>
             ))}
           </ul>
-          {pagedOwn.more && <LoadMore {...pagedOwn.more} label="transactions" />}
+          {pagedOwn.pager && <Pager {...pagedOwn.pager} label="transactions" />}
           <Link
             className="ui-link wallets-all"
             to={`/transactions?account=${encodeURIComponent(accountId)}`}
@@ -268,9 +271,13 @@ export default function WalletPage() {
   const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
-  // PAGES: twenty addresses and twenty assets a page.
+  // PAGES: twenty addresses a page.
   const pagedAddresses = useInfinite(own);
-  const pagedHoldings = useInfinite(holdings);
+  // WALLET-ASSETS-MORE: five assets, the rest behind "Show N more". The list unfolds for one
+  // wallet: another wallet's page opens folded.
+  const [unfolded, setUnfolded] = useState<string | null>(null);
+  const allAssets = unfolded === accountId;
+  const shownHoldings = allAssets ? holdings : holdings.slice(0, SHORT_PAGE);
   const refresh = () => {
     void load(true);
     void loadOperations();
@@ -332,10 +339,17 @@ export default function WalletPage() {
             }
           />
           <Card className="wallet-overview" label="Summary">
-            <Stats size="lg">
-              <Stat lead label="Total value" value={money(total, currency)} />
+            {/* Four figures spread over the card, as in the prototype. */}
+            <Stats>
+              <Stat label="Total value" value={money(total, currency)} />
               <Stat label="Assets" value={holdings.length} />
-              <Stat label="Tracked addresses" value={own.length || 'None'} />
+              {own.length > 0 && own.every((address) => networkOf(address).exchange) ? (
+                // The backend refuses a key that can trade, so the connection only reads. Whether
+                // it works now is the last sync's to say.
+                <Stat label="Connection" value="API, read-only" />
+              ) : (
+                <Stat label="Tracked networks" value={networkCount(own) || 'None'} />
+              )}
               <Stat label="Last sync" value={<LastSync addresses={own} runs={runs} />} />
             </Stats>
             <ReconcileNote
@@ -381,7 +395,7 @@ export default function WalletPage() {
                 <EmptyState id="wallet-assets-none" title="No assets in this wallet." compact />
               ) : (
                 <ul className="wallets-list wallets-holdings">
-                  {pagedHoldings.rows.map((holding) => (
+                  {shownHoldings.map((holding) => (
                     <li key={holding.asset.instrumentId}>
                       <Link
                         className="wallets-asset wallets-holdings__asset"
@@ -415,7 +429,16 @@ export default function WalletPage() {
                   ))}
                 </ul>
               )}
-              {pagedHoldings.more && <LoadMore {...pagedHoldings.more} label="assets" />}
+              {holdings.length > SHORT_PAGE && (
+                <Button
+                  variant="link"
+                  className="wallets-all"
+                  aria-expanded={allAssets}
+                  onClick={() => setUnfolded(allAssets ? null : accountId)}
+                >
+                  {allAssets ? 'Show less' : `Show ${holdings.length - SHORT_PAGE} more`}
+                </Button>
+              )}
             </Card>
             <WalletTransactions
               accountId={accountId}

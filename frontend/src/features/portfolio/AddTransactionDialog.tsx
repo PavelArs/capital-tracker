@@ -8,7 +8,7 @@ import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.a
 import { type DependentOperation, tradesApi } from '@api/trades.api';
 import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
@@ -58,6 +58,7 @@ import {
   valueOptional,
   withDefaultTime,
 } from './add-transaction';
+import ConvertForm from './ConvertForm';
 import { useFocusFirstProblem } from './focus-problem';
 import { money, price, quantity } from './format';
 import './portfolio.css';
@@ -254,6 +255,7 @@ const moreKinds = [
   ['airdrop', 'Airdrop'],
   ['gift-received', 'Gift'],
   ['fee', 'Fee'],
+  ['convert', 'Convert'],
 ] as const satisfies readonly (readonly [EntryKind, string])[];
 const giftKinds = [
   ['gift-received', 'Received'],
@@ -261,10 +263,17 @@ const giftKinds = [
 ] as const satisfies readonly (readonly [EntryKind, string])[];
 const kindNames = new Map<EntryKind, string>([...mainKinds, ...moreKinds, ['gift-sent', 'Gift']]);
 const isMoreKind = (kind: EntryKind) =>
-  kind === 'reward' || kind === 'airdrop' || kind === 'fee' || kind.startsWith('gift');
+  kind === 'reward' ||
+  kind === 'airdrop' ||
+  kind === 'fee' ||
+  kind === 'convert' ||
+  kind.startsWith('gift');
 /** Which records a type is saved as: an edit keeps to the same kind of record. */
 const family = (kind: EntryKind) =>
   kind === 'transfer' ? 'transfer' : kind === 'reward' || kind === 'airdrop' ? 'reward' : 'trade';
+/** An edit keeps to its kind of record, and a conversion is added only (it has no edit form yet). */
+const editLocked = (editing: boolean, value: EntryKind, kind: EntryKind) =>
+  editing && (family(value) !== family(kind) || value === 'convert');
 
 /** What a value means for the capital, under the Value field. */
 const valueHints: Partial<Record<EntryKind, string>> = {
@@ -368,6 +377,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [settled, setSettled] = useState(() => ({ date: initial.date, time: initial.time }));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The Convert body saves on its own; the window still must not close under it.
+  const [convertSaving, setConvertSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const id = useId();
   const { form, refused } = useFocusFirstProblem();
@@ -783,554 +794,593 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     allocation,
   );
 
+  // Convert starts in the account that holds the most of the cash given up.
+  const holderOfCash = useCallback(
+    (instrumentId: string) => holderOf(accounts ?? [], instrumentId),
+    [accounts],
+  );
+  // Switching to or from Convert swaps the whole body, so the Type choice is made anew: give the
+  // keyboard back to the type that was just chosen.
+  const firstKind = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of type moves the focus.
+  useEffect(() => {
+    if (firstKind.current) {
+      firstKind.current = false;
+      return;
+    }
+    document.querySelector<HTMLInputElement>(`input[name="${id}-kind"]:checked`)?.focus();
+  }, [kind === 'convert']);
+  // The body under a running save stays, so its answer lands in the form that asked.
+  const typeLocked = saving || convertSaving;
+  const typeField = (
+    <div className="ui-field">
+      <span id={`${id}-type`} className="ui-field__label">
+        Type
+      </span>
+      <div className="portfolio-types">
+        <SegmentedControl
+          name={`${id}-kind`}
+          labelledBy={`${id}-type`}
+          options={mainKinds}
+          value={kind}
+          disabled={(value) => typeLocked || editLocked(Boolean(editing), value, kind)}
+          onChange={choose}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="portfolio-types__more"
+          aria-expanded={moreShown}
+          aria-controls={`${id}-more-types`}
+          onClick={() => setMoreShown(!moreShown)}
+        >
+          More <span aria-hidden="true">{moreShown ? '▴' : '▾'}</span>
+        </Button>
+      </div>
+      {moreShown && (
+        <SegmentedControl
+          id={`${id}-more-types`}
+          name={`${id}-kind`}
+          label="More types"
+          options={moreKinds}
+          value={kind}
+          isChecked={(value) =>
+            value === 'gift-received' ? kind.startsWith('gift') : kind === value
+          }
+          disabled={(value) => typeLocked || editLocked(Boolean(editing), value, kind)}
+          onChange={choose}
+        />
+      )}
+      {kind.startsWith('gift') && (
+        <SegmentedControl
+          name={`${id}-gift`}
+          label="Gift"
+          options={giftKinds}
+          value={kind}
+          onChange={choose}
+        />
+      )}
+    </div>
+  );
+
   return (
     <Modal
       titleId={`${id}-title`}
       size="wide"
-      onEscape={saving ? undefined : onClose}
+      onEscape={saving || convertSaving ? undefined : onClose}
       initialFocus={(root) => root.querySelector<HTMLElement>('input[type="radio"]:checked')}
     >
-      <form ref={form} onSubmit={submit} noValidate>
-        <ModalHeader
+      {kind === 'convert' ? (
+        <ConvertForm
           titleId={`${id}-title`}
-          title={editing ? 'Edit transaction' : 'Add transaction'}
+          typeField={typeField}
+          accounts={accounts}
+          assets={ready ? allAssets : null}
+          loadFailed={loadFailed}
+          holderOf={holderOfCash}
           onClose={onClose}
-          closeDisabled={saving}
+          onSaved={onSaved}
+          onSaving={setConvertSaving}
         />
-        <ModalBody>
-          <div className="ui-field">
-            <span id={`${id}-type`} className="ui-field__label">
-              Type
-            </span>
-            <div className="portfolio-types">
-              <SegmentedControl
-                name={`${id}-kind`}
-                labelledBy={`${id}-type`}
-                options={mainKinds}
-                value={kind}
-                disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
-                onChange={choose}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="portfolio-types__more"
-                aria-expanded={moreShown}
-                aria-controls={`${id}-more-types`}
-                onClick={() => setMoreShown(!moreShown)}
-              >
-                More <span aria-hidden="true">{moreShown ? '▴' : '▾'}</span>
-              </Button>
-            </div>
-            {moreShown && (
-              <SegmentedControl
-                id={`${id}-more-types`}
-                name={`${id}-kind`}
-                label="More types"
-                options={moreKinds}
-                value={kind}
-                isChecked={(value) =>
-                  value === 'gift-received' ? kind.startsWith('gift') : kind === value
-                }
-                disabled={(value) => Boolean(editing) && family(value) !== family(kind)}
-                onChange={choose}
-              />
-            )}
-            {kind.startsWith('gift') && (
-              <SegmentedControl
-                name={`${id}-gift`}
-                label="Gift"
-                options={giftKinds}
-                value={kind}
-                onChange={choose}
-              />
-            )}
-          </div>
-          {loadFailed ? (
-            <Banner tone="neg">
-              Could not load your assets and accounts. Close this window and try again.
-            </Banner>
-          ) : !ready ? (
-            <p className="ui-field__hint" role="status">
-              Loading your assets and accounts…
-            </p>
-          ) : accounts.length === 0 || assets.length === 0 ? (
-            <Banner tone="info" role="status">
-              {accounts.length === 0 ? (
-                <>
-                  Add a wallet first on the{' '}
-                  <Link className="ui-link" to="/wallets">
-                    Wallets
-                  </Link>{' '}
-                  page, or an asset with a balance on the Portfolio page.
-                </>
-              ) : (
-                'Add an asset first on the Portfolio page, then record its trades.'
-              )}
-            </Banner>
-          ) : (
-            <>
-              <div className="ui-field">
-                <span id={`${id}-asset`} className="ui-field__label">
-                  Asset
-                </span>
-                <ChipGroup labelledBy={`${id}-asset`}>
-                  {shownAssets.map((item) => (
-                    <Chip
-                      key={item.id}
-                      pressed={!other && entry.instrumentId === item.id}
-                      icon={
-                        <AssetIcon
-                          symbol={item.symbol}
-                          name={item.name}
-                          assetType={item.assetType}
-                          size="sm"
+      ) : (
+        <form ref={form} onSubmit={submit} noValidate>
+          <ModalHeader
+            titleId={`${id}-title`}
+            title={editing ? 'Edit transaction' : 'Add transaction'}
+            onClose={onClose}
+            closeDisabled={saving}
+          />
+          <ModalBody>
+            {typeField}
+            {loadFailed ? (
+              <Banner tone="neg">
+                Could not load your assets and accounts. Close this window and try again.
+              </Banner>
+            ) : !ready ? (
+              <p className="ui-field__hint" role="status">
+                Loading your assets and accounts…
+              </p>
+            ) : accounts.length === 0 || assets.length === 0 ? (
+              <Banner tone="info" role="status">
+                {accounts.length === 0 ? (
+                  <>
+                    Add a wallet first on the{' '}
+                    <Link className="ui-link" to="/wallets">
+                      Wallets
+                    </Link>{' '}
+                    page, or an asset with a balance on the Portfolio page.
+                  </>
+                ) : (
+                  'Add an asset first on the Portfolio page, then record its trades.'
+                )}
+              </Banner>
+            ) : (
+              <>
+                <div className="ui-field">
+                  <span id={`${id}-asset`} className="ui-field__label">
+                    Asset
+                  </span>
+                  <ChipGroup labelledBy={`${id}-asset`}>
+                    {shownAssets.map((item) => (
+                      <Chip
+                        key={item.id}
+                        pressed={!other && entry.instrumentId === item.id}
+                        icon={
+                          <AssetIcon
+                            symbol={item.symbol}
+                            name={item.name}
+                            assetType={item.assetType}
+                            size="sm"
+                          />
+                        }
+                        onClick={() => {
+                          setOther(null);
+                          update({ instrumentId: item.id });
+                        }}
+                      >
+                        {item.symbol ?? item.name}
+                      </Chip>
+                    ))}
+                    {moreAssets.length > 0 && (
+                      <Select
+                        size="sm"
+                        className="portfolio-chip-select"
+                        aria-label="More assets"
+                        value=""
+                        onChange={(event) => {
+                          setOther(null);
+                          update({ instrumentId: event.target.value });
+                        }}
+                      >
+                        <option value="">More assets…</option>
+                        {moreAssets.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                    {!sell && !editing && (
+                      <Chip
+                        pressed={other !== null}
+                        onClick={() => setOther(other ?? { ticker: '', name: '' })}
+                      >
+                        <span aria-hidden="true">+</span> Other asset
+                      </Chip>
+                    )}
+                  </ChipGroup>
+                  {other ? null : fieldError('instrument')}
+                </div>
+                {other && (
+                  <div className="ui-field-row">
+                    <div className="ui-field">
+                      <label className="ui-field__label" htmlFor={`${id}-ticker`}>
+                        Ticker
+                      </label>
+                      <Input
+                        id={`${id}-ticker`}
+                        placeholder="e.g. TON"
+                        autoComplete="off"
+                        value={other.ticker}
+                        onChange={(event) => setOther({ ...other, ticker: event.target.value })}
+                        onBlur={leave('instrument')}
+                        {...invalid('instrument')}
+                      />
+                      {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
+                    </div>
+                    <Field id={`${id}-name`} label="Name (optional)">
+                      {(control) => (
+                        <Input
+                          {...control}
+                          placeholder={otherTicker || 'Toncoin'}
+                          autoComplete="off"
+                          maxLength={120}
+                          value={other.name}
+                          onChange={(event) => setOther({ ...other, name: event.target.value })}
                         />
-                      }
-                      onClick={() => {
-                        setOther(null);
-                        update({ instrumentId: item.id });
-                      }}
-                    >
-                      {item.symbol ?? item.name}
-                    </Chip>
-                  ))}
-                  {moreAssets.length > 0 && (
-                    <Select
-                      size="sm"
-                      className="portfolio-chip-select"
-                      aria-label="More assets"
-                      value=""
-                      onChange={(event) => {
-                        setOther(null);
-                        update({ instrumentId: event.target.value });
-                      }}
-                    >
-                      <option value="">More assets…</option>
-                      {moreAssets.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                  {!sell && !editing && (
-                    <Chip
-                      pressed={other !== null}
-                      onClick={() => setOther(other ?? { ticker: '', name: '' })}
-                    >
-                      <span aria-hidden="true">+</span> Other asset
-                    </Chip>
-                  )}
-                </ChipGroup>
-                {other ? null : fieldError('instrument')}
-              </div>
-              {other && (
+                      )}
+                    </Field>
+                  </div>
+                )}
                 <div className="ui-field-row">
                   <div className="ui-field">
-                    <label className="ui-field__label" htmlFor={`${id}-ticker`}>
-                      Ticker
+                    <label className="ui-field__label" htmlFor={`${id}-amount`}>
+                      Amount
                     </label>
-                    <Input
-                      id={`${id}-ticker`}
-                      placeholder="e.g. TON"
-                      autoComplete="off"
-                      value={other.ticker}
-                      onChange={(event) => setOther({ ...other, ticker: event.target.value })}
-                      onBlur={leave('instrument')}
-                      {...invalid('instrument')}
-                    />
-                    {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
+                    <Affix suffix={symbol}>
+                      <Input
+                        id={`${id}-amount`}
+                        numeric
+                        placeholder="0.00"
+                        value={entry.amount}
+                        onChange={(event) => setAmount(event.target.value)}
+                        onBlur={leave('amount')}
+                        {...(overshown
+                          ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
+                          : invalid('amount'))}
+                      />
+                    </Affix>
+                    {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
+                      (sell && (
+                        <Availability
+                          id={`${id}-available`}
+                          account={accountName}
+                          symbol={symbol}
+                          date={at}
+                          available={available}
+                          loading={availableKey !== null && availability?.key !== availableKey}
+                          over={overshown}
+                          onUseAll={applyAll}
+                        />
+                      ))}
                   </div>
-                  <Field id={`${id}-name`} label="Name (optional)">
+                  <Field id={`${id}-date`} label="Date" error={problem('date')}>
                     {(control) => (
                       <Input
                         {...control}
-                        placeholder={otherTicker || 'Toncoin'}
-                        autoComplete="off"
-                        maxLength={120}
-                        value={other.name}
-                        onChange={(event) => setOther({ ...other, name: event.target.value })}
+                        type="date"
+                        max={today()}
+                        value={entry.date}
+                        onChange={(event) => update({ date: event.target.value })}
+                        onBlur={settle('date')}
                       />
                     )}
                   </Field>
                 </div>
-              )}
-              <div className="ui-field-row">
-                <div className="ui-field">
-                  <label className="ui-field__label" htmlFor={`${id}-amount`}>
-                    Amount
-                  </label>
-                  <Affix suffix={symbol}>
-                    <Input
-                      id={`${id}-amount`}
-                      numeric
-                      placeholder="0.00"
-                      value={entry.amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      onBlur={leave('amount')}
-                      {...(overshown
-                        ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
-                        : invalid('amount'))}
-                    />
-                  </Affix>
-                  {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
-                    (sell && (
-                      <Availability
-                        id={`${id}-available`}
-                        account={accountName}
-                        symbol={symbol}
-                        date={at}
-                        available={available}
-                        loading={availableKey !== null && availability?.key !== availableKey}
-                        over={overshown}
-                        onUseAll={applyAll}
-                      />
-                    ))}
-                </div>
-                <Field id={`${id}-date`} label="Date" error={problem('date')}>
-                  {(control) => (
-                    <Input
-                      {...control}
-                      type="date"
-                      max={today()}
-                      value={entry.date}
-                      onChange={(event) => update({ date: event.target.value })}
-                      onBlur={settle('date')}
-                    />
-                  )}
-                </Field>
-              </div>
-              {priced && (
-                <>
-                  <div className="ui-field-row">
+                {priced && (
+                  <>
+                    <div className="ui-field-row">
+                      <div className="ui-field">
+                        <label className="ui-field__label" htmlFor={`${id}-unit`}>
+                          Price per {unitSymbol}
+                        </label>
+                        <Affix suffix={entry.currency}>
+                          <Input
+                            id={`${id}-unit`}
+                            numeric
+                            placeholder="0.00"
+                            value={unit}
+                            onChange={(event) => setUnitPrice(event.target.value)}
+                          />
+                        </Affix>
+                        {marketPrice && (
+                          <span className="ui-field__hint">
+                            Market today{' '}
+                            {needsRate(entry.currency)
+                              ? `${quantity(marketPrice)} ${entry.currency}`
+                              : price(marketUsd ?? null, 'USD')}{' '}
+                            ·{' '}
+                            <button
+                              type="button"
+                              className="ui-link"
+                              onClick={() => setUnitPrice(marketPrice)}
+                            >
+                              Use
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      <div className="ui-field">
+                        <label className="ui-field__label" htmlFor={`${id}-total`}>
+                          {buy ? 'Total paid' : 'Total received'}
+                        </label>
+                        <Affix suffix={entry.currency}>
+                          <Input
+                            id={`${id}-total`}
+                            numeric
+                            placeholder="0.00"
+                            value={entry.total}
+                            onChange={(event) => setTotal(event.target.value)}
+                            onBlur={leave('total')}
+                            {...invalid('total')}
+                          />
+                        </Affix>
+                        {fieldError(
+                          'total',
+                          buy ? 'Enter what you paid' : 'Enter what you received',
+                        )}
+                      </div>
+                    </div>
                     <div className="ui-field">
-                      <label className="ui-field__label" htmlFor={`${id}-unit`}>
-                        Price per {unitSymbol}
-                      </label>
-                      <Affix suffix={entry.currency}>
-                        <Input
-                          id={`${id}-unit`}
-                          numeric
-                          placeholder="0.00"
-                          value={unit}
-                          onChange={(event) => setUnitPrice(event.target.value)}
-                        />
-                      </Affix>
-                      {marketPrice && (
+                      <span id={`${id}-currency`} className="ui-field__label">
+                        {buy ? 'Paid in' : 'Received in'}
+                      </span>
+                      <SegmentedControl
+                        name={`${id}-currency`}
+                        labelledBy={`${id}-currency`}
+                        options={paidIn}
+                        value={entry.currency}
+                        onChange={(code: PaidIn) =>
+                          update({ currency: code, rate: '', rateEdited: false })
+                        }
+                      />
+                      {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
                         <span className="ui-field__hint">
-                          Market today{' '}
-                          {needsRate(entry.currency)
-                            ? `${quantity(marketPrice)} ${entry.currency}`
-                            : price(marketUsd ?? null, 'USD')}{' '}
-                          ·{' '}
+                          {entry.currency} is counted 1:1 with USD.
+                        </span>
+                      )}
+                      {sell
+                        ? !(asset && isCashOf(asset, entry.currency)) && (
+                            <span className="ui-field__hint">
+                              The {entry.currency} received stays in {accountName} as cash.
+                            </span>
+                          )
+                        : fromCash !== null &&
+                          totalTyped !== null && (
+                            <span className="ui-field__hint">
+                              {compareDecimal(fromCash, totalTyped) === 0
+                                ? `Paid from the ${entry.currency} cash in ${accountName}.`
+                                : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(subtractDecimal(totalTyped, fromCash))} ${entry.currency} is new money.`}
+                            </span>
+                          )}
+                    </div>
+                    {needsRate(entry.currency) && (
+                      <div className="ui-field">
+                        <label className="ui-field__label" htmlFor={`${id}-rate`}>
+                          Exchange rate
+                        </label>
+                        <Affix wide suffix={`${entry.currency} per 1 USD`}>
+                          <Input
+                            id={`${id}-rate`}
+                            numeric
+                            placeholder={rateLoading ? 'Loading…' : ''}
+                            value={shown.rate}
+                            onChange={(event) =>
+                              update({ rate: event.target.value, rateEdited: true })
+                            }
+                            aria-describedby={`${id}-rate-hint`}
+                            onBlur={leave('rate')}
+                            {...invalid('rate')}
+                          />
+                        </Affix>
+                        {fieldError('rate')}
+                        <span className="ui-field__hint" id={`${id}-rate-hint`}>
+                          {entry.rateEdited
+                            ? 'Your rate is used for this transaction. '
+                            : prefill
+                              ? 'Bank of Russia rate on the selected date, filled in automatically. Change it if you paid a different rate. '
+                              : rateLoading
+                                ? ''
+                                : 'No Bank of Russia rate is stored for this date; enter the rate you paid. '}
+                          {entry.rateEdited && prefill && (
+                            <button
+                              type="button"
+                              className="ui-link"
+                              onClick={() => update({ rate: '', rateEdited: false })}
+                            >
+                              Use Bank of Russia rate {prefill}
+                            </button>
+                          )}
+                          {!entry.rateEdited && 'Totals are kept in USD.'}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {valued(kind) && (
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-total`}>
+                      Value{valueOptional(kind) ? ' (optional)' : ''}
+                    </label>
+                    <Affix suffix="USD">
+                      <Input
+                        id={`${id}-total`}
+                        numeric
+                        placeholder={marketValue ?? '0.00'}
+                        value={entry.total}
+                        onChange={(event) => update({ total: event.target.value })}
+                        aria-describedby={`${id}-value-hint`}
+                        onBlur={leave('total')}
+                        {...invalid('total')}
+                      />
+                    </Affix>
+                    {fieldError(
+                      'total',
+                      numberProblem(entry.total, 'Enter what it was worth on that date'),
+                    )}
+                    <span className="ui-field__hint" id={`${id}-value-hint`}>
+                      What it was worth on that date. {valueHints[kind]}
+                      {marketValue && (
+                        <>
+                          {' '}
+                          Market today {money(marketValue, 'USD')} ·{' '}
                           <button
                             type="button"
                             className="ui-link"
-                            onClick={() => setUnitPrice(marketPrice)}
+                            onClick={() => update({ total: marketValue })}
                           >
                             Use
                           </button>
-                        </span>
+                        </>
                       )}
-                    </div>
-                    <div className="ui-field">
-                      <label className="ui-field__label" htmlFor={`${id}-total`}>
-                        {buy ? 'Total paid' : 'Total received'}
-                      </label>
-                      <Affix suffix={entry.currency}>
-                        <Input
-                          id={`${id}-total`}
-                          numeric
-                          placeholder="0.00"
-                          value={entry.total}
-                          onChange={(event) => setTotal(event.target.value)}
-                          onBlur={leave('total')}
-                          {...invalid('total')}
-                        />
-                      </Affix>
-                      {fieldError('total', buy ? 'Enter what you paid' : 'Enter what you received')}
-                    </div>
-                  </div>
-                  <div className="ui-field">
-                    <span id={`${id}-currency`} className="ui-field__label">
-                      {buy ? 'Paid in' : 'Received in'}
                     </span>
-                    <SegmentedControl
-                      name={`${id}-currency`}
-                      labelledBy={`${id}-currency`}
-                      options={paidIn}
-                      value={entry.currency}
-                      onChange={(code: PaidIn) =>
-                        update({ currency: code, rate: '', rateEdited: false })
-                      }
-                    />
-                    {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
-                      <span className="ui-field__hint">
-                        {entry.currency} is counted 1:1 with USD.
-                      </span>
-                    )}
-                    {sell
-                      ? !(asset && isCashOf(asset, entry.currency)) && (
-                          <span className="ui-field__hint">
-                            The {entry.currency} received stays in {accountName} as cash.
-                          </span>
-                        )
-                      : fromCash !== null &&
-                        totalTyped !== null && (
-                          <span className="ui-field__hint">
-                            {compareDecimal(fromCash, totalTyped) === 0
-                              ? `Paid from the ${entry.currency} cash in ${accountName}.`
-                              : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(subtractDecimal(totalTyped, fromCash))} ${entry.currency} is new money.`}
-                          </span>
-                        )}
                   </div>
-                  {needsRate(entry.currency) && (
-                    <div className="ui-field">
-                      <label className="ui-field__label" htmlFor={`${id}-rate`}>
-                        Exchange rate
-                      </label>
-                      <Affix wide suffix={`${entry.currency} per 1 USD`}>
-                        <Input
-                          id={`${id}-rate`}
-                          numeric
-                          placeholder={rateLoading ? 'Loading…' : ''}
-                          value={shown.rate}
-                          onChange={(event) =>
-                            update({ rate: event.target.value, rateEdited: true })
-                          }
-                          aria-describedby={`${id}-rate-hint`}
-                          onBlur={leave('rate')}
-                          {...invalid('rate')}
-                        />
-                      </Affix>
-                      {fieldError('rate')}
-                      <span className="ui-field__hint" id={`${id}-rate-hint`}>
-                        {entry.rateEdited
-                          ? 'Your rate is used for this transaction. '
-                          : prefill
-                            ? 'Bank of Russia rate on the selected date, filled in automatically. Change it if you paid a different rate. '
-                            : rateLoading
-                              ? ''
-                              : 'No Bank of Russia rate is stored for this date; enter the rate you paid. '}
-                        {entry.rateEdited && prefill && (
-                          <button
-                            type="button"
-                            className="ui-link"
-                            onClick={() => update({ rate: '', rateEdited: false })}
-                          >
-                            Use Bank of Russia rate {prefill}
-                          </button>
-                        )}
-                        {!entry.rateEdited && 'Totals are kept in USD.'}
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-              {valued(kind) && (
-                <div className="ui-field">
-                  <label className="ui-field__label" htmlFor={`${id}-total`}>
-                    Value{valueOptional(kind) ? ' (optional)' : ''}
-                  </label>
-                  <Affix suffix="USD">
-                    <Input
-                      id={`${id}-total`}
-                      numeric
-                      placeholder={marketValue ?? '0.00'}
-                      value={entry.total}
-                      onChange={(event) => update({ total: event.target.value })}
-                      aria-describedby={`${id}-value-hint`}
-                      onBlur={leave('total')}
-                      {...invalid('total')}
-                    />
-                  </Affix>
-                  {fieldError(
-                    'total',
-                    numberProblem(entry.total, 'Enter what it was worth on that date'),
-                  )}
-                  <span className="ui-field__hint" id={`${id}-value-hint`}>
-                    What it was worth on that date. {valueHints[kind]}
-                    {marketValue && (
-                      <>
-                        {' '}
-                        Market today {money(marketValue, 'USD')} ·{' '}
-                        <button
-                          type="button"
-                          className="ui-link"
-                          onClick={() => update({ total: marketValue })}
+                )}
+                {transfer ? (
+                  <>
+                    <div className="ui-field-row">
+                      <div className="ui-field">
+                        <label className="ui-field__label" htmlFor={`${id}-account`}>
+                          From
+                        </label>
+                        <Select
+                          id={`${id}-account`}
+                          value={accountId}
+                          disabled={Boolean(editing)}
+                          onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
                         >
-                          Use
-                        </button>
-                      </>
-                    )}
-                  </span>
-                </div>
-              )}
-              {transfer ? (
-                <>
-                  <div className="ui-field-row">
-                    <div className="ui-field">
-                      <label className="ui-field__label" htmlFor={`${id}-account`}>
-                        From
-                      </label>
-                      <Select
-                        id={`${id}-account`}
-                        value={accountId}
-                        disabled={Boolean(editing)}
-                        onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
-                      >
-                        {accounts.map((account) => (
-                          <option key={account.id} value={account.id}>
-                            {account.name}
-                          </option>
-                        ))}
-                      </Select>
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div className="ui-field">
+                        <label className="ui-field__label" htmlFor={`${id}-to`}>
+                          To
+                        </label>
+                        <Select
+                          id={`${id}-to`}
+                          value={toAccountId}
+                          disabled={Boolean(editing)}
+                          onChange={(event) => chooseAccount(setToAccountId)(event.target.value)}
+                          {...(tried && sameAccount
+                            ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
+                            : {})}
+                        >
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </Select>
+                        {tried && sameAccount && (
+                          <span className="ui-field__error" id={`${id}-to-error`}>
+                            Choose a different wallet
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="ui-field">
-                      <label className="ui-field__label" htmlFor={`${id}-to`}>
-                        To
-                      </label>
-                      <Select
-                        id={`${id}-to`}
-                        value={toAccountId}
-                        disabled={Boolean(editing)}
-                        onChange={(event) => chooseAccount(setToAccountId)(event.target.value)}
-                        {...(tried && sameAccount
-                          ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
-                          : {})}
-                      >
-                        {accounts.map((account) => (
-                          <option key={account.id} value={account.id}>
-                            {account.name}
-                          </option>
-                        ))}
-                      </Select>
-                      {tried && sameAccount && (
-                        <span className="ui-field__error" id={`${id}-to-error`}>
-                          Choose a different wallet
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <p className="ui-field__hint">
-                    {fewAccounts
-                      ? 'Add a second wallet or account to move coins between them.'
-                      : 'Transfers move coins between your wallets and keep their purchase price. No price needed.'}
-                  </p>
-                </>
-              ) : (
-                <div className="ui-field">
-                  <label className="ui-field__label" htmlFor={`${id}-account`}>
-                    Wallet or account
-                  </label>
-                  <Select
-                    id={`${id}-account`}
-                    value={accountId}
-                    disabled={Boolean(editing)}
-                    onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
-                  >
-                    {accounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              )}
-              <details
-                className="ui-more"
-                open={
-                  Boolean(entry.time || entry.fee || (commented && entry.comment)) ||
-                  found.has('time') ||
-                  found.has('fee') ||
-                  found.has('comment')
-                }
-              >
-                <summary>
-                  {`More options: ${['time', ...(priced || transfer ? ['fee'] : []), ...(commented ? ['comment'] : [])].join(', ')}`}
-                </summary>
-                <div className="ui-field-row">
-                  <Field id={`${id}-time`} label="Time, UTC (optional)" error={problem('time')}>
-                    {(control) => (
-                      <Input
-                        {...control}
-                        type="time"
-                        value={entry.time}
-                        onChange={(event) => update({ time: event.target.value })}
-                        onBlur={settle('time')}
-                      />
-                    )}
-                  </Field>
-                  {(priced || transfer) && (
-                    <Field
-                      id={`${id}-fee`}
-                      label="Fee (optional)"
-                      error={problem('fee', numberProblem(entry.fee, problemText.fee))}
+                    <p className="ui-field__hint">
+                      {fewAccounts
+                        ? 'Add a second wallet or account to move coins between them.'
+                        : 'Transfers move coins between your wallets and keep their purchase price. No price needed.'}
+                    </p>
+                  </>
+                ) : (
+                  <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={`${id}-account`}>
+                      Wallet or account
+                    </label>
+                    <Select
+                      id={`${id}-account`}
+                      value={accountId}
+                      disabled={Boolean(editing)}
+                      onChange={(event) => chooseAccount(setAccountId)(event.target.value)}
                     >
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
+                <details
+                  className="ui-more"
+                  open={
+                    Boolean(entry.time || entry.fee || (commented && entry.comment)) ||
+                    found.has('time') ||
+                    found.has('fee') ||
+                    found.has('comment')
+                  }
+                >
+                  <summary>
+                    {`More options: ${['time', ...(priced || transfer ? ['fee'] : []), ...(commented ? ['comment'] : [])].join(', ')}`}
+                  </summary>
+                  <div className="ui-field-row">
+                    <Field id={`${id}-time`} label="Time, UTC (optional)" error={problem('time')}>
                       {(control) => (
-                        <Affix suffix={transfer ? symbol : entry.currency}>
-                          <Input
-                            {...control}
-                            numeric
-                            placeholder="0.00"
-                            value={entry.fee}
-                            onChange={(event) => update({ fee: event.target.value })}
-                            onBlur={leave('fee')}
-                          />
-                        </Affix>
+                        <Input
+                          {...control}
+                          type="time"
+                          value={entry.time}
+                          onChange={(event) => update({ time: event.target.value })}
+                          onBlur={settle('time')}
+                        />
+                      )}
+                    </Field>
+                    {(priced || transfer) && (
+                      <Field
+                        id={`${id}-fee`}
+                        label="Fee (optional)"
+                        error={problem('fee', numberProblem(entry.fee, problemText.fee))}
+                      >
+                        {(control) => (
+                          <Affix suffix={transfer ? symbol : entry.currency}>
+                            <Input
+                              {...control}
+                              numeric
+                              placeholder="0.00"
+                              value={entry.fee}
+                              onChange={(event) => update({ fee: event.target.value })}
+                              onBlur={leave('fee')}
+                            />
+                          </Affix>
+                        )}
+                      </Field>
+                    )}
+                  </div>
+                  {/* transactions-01: only where the command keeps the comment. */}
+                  {commented && (
+                    <Field id={`${id}-comment`} label="Comment" error={problem('comment')}>
+                      {(control) => (
+                        <Textarea
+                          {...control}
+                          placeholder="Optional"
+                          value={entry.comment}
+                          onChange={(event) => update({ comment: event.target.value })}
+                          onBlur={leave('comment')}
+                        />
                       )}
                     </Field>
                   )}
-                </div>
-                {/* transactions-01: only where the command keeps the comment. */}
-                {commented && (
-                  <Field id={`${id}-comment`} label="Comment" error={problem('comment')}>
-                    {(control) => (
-                      <Textarea
-                        {...control}
-                        placeholder="Optional"
-                        value={entry.comment}
-                        onChange={(event) => update({ comment: event.target.value })}
-                        onBlur={leave('comment')}
-                      />
-                    )}
-                  </Field>
-                )}
-              </details>
-            </>
-          )}
-          {error && <Banner tone="neg">{error}</Banner>}
-        </ModalBody>
-        <ModalFooter
-          summary={
-            <>
-              {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
-              {valued(kind) &&
-                positive(entry.total) !== null &&
-                `Value ${money(positive(entry.total), 'USD')}`}
-            </>
-          }
-        >
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={
-              saving ||
-              (priced && rateLoading) ||
-              !ready ||
-              !accounts?.length ||
-              !assets?.length ||
-              fewAccounts
+                </details>
+              </>
+            )}
+            {error && <Banner tone="neg">{error}</Banner>}
+          </ModalBody>
+          <ModalFooter
+            summary={
+              <>
+                {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
+                {valued(kind) &&
+                  positive(entry.total) !== null &&
+                  `Value ${money(positive(entry.total), 'USD')}`}
+              </>
             }
           >
-            {editing ? 'Save changes' : 'Save transaction'}
-          </Button>
-        </ModalFooter>
-      </form>
+            <Button variant="ghost" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={
+                saving ||
+                (priced && rateLoading) ||
+                !ready ||
+                !accounts?.length ||
+                !assets?.length ||
+                fewAccounts
+              }
+            >
+              {editing ? 'Save changes' : 'Save transaction'}
+            </Button>
+          </ModalFooter>
+        </form>
+      )}
     </Modal>
   );
 }

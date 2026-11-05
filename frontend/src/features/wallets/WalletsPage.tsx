@@ -22,6 +22,7 @@ import {
   connectsBybit,
   holdingsOf,
   ManualRow,
+  networksText,
   ReconcileNote,
   subtitle,
   trackedSymbols,
@@ -236,7 +237,7 @@ export default function WalletsPage() {
                   </div>
                   <div className="wallets-card__total">
                     <strong className="ui-num">{money(account.pricedValue, currency)}</strong>
-                    <span>{holdings.length === 1 ? '1 asset' : `${holdings.length} assets`}</span>
+                    <span>{networksText(own)}</span>
                   </div>
                 </div>
                 {own.length > 0 || manual.length > 0 ? (

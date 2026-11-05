@@ -139,6 +139,9 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+/** What each column of a position row reads, left to right (BROKERS-ROW). */
+const cells = (row: HTMLElement) => [...row.children].map((cell) => cell.textContent);
+
 const tbankMain = id(21);
 const tbankNew = id(22);
 const tbankIis = id(23);
@@ -183,12 +186,23 @@ describe('BROKERS the Brokers page', () => {
       `/portfolio/${id(2)}`,
       `/portfolio/${id(3)}`,
     ]);
-    expect(rows[0]).toHaveTextContent('VWRA30 × $142.10$4,263.00Price of Oct 1, 2026');
-    expect(rows[1]).toHaveTextContent('Bond fund 20304 × ——No price yet');
-    expect(rows[2]).toHaveTextContent('Cash, USD250$250.00');
+    expect(cells(rows[0])).toEqual([
+      'VWRA',
+      '30 × $142.10',
+      'Price set for Oct 1, 2026',
+      '$4,263.00',
+      'Manual price',
+    ]);
+    expect(cells(rows[1])).toEqual(['Bond fund 2030', '4 × —', 'No price yet', '—']);
+    expect(cells(rows[2])).toEqual(['Cash, USD', '250', '$250.00']);
     const other = within(sample).getByRole('group', { name: 'IIS' });
     // Codex P2: a stored price without an exchange rate is not a missing price.
-    expect(within(other).getAllByRole('link')[1]).toHaveTextContent('Euro bond fund3 × ——No rate');
+    expect(cells(within(other).getAllByRole('link')[1])).toEqual([
+      'Euro bond fund',
+      '3 × —',
+      'No rate',
+      '—',
+    ]);
     expect(screen.getByRole('region', { name: 'Total at brokers' })).toHaveTextContent(
       'At brokers$5,934.001 broker · 2 accountsShare of net worth14.8%1 position without a price left out. 1 position without an exchange rate left out.',
     );
@@ -262,7 +276,13 @@ describe('BROKERS the Brokers page', () => {
     expect(within(tbank).getByText('2 accounts · synced via token')).toBeInTheDocument();
     const main = within(tbank).getByRole('group', { name: 'Main broker' });
     expect(within(main).getByTestId('account-total')).toHaveTextContent('$300.00');
-    expect(within(main).getByRole('link')).toHaveTextContent('SBER100 × $3.00$300.00');
+    expect(cells(within(main).getByRole('link'))).toEqual([
+      'SBER',
+      '100 × $3.00',
+      'Price set for Oct 1, 2026',
+      '$300.00',
+      'Manual price',
+    ]);
     // An account whose history is not imported yet is worth "—", not zero, and says why.
     const waiting = within(tbank).getByRole('group', { name: 'Brokerage' });
     expect(within(waiting).getByTestId('account-total')).toHaveTextContent(/^—$/);
@@ -314,7 +334,13 @@ describe('BROKERS the Brokers page', () => {
     const tbank = await screen.findByRole('region', { name: 'T-Bank' });
     const main = within(tbank).getByRole('group', { name: 'Main broker' });
     expect(main).toHaveTextContent('Connected. The T-Bank history is not imported yet.');
-    expect(within(main).getByRole('link')).toHaveTextContent('SBER100 × $3.00$300.00');
+    expect(cells(within(main).getByRole('link'))).toEqual([
+      'SBER',
+      '100 × $3.00',
+      'Price set for Oct 1, 2026',
+      '$300.00',
+      'Manual price',
+    ]);
     expect(within(tbank).getByTestId('broker-total')).toHaveTextContent(
       '$300.001 account waiting for the history import.',
     );
@@ -357,7 +383,7 @@ describe('BROKERS the Brokers page', () => {
     );
     renderPage();
     const sample = await screen.findByRole('region', { name: 'Sample Broker' });
-    expect(within(sample).getByRole('link')).toHaveTextContent('Cash, EUR300—No rate');
+    expect(cells(within(sample).getByRole('link'))).toEqual(['Cash, EUR', '300', 'No rate', '—']);
   });
 
   it('BROKER-ADD-FLOW opens the one Add broker account dialog from the empty page', async () => {
@@ -481,7 +507,13 @@ describe('BROKERS the Brokers page', () => {
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(write).toHaveBeenCalledTimes(1);
     const after = await screen.findByRole('link', { name: /SMPL/ });
-    expect(after).toHaveTextContent('SMPL10 × $1.20$12.00');
+    expect(cells(after)).toEqual([
+      'SMPL',
+      '10 × $1.20',
+      'Price set for Oct 1, 2026',
+      '$12.00',
+      'Manual price',
+    ]);
     const group = screen.getByRole('group', { name: 'Brokerage' });
     expect(group).not.toHaveTextContent('history import');
     expect(within(group).queryByRole('button', { name: 'Import history' })).toBeNull();
@@ -544,5 +576,88 @@ describe('BROKERS the Brokers page', () => {
     expect(summary).toHaveTextContent(
       'Share of net worth≈19.8%Estimated against the known net worth, which leaves out 2 assets without a price or exchange rate, 1 deposit without an exchange rate.',
     );
+  });
+});
+
+describe('BROKERS-ROW a position row has the columns of the prototype', () => {
+  it('BROKERS-ROW puts the name, quantity × price, when the price was set, the value and a Manual price badge in columns', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    renderPage();
+    const sample = await screen.findByRole('region', { name: 'Sample Broker' });
+    const [first] = within(
+      within(sample).getByRole('group', { name: 'Sample Broker' }),
+    ).getAllByRole('link');
+    expect(cells(first)).toEqual([
+      'VWRA',
+      '30 × $142.10',
+      'Price set for Oct 1, 2026',
+      '$4,263.00',
+      'Manual price',
+    ]);
+    expect(within(first).getByText('Manual price')).toHaveClass('ui-badge');
+  });
+
+  it('BROKERS-ROW names where a T-Bank price comes from and how old it is, with the security type and no Manual price badge', async () => {
+    const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(tbankMain, 'Main broker', 'broker', imported)],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      valuation([
+        asset(
+          7,
+          'Sample Bank',
+          [{ accountId: tbankMain, accountName: 'Main broker', quantity: '100', value: '300' }],
+          {
+            symbol: 'SMPL',
+            securityType: 'share',
+            price: { value: '3', observedAt: ago(9), source: 'tbank', status: 'fresh' },
+          },
+        ),
+        asset(
+          8,
+          'Sample Fund',
+          [{ accountId: tbankMain, accountName: 'Main broker', quantity: '5', value: '50' }],
+          {
+            symbol: 'SFND',
+            securityType: 'etf',
+            price: { value: '10', observedAt: ago(3 * 24 * 60), source: 'tbank', status: 'stale' },
+          },
+        ),
+      ]),
+    );
+    renderPage();
+    const tbank = await screen.findByRole('region', { name: 'T-Bank' });
+    const [share, fund] = within(tbank).getAllByRole('link');
+    expect(cells(share)).toEqual([
+      'Sample BankSMPL · Share',
+      '100 × $3.00',
+      'T-Bank · 9 min ago',
+      '$300.00',
+    ]);
+    expect(cells(fund)).toEqual([
+      'Sample FundSFND · Fund',
+      '5 × $10.00',
+      'T-Bank · stale, 3 d ago',
+      '$50.00',
+    ]);
+    expect(within(tbank).queryByText('Manual price')).toBeNull();
+  });
+
+  it("BROKERS-GROUP shows a one-account broker's rows right under its head, without repeating its name and total", async () => {
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [account(broker, 'Sample Broker', 'broker')],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(held));
+    renderPage();
+    const sample = await screen.findByRole('region', { name: 'Sample Broker' });
+    expect(within(sample).getAllByText('Sample Broker')).toHaveLength(1);
+    expect(within(sample).queryByTestId('account-total')).toBeNull();
+    expect(within(sample).getByTestId('broker-total')).toHaveTextContent(
+      '$4,513.001 position without a price left out.',
+    );
+    expect(within(sample).getAllByRole('link')).toHaveLength(3);
   });
 });

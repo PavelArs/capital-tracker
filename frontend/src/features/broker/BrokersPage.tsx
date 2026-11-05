@@ -1,20 +1,21 @@
 import type { AccountSummary } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
-import type { PortfolioValuation } from '@api/portfolio-valuation.api';
+import type { AssetValuation, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import Badge from '@/ui/Badge';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
 import { ErrorState } from '@/ui/ErrorState';
-import { ListRowText, rowClass } from '@/ui/ListRow';
 import PageIntro from '@/ui/PageIntro';
 import { Stat, Stats } from '@/ui/Stats';
 import { dayText } from '@/utils/dates';
 import { sumDecimals } from '@/utils/decimal';
+import { securityLabels } from '../portfolio/asset-parts';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
-import { money, price, quantity } from '../portfolio/format';
+import { money, price, priceNote, quantity, quoted } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { Icon } from '../shell/icons';
@@ -39,6 +40,34 @@ import ImportHistoryDialog from './ImportHistoryDialog';
 import '../shell/shell-page.css';
 import './broker.css';
 
+/**
+ * Where a position's price comes from: the day a price typed by hand is for, or the broker's price
+ * and its age (BPR-3). Cash needs no price; a price without a rate to the shown currency says so.
+ */
+function priceText(asset: AssetValuation, now: Date): string | null {
+  if (asset.missingPrice === 'no-rate') return 'No rate';
+  if (asset.assetType === 'fiat') return null;
+  const current = asset.price;
+  if (!current) return 'No price yet';
+  if (current.status === 'manual')
+    return current.observedAt ? `Price set for ${dayText(current.observedAt)}` : null;
+  if (quoted(asset)) return priceNote(asset, now);
+  return current.observedAt ? `Price of ${dayText(current.observedAt)}` : null;
+}
+
+/** "SBER · Share": the ticker unless it is the name, and the security type a T-Bank link names. */
+function caption(asset: AssetValuation): string | null {
+  const parts = [
+    asset.symbol && asset.symbol !== asset.name.toUpperCase() ? asset.symbol : null,
+    asset.securityType ? securityLabels[asset.securityType] : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
+ * BROKERS-ROW (prototype v8 Brokers): a position's name, quantity × price, where its price comes
+ * from, its value and, for a price typed by hand, a "Manual price" badge, in columns.
+ */
 function Position({
   position,
   portfolio,
@@ -51,33 +80,34 @@ function Position({
   const { asset } = position;
   const currency = portfolio.currency;
   const cash = asset.assetType === 'fiat';
-  const priced = asset.price?.observedAt ? `Price of ${dayText(asset.price.observedAt)}` : null;
+  const sub = cash ? null : caption(asset);
+  const note = priceText(asset, new Date());
   return (
     <li>
-      <Link className={rowClass()} to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
-        <AssetIcon
-          symbol={asset.symbol}
-          name={asset.name}
-          assetType={asset.assetType}
-          assetClass={heldClass(asset.holdings, classes)}
-          size="sm"
-        />
-        <ListRowText
-          title={cash ? `Cash, ${asset.symbol ?? asset.name}` : asset.name}
-          detail={
-            cash
-              ? quantity(position.quantity)
-              : `${asset.symbol && asset.symbol !== asset.name.toUpperCase() ? `${asset.symbol} · ` : ''}${quantity(position.quantity)} × ${price(asset.price?.value ?? null, currency)}`
-          }
-          amount={money(position.value, currency)}
-          value={
-            asset.missingPrice === 'no-rate'
-              ? 'No rate'
-              : cash
-                ? undefined
-                : (priced ?? 'No price yet')
-          }
-        />
+      <Link className="broker-row" to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}>
+        <span className="broker-row__asset">
+          <AssetIcon
+            symbol={asset.symbol}
+            name={asset.name}
+            assetType={asset.assetType}
+            assetClass={heldClass(asset.holdings, classes)}
+            size="sm"
+          />
+          <span>
+            <strong>{cash ? `Cash, ${asset.symbol ?? asset.name}` : asset.name}</strong>
+            {sub && <small>{sub}</small>}
+          </span>
+        </span>
+        <span className="broker-row__amount">
+          {cash
+            ? quantity(position.quantity)
+            : `${quantity(position.quantity)} × ${price(asset.price?.value ?? null, currency)}`}
+        </span>
+        {note && <span className="broker-row__price">{note}</span>}
+        <span className="broker-row__value ui-num">{money(position.value, currency)}</span>
+        {!cash && asset.price?.status === 'manual' && (
+          <Badge className="broker-row__badge">Manual price</Badge>
+        )}
       </Link>
     </li>
   );
@@ -93,28 +123,33 @@ function Account({
   onImport,
 }: {
   account: BrokerAccount;
-  /** The key of the broker card it is shown in. */
-  broker: string;
+  /** The broker card it is shown in. */
+  broker: BrokerGroup;
   portfolio: PortfolioValuation;
   onImport: (account: Importing) => void;
 }) {
-  const label = accountLabel(account, broker);
+  const label = accountLabel(account, broker.key);
   const missing = leftOut(account.unpriced, account.unrated);
+  // The broker's only account under the broker's own name: the card's head already shows its name,
+  // total and what that leaves out, so its positions follow the head as in the prototype.
+  const plain = broker.accounts.length === 1 && label === broker.name;
   return (
     <div
-      className="broker-group"
+      className={plain ? 'broker-group broker-group--plain' : 'broker-group'}
       role="group"
       aria-label={label}
       data-account={account.id}
       tabIndex={-1}
     >
-      <div className="broker-group__head">
-        <b>{label}</b>
-        <span className="broker-group__total" data-testid="account-total">
-          {account.valued ? money(account.value, portfolio.currency) : '—'}
-          {missing && <small>{missing}</small>}
-        </span>
-      </div>
+      {!plain && (
+        <div className="broker-group__head">
+          <b>{label}</b>
+          <span className="broker-group__total" data-testid="account-total">
+            {account.valued ? money(account.value, portfolio.currency) : '—'}
+            {missing && <small>{missing}</small>}
+          </span>
+        </div>
+      )}
       {account.pending && (
         <Banner
           tone="info"
@@ -135,7 +170,7 @@ function Account({
         </Banner>
       )}
       {account.positions.length ? (
-        <ul className="ui-rows">
+        <ul className="broker-rows">
           {account.positions.map((position) => (
             <Position key={position.asset.instrumentId} position={position} portfolio={portfolio} />
           ))}
@@ -187,7 +222,7 @@ function Broker({
           <Account
             key={account.id}
             account={account}
-            broker={group.key}
+            broker={group}
             portfolio={portfolio}
             onImport={onImport}
           />

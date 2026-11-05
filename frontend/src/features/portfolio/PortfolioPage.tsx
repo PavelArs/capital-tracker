@@ -14,7 +14,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
 import { AddDepositDialog } from '../deposits/DepositDialogs';
-import { accountsWithoutRate } from '../deposits/deposit-format';
+import { accountsWithoutRate, dateText, rateText as depositRate } from '../deposits/deposit-format';
 import AddPropertyDialog from '../property/AddPropertyDialog';
 import { estimateOverdue, propertiesOf, propertyTotal } from '../property/real-estate';
 import AssetIcon from '../shell/AssetIcon';
@@ -179,7 +179,21 @@ function BankAsset({
       {deposit.name}
     </Link>
   );
-  const detail = `${deposit.bank} · ${deposit.kind === 'account' ? 'Savings account' : 'Term deposit'}`;
+  // As in the prototype: the bank, the rate and, for a term deposit, when it ends (DEP-ACCOUNT).
+  const end = deposit.endDate ? `until ${dateText(deposit.endDate)}` : 'no end date';
+  // A long bank name wraps as it needs to; the rate and the date never split across lines.
+  const detail = (
+    <>
+      {deposit.bank} · <span className="portfolio-asset__part">{depositRate(deposit)}</span>
+      {deposit.kind !== 'account' && (
+        <>
+          {' · '}
+          <span className="portfolio-asset__part">{end}</span>
+        </>
+      )}
+    </>
+  );
+  const balance = money(deposit.balance, deposit.currency);
   if (phone)
     return (
       <li>
@@ -187,9 +201,9 @@ function BankAsset({
           <Icon name="bank" />
           <ListRowText
             title={link}
-            detail={detail}
+            detail={<span className="ui-row__detail">{detail}</span>}
             amount={money(deposit.values[currency], currency)}
-            value={`${quantity(deposit.balance)} ${deposit.currency}`}
+            value={balance}
           />
         </div>
       </li>
@@ -201,23 +215,63 @@ function BankAsset({
           <Icon name="bank" />
           <span className="portfolio-asset__text">
             {link}
-            <span className="portfolio-asset__ticker">{detail}</span>
+            <span className="portfolio-asset__ticker portfolio-asset__ticker--wrap">{detail}</span>
           </span>
         </span>
       </td>
-      <td className="ui-num">
-        {quantity(deposit.balance)} {deposit.currency}
-      </td>
+      <td className="ui-num">{balance}</td>
       <td className="ui-num">{DASH}</td>
       <td className="ui-num ui-strong">{money(deposit.values[currency], currency)}</td>
       <td className="ui-num">
         <AllocationShare value={deposit.allocationPercent} estimated={estimated} />
       </td>
       <td className="ui-num">{DASH}</td>
-      <td className="ui-num">{DASH}</td>
+      <td className="ui-num">
+        <BankInterest deposit={deposit} />
+      </td>
       <td className="ui-num">{DASH}</td>
     </tr>
   );
+}
+
+/**
+ * PORTFOLIO-BANK-INTEREST (prototype v8 Portfolio): where an asset shows its P&L, a bank product
+ * shows the interest it earned, in its own currency since no rate converts it here. Under Real it
+ * is the interest left after inflation, never the nominal figure; uncounted interest is a dash.
+ */
+function BankInterest({ deposit }: { deposit: Deposit }) {
+  const [view] = useValueView();
+  const [basis] = useInflationBasis();
+  const shown = shownInterest(deposit, view === 'real' ? basis : null);
+  if (shown.amount === null) return <>{DASH}</>;
+  return (
+    <>
+      <span className={toneClass(shown.amount)}>
+        {shown.estimated ? '≈' : ''}
+        {money(shown.amount, deposit.currency, true)}
+      </span>
+      <span className="ui-sub">{shown.real ? 'after inflation' : 'interest'}</span>
+    </>
+  );
+}
+
+/**
+ * The interest a bank product's P&L cell shows, in the product's currency: under Real (`real` is
+ * the basis), what is left after inflation; null where the cell shows a dash.
+ */
+function shownInterest(
+  deposit: Deposit,
+  real: InflationBasis | null,
+): { amount: string | null; estimated: boolean; real: boolean } {
+  if (real !== null && deposit.real !== undefined) {
+    const after = deposit.real[real];
+    return { amount: after?.gain ?? null, estimated: after?.estimated ?? false, real: true };
+  }
+  return {
+    amount: deposit.interestMissing ? null : (deposit.interestEarned ?? null),
+    estimated: false,
+    real: false,
+  };
 }
 
 /** A group's name and share, and its subtotal on the right, marked when a value is missing. */
@@ -321,16 +375,34 @@ export function realProfit(
 }
 
 /** Bank products use the same known-first ordering; columns they do not have tie by name. */
-function sortBankProducts(rows: Deposit[], sort: AssetSort, currency: AccountingCurrency) {
+function sortBankProducts(
+  rows: Deposit[],
+  sort: AssetSort,
+  currency: AccountingCurrency,
+  /** The inflation basis the P&L column reads under Real; null under Nominal. */
+  real: InflationBasis | null,
+) {
   const byName = (a: Deposit, b: Deposit) =>
     a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
   const direction = sort.direction === 'asc' ? 1 : -1;
+  // P&L: the interest shown, in the table's currency at the rate the product's value uses, so
+  // rubles and euros compare. The float only orders the rows; it is never shown. A product in
+  // another currency with no balance gives no rate, so it sorts with the uncounted ones.
+  const interest = (deposit: Deposit) => {
+    const amount = shownInterest(deposit, real).amount;
+    if (amount === null || deposit.currency === currency) return amount;
+    const value = deposit.values[currency];
+    if (value === null || Number(deposit.balance) === 0) return null;
+    return ((Number(amount) * Number(value)) / Number(deposit.balance)).toFixed(8);
+  };
   const value = (deposit: Deposit) =>
     sort.key === 'amount'
       ? deposit.balance
       : sort.key === 'value' || sort.key === 'allocation'
         ? deposit.values[currency]
-        : null;
+        : sort.key === 'pnl'
+          ? interest(deposit)
+          : null;
   return [...rows].sort((a, b) => {
     if (sort.key === 'name') return direction * byName(a, b);
     const left = value(a);
@@ -1010,6 +1082,7 @@ export default function PortfolioPage() {
     ),
     shown,
     portfolio?.currency ?? 'USD',
+    view === 'real' ? basis : null,
   );
   // What every share is of: the net worth, or its known part as an estimate.
   const base = portfolio && shareBase(portfolio);
