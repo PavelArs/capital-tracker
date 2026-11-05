@@ -594,16 +594,17 @@ export default function DashboardPage() {
             </span>
             <div className="ui-toolbar">
               <div className="dashboard-chart-card__title">
+                {/* The legend leads the card as in the prototype; the heading stays for readers. */}
+                <h2 className="ui-sr">Capital</h2>
                 <div className="dashboard-chart-card__name">
-                  <h2>Capital</h2>
+                  <div role="group" aria-label="Chart legend">
+                    <Legend items={legend(chosen === null ? undefined : `${chosenLabel} value`)} />
+                  </div>
                   <AboutChart>
                     Snapshots at stored prices and Bank of Russia rates: hourly for the last week,
                     daily since Jan 1, 2025, in UTC. Net invested is the money put in minus the
                     money taken out; the gap to the value line is your profit or loss.
                   </AboutChart>
-                </div>
-                <div role="group" aria-label="Chart legend">
-                  <Legend items={legend(chosen === null ? undefined : `${chosenLabel} value`)} />
                 </div>
               </div>
               {tabs}
@@ -672,7 +673,7 @@ export default function DashboardPage() {
               asked={asked}
             />
             {portfolio !== null ? (
-              <Allocation portfolio={portfolio} limit={6} />
+              <Allocation portfolio={portfolio} limit={6} places={1} />
             ) : (
               !portfolioFailed && <AllocationLoading />
             )}

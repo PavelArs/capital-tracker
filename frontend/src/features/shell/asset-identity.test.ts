@@ -11,4 +11,11 @@ describe('asset identity colours', () => {
     expect(assetIdentity(fund).color).toBe('var(--c-other)');
     expect(assetClassColors).toEqual({ broker: 'var(--c-broker)', property: 'var(--c-prop)' });
   });
+
+  it('DASH-LAYOUT draws a property as a house and keeps the first letter for everything else', () => {
+    const flat = { symbol: null, name: 'Studio', assetType: 'manual' as const };
+    expect(assetIdentity({ ...flat, assetClass: 'property' }).glyph).toBe('⌂');
+    expect(assetIdentity({ ...flat, assetClass: 'broker' }).glyph).toBe('S');
+    expect(assetIdentity(flat).glyph).toBe('S');
+  });
 });

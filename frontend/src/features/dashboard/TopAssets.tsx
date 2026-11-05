@@ -1,3 +1,4 @@
+import type { AccountClass } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type {
   AccountingCurrency,
@@ -11,7 +12,10 @@ import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
 import { ListRowText, rowClass } from '@/ui/ListRow';
 import { useNarrowScreen } from '@/ui/useMediaQuery';
+import { dayText, moscowDate } from '@/utils/dates';
+import DepositIcon from '../deposits/DepositIcon';
 import { dateText, rateText } from '../deposits/deposit-format';
+import { shareText } from '../portfolio/Allocation';
 import { Change } from '../portfolio/asset-parts';
 import { withCurrency } from '../portfolio/currency';
 import {
@@ -26,6 +30,7 @@ import {
   sourceLabels,
   tone,
 } from '../portfolio/format';
+import { shareText as ownerShare } from '../property/real-estate';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { estimateMark, shareBase } from '../shell/net-worth';
@@ -104,15 +109,33 @@ function DepositTerms({ id }: { id: string }) {
   return `${deposit.bank} · ${rateText(deposit)} · ${until}`;
 }
 
-function DepositIcon({ name }: { name: string }) {
-  return (
-    <span
-      className="asset-icon asset-icon--md dashboard-assets__deposit"
-      data-glyph={name.charAt(0).toUpperCase()}
-      aria-hidden="true"
-    />
-  );
+/**
+ * The icon every screen gives a bank product, read from the deposits list once it is here; until
+ * then the % of a term deposit.
+ */
+function TopDepositIcon({ id }: { id: string }) {
+  const { data } = useCachedRead(cachedReads.deposits);
+  const deposit = data?.items.find((item) => item.id === id);
+  return <DepositIcon deposit={deposit ?? { kind: 'term-deposit', currency: 'USD' }} />;
 }
+
+/**
+ * What a property is held at: "Estimate Aug 1, 2026", with the owner's part first when it is
+ * held in part. It has no price per unit, so the quantity would only read "1".
+ */
+function estimateText(asset: AssetValuation): string | null {
+  const observed = asset.price?.observedAt;
+  if (!observed) return null;
+  const share = Math.round(Number(asset.quantity) * 1e8) / 1e6;
+  const estimate = dayText(moscowDate(observed));
+  return share > 0 && share < 100
+    ? `${ownerShare(share)} · estimate ${estimate}`
+    : `Estimate ${estimate}`;
+}
+
+/** The line under an asset's name: its quantity, or for a property the date it was valued. */
+const detailOf = (asset: AssetValuation, held: AccountClass | null, chains: TokenChains) =>
+  (held === 'property' ? estimateText(asset) : null) ?? amount(asset, chains);
 
 const pathOf = (holding: TopHolding, asked: AccountingCurrency | undefined) =>
   withCurrency(
@@ -159,7 +182,7 @@ function AssetCells({
       <td className="ui-num ui-strong">{money(asset.value, currency)}</td>
       <td className="ui-num">
         {asset.allocationPercent === null ? '' : mark}
-        {percent(asset.allocationPercent, false)}
+        {shareText(asset.allocationPercent, 1)}
       </td>
     </>
   );
@@ -210,10 +233,12 @@ function Table({
         <tbody>
           {holdings.map((holding) => {
             const to = pathOf(holding, asked);
+            const held =
+              holding.kind === 'asset' ? heldClass(holding.asset.holdings, classes) : null;
             const [icon, name, detail]: [ReactNode, string, ReactNode] =
               holding.kind === 'deposit'
                 ? [
-                    <DepositIcon key="icon" name={holding.deposit.name} />,
+                    <TopDepositIcon key="icon" id={holding.deposit.id} />,
                     holding.deposit.name,
                     <DepositTerms key="terms" id={holding.deposit.id} />,
                   ]
@@ -223,11 +248,11 @@ function Table({
                       symbol={holding.asset.symbol}
                       name={holding.asset.name}
                       assetType={holding.asset.assetType}
-                      assetClass={heldClass(holding.asset.holdings, classes)}
+                      assetClass={held}
                       network={onlyChain(holding.asset.symbol, chains)}
                     />,
                     holding.asset.name,
-                    amount(holding.asset, chains),
+                    detailOf(holding.asset, held, chains),
                   ];
             return (
               <tr key={holding.key} onClick={open(to)}>
@@ -251,7 +276,7 @@ function Table({
                     <td className="ui-num ui-strong">{money(holding.deposit.value, currency)}</td>
                     <td className="ui-num">
                       {holding.deposit.share === null ? '' : mark}
-                      {percent(holding.deposit.share, false)}
+                      {shareText(holding.deposit.share, 1)}
                     </td>
                   </>
                 ) : (
@@ -299,7 +324,7 @@ function List({
           <Link className={rowClass()} to={pathOf(holding, asked)}>
             {holding.kind === 'deposit' ? (
               <>
-                <DepositIcon name={holding.deposit.name} />
+                <TopDepositIcon id={holding.deposit.id} />
                 <ListRowText
                   title={holding.deposit.name}
                   detail={
@@ -322,7 +347,11 @@ function List({
                 />
                 <ListRowText
                   title={holding.asset.name}
-                  detail={amount(holding.asset, chains)}
+                  detail={detailOf(
+                    holding.asset,
+                    heldClass(holding.asset.holdings, classes),
+                    chains,
+                  )}
                   amount={money(holding.asset.value, currency)}
                   value={phoneValue(holding.asset, now)}
                 />
