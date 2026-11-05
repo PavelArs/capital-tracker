@@ -7,6 +7,7 @@ import {
   pairFits,
   planTransfer,
   proposeTransferPairs,
+  proposeTransferPairsBounded,
   sameTransaction,
   type TimedLeg,
 } from './chain-transfer';
@@ -417,5 +418,117 @@ describe('XFER-PROPOSED: a withdrawal and a receipt that name different transact
     const pairs = proposeTransferPairs([olderIn, olderOut, into(), out()]);
     expect(pairs.map((pair) => pair.outgoing.txid)).toEqual([txid(1), txid(4)]);
     expect(pairs.map((pair) => pair.incoming.txid)).toEqual([txid(2), txid(5)]);
+  });
+
+  // The proposals as they were computed before the work bound, kept as the oracle.
+  function reference(legs: TimedLeg[]) {
+    const open = legs.filter(
+      (leg) =>
+        leg.receivedUnits !== leg.sentUnits &&
+        leg.accountId !== null &&
+        (leg.status === null || leg.status === 'unclassified'),
+    );
+    const edges: { out: TimedLeg; in: TimedLeg; gap: number; lost: bigint }[] = [];
+    for (const left of open)
+      for (const right of open)
+        if (
+          BigInt(left.receivedUnits) < BigInt(left.sentUnits) &&
+          BigInt(right.receivedUnits) > BigInt(right.sentUnits) &&
+          !sameTransaction(left, right) &&
+          pairFits(left, right)
+        )
+          edges.push({
+            out: left,
+            in: right,
+            gap: +right.blockTime - +left.blockTime,
+            lost: BigInt(left.sentUnits) - BigInt(right.receivedUnits),
+          });
+    const key = (edge: (typeof edges)[number]) => [edge.gap, edge.lost] as const;
+    const bestOf = (side: 'out' | 'in') => {
+      const best = new Map<TimedLeg, (typeof edges)[number]>();
+      for (const leg of new Set(edges.map((edge) => edge[side]))) {
+        const mine = edges
+          .filter((edge) => edge[side] === leg)
+          .sort((a, b) => a.gap - b.gap || (a.lost < b.lost ? -1 : a.lost > b.lost ? 1 : 0));
+        const [first, second] = mine;
+        if (!second || key(first)[0] !== key(second)[0] || key(first)[1] !== key(second)[1])
+          best.set(leg, first);
+      }
+      return best;
+    };
+    const ofOut = bestOf('out');
+    const ofIn = bestOf('in');
+    return edges
+      .filter((edge) => ofOut.get(edge.out) === edge && ofIn.get(edge.in) === edge)
+      .map((edge) => `${edge.out.txid}>${edge.in.txid}`)
+      .sort();
+  }
+
+  it('keeps the proposals of the unbounded algorithm on varied synthetic histories', () => {
+    let seed = 7;
+    const random = (limit: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % limit;
+    };
+    for (let round = 0; round < 40; round++) {
+      const legs: TimedLeg[] = [];
+      for (let n = 0; n < 24; n++) {
+        const amount = 100_000_000n + BigInt(random(4)) * 500_000n;
+        const outgoing = random(2) === 0;
+        legs.push(
+          outgoing
+            ? out({
+                txid: txid(100 + n),
+                sentUnits: amount.toString(),
+                blockTime: later(random(40) * 30),
+                accountId: random(3) === 0 ? accountB : accountA,
+              })
+            : into({
+                txid: txid(100 + n),
+                receivedUnits: (amount - BigInt(random(3)) * 500_000n).toString(),
+                blockTime: later(random(40) * 30),
+                accountId: random(3) === 0 ? accountA : accountB,
+              }),
+        );
+      }
+      const found = proposeTransferPairs(legs).map(
+        (pair) => `${pair.outgoing.txid}>${pair.incoming.txid}`,
+      );
+      expect(found.sort()).toEqual(reference(legs));
+    }
+  });
+
+  it('XFER-PROPOSED-BOUND: a coin with a dense open history offers nothing and the others still do', () => {
+    // 800 withdrawals and 800 receipts of one coin inside one window: 640 000 candidate pairs,
+    // above the bound. A clean pair of another coin is still proposed.
+    const dense: TimedLeg[] = [];
+    for (let n = 0; n < 800; n++) {
+      dense.push(
+        out({ txid: txid(1000 + n) }),
+        into({ txid: txid(3000 + n), blockTime: later(30) }),
+      );
+    }
+    const clean = [
+      out({ txid: txid(9001), asset: 'USDC' }),
+      into({ txid: txid(9002), asset: 'USDC' }),
+    ];
+    const { proposals, limited } = proposeTransferPairsBounded([...dense, ...clean]);
+    expect(limited).toEqual(['USDT']);
+    expect(proposals.map((pair) => pair.outgoing.txid)).toEqual([txid(9001)]);
+    // Every transaction stays as it was: nothing was removed from the input.
+    expect(dense).toHaveLength(1600);
+  });
+
+  it('XFER-PROPOSED-BOUND: a crowded coin does not starve another', () => {
+    const legs: TimedLeg[] = [];
+    for (let n = 0; n < 800; n++)
+      legs.push(
+        out({ txid: txid(1000 + n), asset: 'USDC' }),
+        into({ txid: txid(3000 + n), asset: 'USDC', blockTime: later(30) }),
+      );
+    legs.push(out({ txid: txid(9001) }), into({ txid: txid(9002) }));
+    const { proposals, limited } = proposeTransferPairsBounded(legs);
+    expect(limited).toEqual(['USDC']);
+    expect(proposals).toHaveLength(1);
   });
 });

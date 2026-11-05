@@ -92,7 +92,7 @@ import {
   pairAmounts,
   pairFits,
   planTransfer,
-  proposeTransferPairs,
+  proposeTransferPairsBounded,
   sameTransaction,
   type TimedLeg,
 } from './chain-transfer';
@@ -880,10 +880,15 @@ export class ChainClassificationService {
   async transferProposals(ownerId: string) {
     const owner = parseUuid(ownerId);
     const rows = await this.openLegs(this.source.manager, owner);
+    const { proposals, limited } = proposeTransferPairsBounded(rows);
+    if (limited.length > 0)
+      this.logger.warn(
+        `Transfer proposals skipped for ${limited.length} coin(s) with too many open candidates`,
+      );
     return {
       windowHours: PAIR_WINDOW_HOURS,
       feePercent: Number(PAIR_FEE_PERCENT),
-      proposals: proposeTransferPairs(rows).map((proposal) => ({
+      proposals: proposals.map((proposal) => ({
         ...pairAmounts(proposal),
         outgoing: placed(proposal.outgoing),
         incoming: placed(proposal.incoming),

@@ -190,3 +190,34 @@ describe('CLS-DUPLICATE what a record says as an answer', () => {
     ).toBeNull();
   });
 });
+
+describe('CLS-DUPLICATE-BOUND the work a proposal read does', () => {
+  const leg = (id: string, over: Partial<Movement> = {}) => ({ ...move(over), id });
+
+  it('offers nothing for an account, coin and way whose candidate pairs exceed the bound', () => {
+    // 800 transactions against 800 records inside one window: 640 000 candidates.
+    const legs = Array.from({ length: 800 }, (_unused, n) => leg(`l${n}`));
+    const records = Array.from({ length: 800 }, (_unused, n) => leg(`r${n}`));
+    expect(proposeDuplicates(legs, records)).toEqual([]);
+    // Another coin of the same account is still read.
+    const clean = proposeDuplicates(
+      [...legs, leg('lx', { coin: 'ETH' })],
+      [...records, leg('rx', { coin: 'ETH', at: at(1) })],
+    );
+    expect(clean.map((pair) => [pair.leg.id, pair.record.id])).toEqual([['lx', 'rx']]);
+  });
+
+  it('keeps the closest-match rule when records lie on both sides of the window', () => {
+    const legs = [leg('l1'), leg('l2', { at: at(100), atoms: 50n * unit })];
+    const records = [
+      leg('far', { at: at(-DUPLICATE_WINDOW_HOURS - 5) }),
+      leg('near', { at: at(2) }),
+      leg('other', { at: at(101), atoms: 50n * unit }),
+    ];
+    const found = proposeDuplicates(legs, records);
+    expect(found.map((pair) => [pair.leg.id, pair.record.id])).toEqual([
+      ['l2', 'other'],
+      ['l1', 'near'],
+    ]);
+  });
+});
