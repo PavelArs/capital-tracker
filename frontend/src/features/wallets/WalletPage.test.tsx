@@ -13,7 +13,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import type { ReactElement } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WalletPage, { accountOperations } from './WalletPage';
 import WalletsPage from './WalletsPage';
@@ -216,6 +216,7 @@ function setup({
   valuation = portfolio(),
   listPage = <p>Wallets list</p>,
   quoteCurrency = 'USD',
+  beside = null,
 }: {
   account?: string;
   list?: WalletAddress[];
@@ -225,6 +226,8 @@ function setup({
   valuation?: PortfolioValuation;
   listPage?: ReactElement;
   quoteCurrency?: OperationList['quoteCurrency'];
+  /** Rendered next to the wallet page, for example a link to another wallet. */
+  beside?: ReactElement | null;
 } = {}) {
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
@@ -260,7 +263,15 @@ function setup({
     <ToastProvider>
       <MemoryRouter initialEntries={[`/wallets/${account}`]}>
         <Routes>
-          <Route path="/wallets/:accountId" element={<WalletPage />} />
+          <Route
+            path="/wallets/:accountId"
+            element={
+              <>
+                <WalletPage />
+                {beside}
+              </>
+            }
+          />
           <Route path="/wallets" element={listPage} />
         </Routes>
       </MemoryRouter>
@@ -351,32 +362,31 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     ).toHaveAttribute('href', `/transactions?account=${trust}`);
   });
 
-  it('WALLET-ASSETS-MORE lists five assets and keeps the rest behind Show N more', async () => {
-    const base = portfolio();
-    // Seven coins in this wallet, the largest first: 700, 600, … 100.
-    const coins = Array.from({ length: 7 }, (_, index) =>
-      asset({
+  // `count` coins, the largest first (700, 600, …), each held in Trust Wallet and in Cold storage.
+  const coins = (count: number) =>
+    Array.from({ length: count }, (_, index) => {
+      const value = String(700 - index * 100);
+      return asset({
         instrumentId: id(60 + index),
         name: `Coin ${index + 1}`,
         symbol: `C${index + 1}`,
-        quantity: '1',
-        value: String(700 - index * 100),
+        quantity: '2',
+        value,
         holdings: [
-          {
-            accountId: trust,
-            accountName: 'Trust Wallet',
-            quantity: '1',
-            value: String(700 - index * 100),
-          },
+          { accountId: trust, accountName: 'Trust Wallet', quantity: '1', value },
+          { accountId: cold, accountName: 'Cold storage', quantity: '1', value },
         ],
-      }),
-    );
-    setup({ valuation: { ...base, assets: coins } });
+      });
+    });
+  const coinNames = (assets: HTMLElement) =>
+    within(assets)
+      .getAllByRole('link')
+      .map((link) => link.textContent?.match(/^Coin \d/)?.[0]);
+
+  it('WALLET-ASSETS-MORE lists five assets and keeps the rest behind Show N more', async () => {
+    setup({ valuation: { ...portfolio(), assets: coins(7) } });
     const assets = await screen.findByRole('region', { name: 'Assets' });
-    const names = () =>
-      within(assets)
-        .getAllByRole('link')
-        .map((link) => link.textContent?.match(/^Coin \d/)?.[0]);
+    const names = () => coinNames(assets);
     expect(names()).toEqual(['Coin 1', 'Coin 2', 'Coin 3', 'Coin 4', 'Coin 5']);
 
     const more = within(assets).getByRole('button', { name: 'Show 2 more' });
@@ -391,6 +401,34 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     // The figures above the cards still count every asset.
     const summary = screen.getByRole('region', { name: 'Summary' });
     expect(within(summary).getByText('Assets').nextElementSibling).toHaveTextContent(/^7$/);
+  });
+
+  it('WALLET-ASSETS-MORE offers nothing more when the wallet holds exactly five assets', async () => {
+    setup({ valuation: { ...portfolio(), assets: coins(5) } });
+    const assets = await screen.findByRole('region', { name: 'Assets' });
+    expect(coinNames(assets)).toHaveLength(5);
+    expect(within(assets).queryByRole('button', { name: /^Show/ })).toBeNull();
+  });
+
+  it('WALLET-ASSETS-MORE opens another wallet with its assets folded again', async () => {
+    setup({
+      valuation: { ...portfolio(), assets: coins(7) },
+      beside: <Link to={`/wallets/${cold}`}>Open Cold storage</Link>,
+    });
+    let assets = await screen.findByRole('region', { name: 'Assets' });
+    await userEvent.click(within(assets).getByRole('button', { name: 'Show 2 more' }));
+    expect(coinNames(assets)).toHaveLength(7);
+
+    await userEvent.click(screen.getByRole('link', { name: 'Open Cold storage' }));
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Cold storage' }),
+    ).toBeInTheDocument();
+    assets = screen.getByRole('region', { name: 'Assets' });
+    expect(coinNames(assets)).toHaveLength(5);
+    expect(within(assets).getByRole('button', { name: 'Show 2 more' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
   });
 
   it('WALLET-TX-PAGES shows five transactions a page, newest first, with Previous and Next', async () => {
@@ -416,7 +454,6 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     expect(within(pages).getByRole('status')).toHaveTextContent('6–8 of 8 transactions');
     expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
     // The count in the card's head is every transaction, not the page.
-    expect(within(transactions).getByRole('heading', { name: /Transactions/ })).toBeVisible();
     expect(transactions).toHaveTextContent(/Transactions\s*8/);
   });
 

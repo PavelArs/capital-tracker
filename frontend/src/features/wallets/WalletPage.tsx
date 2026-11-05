@@ -273,8 +273,10 @@ export default function WalletPage() {
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
   // PAGES: twenty addresses a page.
   const pagedAddresses = useInfinite(own);
-  // WALLET-ASSETS-MORE: five assets, the rest behind "Show N more".
-  const [allAssets, setAllAssets] = useState(false);
+  // WALLET-ASSETS-MORE: five assets, the rest behind "Show N more". The list unfolds for one
+  // wallet: another wallet's page opens folded.
+  const [unfolded, setUnfolded] = useState<string | null>(null);
+  const allAssets = unfolded === accountId;
   const shownHoldings = allAssets ? holdings : holdings.slice(0, SHORT_PAGE);
   const refresh = () => {
     void load(true);
@@ -432,7 +434,7 @@ export default function WalletPage() {
                   variant="link"
                   className="wallets-all"
                   aria-expanded={allAssets}
-                  onClick={() => setAllAssets((now) => !now)}
+                  onClick={() => setUnfolded(allAssets ? null : accountId)}
                 >
                   {allAssets ? 'Show less' : `Show ${holdings.length - SHORT_PAGE} more`}
                 </Button>
