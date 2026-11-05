@@ -23,12 +23,18 @@ const months = Array.from({ length: 13 }, (_, i) => {
   return { month, changePercent: '0.25' };
 });
 
-function service(complete = true, inflation: { personal?: string } | null = null) {
+function service(
+  complete = true,
+  inflation: {
+    personal?: string;
+    manual?: { month: string; changePercent: string }[];
+  } | null = null,
+) {
   const source = {
     manager: {
       query: async (sql: string) => {
         if (sql.includes('inflation_months')) return inflation ? months : [];
-        if (sql.includes('inflation_manual_months')) return [];
+        if (sql.includes('inflation_manual_months')) return inflation?.manual ?? [];
         if (sql.includes('inflation_personal_rates'))
           return inflation?.personal ? [{ annualPercent: inflation.personal }] : [];
         return [{ ...row, deadline: addMonths(today, 36) }];
@@ -363,6 +369,24 @@ it("GOAL-REAL-SERVICE reads the goal in today's money by the inflation of its cu
     monthlyContribution: '100',
   });
   expect(preview.real.personal?.inflationPercent).toBe('5');
+});
+
+it('GOAL-REAL-FROM says what the official rate rests on: published months, typed-in ones, estimates', async () => {
+  const from = async (manual?: { month: string; changePercent: string }[]) =>
+    (await service(true, { personal: '5', manual }).list(owner)).items[0].real;
+  // Published months alone: nothing laid over them.
+  const published = await from();
+  expect(published.official?.from).toEqual({ ownMonths: false, estimated: false });
+  expect(published.personal?.from).toEqual({ ownMonths: false, estimated: false });
+  // The owner's month inside the latest twelve replaces a published one.
+  const typed = await from([{ month: '2026-09', changePercent: '0.6' }]);
+  expect(typed.official?.from).toEqual({ ownMonths: true, estimated: false });
+  expect(Number(typed.official?.inflationPercent)).toBeGreaterThan(3.1);
+  // A typed month after a gap leaves the months between estimated.
+  const gap = await from([{ month: '2026-12', changePercent: '0.3' }]);
+  expect(gap.official?.from).toEqual({ ownMonths: true, estimated: true });
+  // The owner's own rate is not a derived figure.
+  expect(gap.personal?.from).toEqual({ ownMonths: false, estimated: false });
 });
 
 it('GOAL-REAL-SERVICE has no real reading without an inflation figure, not the nominal one', async () => {

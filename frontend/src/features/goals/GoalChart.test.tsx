@@ -414,6 +414,7 @@ describe('GOAL-CHART goal chart', () => {
 describe('GOAL-REAL-CHART the chart in the mode that is chosen', () => {
   const real = {
     inflationPercent: '9.5',
+    from: { ownMonths: false, estimated: false },
     returnPercent: '4.1096',
     status: 'behind' as const,
     scenarios: (['pessimistic', 'base', 'optimistic'] as const).map((key, index) => ({

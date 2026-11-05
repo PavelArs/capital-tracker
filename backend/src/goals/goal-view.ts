@@ -120,10 +120,21 @@ function progressOf(value: Exact, target: Exact) {
   };
 }
 
+/**
+ * What a yearly inflation figure rests on beyond the published months: months the owner typed in
+ * and months estimated at the trend. An effective rate is not an official one (GOAL-REAL-FROM).
+ */
+export interface InflationFrom {
+  ownMonths: boolean;
+  estimated: boolean;
+}
+
 /** The projection in today's money: the returns count after inflation (GOAL-REAL). */
 export interface GoalReal {
   /** The yearly inflation the returns were corrected by, in percent. */
   inflationPercent: string;
+  /** What that figure rests on; the owner's own rate rests on nothing derived. */
+  from: InflationFrom;
   /** The base case's return after that inflation, in percent; known even with no cases. */
   returnPercent: string;
   status: GoalStatus;
@@ -134,7 +145,11 @@ export interface GoalReal {
 export interface YearlyInflation {
   official: number | null;
   personal: number | null;
+  /** What the official figure rests on; absent: published months alone. */
+  officialFrom?: InflationFrom;
 }
+
+const PUBLISHED: InflationFrom = { ownMonths: false, estimated: false };
 
 /** The yearly return of a case once the yearly inflation is taken off it, in percent. */
 export const realReturnPercent = (yearly: number, inflation: number) =>
@@ -223,13 +238,14 @@ export function goalView(
   const progress =
     now.value === null ? null : progressOf(exact(now.value), exact(row.targetAmount));
   const nominal = scenarioReturns(Number(row.expectedReturnPercent));
-  const reading = (rate: number | null | undefined): GoalReal | null => {
+  const reading = (rate: number | null | undefined, from: InflationFrom): GoalReal | null => {
     if (rate === null || rate === undefined || !Number.isFinite(rate) || rate <= -100) return null;
     const returns = Object.fromEntries(
       Object.entries(nominal).map(([key, yearly]) => [key, realReturnPercent(yearly, rate)]),
     ) as Record<ScenarioKey, number>;
     return {
       inflationPercent: percent(rate),
+      from,
       returnPercent: percent(returns.base),
       ...projection(row, now, today, progress, returns),
     };
@@ -254,6 +270,9 @@ export function goalView(
     },
     status,
     scenarios,
-    real: { official: reading(inflation?.official), personal: reading(inflation?.personal) },
+    real: {
+      official: reading(inflation?.official, inflation?.officialFrom ?? PUBLISHED),
+      personal: reading(inflation?.personal, PUBLISHED),
+    },
   };
 }

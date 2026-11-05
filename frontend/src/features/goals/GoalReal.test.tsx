@@ -62,12 +62,14 @@ const flat: Goal = {
   real: {
     official: {
       inflationPercent: '9.5',
+      from: { ownMonths: false, estimated: false },
       returnPercent: '4.1096',
       status: 'behind',
       scenarios: official,
     },
     personal: {
       inflationPercent: '7',
+      from: { ownMonths: false, estimated: false },
       returnPercent: '6.5421',
       status: 'behind',
       scenarios: personal,
@@ -172,6 +174,38 @@ describe('GOAL-REAL-LIST: the goals in the mode that is chosen', () => {
         'Behind by ₽300,000 a month. Reaching it by Dec 2099 needs ₽450,000 a month; at ₽150,000 it takes until Jun 2033.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('GOAL-REAL-FROM does not call the rate official when typed-in or estimated months are in it', async () => {
+    const official = flat.real?.official as NonNullable<typeof flat.real>['official'];
+    const withFrom = (from: { ownMonths: boolean; estimated: boolean }): Goal => ({
+      ...flat,
+      real: { official: official && { ...official, from }, personal: flat.real?.personal ?? null },
+    });
+    const note = async (from: { ownMonths: boolean; estimated: boolean }) => {
+      vi.spyOn(goalsApi, 'list').mockResolvedValue({
+        asOf: '2026-10-13',
+        items: [withFrom(from)],
+      });
+      setValueView('real');
+      withRouter(null);
+      const text = (await screen.findByText(/^In today's money\. Targets keep/)).textContent ?? '';
+      cleanup();
+      forgetReads();
+      return text;
+    };
+    expect(await note({ ownMonths: false, estimated: false })).toMatch(
+      /RUB 9\.5% a year, official, last 12 months/,
+    );
+    const typed = await note({ ownMonths: true, estimated: false });
+    expect(typed).toMatch(/RUB 9\.5% \(official with months you typed in\) a year, last 12 months/);
+    expect(typed).not.toMatch(/a year, official/);
+    expect(await note({ ownMonths: false, estimated: true })).toMatch(
+      /RUB 9\.5% \(official with estimated months\)/,
+    );
+    expect(await note({ ownMonths: true, estimated: true })).toMatch(
+      /RUB 9\.5% \(official with months you typed in and estimated ones\)/,
+    );
   });
 
   it('GOAL-REAL-UNKNOWN shows why there is no real figure, not the nominal verdict', async () => {

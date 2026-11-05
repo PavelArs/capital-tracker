@@ -103,13 +103,26 @@ export function RealNote({
   goals: readonly GoalPreview[];
   basis: InflationBasis;
 }) {
-  const rates = new Map<GoalCurrency, string>();
+  const rates = new Map<GoalCurrency, GoalReal>();
   for (const goal of goals) {
     const real = goal.real?.[basis];
-    if (real) rates.set(goal.currency, real.inflationPercent);
+    if (real) rates.set(goal.currency, real);
   }
-  const how = basis === 'official' ? 'official, last 12 months' : 'your own rate';
-  const list = [...rates].map(([currency, percent]) => `${currency} ${inflationText(percent)}%`);
+  // An effective rate is not an official one: say when typed-in or estimated months are in it.
+  const derived = (real: GoalReal) => {
+    const { ownMonths, estimated } = real.from;
+    if (basis !== 'official' || !(ownMonths || estimated)) return '';
+    const what = ownMonths
+      ? `months you typed in${estimated ? ' and estimated ones' : ''}`
+      : 'estimated months';
+    return ` (official with ${what})`;
+  };
+  const pure = [...rates.values()].every((real) => derived(real) === '');
+  const how =
+    basis !== 'official' ? 'your own rate' : pure ? 'official, last 12 months' : 'last 12 months';
+  const list = [...rates].map(
+    ([currency, real]) => `${currency} ${inflationText(real.inflationPercent)}%${derived(real)}`,
+  );
   return (
     <Banner tone="neutral" icon="info">
       {"In today's money. Targets keep their value, and returns count after inflation"}

@@ -101,7 +101,7 @@ export class GoalsService {
             inflation,
           );
     // GOAL-REAL: the same pace judged in today's money, one reading per basis.
-    const real = (basis: keyof YearlyInflation) => {
+    const real = (basis: 'official' | 'personal') => {
       // Without a monthly average there is no plan to judge, but a basis that has an
       // inflation figure still owes the same "not enough history" answer.
       if (planned === null)

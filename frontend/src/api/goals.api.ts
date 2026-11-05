@@ -35,6 +35,8 @@ export interface GoalScenario {
 export interface GoalReal {
   /** The yearly inflation the returns were corrected by, in percent. */
   inflationPercent: string;
+  /** What that figure rests on beyond the published months: the owner's typed-in or estimated ones. */
+  from: { ownMonths: boolean; estimated: boolean };
   /** The base case's return after that inflation, in percent; known even with no cases. */
   returnPercent: string;
   status: GoalStatus;
