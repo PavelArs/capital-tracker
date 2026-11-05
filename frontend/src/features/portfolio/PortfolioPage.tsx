@@ -242,28 +242,36 @@ function BankAsset({
 function BankInterest({ deposit }: { deposit: Deposit }) {
   const [view] = useValueView();
   const [basis] = useInflationBasis();
-  if (view === 'real' && deposit.real !== undefined) {
-    const real = deposit.real[basis];
-    if (real?.gain == null) return <>{DASH}</>;
-    return (
-      <>
-        <span className={toneClass(real.gain)}>
-          {real.estimated ? '≈' : ''}
-          {money(real.gain, deposit.currency, true)}
-        </span>
-        <span className="ui-sub">after inflation</span>
-      </>
-    );
-  }
-  if (deposit.interestMissing || deposit.interestEarned == null) return <>{DASH}</>;
+  const shown = shownInterest(deposit, view === 'real' ? basis : null);
+  if (shown.amount === null) return <>{DASH}</>;
   return (
     <>
-      <span className={toneClass(deposit.interestEarned)}>
-        {money(deposit.interestEarned, deposit.currency, true)}
+      <span className={toneClass(shown.amount)}>
+        {shown.estimated ? '≈' : ''}
+        {money(shown.amount, deposit.currency, true)}
       </span>
-      <span className="ui-sub">interest</span>
+      <span className="ui-sub">{shown.real ? 'after inflation' : 'interest'}</span>
     </>
   );
+}
+
+/**
+ * The interest a bank product's P&L cell shows, in the product's currency: under Real (`real` is
+ * the basis), what is left after inflation; null where the cell shows a dash.
+ */
+function shownInterest(
+  deposit: Deposit,
+  real: InflationBasis | null,
+): { amount: string | null; estimated: boolean; real: boolean } {
+  if (real !== null && deposit.real !== undefined) {
+    const after = deposit.real[real];
+    return { amount: after?.gain ?? null, estimated: after?.estimated ?? false, real: true };
+  }
+  return {
+    amount: deposit.interestMissing ? null : (deposit.interestEarned ?? null),
+    estimated: false,
+    real: false,
+  };
 }
 
 /** A group's name and share, and its subtotal on the right, marked when a value is missing. */
@@ -367,16 +375,33 @@ export function realProfit(
 }
 
 /** Bank products use the same known-first ordering; columns they do not have tie by name. */
-function sortBankProducts(rows: Deposit[], sort: AssetSort, currency: AccountingCurrency) {
+function sortBankProducts(
+  rows: Deposit[],
+  sort: AssetSort,
+  currency: AccountingCurrency,
+  /** The inflation basis the P&L column reads under Real; null under Nominal. */
+  real: InflationBasis | null,
+) {
   const byName = (a: Deposit, b: Deposit) =>
     a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
   const direction = sort.direction === 'asc' ? 1 : -1;
+  // P&L: the interest shown, in the table's currency at the rate the product's value uses, so
+  // rubles and euros compare. The float only orders the rows; it is never shown.
+  const interest = (deposit: Deposit) => {
+    const amount = shownInterest(deposit, real).amount;
+    if (amount === null || deposit.currency === currency) return amount;
+    const value = deposit.values[currency];
+    if (value === null || Number(deposit.balance) === 0) return null;
+    return ((Number(amount) * Number(value)) / Number(deposit.balance)).toFixed(8);
+  };
   const value = (deposit: Deposit) =>
     sort.key === 'amount'
       ? deposit.balance
       : sort.key === 'value' || sort.key === 'allocation'
         ? deposit.values[currency]
-        : null;
+        : sort.key === 'pnl'
+          ? interest(deposit)
+          : null;
   return [...rows].sort((a, b) => {
     if (sort.key === 'name') return direction * byName(a, b);
     const left = value(a);
@@ -1056,6 +1081,7 @@ export default function PortfolioPage() {
     ),
     shown,
     portfolio?.currency ?? 'USD',
+    view === 'real' ? basis : null,
   );
   // What every share is of: the net worth, or its known part as an estimate.
   const base = portfolio && shareBase(portfolio);

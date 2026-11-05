@@ -4483,6 +4483,67 @@ describe('PORTFOLIO-BANK-ROW: a bank product row reads as in the prototype', () 
     const cell = await pnlCell(product({ interestMissing: true, interestEarned: null }));
     expect(cell).toHaveTextContent(/^—$/);
   });
+
+  it('PORTFOLIO-BANK-INTEREST orders the products by the interest shown, in the table currency, uncounted last', async () => {
+    // ₽30,947 is about $372 at the deposit's own rate; €500 is $585; the third is not counted.
+    const ruble = product();
+    const euro = product({
+      id: id(997),
+      kind: 'account',
+      name: 'Savings account',
+      currency: 'EUR',
+      endDate: null,
+      balance: '10000',
+      interestEarned: '500',
+      real: {
+        official: { inflationPercent: '2.1', ratePercent: null, gain: '-50', estimated: false },
+        personal: null,
+      },
+      values: { USD: '11700', EUR: '10000', RUB: '970000' },
+    });
+    const uncounted = product({
+      id: id(996),
+      name: 'Another deposit',
+      interestMissing: true,
+      interestEarned: null,
+      real: { official: null, personal: null },
+    });
+    vi.mocked(depositsApi.list).mockResolvedValue({
+      asOf: '2026-10-18',
+      items: [ruble, euro, uncounted],
+      totals: { USD: '22055.56', EUR: '18900.20', RUB: '1831894.24' },
+    });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { depositsValue: '22055.56' }),
+    );
+    const user = userEvent.setup();
+    const names = /^(Ruble deposit|Savings account|Another deposit)/;
+    const order = () =>
+      screen
+        .getAllByRole('row')
+        .map((row) => row.textContent?.match(names)?.[1])
+        .filter(Boolean);
+    const sortByPnl = async () => {
+      const header = screen.getByRole('columnheader', { name: /P&L$/ });
+      await user.click(within(header).getByRole('button'));
+    };
+
+    setValueView('nominal');
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Ruble deposit/ });
+    await sortByPnl();
+    expect(order()).toEqual(['Savings account', 'Ruble deposit', 'Another deposit']);
+    await sortByPnl();
+    expect(order()).toEqual(['Ruble deposit', 'Savings account', 'Another deposit']);
+    cleanup();
+
+    // Real: ₽17,946 after inflation (about $216) above −€50 (−$58.50); still uncounted last.
+    setValueView('real');
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Ruble deposit/ });
+    await sortByPnl();
+    expect(order()).toEqual(['Ruble deposit', 'Savings account', 'Another deposit']);
+  });
 });
 
 it('PORTFOLIO-BANK-ZERO lists an existing zero-balance product instead of the empty state', async () => {
