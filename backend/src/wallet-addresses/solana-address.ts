@@ -6,9 +6,18 @@ function bad(): never {
   throw new BadRequestException('Invalid Solana address');
 }
 
-/** The bytes a base58 text encodes; each leading "1" is a zero byte. */
-export function base58Bytes(value: string): Buffer | null {
-  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(value)) return null;
+/**
+ * The longest base58 text decoded unless a caller asks for more: a 64-byte signature is 88
+ * characters. Decoding is quadratic in the length, so a provider's text is cut off before it.
+ */
+export const MAX_BASE58_CHARS = 128;
+
+/**
+ * The bytes a base58 text encodes; each leading "1" is a zero byte. Null for text that is not
+ * base58 or is longer than `maxChars`.
+ */
+export function base58Bytes(value: string, maxChars = MAX_BASE58_CHARS): Buffer | null {
+  if (value.length > maxChars || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(value)) return null;
   let number = 0n;
   for (const character of value) number = number * 58n + BigInt(BASE58.indexOf(character));
   const hex = number === 0n ? '' : number.toString(16);

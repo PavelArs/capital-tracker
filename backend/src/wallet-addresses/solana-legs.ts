@@ -75,14 +75,15 @@ export function solanaTokenFacts(
   return [...facts.values()];
 }
 
-function held(
+/** What the wallet holds of each mint in one list of token balances, in one pass. */
+function heldByMint(
   balances: readonly TokenBalance[],
-  mint: string,
   owns: (balance: TokenBalance) => boolean,
-): bigint {
-  return balances
-    .filter((balance) => balance.mint === mint && owns(balance))
-    .reduce((total, balance) => total + balance.amount, 0n);
+): Map<string, bigint> {
+  const totals = new Map<string, bigint>();
+  for (const balance of balances)
+    if (owns(balance)) totals.set(balance.mint, (totals.get(balance.mint) ?? 0n) + balance.amount);
+  return totals;
 }
 
 /**
@@ -125,8 +126,10 @@ export function solanaLegs(
   const mints = [
     ...new Set([...tx.preTokenBalances, ...tx.postTokenBalances].map((item) => item.mint)),
   ].sort((left, right) => tokenLegNumber(left) - tokenLegNumber(right));
+  const after = heldByMint(tx.postTokenBalances, owns);
+  const before = heldByMint(tx.preTokenBalances, owns);
   for (const mint of mints) {
-    const delta = held(tx.postTokenBalances, mint, owns) - held(tx.preTokenBalances, mint, owns);
+    const delta = (after.get(mint) ?? 0n) - (before.get(mint) ?? 0n);
     if (delta === 0n) continue;
     const txid = `${tx.signature}-${tokenLegNumber(mint)}`;
     legs.push({
