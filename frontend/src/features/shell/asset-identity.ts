@@ -85,6 +85,17 @@ export function assetIdentity(asset: {
   };
 }
 
+/**
+ * A bank product (prototype "aico" of a deposit): the bank colour, a % on a term deposit and the
+ * currency's own sign on an account, which holds money rather than runs a rate.
+ */
+export function depositIdentity(kind: 'term-deposit' | 'account', currency: string): AssetIdentity {
+  return {
+    color: 'var(--c-bank)',
+    glyph: kind === 'account' ? (known[currency]?.glyph ?? '%') : '%',
+  };
+}
+
 export type Blockchain = Exclude<Network, 'bybit'>;
 const networkCoins: Record<Blockchain, string> = {
   bitcoin: 'BTC',

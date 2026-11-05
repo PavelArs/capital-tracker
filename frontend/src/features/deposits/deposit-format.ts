@@ -27,16 +27,9 @@ export function daysBetween(from: string, to: string): number {
 /** Today's calendar date in Moscow, the day the server counts interest by. */
 export const today = () => moscowDate(Date.now());
 
-/** Why an interest after inflation cannot be shown: the history has gaps. */
-export const NO_REAL_GAIN = 'no inflation figures yet';
-
-/** Why the end balance has no figure in today's money: the term is over, or the data is short. */
-export const noRealEndReason = (endDate: string, asOf: string): string =>
-  endDate < asOf ? 'the term has ended' : 'no inflation figures for the term yet';
-
 /** The badge tone of each status. */
 export const statusTone: Record<DepositStatus, BadgeTone> = {
-  active: 'info',
+  active: 'pos',
   matured: 'warn',
   closed: 'muted',
 };
@@ -83,19 +76,37 @@ export const accountsWithoutRate = (count: number): string =>
 export const rateText = (deposit: Pick<Deposit, 'ratePercent'>): string =>
   deposit.ratePercent === null ? 'No rate entered' : `${deposit.ratePercent}%`;
 
-/** "12% · interest paid monthly · until 1 Oct 2026"; an account has no term to end (DEP-ACCOUNT). */
-export function termText(deposit: Deposit): string {
-  const rate = rateText(deposit);
+/** "12% · interest paid monthly": the rate and how its interest comes (DEP-ACCOUNT: "No rate entered" for none). */
+export function interestTermsText(deposit: Deposit): string {
   const interest = deposit.capitalized
     ? `interest added ${payoutNames[deposit.payout]}`
     : `interest paid ${payoutNames[deposit.payout]}`;
-  if (deposit.kind === 'account') return `${rate} · ${interest}`;
-  const until = deposit.endDate ? `until ${dateText(deposit.endDate)}` : 'no end date';
-  return `${rate} · ${interest} · ${until}`;
+  return `${rateText(deposit)} · ${interest}`;
+}
+
+/** "until Oct 1, 2026" or "no end date" for a term deposit; an account has no term to end (DEP-ACCOUNT). */
+export const endText = (deposit: Deposit): string | null =>
+  deposit.kind === 'account'
+    ? null
+    : deposit.endDate
+      ? `until ${dateText(deposit.endDate)}`
+      : 'no end date';
+
+/** "12% · interest paid monthly · until 1 Oct 2026"; an account has no term to end (DEP-ACCOUNT). */
+export function termText(deposit: Deposit): string {
+  return [interestTermsText(deposit), endText(deposit)].filter(Boolean).join(' · ');
 }
 
 const STALE_CHECK_DAYS = 30;
 const ENDING_SOON_DAYS = 7;
+
+/** "Ends in 3 days" on an active term that ends within a week, "Ends today" on its last day; else null. */
+export function endsSoonText(deposit: Deposit, asOf: string): string | null {
+  if (deposit.status !== 'active' || !deposit.endDate) return null;
+  const left = daysBetween(asOf, deposit.endDate);
+  if (left > ENDING_SOON_DAYS) return null;
+  return left <= 0 ? 'Ends today' : `Ends in ${left} ${left === 1 ? 'day' : 'days'}`;
+}
 
 /** What needs the owner's eye on a deposit, or null (DEP-ATTENTION). */
 export function attention(deposit: Deposit, asOf: string): string | null {
