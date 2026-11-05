@@ -190,7 +190,7 @@
 @media (min-width: 1280px) {
   .deposit-columns {
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-    align-items: start;
+    align-items: stretch;
   }
 }
 
