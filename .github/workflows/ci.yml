@@ -28,7 +28,7 @@ jobs:
   backend-check:
     name: Backend Lint & Format
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backend
@@ -54,7 +54,7 @@ jobs:
   backend-test:
     name: Backend Tests
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backend
@@ -90,7 +90,7 @@ jobs:
   backend-build:
     name: Backend Build
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [backend-check]
     defaults:
       run:
@@ -123,7 +123,7 @@ jobs:
   frontend-check:
     name: Frontend Lint & Format
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
@@ -149,7 +149,7 @@ jobs:
   frontend-test:
     name: Frontend Tests
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
@@ -185,7 +185,7 @@ jobs:
   frontend-build:
     name: Frontend Build
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [frontend-check]
     defaults:
       run:
@@ -231,7 +231,7 @@ jobs:
   # a job-level condition: every release job still ends in success, which the aggregate requires.
   release-images:
     name: Build Release Images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Up to 45 minutes waiting for the pull request run (scripts/check-merged-pr-ci.cjs WAIT), then
     # a full build and upload if its images cannot be reused.
     timeout-minutes: 90
@@ -365,7 +365,7 @@ jobs:
 
   critical-acceptance:
     name: Critical acceptance (${{ matrix.shard }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -450,7 +450,7 @@ jobs:
   # The scans need only the built images, so they run beside the shards rather than after them.
   image-security:
     name: Image Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -554,7 +554,7 @@ jobs:
   # Passes only when every shard passed on the built images and the scan job passed on them.
   docker-build:
     name: Acceptance Receipt and Image Security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -620,7 +620,7 @@ jobs:
 
   spec-check:
     name: Specification and Engineering Gates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -636,7 +636,7 @@ jobs:
 
   dependency-audit:
     name: Production Dependency Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name != 'push'
     timeout-minutes: 10
     steps:
@@ -653,7 +653,7 @@ jobs:
   # It gates nothing, so a cache outage cannot hold back a release.
   playwright-cache:
     name: Warm Playwright Browser Cache
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
     if: github.event_name == 'push'
@@ -681,7 +681,7 @@ jobs:
   # request passed every job above, critical acceptance shards included, on its last head.
   merged-pr-ci:
     name: Merged Pull Request CI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: github.event_name == 'push'
     permissions:
@@ -700,7 +700,7 @@ jobs:
 
   ci-status:
     name: CI Status
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - backend-check
       - backend-test
