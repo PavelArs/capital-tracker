@@ -239,7 +239,6 @@ async function main() {
     );
     assert.equal(
       state.latest_migration,
-      'AddWalletSyncSwitch1798500000000',
       'AddPropertyDetails1798600000000',
       'Latest current migration follows the preceding exact-ledger migration probe',
     );

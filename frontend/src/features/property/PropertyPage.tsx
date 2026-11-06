@@ -301,13 +301,26 @@ function PropertyDetailsView({
             <Button
               size="sm"
               icon="edit"
-              disabled={mine === 'loading' || mine === undefined}
+              disabled={mine === 'loading' || mine === undefined || recorded.stale}
               onClick={() => setEditing(true)}
             >
               Edit
             </Button>
           }
         />
+        {recorded.stale && (
+          <Banner
+            tone="warn"
+            role="alert"
+            action={
+              <Button size="sm" icon="refresh" onClick={() => recorded.reload(true)}>
+                Refresh
+              </Button>
+            }
+          >
+            Could not refresh the rent and notes; showing the last loaded ones.
+          </Banner>
+        )}
         <KeyValue>
           <KeyValueRow term="Rent">
             {mine === undefined

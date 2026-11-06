@@ -389,6 +389,22 @@ describe('PROPERTY-PAGE the page of one property', () => {
     expect(await within(card).findAllByText('Could not be read')).toHaveLength(2);
   });
 
+  it('PROPERTY-DETAILS-STALE warns when the saved rent and notes could not be read again', async () => {
+    const user = userEvent.setup();
+    const dialog = await openDetails(user);
+    vi.mocked(propertyDetailsApi.list).mockRejectedValue(new Error('offline'));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const card = screen.getByRole('region', { name: 'Rent and notes' });
+    expect(
+      await within(card).findByText(
+        'Could not refresh the rent and notes; showing the last loaded ones.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Edit' })).toBeDisabled();
+  });
+
   it('PROPERTY-DETAILS empty fields clear the record', async () => {
     const user = userEvent.setup();
     const dialog = await openDetails(user);
