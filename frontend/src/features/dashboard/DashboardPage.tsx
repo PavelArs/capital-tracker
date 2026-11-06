@@ -2,6 +2,7 @@ import { cachedReads } from '@api/cached-reads';
 import { showingKept, useConnection } from '@api/connection';
 import {
   type HistoryPeriod,
+  type HistorySection,
   historyPeriods,
   type PortfolioHistory,
 } from '@api/portfolio-history.api';
@@ -25,6 +26,7 @@ import { marketMissingText } from '../shell/market-missing';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
+import { useCachedRead } from '../shell/useCachedRead';
 import { useValueView } from '../shell/value-view';
 import { assetKey } from '../transactions/operation-format';
 import DashboardLoading, { AllocationLoading } from './DashboardLoading';
@@ -36,6 +38,7 @@ import Badge from '@/ui/Badge';
 import { Banner } from '@/ui/Banner';
 import { Button, ButtonLink } from '@/ui/Button';
 import { Card } from '@/ui/Card';
+import { Chip, ChipGroup } from '@/ui/Chip';
 import EmptyState from '@/ui/EmptyState';
 import { ErrorState } from '@/ui/ErrorState';
 import { Legend, type LegendItem } from '@/ui/Legend';
@@ -50,11 +53,36 @@ const periodLabels: Record<HistoryPeriod, string> = {
   ALL: 'since Jan 1, 2025',
 };
 
-const LEGEND: readonly LegendItem[] = [
-  { key: 'value', label: 'Portfolio value', swatch: 'line', color: 'var(--accent)' },
+const legend = (value = 'Portfolio value'): readonly LegendItem[] => [
+  { key: 'value', label: value, swatch: 'line', color: 'var(--accent)' },
   { key: 'invested', label: 'Net invested', swatch: 'line', color: 'var(--ink-3)' },
   { key: 'deposit', label: 'Deposit', swatch: 'marker', color: 'var(--ink-2)' },
 ];
+
+// SECTION-CHART: the parts of the capital the chart can show alone, named as the navigation
+// names them (a wallet is any account with no class of its own; the banks are the deposits).
+const SECTIONS: readonly { key: HistorySection; label: string }[] = [
+  { key: 'wallet', label: 'Wallets' },
+  { key: 'bank', label: 'Banks' },
+  { key: 'broker', label: 'Brokers' },
+  { key: 'property', label: 'Real estate' },
+];
+
+/** The sections the owner holds something in, in the chart's order. */
+export function heldSections(
+  accounts: readonly { assetClass?: 'broker' | 'property' | null }[] | undefined,
+  portfolio: PortfolioValuation | null,
+): HistorySection[] {
+  const found = new Set<HistorySection>(
+    (accounts ?? []).map((item) => item.assetClass ?? 'wallet'),
+  );
+  if (
+    portfolio !== null &&
+    (Number(portfolio.depositsValue) > 0 || portfolio.unratedDepositCount > 0)
+  )
+    found.add('bank');
+  return SECTIONS.filter((section) => found.has(section.key)).map((section) => section.key);
+}
 
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
@@ -405,6 +433,11 @@ export default function DashboardPage() {
     size: 'sm',
   });
   const chartTitle = useId();
+  // SECTION-CHART: the chart alone can show one section; the net worth above stays whole.
+  const [section, setSection] = useState<HistorySection | null>(null);
+  const [sectionHistory, setSectionHistory] = useState<PortfolioHistory | null>(null);
+  const [sectionFailed, setSectionFailed] = useState(false);
+  const latestSection = useRef(0);
   const [adding, setAdding] = useState(false);
   const latest = useRef(0);
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
@@ -436,6 +469,23 @@ export default function DashboardPage() {
     void load();
   }, [load]);
 
+  const loadSection = useCallback(async () => {
+    if (section === null) return;
+    const request = ++latestSection.current;
+    setSectionFailed(false);
+    const kept = cachedReads.history.last(period, asked, section);
+    if (kept) setSectionHistory(kept);
+    try {
+      const next = await cachedReads.history.load(period, asked, section);
+      if (request === latestSection.current) setSectionHistory(next);
+    } catch {
+      if (request === latestSection.current) setSectionFailed(true);
+    }
+  }, [section, period, asked]);
+  useEffect(() => {
+    void loadSection();
+  }, [loadSection]);
+
   // Top assets, allocation and old prices come from today's valuation; a failure there
   // leaves the net worth and the chart in place.
   const loadPortfolio = useCallback(async () => {
@@ -462,11 +512,34 @@ export default function DashboardPage() {
   };
 
   const shown = history;
-  const chartLabel = shown
-    ? `Portfolio value, ${periodLabels[shown.period]}, from ${money(
-        shown.points.find((point) => point.value !== null)?.value ?? null,
-        shown.currency,
-      )} to ${money(shown.value, shown.currency)}`
+  const accountList = useCachedRead(cachedReads.accounts).data ?? undefined;
+  const sections = heldSections(accountList, portfolio);
+  // One section alone is the whole: there is nothing to filter. A section that went away
+  // (its last account removed) is no longer asked for.
+  const filtering = sections.length > 1;
+  const chosen = filtering && section !== null && sections.includes(section) ? section : null;
+  const chosenLabel = SECTIONS.find((item) => item.key === chosen)?.label ?? '';
+  // The section's answer counts only for the period, currency and section now asked.
+  const ofSection =
+    chosen !== null &&
+    sectionHistory !== null &&
+    sectionHistory.section === chosen &&
+    sectionHistory.currency === shown?.currency
+      ? sectionHistory
+      : null;
+  // As with the whole, another period keeps the last chart until its answer comes; a failed
+  // read of it does not pass the old period's chart off as the new one.
+  const charted =
+    chosen === null
+      ? shown
+      : ofSection !== null && (ofSection.period === period || !sectionFailed)
+        ? ofSection
+        : null;
+  const chartLabel = charted
+    ? `${chosen === null ? 'Portfolio' : chosenLabel} value, ${periodLabels[charted.period]}, from ${money(
+        charted.points.find((point) => point.value !== null)?.value ?? null,
+        charted.currency,
+      )} to ${money(charted.value, charted.currency)}`
     : '';
 
   return (
@@ -521,29 +594,75 @@ export default function DashboardPage() {
             </span>
             <div className="ui-toolbar">
               <div className="dashboard-chart-card__title">
+                {/* The legend leads the card as in the prototype; the heading stays for readers. */}
+                <h2 className="ui-sr">Capital</h2>
                 <div className="dashboard-chart-card__name">
-                  <h2>Capital</h2>
+                  <div role="group" aria-label="Chart legend">
+                    <Legend items={legend(chosen === null ? undefined : `${chosenLabel} value`)} />
+                  </div>
                   <AboutChart>
                     Snapshots at stored prices and Bank of Russia rates: hourly for the last week,
                     daily since Jan 1, 2025, in UTC. Net invested is the money put in minus the
                     money taken out; the gap to the value line is your profit or loss.
                   </AboutChart>
                 </div>
-                <div role="group" aria-label="Chart legend">
-                  <Legend items={LEGEND} />
-                </div>
               </div>
               {tabs}
             </div>
+            {filtering && (
+              <ChipGroup label="Show on the chart">
+                <Chip pressed={chosen === null} onClick={() => setSection(null)}>
+                  Everything
+                </Chip>
+                {SECTIONS.filter((item) => sections.includes(item.key)).map((item) => (
+                  <Chip
+                    key={item.key}
+                    pressed={chosen === item.key}
+                    onClick={() => setSection(item.key)}
+                  >
+                    {item.label}
+                  </Chip>
+                ))}
+              </ChipGroup>
+            )}
+            {/* A chart kept from before is not passed off as current (STALE-STATE). */}
+            {chosen !== null && sectionFailed && charted !== null && (
+              <Banner
+                tone="neg"
+                action={
+                  <Button size="sm" icon="refresh" onClick={() => void loadSection()}>
+                    Try again
+                  </Button>
+                }
+              >
+                Could not update the {chosenLabel} chart. Showing the last loaded figures.
+              </Banner>
+            )}
             <div {...panelProps}>
-              <HistoryChart
-                key={`${shown.period}:${shown.currency}:${shown.at}`}
-                points={shown.points}
-                period={shown.period}
-                currency={shown.currency}
-                label={chartLabel}
-              />
+              {charted !== null ? (
+                <HistoryChart
+                  key={`${charted.section ?? 'all'}:${charted.period}:${charted.currency}:${charted.at}`}
+                  points={charted.points}
+                  period={charted.period}
+                  currency={charted.currency}
+                  label={chartLabel}
+                />
+              ) : sectionFailed ? (
+                <ErrorState what={`the ${chosenLabel} chart`} onRetry={() => void loadSection()} />
+              ) : (
+                <p className="dashboard-chart__empty" role="status">
+                  Loading the {chosenLabel} chart…
+                </p>
+              )}
             </div>
+            {!!charted?.transfersAcross && (
+              <p className="dashboard-chart__note" role="note">
+                {charted.transfersAcross === 1
+                  ? '1 transfer between sections (made at any time) is'
+                  : `${charted.transfersAcross} transfers between sections (made at any time) are`}{' '}
+                not counted as money put in, so Net invested here can read low or high.
+              </p>
+            )}
           </Card>
           <div className="dashboard-bottom">
             <TopAssets
@@ -554,7 +673,7 @@ export default function DashboardPage() {
               asked={asked}
             />
             {portfolio !== null ? (
-              <Allocation portfolio={portfolio} limit={6} />
+              <Allocation portfolio={portfolio} limit={6} places={1} />
             ) : (
               !portfolioFailed && <AllocationLoading />
             )}

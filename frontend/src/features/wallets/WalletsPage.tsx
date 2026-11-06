@@ -22,6 +22,7 @@ import {
   connectsBybit,
   holdingsOf,
   ManualRow,
+  networksText,
   ReconcileNote,
   subtitle,
   trackedSymbols,
@@ -70,6 +71,7 @@ export default function WalletsPage() {
     forget,
     runs,
     sync,
+    setSyncEnabled,
     asked,
   } = useWallets();
   const toast = useToast();
@@ -162,6 +164,7 @@ export default function WalletsPage() {
       currency={currency}
       onOpen={() => setOpenId(address.id)}
       onSync={() => void sync(address.id)}
+      onSyncEnabled={(enabled) => setSyncEnabled(address.id, enabled)}
     />
   );
 
@@ -236,7 +239,7 @@ export default function WalletsPage() {
                   </div>
                   <div className="wallets-card__total">
                     <strong className="ui-num">{money(account.pricedValue, currency)}</strong>
-                    <span>{holdings.length === 1 ? '1 asset' : `${holdings.length} assets`}</span>
+                    <span>{networksText(own)}</span>
                   </div>
                 </div>
                 {own.length > 0 || manual.length > 0 ? (
@@ -320,6 +323,7 @@ export default function WalletsPage() {
           prices={prices}
           run={runs[open.id]}
           onSync={() => void sync(open.id)}
+          onSyncEnabled={(enabled) => setSyncEnabled(open.id, enabled)}
           onSaved={(address, newAccount) => {
             replace(address);
             if (newAccount) void load(true);

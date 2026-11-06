@@ -131,6 +131,7 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
     'Value',
     'Account',
     'Status',
+    'Source',
   ]);
 
   const accountFilter = main.getByRole('combobox', { name: 'Account', exact: true });
@@ -149,7 +150,8 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
     '+0.00918359',
     '$1,000.00',
     accountName,
-    'RecordedManual',
+    'Recorded',
+    'Manual',
   ]);
   // OPS-CURRENCY: the list switches to RUB at Bank of Russia rates and keeps the filter.
   await main.getByRole('radio', { name: 'RUB', exact: true }).check();
@@ -188,8 +190,9 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   // A raw chain row has no recorded value: an estimate at a stored price, or none at all.
   await expect(receipt.nth(3)).toHaveText(/^(≈ \$[\d,]+\.\d{2}|—)$/);
   await expect(receipt.nth(4)).toHaveText(walletLabel);
-  // OPS-COMPACT: the source sits under the status in one column.
-  await expect(receipt.nth(5)).toHaveText('To classifyBlockchain');
+  // OPS-SOURCE-COLUMN: the status in full, the source in a column of its own.
+  await expect(receipt.nth(5)).toHaveText('Needs classification');
+  await expect(receipt.nth(6)).toHaveText('Blockchain');
   await page.screenshot({ path: testInfo.outputPath('transactions-wallet-1440-dark.png') });
 
   // OPS-FILTER: asset BTC and status "Needs classification" leave only matching rows.
@@ -213,7 +216,7 @@ test('OPS-UI: manual and blockchain operations in one Transactions list with fil
   const count = await rows.count();
   for (let index = 0; index < count; index++) {
     await expect(cells(rows.nth(index)).nth(1)).toHaveText(/^BTC/);
-    await expect(cells(rows.nth(index)).nth(5)).toHaveText(/^To classify/);
+    await expect(cells(rows.nth(index)).nth(5)).toHaveText(/^Needs classification/);
   }
   await page.screenshot({ path: testInfo.outputPath('transactions-filter-1440-dark.png') });
 

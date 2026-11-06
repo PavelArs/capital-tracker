@@ -18,7 +18,7 @@ const settings = {
 };
 const database = 'capital_tracker_property_e2e';
 const modulePath = '/app/backend/dist/accounting/property-details.service.js';
-const MIGRATIONS = 77;
+const MIGRATIONS = 78;
 let stage = 'synthetic configuration';
 
 function source() {

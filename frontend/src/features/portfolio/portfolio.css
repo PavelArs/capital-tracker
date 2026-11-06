@@ -134,6 +134,15 @@ a.portfolio-asset__name:hover {
   white-space: nowrap;
 }
 
+/* A bank product's rate and end date wrap rather than lose the date to an ellipsis. */
+.portfolio-asset__ticker--wrap {
+  white-space: normal;
+}
+
+.portfolio-asset__part {
+  white-space: nowrap;
+}
+
 /* A percentage beside its amount on one line (purchases table). */
 .portfolio-ratio--inline {
   display: inline;
@@ -219,11 +228,12 @@ a.portfolio-asset__name:hover {
   color: var(--warn);
 }
 
-/* Holdings and the asset's transactions side by side (prototype .two-col). */
+/* Holdings and the asset's transactions side by side (prototype .two-col), both cards as tall as
+   the taller one so they end on one line. */
 .portfolio-split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: var(--sp-4);
 }
 

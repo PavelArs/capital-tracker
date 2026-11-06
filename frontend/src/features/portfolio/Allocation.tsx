@@ -55,12 +55,15 @@ function sliceColor(
 }
 
 /**
- * A slice's share of the portfolio as shown. A held share too small for two decimals reads
- * "<0.01%", never "0.00%", which would say it holds nothing (polish 23).
+ * A slice's share of the portfolio as shown. A held share too small for its decimals reads
+ * "<0.01%" (or "<0.1%" with one), never "0.00%", which would say it holds nothing (polish 23).
  */
-export function shareText(value: string | null): string {
-  const shown = percent(value, false);
-  return value !== null && shown === '0.00%' && Number(value) > 0 ? '<0.01%' : shown;
+export function shareText(value: string | null, places: 1 | 2 = 2): string {
+  const shown = percent(value, false, places);
+  const none = `${(0).toFixed(places)}%`;
+  return value !== null && shown === none && Number(value) > 0
+    ? `<${(10 ** -places).toFixed(places)}%`
+    : shown;
 }
 
 /** The same holding classes as the portfolio table, independently of how a price is entered. */
@@ -130,9 +133,12 @@ function folded(slices: AllocationSlice[], limit: number | undefined) {
 export default function Allocation({
   portfolio,
   limit,
+  places = 2,
 }: {
   portfolio: PortfolioValuation;
   limit?: number;
+  /** Decimals of a share: the Dashboard shows one, the Portfolio two. */
+  places?: 1 | 2;
 }) {
   const [grouping, setGrouping] = useState<Grouping>('byAsset');
   const heading = useId();
@@ -209,7 +215,7 @@ export default function Allocation({
                 <span className="portfolio-slices__percent">
                   {/* NW-SHARE-ESTIMATE: of a net worth that leaves out what the note below says. */}
                   {!portfolio.allocation.complete && slice.percent !== null ? '≈' : ''}
-                  {shareText(slice.percent)}
+                  {shareText(slice.percent, places)}
                 </span>
               </li>
             ))}

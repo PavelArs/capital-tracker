@@ -191,22 +191,20 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     expect(screen.queryByText('Loading deposits')).toBeNull();
   });
 
-  it('shows each deposit with its terms, value in the chosen currency and what needs a look', async () => {
+  it('shows each deposit with its terms and its value in the chosen currency', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, dollars]));
     open('/deposits?currency=RUB');
     const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
       'li',
     ) as HTMLElement;
-    expect(within(card).getByText('₽100,328')).toBeInTheDocument();
-    expect(
-      within(card).getByText('12% · interest paid monthly · until Dec 1, 2026'),
-    ).toBeInTheDocument();
+    // In the deposit's own currency the balance and the value sit in their own columns, both.
+    expect(within(card).getAllByText('₽100,328')).toHaveLength(2);
+    expect(within(card).getByText('12% · interest paid monthly')).toBeInTheDocument();
+    expect(within(card).getByText('until Dec 1, 2026')).toBeInTheDocument();
     expect(within(card).getAllByText(/₽1,019 on Nov 1, 2026/)[0]).toBeInTheDocument();
-    expect(within(card).getByText('Not checked against the bank yet')).toBeInTheDocument();
     const usd = screen.getByRole('link', { name: /Dollar B/ }).closest('li') as HTMLElement;
     expect(within(usd).getByText('₽454,686')).toBeInTheDocument();
     expect(within(usd).getByText('$5,052.07')).toBeInTheDocument();
-    expect(within(usd).getByText(/differs by \$0\.03/)).toBeInTheDocument();
     const total = screen.getByRole('region', { name: 'Total in deposits' });
     expect(within(total).getByText('₽555,015')).toBeInTheDocument();
     expect(within(card).getByRole('link')).toHaveAttribute(
@@ -223,11 +221,6 @@ describe('DEP-LIST: the deposits and what they are worth', () => {
     const product = await screen.findByRole('link', { name: /Savings A/ });
     expect(product).toHaveClass('deposit-product__row');
     expect(product.querySelector('.ui-card')).toBeNull();
-    const details = product.closest('li')?.querySelector('details') as HTMLDetailsElement;
-    expect(details.open).toBe(false);
-    await userEvent.click(within(details).getByText('Interest and balance details'));
-    expect(details.open).toBe(true);
-    expect(within(details).getByText('Next interest')).toBeVisible();
   });
 
   it('invites the first deposit when there is none', async () => {
@@ -651,7 +644,7 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     expect(periods).not.toHaveTextContent('no rate entered');
   });
 
-  it('says on its card that the interest is not counted, and what the list total leaves out', async () => {
+  it('says on its row that the interest is not counted, and what the list total leaves out', async () => {
     vi.spyOn(depositsApi, 'list').mockResolvedValue({
       ...list([unrated]),
       interestMissingCount: 1,
@@ -660,11 +653,11 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     const card = (await screen.findByRole('link', { name: /Current C/ })).closest(
       'li',
     ) as HTMLElement;
-    expect(card).toHaveTextContent('Interest');
-    expect(card).toHaveTextContent('Not counted, no rate entered');
+    expect(card).toHaveTextContent('No rate entered');
+    expect(card).toHaveTextContent('Interest not counted');
     expect(card).not.toHaveTextContent('Interest earned');
     expect(card).not.toHaveTextContent(/₽0\.00/);
-    expect(card).not.toHaveTextContent('Next interest');
+    expect(card).not.toHaveTextContent('Next');
     expect(
       screen.getByText(
         /1 account has days with no rate entered; the interest of those days is not counted\./,
@@ -724,7 +717,7 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     const card = (await screen.findByRole('link', { name: /Current C/ })).closest(
       'li',
     ) as HTMLElement;
-    expect(card).toHaveTextContent('Not counted before the first rate');
+    expect(card).toHaveTextContent('Earlier interest not counted');
     expect(card).not.toHaveTextContent('Interest earned');
     cleanup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(
@@ -846,7 +839,9 @@ describe('DEP-ACCOUNT: an account with no rate shows its interest as missing, no
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(rated));
     open(`/deposits/${rated.id}?currency=RUB`);
     await screen.findByRole('heading', { level: 2, name: 'Current C' });
-    expect(screen.getByText('Earned, not posted yet').parentElement).toHaveTextContent('₽12');
+    expect(screen.getByText('Interest earned').parentElement).toHaveTextContent(
+      '₽12 not posted yet',
+    );
     expect(
       screen.queryByText(
         /After-inflation figures are unavailable while earlier interest is missing/,
@@ -905,13 +900,14 @@ describe('DEP-DETAIL: one deposit', () => {
     const periods = (await screen.findByRole('heading', { name: 'Interest by period' })).closest(
       'section',
     ) as HTMLElement;
-    // A header row and five periods: the page no longer grows as it scrolls.
-    expect(within(periods).getAllByRole('row')).toHaveLength(6);
-    expect(within(periods).getAllByRole('row')[1]).toHaveTextContent('Aug 15, 2026');
+    // Five periods a page: the page no longer grows as it scrolls.
+    const rows = () => within(periods).getAllByRole('listitem');
+    expect(rows()).toHaveLength(5);
+    expect(rows()[0]).toHaveTextContent('Aug 14, 2026 – Aug 15, 2026');
     expect(within(periods).getByRole('status')).toHaveTextContent('1–5 of 45 periods');
     await user.click(within(periods).getByRole('button', { name: 'Next' }));
-    expect(within(periods).getAllByRole('row')).toHaveLength(6);
-    expect(within(periods).getAllByRole('row')[1]).toHaveTextContent('Aug 10, 2026');
+    expect(rows()).toHaveLength(5);
+    expect(rows()[0]).toHaveTextContent('Aug 9, 2026 – Aug 10, 2026');
     expect(within(periods).getByRole('status')).toHaveTextContent('6–10 of 45 periods');
   });
 
@@ -1133,11 +1129,11 @@ describe('DEP-DETAIL: one deposit', () => {
   });
 
   it.each([
-    ['1.23', '+₽1', '₽1'],
-    ['-1.23', '-₽2', '-₽2'],
+    ['1.23', '+₽1'],
+    ['-1.23', '-₽2'],
   ])(
-    'RUB-CHECK rounds computed %s differences in details, summary and list',
-    async (difference, signed, unsigned) => {
+    'RUB-CHECK rounds computed %s differences in the checks and the summary',
+    async (difference, signed) => {
       const check = {
         id: 'rounding-check',
         checkedOn: '2026-10-11',
@@ -1153,12 +1149,6 @@ describe('DEP-DETAIL: one deposit', () => {
       expect(within(checks).getByText(signed)).toBeInTheDocument();
       expect(screen.getByText('Last check').parentElement).toHaveTextContent(signed);
       expect(checks).toHaveTextContent('₽100,330.45');
-      cleanup();
-      vi.spyOn(depositsApi, 'list').mockResolvedValue(list([{ ...savings, lastCheck: check }]));
-      open('/deposits');
-      expect(
-        (await screen.findByRole('link', { name: /Savings A/ })).closest('li'),
-      ).toHaveTextContent(`differs by ${unsigned}`);
     },
   );
 
@@ -1234,12 +1224,12 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
       'li',
     ) as HTMLElement;
-    expect(within(card).getByText('₽3,328')).toBeInTheDocument();
+    expect(within(card).getByText('₽100,328')).toBeInTheDocument();
     expect(card).not.toHaveTextContent(/inflation|\breal\b/i);
     expect(screen.getByRole('radio', { name: 'Nominal' })).toBeChecked();
   });
 
-  it('DEP-ONE-REAL-LIST shows the real rate and the interest after inflation, not the nominal interest', async () => {
+  it('DEP-ONE-REAL-LIST shows the real rate on the row and no nominal interest', async () => {
     setValueView('real');
     vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
     open('/deposits');
@@ -1247,104 +1237,70 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
       'li',
     ) as HTMLElement;
     expect(within(card).getByText('Real +2.84% a year after 8.90% inflation')).toBeInTheDocument();
-    expect(within(card).getByText('Interest after inflation')).toBeInTheDocument();
-    expect(within(card).getByText('+₽2,450')).toBeInTheDocument();
     expect(card).not.toHaveTextContent(/3,328|nominal/i);
+    expect(within(card).queryByText('Interest after inflation')).toBeNull();
   });
 
-  it('DEP-ONE-REAL-LIST-END gives the end balance in today money, not the bank balance, under Real', async () => {
+  const endsIn = (inTodaysMoney: { amount: string; estimated: boolean } | null): Deposit => ({
+    ...inflated,
+    atMaturity: {
+      date: '2026-12-01',
+      balance: '104000.00',
+      interest: '4000.00',
+      inTodaysMoney: { official: inTodaysMoney, personal: null },
+    },
+  });
+  const stat = async (label: string) =>
+    (await screen.findByText(label, { selector: 'dt' })).closest('div') as HTMLElement;
+
+  it('DEP-ONE-REAL-DETAIL-END gives the end balance in today money, not the bank balance, under Real', async () => {
     setValueView('real');
-    const ending: Deposit = {
-      ...inflated,
-      atMaturity: {
-        date: '2026-12-01',
-        balance: '104000.00',
-        interest: '4000.00',
-        inTodaysMoney: {
-          official: { amount: '98000.00', estimated: false },
-          personal: null,
-        },
-      },
-    };
-    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ending]));
-    open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
-      'li',
-    ) as HTMLElement;
-    expect(card).toHaveTextContent("At the end, in today's money");
-    expect(card).toHaveTextContent('₽98,000');
-    expect(card).not.toHaveTextContent('104,000');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(endsIn({ amount: '98000.00', estimated: false })),
+    );
+    open(`/deposits/${savings.id}`);
+    const end = await stat("At the end, in today's money");
+    expect(end).toHaveTextContent('₽98,000');
+    expect(end).not.toHaveTextContent('104,000');
+    expect(screen.queryByText('At the end of the term')).toBeNull();
   });
 
-  it('DEP-ONE-REAL-LIST-ESTIMATED marks an estimated end balance and estimated interest on the card', async () => {
+  it('DEP-ONE-REAL-DETAIL-ESTIMATED marks an estimated end balance and estimated interest', async () => {
     setValueView('real');
     const estimated: Deposit = {
-      ...inflated,
-      atMaturity: {
-        date: '2026-12-01',
-        balance: '104000.00',
-        interest: '4000.00',
-        inTodaysMoney: {
-          official: { amount: '98000.00', estimated: true },
-          personal: null,
-        },
-      },
+      ...endsIn({ amount: '98000.00', estimated: true }),
       real: { official: { ...official, estimated: true }, personal: own },
     };
-    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([estimated]));
-    open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
-      'li',
-    ) as HTMLElement;
-    const end = within(card)
-      .getByText("At the end, in today's money")
-      .closest('div') as HTMLElement;
-    const interest = within(card)
-      .getByText('Interest after inflation')
-      .closest('div') as HTMLElement;
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(estimated));
+    open(`/deposits/${savings.id}`);
+    const end = await stat("At the end, in today's money");
     expect(end).toHaveTextContent('₽98,000');
     expect(end).toHaveTextContent('estimated');
-    expect(interest).toHaveTextContent('estimated');
+    expect(await stat('Interest after inflation')).toHaveTextContent('estimated');
   });
 
-  it('DEP-ONE-REAL-LIST-FINAL leaves a settled figure without the estimate marker', async () => {
+  it('DEP-ONE-REAL-DETAIL-FINAL leaves a settled figure without the estimate marker', async () => {
     setValueView('real');
     const settled: Deposit = {
-      ...inflated,
-      atMaturity: {
-        date: '2026-12-01',
-        balance: '104000.00',
-        interest: '4000.00',
-        inTodaysMoney: {
-          official: { amount: '98000.00', estimated: false },
-          personal: null,
-        },
-      },
+      ...endsIn({ amount: '98000.00', estimated: false }),
       real: { official: { ...official, estimated: false }, personal: own },
     };
-    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([settled]));
-    open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
-      'li',
-    ) as HTMLElement;
-    expect(card).not.toHaveTextContent('estimated');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(settled));
+    open(`/deposits/${savings.id}`);
+    expect(await stat("At the end, in today's money")).not.toHaveTextContent('estimated');
+    expect(await stat('Interest after inflation')).not.toHaveTextContent('estimated');
   });
 
-  it('DEP-ONE-REAL-LIST-END-UNKNOWN shows a dash for an end balance with no figure in today money', async () => {
+  it('DEP-ONE-REAL-DETAIL-END-UNKNOWN shows a dash for an end balance with no figure in today money', async () => {
     setValueView('real');
-    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([inflated]));
-    open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
-      'li',
-    ) as HTMLElement;
-    const end = within(card)
-      .getByText("At the end, in today's money")
-      .closest('div') as HTMLElement;
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(inflated));
+    open(`/deposits/${savings.id}`);
+    const end = await stat("At the end, in today's money");
     expect(end).toHaveTextContent('—');
-    expect(card).not.toHaveTextContent('104,000');
+    expect(end).not.toHaveTextContent('104,000');
   });
 
-  it('DEP-ONE-REAL-LIST-REASONS gives a reason beside every dash on the card', async () => {
+  it('DEP-ONE-REAL-DETAIL-REASONS gives a reason beside every dash', async () => {
     setValueView('real');
     const unknown = { ...official, inflationPercent: null, ratePercent: null, gain: null };
     const ending: Deposit = {
@@ -1357,29 +1313,22 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
       },
       real: { official: unknown, personal: unknown },
     };
-    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ending]));
-    open('/deposits');
-    const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
-      'li',
-    ) as HTMLElement;
-    const interest = within(card)
-      .getByText('Interest after inflation')
-      .closest('div') as HTMLElement;
-    const end = within(card)
-      .getByText("At the end, in today's money")
-      .closest('div') as HTMLElement;
-    expect(interest).toHaveTextContent('no inflation figures yet');
-    expect(end).toHaveTextContent('no inflation figures for the term yet');
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(ending));
+    open(`/deposits/${savings.id}`);
+    expect(await stat('Interest after inflation')).toHaveTextContent(
+      'No RUB inflation figures for the whole time yet',
+    );
+    expect(await stat("At the end, in today's money")).toHaveTextContent(
+      'No inflation figures for the term yet',
+    );
   });
 
   it.each([
-    ['list', '2026-12-02', '2026-11-30', 'the term has ended'],
-    ['detail', '2026-12-02', '2026-11-30', 'The term has ended'],
-    ['list', '2026-11-30', '2026-12-02', 'no inflation figures for the term yet'],
-    ['detail', '2026-11-30', '2026-12-02', 'No inflation figures for the term yet'],
+    ['2026-12-02', '2026-11-30', 'The term has ended'],
+    ['2026-11-30', '2026-12-02', 'No inflation figures for the term yet'],
   ])(
-    'DEP-REAL-ASOF uses the %s response day %s despite browser day %s',
-    async (view, asOf, browserDay, reason) => {
+    'DEP-REAL-ASOF uses the detail response day %s despite browser day %s',
+    async (asOf, browserDay, reason) => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date(`${browserDay}T12:00:00Z`));
       try {
@@ -1395,37 +1344,41 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
             inTodaysMoney: { official: null, personal: null },
           },
         };
-        vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([ending]), asOf });
         vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(ending, { asOf }));
-        open(view === 'list' ? '/deposits' : `/deposits/${ending.id}`);
-        const end = (await screen.findByText("At the end, in today's money")).closest('div');
-        expect(end).toHaveTextContent(reason);
+        open(`/deposits/${ending.id}`);
+        expect(await stat("At the end, in today's money")).toHaveTextContent(reason);
       } finally {
         vi.useRealTimers();
       }
     },
   );
 
-  it('DEP-ONE-REAL-LIST-ENDED says the term has ended instead of promising a figure', async () => {
+  it('DEP-REAL-ASOF counts the days to the end from the list response day, not the browser day', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-30T12:00:00Z'));
+    try {
+      const ending: Deposit = { ...savings, endDate: '2026-12-03' };
+      vi.spyOn(depositsApi, 'list').mockResolvedValue({ ...list([ending]), asOf: '2026-12-02' });
+      open('/deposits');
+      const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
+        'li',
+      ) as HTMLElement;
+      expect(within(card).getByText('Ends in 1 day')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('DEP-ONE-REAL-LIST-ENDED gives a row whose term has ended the Term ended badge, not a promise', async () => {
     setValueView('real');
-    const ended: Deposit = {
-      ...inflated,
-      atMaturity: {
-        date: '2020-01-01',
-        balance: '104000.00',
-        interest: '4000.00',
-        inTodaysMoney: { official: null, personal: null },
-      },
-    };
-    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([ended]));
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(
+      list([{ ...inflated, status: 'matured' as const }]),
+    );
     open('/deposits');
     const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
       'li',
     ) as HTMLElement;
-    const end = within(card)
-      .getByText("At the end, in today's money")
-      .closest('div') as HTMLElement;
-    expect(end).toHaveTextContent('the term has ended');
+    expect(within(card).getByText('Term ended')).toBeInTheDocument();
     expect(card).not.toHaveTextContent('for the term yet');
   });
 
@@ -1483,6 +1436,8 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     await user.click(screen.getByRole('radio', { name: 'Real' }));
     expect(card).toHaveTextContent('Real +2.84% a year after 8.90% inflation');
     expect(card).not.toHaveTextContent('3,328');
+    await user.click(screen.getByRole('radio', { name: 'Nominal' }));
+    expect(card).not.toHaveTextContent(/inflation/i);
   });
 
   it('INFL-DEPOSIT-OWN-RATE follows the rate the owner chose in Settings', async () => {
@@ -1494,10 +1449,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
       'li',
     ) as HTMLElement;
     expect(within(card).getByText('Real +1.82% a year after 10.00% inflation')).toBeInTheDocument();
-    expect(within(card).getByText('-₽121')).toBeInTheDocument();
   });
 
-  it('INFL-DEPOSIT-LIST-UNKNOWN under Real shows a dash for the interest it cannot read, not the nominal interest', async () => {
+  it('INFL-DEPOSIT-LIST-UNKNOWN under Real says the real rate has no figure, and shows no nominal interest', async () => {
     setValueView('real');
     const unknown = { ...official, inflationPercent: null, ratePercent: null, gain: null };
     vi.spyOn(depositsApi, 'list').mockResolvedValue(
@@ -1507,7 +1461,7 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     const card = (await screen.findByRole('link', { name: /Savings A/ })).closest(
       'li',
     ) as HTMLElement;
-    expect(within(card).getAllByText('—').length).toBeGreaterThan(0);
+    expect(card).toHaveTextContent('Real rate —, no inflation figures yet');
     expect(card).not.toHaveTextContent('3,328');
     expect(card).not.toHaveTextContent(/Real [+-]/);
   });
@@ -1528,8 +1482,9 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     open(`/deposits/${savings.id}`);
     const earned = (await screen.findByText('Interest earned')).closest('div') as HTMLElement;
     expect(within(earned).getByText('₽3,328')).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: /inflation/i })).toBeNull();
-    expect(screen.getByRole('columnheader', { name: 'Interest' })).toBeInTheDocument();
+    const periodsList = screen.getByRole('list', { name: 'Interest by period' });
+    expect(within(periodsList).getByText('₽1,019')).toBeInTheDocument();
+    expect(periodsList).not.toHaveTextContent(/inflation/i);
     const page = screen
       .getByRole('heading', { level: 2, name: 'Savings A' })
       .closest('.shell-page');
@@ -1548,21 +1503,20 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     expect(within(earned).getByText('+₽2,450')).toBeInTheDocument();
     expect(screen.queryByText('Interest earned')).toBeNull();
     expect(screen.queryByText('₽3,328')).toBeNull();
-    const table = screen.getByRole('columnheader', { name: 'After inflation' }).closest('table');
-    expect(within(table as HTMLElement).getByText('+₽52')).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: 'Interest' })).toBeNull();
-    expect(within(table as HTMLElement).queryByText('₽1,019')).toBeNull();
+    const list = screen.getByRole('list', { name: 'Interest by period' });
+    expect(within(list).getByText('+₽52')).toBeInTheDocument();
+    expect(within(list).getByText('after inflation')).toBeInTheDocument();
+    expect(within(list).queryByText('₽1,019')).toBeNull();
   });
 
   it('DEP-ONE-REAL-DETAIL-OLD-PERIODS shows dashes, not the bank interest, for periods saved without the figure', async () => {
     setValueView('real');
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(inflated));
     open(`/deposits/${savings.id}`);
-    const table = (await screen.findByRole('columnheader', { name: 'After inflation' })).closest(
-      'table',
-    ) as HTMLElement;
-    expect(within(table).queryByText('₽1,019')).toBeNull();
-    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
+    const list = await screen.findByRole('list', { name: 'Interest by period' });
+    expect(within(list).queryByText('₽1,019')).toBeNull();
+    expect(within(list).getAllByText('—').length).toBeGreaterThan(0);
+    expect(list).toHaveTextContent('No inflation figures for this period');
   });
 
   it('DEP-ONE-REAL-DETAIL-UNKNOWN shows a dash and the reason for the interest it cannot read', async () => {
@@ -1590,6 +1544,7 @@ describe('INFL-DEPOSIT: a deposit after inflation', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText(/at your own rate/).length).toBeGreaterThan(0);
     expect(screen.getByText('-₽32')).toBeInTheDocument();
+    expect(await stat('Interest after inflation')).toHaveTextContent('-₽121');
   });
 
   it('INFL-DEPOSIT-DETAIL-KEPT-ANSWER leaves out the column an older saved answer has no figures for', async () => {
@@ -1930,9 +1885,9 @@ describe('the deposit page', () => {
       ),
     );
     open(`/deposits/${savings.id}`);
-    // The deposit is the page head (h2); the top bar names the section and holds the switch.
+    // The top bar names the deposit and holds the switch; the page head repeats the name (h2).
     await screen.findByRole('heading', { level: 2, name: 'Savings A' });
-    const heading = screen.getByRole('heading', { level: 1, name: 'Banks' });
+    const heading = screen.getByRole('heading', { level: 1, name: 'Savings A' });
     const header = heading.closest('header') as HTMLElement;
     const values = within(header).getByRole('radiogroup', { name: 'Values' });
     await user.click(within(values).getByRole('radio', { name: 'Real' }));
@@ -2022,5 +1977,257 @@ describe('the deposit page', () => {
     const checks = screen.getByRole('list', { name: 'Checks against the bank' });
     expect(checks).toHaveTextContent('Bank ₽100,330 · App ₽100,328');
     expect(checks).toHaveTextContent('+₽1');
+  });
+});
+
+describe('BANKS-LAYOUT: the Banks list as the prototype lays it out', () => {
+  const account: Deposit = {
+    ...savings,
+    id: '00000000-0000-4000-8000-000000000003',
+    kind: 'account',
+    name: 'Everyday account',
+    currency: 'EUR',
+    endDate: null,
+    capitalized: true,
+    payout: 'daily',
+    ratePercent: '2',
+    nextPayout: null,
+    atMaturity: null,
+    values: { USD: '1100.00', EUR: '1000.00', RUB: '100328.77' },
+    balance: '1000.00',
+  };
+  const row = async (name: RegExp) =>
+    (await screen.findByRole('link', { name })).closest('li') as HTMLElement;
+
+  it('BANKS-ROW-VALUE-COLUMN keeps the value in the currency shown as its own column, also in the deposit’s own currency', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
+    open('/deposits?currency=RUB');
+    const card = await row(/Savings A/);
+    expect(card.querySelector('.deposit-product__balance')).toHaveTextContent('₽100,328');
+    expect(card.querySelector('.deposit-product__value')).toHaveTextContent('₽100,328');
+  });
+
+  it('BANKS-ROW-ICON draws a round coloured % for a deposit and the currency’s own sign for an account', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, account]));
+    open('/deposits');
+    const term = await row(/Savings A/);
+    expect(term.querySelector('.asset-icon')).toHaveAttribute('data-glyph', '%');
+    const current = await row(/Everyday account/);
+    expect(current.querySelector('.asset-icon')).toHaveAttribute('data-glyph', '€');
+  });
+
+  it('BANKS-ROW-BADGE says Active in green, and a term ending within a week or ended in amber', async () => {
+    const ending: Deposit = {
+      ...savings,
+      id: '00000000-0000-4000-8000-000000000004',
+      name: 'Ending C',
+      endDate: '2026-10-14',
+    };
+    const ended: Deposit = {
+      ...savings,
+      id: '00000000-0000-4000-8000-000000000005',
+      name: 'Ended D',
+      status: 'matured',
+    };
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, ending, ended]));
+    open('/deposits');
+    expect(within(await row(/Savings A/)).getByText('Active')).toHaveClass('ui-badge--pos');
+    expect(within(await row(/Ending C/)).getByText('Ends in 3 days')).toHaveClass('ui-badge--warn');
+    expect(within(await row(/Ended D/)).getByText('Term ended')).toHaveClass('ui-badge--warn');
+  });
+
+  it('BANKS-ROW-TERMS puts the rate and the interest on the first line and the end date on the second', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings, account]));
+    open('/deposits');
+    const term = (await row(/Savings A/)).querySelector('.deposit-product__terms') as HTMLElement;
+    expect(within(term).getByText('12% · interest paid monthly')).toBeInTheDocument();
+    expect(within(term).getByText('until Dec 1, 2026')).toBeInTheDocument();
+    const current = (await row(/Everyday account/)).querySelector(
+      '.deposit-product__terms',
+    ) as HTMLElement;
+    expect(current).toHaveTextContent('2% · interest added daily');
+    expect(current.querySelectorAll('small')).toHaveLength(0);
+  });
+
+  it('BANKS-ROW-PLAIN has no details row and no “not checked” banner under a product', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
+    open('/deposits');
+    const card = await row(/Savings A/);
+    expect(card.querySelector('details')).toBeNull();
+    expect(within(card).queryByText('Interest and balance details')).toBeNull();
+    expect(within(card).queryByText('Not checked against the bank yet')).toBeNull();
+    expect(within(card).queryByRole('status')).toBeNull();
+  });
+
+  it('BANKS-ROW-CHECK says on the row when the last bank check found a difference, and nothing for a match', async () => {
+    const differing: Deposit = {
+      ...savings,
+      lastCheck: {
+        checkedOn: '2026-10-04',
+        bankBalance: '100330.45',
+        calculated: '100329.22',
+        difference: '1.23',
+      },
+    };
+    const matching: Deposit = {
+      ...dollars,
+      lastCheck: {
+        checkedOn: '2026-10-04',
+        bankBalance: '5052.07',
+        calculated: '5052.07',
+        difference: '0.00',
+      },
+    };
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([differing, matching]));
+    open('/deposits?currency=RUB');
+    expect(
+      within(await row(/Savings A/)).getByText(/Differs from the bank by ₽1\b/),
+    ).toBeInTheDocument();
+    expect(within(await row(/Dollar B/)).queryByText(/Differs from the bank/)).toBeNull();
+  });
+
+  it('BANKS-HEAD gives the bank the head a broker has: a framed icon, a 16 px name and the total', async () => {
+    vi.spyOn(depositsApi, 'list').mockResolvedValue(list([savings]));
+    open('/deposits');
+    const bank = await screen.findByRole('region', { name: 'Synthetic Bank' });
+    expect(bank.querySelector('.deposit-bank__icon')).not.toBeNull();
+    expect(within(bank).getByText('Synthetic Bank')).toHaveClass('deposit-bank__name');
+    expect(within(bank).getByText('1 product')).toBeInTheDocument();
+  });
+});
+
+describe('DEPOSIT-LAYOUT: the deposit page as the prototype lays it out', () => {
+  const months = (count: number): DepositChartPoint[] =>
+    Array.from({ length: count }, (_, index) => {
+      const date = new Date(Date.UTC(2025, 9 + index, 11)).toISOString().slice(0, 10);
+      return {
+        date,
+        balance: `${100000 + index * 1000}.00`,
+        invested: '100000.00',
+        real: { official: null, personal: null },
+      };
+    });
+  const withMonths = (count: number) =>
+    detail({ ...savings, real: { official: null, personal: null } }, { chart: months(count) });
+
+  it('DEPOSIT-TITLE names the deposit in the top bar', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Savings A' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Banks' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Back to Banks' })).toBeInTheDocument();
+  });
+
+  it('DEPOSIT-STATS keeps what the deposit has not posted yet in the interest earned, not as another figure', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail({ ...savings, capitalized: true, interestEarned: '1348.77' }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const earned = screen.getByText('Interest earned', { selector: 'dt' });
+    expect(earned.nextElementSibling).toHaveTextContent('₽1,348');
+    expect(earned.parentElement).toHaveTextContent('₽328 not posted yet');
+    expect(screen.queryByText('Earned, not posted yet')).toBeNull();
+    expect(
+      Array.from(document.querySelectorAll('.ui-stats dt')).map((dt) => dt.textContent),
+    ).toEqual([
+      'In the deposit',
+      'Interest earned',
+      'Interest added so far',
+      'Next, paid',
+      'At the end of the term',
+    ]);
+  });
+
+  it('DEPOSIT-CHART-PERIODS has no title over the chart and periods beside its legend', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withMonths(14));
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const chart = screen.getByRole('region', { name: 'Value over time' });
+    expect(within(chart).getByRole('heading', { name: 'Value over time' })).toHaveClass('ui-sr');
+    const tabs = within(chart).getByRole('tablist', { name: 'Chart period' });
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['3M', '6M', '1Y', 'ALL']);
+    expect(within(tabs).getByRole('tab', { name: 'ALL' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(within(tabs).getByRole('tab', { name: '3M' }));
+    const plot = within(chart).getByRole('group', { name: /Use the arrow keys/ });
+    act(() => plot.focus());
+    await user.keyboard('{Home}');
+    // The last point is Nov 11, 2026; three months back is Aug 11.
+    expect(within(plot).getByText('Aug 11, 2026')).toBeInTheDocument();
+  });
+
+  it('DEPOSIT-CHART-PERIODS offers only the periods shorter than the deposit’s life', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withMonths(5));
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const tabs = screen.getByRole('tablist', { name: 'Chart period' });
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['3M', 'ALL']);
+  });
+
+  it('DEPOSIT-CHART-PERIODS offers none for a deposit younger than three months', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(withMonths(3));
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    expect(screen.queryByRole('tablist', { name: 'Chart period' })).toBeNull();
+  });
+
+  it('DEPOSIT-CHART-PERIODS cuts to six months and to a year, a month-end day clamped to a shorter month', async () => {
+    const user = userEvent.setup();
+    // Monthly points on the 31st or the last day: Jan 31 2026 back 3 months is Oct 31, 6 months Jul 31.
+    const ends = [
+      '2025-06-30',
+      '2025-07-31',
+      '2025-08-31',
+      '2025-09-30',
+      '2025-10-31',
+      '2025-11-30',
+      '2025-12-31',
+      '2026-01-31',
+    ];
+    const points: DepositChartPoint[] = ends.map((date, index) => ({
+      date,
+      balance: `${100000 + index * 1000}.00`,
+      invested: '100000.00',
+      real: { official: null, personal: null },
+    }));
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail({ ...savings, real: { official: null, personal: null } }, { chart: points }),
+    );
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const tabs = screen.getByRole('tablist', { name: 'Chart period' });
+    await user.click(within(tabs).getByRole('tab', { name: '6M' }));
+    const plot = screen.getByRole('group', { name: /Use the arrow keys/ });
+    act(() => plot.focus());
+    await user.keyboard('{Home}');
+    // Six months before Jan 31, 2026 is Jul 31, 2025, and that day is kept.
+    expect(within(plot).getByText('Jul 31, 2025')).toBeInTheDocument();
+    await user.click(within(tabs).getByRole('tab', { name: 'ALL' }));
+    act(() => plot.focus());
+    await user.keyboard('{Home}');
+    expect(within(plot).getByText('Jun 30, 2025')).toBeInTheDocument();
+  });
+
+  it('DEPOSIT-INTEREST-LIST lists the interest of each period as a two-line row on a wide screen too', async () => {
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));
+    open(`/deposits/${savings.id}`);
+    await screen.findByRole('heading', { level: 2, name: 'Savings A' });
+    const periods = screen.getByRole('list', { name: 'Interest by period' });
+    const [first] = within(periods).getAllByRole('listitem');
+    expect(first).toHaveTextContent('Jul 1, 2026 – Aug 1, 2026');
+    expect(first).toHaveTextContent('Payable');
+    expect(first).toHaveTextContent('₽1,019');
+    expect(
+      within(screen.getByRole('region', { name: 'Interest by period' })).queryByRole('table'),
+    ).toBeNull();
   });
 });

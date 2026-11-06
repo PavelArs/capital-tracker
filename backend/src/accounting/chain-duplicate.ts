@@ -1,5 +1,6 @@
 import type { Classification, PricedClassification } from './chain-classification';
 import { canonicalDecimalToAtoms } from './money';
+import { ClosestEdges, lowerBound, upperBound, withinBudget } from './proposal-matching';
 import { type SettlementCurrency, settlementCurrencies } from './trade-settlement';
 
 // CLS-DUPLICATE: a record the owner added by hand or from CSV and the blockchain transaction
@@ -37,48 +38,83 @@ export function duplicateFits(leg: Movement, record: Movement): boolean {
  * CLS-DUPLICATE: the unanswered transactions that are each the single closest match of one
  * record, and the other way round. The closest is the one whose amount differs least, then the
  * one nearest in time; a tie or a second equally close candidate leaves both to the owner
- * (nothing is guessed). Newest transaction first.
+ * (nothing is guessed). Newest transaction first. The records of one account, coin and way with
+ * more candidate pairs than the work bound allows (proposal-matching.ts) offer none; the owner
+ * classifies those transactions by hand.
  */
-export function proposeDuplicates<L extends Movement, R extends Movement>(
+export function proposeDuplicatesBounded<L extends Movement, R extends Movement>(
   legs: readonly L[],
   records: readonly R[],
-): { leg: L; record: R }[] {
+): { proposals: { leg: L; record: R }[]; limitedGroups: number } {
   type Edge = { leg: L; record: R; amount: bigint; time: number };
-  const edges: Edge[] = [];
-  const groups = new Map<string, R[]>();
+  const keyOf = (item: Movement) => `${item.accountId}|${item.coin}|${item.inbound}`;
+  const at = (record: R) => record.at.getTime();
+  const windowMs = DUPLICATE_WINDOW_HOURS * 3_600_000;
+  const byKey = new Map<string, { records: R[]; legs: L[] }>();
   for (const record of records) {
-    const key = `${record.accountId}|${record.coin}|${record.inbound}`;
-    groups.set(key, [...(groups.get(key) ?? []), record]);
+    const group = byKey.get(keyOf(record)) ?? { records: [], legs: [] };
+    group.records.push(record);
+    byKey.set(keyOf(record), group);
   }
-  for (const leg of legs)
-    for (const record of groups.get(`${leg.accountId}|${leg.coin}|${leg.inbound}`) ?? [])
-      if (duplicateFits(leg, record))
-        edges.push({
+  for (const leg of legs) byKey.get(keyOf(leg))?.legs.push(leg);
+  // The records within the window of a transaction, as a range of the time-sorted list.
+  const range = (sorted: readonly R[], leg: L) => [
+    lowerBound(sorted, at, leg.at.getTime() - windowMs),
+    upperBound(sorted, at, leg.at.getTime() + windowMs),
+  ];
+  const groups = [...byKey.values()].map((group) => {
+    const sorted = [...group.records].sort((left, right) => at(left) - at(right));
+    const work = group.legs.reduce((sum, leg) => {
+      const [from, to] = range(sorted, leg);
+      return sum + (to - from);
+    }, 0);
+    return { legs: group.legs, sorted, work };
+  });
+  const allowed = withinBudget(groups.map((group) => group.work));
+  const closer = (left: Edge, right: Edge) =>
+    left.amount !== right.amount ? (left.amount < right.amount ? -1 : 1) : left.time - right.time;
+  const ofLeg = new ClosestEdges<L, Edge>(closer);
+  const ofRecord = new ClosestEdges<R, Edge>(closer);
+  let limitedGroups = 0;
+  groups.forEach((group, index) => {
+    if (!allowed[index]) {
+      if (group.work > 0) limitedGroups++;
+      return;
+    }
+    for (const leg of group.legs) {
+      const [from, to] = range(group.sorted, leg);
+      for (let position = from; position < to; position++) {
+        const record = group.sorted[position];
+        if (!duplicateFits(leg, record)) continue;
+        const edge = {
           leg,
           record,
           amount: leg.atoms > record.atoms ? leg.atoms - record.atoms : record.atoms - leg.atoms,
           time: Math.abs(leg.at.getTime() - record.at.getTime()),
-        });
-  const closer = (left: Edge, right: Edge) =>
-    left.amount !== right.amount ? (left.amount < right.amount ? -1 : 1) : left.time - right.time;
-  const alike = (left: Edge, right: Edge) =>
-    left.amount === right.amount && left.time === right.time;
-  const bestOf = <K extends 'leg' | 'record'>(side: K) => {
-    const grouped = new Map<Edge[K], Edge[]>();
-    for (const edge of edges) grouped.set(edge[side], [...(grouped.get(edge[side]) ?? []), edge]);
-    const best = new Map<Edge[K], Edge>();
-    for (const [item, mine] of grouped) {
-      const sorted = mine.sort(closer);
-      if (sorted.length < 2 || !alike(sorted[0], sorted[1])) best.set(item, sorted[0]);
+        };
+        ofLeg.offer(leg, edge);
+        ofRecord.offer(record, edge);
+      }
     }
-    return best;
-  };
-  const ofLeg = bestOf('leg');
-  const ofRecord = bestOf('record');
-  return edges
-    .filter((edge) => ofLeg.get(edge.leg) === edge && ofRecord.get(edge.record) === edge)
-    .sort((left, right) => right.leg.at.getTime() - left.leg.at.getTime())
+  });
+  // Newest first; transactions at one moment keep the order they were given in.
+  const position = new Map<L, number>(legs.map((leg, index) => [leg, index]));
+  const proposals = [...ofLeg.unique()]
+    .filter((edge) => ofRecord.closest(edge.record) === edge)
+    .sort(
+      (left, right) =>
+        right.leg.at.getTime() - left.leg.at.getTime() ||
+        (position.get(left.leg) as number) - (position.get(right.leg) as number),
+    )
     .map(({ leg, record }) => ({ leg, record }));
+  return { proposals, limitedGroups };
+}
+
+export function proposeDuplicates<L extends Movement, R extends Movement>(
+  legs: readonly L[],
+  records: readonly R[],
+): { leg: L; record: R }[] {
+  return proposeDuplicatesBounded(legs, records).proposals;
 }
 
 /** A trade of the owner's as far as the answer to a transaction is concerned. */

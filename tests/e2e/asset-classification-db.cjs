@@ -85,7 +85,7 @@ async function createPreviousSchema() {
         /^[A-Za-z]+\d{13}$/.test(entry.name) &&
         entry.name !== migration,
     );
-  assert.equal(classes.length, 76, 'Every migration but the classification: exactly seventy-six');
+  assert.equal(classes.length, 77, 'Every migration but the classification: exactly seventy-seven');
   const prior = new DataSource({
     type: 'postgres',
     host: settings.DB_HOST,

@@ -13,6 +13,9 @@ export type MarketMissing =
   | 'unpriced-changed';
 export const historyPeriods: readonly HistoryPeriod[] = ['24H', '7D', '1M', '3M', '1Y', 'ALL'];
 
+/** SECTION-CHART: a part of the capital the dashboard chart can show alone. */
+export type HistorySection = 'wallet' | 'bank' | 'broker' | 'property';
+
 // Exact decimal strings from GET /accounting/portfolio/history (record-portfolio-snapshots):
 // stored snapshots of the period, then the current value. A null value had no rate.
 // `invested` is net invested up to the point: deposits minus withdrawals at each one's
@@ -50,6 +53,13 @@ export interface PortfolioHistory {
   /** Current unpriced assets excluded consistently from value, flows and P&L. */
   excludedAssetCount?: number;
   excludedDepositCount?: number;
+  /** Set when the answer is of one section only, with its figures; absent for the whole. */
+  section?: HistorySection;
+  /**
+   * Section only: the own transfers with one end outside it. They move value in or out of the
+   * section with no money put in, which its Net invested cannot tell apart from a gain.
+   */
+  transfersAcross?: number;
   // Assets held at the start with no price then, valued at their nearest trade or later price: the change
   // and the market part are estimates when above 0. Absent in an answer saved before it.
   startEstimatedAssetCount?: number;
@@ -79,9 +89,13 @@ export interface PortfolioHistory {
 export const HISTORY_TIMEOUT_MS = 30_000;
 
 export const portfolioHistoryApi = {
-  get: async (period: HistoryPeriod, currency?: AccountingCurrency): Promise<PortfolioHistory> => {
+  get: async (
+    period: HistoryPeriod,
+    currency?: AccountingCurrency,
+    section?: HistorySection,
+  ): Promise<PortfolioHistory> => {
     const response = await apiClient.get<PortfolioHistory>('/accounting/portfolio/history', {
-      params: currency ? { period, currency } : { period },
+      params: { period, ...(currency ? { currency } : {}), ...(section ? { section } : {}) },
       timeout: HISTORY_TIMEOUT_MS,
     });
     return response.data;

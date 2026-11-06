@@ -10,7 +10,8 @@ export const typeLabels: Record<AssetType, string> = {
   fiat: 'Cash',
   manual: 'Manual',
 };
-const securityLabels = { share: 'Share', bond: 'Bond', etf: 'Fund' } as const;
+/** The security type a T-Bank link names, as a caption reads it. */
+export const securityLabels = { share: 'Share', bond: 'Bond', etf: 'Fund' } as const;
 /**
  * "BTC · Crypto · USD": ticker, type and value currency of an asset; a token held in tracked
  * wallets names their blockchains, "USDT on Ethereum, Solana" (TOKEN-CHAIN).

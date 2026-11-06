@@ -73,6 +73,11 @@ Decisions taken without asking, open to correction:
   covering up to two years. Whether the two RUB purchases (likely P2P) are visible
   is unverified: Bybit's P2P API is documented as a separate API. Anything the API
   cannot return stays manual. Change M22 verifies this against Pavel's own read-only key.
+- **D9 What needs attention lives in the header bell** (owner, 2026-11-04). The
+  prototype's "Needs your attention" block beside the dashboard total is not built: the
+  bell in every page header (`docs/application-shell.md`) shows the count and lists
+  each problem with its one action, on every page rather than on the dashboard only.
+  Wherever the scenarios below say "attention list", they mean the bell's panel.
 
 ## 2. Principles
 
@@ -186,6 +191,7 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-OPS-7 | Every create, correction, classification and void is kept as an immutable version with its time and source. | 14 | — |
 | PR-OPS-8 | A Sell, Expense or Transfer cannot exceed the available quantity (lowest balance from its date forward); the form shows it and offers "Use all". A Buy that later operations consume cannot be deleted. | 7, 8 | 13 |
 | PR-OPS-9 | Sale proceeds stay in the account as cash; a Buy spends that cash before counting outside money as a deposit. | 10, 11 | 13, 22 |
+| PR-OPS-10 | Convert: cash in one currency (USD, EUR, RUB) becomes cash in another in the same account as one operation, limited to the cash available then; it is no flow, and only the change of the exchange rate since the cash was received is profit or loss. | 8, 10 | 13 |
 | PR-VAL-1 | Portfolio value now, in the selected main currency (USD, EUR, RUB), over all accounts. | 3.1 | 5, 6, 9 |
 | PR-VAL-4 | Cost basis, realized and unrealized P&L are kept in USD, EUR and RUB, each with the FX rate of the operation's date; adding another currency needs only its rate series (Q1). | 3.1, 11 | 9, 21, 22 |
 | PR-FX-1 | Daily Bank of Russia rates for USD and EUR are collected and stored with their date and source, backfilled from 01.01.2009, so carry-in lots and other operations older than the 2025 chart history have the rate of their own date. | 5.3, 16 | 9, 11 |
@@ -429,8 +435,8 @@ I know where its value comes from.
   **then** one observation exists.
 - PRC-OUTAGE (E2E): **Given** a stored BTC price from 3 hours ago and a failing
   provider **when** the owner opens the dashboard **then** value uses the stored
-  price, the price is marked "updated 3 h ago", **and** the attention block says
-  prices are delayed.
+  price, the price is marked "updated 3 h ago", **and** the attention list in the
+  header bell says prices are delayed (D9).
 - PRC-NONE: **Given** an asset with no observation **when** the portfolio is valued
   **then** the asset shows "No price", the total is marked incomplete and nothing is 0.
 
@@ -481,7 +487,7 @@ I know where its value comes from.
   readable reason.
 - SYNC-RECONCILE: **Given** the chain reports 0.0100 BTC and operations compute 0.0098
   BTC **when** the wallet is shown **then** it shows "Balance differs by 0.0002 BTC"
-  and the dashboard attention block lists it.
+  and the attention list in the header bell lists it (D9).
 
 **US-3.3** As the owner I see when data was last updated.
 
@@ -568,6 +574,11 @@ network-specific identity:
   current value of 0.5 BTC.
 - OPS-BUY-CASH: **Given** an account holding 30000 USDT **when** the owner buys BTC for
   40000 USDT **then** the 30000 USDT cash is spent and only 10000 USDT counts as a deposit.
+- CASH-CONVERT: **Given** an account holding 80000 RUB put in at 80 RUB per USD (1000
+  USD) **when** the owner converts 72000 RUB into 800 USD **then** the account holds 8000
+  RUB and 800 USD, the sale of 72000 RUB (cost 900 USD) realizes −100 USD, net flow is 0,
+  **and** converting more RUB than the account holds is refused. The list shows the
+  operation as "Convert".
 
 **US-4.4** As the owner I classify transactions the app found.
 
@@ -826,11 +837,12 @@ take back out, and the rewards it pays.
 
 - DASH-MAIN (E2E): **Given** priced holdings and snapshots **when** the owner signs in
   **then** the dashboard shows total net worth, change for the selected period
-  (default 1M) in amount and percent, the chart, allocation, top assets **and** the
-  attention block.
+  (default 1M) in amount and percent, the chart, allocation **and** top assets; what
+  needs attention is in the header bell (D9).
 - DASH-ATTENTION: **Given** 3 unclassified transactions, a failed Ethereum sync and
-  prices 2 hours old **then** the attention block lists exactly these three items;
-  **given** none of them **then** the block is collapsed to one quiet line.
+  prices 2 hours old **then** the header bell shows a count **and** its panel lists
+  exactly these three items, each with its action; **given** none of them **then** the
+  bell shows no count and its panel says "Everything is up to date" (D9).
 - DASH-EMPTY (E2E): **Given** a new owner with no accounts **then** the dashboard says
   "Your portfolio is empty" with "Add wallet" and "Add asset".
 
@@ -953,7 +965,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M13 | `link-own-transfers` | automatic transfers between known wallets (D7), manual links; network fee as Fee | M12 | — |
 | M14 | `track-ethereum-wallets` | ETH + USDT/USDC history and balance | M11, M12 | Q6, Q7 |
 | M15 | `track-solana-wallets` | SOL + USDT/USDC history and balance | M11, M12 | Q7 |
-| M16 | `show-dashboard-attention` | attention block, allocation and top assets on the dashboard | M6, M11, M12 | — |
+| M16 | `show-dashboard-attention` | allocation and top assets on the dashboard; what needs attention in the header bell (D9) | M6, M11, M12 | — |
 | M17 | `reset-password-by-email` | reset request, email via Yandex SMTP, link, pages | — | Q5 |
 | M18 | `manage-security-settings` | recovery-code regeneration, sessions, log out everywhere | M1 | — |
 | M19 | `export-owner-data` | CSV archive and JSON backup in Settings | M8 | — |

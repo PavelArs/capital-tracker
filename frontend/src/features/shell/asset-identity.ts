@@ -46,6 +46,9 @@ export const assetClassColors: Record<AccountClass, string> = {
   property: 'var(--c-prop)',
 };
 
+/** A property is drawn as a house, not by the first letter of its name (prototype "aico"). */
+const propertyGlyph = '⌂';
+
 /** Every account's class (v8), by account id: null for a wallet. */
 export type AccountClasses = Readonly<Record<string, AccountClass | null | undefined>>;
 
@@ -81,7 +84,21 @@ export function assetIdentity(asset: {
           : asset.assetClass
             ? assetClassColors[asset.assetClass]
             : other,
-    glyph: (ticker || asset.name.trim()).slice(0, 1).toUpperCase() || '?',
+    glyph:
+      asset.assetClass === 'property'
+        ? propertyGlyph
+        : (ticker || asset.name.trim()).slice(0, 1).toUpperCase() || '?',
+  };
+}
+
+/**
+ * A bank product (prototype "aico" of a deposit): the bank colour, a % on a term deposit and the
+ * currency's own sign on an account, which holds money rather than runs a rate.
+ */
+export function depositIdentity(kind: 'term-deposit' | 'account', currency: string): AssetIdentity {
+  return {
+    color: 'var(--c-bank)',
+    glyph: kind === 'account' ? (known[currency]?.glyph ?? '%') : '%',
   };
 }
 

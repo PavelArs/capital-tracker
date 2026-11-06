@@ -356,12 +356,20 @@ button.wallets-source__open:focus-visible {
   margin: 18px 0 0;
 }
 
-/* Assets and transactions side by side (prototype .two-col). */
+/* Assets and transactions side by side (prototype .two-col): the list of transactions wider,
+   both cards as tall as the taller one so they end on one line; one under the other below
+   1100 px. */
 .wallets-split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  align-items: start;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: stretch;
   gap: var(--sp-4);
+}
+
+@media (max-width: 1100px) {
+  .wallets-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .wallets-holdings__open {

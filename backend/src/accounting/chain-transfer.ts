@@ -7,6 +7,7 @@ import {
 } from '../wallet-addresses/chain-assets';
 import { unfit } from './chain-classification';
 import { formatAtoms } from './money';
+import { ClosestEdges, lowerBound, upperBound, withinBudget } from './proposal-matching';
 
 // link-own-transfers (M13, XFER-*): coins that leave one of the owner's accounts and arrive in
 // another are one transfer, which keeps their cost basis and changes capital only by the
@@ -227,8 +228,12 @@ export interface PairProposal<L extends TimedLeg = TimedLeg> {
  * answered and that name different transactions (the same one is XFER-AUTO). A pair is
  * proposed only when each is the other's single closest candidate in time and amount; a
  * tie or a second candidate leaves both to the owner (nothing is guessed). Newest first.
+ * A coin with more candidate pairs than the work bound allows (proposal-matching.ts) offers none
+ * and is named in `limited`; its transactions stay for the owner to classify by hand.
  */
-export function proposeTransferPairs<L extends TimedLeg>(legs: readonly L[]): PairProposal<L>[] {
+export function proposeTransferPairsBounded<L extends TimedLeg>(
+  legs: readonly L[],
+): { proposals: PairProposal<L>[]; limited: string[] } {
   const open = legs.filter(
     (leg) =>
       net(leg) !== 0n &&
@@ -244,51 +249,67 @@ export function proposeTransferPairs<L extends TimedLeg>(legs: readonly L[]): Pa
     byCoin.set(coin, group);
   }
   const windowMs = PAIR_WINDOW_HOURS * 3_600_000;
-  const edges: Edge[] = [];
-  for (const group of byCoin.values()) {
-    const later = [...group.in].sort((left, right) => +left.blockTime - +right.blockTime);
-    for (const out of group.out) {
-      // The receipts no earlier than the withdrawal, in time order, until the window ends.
-      let low = 0;
-      let high = later.length;
-      while (low < high) {
-        const middle = (low + high) >> 1;
-        if (+later[middle].blockTime < +out.blockTime) low = middle + 1;
-        else high = middle;
-      }
-      for (let at = low; at < later.length; at++) {
-        const into = later[at];
-        const gap = +into.blockTime - +out.blockTime;
-        if (gap > windowMs) break;
-        if (sameTransaction(out, into) || !pairFits(out, into)) continue;
-        edges.push({ out, in: into, gap, lost: -netAtoms(out) - netAtoms(into) });
-      }
-    }
-  }
+  const time = (leg: L) => +leg.blockTime;
+  // The receipts no earlier than a withdrawal and within the window, as a range of the sorted list.
+  const range = (later: readonly L[], out: L) => [
+    lowerBound(later, time, time(out)),
+    upperBound(later, time, time(out) + windowMs),
+  ];
+  const groups = [...byCoin.entries()].map(([coin, group]) => {
+    const later = [...group.in].sort((left, right) => time(left) - time(right));
+    const work = group.out.reduce((sum, out) => {
+      const [from, to] = range(later, out);
+      return sum + (to - from);
+    }, 0);
+    return { coin, outs: group.out, later, work };
+  });
+  const allowed = withinBudget(groups.map((group) => group.work));
   const closer = (left: Edge, right: Edge) =>
-    left.gap !== right.gap ? left.gap - right.gap : left.lost < right.lost ? -1 : 1;
-  const alike = (left: Edge, right: Edge) => left.gap === right.gap && left.lost === right.lost;
+    left.gap !== right.gap
+      ? left.gap - right.gap
+      : left.lost === right.lost
+        ? 0
+        : left.lost < right.lost
+          ? -1
+          : 1;
   // The single best edge of each leg; a leg whose two best edges are equally good has none.
-  const bestOf = (side: 'out' | 'in') => {
-    const grouped = new Map<L, Edge[]>();
-    for (const edge of edges) grouped.set(edge[side], [...(grouped.get(edge[side]) ?? []), edge]);
-    const best = new Map<L, Edge>();
-    for (const [leg, mine] of grouped) {
-      const sorted = mine.sort(closer);
-      if (sorted.length < 2 || !alike(sorted[0], sorted[1])) best.set(leg, sorted[0]);
+  const ofOut = new ClosestEdges<L, Edge>(closer);
+  const ofIn = new ClosestEdges<L, Edge>(closer);
+  const limited: string[] = [];
+  groups.forEach((group, index) => {
+    if (!allowed[index]) {
+      if (group.work > 0) limited.push(group.coin);
+      return;
     }
-    return best;
-  };
-  const ofOut = bestOf('out');
-  const ofIn = bestOf('in');
-  return edges
-    .filter((edge) => ofOut.get(edge.out) === edge && ofIn.get(edge.in) === edge)
+    for (const out of group.outs) {
+      const [from, to] = range(group.later, out);
+      for (let at = from; at < to; at++) {
+        const into = group.later[at];
+        if (sameTransaction(out, into) || !pairFits(out, into)) continue;
+        const edge = {
+          out,
+          in: into,
+          gap: time(into) - time(out),
+          lost: -netAtoms(out) - netAtoms(into),
+        };
+        ofOut.offer(out, edge);
+        ofIn.offer(into, edge);
+      }
+    }
+  });
+  const proposals = [...ofOut.unique()]
+    .filter((edge) => ofIn.closest(edge.in) === edge)
     .map((edge) => ({ outgoing: edge.out, incoming: edge.in, feeAtoms: edge.lost }))
     .sort(
       (left, right) =>
         +right.outgoing.blockTime - +left.outgoing.blockTime ||
         (left.outgoing.txid < right.outgoing.txid ? -1 : 1),
     );
+  return { proposals, limited: limited.sort() };
+}
+
+export function proposeTransferPairs<L extends TimedLeg>(legs: readonly L[]): PairProposal<L>[] {
+  return proposeTransferPairsBounded(legs).proposals;
 }
 
 /** What a proposal says in words: the coin, what left, what arrived and the fee between. */

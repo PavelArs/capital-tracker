@@ -34,12 +34,14 @@ import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
 import { readJournal } from './sync-journal';
+import { type SyncOffReason, setSyncEnabled } from './sync-switch';
 import { balancesLateral, leftOut, withDust } from './token-left-out';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
   type ExchangeRegistration,
   parseBalanceGap,
   parseRegistration,
+  parseSyncEnabled,
   parseTokenVisibility,
   parseTransactionQuery,
   parseUpdate,
@@ -66,6 +68,11 @@ interface AddressRow {
   walkCursorTxid: string | null;
   completedTopTxid: string | null;
   completedAt: Date | null;
+  /** WALLET-SYNC-OFF: set while the background sync is switched off, and by whom. */
+  syncDisabledAt: Date | null;
+  syncDisabledReason: SyncOffReason | null;
+  /** Failed passes in a row; three switch the sync off. */
+  syncFailures: number;
   createdAt: Date;
   transactionCount: number;
   /** Received minus sent per asset; null names the network's own coin. */
@@ -582,6 +589,11 @@ function summary(row: AddressRow, now = new Date()) {
       lastSuccessAt: status?.lastSuccessAt ?? null,
       nextRunAt: status?.nextRunAt ?? null,
       errorMessage: status?.errorMessage ?? null,
+      // WALLET-SYNC-OFF: present only while the background job skips the address. "failures"
+      // means the app switched it off, "manual" the owner. The stored transactions stay.
+      ...(row.syncDisabledAt && row.syncDisabledReason
+        ? { off: { reason: row.syncDisabledReason, at: row.syncDisabledAt.toISOString() } }
+        : {}),
     },
   };
 }
@@ -649,6 +661,7 @@ export class WalletAddressService {
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
           VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT ("ownerId", network, address) DO UPDATE SET "removedAt" = NULL,
+            "syncDisabledAt" = NULL, "syncDisabledReason" = NULL, "syncFailures" = 0,
             "accountId" = EXCLUDED."accountId", label = EXCLUDED.label
             WHERE wallet_addresses."removedAt" IS NOT NULL
           RETURNING id, (xmax = 0) AS fresh`,
@@ -712,6 +725,7 @@ export class WalletAddressService {
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
           VALUES ($1, $2, 'bybit', $3, $4, $5)
           ON CONFLICT ("ownerId", network, address) DO UPDATE SET "removedAt" = NULL,
+            "syncDisabledAt" = NULL, "syncDisabledReason" = NULL, "syncFailures" = 0,
             "accountId" = EXCLUDED."accountId", label = EXCLUDED.label
             WHERE wallet_addresses."removedAt" IS NOT NULL
           RETURNING id`,
@@ -742,7 +756,13 @@ export class WalletAddressService {
           historyFrom,
         ],
       );
-      // A new key for an account whose key stopped working is tried at the next tick.
+      // A new key for an account whose key stopped working is tried at the next tick, also when
+      // the failures had switched its sync off (WALLET-SYNC-OFF). An owner's own "off" stays.
+      await manager.query(
+        `UPDATE wallet_addresses SET "syncDisabledAt" = NULL, "syncDisabledReason" = NULL,
+          "syncFailures" = 0 WHERE id = $1 AND "syncDisabledReason" = 'failures'`,
+        [wallet.id],
+      );
       await manager.query(
         `UPDATE sync_sources SET "nextRunAt" = clock_timestamp() WHERE key = $1`,
         [walletSourceKey(wallet.id)],
@@ -863,7 +883,11 @@ export class WalletAddressService {
   async sync(ownerId: string, id: string) {
     const owner = parseUuid(ownerId);
     const addressId = parseUuid(id);
-    const { network } = await this.read((manager) => this.address(manager, owner, addressId));
+    const { network, syncDisabledAt } = await this.read((manager) =>
+      this.address(manager, owner, addressId),
+    );
+    // WALLET-SYNC-OFF: a switched-off address is read again only after the owner switches it on.
+    if (syncDisabledAt) throw new ConflictException('Sync is switched off for this address');
     const result = await this.walletSync.run({ id: addressId, ownerId: owner, network });
     if (result === 'busy') throw new ConflictException('Another sync advanced this address');
     return {
@@ -872,6 +896,22 @@ export class WalletAddressService {
       imported: result.step?.imported ?? 0,
       address: summary(await this.read((manager) => this.address(manager, owner, addressId))),
     };
+  }
+
+  /**
+   * WALLET-SYNC-OFF: switches one address's background sync on or off. Nothing is deleted: the
+   * stored transactions stay when it is off. Asking for the state the address is in changes
+   * nothing, so a repeated request is safe.
+   */
+  async setSyncEnabled(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const addressId = parseUuid(id);
+    const { enabled } = parseSyncEnabled(raw);
+    return this.source.transaction('READ COMMITTED', async (manager) => {
+      if (!(await setSyncEnabled(manager, owner, addressId, enabled)))
+        throw new NotFoundException();
+      return summary(await this.address(manager, owner, addressId));
+    });
   }
 
   /** SYNC-JOURNAL: the newest passes of one wallet, newest first. */

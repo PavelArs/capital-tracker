@@ -229,6 +229,33 @@ describe('DASH-ATTENTION: what needs the owner on the dashboard', () => {
     ]);
   });
 
+  it('WALLET-SYNC-OFF: tells the owner a wallet the app switched off, and leaves one the owner switched off', () => {
+    const off = (reason: 'failures' | 'manual') =>
+      wallet(4, {
+        network: 'arbitrum',
+        label: 'Arb',
+        chainBalance: null,
+        sync: {
+          ...failedEthereum.sync,
+          state: 'never',
+          status: 'failed',
+          errorMessage: 'Arbitrum One data is temporarily unavailable.',
+          off: { reason, at: minutesAgo(3) },
+        },
+      });
+    const [item] = collectAttention(input({ wallets: [off('failures')] })).items;
+    expect(item).toMatchObject({
+      key: `wallet:${id(24)}`,
+      tone: 'warn',
+      title: 'Arbitrum One wallet sync switched off',
+      action: { label: 'Open', to: `/wallets/${trust}` },
+    });
+    expect(item.detail).toContain('Switched off after 3 failed attempts in a row.');
+    expect(item.detail).toContain('Arbitrum One data is temporarily unavailable.');
+    expect(item.detail).toContain('Turn it on again');
+    expect(collectAttention(input({ wallets: [off('manual')] })).items).toEqual([]);
+  });
+
   it('SYNC-RECONCILE: lists a wallet whose chain balance differs from its transactions', () => {
     const attention = collectAttention(
       input({

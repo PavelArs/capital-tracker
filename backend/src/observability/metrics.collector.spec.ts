@@ -17,12 +17,17 @@ const value = async (name: string, labels: Record<string, string>) => {
   return undefined;
 };
 
+const walletQueries: string[] = [];
 function collector(rows: { sources: unknown[]; wallets: unknown[] } | Error) {
   const source = {
     query: jest.fn(async (sql: string) => {
       if (rows instanceof Error) throw rows;
       if (sql.includes('pg_database_size')) return [{ bytes: '123456' }];
-      return sql.includes('FROM wallet_addresses') ? rows.wallets : rows.sources;
+      if (sql.includes('FROM wallet_addresses')) {
+        walletQueries.push(sql);
+        return rows.wallets;
+      }
+      return rows.sources;
     }),
     driver: { master: { totalCount: 4, idleCount: 3, waitingCount: 1 } },
   } as unknown as DataSource;
@@ -30,6 +35,13 @@ function collector(rows: { sources: unknown[]; wallets: unknown[] } | Error) {
 }
 
 describe('OBS-COLLECTOR', () => {
+  it('WALLET-SYNC-OFF leaves a switched-off wallet out of the wallet metrics', async () => {
+    walletQueries.length = 0;
+    await collector({ sources: [], wallets: [] }).collect();
+    expect(walletQueries).toHaveLength(1);
+    expect(walletQueries[0]).toContain('"syncDisabledAt" IS NULL');
+  });
+
   it('OBS-SRC-1 reports when each price and rate source last succeeded and its state', async () => {
     await collector({
       sources: [

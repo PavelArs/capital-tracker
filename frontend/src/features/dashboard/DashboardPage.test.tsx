@@ -8,6 +8,7 @@ import { operationsApi } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
   type HistoryPeriod,
+  type HistorySection,
   type PortfolioHistory,
   portfolioHistoryApi,
 } from '@api/portfolio-history.api';
@@ -808,7 +809,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage();
     const top = await screen.findByRole('region', { name: 'Top assets' });
     const [first] = within(top).getAllByRole('row').slice(1);
-    expect(first.textContent).toBe('Bitcoin0.05 BTC$2,100.00-0.80%$4,200.00≈42.00%');
+    expect(first.textContent).toBe('Bitcoin0.05 BTC$2,100.00-0.80%$4,200.00≈42.0%');
   });
 
   it('DASH-TOP-BUSY says the Top assets card is busy while the valuation loads', async () => {
@@ -898,12 +899,12 @@ describe('show-dashboard-top-assets', () => {
     expect(valued).toHaveBeenCalledWith(undefined);
     const rows = within(top).getAllByRole('row').slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([
-      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.00%',
-      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.00%',
+      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.0%',
+      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.0%',
       // dashboard-06: a fixed price is no market quote, so its 24h says so as on phones.
-      'US Dollar1,500 USD$1.00Fixed$1,500.0015.00%',
-      'Solana2 SOL$450.00+1.25%$900.009.00%',
-      'Zcash2 ZEC$300.00+1.25%$600.006.00%',
+      'US Dollar1,500 USD$1.00Fixed$1,500.0015.0%',
+      'Solana2 SOL$450.00+1.25%$900.009.0%',
+      'Zcash2 ZEC$300.00+1.25%$600.006.0%',
     ]);
     expect(within(rows[0]).getByText('-0.80%')).toHaveClass('ui-neg');
     expect(within(rows[0]).getByRole('link', { name: 'Bitcoin' })).toHaveAttribute(
@@ -925,17 +926,17 @@ describe('show-dashboard-top-assets', () => {
         .getAllByRole('listitem')
         .map((item) => item.textContent);
     expect(shares()).toEqual([
-      'Bitcoin BTC$4,200.0042.00%',
-      'Ethereum ETH$2,000.0020.00%',
-      'US Dollar USD$1,500.0015.00%',
-      'Solana SOL$900.009.00%',
-      'Zcash ZEC$600.006.00%',
-      'Other 2 assets$800.008.00%',
+      'Bitcoin BTC$4,200.0042.0%',
+      'Ethereum ETH$2,000.0020.0%',
+      'US Dollar USD$1,500.0015.0%',
+      'Solana SOL$900.009.0%',
+      'Zcash ZEC$600.006.0%',
+      'Other 2 assets$800.008.0%',
     ]);
     await user.click(within(allocation).getByRole('radio', { name: 'Classes' }));
-    expect(shares()).toEqual(['Crypto$8,500.0085.00%', 'Cash$1,500.0015.00%']);
+    expect(shares()).toEqual(['Crypto$8,500.0085.0%', 'Cash$1,500.0015.0%']);
     await user.click(within(allocation).getByRole('radio', { name: 'Accounts' }));
-    expect(shares()).toEqual(['Trust Wallet$7,000.0070.00%', 'Cold storage$3,000.0030.00%']);
+    expect(shares()).toEqual(['Trust Wallet$7,000.0070.0%', 'Cold storage$3,000.0030.0%']);
   });
 
   it('PHONE-LIST shows top assets as two-line rows with the 24h change', async () => {
@@ -1319,11 +1320,11 @@ describe('Dashboard UI audit', () => {
     await within(top).findByText('Synthetic Bank · 12% · until Dec 1, 2026');
     const rows = within(top).getAllByRole('row').slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([
-      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.00%',
-      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.00%',
-      'Savings ASynthetic Bank · 12% · until Dec 1, 2026——$1,800.0018.00%',
-      'US Dollar1,500 USD$1.00Fixed$1,500.0015.00%',
-      'Solana2 SOL$450.00+1.25%$900.009.00%',
+      'Bitcoin0.05 BTC$2,100.00-0.80%$4,200.0042.0%',
+      'Ethereum2 ETH$1,000.00+1.25%$2,000.0020.0%',
+      'Savings ASynthetic Bank · 12% · until Dec 1, 2026——$1,800.0018.0%',
+      'US Dollar1,500 USD$1.00Fixed$1,500.0015.0%',
+      'Solana2 SOL$450.00+1.25%$900.009.0%',
     ]);
     expect(within(rows[2]).getByRole('link', { name: 'Savings A' })).toHaveAttribute(
       'href',
@@ -1719,5 +1720,419 @@ describe('COST-ESTIMATE dashboard', () => {
       'href',
       '/transactions?asset=ETH&cost=unknown',
     );
+  });
+});
+
+describe('SECTION-CHART dashboard', () => {
+  const brokerAccount = id(60);
+  const houseAccount = id(61);
+  // Wallets, a broker account, a property and bank deposits: every section the chart can show.
+  const holdsAllSections = () => {
+    accounts.mockResolvedValue({
+      items: [
+        account(trust, 'Trust Wallet'),
+        account(brokerAccount, 'Broker account', 'broker'),
+        account(houseAccount, 'Studio', 'property'),
+      ],
+      nextCursor: null,
+    });
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({ currency: currency ?? 'USD', depositsValue: '12500' }),
+    );
+  };
+  // The part of the capital in one section: smaller than the whole, with its own money put in.
+  const sectionHistory = (section: HistorySection, changes: Partial<PortfolioHistory> = {}) =>
+    history({
+      section,
+      transfersAcross: 0,
+      value: '30000',
+      invested: '25000',
+      points: [
+        { at: '2026-09-05T00:00:00.000Z', value: '28000', complete: true, invested: '25000' },
+        { at: '2026-10-04T12:30:00.000Z', value: '30000', complete: true, invested: '25000' },
+      ],
+      ...changes,
+    });
+  const answerSections = (changes: Partial<PortfolioHistory> = {}) =>
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) =>
+        section
+          ? sectionHistory(section, { period, currency: currency ?? 'USD', ...changes })
+          : history({ period, currency: currency ?? 'USD' }),
+    );
+  const chips = async () => within(await screen.findByRole('group', { name: 'Show on the chart' }));
+
+  it('SECTION-CHART offers Everything and a chip for each section the owner holds', async () => {
+    holdsAllSections();
+    renderPage();
+    const group = await chips();
+    expect(group.getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      'Everything',
+      'Wallets',
+      'Banks',
+      'Brokers',
+      'Real estate',
+    ]);
+    expect(group.getByRole('button', { name: 'Everything' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(group.getByRole('button', { name: 'Brokers' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('SECTION-CHART leaves out the section the owner holds nothing of', async () => {
+    accounts.mockResolvedValue({
+      items: [account(trust, 'Trust Wallet'), account(brokerAccount, 'Broker account', 'broker')],
+      nextCursor: null,
+    });
+    renderPage();
+    const group = await chips();
+    expect(group.getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      'Everything',
+      'Wallets',
+      'Brokers',
+    ]);
+  });
+
+  it('SECTION-CHART offers no filter to an owner with one section only', async () => {
+    renderPage();
+    await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('region', { name: 'Allocation' });
+    expect(screen.queryByRole('group', { name: 'Show on the chart' })).toBeNull();
+  });
+
+  it('SECTION-CHART draws the chosen section alone and keeps the net worth whole', async () => {
+    holdsAllSections();
+    answerSections();
+    const user = userEvent.setup();
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    expect(
+      await within(chart).findByRole('img', {
+        name: 'Brokers value, past month, from $28,000.00 to $30,000.00',
+      }),
+    ).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('1M', undefined, 'broker');
+    expect(group.getByRole('button', { name: 'Brokers' })).toHaveAttribute('aria-pressed', 'true');
+    expect(group.getByRole('button', { name: 'Everything' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    const hero = screen.getByRole('region', { name: 'Net worth' });
+    expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
+    await user.click(group.getByRole('button', { name: 'Everything' }));
+    expect(
+      await within(chart).findByRole('img', {
+        name: 'Portfolio value, past month, from $100,000.00 to $115,000.00',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('SECTION-CHART reads the section again for another period and currency', async () => {
+    holdsAllSections();
+    answerSections();
+    const user = userEvent.setup();
+    renderPage('/dashboard?currency=EUR');
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Wallets' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('1M', 'EUR', 'wallet'));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    await user.click(within(chart).getByRole('tab', { name: '3M' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('3M', 'EUR', 'wallet'));
+    expect(group.getByRole('button', { name: 'Wallets' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('SECTION-CHART says so when a section cannot be read, and tries again', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let failing = true;
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (failing) throw new Error('offline');
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Real estate' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("Couldn't load the Real estate chart.");
+    // The whole portfolio stays on screen.
+    expect(heroValue(screen.getByRole('region', { name: 'Net worth' }))).toHaveTextContent(
+      /^\$115,000\.00$/,
+    );
+    failing = false;
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(
+      await screen.findByRole('img', {
+        name: 'Real estate value, past month, from $28,000.00 to $30,000.00',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('SECTION-CHART says how many transfers across the border its money put in leaves out', async () => {
+    holdsAllSections();
+    answerSections({ transfersAcross: 2 });
+    const user = userEvent.setup();
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Wallets' }));
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(
+      '2 transfers between sections (made at any time) are not counted as money put in, so Net invested here can read low or high.',
+    );
+  });
+
+  it('SECTION-CHART writes no note when no transfer crosses the border', async () => {
+    holdsAllSections();
+    answerSections();
+    const user = userEvent.setup();
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Wallets' }));
+    await screen.findByRole('img', { name: /^Wallets value/ });
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('SECTION-CHART keeps the last chart of a section while another period loads', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (period === '3M') await new Promise<void>((resolve) => (release = resolve));
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    await within(chart).findByRole('img', { name: /^Brokers value, past month/ });
+    await user.click(within(chart).getByRole('tab', { name: '3M' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('3M', undefined, 'broker'));
+    expect(within(chart).getByRole('img', { name: /^Brokers value, past month/ })).toBeVisible();
+    expect(screen.queryByText(/Loading the Brokers chart/)).toBeNull();
+    release();
+    expect(
+      await within(chart).findByRole('img', { name: /^Brokers value, past 3 months/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('SECTION-CHART says so when a section it already shows cannot be read again, and tries again', async () => {
+    holdsAllSections();
+    const user = userEvent.setup();
+    let failing = false;
+    get.mockImplementation(
+      async (period: HistoryPeriod, currency?: AccountingCurrency, section?: HistorySection) => {
+        if (!section) return history({ period, currency: currency ?? 'USD' });
+        if (failing) throw new Error('offline');
+        return sectionHistory(section, { period, currency: currency ?? 'USD' });
+      },
+    );
+    renderPage();
+    const group = await chips();
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    await screen.findByRole('img', { name: /^Brokers value, past month/ });
+    await user.click(group.getByRole('button', { name: 'Everything' }));
+    await screen.findByRole('img', { name: /^Portfolio value, past month/ });
+    failing = true;
+    await user.click(group.getByRole('button', { name: 'Brokers' }));
+    // The last answer stays, and the page says it is not current.
+    const note = 'Could not update the Brokers chart. Showing the last loaded figures.';
+    await screen.findByText(note);
+    expect(screen.getByRole('img', { name: /^Brokers value, past month/ })).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText(note)).toBeNull());
+  });
+});
+
+// DASH-LAYOUT: the dashboard as the prototype draws it. Synthetic data only.
+describe('DASH-LAYOUT dashboard', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const flatAccount = id(50);
+  const term: Deposit = {
+    id: id(70),
+    name: 'Savings A',
+    bank: 'Synthetic Bank',
+    currency: 'USD',
+    startDate: '2026-07-01',
+    endDate: '2026-12-01',
+    payout: 'monthly',
+    capitalized: false,
+    dayBasis: 'actual-365',
+    earlyClose: 'forfeits-interest',
+    ratePercent: '12',
+    status: 'active',
+    closedOn: null,
+    principal: '1780.00',
+    accrued: '20.00',
+    due: '0.00',
+    balance: '1800.00',
+    values: { USD: '1800.00', EUR: '1620.00', RUB: '162000.00' },
+    nextPayout: { date: '2026-11-01', interest: '18.00', treatment: 'payable' },
+    atMaturity: { date: '2026-12-01', balance: '1836.00', interest: '36.00' },
+    lastCheck: null,
+  };
+  const flat = (quantity: string, changes: Partial<AssetValuation> = {}) =>
+    asset(99, 'Studio apartment', '', '3000', {
+      assetType: 'manual',
+      priceSource: 'manual',
+      quantity,
+      price: {
+        value: '3000',
+        source: 'manual',
+        status: 'manual',
+        observedAt: '2026-08-01T09:00:00.000Z',
+      },
+      priceChange24hPercent: null,
+      holdings: [
+        { accountId: flatAccount, accountName: 'Studio account', quantity, value: '3000' },
+      ],
+      ...changes,
+    });
+
+  // A flat, a deposit and the crypto, ranked by value.
+  function holdFlatAndDeposit(quantity = '1') {
+    accounts.mockResolvedValue({
+      items: [account(flatAccount, 'Studio account', 'property'), account(trust, 'Trust Wallet')],
+      nextCursor: null,
+    });
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [term],
+      totals: term.values,
+    });
+    const base = valuation({ depositsValue: '1800', assets: [flat(quantity), ...assets] });
+    valued.mockImplementation(async (currency?: AccountingCurrency) => ({
+      ...base,
+      currency: currency ?? 'USD',
+      allocation: {
+        ...base.allocation,
+        byAsset: [
+          slice(id(99), 'Studio apartment', '3000'),
+          slice(`deposit:${term.id}`, 'Savings A', '1800'),
+          ...base.allocation.byAsset.slice(0, 3),
+        ],
+      },
+    }));
+  }
+
+  const topRows = async () => {
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    await within(top).findByText('Synthetic Bank · 12% · until Dec 1, 2026');
+    return within(top).getAllByRole('row').slice(1);
+  };
+  const glyph = (row: HTMLElement) => row.querySelector('.asset-icon')?.getAttribute('data-glyph');
+
+  it('DASH-LAYOUT draws a bank deposit with the % of every bank product and a flat with a house', async () => {
+    holdFlatAndDeposit();
+    renderPage();
+    const [flatRow, depositRow] = await topRows();
+    expect(glyph(flatRow)).toBe('⌂');
+    expect(glyph(depositRow)).toBe('%');
+  });
+
+  it('DASH-LAYOUT draws a savings account with the sign of its currency', async () => {
+    holdFlatAndDeposit();
+    vi.spyOn(depositsApi, 'list').mockResolvedValue({
+      asOf: '2026-10-04',
+      items: [{ ...term, kind: 'account', currency: 'EUR', endDate: null, atMaturity: null }],
+      totals: term.values,
+    });
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    await within(top).findByText('Synthetic Bank · 12%');
+    const [, depositRow] = within(top).getAllByRole('row').slice(1);
+    expect(glyph(depositRow)).toBe('€');
+  });
+
+  it('DASH-LAYOUT says when a flat was last valued instead of counting it as one unit', async () => {
+    holdFlatAndDeposit();
+    renderPage();
+    const [flatRow] = await topRows();
+    expect(flatRow).toHaveTextContent('Studio apartmentEstimate Aug 1, 2026');
+    expect(flatRow).not.toHaveTextContent('Studio apartment1');
+  });
+
+  it('DASH-LAYOUT adds the owner’s share to the estimate of a flat held in part', async () => {
+    holdFlatAndDeposit('0.5');
+    renderPage();
+    const [flatRow] = await topRows();
+    expect(flatRow).toHaveTextContent('Studio apartment50% yours · estimate Aug 1, 2026');
+  });
+
+  it('DASH-LAYOUT says the same on phones', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    holdFlatAndDeposit();
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    // The class of the account arrives after the row does; the row waits for it to say so.
+    await within(top).findByText('Estimate Aug 1, 2026');
+    const row = within(top).getByRole('link', { name: /Studio apartment/ });
+    expect(row.querySelector('.asset-icon')?.getAttribute('data-glyph')).toBe('⌂');
+  });
+
+  it('DASH-LAYOUT keeps the quantity of a coin and the terms of a deposit', async () => {
+    holdFlatAndDeposit();
+    renderPage();
+    const [, depositRow, bitcoinRow] = await topRows();
+    expect(depositRow).toHaveTextContent('Savings ASynthetic Bank · 12% · until Dec 1, 2026');
+    expect(bitcoinRow).toHaveTextContent('Bitcoin0.05 BTC');
+  });
+
+  it('DASH-LAYOUT shows a share to one decimal in the top assets and the allocation', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) => {
+      const base = valuation({ currency: currency ?? 'USD' });
+      return {
+        ...base,
+        allocation: {
+          ...base.allocation,
+          byAsset: [
+            { ...base.allocation.byAsset[0], percent: '62.49' },
+            { ...base.allocation.byAsset[1], percent: '0.04' },
+          ],
+        },
+        assets: base.assets.map((item, index) =>
+          index === 0
+            ? { ...item, allocationPercent: '62.49' }
+            : index === 1
+              ? { ...item, allocationPercent: '0.04' }
+              : item,
+        ),
+      };
+    });
+    renderPage();
+    const top = await screen.findByRole('region', { name: 'Top assets' });
+    const [bitcoin, ethereum] = within(top).getAllByRole('row').slice(1);
+    // Rounded down like every other figure: the share is never shown larger than it is.
+    expect(bitcoin).toHaveTextContent('62.4%');
+    expect(bitcoin).not.toHaveTextContent('62.49%');
+    // A share too small for one decimal never reads as nothing held.
+    expect(ethereum).toHaveTextContent('<0.1%');
+    const allocation = screen.getByRole('region', { name: 'Allocation' });
+    const items = within(allocation).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('62.4%');
+    expect(items[1]).toHaveTextContent('<0.1%');
+  });
+
+  it('DASH-LAYOUT keeps the chart title for assistive technology and the note on how it is made', async () => {
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Portfolio value over time' });
+    const title = within(chart).getByRole('heading', { name: 'Capital' });
+    expect(title).toHaveClass('ui-sr');
+    await userEvent.setup().click(within(chart).getByRole('button', { name: 'About this chart' }));
+    expect(within(chart).getByRole('note')).toHaveTextContent('Net invested is the money put in');
   });
 });

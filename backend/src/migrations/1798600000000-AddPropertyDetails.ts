@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPropertyDetails1798400000000 implements MigrationInterface {
-  name = 'AddPropertyDetails1798400000000';
+export class AddPropertyDetails1798600000000 implements MigrationInterface {
+  name = 'AddPropertyDetails1798600000000';
 
   async up(runner: QueryRunner): Promise<void> {
     // PROP-DETAILS: what the owner records about a property besides its estimate and purchase:

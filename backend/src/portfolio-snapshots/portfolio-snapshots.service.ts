@@ -47,6 +47,7 @@ import {
 } from './capital-flows';
 import { contributionStart, monthlyContributions } from './contribution-stats';
 import { personalReading, realProfit } from './real-profit';
+import { type HistorySection, historySections, scopeToSection } from './section-scope';
 import {
   DEFAULT_PERIOD,
   firstValuedPoint,
@@ -176,16 +177,28 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const invalid = () => new BadRequestException('Invalid accounting input');
 
 /** `period` (24H, 7D, 1M, 3M, 1Y, ALL; default 1M) and `currency` (default: main currency). */
-function parseQuery(query: unknown): {
+function parseQuery(
+  query: unknown,
+  sections = false,
+): {
   period: HistoryPeriod;
   currency: AccountingCurrency | null;
+  section: HistorySection | null;
 } {
   if (!query || typeof query !== 'object' || Array.isArray(query)) throw invalid();
-  const { period = DEFAULT_PERIOD, currency = null, ...rest } = query as Record<string, unknown>;
+  const {
+    period = DEFAULT_PERIOD,
+    currency = null,
+    section = null,
+    ...rest
+  } = query as Record<string, unknown>;
   if (Object.keys(rest).length > 0) throw invalid();
   if (!(historyPeriods as readonly unknown[]).includes(period)) throw invalid();
   if (currency !== null && !isAccountingCurrency(currency)) throw invalid();
-  return { period: period as HistoryPeriod, currency };
+  // SECTION-CHART: only the history reads one section of the capital.
+  if (section !== null && !(sections && (historySections as readonly unknown[]).includes(section)))
+    throw invalid();
+  return { period: period as HistoryPeriod, currency, section: section as HistorySection | null };
 }
 
 /**
@@ -609,7 +622,7 @@ export class PortfolioSnapshotsService {
 
   async history(ownerId: string, rawQuery: unknown, now = new Date()) {
     const owner = parseUuid(ownerId);
-    const query = parseQuery(rawQuery);
+    const query = parseQuery(rawQuery, true);
     await this.refresh(owner, now);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
@@ -623,6 +636,7 @@ export class PortfolioSnapshotsService {
         flows,
         start,
         startEstimatedAssetCount,
+        transfersAcross,
       } = await this.period(manager, owner, query, now, true);
       const invested = investedAt(
         flows,
@@ -644,6 +658,9 @@ export class PortfolioSnapshotsService {
         complete: points.every((point) => point.complete),
         excludedAssetCount: scope.excluded.size,
         excludedDepositCount: scope.excludedDeposits.size,
+        // SECTION-CHART: the one section this reads, and the own transfers across its border,
+        // which put money in or take it out of the section without being counted as such.
+        ...(query.section ? { section: query.section, transfersAcross } : {}),
         // Assets held at the period's start valued at their nearest trade or later price: when above 0, the
         // change and the market part are estimates.
         startEstimatedAssetCount,
@@ -732,7 +749,11 @@ export class PortfolioSnapshotsService {
     );
     const storedComplete = stored.every((point) => point.complete);
     // The current value closes the period with the same rules as the snapshots.
-    const original = await readValuationInputs(manager, owner);
+    const everything = await readValuationInputs(manager, owner);
+    // SECTION-CHART: one section reads as the whole portfolio does, from its own accounts or
+    // deposits; the stored snapshots are of the whole, so every point is valued again below.
+    const section = query.section ? scopeToSection(everything, query.section) : null;
+    const original = section?.inputs ?? everything;
     const readAccounts = accountHistoryReader(original);
     const currentAccounts = readAccounts(now.toISOString());
     const prices = await latestPortfolioPrices(manager, owner, original.instruments, now);
@@ -743,7 +764,7 @@ export class PortfolioSnapshotsService {
     const excludedCount = excluded.size + excludedDeposits.size;
     const [priced] = valuesAt(valuation, now.getTime(), prices, [fx], currentAccounts);
     const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
-    if (excludedCount > 0) {
+    if (excludedCount > 0 || section) {
       // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
       const subset = {
         ...original,
@@ -811,7 +832,7 @@ export class PortfolioSnapshotsService {
     // Deposits and withdrawals come from the operations themselves, in this currency at the
     // rate of each one's date (split-market-and-flows).
     const flows = [
-      ...stateFlows(capitalFlows(valuation), fx),
+      ...stateFlows(capitalFlows(valuation, section?.accountIds), fx),
       ...depositFlows(valuation.deposits, fx),
     ].sort((left, right) => left.at - right.at);
     let start = firstValuedPoint(series);
@@ -881,6 +902,7 @@ export class PortfolioSnapshotsService {
       start,
       storedComplete,
       startEstimatedAssetCount,
+      transfersAcross: section?.transfersAcross ?? 0,
     };
   }
 

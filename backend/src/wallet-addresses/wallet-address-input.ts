@@ -149,6 +149,12 @@ export function parseTokenVisibility(raw: unknown): TokenVisibility {
   return { tickers: [...new Set(tickers as string[])], visibility };
 }
 
+/** WALLET-SYNC-OFF: whether the address's background sync runs. */
+export function parseSyncEnabled(raw: unknown): { enabled: boolean } {
+  const { enabled } = object(raw, ['enabled']);
+  return typeof enabled === 'boolean' ? { enabled } : bad();
+}
+
 export function parseTransactionQuery(raw: unknown): { offset: number; limit: number } {
   const row = object(raw ?? {}, ['offset', 'limit']);
   return {

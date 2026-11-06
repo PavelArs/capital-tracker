@@ -590,6 +590,130 @@ async function cash(db, s, f) {
   console.log('PASS OPS-BUY-CASH spends 30000 USDT first; only 10000 is a deposit');
 }
 
+async function convert(db, s, f) {
+  stage = 'CASH-CONVERT one sale converts cash into another currency inside the account';
+  const { convertOwner: owner } = f;
+  const fiat = async (name, symbol) =>
+    (
+      await s.accounting.createInstrument(owner, {
+        requestId: randomUUID(),
+        name,
+        symbol,
+        assetType: 'fiat',
+      })
+    ).value.id;
+  const rub = await fiat('Russian ruble', 'RUB');
+  const usd = await fiat('US dollar', 'USD');
+  const safe = await account(s, owner, 'Home safe');
+  await db.query(
+    `INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit") VALUES
+      ('USD','cbr','2026-01-02','80'),('EUR','cbr','2026-01-02','88'),
+      ('USD','cbr','2026-03-02','90'),('EUR','cbr','2026-03-02','100')`,
+  );
+  const flows = () =>
+    db.transaction('REPEATABLE READ', async (manager) => {
+      const {
+        readValuationInputs,
+      } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+      const { capitalFlows } = require('/app/backend/dist/portfolio-snapshots/capital-flows.js');
+      return capitalFlows(await readValuationInputs(manager, owner)).map((flow) => [
+        new Date(flow.at).toISOString(),
+        String(flow.usd / 10n ** 30n),
+      ]);
+    });
+  const lots = async () =>
+    (await s.trades.listLots(owner, safe, {})).items.map((lot) => [
+      lot.instrumentSymbol,
+      lot.remainingQuantity,
+      lot.remainingCostUsd,
+    ]);
+  const heldAt = async (instrumentId, date) =>
+    (await s.trades.available(owner, safe, { instrumentId, at: day(date) })).quantity;
+
+  // 80000 RUB put in at 80 RUB per USD: a deposit of 1000 USD.
+  await trade(s, owner, safe, {
+    instrumentId: rub,
+    side: 'buy',
+    occurredAt: day('2026-01-02'),
+    quantity: '80000',
+    paid: { currency: 'RUB', gross: '80000', fee: '0' },
+    feeUsd: undefined,
+    expectedJournalRevision: 0,
+  });
+  assert.deepEqual(await flows(), [['2026-01-02T00:00:00.000Z', '1000']]);
+
+  // Convert 72000 RUB into 800 USD (90 RUB per USD): one sale, settled in the USD cash.
+  const request = {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(s, owner, safe),
+    instrumentId: rub,
+    side: 'sell',
+    occurredAt: day('2026-03-02'),
+    quantity: '72000',
+    grossUsd: '800',
+    feeUsd: '0',
+    settlementCurrency: 'USD',
+  };
+  const converted = await s.trades.create(owner, safe, request);
+  assert.equal(converted.created, true);
+  assert.deepEqual(converted.value.trade.settlement, {
+    instrumentId: usd,
+    instrumentName: 'US dollar',
+    instrumentSymbol: 'USD',
+    quantity: '800',
+  });
+  assert.equal((await s.trades.create(owner, safe, request)).created, false, 'A replay is no 2nd');
+  assert.equal(await heldAt(rub, '2026-03-03'), '8000');
+  assert.equal(await heldAt(usd, '2026-03-03'), '800');
+  assert.deepEqual(await lots(), [
+    ['RUB', '8000', '100'],
+    ['USD', '800', '800'],
+  ]);
+  // 72000 RUB cost 900 USD in January and bought 800 USD: the exchange cost 100 USD.
+  assert.equal((await s.trades.getJournal(owner, safe)).journal.summary.realizedUsd, '-100');
+  assert.deepEqual(
+    await flows(),
+    [['2026-01-02T00:00:00.000Z', '1000']],
+    'A conversion moves no money in or out',
+  );
+
+  // Convert 100 USD into 90 EUR, paid in EUR (Bank of Russia: 90 EUR = 9000 RUB = 100 USD).
+  const euros = await s.trades.create(owner, safe, {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(s, owner, safe),
+    instrumentId: usd,
+    side: 'sell',
+    occurredAt: day('2026-03-02'),
+    quantity: '100',
+    paid: { currency: 'EUR', gross: '90', fee: '0' },
+    settlementCurrency: 'EUR',
+  });
+  assert.equal(euros.value.trade.settlement.instrumentSymbol, 'EUR');
+  assert.equal(euros.value.trade.settlement.quantity, '90');
+  assert.equal(euros.value.trade.grossUsd, '100');
+  assert.equal(await heldAt(usd, '2026-03-03'), '700');
+
+  // More than the account holds is refused and nothing is saved.
+  const before = await fingerprint(db);
+  await rejected(
+    () =>
+      s.trades.create(owner, safe, {
+        requestId: randomUUID(),
+        expectedJournalRevision: euros.value.trade.journalRevision,
+        instrumentId: rub,
+        side: 'sell',
+        occurredAt: day('2026-03-03'),
+        quantity: '8000.01',
+        grossUsd: '88',
+        feeUsd: '0',
+        settlementCurrency: 'USD',
+      }),
+    409,
+  );
+  assert.equal(await fingerprint(db), before);
+  console.log('PASS CASH-CONVERT RUB to USD and USD to EUR in one sale; realized -100; no flow');
+}
+
 async function kinds(db, s, f) {
   stage = 'PR-OPS-2 income, expense, fee, transfer and reward without journal ceremony';
   const { kindsOwner: owner } = f;
@@ -808,27 +932,29 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 77/);
+  assert.match(migrated.stdout, /Migrations applied: 78/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 77);
-    const [owner, other, cashOwner, kindsOwner] =
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 78);
+    const [owner, other, cashOwner, kindsOwner, convertOwner] =
       await db.query(`INSERT INTO users(email,password) VALUES
       ('manual-ops-owner@example.invalid','synthetic-not-a-hash'),
       ('manual-ops-other@example.invalid','synthetic-not-a-hash'),
       ('manual-ops-cash@example.invalid','synthetic-not-a-hash'),
-      ('manual-ops-kinds@example.invalid','synthetic-not-a-hash') RETURNING id`);
+      ('manual-ops-kinds@example.invalid','synthetic-not-a-hash'),
+      ('manual-ops-convert@example.invalid','synthetic-not-a-hash') RETURNING id`);
     const s = services(db);
     const f = {
       owner: owner.id,
       other: other.id,
       cashOwner: cashOwner.id,
       kindsOwner: kindsOwner.id,
+      convertOwner: convertOwner.id,
     };
     f.btc = await instrument(s, f.owner, 'Bitcoin', 'BTC');
     f.eth = await instrument(s, f.owner, 'Ether', 'ETH');
-    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove, cash, kinds])
+    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove, cash, convert, kinds])
       await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();

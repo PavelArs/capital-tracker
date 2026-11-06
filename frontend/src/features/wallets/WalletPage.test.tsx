@@ -13,7 +13,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import type { ReactElement } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WalletPage, { accountOperations } from './WalletPage';
 import WalletsPage from './WalletsPage';
@@ -216,6 +216,7 @@ function setup({
   valuation = portfolio(),
   listPage = <p>Wallets list</p>,
   quoteCurrency = 'USD',
+  beside = null,
 }: {
   account?: string;
   list?: WalletAddress[];
@@ -225,6 +226,8 @@ function setup({
   valuation?: PortfolioValuation;
   listPage?: ReactElement;
   quoteCurrency?: OperationList['quoteCurrency'];
+  /** Rendered next to the wallet page, for example a link to another wallet. */
+  beside?: ReactElement | null;
 } = {}) {
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
@@ -260,7 +263,15 @@ function setup({
     <ToastProvider>
       <MemoryRouter initialEntries={[`/wallets/${account}`]}>
         <Routes>
-          <Route path="/wallets/:accountId" element={<WalletPage />} />
+          <Route
+            path="/wallets/:accountId"
+            element={
+              <>
+                <WalletPage />
+                {beside}
+              </>
+            }
+          />
           <Route path="/wallets" element={listPage} />
         </Routes>
       </MemoryRouter>
@@ -320,7 +331,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
       within(summary).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(stat('Total value')).toBe('$800.00');
     expect(stat('Assets')).toBe('1');
-    expect(stat('Tracked addresses')).toBe('1');
+    expect(stat('Tracked networks')).toBe('1');
     expect(stat('Last sync')).toContain('Synced');
     // 0.01 BTC on the chain and 0.01 BTC recorded: nothing to reconcile.
     expect(within(summary).queryByRole('note')).toBeNull();
@@ -336,6 +347,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
       `/portfolio/${id(1)}`,
     );
     expect(within(assets).queryByText(/Tether/)).toBeNull();
+    expect(within(assets).queryByRole('button', { name: /^Show/ })).toBeNull();
 
     const transactions = screen.getByRole('region', { name: /^Transactions/ });
     await waitFor(() => expect(within(transactions).getAllByRole('listitem')).toHaveLength(3));
@@ -344,9 +356,105 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     expect(rows[0]).toHaveTextContent('Needs classification');
     expect(rows[1]).toHaveTextContent('Cold storage → Trust Wallet');
     expect(rows[2]).toHaveTextContent('Buy');
+    expect(within(transactions).queryByRole('navigation')).toBeNull();
     expect(
       within(transactions).getByRole('link', { name: 'Open in Transactions' }),
     ).toHaveAttribute('href', `/transactions?account=${trust}`);
+  });
+
+  // `count` coins, the largest first (700, 600, …), each held in Trust Wallet and in Cold storage.
+  const coins = (count: number) =>
+    Array.from({ length: count }, (_, index) => {
+      const value = String(700 - index * 100);
+      return asset({
+        instrumentId: id(60 + index),
+        name: `Coin ${index + 1}`,
+        symbol: `C${index + 1}`,
+        quantity: '2',
+        value,
+        holdings: [
+          { accountId: trust, accountName: 'Trust Wallet', quantity: '1', value },
+          { accountId: cold, accountName: 'Cold storage', quantity: '1', value },
+        ],
+      });
+    });
+  const coinNames = (assets: HTMLElement) =>
+    within(assets)
+      .getAllByRole('link')
+      .map((link) => link.textContent?.match(/^Coin \d/)?.[0]);
+
+  it('WALLET-ASSETS-MORE lists five assets and keeps the rest behind Show N more', async () => {
+    setup({ valuation: { ...portfolio(), assets: coins(7) } });
+    const assets = await screen.findByRole('region', { name: 'Assets' });
+    const names = () => coinNames(assets);
+    expect(names()).toEqual(['Coin 1', 'Coin 2', 'Coin 3', 'Coin 4', 'Coin 5']);
+
+    const more = within(assets).getByRole('button', { name: 'Show 2 more' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(more);
+    expect(names()).toEqual(['Coin 1', 'Coin 2', 'Coin 3', 'Coin 4', 'Coin 5', 'Coin 6', 'Coin 7']);
+
+    const less = within(assets).getByRole('button', { name: 'Show less' });
+    expect(less).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(less);
+    expect(names()).toHaveLength(5);
+    // The figures above the cards still count every asset.
+    const summary = screen.getByRole('region', { name: 'Summary' });
+    expect(within(summary).getByText('Assets').nextElementSibling).toHaveTextContent(/^7$/);
+  });
+
+  it('WALLET-ASSETS-MORE offers nothing more when the wallet holds exactly five assets', async () => {
+    setup({ valuation: { ...portfolio(), assets: coins(5) } });
+    const assets = await screen.findByRole('region', { name: 'Assets' });
+    expect(coinNames(assets)).toHaveLength(5);
+    expect(within(assets).queryByRole('button', { name: /^Show/ })).toBeNull();
+  });
+
+  it('WALLET-ASSETS-MORE opens another wallet with its assets folded again', async () => {
+    setup({
+      valuation: { ...portfolio(), assets: coins(7) },
+      beside: <Link to={`/wallets/${cold}`}>Open Cold storage</Link>,
+    });
+    let assets = await screen.findByRole('region', { name: 'Assets' });
+    await userEvent.click(within(assets).getByRole('button', { name: 'Show 2 more' }));
+    expect(coinNames(assets)).toHaveLength(7);
+
+    await userEvent.click(screen.getByRole('link', { name: 'Open Cold storage' }));
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Cold storage' }),
+    ).toBeInTheDocument();
+    assets = screen.getByRole('region', { name: 'Assets' });
+    expect(coinNames(assets)).toHaveLength(5);
+    expect(within(assets).getByRole('button', { name: 'Show 2 more' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('WALLET-TX-PAGES shows five transactions a page, newest first, with Previous and Next', async () => {
+    // Eight buys on June 11–18, 2025.
+    const buys = Array.from({ length: 8 }, (_, index) =>
+      operation(10 + index, { occurredAt: `2025-06-${11 + index}T00:00:00.000Z` }),
+    );
+    setup({ items: buys });
+    const transactions = await screen.findByRole('region', { name: /^Transactions/ });
+    await waitFor(() => expect(within(transactions).getAllByRole('listitem')).toHaveLength(5));
+    const pages = within(transactions).getByRole('navigation', { name: 'Pages of transactions' });
+    expect(within(pages).getByRole('status')).toHaveTextContent('1–5 of 8 transactions');
+    expect(within(pages).getByRole('button', { name: 'Previous' })).toBeDisabled();
+    let rows = within(transactions).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Jun 18, 2025');
+    expect(rows[4]).toHaveTextContent('Jun 14, 2025');
+
+    await userEvent.click(within(pages).getByRole('button', { name: 'Next' }));
+    rows = within(transactions).getAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent('Jun 13, 2025');
+    expect(rows[2]).toHaveTextContent('Jun 11, 2025');
+    expect(within(pages).getByRole('status')).toHaveTextContent('6–8 of 8 transactions');
+    expect(within(pages).getByRole('button', { name: 'Next' })).toBeDisabled();
+    // The count in the card's head is every transaction, not the page.
+    expect(transactions).toHaveTextContent(/Transactions\s*8/);
   });
 
   it('WAL-OPEN: each transaction row opens that transaction in Transactions', async () => {
@@ -394,16 +502,18 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     expect(screen.queryByRole('dialog', { name: 'Edit wallet' })).toBeNull();
   });
 
-  it('W1 shows how the wallet is held next to its addresses, once the owner said', async () => {
+  it('W1 shows how the wallet is held under its name, once the owner said', async () => {
     setup({ kind: 'hardware' });
     await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
-    expect(await screen.findByText('Hardware wallet · Bitcoin · 1 address')).toBeVisible();
+    // As in the prototype: the kind alone; the addresses are listed below.
+    expect(await screen.findByText('Hardware wallet')).toBeVisible();
+    expect(screen.queryByText(/Bitcoin · 1 address/)).toBeNull();
   });
 
   it('W1 changes how the wallet is held without touching its name, and can take it back', async () => {
     const user = userEvent.setup();
     setup({ kind: 'software' });
-    await screen.findByText('Software wallet · Bitcoin · 1 address');
+    await screen.findByText('Software wallet');
     const update = vi.spyOn(accountingApi, 'updateAccount').mockResolvedValue({
       id: trust,
       name: 'Trust Wallet',
@@ -438,7 +548,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     await user.selectOptions(within(dialog).getByLabelText('How you hold it'), 'hardware');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(update).toHaveBeenCalledWith(trust, { kind: 'hardware' });
-    expect(await screen.findByText('Hardware wallet · Bitcoin · 1 address')).toBeVisible();
+    expect(await screen.findByText('Hardware wallet')).toBeVisible();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({
       items: [
@@ -458,6 +568,84 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(update).toHaveBeenLastCalledWith(trust, { kind: null });
     expect(await screen.findByText('Bitcoin · 1 address')).toBeVisible();
+  });
+
+  it('WALLET-STATS counts the networks a wallet tracks, each network once', async () => {
+    setup({ list: [wallet(1), wallet(2, { address: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2' })] });
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    const labels = [...summary.querySelectorAll('dt')].map((label) => label.textContent);
+    expect(labels).toEqual(['Total value', 'Assets', 'Tracked networks', 'Last sync']);
+    // Two Bitcoin addresses are one network.
+    expect(within(summary).getByText('Tracked networks').nextElementSibling).toHaveTextContent(
+      /^1$/,
+    );
+  });
+
+  it('TOKEN-HIDE counts only the assets the wallet shows, not a hidden token', async () => {
+    const base = portfolio();
+    const ether = wallet(2, {
+      network: 'ethereum',
+      address: `0x${'5e'.repeat(20)}`,
+      label: 'Main ETH',
+      chainBalance: '0',
+      balances: [{ symbol: 'ETH', quantity: '0' }],
+      hiddenTokens: [{ symbol: 'USDT1A2B', name: 'Tether', quantity: '-40', reason: 'lookalike' }],
+    });
+    setup({
+      list: [wallet(1), ether],
+      valuation: {
+        ...base,
+        assets: [
+          ...base.assets,
+          asset({
+            instrumentId: id(5),
+            name: 'Tether',
+            symbol: 'USDT1A2B',
+            price: null,
+            quantity: '40',
+            value: null,
+            holdings: [
+              { accountId: trust, accountName: 'Trust Wallet', quantity: '40', value: null },
+            ],
+          }),
+        ],
+      },
+    });
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    // Bitcoin only: the lookalike token the address leaves out is not one of its assets.
+    expect(within(summary).getByText('Assets').nextElementSibling).toHaveTextContent(/^1$/);
+    expect(screen.getByRole('region', { name: 'Assets' })).not.toHaveTextContent('USDT1A2B');
+    expect(within(summary).getByText('Tracked networks').nextElementSibling).toHaveTextContent(
+      /^2$/,
+    );
+  });
+
+  it('WALLET-STATS names the connection of an exchange account: its read-only API', async () => {
+    setup({
+      kind: 'exchange',
+      list: [
+        wallet(1, {
+          network: 'bybit',
+          address: '123456789',
+          label: 'Bybit',
+          balances: [{ symbol: 'BTC', quantity: '0.01' }],
+          exchange: {
+            keyHint: '0001',
+            ipBound: false,
+            keyExpiresAt: '2027-01-01T00:00:00.000Z',
+            reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            untracked: [],
+            historyFrom: '2024-10-10T00:00:00.000Z',
+          },
+        }),
+      ],
+    });
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    // "Connection", not "Connected": the key may have expired; Last sync says how it went.
+    expect(within(summary).getByText('Connection').nextElementSibling).toHaveTextContent(
+      'API, read-only',
+    );
+    expect(within(summary).queryByText('Tracked networks')).toBeNull();
   });
 
   it('keeps the dialog open with the reason when the rename is refused', async () => {
@@ -721,6 +909,97 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     setup({ account: id(99) });
     expect(await screen.findByRole('heading', { name: 'Wallet not found' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Open Wallets' })).toHaveAttribute('href', '/wallets');
+  });
+});
+
+describe("WALLET-SYNC-OFF: switching a wallet's sync off and on", () => {
+  const off = (reason: 'failures' | 'manual', changes: Partial<WalletAddress['sync']> = {}) =>
+    wallet(1, {
+      sync: {
+        ...wallet(1).sync,
+        status: reason === 'failures' ? 'failed' : null,
+        errorMessage: reason === 'failures' ? 'Bitcoin data is temporarily unavailable.' : null,
+        off: { reason, at: '2026-11-05T12:00:00.000Z' },
+        ...changes,
+      },
+    });
+
+  it('turns sync off from the drawer, keeps the found transactions and says so', async () => {
+    const user = userEvent.setup();
+    setup();
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    await user.click(
+      within(addresses).getByRole('button', { name: `Savings ${wallet(1).address}` }),
+    );
+    const drawer = await screen.findByRole('dialog');
+    const switchSync = vi
+      .spyOn(walletAddressesApi, 'setSyncEnabled')
+      .mockResolvedValue(off('manual'));
+    // The page reads the list again after the switch.
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([off('manual')]);
+    await user.click(within(drawer).getByRole('button', { name: 'Turn sync off' }));
+    expect(switchSync).toHaveBeenCalledWith(wallet(1).id, false);
+    expect(await within(drawer).findByText(/^Sync is switched off\./)).toHaveTextContent(
+      'The transactions found so far stay.',
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Sync now' })).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Turn sync on' })).toBeEnabled();
+    expect(within(drawer).getAllByText('Sync off').length).toBeGreaterThan(0);
+    expect(within(drawer).getByText('Not updated: sync is off')).toBeInTheDocument();
+    expect(await screen.findByText('Sync is off for Savings')).toBeInTheDocument();
+  });
+
+  it('shows why the app switched sync off and turns it back on from the row', async () => {
+    const user = userEvent.setup();
+    setup({ list: [off('failures')] });
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    const note = within(addresses).getByText(
+      /^Sync was switched off after 3 failed attempts in a row\./,
+    );
+    expect(note).toHaveTextContent('Bitcoin data is temporarily unavailable.');
+    expect(note).toHaveTextContent('The transactions found so far stay.');
+    expect(within(addresses).getAllByText('Sync off').length).toBeGreaterThan(0);
+    expect(within(addresses).queryByRole('button', { name: 'Retry now' })).toBeNull();
+    const switchSync = vi.spyOn(walletAddressesApi, 'setSyncEnabled').mockResolvedValue(wallet(1));
+    // The page reads the list again after the switch.
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([wallet(1)]);
+    await user.click(within(addresses).getByRole('button', { name: 'Turn sync on' }));
+    expect(switchSync).toHaveBeenCalledWith(wallet(1).id, true);
+    await waitFor(() =>
+      expect(within(addresses).queryByRole('button', { name: 'Turn sync on' })).toBeNull(),
+    );
+  });
+
+  it('says so and keeps the sync off when the request fails', async () => {
+    const user = userEvent.setup();
+    setup({ list: [off('manual')] });
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    vi.spyOn(walletAddressesApi, 'setSyncEnabled').mockRejectedValue(new Error('offline'));
+    await user.click(within(addresses).getByRole('button', { name: 'Turn sync on' }));
+    expect(await screen.findByText('Could not turn sync on. Try again.')).toBeInTheDocument();
+    expect(within(addresses).getByRole('button', { name: 'Turn sync on' })).toBeEnabled();
+  });
+
+  it('does not read a switched-off address when the wallet is synced', async () => {
+    const user = userEvent.setup();
+    const second = wallet(2, { address: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', label: null });
+    setup({ list: [off('failures'), second] });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    const sync = vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue({
+      outcome: 'complete',
+      reason: null,
+      imported: 0,
+      address: second,
+    });
+    await user.click(screen.getByRole('button', { name: 'Sync now' }));
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+    expect(sync).toHaveBeenCalledWith(second.id);
+  });
+
+  it('offers no wallet-wide Sync now when every address is switched off', async () => {
+    setup({ list: [off('manual')] });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
   });
 });
 
