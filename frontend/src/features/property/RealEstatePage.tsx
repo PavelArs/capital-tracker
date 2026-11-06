@@ -225,7 +225,7 @@ export default function RealEstatePage() {
         </EmptyState>
       ) : (
         <>
-          {(failed || recorded.stale) && (
+          {(failed || recorded.stale || (!recorded.data && !!recorded.error)) && (
             <Banner
               tone="warn"
               role="alert"
@@ -244,7 +244,9 @@ export default function RealEstatePage() {
             >
               {failed
                 ? 'Could not refresh your real estate; showing the last loaded figures.'
-                : 'Could not refresh the rent; showing the last loaded ones.'}
+                : recorded.data
+                  ? 'Could not refresh the rent; showing the last loaded ones.'
+                  : 'Could not read the rent.'}
             </Banner>
           )}
           <PageIntro action={addButton}>

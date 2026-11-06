@@ -298,6 +298,20 @@ describe('PROPERTY-LIST Real estate', () => {
     await vi.waitFor(() => expect(again).toHaveTextContent('Rent $500.00 a month'));
   });
 
+  it('PROPERTY-RENT-RETRY offers a refresh when the first read of the rents failed', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    const list = vi.spyOn(propertyDetailsApi, 'list');
+    list.mockRejectedValueOnce(new Error('offline'));
+    list.mockResolvedValue([details(id(1), { monthlyRent: '450.00' })]);
+    renderPage();
+    const [card] = within(await screen.findByRole('list')).getAllByRole('link');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not read the rent.');
+    await userEvent.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    await vi.waitFor(() => expect(card).toHaveTextContent('Rent $450.00 a month'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('counts only what is held in property accounts when the asset is also held elsewhere', async () => {
     // Codex P2: an asset bought into a wallet as well must not bring the wallet's part along.
     const mixed = asset(4, 'Garage', plot, {

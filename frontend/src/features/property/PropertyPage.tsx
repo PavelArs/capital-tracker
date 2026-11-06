@@ -329,7 +329,7 @@ function PropertyDetailsView({
             </Button>
           }
         />
-        {recorded.stale && (
+        {(recorded.stale || mine === undefined) && (
           <Banner
             tone="warn"
             role="alert"
@@ -339,7 +339,9 @@ function PropertyDetailsView({
               </Button>
             }
           >
-            Could not refresh the rent and notes; showing the last loaded ones.
+            {mine === undefined
+              ? 'Could not read the rent and notes.'
+              : 'Could not refresh the rent and notes; showing the last loaded ones.'}
           </Banner>
         )}
         <KeyValue>

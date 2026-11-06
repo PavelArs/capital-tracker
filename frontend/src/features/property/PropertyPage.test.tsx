@@ -416,6 +416,17 @@ describe('PROPERTY-PAGE the page of one property', () => {
     expect(await within(card).findAllByText('Could not be read')).toHaveLength(2);
   });
 
+  it('PROPERTY-DETAILS-RETRY offers a retry when the first read of the details failed', async () => {
+    const user = userEvent.setup();
+    const list = vi.spyOn(propertyDetailsApi, 'list').mockRejectedValueOnce(new Error('offline'));
+    await open();
+    const card = await screen.findByRole('region', { name: 'Rent and notes' });
+    await user.click(await within(card).findByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() => expect(within(card).getByRole('button', { name: 'Edit' })).toBeEnabled());
+    expect(within(card).queryByText('Could not be read')).toBeNull();
+  });
+
   it('PROPERTY-DETAILS-STALE warns when the saved rent and notes could not be read again', async () => {
     const user = userEvent.setup();
     const dialog = await openDetails(user);
