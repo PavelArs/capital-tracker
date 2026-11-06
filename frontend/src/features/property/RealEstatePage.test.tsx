@@ -6,6 +6,7 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
+import { type PropertyDetails, propertyDetailsApi } from '@api/property-details.api';
 import { forgetReads } from '@api/read-cache';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -65,6 +66,8 @@ const valuation = (assets: AssetValuation[]) =>
     at: '2026-10-12T12:00:00.000Z',
     currency: 'USD',
     mainCurrency: 'USD',
+    totalValue: '200000',
+    pricedSubtotal: '200000',
     assets,
     accounts: [],
   }) as unknown as PortfolioValuation;
@@ -122,9 +125,22 @@ const lotsOf: Record<string, Omit<AssetLots, 'instrumentId' | 'currency'>> = {
   [id(2)]: { complete: false, lots: [lot(plot, '2026-03-01T00:00:00.000Z')] },
 };
 
+// What the owner recorded with a property (GET /accounting/property-details).
+const details = (instrumentId: string, changes: Partial<PropertyDetails>): PropertyDetails => ({
+  instrumentId,
+  monthlyRent: null,
+  currency: 'USD',
+  note: null,
+  updatedAt: '2026-10-01T00:00:00.000Z',
+  ...changes,
+});
+
 beforeEach(() => {
   vi.restoreAllMocks();
   forgetReads();
+  vi.spyOn(propertyDetailsApi, 'list').mockResolvedValue([
+    details(id(1), { monthlyRent: '450.00' }),
+  ]);
   vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-12T12:00:00Z'));
   vi.spyOn(portfolioValuationApi, 'lots').mockImplementation(async (instrumentId) => ({
@@ -151,6 +167,7 @@ const renderPage = () =>
     <MemoryRouter initialEntries={['/real-estate']}>
       <Routes>
         <Route path="/real-estate" element={<RealEstatePage />} />
+        <Route path="/real-estate/:assetId" element={<p>Property page</p>} />
         <Route path="/portfolio/:instrumentId" element={<p>Asset page</p>} />
       </Routes>
     </MemoryRouter>,
@@ -180,22 +197,119 @@ describe('PROPERTY-LIST Real estate', () => {
     const list = await screen.findByRole('list');
     const cards = within(list).getAllByRole('link');
     expect(cards.map((card) => card.getAttribute('href'))).toEqual([
-      `/portfolio/${id(1)}`,
-      `/portfolio/${id(2)}`,
+      `/real-estate/${id(1)}`,
+      `/real-estate/${id(2)}`,
     ]);
     await vi.waitFor(() => expect(cards[0]).toHaveTextContent('Bought'));
-    expect(cards[0]).toHaveTextContent(
-      'Studio50% yours$46,000.00Whole property$92,000.00Estimate ofAug 1, 2026Over 60 days oldBoughtSep 1, 2025Paid$42,500.00Gain+$3,500.00 (+8.24%)',
-    );
-    expect(cards[1]).toHaveTextContent(
-      'LandFully yours$15,000.00Estimate ofOct 12, 2026Paid$16,000.00Gain-$1,000.00 (-6.25%)',
-    );
+    await vi.waitFor(() => expect(cards[0]).toHaveTextContent('Rent $450.00'));
+    // PROPERTY-CARD: the header names the property and its share, with the owner's value and
+    // what it is; one row under it holds what was paid, the rent, the gain and the estimate.
+    expect(cards[0]).toHaveTextContent('StudioReal estate · 50% yours$46,000.00Your estimate');
+    expect(cards[0]).toHaveTextContent('Whole property$92,000.00');
+    expect(cards[0]).toHaveTextContent('Bought Sep 1, 2025for $42,500.00');
+    expect(cards[0]).toHaveTextContent('Rent $450.00 a monthEntered by you');
+    expect(cards[0]).toHaveTextContent('Gain+$3,500.00 +8.24%');
+    expect(cards[0]).toHaveTextContent('Estimate Aug 1, 2026');
+    expect(cards[1]).toHaveTextContent('LandReal estate · Fully yours$15,000.00Your estimate');
+    expect(cards[1]).toHaveTextContent('Paid $16,000.00');
+    expect(cards[1]).toHaveTextContent('Rent not recorded');
+    expect(cards[1]).toHaveTextContent('Gain-$1,000.00 -6.25%');
+    expect(cards[1]).not.toHaveTextContent('Bought');
     expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
       'In real estate$61,000.00',
     );
     expect(screen.queryByText('Gold coins')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Add property' }));
     expect(screen.getByRole('dialog', { name: 'Add property' })).toBeInTheDocument();
+  });
+
+  it('PROPERTY-SHARE gives the share of net worth held in real estate, estimated while net worth is partly unknown', async () => {
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    renderPage();
+    const summary = await screen.findByRole('region', { name: 'Total in real estate' });
+    expect(summary).toHaveTextContent('In real estate$61,000.00');
+    expect(summary).toHaveTextContent('Share of net worth30.5%');
+    expect(summary).not.toHaveTextContent('≈');
+    cleanup();
+    forgetReads();
+    get.mockResolvedValue({
+      ...valuation(properties),
+      totalValue: null,
+      pricedSubtotal: '122000',
+      missingPriceCount: 1,
+    });
+    renderPage();
+    const estimated = await screen.findByRole('region', { name: 'Total in real estate' });
+    expect(estimated).toHaveTextContent('Share of net worth≈50%');
+    expect(estimated).toHaveTextContent('Estimated against the known net worth');
+  });
+
+  it('PROPERTY-RENT shows a rent as entered, with its kopecks, in the currency of the property', async () => {
+    const flat = {
+      ...properties[0],
+      valuationCurrency: 'RUB' as const,
+      quantity: '1',
+      holdings: [{ accountId: studio, accountName: 'Studio', quantity: '1', value: '9000000' }],
+      price: { ...properties[0].price!, value: '9000000' },
+      value: '9000000',
+    };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      ...valuation([flat]),
+      currency: 'RUB',
+      mainCurrency: 'RUB',
+    });
+    vi.spyOn(propertyDetailsApi, 'list').mockResolvedValue([
+      details(id(1), { monthlyRent: '45000.50', currency: 'RUB' }),
+    ]);
+    renderPage();
+    expect(await screen.findByRole('link', { name: /Studio/ })).toHaveTextContent(
+      'Rent ₽45,000.50 a month',
+    );
+  });
+
+  it('PROPERTY-RENT does not call a rent missing when it could not be read', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    vi.spyOn(propertyDetailsApi, 'list').mockRejectedValue(new Error('offline'));
+    renderPage();
+    const [card] = within(await screen.findByRole('list')).getAllByRole('link');
+    await vi.waitFor(() => expect(card).toHaveTextContent('Rent unavailable'));
+    expect(card).not.toHaveTextContent('Rent not recorded');
+    // The figures that do not depend on it are still there.
+    expect(card).toHaveTextContent('$46,000.00Your estimate');
+  });
+
+  it('PROPERTY-RENT-STALE warns and offers a refresh when the kept rents could not be read again', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    const list = vi.spyOn(propertyDetailsApi, 'list');
+    list.mockResolvedValue([details(id(1), { monthlyRent: '450.00' })]);
+    renderPage();
+    const [first] = within(await screen.findByRole('list')).getAllByRole('link');
+    await vi.waitFor(() => expect(first).toHaveTextContent('Rent $450.00 a month'));
+    cleanup();
+    // Back on the page: the kept rents show at once and asking again fails.
+    list.mockRejectedValue(new Error('offline'));
+    renderPage();
+    const [again] = within(await screen.findByRole('list')).getAllByRole('link');
+    expect(again).toHaveTextContent('Rent $450.00 a month');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not refresh the rent; showing the last loaded ones.');
+    list.mockResolvedValue([details(id(1), { monthlyRent: '500.00' })]);
+    await userEvent.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    await vi.waitFor(() => expect(again).toHaveTextContent('Rent $500.00 a month'));
+  });
+
+  it('PROPERTY-RENT-RETRY offers a refresh when the first read of the rents failed', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    const list = vi.spyOn(propertyDetailsApi, 'list');
+    list.mockRejectedValueOnce(new Error('offline'));
+    list.mockResolvedValue([details(id(1), { monthlyRent: '450.00' })]);
+    renderPage();
+    const [card] = within(await screen.findByRole('list')).getAllByRole('link');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not read the rent.');
+    await userEvent.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    await vi.waitFor(() => expect(card).toHaveTextContent('Rent $450.00 a month'));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('counts only what is held in property accounts when the asset is also held elsewhere', async () => {
@@ -214,8 +328,9 @@ describe('PROPERTY-LIST Real estate', () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([mixed]));
     renderPage();
     const [card] = within(await screen.findByRole('list')).getAllByRole('link');
-    expect(card).toHaveTextContent('GarageFully yours$20,000.00');
-    expect(card).toHaveTextContent('Paid—Gain—');
+    expect(card).toHaveTextContent('GarageReal estate · Fully yours$20,000.00');
+    expect(card).toHaveTextContent('Paid —');
+    expect(card).toHaveTextContent('Gain—');
     expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
       '$20,000.00',
     );
@@ -236,7 +351,7 @@ describe('PROPERTY-LIST Real estate', () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation([sliver]));
     renderPage();
     const [card] = within(await screen.findByRole('list')).getAllByRole('link');
-    expect(card).toHaveTextContent('TowerLess than 0.01% yours$20,000.00');
+    expect(card).toHaveTextContent('TowerReal estate · Less than 0.01% yours$20,000.00');
     expect(screen.getByRole('region', { name: 'Total in real estate' })).toHaveTextContent(
       '$20,000.00',
     );
@@ -299,28 +414,29 @@ describe('PROPERTY-LIST Real estate', () => {
       vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(studioAt(observedAt));
       renderPage();
       const [card] = within(await screen.findByRole('list')).getAllByRole('link');
-      return within(card).queryByText('Over 60 days old');
+      return within(card).queryByText(/over two months old/);
     };
     // Sep 30, 23:59 in Moscow: 60 days after Aug 1, not yet over 60 days.
     expect(await badge('2026-09-30T20:59:00Z', '2026-07-31T21:30:00.000Z')).toBeNull();
-    // Oct 1, 00:00 in Moscow: 61 days.
+    // Oct 1, 00:00 in Moscow: 61 days. The badge says it in words as well as in its colour.
     const warned = await badge('2026-09-30T21:00:00Z', '2026-07-31T21:30:00.000Z');
-    expect(warned).toHaveClass('ui-badge', 'ui-badge--warn');
+    expect(warned?.closest('.ui-badge')).toHaveClass('ui-badge--warn');
     expect(screen.getByRole('link', { name: /Studio/ })).toHaveTextContent(
-      'Estimate ofAug 1, 2026Over 60 days old',
+      'Estimate Aug 1, 2026, over two months old',
     );
     expect(await badge('2026-09-30T21:00:00Z', '2026-08-02T00:00:00.000Z')).toBeNull();
+    expect(screen.getByRole('link', { name: /Studio/ })).toHaveTextContent('Estimate Aug 2, 2026');
   });
 
   it('classes-23 dates the estimate and the first purchase as the rest of the app does', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
     renderPage();
     const [first, second] = within(await screen.findByRole('list')).getAllByRole('link');
-    expect(await within(first).findByText('Sep 1, 2025')).toBeInTheDocument();
-    expect(first).toHaveTextContent('Estimate ofAug 1, 2026');
+    expect(await within(first).findByText(/Bought Sep 1, 2025/)).toBeInTheDocument();
+    expect(first).toHaveTextContent('Estimate Aug 1, 2026');
     expect(portfolioValuationApi.lots).toHaveBeenCalledWith(id(2), undefined);
     // Land's history may start after its purchase, so no purchase date is claimed.
     expect(second).not.toHaveTextContent('Bought');
-    expect(second).toHaveTextContent('Estimate ofOct 12, 2026');
+    expect(second).toHaveTextContent('Estimate Oct 12, 2026');
   });
 });

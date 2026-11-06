@@ -43,6 +43,7 @@ const detailTitles: readonly (readonly [string, string])[] = [
   ['/portfolio/', 'Asset'],
   ['/wallets/', 'Wallet'],
   ['/deposits/', 'Deposit'],
+  ['/real-estate/', 'Property'],
   ['/goals/', 'Goal'],
 ];
 

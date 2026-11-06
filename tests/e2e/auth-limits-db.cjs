@@ -103,6 +103,7 @@ const expectedMigrationNames = [
   'AddWalletSyncProgress1798200000000',
   'AddFetchedAtIndexes1798300000000',
   'AddWalletSyncSwitch1798500000000',
+  'AddPropertyDetails1798600000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';
@@ -877,7 +878,7 @@ async function main() {
         ({ name }) => name,
       ),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current seventy-seven-migration ledger',
+      'The actual migration CLI must build the complete current seventy-eight-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [

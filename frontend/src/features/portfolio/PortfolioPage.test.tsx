@@ -3746,6 +3746,46 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       ReturnType<typeof manualPricesApi.list>
     >;
 
+  it('PROPERTY-PAGE-LINK opens an asset held only in a property account on its own page', async () => {
+    const flat = valued(
+      6,
+      'Flat',
+      null,
+      { assetType: 'manual', valuationCurrency: 'RUB', priceSource: 'manual' },
+      {
+        quantity: '1',
+        holdings: [{ accountId: id(202), accountName: 'Flat', quantity: '1', value: '0' }],
+      },
+    );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, flat]));
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: id(202),
+          name: 'Flat',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    render(
+      <MemoryRouter initialEntries={[`/portfolio/${flat.instrumentId}`]}>
+        <Routes>
+          <Route path="/portfolio/:assetId" element={<AssetPage />} />
+          <Route path="/real-estate/:assetId" element={<p>Property page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Property page')).toBeInTheDocument();
+    cleanup();
+    // A coin is not a property: its page stays.
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    expect((await screen.findAllByRole('heading', { name: 'Bitcoin' })).length).toBeGreaterThan(0);
+  });
+
   it('G1: a hand-valued asset has Update price; a market-priced one does not', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, deposit]));
     renderAt(`/portfolio/${bitcoin.instrumentId}`);

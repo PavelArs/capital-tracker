@@ -9,8 +9,9 @@ import type {
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { dayText } from '@/utils/dates';
+import { propertiesOf } from '../property/real-estate';
 import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
@@ -125,19 +126,22 @@ export function purchasesOf(operations: readonly Operation[], instrumentId: stri
   );
 }
 
-type OperationsState = OperationList | 'loading' | 'failed';
+export type OperationsState = OperationList | 'loading' | 'failed';
 
 // Position value against cost basis over a period, with purchase dots (ASSET-CHART).
-function ValueChart({
+export function ValueChart({
   asset,
   currency,
   asked,
   operations,
+  names = { value: 'Position value', cost: 'Cost basis' },
 }: {
   asset: AssetValuation;
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   operations: OperationsState;
+  /** What the two lines are called; a property's are its estimate and the money put in. */
+  names?: { value: string; cost: string };
 }) {
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
   const chartTitle = useId();
@@ -186,13 +190,13 @@ function ValueChart({
           <div aria-label="Chart legend" role="group">
             <Legend
               items={[
-                { key: 'value', label: 'Position value', swatch: 'line', color: 'var(--accent)' },
+                { key: 'value', label: names.value, swatch: 'line', color: 'var(--accent)' },
                 ...(costHidden
                   ? []
                   : ([
                       {
                         key: 'cost',
-                        label: 'Cost basis',
+                        label: names.cost,
                         swatch: 'dash',
                         color: 'var(--ink-3)',
                       },
@@ -754,6 +758,17 @@ export default function AssetPage() {
   }, []);
 
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
+  // Held only in property accounts, the asset has its own page. One held partly elsewhere stays
+  // here, where Holdings names the property account.
+  const accountClasses = useAccountClasses();
+  if (
+    portfolio &&
+    asset &&
+    asset.holdings.length > 0 &&
+    asset.holdings.every((holding) => accountClasses[holding.accountId] === 'property') &&
+    propertiesOf(portfolio, accountClasses).some((item) => item.asset.instrumentId === assetId)
+  )
+    return <Navigate replace to={withCurrency(`/real-estate/${asset.instrumentId}`, asked)} />;
   return (
     <div className="shell-page">
       <PageHeader title="Portfolio" currency={portfolio?.currency} valueSwitch />

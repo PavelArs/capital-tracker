@@ -13,6 +13,7 @@ import { parsePriceVoid } from '../accounting/manual-price-input';
 import { parseTransferVoid } from '../accounting/owned-transfer-input';
 import { parseProfitPreview } from '../accounting/period-profit';
 import { parseFlowVoid } from '../accounting/portfolio-flow-input';
+import { parsePropertyDetails } from '../accounting/property-details-input';
 import { parseTradeVoid } from '../accounting/trade-input';
 import { parseValuationHistoryQuery } from '../accounting/valuation-history-input';
 import { parseCheck as parseBrokerCheck } from '../brokers/broker-connection-input';
@@ -124,6 +125,12 @@ const cases: Case[] = [
     parse: parseBrokerCheck,
     valid: { token: 't.synthetic-test-token-0000000000' },
     required: 'token',
+  },
+  {
+    name: 'accounting/property-details-input parsePropertyDetails',
+    parse: parsePropertyDetails,
+    valid: { monthlyRent: '450.00', note: null },
+    required: 'note',
   },
   {
     name: 'goals/goal-input parseGoalPreview',

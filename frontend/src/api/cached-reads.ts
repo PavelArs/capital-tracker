@@ -5,6 +5,7 @@ import { type DepositDetail, type DepositList, depositsApi } from './deposits.ap
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
 import { type Goal, type GoalForecast, type GoalList, goalsApi } from './goals.api';
 import { type HiddenAsset, hiddenAssetsApi } from './hidden-assets.api';
+import { manualPricesApi, type PriceBook } from './manual-prices.api';
 import {
   CLASSIFICATION_CHANGED,
   type DuplicateProposals,
@@ -15,6 +16,7 @@ import {
 import { type OwnerSettings, ownerSettingsApi } from './owner-settings.api';
 import { type PortfolioHistory, portfolioHistoryApi } from './portfolio-history.api';
 import { portfolioValuationApi } from './portfolio-valuation.api';
+import { type PropertyDetails, propertyDetailsApi } from './property-details.api';
 import {
   forgetReads,
   generationNow,
@@ -198,6 +200,15 @@ export const cachedReads = {
   rates: cachedRead('rates', (): Promise<FxRatesReport> => fxRatesApi.get()),
   deposits: cachedRead('deposits', (): Promise<DepositList> => depositsApi.list()),
   deposit: cachedRead('deposit', (id: string): Promise<DepositDetail> => depositsApi.get(id)),
+  propertyDetails: cachedRead(
+    'property-details',
+    (): Promise<PropertyDetails[]> => propertyDetailsApi.list(),
+  ),
+  /** The estimates entered for a hand-valued asset, newest first. */
+  manualPrices: cachedRead(
+    'manual-prices',
+    (instrumentId: string): Promise<PriceBook> => manualPricesApi.list(instrumentId),
+  ),
   goals: cachedRead('goals', (): Promise<GoalList> => goalsApi.list()),
   goalInsights: cachedRead('goal-insights', (id: string, _terms: string) => goalsApi.insights(id)),
   goal: cachedRead('goal', (id: string): Promise<Goal> => goalsApi.get(id)),
