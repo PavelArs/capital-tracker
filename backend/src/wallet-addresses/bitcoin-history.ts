@@ -1,5 +1,6 @@
 import type { EntityManager } from 'typeorm';
 import type { ChainObservation } from './esplora-client';
+import { jsonbText } from './jsonb-text';
 
 /** Stores a page of observations of one wallet once each; returns how many were new. */
 export async function insertObservations(
@@ -22,7 +23,7 @@ export async function insertObservations(
       tx.sentSats.toString(),
       tx.feeSats.toString(),
       tx.direction,
-      JSON.stringify(tx.raw),
+      jsonbText(tx.raw),
     );
     const slot = (offset: number) => `$${base + offset}`;
     return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb)`;

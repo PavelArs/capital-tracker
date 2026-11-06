@@ -30,6 +30,7 @@ import {
   otherTokenByTicker,
 } from './chain-assets';
 import { walletSourceKey } from './chain-sync';
+import { jsonbText } from './jsonb-text';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
@@ -966,7 +967,7 @@ export class WalletAddressService {
           leg.receivedUnits.toString(),
           leg.sentUnits.toString(),
           leg.direction,
-          JSON.stringify({ ...leg.raw, txid: leg.txid }),
+          jsonbText({ ...leg.raw, txid: leg.txid }),
           leg.asset,
         ],
       );

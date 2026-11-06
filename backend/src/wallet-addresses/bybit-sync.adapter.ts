@@ -31,6 +31,7 @@ import {
   withoutStoredYields,
 } from './bybit-records';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
+import { jsonbText } from './jsonb-text';
 
 const DAY_MS = 86_400_000;
 // Bybit's longest ranges: seven days of trades, less than 30 days of deposits or withdrawals.
@@ -420,7 +421,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
             leg.receivedUnits.toString(),
             leg.sentUnits.toString(),
             leg.direction,
-            JSON.stringify(leg.raw),
+            jsonbText(leg.raw),
           ],
         );
       }
@@ -528,7 +529,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
         leg.sentUnits.toString(),
         leg.feeUnits.toString(),
         leg.direction,
-        JSON.stringify(leg.raw),
+        jsonbText(leg.raw),
         leg.asset,
       );
       const slot = (offset: number) => `$${base + offset}`;
@@ -562,7 +563,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
         `UPDATE bybit_accounts SET balances = $2::jsonb, earn = $3::jsonb,
             "balancesAt" = clock_timestamp()
           WHERE "walletId" = $1`,
-        [account.id, JSON.stringify(rows), earn && JSON.stringify(held)],
+        [account.id, jsonbText(rows), earn && jsonbText(held)],
       );
       await manager.query(
         `UPDATE wallet_addresses SET "completedAt" = clock_timestamp()

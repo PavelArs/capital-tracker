@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { DataSource, EntityManager } from 'typeorm';
 import { BlockbookClient, type ZcashLeg } from './blockbook-client';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
+import { jsonbText } from './jsonb-text';
 
 // Bounds for one pass; the next pass continues from the committed page.
 export const MAX_ZCASH_PAGES = 8;
@@ -171,7 +172,7 @@ export class ZcashSyncAdapter implements ChainSyncAdapter {
         leg.sentUnits.toString(),
         leg.feeUnits.toString(),
         leg.direction,
-        JSON.stringify(leg.raw),
+        jsonbText(leg.raw),
       );
       const slot = (offset: number) => `$${base + offset}`;
       return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb,NULL)`;

@@ -3,6 +3,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { DataSource, EntityManager } from 'typeorm';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
 import { countableLegs, registerChainTokens, type TokenFacts } from './chain-tokens';
+import { jsonbText } from './jsonb-text';
 import { type SolanaLeg, solanaLegs, solanaTokenFacts } from './solana-legs';
 import {
   parseTransaction,
@@ -393,7 +394,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
       await manager.query(
         `UPDATE wallet_addresses SET "solanaSync" = $3::jsonb
           WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL`,
-        [current.ownerId, current.id, JSON.stringify(progress)],
+        [current.ownerId, current.id, jsonbText(progress)],
       );
       return { ...current, solanaSync: progress };
     });
@@ -435,7 +436,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
           current.id,
           state.tokenBackfillTo,
           state.tokenBackfillAt,
-          state.solanaSync ? JSON.stringify(state.solanaSync) : null,
+          state.solanaSync ? jsonbText(state.solanaSync) : null,
         ],
       );
       return { inserted, state };
@@ -493,7 +494,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
           current.id,
           end,
           caughtUp,
-          state.solanaSync ? JSON.stringify(state.solanaSync) : null,
+          state.solanaSync ? jsonbText(state.solanaSync) : null,
         ],
       );
       return { inserted, state };
@@ -516,7 +517,7 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
           leg.sentUnits.toString(),
           leg.feeUnits.toString(),
           leg.direction,
-          JSON.stringify(leg.raw),
+          jsonbText(leg.raw),
           leg.asset,
         );
         const slot = (offset: number) => `$${base + offset}`;
