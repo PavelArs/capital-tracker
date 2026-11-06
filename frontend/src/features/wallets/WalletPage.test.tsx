@@ -912,6 +912,97 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
   });
 });
 
+describe("WALLET-SYNC-OFF: switching a wallet's sync off and on", () => {
+  const off = (reason: 'failures' | 'manual', changes: Partial<WalletAddress['sync']> = {}) =>
+    wallet(1, {
+      sync: {
+        ...wallet(1).sync,
+        status: reason === 'failures' ? 'failed' : null,
+        errorMessage: reason === 'failures' ? 'Bitcoin data is temporarily unavailable.' : null,
+        off: { reason, at: '2026-11-05T12:00:00.000Z' },
+        ...changes,
+      },
+    });
+
+  it('turns sync off from the drawer, keeps the found transactions and says so', async () => {
+    const user = userEvent.setup();
+    setup();
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    await user.click(
+      within(addresses).getByRole('button', { name: `Savings ${wallet(1).address}` }),
+    );
+    const drawer = await screen.findByRole('dialog');
+    const switchSync = vi
+      .spyOn(walletAddressesApi, 'setSyncEnabled')
+      .mockResolvedValue(off('manual'));
+    // The page reads the list again after the switch.
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([off('manual')]);
+    await user.click(within(drawer).getByRole('button', { name: 'Turn sync off' }));
+    expect(switchSync).toHaveBeenCalledWith(wallet(1).id, false);
+    expect(await within(drawer).findByText(/^Sync is switched off\./)).toHaveTextContent(
+      'The transactions found so far stay.',
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Sync now' })).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Turn sync on' })).toBeEnabled();
+    expect(within(drawer).getAllByText('Sync off').length).toBeGreaterThan(0);
+    expect(within(drawer).getByText('Not updated: sync is off')).toBeInTheDocument();
+    expect(await screen.findByText('Sync is off for Savings')).toBeInTheDocument();
+  });
+
+  it('shows why the app switched sync off and turns it back on from the row', async () => {
+    const user = userEvent.setup();
+    setup({ list: [off('failures')] });
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    const note = within(addresses).getByText(
+      /^Sync was switched off after 3 failed attempts in a row\./,
+    );
+    expect(note).toHaveTextContent('Bitcoin data is temporarily unavailable.');
+    expect(note).toHaveTextContent('The transactions found so far stay.');
+    expect(within(addresses).getAllByText('Sync off').length).toBeGreaterThan(0);
+    expect(within(addresses).queryByRole('button', { name: 'Retry now' })).toBeNull();
+    const switchSync = vi.spyOn(walletAddressesApi, 'setSyncEnabled').mockResolvedValue(wallet(1));
+    // The page reads the list again after the switch.
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([wallet(1)]);
+    await user.click(within(addresses).getByRole('button', { name: 'Turn sync on' }));
+    expect(switchSync).toHaveBeenCalledWith(wallet(1).id, true);
+    await waitFor(() =>
+      expect(within(addresses).queryByRole('button', { name: 'Turn sync on' })).toBeNull(),
+    );
+  });
+
+  it('says so and keeps the sync off when the request fails', async () => {
+    const user = userEvent.setup();
+    setup({ list: [off('manual')] });
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    vi.spyOn(walletAddressesApi, 'setSyncEnabled').mockRejectedValue(new Error('offline'));
+    await user.click(within(addresses).getByRole('button', { name: 'Turn sync on' }));
+    expect(await screen.findByText('Could not turn sync on. Try again.')).toBeInTheDocument();
+    expect(within(addresses).getByRole('button', { name: 'Turn sync on' })).toBeEnabled();
+  });
+
+  it('does not read a switched-off address when the wallet is synced', async () => {
+    const user = userEvent.setup();
+    const second = wallet(2, { address: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', label: null });
+    setup({ list: [off('failures'), second] });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    const sync = vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue({
+      outcome: 'complete',
+      reason: null,
+      imported: 0,
+      address: second,
+    });
+    await user.click(screen.getByRole('button', { name: 'Sync now' }));
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+    expect(sync).toHaveBeenCalledWith(second.id);
+  });
+
+  it('offers no wallet-wide Sync now when every address is switched off', async () => {
+    setup({ list: [off('manual')] });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
+  });
+});
+
 describe('UI audit: one wallet', () => {
   it('wallets-02 keeps the keyboard on Sync now while it runs', async () => {
     const user = userEvent.setup();

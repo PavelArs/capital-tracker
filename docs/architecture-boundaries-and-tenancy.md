@@ -22,7 +22,7 @@ Multi-user is out of scope today. The brief says "One owner, no public registrat
 |---|---|---|
 | Backend | about 54,000 lines in `backend/src` without specs (3,500 of them migrations), 20 top-level folders, 18 Nest modules, 31 controllers, 132 routes | One NestJS process serves HTTP, runs six `@Interval` jobs and exposes metrics on loopback `:9464`. |
 | Frontend | about 37,000 lines in `frontend/src` without tests, 14 feature folders | React and Vite, served by nginx in its own container. |
-| Database | 76 migrations, PostgreSQL 16 | Single schema. |
+| Database | 77 migrations, PostgreSQL 16 | Single schema. |
 | Tests | 54 containerized PostgreSQL probes (`tests/e2e/*-db.cjs`), 36 Playwright specs | Critical profile on every PR, full suite nightly (`.github/workflows/full-acceptance.yml`). |
 | Deployment | Three Compose services (`postgres`, `backend`, `frontend`) behind the owner's host nginx | Release through `cd.yml` after the owner's approval, then the dispatcher on the server (`docs/manual-mvp-release.md`). Redis was removed in #370 (ADR-001 item 2). Daily encrypted backups with a backup-age alert landed in #369 and a dashboard panel in #387 (ADR-001 item 1); installing the host timer is the owner's step, which the repository cannot show. ADR-001's checklist is not ticked for either. |
 

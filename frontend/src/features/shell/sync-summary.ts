@@ -27,13 +27,24 @@ export function summarizeSync(sources: readonly SyncSource[], now = new Date()):
       problems: [],
     };
   }
-  const failing = sources.filter(
-    (source) => source.state === 'failed' || source.state === 'delayed',
+  // WALLET-SYNC-OFF: a wallet the owner switched off is on purpose and left out; one the app
+  // switched off after repeated failures needs attention until it is switched on again.
+  const active = sources.filter((source) => source.disabledReason !== 'manual');
+  const failing = active.filter(
+    (source) =>
+      source.disabledReason === 'failures' ||
+      source.state === 'failed' ||
+      source.state === 'delayed',
   );
-  const problems = failing.map((source) =>
-    source.errorMessage ? `${source.name}: ${source.errorMessage}` : source.name,
+  const problems = failing.map((source) => {
+    const reason =
+      source.disabledReason === 'failures' ? 'Sync switched off after failures.' : null;
+    const text = [reason, source.errorMessage].filter(Boolean).join(' ');
+    return text ? `${source.name}: ${text}` : source.name;
+  });
+  const running = active.filter(
+    (source) => !failing.includes(source) && (source.state === 'syncing' || source.state === null),
   );
-  const running = sources.filter((source) => source.state === 'syncing' || source.state === null);
   if (running.length > 0 && failing.length === 0) {
     return {
       tone: 'info',
@@ -46,7 +57,7 @@ export function summarizeSync(sources: readonly SyncSource[], now = new Date()):
   }
   if (failing.length > 0) {
     const others = latest(
-      sources.filter((source) => !failing.includes(source)).map((source) => source.lastSuccessAt),
+      active.filter((source) => !failing.includes(source)).map((source) => source.lastSuccessAt),
     );
     return {
       tone: 'warn',
@@ -58,7 +69,7 @@ export function summarizeSync(sources: readonly SyncSource[], now = new Date()):
       problems,
     };
   }
-  const last = latest(sources.map((source) => source.lastSuccessAt));
+  const last = latest(active.map((source) => source.lastSuccessAt));
   return {
     tone: 'pos',
     title: 'All synced',
