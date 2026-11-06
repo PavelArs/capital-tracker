@@ -135,3 +135,38 @@ describe('GOAL-CHART goal forecast', () => {
     expect(none.stalePrices).toBe(1);
   });
 });
+
+describe("GOAL-REAL-CHART the forecast in today's money", () => {
+  const inflation = { official: 3, personal: null };
+
+  it('GOAL-REAL-CHART-POINTS counts the cases after inflation on the same days, from the same start', () => {
+    const forecast = goalForecast(row, now('5000.00'), today, inflation);
+    const real = forecast.real.official;
+    expect(real).not.toBeNull();
+    expect(real?.map((point) => point.on)).toEqual(forecast.points.map((point) => point.on));
+    expect(real?.[0]).toEqual(forecast.points[0]);
+    expect(Number(real?.at(-1)?.base)).toBeLessThan(Number(forecast.points.at(-1)?.base));
+    // The last real point is the real projection at the deadline.
+    const view = goalView(row, now('5000.00'), today, inflation);
+    expect(real?.at(-1)?.base).toBe(view.real.official?.scenarios[1].projectedAtDeadline);
+  });
+
+  it('GOAL-REAL-CHART-UNKNOWN has no real points for a basis without an inflation figure', () => {
+    const forecast = goalForecast(row, now('5000.00'), today, inflation);
+    expect(forecast.real.personal).toBeNull();
+  });
+
+  it('GOAL-REAL-CHART-HORIZON runs a goal without a date as far as its real base case needs', () => {
+    const open = { ...row, deadline: null };
+    const forecast = goalForecast(open, now('5000.00'), today, inflation);
+    expect(forecast.real.official?.length).toBeGreaterThan(forecast.points.length);
+  });
+
+  it('GOAL-REAL-CHART-EMPTY is empty without a value or after the deadline', () => {
+    expect(goalForecast(row, now(null), today, inflation).real.official).toEqual([]);
+    expect(
+      goalForecast({ ...row, deadline: '2026-10-01' }, now('5000.00'), today, inflation).real
+        .official,
+    ).toEqual([]);
+  });
+});

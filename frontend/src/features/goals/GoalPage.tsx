@@ -38,13 +38,21 @@ import {
   statusText,
   statusTone,
   timeLeft,
-  verdict,
 } from './goal-format';
+import {
+  type GoalMode,
+  inflationText,
+  RealNote,
+  readGoal,
+  realRateText,
+  useGoalMode,
+  verdictOf,
+} from './goal-reading';
 import '../shell/shell-page.css';
 import './goals.css';
 
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
-function Cases({ goal }: { goal: Goal }) {
+function Cases({ goal, mode }: { goal: Goal; mode: GoalMode }) {
   const money = (value: string | null) => flooredText(value, goal.currency);
   const needed = (value: string | null) => neededText(value, goal.currency);
   const dated = goal.deadline !== null;
@@ -85,7 +93,10 @@ function Cases({ goal }: { goal: Goal }) {
                   <b>{scenarioText[scenario.key]}</b>
                 </td>
                 <td className="ui-num" data-label="Return a year">
-                  {rateText(scenario.returnPercent)}%
+                  {mode.real
+                    ? realRateText(scenario.returnPercent)
+                    : rateText(scenario.returnPercent)}
+                  %
                 </td>
                 {dated ? (
                   <>
@@ -139,14 +150,15 @@ function Cases({ goal }: { goal: Goal }) {
 }
 
 /** How many points a year the pessimistic and optimistic cases sit below and above the base. */
-function offsets(goal: Goal): { less: string; more: string } | null {
+function offsets(goal: Goal, mode: GoalMode): { less: string; more: string } | null {
   const rate = (key: GoalScenario['key']) =>
     goal.scenarios.find((scenario) => scenario.key === key)?.returnPercent;
   const [low, base, high] = [rate('pessimistic'), rate('base'), rate('optimistic')];
   if (low === undefined || base === undefined || high === undefined) return null;
   const less = exactDifference(base, low);
   const more = exactDifference(high, base);
-  return less === null || more === null ? null : { less: rateText(less), more: rateText(more) };
+  const text = (points: string) => (mode.real ? realRateText(points) : rateText(points));
+  return less === null || more === null ? null : { less: text(less), more: text(more) };
 }
 
 /** The icon of the verdict: a check when it is good news, an alert when it is not. */
@@ -161,7 +173,12 @@ const verdictIcon = (status: Goal['status']) =>
 // return cases.
 export default function GoalPage() {
   const { goalId = '' } = useParams();
-  const { data: goal, error, replace, reload } = useCachedRead(cachedReads.goal, goalId);
+  const { data: stored, error, replace, reload } = useCachedRead(cachedReads.goal, goalId);
+  const mode = useGoalMode();
+  // The goal as the chosen mode reads it: under Real its real cases, never the nominal ones. The
+  // stored goal stays what the dialogs, the chart and the insights are keyed and filled from.
+  const reading = stored ? readGoal(stored, mode) : null;
+  const goal = reading ? reading.goal : null;
   const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -175,10 +192,14 @@ export default function GoalPage() {
     if (arrivedAdded.current) navigate({ pathname: location.pathname }, { replace: true });
   }, []);
   useEffect(() => {
-    if (!arrivedAdded.current || !goal) return;
+    if (!arrivedAdded.current || !stored) return;
     arrivedAdded.current = false;
-    said.current = toast.show({ tone: 'success', title: 'Goal added', detail: verdict(goal) });
-  }, [goal, toast]);
+    said.current = toast.show({
+      tone: 'success',
+      title: 'Goal added',
+      detail: verdictOf(readGoal(stored, mode)),
+    });
+  }, [stored, mode, toast]);
   const cases = useId();
   // A malformed id in the address names no goal either (goals-23).
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -201,7 +222,7 @@ export default function GoalPage() {
   const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
   const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
   const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
-  const gap = goal ? offsets(goal) : null;
+  const gap = goal ? offsets(goal, mode) : null;
   // With assets that have no price the value is understated, so projections are estimates
   // for the priced subset, even for a goal that is already reached.
   const known = goal?.progress.current != null;
@@ -210,11 +231,11 @@ export default function GoalPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Goals" />
+      <PageHeader title="Goals" valueSwitch />
       <Crumb to="/goals">Goals</Crumb>
       {error && goal === null ? (
         <ErrorState what="this goal" onRetry={() => reload()} />
-      ) : goal === null ? (
+      ) : goal === null || reading === null || stored === null ? (
         <PageSkeleton label="Loading goal" show={['cards']} />
       ) : (
         <>
@@ -244,12 +265,13 @@ export default function GoalPage() {
                 set {dateText(moscowDay(goal.createdAt))}
               </small>
             </div>
-            <GoalFigures goal={goal} />
+            <GoalFigures goal={goal} real={mode.real} />
             <GoalBar goal={goal} />
           </Card>
           <Banner tone={bannerTone[goal.status]} icon={verdictIcon(goal.status)} role="status">
-            {verdict(goal)}
+            {verdictOf(reading)}
           </Banner>
+          {mode.real && <RealNote goals={[stored]} basis={mode.basis} />}
           {stale && <Banner tone="warn">{stale}</Banner>}
           <Card>
             <Stats label="Goal figures">
@@ -262,7 +284,11 @@ export default function GoalPage() {
                     : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price or rate'}`
                 }
               />
-              <Stat label="Target" value={entered(goal.targetAmount)} />
+              <Stat
+                label="Target"
+                value={entered(goal.targetAmount)}
+                hint={mode.real ? "In today's money" : undefined}
+              />
               <Stat
                 label="Time left"
                 value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
@@ -283,8 +309,20 @@ export default function GoalPage() {
               />
               <Stat
                 label="Expected return"
-                value={`${rateText(goal.expectedReturnPercent)}% a year`}
-                hint="The base case"
+                value={
+                  mode.real
+                    ? reading.real
+                      ? `${realRateText(reading.real.returnPercent)}% a year`
+                      : '—'
+                    : `${rateText(goal.expectedReturnPercent)}% a year`
+                }
+                hint={
+                  mode.real
+                    ? reading.real
+                      ? `After ${inflationText(reading.real.inflationPercent)}% inflation`
+                      : undefined
+                    : 'The base case'
+                }
               />
               {goal.deadline ? (
                 <Stat
@@ -298,7 +336,7 @@ export default function GoalPage() {
                   value={
                     goal.status === 'reached'
                       ? 'Already'
-                      : !known
+                      : !known || reading.missing
                         ? 'Not known'
                         : base?.reachedOn
                           ? monthYear(base.reachedOn)
@@ -313,7 +351,7 @@ export default function GoalPage() {
               )}
             </Stats>
           </Card>
-          <GoalChart goal={goal} />
+          <GoalChart goal={stored} mode={mode} />
           {goal.scenarios.length > 0 && known && (
             <Card labelledBy={cases}>
               <CardHeader id={cases} title="Three cases" />
@@ -324,11 +362,16 @@ export default function GoalPage() {
                     ? `${gap.less} points less and more`
                     : `${gap.less} points less and ${gap.more} more`
                   : 'other rates'}{' '}
-                a year than the {rateText(goal.expectedReturnPercent)}% you expect.
+                a year than the{' '}
+                {mode.real && reading.real
+                  ? `${realRateText(reading.real.returnPercent)}% you expect after inflation`
+                  : `${rateText(goal.expectedReturnPercent)}% you expect`}
+                .
               </p>
-              <Cases goal={goal} />
+              <Cases goal={goal} mode={mode} />
               <Banner tone="neutral" icon="info">
-                A projection, not a promise: the same return every year on the whole portfolio, with{' '}
+                A projection, not a promise: the same return every year{' '}
+                {mode.real ? 'after inflation ' : ''}on the whole portfolio, with{' '}
                 {planned ? `${entered(goal.monthlyContribution)} put in` : 'nothing put in'} once a
                 month, the first a month from {dateText(goal.asOf)}, and interest compounded
                 monthly. Bank deposits count at the same rate for now. Markets do not move in a
@@ -336,10 +379,10 @@ export default function GoalPage() {
               </Banner>
             </Card>
           )}
-          <GoalInsights goal={goal} />
+          <GoalInsights goal={stored} mode={mode} />
           {dialog === 'edit' && (
             <GoalDialog
-              goal={goal}
+              goal={stored}
               defaultCurrency={goal.currency}
               onClose={() => setDialog(null)}
               onSaved={(saved) => {
@@ -349,14 +392,14 @@ export default function GoalPage() {
                 said.current = toast.show({
                   tone: 'success',
                   title: 'Goal saved',
-                  detail: verdict(saved),
+                  detail: verdictOf(readGoal(saved, mode)),
                 });
               }}
             />
           )}
           {dialog === 'delete' && (
             <DeleteGoalDialog
-              goal={goal}
+              goal={stored}
               onClose={() => setDialog(null)}
               onDeleted={() => navigate('/goals', { state: { notice: 'deleted' } })}
             />

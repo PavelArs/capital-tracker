@@ -18,13 +18,16 @@ export function GoalBar({ goal }: { goal: Goal }) {
   );
 }
 
-/** "$51,000 of $220,000   23%": where the portfolio stands against the sum. */
-export function GoalFigures({ goal }: { goal: Goal }) {
+/** "$51,000 of $220,000   23%": where the portfolio stands against the sum (in today's money under Real). */
+export function GoalFigures({ goal, real = false }: { goal: Goal; real?: boolean }) {
   const percent = goal.progress.percent === null ? null : Math.floor(Number(goal.progress.percent));
   return (
     <span className="goal-figures">
       <b>{flooredText(goal.progress.current, goal.currency)}</b>
-      <span>of {enteredText(goal.targetAmount, goal.currency)}</span>
+      <span>
+        of {enteredText(goal.targetAmount, goal.currency)}
+        {real ? " in today's money" : ''}
+      </span>
       {percent !== null && <span className="goal-figures__share">{percent}%</span>}
     </span>
   );
