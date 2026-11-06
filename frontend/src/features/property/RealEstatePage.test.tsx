@@ -278,6 +278,26 @@ describe('PROPERTY-LIST Real estate', () => {
     expect(card).toHaveTextContent('$46,000.00Your estimate');
   });
 
+  it('PROPERTY-RENT-STALE warns and offers a refresh when the kept rents could not be read again', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation(properties));
+    const list = vi.spyOn(propertyDetailsApi, 'list');
+    list.mockResolvedValue([details(id(1), { monthlyRent: '450.00' })]);
+    renderPage();
+    const [first] = within(await screen.findByRole('list')).getAllByRole('link');
+    await vi.waitFor(() => expect(first).toHaveTextContent('Rent $450.00 a month'));
+    cleanup();
+    // Back on the page: the kept rents show at once and asking again fails.
+    list.mockRejectedValue(new Error('offline'));
+    renderPage();
+    const [again] = within(await screen.findByRole('list')).getAllByRole('link');
+    expect(again).toHaveTextContent('Rent $450.00 a month');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not refresh the rent; showing the last loaded ones.');
+    list.mockResolvedValue([details(id(1), { monthlyRent: '500.00' })]);
+    await userEvent.click(within(alert).getByRole('button', { name: 'Refresh' }));
+    await vi.waitFor(() => expect(again).toHaveTextContent('Rent $500.00 a month'));
+  });
+
   it('counts only what is held in property accounts when the asset is also held elsewhere', async () => {
     // Codex P2: an asset bought into a wallet as well must not bring the wallet's part along.
     const mixed = asset(4, 'Garage', plot, {

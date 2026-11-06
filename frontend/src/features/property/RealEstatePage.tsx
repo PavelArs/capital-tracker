@@ -225,17 +225,26 @@ export default function RealEstatePage() {
         </EmptyState>
       ) : (
         <>
-          {failed && (
+          {(failed || recorded.stale) && (
             <Banner
               tone="warn"
               role="alert"
               action={
-                <Button variant="secondary" size="sm" onClick={() => load(true)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    load(true);
+                    recorded.reload(true);
+                  }}
+                >
                   Refresh
                 </Button>
               }
             >
-              Could not refresh your real estate; showing the last loaded figures.
+              {failed
+                ? 'Could not refresh your real estate; showing the last loaded figures.'
+                : 'Could not refresh the rent; showing the last loaded ones.'}
             </Banner>
           )}
           <PageIntro action={addButton}>

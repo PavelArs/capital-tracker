@@ -173,10 +173,8 @@ function PropertyDetailsView({
   const instrumentId = asset.instrumentId;
   const estimated = asset.price?.observedAt ?? null;
   const overdue = estimated !== null && estimateOverdue(estimated, new Date());
-  const bought = firstBought(
-    useCachedRead(cachedReads.assetLots, instrumentId, asked).data,
-    classes,
-  );
+  const lots = useCachedRead(cachedReads.assetLots, instrumentId, asked);
+  const bought = firstBought(lots.data, classes);
   const prices = useCachedRead(cachedReads.manualPrices, instrumentId);
   const operations = useCachedRead(cachedReads.operations, asked);
   const recorded = useCachedRead(cachedReads.propertyDetails);
@@ -211,6 +209,29 @@ function PropertyDetailsView({
           }
         >
           {`The estimate is from ${day(estimated)}, over two months ago. Prices in your area may have moved.`}
+        </Banner>
+      )}
+      {(prices.stale || lots.stale || operations.stale) && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button
+              size="sm"
+              icon="refresh"
+              onClick={() => {
+                prices.reload(true);
+                lots.reload(true);
+                operations.reload(true);
+              }}
+            >
+              Refresh
+            </Button>
+          }
+        >
+          {prices.stale
+            ? 'Could not refresh the estimates; showing the last loaded ones.'
+            : 'Could not refresh the purchases and chart; showing the last loaded ones.'}
         </Banner>
       )}
       <Card label="Property figures">

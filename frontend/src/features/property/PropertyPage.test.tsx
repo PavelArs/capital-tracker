@@ -342,6 +342,33 @@ describe('PROPERTY-PAGE the page of one property', () => {
     expect(within(alert).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 
+  it('PROPERTY-STALE-ESTIMATES warns when the estimates could not be read again after a save', async () => {
+    const user = userEvent.setup();
+    await open();
+    const card = await screen.findByRole('region', { name: 'Estimates' });
+    await within(card).findByText('Sep 1, 2025');
+    // The save itself works; reading the estimates again afterwards does not.
+    const kept = book([
+      receipt(2, '2026-08-01T00:00:00.000Z', '92000'),
+      receipt(1, '2025-09-01T00:00:00.000Z', '85000'),
+    ]);
+    vi.mocked(manualPricesApi.list).mockImplementation(async () => {
+      if (savePrice.mock.calls.length > 0) throw new Error('offline');
+      return kept;
+    });
+    const [header] = screen.getAllByRole('button', { name: 'Update estimate' });
+    await user.click(header);
+    const dialog = screen.getByRole('dialog', { name: 'Update estimate' });
+    await user.type(within(dialog).getByLabelText('Estimate of the whole property, USD'), '95000');
+    await user.click(within(dialog).getByRole('button', { name: 'Save estimate' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const alert = await screen.findByText(
+      'Could not refresh the estimates; showing the last loaded ones.',
+    );
+    expect(alert).toBeInTheDocument();
+    expect(within(card).getByText('Sep 1, 2025')).toBeInTheDocument();
+  });
+
   it('PROPERTY-CHART-SCOPE shows no value chart for a property also held outside property accounts', async () => {
     const mixed = {
       ...flat,
