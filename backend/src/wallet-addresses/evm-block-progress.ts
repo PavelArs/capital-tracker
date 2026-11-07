@@ -3,6 +3,7 @@ import { ConflictException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { ETHERSCAN_PAGE_SIZE, parseInternal, parseNormal, parseToken } from './etherscan-client';
 import type { EvmReader, EvmSource } from './evm-reader';
+import { jsonbText } from './jsonb-text';
 
 type Kind = 'normal' | 'internal' | 'tokens';
 export interface EvmBlockProgress {
@@ -73,7 +74,7 @@ export async function readEvmBlock(
         throw new ConflictException('Another sync advanced this address');
       await manager.query(
         'UPDATE wallet_addresses SET "evmSync" = $3::jsonb WHERE "ownerId" = $1 AND id = $2',
-        [expected.ownerId, expected.id, JSON.stringify(next)],
+        [expected.ownerId, expected.id, jsonbText(next)],
       );
       return { ...current, evmSync: next };
     });

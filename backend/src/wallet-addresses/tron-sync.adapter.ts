@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
+import { jsonbText } from './jsonb-text';
 import { tronHex } from './tron-address';
 import {
   needsInfo,
@@ -334,7 +335,7 @@ export class TronSyncAdapter implements ChainSyncAdapter {
         leg.sentUnits.toString(),
         leg.feeUnits.toString(),
         leg.direction,
-        JSON.stringify(leg.raw),
+        jsonbText(leg.raw),
         leg.asset,
       );
       const slot = (offset: number) => `$${base + offset}`;
