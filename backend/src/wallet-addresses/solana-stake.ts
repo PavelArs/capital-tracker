@@ -69,9 +69,12 @@ function signerCount(raw: Record<string, unknown>): number {
   return Number.isSafeInteger(count) ? (count as number) : 0;
 }
 
+// A stake instruction's data is far below 200 bytes (about 275 base58 characters).
+const MAX_INSTRUCTION_CHARS = 512;
+
 /** The instruction's tag: a little-endian u32 at the start of its data; null if unreadable. */
 function tag(data: string): number | null {
-  const bytes = base58Bytes(data);
+  const bytes = base58Bytes(data, MAX_INSTRUCTION_CHARS);
   return bytes && bytes.length >= 4 ? bytes.readUInt32LE(0) : null;
 }
 
