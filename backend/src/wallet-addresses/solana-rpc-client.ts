@@ -108,6 +108,10 @@ function integer(value: unknown, maximum: number): number {
 const slot = (value: unknown) => integer(value, 2 ** 31 - 1);
 const time = (value: unknown) => integer(value, MAX_UNIX_SECONDS);
 const lamports = (value: unknown) => BigInt(integer(value, Number.MAX_SAFE_INTEGER));
+// A transaction's account indexes are one byte, so no transaction names more than 256 accounts;
+// it holds at most one token balance per token account and a signature per required signer.
+const MAX_ACCOUNTS = 256;
+const MAX_SIGNATURES = 64;
 function key(value: unknown): string {
   return typeof value === 'string' && base58Bytes(value)?.length === 32 ? value : invalid();
 }
@@ -154,7 +158,9 @@ export function parseTokenAccounts(result: unknown): string[] {
 
 function tokenBalances(value: unknown, accounts: number): TokenBalance[] {
   if (value === null || value === undefined) return [];
-  return list(value).map((entry) => {
+  const entries = list(value);
+  if (entries.length > accounts) invalid();
+  return entries.map((entry) => {
     const item = record(entry);
     const { amount, decimals } = record(item.uiTokenAmount);
     if (typeof amount !== 'string' || !/^(0|[1-9][0-9]{0,38})$/.test(amount)) invalid();
@@ -177,17 +183,21 @@ export function parseTransaction(result: unknown, expected: string): SolanaTrans
   const item = record(result);
   const meta = record(item.meta);
   const message = record(record(item.transaction).message);
-  const signatures = list(record(item.transaction).signatures).map(signature);
+  const signed = list(record(item.transaction).signatures);
+  if (signed.length > MAX_SIGNATURES) invalid();
+  const signatures = signed.map(signature);
   if (!signatures.includes(expected)) invalid();
   const loaded =
     meta.loadedAddresses === undefined || meta.loadedAddresses === null
       ? { writable: [], readonly: [] }
       : record(meta.loadedAddresses);
-  const accounts = [
+  const named = [
     ...list(message.accountKeys),
     ...list(loaded.writable ?? []),
     ...list(loaded.readonly ?? []),
-  ].map(key);
+  ];
+  if (named.length > MAX_ACCOUNTS) invalid();
+  const accounts = named.map(key);
   const preBalances = list(meta.preBalances).map(lamports);
   const postBalances = list(meta.postBalances).map(lamports);
   if (
