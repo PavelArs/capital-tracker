@@ -314,6 +314,9 @@ describe('SOL-IDENTITY: legs of a Solana wallet', () => {
     const reversed = solanaLegs(wallet, new Set(), airdrop(clashB, clashA, wallet));
     const named = (list: SolanaLeg[]) => new Map(list.map((leg) => [leg.asset, leg.txid]));
     expect(named(reversed)).toEqual(named(legs));
+    const counter = key('counter-wallet');
+    const seenByCounter = solanaLegs(counter, new Set(), airdrop(clashA, clashB, counter));
+    expect(named(seenByCounter)).toEqual(named(legs));
     // The mint that sorts first keeps the number it always had; the other takes the next one.
     const signatureOf = legs[0].txid.split('-')[0];
     expect(byMint.get(clashB)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashB)}`);
@@ -325,5 +328,43 @@ describe('SOL-IDENTITY: legs of a Solana wallet', () => {
     const mints = [key('m1'), key('m2'), key('m3'), USDT, USDC];
     for (const mint of mints)
       expect(tokenLegNumbers([mint, ...mints]).get(mint)).toBe(tokenLegNumber(mint));
+  });
+
+  describe('TOKEN-ANY numbers with chosen clashes', () => {
+    const numberOf = (table: Record<string, number>) => (mint: string) => table[mint];
+
+    it('keeps the number of a mint that clashes with nobody when a displaced one would land on it', () => {
+      // a and b share 100; c has 101 of its own and must keep it.
+      const numbers = tokenLegNumbers(['b', 'a', 'c'], numberOf({ a: 100, b: 100, c: 101 }));
+      expect(numbers.get('a')).toBe(100);
+      expect(numbers.get('c')).toBe(101);
+      expect(numbers.get('b')).toBe(102);
+      expect(new Set(numbers.values()).size).toBe(3);
+    });
+
+    it('moves each of three alike mints to its own free number, in text order', () => {
+      const numbers = tokenLegNumbers(['c', 'a', 'b'], numberOf({ a: 7, b: 7, c: 7 }));
+      expect([numbers.get('a'), numbers.get('b'), numbers.get('c')]).toEqual([7, 8, 9]);
+    });
+
+    it('gives the same numbers whatever the order of the mints', () => {
+      const table = { a: 5, b: 5, c: 6, d: 6, e: 6 };
+      const first = tokenLegNumbers(['a', 'b', 'c', 'd', 'e'], numberOf(table));
+      const second = tokenLegNumbers(['e', 'd', 'c', 'b', 'a'], numberOf(table));
+      expect([...second].sort()).toEqual([...first].sort());
+      expect(new Set(first.values()).size).toBe(5);
+    });
+
+    it('wraps past the highest number to 3 and never produces the built-in 1 or 2', () => {
+      const numbers = tokenLegNumbers(['a', 'b'], numberOf({ a: 999_999_999, b: 999_999_999 }));
+      expect(numbers.get('a')).toBe(999_999_999);
+      expect(numbers.get('b')).toBe(3);
+      const withBuiltIns = tokenLegNumbers([USDT, USDC, 'x', 'y'], (mint) =>
+        mint === USDT ? 1 : mint === USDC ? 2 : 999_999_999,
+      );
+      expect(withBuiltIns.get(USDT)).toBe(1);
+      expect(withBuiltIns.get(USDC)).toBe(2);
+      expect(withBuiltIns.get('y')).toBe(3);
+    });
   });
 });
