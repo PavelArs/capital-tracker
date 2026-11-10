@@ -8,6 +8,7 @@ export const backupTables = [
   'retired_commands',
   'accounting_instruments',
   'hidden_assets',
+  'property_details',
   'bank_deposits',
   'bank_deposit_rates',
   'bank_deposit_movements',
