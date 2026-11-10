@@ -310,17 +310,20 @@ describe('SOL-IDENTITY: legs of a Solana wallet', () => {
     const byMint = new Map(legs.map((leg) => [leg.asset, leg]));
     expect(byMint.get(clashA)?.receivedUnits).toBe(7n);
     expect(byMint.get(clashB)?.receivedUnits).toBe(9n);
-    // The same transaction read in the other order, or by the other wallet, names the legs alike.
-    const reversed = solanaLegs(wallet, new Set(), airdrop(clashB, clashA, wallet));
+    // The mint the transaction lists first keeps the number it always had (the leg an earlier
+    // import stored); the other takes the next one.
     const named = (list: SolanaLeg[]) => new Map(list.map((leg) => [leg.asset, leg.txid]));
-    expect(named(reversed)).toEqual(named(legs));
+    const signatureOf = legs[0].txid.split('-')[0];
+    expect(byMint.get(clashA)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashA)}`);
+    expect(byMint.get(clashB)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashB) + 1}`);
+    // The other wallet reading the same transaction names the legs alike.
     const counter = key('counter-wallet');
     const seenByCounter = solanaLegs(counter, new Set(), airdrop(clashA, clashB, counter));
     expect(named(seenByCounter)).toEqual(named(legs));
-    // The mint that sorts first keeps the number it always had; the other takes the next one.
-    const signatureOf = legs[0].txid.split('-')[0];
-    expect(byMint.get(clashB)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashB)}`);
-    expect(byMint.get(clashA)?.txid).toBe(`${signatureOf}-${tokenLegNumber(clashA) + 1}`);
+    // Listed the other way round, the other mint is the one that keeps its number.
+    const reversed = solanaLegs(wallet, new Set(), airdrop(clashB, clashA, wallet));
+    expect(named(reversed).get(clashB)).toBe(`${signatureOf}-${tokenLegNumber(clashB)}`);
+    expect(named(reversed).get(clashA)).toBe(`${signatureOf}-${tokenLegNumber(clashA) + 1}`);
     for (const leg of legs) expect(leg.txid).toMatch(/^[1-9A-HJ-NP-Za-km-z]+-[0-9]{1,9}$/);
   });
 
@@ -330,29 +333,47 @@ describe('SOL-IDENTITY: legs of a Solana wallet', () => {
       expect(tokenLegNumbers([mint, ...mints]).get(mint)).toBe(tokenLegNumber(mint));
   });
 
+  it('TOKEN-ANY finds a leg stored by an earlier import under its old txid', () => {
+    // Before this change the first leg of a clash stayed under the plain number and the other was
+    // dropped. The mint listed first but unchanged for this wallet has no leg, so the other mint
+    // is the one that was stored under the plain number, and still is.
+    const foreignOwner = key('foreign-owner');
+    const mixed = tx({
+      accounts: [other, walletUsdc, wallet, token],
+      preBalances: [SOL, 1n, 0n, 1n],
+      postBalances: [SOL - 5000n, 1n, 0n, 1n],
+      preTokenBalances: [balance(1, clashA, foreignOwner, 0n), balance(2, clashB, wallet, 0n)],
+      postTokenBalances: [balance(1, clashA, foreignOwner, 7n), balance(2, clashB, wallet, 9n)],
+    });
+    const legs = solanaLegs(wallet, new Set(), mixed);
+    expect(legs).toHaveLength(1);
+    expect(legs[0].asset).toBe(clashB);
+    expect(legs[0].txid).toBe(`${legs[0].txid.split('-')[0]}-${tokenLegNumber(clashB)}`);
+  });
+
   describe('TOKEN-ANY numbers with chosen clashes', () => {
     const numberOf = (table: Record<string, number>) => (mint: string) => table[mint];
 
     it('keeps the number of a mint that clashes with nobody when a displaced one would land on it', () => {
       // a and b share 100; c has 101 of its own and must keep it.
-      const numbers = tokenLegNumbers(['b', 'a', 'c'], numberOf({ a: 100, b: 100, c: 101 }));
+      const numbers = tokenLegNumbers(['a', 'b', 'c'], numberOf({ a: 100, b: 100, c: 101 }));
       expect(numbers.get('a')).toBe(100);
       expect(numbers.get('c')).toBe(101);
       expect(numbers.get('b')).toBe(102);
       expect(new Set(numbers.values()).size).toBe(3);
     });
 
-    it('moves each of three alike mints to its own free number, in text order', () => {
+    it('moves each of three alike mints to its own free number, in list order', () => {
       const numbers = tokenLegNumbers(['c', 'a', 'b'], numberOf({ a: 7, b: 7, c: 7 }));
-      expect([numbers.get('a'), numbers.get('b'), numbers.get('c')]).toEqual([7, 8, 9]);
+      expect([numbers.get('c'), numbers.get('a'), numbers.get('b')]).toEqual([7, 8, 9]);
     });
 
-    it('gives the same numbers whatever the order of the mints', () => {
+    it('gives every mint a different number when several numbers clash', () => {
       const table = { a: 5, b: 5, c: 6, d: 6, e: 6 };
-      const first = tokenLegNumbers(['a', 'b', 'c', 'd', 'e'], numberOf(table));
-      const second = tokenLegNumbers(['e', 'd', 'c', 'b', 'a'], numberOf(table));
-      expect([...second].sort()).toEqual([...first].sort());
-      expect(new Set(first.values()).size).toBe(5);
+      const numbers = tokenLegNumbers(['a', 'b', 'c', 'd', 'e'], numberOf(table));
+      expect(new Set(numbers.values()).size).toBe(5);
+      expect(numbers.get('a')).toBe(5);
+      expect(numbers.get('c')).toBe(6);
     });
 
     it('wraps past the highest number to 3 and never produces the built-in 1 or 2', () => {
