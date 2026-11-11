@@ -14,13 +14,33 @@ const MONTH_DAYS = 30.4375;
 // statistics office has not published yet.
 const TREND_MONTHS = 12;
 
+/**
+ * The years the month arithmetic supports. A month text has a four-digit year, and "10000-01"
+ * sorts before "9999-12" as text, so a month outside the range could keep a loop walking
+ * months without ever passing its end. Every month and day from a provider or a request is
+ * checked against it (isMonth, isDay) before any month is counted.
+ */
+export const MIN_YEAR = 1900;
+export const MAX_YEAR = 2200;
+const inRange = (value: string) => {
+  const year = Number(value.slice(0, 4));
+  return year >= MIN_YEAR && year <= MAX_YEAR;
+};
+
 export const isMonth = (value: unknown): value is string =>
-  typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+  typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && inRange(value);
 
 export const isDay = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  inRange(value) &&
+  isRealDay(value);
+
+// A day the calendar does not have (a month 13, a day 00, the 30th of February) is not one.
+function isRealDay(value: string): boolean {
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 const monthNumber = (month: string) =>
   Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
@@ -28,6 +48,8 @@ export function monthFromNumber(number: number): string {
   const year = Math.floor(number / 12);
   return `${String(year).padStart(4, '0')}-${String((number % 12) + 1).padStart(2, '0')}`;
 }
+/** How many months `to` is after `from`; negative when it is before. */
+export const monthsBetween = (from: string, to: string) => monthNumber(to) - monthNumber(from);
 export const previousMonth = (month: string) => monthFromNumber(monthNumber(month) - 1);
 export const nextMonth = (month: string) => monthFromNumber(monthNumber(month) + 1);
 

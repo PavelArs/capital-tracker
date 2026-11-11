@@ -16,6 +16,10 @@ export const parseCurrency = (value: unknown): AccountingCurrency =>
 
 export const parseMonth = (value: unknown): string => (isMonth(value) ? value : bad('month'));
 
+/** A month that may already be stored, so it can still be removed: any four-digit year. */
+export const parseStoredMonth = (value: unknown): string =>
+  typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value : bad('month');
+
 /**
  * A month the owner types in: one that has begun on the Moscow calendar. A later one (a typo in
  * the year) would have every month before it estimated and is refused.
