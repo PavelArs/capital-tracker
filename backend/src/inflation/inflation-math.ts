@@ -34,7 +34,13 @@ export const isDay = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   inRange(value) &&
-  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  isRealDay(value);
+
+// A day the calendar does not have (a month 13, a day 00, the 30th of February) is not one.
+function isRealDay(value: string): boolean {
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 const monthNumber = (month: string) =>
   Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
@@ -42,6 +48,8 @@ export function monthFromNumber(number: number): string {
   const year = Math.floor(number / 12);
   return `${String(year).padStart(4, '0')}-${String((number % 12) + 1).padStart(2, '0')}`;
 }
+/** How many months `to` is after `from`; negative when it is before. */
+export const monthsBetween = (from: string, to: string) => monthNumber(to) - monthNumber(from);
 export const previousMonth = (month: string) => monthFromNumber(monthNumber(month) - 1);
 export const nextMonth = (month: string) => monthFromNumber(monthNumber(month) + 1);
 

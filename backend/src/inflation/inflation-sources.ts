@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { AccountingCurrency } from '../fx-rates/fx-conversion';
-import { isMonth, nextMonth, previousMonth } from './inflation-math';
+import { isMonth, monthsBetween, nextMonth, previousMonth } from './inflation-math';
 
 // `bls` is the stored key of the US CPI-U series (the publisher the data comes from); the client
 // reads it through the OECD, because the BLS website refuses the owner's server.
@@ -58,14 +58,8 @@ export function levelsToChanges(levels: readonly Level[]): MonthlyChange[] {
   for (let i = 1; i < levels.length; i++) {
     const before = levels[i - 1];
     const after = levels[i];
-    let steps = 1;
-    // Counting stops once the gap is too long to fill, however far apart the months are.
-    for (
-      let month = nextMonth(before.month);
-      month < after.month && steps <= MAX_FILLED_GAP + 1;
-      month = nextMonth(month)
-    )
-      steps++;
+    // The months from one level to the next, counted without walking them.
+    const steps = Math.max(1, monthsBetween(before.month, after.month));
     if (steps > MAX_FILLED_GAP + 1) continue;
     const percent = ((after.value / before.value) ** (1 / steps) - 1) * 100;
     let month = before.month;

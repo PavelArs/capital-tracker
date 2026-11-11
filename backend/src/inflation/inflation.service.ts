@@ -9,9 +9,9 @@ import { presentSource, recordSource, type SourceRow } from '../sync-status/sync
 import {
   parseCurrency,
   parseFactorQuery,
-  parseMonth,
   parseMonthlyChange,
   parsePersonalRate,
+  parseStoredMonth,
   parseTypedMonth,
 } from './inflation-input';
 import {
@@ -354,7 +354,7 @@ export class InflationService {
   async removeMonth(ownerId: string, currencyInput: string, monthInput: string) {
     const owner = parseUuid(ownerId);
     const currency = parseCurrency(currencyInput);
-    const month = parseMonth(monthInput);
+    const month = parseStoredMonth(monthInput);
     const [, removed]: [unknown, number] = await this.source.query(
       `DELETE FROM inflation_manual_months
         WHERE "ownerId" = $1 AND currency = $2 AND month = ($3 || '-01')::date`,

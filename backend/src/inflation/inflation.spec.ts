@@ -6,6 +6,7 @@ import {
   parseFactorQuery,
   parseMonthlyChange,
   parsePersonalRate,
+  parseStoredMonth,
   parseTypedMonth,
 } from './inflation-input';
 import {
@@ -16,6 +17,7 @@ import {
   levelOn,
   MAX_YEAR,
   MIN_YEAR,
+  monthFromNumber,
   officialFactor,
   personalFactor,
   trailingYearEstimated,
@@ -632,6 +634,26 @@ describe('INFL-DOMAIN the dates the month arithmetic supports', () => {
     ]);
   });
 
+  it('refuses a five-digit year, a month 13, a day 00 and a leap day that is not one', () => {
+    expect(['10000-01', '2026-13'].map(isMonth)).toEqual([false, false]);
+    expect(
+      ['10000-01-01', '2026-13-45', '2026-00-10', '2026-04-00', '1900-02-29'].map(isDay),
+    ).toEqual([false, false, false, false, false]);
+    expect(['2024-02-29', '2200-12-31'].map(isDay)).toEqual([true, true]);
+    expect(() =>
+      parseFactorQuery({ currency: 'USD', from: '2026-13-45', to: '2026-13-46' }),
+    ).toThrow(BadRequestException);
+  });
+
+  it('removes a stored month of any four-digit year but types in only the supported ones', () => {
+    expect(parseStoredMonth('1850-03')).toBe('1850-03');
+    expect(() => parseStoredMonth('2026-13')).toThrow(BadRequestException);
+    expect(() => parseStoredMonth('10000-01')).toThrow(BadRequestException);
+    expect(() => parseTypedMonth('1850-03', new Date('2026-11-01T00:00:00Z'))).toThrow(
+      BadRequestException,
+    );
+  });
+
   it.each([
     ['0001-01', 'a month long before any index'],
     ['9999-12', 'a month in the far future'],
@@ -643,7 +665,7 @@ describe('INFL-DOMAIN the dates the month arithmetic supports', () => {
           [month, '101'],
         ]),
       ),
-    ).toThrow('month');
+    ).toThrow(`month "${month}"`);
     expect(() =>
       parseEurostatHicp(
         JSON.stringify({
@@ -655,16 +677,46 @@ describe('INFL-DOMAIN the dates the month arithmetic supports', () => {
           dimension: { time: { category: { index: { [month]: 0 } } } },
         }),
       ),
-    ).toThrow('month');
+    ).toThrow(`month "${month}"`);
     const [year, mm] = month.split('-');
     expect(() =>
       parseCbrInflation(
         `<table class="data"><tr><th>Дата</th><th>Инфляция, % г/г</th></tr><tr><td>${mm}.${year}</td><td>6,35</td></tr></table>`,
       ),
-    ).toThrow('date');
+    ).toThrow(`date "${mm}.${year}"`);
   });
 
-  it('stops counting a gap between published months as soon as it is too long to fill', () => {
+  it.each(['1900-01', '2200-12'])('still reads %s in each of the three sources', (month) => {
+    expect(() => parseOecdCpiLevels(oecd([[month, '100']]))).not.toThrow();
+    expect(() =>
+      parseEurostatHicp(
+        JSON.stringify({
+          version: '2.0',
+          class: 'dataset',
+          id: ['freq', 'unit', 'coicop18', 'geo', 'time'],
+          size: [1, 1, 1, 1, 1],
+          value: { '0': 100 },
+          dimension: { time: { category: { index: { [month]: 0 } } } },
+        }),
+      ),
+    ).not.toThrow(/month/);
+    const [year, mm] = month.split('-');
+    expect(() =>
+      parseCbrInflation(
+        `<table class="data"><tr><th>Дата</th><th>Инфляция, % г/г</th></tr><tr><td>${mm}.${year}</td><td>6,35</td></tr></table>`,
+      ),
+    ).not.toThrow(/date/);
+  });
+
+  it('fills a gap of up to three missing months and breaks the chain at a longer one, far apart or not', () => {
+    const gap = (missing: number) =>
+      levelsToChanges([
+        { month: '2025-01', value: 100 },
+        { month: monthFromNumber(2025 * 12 + missing + 1), value: 110 },
+      ]);
+    expect(gap(0)).toHaveLength(1);
+    expect(gap(3)).toHaveLength(4);
+    expect(gap(4)).toEqual([]);
     expect(
       levelsToChanges([
         { month: '1900-01', value: 100 },
