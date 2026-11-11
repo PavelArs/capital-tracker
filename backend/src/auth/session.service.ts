@@ -99,12 +99,16 @@ export class SessionService {
    * A browser says where a request comes from in Sec-Fetch-Site. A page of another site (or a
    * sibling subdomain) that sends the visitor here is not the app: the browser then leaves the
    * SameSite=Strict cookie out, and a new anonymous session would replace the owner's cookie.
-   * Only the app itself ("same-origin") or the visitor typing the address ("none") bootstraps;
-   * a client that sends no such header (curl, an old browser) is judged by Origin as before.
+   * Only the app itself ("same-origin") or the visitor typing the address ("none") bootstraps.
+   * A request from the same site but another origin ("same-site") is the app only when the
+   * browser also named the configured origin in Origin (the frontend and the API on two
+   * subdomains); a navigation never carries Origin. A client that sends no such header (curl, an
+   * old browser) is judged by Origin as before.
    */
-  checkFetchSite(site: unknown): void {
-    if (site !== undefined && site !== 'same-origin' && site !== 'none')
-      throw new ForbiddenException();
+  checkFetchSite(site: unknown, originMatched: boolean): void {
+    if (site === undefined || site === 'same-origin' || site === 'none') return;
+    if (site === 'same-site' && originMatched) return;
+    throw new ForbiddenException();
   }
 
   async row(manager: EntityManager, hash: string): Promise<SessionRow | undefined> {
