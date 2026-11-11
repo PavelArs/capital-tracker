@@ -62,6 +62,7 @@ const hash = (id) => sha256(`ct-e2e-tron-tx:${id}`).toString('hex');
 const wallet = account('main');
 const cold = account('cold');
 const busy = account('busy');
+const crowded = account('crowded');
 const staker = account('staker');
 const outside = account('outside');
 const witness = account('witness');
@@ -623,6 +624,45 @@ async function main() {
     await post('tron', { pageSize: 200 });
     console.log(
       'PASS TRON-SYNC a list of more pages than one pass reads stores whole block times (4 of 7), then the rest on the next pass',
+    );
+
+    // TRON-LISTING (Codex Security #5): seven transactions of one block time are more than the
+    // five one-item pages of a pass; the cursor stands before that block time, which is then read
+    // on its own, whole, instead of failing on every pass.
+    const crowdedId = (
+      await s.addresses.register(owner, { network: 'tron', address: crowded.address })
+    ).value.id;
+    await postTron(
+      {
+        transactions: [1, 2, 3, 4, 5, 6, 7].map((n) =>
+          transfer(`crowded-${n}`, 320, outside, crowded, SUN),
+        ),
+      },
+      { tip: tip(330), pageSize: 1 },
+    );
+    const before = await s.addresses.sync(owner, crowdedId);
+    assert.deepEqual([before.outcome, before.imported], ['partial', 0]);
+    assert.deepEqual((await cursor(crowdedId)).readTo, new Date(at(320) - 1));
+    const whole = await newRequests(() => s.addresses.sync(owner, crowdedId));
+    assert.deepEqual([whole.result.outcome, whole.result.imported], ['partial', 7]);
+    assert.ok(
+      whole.calls
+        .map(call)
+        .some(
+          (item) =>
+            item[0] === 'transactions' && item[2] === at(320) && item[3] === 'offset-6',
+        ),
+      'The crowded block time is read to its seventh page',
+    );
+    assert.deepEqual((await cursor(crowdedId)).readTo, new Date(at(320)));
+    const crowdedRest = await s.addresses.sync(owner, crowdedId);
+    assert.deepEqual(
+      [crowdedRest.outcome, crowdedRest.imported, crowdedRest.address.balances[0]],
+      ['complete', 0, { symbol: 'TRX', quantity: '7.000000' }],
+    );
+    await post('tron', { pageSize: 200 });
+    console.log(
+      'PASS TRON-LISTING a block time of more records than a pass reads is read whole and stored once, then the wallet completes',
     );
 
     // Constraints: base58check T-addresses, hex hashes, non-zero stake moves.

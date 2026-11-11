@@ -11,8 +11,8 @@ import {
   tronLegs,
   tronTokenContracts,
 } from './tron-legs';
+import { MAX_TRON_PAGES, readTronLists } from './tron-listing';
 import {
-  type PageResult,
   TRONSCAN_PAGE_SIZE,
   type TronAccountItem,
   TronGridClient,
@@ -23,8 +23,6 @@ import {
 
 // Bounds for one pass; the next pass continues from the committed block time.
 export const MAX_INFO_PER_SYNC = 40;
-// Pages of one list in one pass: 1 000 items.
-export const MAX_TRON_PAGES = 5;
 const SYNC_TIME_BUDGET_MS = 25_000;
 
 interface ScanRow {
@@ -33,8 +31,6 @@ interface ScanRow {
   address: string;
   readTo: Date | null;
 }
-
-type Listed<T> = { ok: true; items: T[]; end: number } | { ok: false; reason: StepFailure };
 
 /**
  * TRON-SYNC: Tron history from TronGrid. Every confirmed transaction of the wallet, its TRX
@@ -76,24 +72,19 @@ export class TronSyncAdapter implements ChainSyncAdapter {
     }
 
     const started = Date.now();
-    const lists: Listed<TronAccountItem | TronTokenTransfer>[] = [
-      await this.list((fingerprint) =>
-        this.client.transactions(state.address, after + 1, target, fingerprint),
-      ),
-    ];
-    for (const contract of tronTokenContracts)
-      lists.push(
-        await this.list((fingerprint) =>
-          this.client.tokenTransfers(state.address, contract, after + 1, target, fingerprint),
+    const listed = await readTronLists<TronAccountItem | TronTokenTransfer>(
+      [
+        (from, to, fingerprint) => this.client.transactions(state.address, from, to, fingerprint),
+        ...tronTokenContracts.map(
+          (contract) => (from: number, to: number, fingerprint: string | null) =>
+            this.client.tokenTransfers(state.address, contract, from, to, fingerprint),
         ),
-      );
-    let end = target;
-    for (const listed of lists) {
-      if (!listed.ok) return failed(listed.reason);
-      end = Math.min(end, listed.end);
-    }
-    // One block time alone fills more pages than a pass may read.
-    if (end <= after) return failed('invalid_response');
+      ],
+      after,
+      target,
+    );
+    if (!listed.ok) return failed(listed.reason);
+    const { lists, end } = listed;
     const groups = new Map<string, Omit<TronTransactionGroup, 'info'>>();
     const group = (txid: string, timestamp: number) => {
       const found = groups.get(txid) ?? {
@@ -106,9 +97,8 @@ export class TronSyncAdapter implements ChainSyncAdapter {
       groups.set(txid, found);
       return found;
     };
-    for (const listed of lists) {
-      if (!listed.ok) continue;
-      for (const item of listed.items) {
+    for (const list of lists) {
+      for (const item of list.items) {
         if (item.timestamp <= after || item.timestamp > end) continue;
         // A zero-value token transfer (address poisoning) moves nothing and needs no reading.
         if ('value' in item && item.value === 0n) continue;
@@ -136,7 +126,8 @@ export class TronSyncAdapter implements ChainSyncAdapter {
       const batch = ordered.slice(position, next);
       const wanted = batch.filter((item) => needsInfo(hex, item)).length;
       if (fetched > 0 && fetched + wanted > MAX_INFO_PER_SYNC) break;
-      if (Date.now() - started > SYNC_TIME_BUDGET_MS) break;
+      // The first block time is always taken: a pass that listed for long must still advance.
+      if (position > 0 && Date.now() - started > SYNC_TIME_BUDGET_MS) break;
       const read: TronTransactionGroup[] = [];
       for (const item of batch) {
         let info: TronTransactionInfo | null = null;
@@ -224,31 +215,6 @@ export class TronSyncAdapter implements ChainSyncAdapter {
     return this.source.transaction('READ COMMITTED', (manager) =>
       this.insert(manager, state, legs),
     );
-  }
-
-  /**
-   * Every page of one list, up to the pass's limit. A list that has more pages ends before the
-   * block time of its last item, which may continue on the next page.
-   */
-  private async list<T extends { timestamp: number }>(
-    read: (fingerprint: string | null) => Promise<PageResult<T>>,
-  ): Promise<Listed<T>> {
-    const items: T[] = [];
-    let fingerprint: string | null = null;
-    for (let page = 0; page < MAX_TRON_PAGES; page++) {
-      const listed = await read(fingerprint);
-      if (!listed.ok) return listed;
-      for (const item of listed.items) {
-        // Oldest first: anything else is an answer this reading cannot trust.
-        if (items.length > 0 && item.timestamp < items[items.length - 1].timestamp)
-          return { ok: false, reason: 'invalid_response' };
-        items.push(item);
-      }
-      if (!listed.next) return { ok: true, items, end: Number.POSITIVE_INFINITY };
-      fingerprint = listed.next;
-    }
-    const last = items[items.length - 1];
-    return { ok: true, items, end: last ? last.timestamp - 1 : Number.NEGATIVE_INFINITY };
   }
 
   private async scan(owner: string, id: string): Promise<ScanRow> {
