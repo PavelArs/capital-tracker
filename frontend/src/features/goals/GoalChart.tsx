@@ -15,6 +15,7 @@ import {
 } from '../dashboard/HistoryChart';
 import { useCachedRead } from '../shell/useCachedRead';
 import { dateText, enteredText, flooredText, monthYear, rateText, staleText } from './goal-format';
+import { type GoalMode, readGoal, realRateText } from './goal-reading';
 
 const HEIGHT = 290;
 const PAD = { left: 4, right: 64, top: 24, bottom: 28 };
@@ -76,7 +77,16 @@ function line(points: readonly ([number, number] | null)[]): string {
  * pessimistic and optimistic cases, with the sum to reach. Projections are left out while an
  * asset has no price, as on the rest of the page.
  */
-export default function GoalChart({ goal }: { goal: Goal }) {
+export default function GoalChart({
+  goal: stored,
+  mode = { real: false },
+}: {
+  goal: Goal;
+  mode?: GoalMode;
+}) {
+  // Under Real the cases and rates are the real ones; the stored goal keys the reads.
+  const reading = readGoal(stored, mode);
+  const goal = reading.goal;
   const {
     data: history,
     error: historyError,
@@ -84,12 +94,12 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     reload: reloadHistory,
   } = useCachedRead(cachedReads.history, 'ALL', goal.currency);
   const terms = JSON.stringify([
-    goal.currency,
-    goal.targetAmount,
-    goal.deadline,
-    goal.expectedReturnPercent,
-    goal.monthlyContribution,
-    goal.asOf,
+    stored.currency,
+    stored.targetAmount,
+    stored.deadline,
+    stored.expectedReturnPercent,
+    stored.monthlyContribution,
+    stored.asOf,
   ]);
   const {
     data: forecast,
@@ -123,7 +133,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const label = `${goal.name}: the portfolio so far and the forecast against the sum to reach`;
 
   // Chart coordinates only: every amount written out comes from the server's decimal strings.
-  const past: Past[] = (history?.points ?? []).flatMap((point) =>
+  // The history is money as it was: under Real only the forecast, in today's money, is drawn.
+  const past: Past[] = (mode.real ? [] : (history?.points ?? [])).flatMap((point) =>
     point.value === null
       ? []
       : [
@@ -138,9 +149,12 @@ export default function GoalChart({ goal }: { goal: Goal }) {
           },
         ],
   );
+  const forecastPoints = mode.real
+    ? (forecast?.real?.[mode.basis] ?? null)
+    : (forecast?.points ?? null);
   const ahead: Ahead[] =
-    known && forecast?.currency === goal.currency
-      ? forecast.points.slice(1).flatMap((point) =>
+    known && forecast?.currency === goal.currency && forecastPoints !== null
+      ? forecastPoints.slice(1).flatMap((point) =>
           point.base === null
             ? []
             : [
@@ -164,11 +178,19 @@ export default function GoalChart({ goal }: { goal: Goal }) {
       <Card variant="chart" label={label}>
         <CardHeader title="Progress and forecast" />
         <p className="goal-chart__empty" role="note">
-          {historyError && history === null
-            ? 'Could not load the portfolio history. Try again later.'
-            : history === null
-              ? 'Loading the chart…'
-              : `No portfolio figures in ${goal.currency} yet.`}
+          {mode.real
+            ? reading.missing !== null
+              ? 'There is no forecast to draw without a real figure.'
+              : forecast === null
+                ? forecastError
+                  ? 'Could not load the forecast. Try again later.'
+                  : 'Loading the chart…'
+                : `No forecast to draw in ${goal.currency}.`
+            : historyError && history === null
+              ? 'Could not load the portfolio history. Try again later.'
+              : history === null
+                ? 'Loading the chart…'
+                : `No portfolio figures in ${goal.currency} yet.`}
         </p>
         {!goal.progress.complete && (
           <Banner tone="info">
@@ -210,7 +232,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const floor = PAD.top + innerHeight;
 
   // A day without a value (no rate) breaks the portfolio line and its area instead of joining.
-  const points = history?.points ?? [];
+  const points = mode.real ? [] : (history?.points ?? []);
   const valued = points.map((point): [number, number] | null =>
     point.value === null ? null : [x(Date.parse(point.at)), y(Number(point.value))],
   );
@@ -238,7 +260,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   // The forecast starts at the portfolio now, the same figure the history ends on.
   // The drawn forecast starts from the value the server forecast from, which can differ from the
   // goal's own reading if the portfolio was revalued between the two requests.
-  const first = ahead.length > 0 ? forecast?.points[0] : undefined;
+  const first = ahead.length > 0 ? forecastPoints?.[0] : undefined;
   const origin: [number, number] | null =
     first?.base != null
       ? [x(dayTime(first.on)), y(Number(first.base))]
@@ -306,22 +328,41 @@ export default function GoalChart({ goal }: { goal: Goal }) {
       ? x(current.time) - 224
       : x(current.time) + 14
     : 0;
+  const rate = (percent: string) => (mode.real ? realRateText(percent) : rateText(percent));
   const rangeText =
-    low && high ? `${rateText(low.returnPercent)}% to ${rateText(high.returnPercent)}%` : null;
+    low && high ? `${rate(low.returnPercent)}% to ${rate(high.returnPercent)}%` : null;
 
   return (
     <Card variant="chart" labelledBy="goal-chart">
-      <CardHeader id="goal-chart" title="Progress and forecast" sub={goal.currency} />
+      <CardHeader
+        id="goal-chart"
+        title="Progress and forecast"
+        sub={mode.real ? `In today's money · ${goal.currency}` : goal.currency}
+      />
       <div aria-label="Chart legend" role="group">
         <Legend
           items={[
-            { key: 'value', label: 'Portfolio', swatch: 'line', color: 'var(--accent)' },
-            { key: 'invested', label: 'Money put in', swatch: 'line', color: 'var(--ink-3)' },
+            ...(mode.real
+              ? []
+              : [
+                  {
+                    key: 'value',
+                    label: 'Portfolio',
+                    swatch: 'line' as const,
+                    color: 'var(--accent)',
+                  },
+                  {
+                    key: 'invested',
+                    label: 'Money put in',
+                    swatch: 'line' as const,
+                    color: 'var(--ink-3)',
+                  },
+                ]),
             ...(band.length > 0 && base
               ? [
                   {
                     key: 'forecast',
-                    label: `Forecast at ${rateText(base.returnPercent)}%`,
+                    label: `Forecast at ${rate(base.returnPercent)}%`,
                     swatch: 'dash' as const,
                     color: 'var(--accent)',
                   },
@@ -530,7 +571,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
           </div>
         )}
       </div>
-      {(historyStale || forecastStale) && (
+      {((!mode.real && historyStale) || forecastStale) && (
         <Banner
           tone="warn"
           role="alert"
@@ -550,7 +591,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
           Could not refresh the chart. The figures below may be out of date.
         </Banner>
       )}
-      {historyError !== null && history === null && (
+      {!mode.real && historyError !== null && history === null && (
         <Banner
           tone="warn"
           role="alert"

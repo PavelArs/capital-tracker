@@ -120,10 +120,55 @@ function progressOf(value: Exact, target: Exact) {
   };
 }
 
-/** One goal with its progress and the three return cases (GOAL-FORECAST). */
-export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
-  const progress =
-    now.value === null ? null : progressOf(exact(now.value), exact(row.targetAmount));
+/**
+ * What a yearly inflation figure rests on beyond the published months: months the owner typed in
+ * and months estimated at the trend. An effective rate is not an official one (GOAL-REAL-FROM).
+ */
+export interface InflationFrom {
+  ownMonths: boolean;
+  estimated: boolean;
+}
+
+/** The projection in today's money: the returns count after inflation (GOAL-REAL). */
+export interface GoalReal {
+  /** The yearly inflation the returns were corrected by, in percent. */
+  inflationPercent: string;
+  /** What that figure rests on; the owner's own rate rests on nothing derived. */
+  from: InflationFrom;
+  /** The base case's return after that inflation, in percent; known even with no cases. */
+  returnPercent: string;
+  status: GoalStatus;
+  scenarios: GoalScenario[];
+}
+
+/** Yearly inflation of the goal's currency in percent, per basis; null: no figure for that basis. */
+export interface YearlyInflation {
+  official: number | null;
+  personal: number | null;
+  /** What the official figure rests on; absent: published months alone. */
+  officialFrom?: InflationFrom;
+}
+
+const PUBLISHED: InflationFrom = { ownMonths: false, estimated: false };
+
+/** The yearly return of a case once the yearly inflation is taken off it, in percent. */
+export const realReturnPercent = (yearly: number, inflation: number) =>
+  ((1 + yearly / 100) / (1 + inflation / 100) - 1) * 100;
+
+/** The progress in exact decimals, from the portfolio's value now. */
+type Progress = ReturnType<typeof progressOf> | null;
+
+/**
+ * The status and the three return cases for yearly returns already chosen: nominal ones, or ones
+ * corrected by inflation (the target and the contribution stay as entered either way).
+ */
+function projection(
+  row: GoalRow,
+  now: PortfolioNow,
+  today: string,
+  progress: Progress,
+  returns: Record<ScenarioKey, number>,
+) {
   // The return cases are estimates in plain numbers; progress and the status stay exact.
   const target = estimateOf(row.targetAmount);
   const current = now.value === null ? null : estimateOf(now.value);
@@ -139,12 +184,7 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   const scenarios: GoalScenario[] =
     current === null
       ? []
-      : (
-          Object.entries(scenarioReturns(Number(row.expectedReturnPercent))) as [
-            ScenarioKey,
-            number,
-          ][]
-        ).map(([key, yearly]) => {
+      : (Object.entries(returns) as [ScenarioKey, number][]).map(([key, yearly]) => {
           const rate = monthlyRate(yearly);
           const raw = monthsToReach(current, target, plan, rate);
           // A float can round a value just short of the sum up to it: until the exact progress
@@ -180,6 +220,37 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   // A value that leaves out an asset without a price or rate only understates the portfolio:
   // reaching the goal stays true, falling behind does not.
   if (!now.complete && (status === 'behind' || status === 'overdue')) status = 'unknown';
+  return { status, scenarios };
+}
+
+/**
+ * One goal with its progress and the three return cases (GOAL-FORECAST). With the yearly
+ * inflation of its currency it also carries the same cases in today's money (GOAL-REAL), one
+ * reading per basis, as the other pages do: the target keeps its value, the contribution stays
+ * as entered, and each nominal return is corrected by the inflation.
+ */
+export function goalView(
+  row: GoalRow,
+  now: PortfolioNow,
+  today: string,
+  inflation?: YearlyInflation,
+) {
+  const progress =
+    now.value === null ? null : progressOf(exact(now.value), exact(row.targetAmount));
+  const nominal = scenarioReturns(Number(row.expectedReturnPercent));
+  const reading = (rate: number | null | undefined, from: InflationFrom): GoalReal | null => {
+    if (rate === null || rate === undefined || !Number.isFinite(rate) || rate <= -100) return null;
+    const returns = Object.fromEntries(
+      Object.entries(nominal).map(([key, yearly]) => [key, realReturnPercent(yearly, rate)]),
+    ) as Record<ScenarioKey, number>;
+    return {
+      inflationPercent: percent(rate),
+      from,
+      returnPercent: percent(returns.base),
+      ...projection(row, now, today, progress, returns),
+    };
+  };
+  const { status, scenarios } = projection(row, now, today, progress, nominal);
   return {
     id: row.id,
     name: row.name,
@@ -199,5 +270,9 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
     },
     status,
     scenarios,
+    real: {
+      official: reading(inflation?.official, inflation?.officialFrom ?? PUBLISHED),
+      personal: reading(inflation?.personal, PUBLISHED),
+    },
   };
 }

@@ -4,14 +4,21 @@ import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
-import { money } from '../portfolio/format';
+import { DASH, money } from '../portfolio/format';
 import { marketMissingText } from '../shell/market-missing';
 import { InlineSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { monthsFrom, monthYear, span } from './goal-format';
+import { type GoalMode, noRealFigure } from './goal-reading';
 
 /** Historical contributions stay nominal, including when the forecast is shown in real terms. */
-export default function GoalInsights({ goal }: { goal: Goal }) {
+export default function GoalInsights({
+  goal,
+  mode = { real: false },
+}: {
+  goal: Goal;
+  mode?: GoalMode;
+}) {
   const terms = JSON.stringify([
     goal.currency,
     goal.expectedReturnPercent,
@@ -57,7 +64,11 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
   const negativeGrowth = [data.growth.contributions, data.growth.market].some(
     (value) => value !== null && Number(value) < 0,
   );
-  const pace = data.paceReachedOn;
+  // GOAL-REAL: the pace under Real is the one judged in today's money, or none without a figure.
+  const judged = mode.real
+    ? (data.real?.[mode.basis] ?? null)
+    : { paceStatus: data.paceStatus, paceReachedOn: data.paceReachedOn };
+  const pace = judged?.paceReachedOn ?? null;
   const deadline = goal.deadline;
   const paceGap =
     pace && deadline && pace > data.asOf
@@ -89,8 +100,8 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
       <Card label="Your contributions">
         <CardHeader title="Your contributions" sub="Money put in minus money taken out" />
         <p className="ui-sub">
-          Full months only. Averages need all 3, 6 or 12 months of tracked history. Figures are
-          nominal, at each flow’s exchange rate.
+          Full months only. Averages need all 3, 6 or 12 months of tracked history. Figures are at
+          each flow’s exchange rate.
         </p>
         {data.months.length > 0 ? (
           <>
@@ -136,15 +147,19 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
             </KeyValueRow>
           ))}
           <KeyValueRow term="At your 6-month pace">
-            {data.paceReachedOn
-              ? data.paceReachedOn <= data.asOf
-                ? 'Reached'
-                : monthYear(data.paceReachedOn)
-              : data.paceStatus === 'insufficient-history'
-                ? 'Not enough history'
-                : data.paceStatus === 'beyond-horizon'
-                  ? 'Not reached within 100 years'
-                  : 'No current priced value'}
+            {judged === null
+              ? mode.real
+                ? noRealFigure(goal.currency, mode.basis)
+                : DASH
+              : judged.paceReachedOn
+                ? judged.paceReachedOn <= data.asOf
+                  ? 'Reached'
+                  : monthYear(judged.paceReachedOn)
+                : judged.paceStatus === 'insufficient-history'
+                  ? 'Not enough history'
+                  : judged.paceStatus === 'beyond-horizon'
+                    ? 'Not reached within 100 years'
+                    : 'No current priced value'}
             {paceGap && (
               <span
                 className="goal-pace-gap"
@@ -156,8 +171,8 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
           </KeyValueRow>
         </KeyValue>
         <p className="ui-sub">
-          Estimated with your expected return and the average net contribution of the last six full
-          months.
+          Estimated with your expected return{mode.real ? ' after inflation' : ''} and the average
+          net contribution of the last six full months.
         </p>
       </Card>
       <Card label="Where the growth came from">
@@ -208,7 +223,7 @@ export default function GoalInsights({ goal }: { goal: Goal }) {
           </p>
         )}
         <p className="ui-sub">
-          Nominal growth over the available history
+          Growth over the available history
           {data.growth.from ? ` since ${monthYear(data.growth.from.slice(0, 10))}` : ''}. Market
           includes interest and rewards. Growth includes opening basis when it entered tracked
           history; savings averages exclude it. Missing historical prices or rates remain unknown.

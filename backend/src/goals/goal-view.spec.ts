@@ -326,3 +326,63 @@ describe('goal view', () => {
     expect(four.scenarios[1].requiredMonthly).toBe('25.00');
   });
 });
+
+describe("GOAL-REAL goal view in today's money", () => {
+  const inflation = { official: 3, personal: 5 };
+
+  it('GOAL-REAL-RETURNS counts every case after inflation, the nominal cases unchanged', () => {
+    const view = goalView(row, now('10000.00'), today, inflation);
+    expect(view.scenarios.map((scenario) => scenario.returnPercent)).toEqual(['4', '8', '12']);
+    // (1.04 / 1.03 − 1), (1.08 / 1.03 − 1), (1.12 / 1.03 − 1), in percent.
+    expect(view.real.official?.scenarios.map((scenario) => scenario.returnPercent)).toEqual([
+      '0.9709',
+      '4.8544',
+      '8.7379',
+    ]);
+    expect(view.real.official?.inflationPercent).toBe('3');
+    expect(view.real.official?.returnPercent).toBe('4.8544');
+    // (1.08 / 1.05 − 1) in percent.
+    expect(view.real.personal?.scenarios[1].returnPercent).toBe('2.8571');
+  });
+
+  it('GOAL-REAL-PROJECTION keeps the target and the contribution, so less is reached and more needed', () => {
+    const view = goalView(row, now('10000.00'), today, inflation);
+    const [nominal, real] = [view.scenarios[1], view.real.official?.scenarios[1]];
+    expect(real).toBeDefined();
+    expect(Number(real?.projectedAtDeadline)).toBeLessThan(Number(nominal.projectedAtDeadline));
+    expect(Number(real?.requiredMonthly)).toBeGreaterThan(Number(nominal.requiredMonthly));
+    expect(real?.monthsToTarget as number).toBeGreaterThan(nominal.monthsToTarget as number);
+    // The basis with the higher inflation falls further behind.
+    expect(Number(view.real.personal?.scenarios[1].projectedAtDeadline)).toBeLessThan(
+      Number(real?.projectedAtDeadline),
+    );
+  });
+
+  it("GOAL-REAL-STATUS can be behind in today's money while on track as counted", () => {
+    const near = { ...row, monthlyContribution: '230.00' };
+    const view = goalView(near, now('10000.00'), today, { official: 8, personal: null });
+    expect(view.status).toBe('on-track');
+    expect(view.real.official?.status).toBe('behind');
+  });
+
+  it('GOAL-REAL-UNKNOWN leaves a basis without an inflation figure unanswered', () => {
+    const view = goalView(row, now('10000.00'), today, { official: 3, personal: null });
+    expect(view.real.official).not.toBeNull();
+    expect(view.real.personal).toBeNull();
+  });
+
+  it('GOAL-REAL-REACHED stays reached, and a portfolio without value has no real cases', () => {
+    const done = goalView(row, now('25000.00'), today, inflation);
+    expect(done.real.official?.status).toBe('reached');
+    const none = goalView(row, now(null), today, inflation);
+    expect(none.real.official?.scenarios).toEqual([]);
+    expect(none.real.official?.status).toBe('unknown');
+    // The real return of the base case is known without a value to project from.
+    expect(none.real.official?.returnPercent).toBe('4.8544');
+  });
+
+  it('GOAL-REAL-NEGATIVE-INFLATION lifts the real return above the nominal one', () => {
+    const view = goalView(row, now('10000.00'), today, { official: -2, personal: null });
+    expect(Number(view.real.official?.scenarios[1].returnPercent)).toBeGreaterThan(8);
+  });
+});

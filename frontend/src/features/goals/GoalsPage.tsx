@@ -10,6 +10,7 @@ import { Card } from '@/ui/Card';
 import EmptyState from '@/ui/EmptyState';
 import { ErrorState } from '@/ui/ErrorState';
 import PageIntro from '@/ui/PageIntro';
+import { DASH } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
@@ -17,19 +18,21 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { useCachedRead } from '../shell/useCachedRead';
 import { GoalDialog } from './GoalDialogs';
 import { GoalBar, GoalFigures } from './GoalProgress';
+import { dateText, ordered, rateText, staleText, statusText, statusTone } from './goal-format';
 import {
-  dateText,
-  ordered,
-  rateText,
-  staleText,
-  statusText,
-  statusTone,
-  verdict,
-} from './goal-format';
+  type GoalMode,
+  RealNote,
+  readGoal,
+  realRateText,
+  useGoalMode,
+  verdictOf,
+} from './goal-reading';
 import '../shell/shell-page.css';
 import './goals.css';
 
-function GoalCard({ goal }: { goal: Goal }) {
+function GoalCard({ goal: stored, mode }: { goal: Goal; mode: GoalMode }) {
+  const reading = readGoal(stored, mode);
+  const goal = reading.goal;
   return (
     <Card as="li" className="goal-card">
       <div className="goal-card__head">
@@ -42,16 +45,20 @@ function GoalCard({ goal }: { goal: Goal }) {
           </Link>
           <small>
             {goal.deadline ? `By ${dateText(goal.deadline)}` : 'No date'} ·{' '}
-            {rateText(goal.expectedReturnPercent)}% a year
+            {mode.real
+              ? reading.real
+                ? `${realRateText(reading.real.returnPercent)}% a year after inflation`
+                : DASH
+              : `${rateText(goal.expectedReturnPercent)}% a year`}
           </small>
         </div>
         <Badge tone={statusTone[goal.status]} dot>
           {statusText[goal.status]}
         </Badge>
       </div>
-      <GoalFigures goal={goal} />
+      <GoalFigures goal={goal} real={mode.real} />
       <GoalBar goal={goal} />
-      <p className="goal-card__verdict">{verdict(goal)}</p>
+      <p className="goal-card__verdict">{verdictOf(reading)}</p>
     </Card>
   );
 }
@@ -62,6 +69,7 @@ export default function GoalsPage() {
   const { data: list, error, reload } = useCachedRead(cachedReads.goals);
   const [adding, setAdding] = useState(false);
   const { main } = useMainCurrency();
+  const mode = useGoalMode();
   const navigate = useNavigate();
   const location = useLocation();
   // goals-09: a toast says what was just done. A goal deleted on its own page arrives here with
@@ -98,7 +106,7 @@ export default function GoalsPage() {
 
   return (
     <div className="shell-page" ref={page}>
-      <PageHeader title="Goals" />
+      <PageHeader title="Goals" valueSwitch />
       {error && list === null ? (
         <ErrorState what="your goals" onRetry={() => reload()} />
       ) : list === null ? (
@@ -124,13 +132,15 @@ export default function GoalsPage() {
             your whole portfolio, in the currency the goal was set in.
           </PageIntro>
           {stale && <Banner tone="warn">{stale}</Banner>}
+          {mode.real && <RealNote goals={list.items} basis={mode.basis} />}
           <ul className="goal-list">
             {ordered(list.items).map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard key={goal.id} goal={goal} mode={mode} />
             ))}
           </ul>
           <Banner tone="neutral" icon="info">
-            Projections, not promises: they assume the same return every year.
+            Projections, not promises: they assume the same return every year
+            {mode.real ? ', after inflation' : ''}.
           </Banner>
         </>
       )}

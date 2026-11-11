@@ -16,9 +16,30 @@ const row = {
 };
 const today = new Date().toISOString().slice(0, 10);
 
-function service(complete = true) {
+/** Thirteen published months of 0.25%: about 3.04% over the latest twelve. */
+const months = Array.from({ length: 13 }, (_, i) => {
+  const index = 2025 * 12 + 8 + i;
+  const month = `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+  return { month, changePercent: '0.25' };
+});
+
+function service(
+  complete = true,
+  inflation: {
+    personal?: string;
+    manual?: { month: string; changePercent: string }[];
+  } | null = null,
+) {
   const source = {
-    manager: { query: async () => [{ ...row, deadline: addMonths(today, 36) }] },
+    manager: {
+      query: async (sql: string) => {
+        if (sql.includes('inflation_months')) return inflation ? months : [];
+        if (sql.includes('inflation_manual_months')) return inflation?.manual ?? [];
+        if (sql.includes('inflation_personal_rates'))
+          return inflation?.personal ? [{ annualPercent: inflation.personal }] : [];
+        return [{ ...row, deadline: addMonths(today, 36) }];
+      },
+    },
     transaction: async (work: (manager: unknown) => unknown) =>
       work({ query: async () => [], queryRunner: { isTransactionActive: true } }),
   };
@@ -40,10 +61,11 @@ describe('goals service', () => {
     const stored: unknown[] = [];
     const goals = service();
     // Any query against the table would be a store; the preview needs none.
+    // Reading the inflation figures (GOAL-REAL) is not a store.
     (goals as unknown as { source: { manager: { query: unknown } } }).source.manager.query = async (
       ...args: unknown[]
     ) => {
-      stored.push(args);
+      if (!String(args[0]).includes('inflation_')) stored.push(args);
       return [];
     };
     const view = await goals.preview(owner, {
@@ -195,6 +217,7 @@ describe('goals service', () => {
     function storedGoal(stored: string | null, writes: unknown[][] = []) {
       const query = async (sql: string, params: unknown[] = []) => {
         if (sql.startsWith('UPDATE')) writes.push(params);
+        if (sql.includes('inflation_')) return [];
         return sql.includes('FOR UPDATE')
           ? [{ id: row.id, deadline: stored }]
           : [{ ...row, deadline: stored }];
@@ -323,4 +346,104 @@ it('GOAL-WIDGETS keeps missing current value distinct from an unreachable pace',
   const view = await goals.insights(owner, row.id);
   expect(view.paceStatus).toBe('missing-value');
   expect(view.paceReachedOn).toBeNull();
+});
+
+it("GOAL-REAL-SERVICE reads the goal in today's money by the inflation of its currency", async () => {
+  const goals = service(true, { personal: '5' });
+  const { items } = await goals.list(owner);
+  const { official, personal } = items[0].real;
+  expect(Number(official?.inflationPercent)).toBeCloseTo(3.0416, 3);
+  expect(personal?.inflationPercent).toBe('5');
+  expect(Number(official?.scenarios[1].returnPercent)).toBeLessThan(8);
+  expect(Number(personal?.scenarios[1].returnPercent)).toBeLessThan(
+    Number(official?.scenarios[1].returnPercent),
+  );
+  expect(items[0].scenarios[1].returnPercent).toBe('8');
+  const one = await goals.get(owner, row.id);
+  expect(one.real.personal?.inflationPercent).toBe('5');
+  const preview = await goals.preview(owner, {
+    currency: 'USD',
+    targetAmount: '20000',
+    deadline: addMonths(today, 36),
+    expectedReturnPercent: '8',
+    monthlyContribution: '100',
+  });
+  expect(preview.real.personal?.inflationPercent).toBe('5');
+});
+
+it('GOAL-REAL-FROM says what the official rate rests on: published months, typed-in ones, estimates', async () => {
+  const from = async (manual?: { month: string; changePercent: string }[]) =>
+    (await service(true, { personal: '5', manual }).list(owner)).items[0].real;
+  // Published months alone: nothing laid over them.
+  const published = await from();
+  expect(published.official?.from).toEqual({ ownMonths: false, estimated: false });
+  expect(published.personal?.from).toEqual({ ownMonths: false, estimated: false });
+  // The owner's month inside the latest twelve replaces a published one.
+  const typed = await from([{ month: '2026-09', changePercent: '0.6' }]);
+  expect(typed.official?.from).toEqual({ ownMonths: true, estimated: false });
+  expect(Number(typed.official?.inflationPercent)).toBeGreaterThan(3.1);
+  // A typed month after a gap leaves the months between estimated.
+  const gap = await from([{ month: '2026-12', changePercent: '0.3' }]);
+  expect(gap.official?.from).toEqual({ ownMonths: true, estimated: true });
+  // The owner's own rate is not a derived figure.
+  expect(gap.personal?.from).toEqual({ ownMonths: false, estimated: false });
+});
+
+it('GOAL-REAL-SERVICE has no real reading without an inflation figure, not the nominal one', async () => {
+  const { items } = await service().list(owner);
+  expect(items[0].real).toEqual({ official: null, personal: null });
+});
+
+it("GOAL-REAL-CHART-SERVICE forecasts in today's money to the same days", async () => {
+  const forecast = await service(true, { personal: '5' }).forecast(owner, row.id);
+  expect(forecast.real.official?.length).toBe(forecast.points.length);
+  expect(forecast.real.personal?.at(-1)?.base).not.toBe(forecast.points.at(-1)?.base);
+  expect((await service().forecast(owner, row.id)).real).toEqual({
+    official: null,
+    personal: null,
+  });
+});
+
+it("GOAL-REAL-PACE-SERVICE judges the 6-month pace in today's money too", async () => {
+  const goals = service(true, { personal: '5' });
+  (goals as unknown as { snapshots: { growth: unknown } }).snapshots.growth = async () => ({
+    value: '5000',
+    complete: true,
+    contributions: { months: [], averages: { 3: '100', 6: '100', 12: '100' } },
+    netFlow: '900',
+    marketEffect: '50',
+    marketMissing: null,
+    change: '950',
+    startAt: '2025-10-18T00:00:00Z',
+  });
+  const view = await goals.insights(owner, row.id);
+  expect(view.paceStatus).toBe('projected');
+  expect(view.real.official?.paceStatus).toBe('projected');
+  expect(view.real.personal?.paceStatus).toBe('projected');
+  // A lower real return takes longer to get there.
+  expect((view.real.personal?.paceReachedOn as string) > (view.paceReachedOn as string)).toBe(true);
+});
+
+it('GOAL-REAL-PACE-HISTORY says not enough history under Real too, when the inflation figure exists', async () => {
+  const goals = service(true, { personal: '5' });
+  (goals as unknown as { snapshots: { growth: unknown } }).snapshots.growth = async () => ({
+    value: '5000',
+    complete: true,
+    contributions: { months: [], averages: { 3: null, 6: null, 12: null } },
+    netFlow: '0',
+    marketEffect: '0',
+    marketMissing: null,
+    change: '0',
+    startAt: '2026-06-18T00:00:00Z',
+  });
+  const view = await goals.insights(owner, row.id);
+  expect(view.paceStatus).toBe('insufficient-history');
+  expect(view.real.official).toEqual({ paceStatus: 'insufficient-history', paceReachedOn: null });
+  expect(view.real.personal).toEqual({ paceStatus: 'insufficient-history', paceReachedOn: null });
+  // Without any inflation figure there is no real reading to say it about.
+  const bare = service(true);
+  (bare as unknown as { snapshots: { growth: unknown } }).snapshots.growth = (
+    goals as unknown as { snapshots: { growth: unknown } }
+  ).snapshots.growth;
+  expect((await bare.insights(owner, row.id)).real).toEqual({ official: null, personal: null });
 });
