@@ -42,7 +42,9 @@ export class AuthController {
   @AuthRequestLimit('csrf-ip')
   @Get('csrf')
   async csrf(@Request() req: SessionRequest, @Res({ passthrough: true }) res: Response) {
-    if (req.headers.origin !== undefined) this.sessions.checkOrigin(req.headers.origin);
+    const origin = req.headers.origin;
+    if (origin !== undefined) this.sessions.checkOrigin(origin);
+    this.sessions.checkFetchSite(req.headers['sec-fetch-site'], origin !== undefined);
     const state = await this.sessions.csrf(readSessionCookie(req.headers.cookie));
     if (state.token)
       res.cookie(SESSION_COOKIE, state.token, { ...COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 });
