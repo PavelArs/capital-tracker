@@ -5,7 +5,7 @@ import { ownedTransfersApi } from '@api/owned-transfers.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type DependentOperation, type TradeVersion, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AmountHero } from '@/ui/AmountHero';
 import Badge from '@/ui/Badge';
@@ -573,6 +573,353 @@ function coinOf(instrumentId: string, operation: Operation, operations: Operatio
   return 'coins';
 }
 
+/** The amount the hero shows under the coins, or null when none is known. */
+function heroValue(operation: Operation, currency: AccountingCurrency): string | null {
+  if (operation.value !== null)
+    return money(operation.value, currency, false, rounding(operation, currency));
+  if (operation.estimatedValue !== null)
+    return `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))} at the price at the time`;
+  return null;
+}
+
+function Hero({ operation, currency }: { operation: Operation; currency: AccountingCurrency }) {
+  const needs = operation.status === 'needs-classification';
+  const muted = operation.status === 'hidden' || operation.status === 'dust';
+  const value = heroValue(operation, currency);
+  return (
+    <AmountHero
+      badge={
+        <Badge tone={needs ? 'warn' : muted ? 'muted' : 'neutral'} dot={needs}>
+          {needs || muted
+            ? statusLabels[operation.status]
+            : `${sourceLabel(operation)} · ${typeLabel(operation)}`}
+        </Badge>
+      }
+      amount={
+        operation.counterAsset && operation.counterQuantity ? (
+          <>
+            <span className="transactions-hero__line">{signedAmount(operation)}</span>
+            <span className="transactions-hero__line">
+              {amount(operation.counterQuantity, operation.counterAsset, '+')}
+            </span>
+          </>
+        ) : (
+          signedAmount(operation)
+        )
+      }
+      detail={value ?? `Value ${DASH}`}
+    />
+  );
+}
+
+/** POOL-WITHDRAW, POOL-PARTIAL: what came back, what is left and the difference to the deposit. */
+function PoolWithdrawalNote({ operation }: { operation: Operation }) {
+  return (
+    <Banner tone="pos" role="note">
+      Returned from a liquidity pool:{' '}
+      {operation.pool?.partial ? 'a part of the deposit' : 'the deposit'} comes back as your own
+      coins, not income and not a deposit.
+      {operation.pool?.partial &&
+        (Number(operation.pool.remaining ?? 0) > 0
+          ? ` The ${amount(operation.pool.remaining!, operation.asset)} left in the pool stay yours, with their purchase price.`
+          : ' Nothing is left in the pool.')}
+      {operation.pool &&
+        (operation.pool.difference.startsWith('-')
+          ? ` The ${amount(operation.pool.difference.slice(1), operation.asset)} below it left without a sale price (impermanent loss).`
+          : Number(operation.pool.difference) > 0
+            ? ` The ${amount(operation.pool.difference, operation.asset)} above it is pool income.`
+            : '')}
+    </Banner>
+  );
+}
+
+/** BYBIT-TRADES, BYBIT-CONVERT: a buy or sale read from Bybit's trade or convert history. */
+function BybitTradeNote({ operation }: { operation: Operation }) {
+  const buy = operation.type === 'buy';
+  return (
+    <Banner tone="pos" role="note">
+      Recognised automatically from Bybit's{' '}
+      {operation.chain?.txid.startsWith('bybit-trade-convert-')
+        ? 'convert history'
+        : 'trade history'}
+      :{' '}
+      {buy
+        ? 'paid from the USDT or USDC this account already held'
+        : 'the coins sold were already in this account'}
+      , so it counts as a {buy ? 'purchase' : 'sale'}, not a deposit. Change the classification if
+      it is wrong.
+    </Banner>
+  );
+}
+
+/** What the app recognised on its own (XFER-AUTO, BYBIT-TRADES, BYBIT-EARN). */
+function AutomaticNotes({ operation }: { operation: Operation }) {
+  if (!operation.classification?.automatic || operation.status !== 'recorded') return null;
+  return (
+    <>
+      {(operation.type === 'buy' || operation.type === 'sell') && (
+        <BybitTradeNote operation={operation} />
+      )}
+      {operation.type === 'staking-reward' && operation.wallet?.network === 'bybit' && (
+        <Banner tone="pos" role="note">
+          Recognised automatically from Bybit's Earn yield history: counts as staking income at the
+          coin's price when Bybit paid it. Change the classification if it is wrong.
+        </Banner>
+      )}
+      {operation.counterAccount && (
+        <Banner tone="pos" role="note">
+          Recognised automatically: both addresses belong to your wallets and{' '}
+          {operation.counterAccount.name} received the same amount minus the network fee. Counts as
+          a transfer, not a sale or a deposit.
+        </Banner>
+      )}
+    </>
+  );
+}
+
+/** CLS-RECORDED, CLS-PAID: the record added by hand that this transaction already is. */
+function RecordNote({ operation, record }: { operation: Operation; record: Operation }) {
+  if (operation.type !== 'transfer')
+    return (
+      <Banner tone="pos" role="note">
+        Already recorded by hand or from CSV: this transaction doesn't count on its own, so its
+        coins are not counted twice. Change the classification if it is wrong.
+      </Banner>
+    );
+  return (
+    <Banner tone="pos" role="note">
+      These coins moved to {record.account?.name ?? 'that account'} and paid for the purchase you
+      added there, so the purchase is not new money. Change the classification if it is wrong.
+    </Banner>
+  );
+}
+
+/** The drawer's verdicts on the transaction (role note): what it counts as and why. */
+function Notes({ operation, record }: { operation: Operation; record: Operation | undefined }) {
+  const recorded = operation.status === 'recorded';
+  return (
+    <>
+      {(operation.type === 'stake' || operation.type === 'unstake') && (
+        <Banner tone="pos" role="note">
+          {operation.type === 'stake'
+            ? `Moved into ${stakePlace(operation)}: the coins stay yours and keep their purchase price.`
+            : `Returned from ${stakePlace(operation)}: not income and not a deposit, rewards count as they are earned.`}{' '}
+          Only the network fee is a cost.
+        </Banner>
+      )}
+      {recorded && operation.type === 'pool-deposit' && (
+        <Banner tone="pos" role="note">
+          Moved into a liquidity pool: the coins stay yours and keep their purchase price until a
+          pool withdrawal returns them. Only the network fee is a cost.
+        </Banner>
+      )}
+      {recorded && operation.type === 'pool-withdrawal' && (
+        <PoolWithdrawalNote operation={operation} />
+      )}
+      {record && recorded && <RecordNote operation={operation} record={record} />}
+      {operation.status === 'dust' && (
+        <Banner tone="pos" role="note">
+          Worth less than your dust threshold, or a token no price source lists, so it doesn't ask
+          to be classified. It still counts in your balance. Classify it if it matters, or hide it.
+        </Banner>
+      )}
+      <AutomaticNotes operation={operation} />
+    </>
+  );
+}
+
+function FactRows({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <KeyValue>
+      {rows.map(([label, content]) => (
+        <KeyValueRow key={label} term={label}>
+          {content}
+        </KeyValueRow>
+      ))}
+    </KeyValue>
+  );
+}
+
+/** CLS-COMPACT: while compact, only what identifies the transaction shows; the rest folds. */
+function Facts({ rows, compact }: { rows: [string, ReactNode][]; compact: boolean }) {
+  const folded = rows.filter(([label]) => !essential.has(label));
+  return (
+    <section aria-label="Details">
+      <FactRows rows={compact ? rows.filter(([label]) => essential.has(label)) : rows} />
+      {compact && folded.length > 0 && (
+        <details className="ui-more transactions-facts-more">
+          <summary>
+            <Icon name="chevron" className="shell-icon" />
+            Details
+          </summary>
+          <div>
+            <FactRows rows={folded} />
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function History({ history }: { history: TradeVersion[] }) {
+  return (
+    <section aria-labelledby="operation-history">
+      <h3 id="operation-history" className="ui-section-t">
+        History
+      </h3>
+      <ol className="transactions-history">
+        {history.map((version) => (
+          <li key={version.version}>
+            <span>
+              {versionLabels[version.kind]} {moment(version.createdAt)}
+            </span>
+            <span className="ui-soft">
+              {version.side === 'buy' ? 'Buy' : 'Sell'} {quantity(version.quantity)}{' '}
+              {version.instrumentSymbol ?? version.instrumentName} for{' '}
+              {version.paid
+                ? `${quantity(version.paid.gross)} ${version.paid.currency}`
+                : money(version.grossUsd, 'USD')}
+              {version.comment ? ` · ${version.comment}` : ''}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Guidance on what the buttons of a blockchain transaction or Bybit record can do. */
+function chainGuidance(operation: Operation, counted: boolean): string {
+  if (counted)
+    return 'You counted this difference yourself, so you can delete it. Until then you can also change the classification, add a comment or hide it from calculations.';
+  return `${sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'} can't be deleted. You can change the classification, add a comment or hide it from calculations. Your changes survive the next sync.`;
+}
+
+function DeleteConfirm({
+  confirm,
+  operation,
+  boxRef,
+  onDismiss,
+  onDelete,
+}: {
+  confirm: Confirm;
+  operation: Operation;
+  boxRef: RefObject<HTMLDivElement | null>;
+  onDismiss: () => void;
+  onDelete: () => void;
+}) {
+  const what = operation.type === 'buy' ? 'purchase' : 'transaction';
+  const deleting = confirm.step === 'deleting';
+  return (
+    <Modal
+      titleId="operation-confirm-title"
+      size="narrow"
+      // Both steps interrupt with an answer to give, as every confirmation (ConfirmDialog):
+      // Cancel (or OK when it cannot be deleted) takes the keyboard first.
+      role="alertdialog"
+      describedBy="operation-confirm-text"
+      onEscape={onDismiss}
+      overDrawer
+      boxRef={boxRef}
+    >
+      <ModalHeader
+        titleId="operation-confirm-title"
+        onClose={onDismiss}
+        closeDisabled={deleting}
+        title={
+          confirm.step === 'blocked' ? `This ${what} can't be deleted` : 'Delete this transaction?'
+        }
+      />
+      <ModalBody>
+        <p id="operation-confirm-text" className="ui-confirm__text">
+          {confirm.step === 'blocked'
+            ? `${confirm.dependent} spends these ${confirm.coin}. Without this ${what} ${confirm.account} would not hold enough. Delete or change that transaction first.`
+            : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
+        </p>
+        {confirm.step === 'ask' && confirm.error && <Banner tone="neg">{confirm.error}</Banner>}
+      </ModalBody>
+      <ModalFooter>
+        {confirm.step === 'blocked' ? (
+          <Button variant="primary" onClick={onDismiss}>
+            OK
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" disabled={deleting} onClick={onDismiss}>
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={deleting} onClick={onDelete}>
+              {deleting ? 'Deleting…' : 'Delete transaction'}
+            </Button>
+          </>
+        )}
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+type Deletion = { key: string; requestId: string; from: number; to: number };
+
+const journalRevision = async (accountId: string) =>
+  (await tradesApi.state(accountId)).journal?.journalRevision ?? 0;
+
+/** OPS-DELETE: the void command of the operation's kind, at the revisions read the first time. */
+function voidOperation(
+  operation: Operation,
+  accountId: string,
+  { requestId, from, to }: Deletion,
+): Promise<unknown> {
+  const id = operation.id.slice(operation.id.indexOf(':') + 1);
+  const expectedVersion = operation.version ?? 0;
+  if (operation.kind === 'transfer')
+    return ownedTransfersApi.void(id, {
+      requestId,
+      expectedVersion,
+      expectedFromJournalRevision: from,
+      expectedToJournalRevision: to,
+    });
+  if (operation.kind === 'reward')
+    return assetRewardsApi.void(accountId, id, {
+      requestId,
+      expectedJournalRevision: from,
+      expectedVersion,
+    });
+  if (operation.kind === 'capital-return')
+    return operationsApi.voidCapitalReturn(accountId, id, {
+      requestId,
+      expectedJournalRevision: from,
+    });
+  return tradesApi.void(accountId, operation.id.replace(/^trade:/, ''), {
+    requestId,
+    expectedJournalRevision: from,
+  });
+}
+
+function deleteError(status: number | undefined): string {
+  if (status === undefined)
+    return 'Could not reach the server. The transaction may have been deleted; reload the page to check.';
+  if (status === 409)
+    return 'This transaction was changed elsewhere. Close this window, reload and try again.';
+  return 'Could not delete the transaction. Try again.';
+}
+
+function hideError(error: unknown): string {
+  if (dependentOf(error) !== null)
+    return 'A later transaction spends these coins, so this one cannot be hidden. Change that transaction first.';
+  const status = isAxiosError(error) ? error.response?.status : undefined;
+  if (
+    status === 422 &&
+    isAxiosError(error) &&
+    (error.response?.data as { message?: unknown } | undefined)?.message === POOL_DEPOSIT_NAMED
+  )
+    return 'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.';
+  if (status === undefined)
+    return 'Could not reach the server. It may have been saved; reload the page to check.';
+  if (status === 409)
+    return 'This transaction was changed elsewhere. Close this window, reload and try again.';
+  return 'Could not save. Try again.';
+}
+
 interface Props {
   operation: Operation;
   /** The list's quote currency, which the operation's amounts are in. */
@@ -692,46 +1039,22 @@ export default function OperationDrawer({
   // Deleting voids the operation: its history keeps every version, the void included
   // (OPS-DELETE). A retry after a lost answer or a server error sends the same command again,
   // with its request id and the revisions read the first time, so the server records it once.
-  const deletion = useRef<{ key: string; requestId: string; from: number; to: number } | null>(
-    null,
-  );
+  const deletion = useRef<Deletion | null>(null);
   const remove = async () => {
     if (!changeable) return;
     setConfirm({ step: 'deleting' });
-    const revision = async (accountId: string) =>
-      (await tradesApi.state(accountId)).journal?.journalRevision ?? 0;
-    const [kind, id] = [operation.kind, operation.id.slice(operation.id.indexOf(':') + 1)];
-    const expectedVersion = operation.version ?? 0;
-    const key = `${operation.id}:${expectedVersion}`;
+    const key = `${operation.id}:${operation.version ?? 0}`;
     try {
       if (deletion.current?.key !== key) {
         const [from, to] = await Promise.all([
-          revision(changeable.id),
-          kind === 'transfer' ? revision(operation.counterAccount?.id ?? changeable.id) : 0,
+          journalRevision(changeable.id),
+          operation.kind === 'transfer'
+            ? journalRevision(operation.counterAccount?.id ?? changeable.id)
+            : 0,
         ]);
         deletion.current = { key, requestId: newRequestId(), from, to };
       }
-      const { requestId, from, to } = deletion.current;
-      if (kind === 'transfer')
-        await ownedTransfersApi.void(id, {
-          requestId,
-          expectedVersion,
-          expectedFromJournalRevision: from,
-          expectedToJournalRevision: to,
-        });
-      else if (kind === 'reward')
-        await assetRewardsApi.void(changeable.id, id, {
-          requestId,
-          expectedJournalRevision: from,
-          expectedVersion,
-        });
-      else if (kind === 'capital-return')
-        await operationsApi.voidCapitalReturn(changeable.id, id, {
-          requestId,
-          expectedJournalRevision: from,
-        });
-      else
-        await tradesApi.void(changeable.id, tradeId, { requestId, expectedJournalRevision: from });
+      await voidOperation(operation, changeable.id, deletion.current);
       onDeleted?.();
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -742,15 +1065,7 @@ export default function OperationDrawer({
         setConfirm(blocked(dependent));
         return;
       }
-      setConfirm({
-        step: 'ask',
-        error:
-          status === undefined
-            ? 'Could not reach the server. The transaction may have been deleted; reload the page to check.'
-            : status === 409
-              ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
-              : 'Could not delete the transaction. Try again.',
-      });
+      setConfirm({ step: 'ask', error: deleteError(status) });
     }
   };
 
@@ -778,184 +1093,30 @@ export default function OperationDrawer({
       announceClassificationChange();
       onClassified?.(chain.status === 'hidden' ? 'included' : 'hidden');
     } catch (error) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      setToggling({
-        busy: false,
-        error:
-          dependentOf(error) !== null
-            ? 'A later transaction spends these coins, so this one cannot be hidden. Change that transaction first.'
-            : status === 422 &&
-                isAxiosError(error) &&
-                (error.response?.data as { message?: unknown } | undefined)?.message ===
-                  POOL_DEPOSIT_NAMED
-              ? 'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.'
-              : status === undefined
-                ? 'Could not reach the server. It may have been saved; reload the page to check.'
-                : status === 409
-                  ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
-                  : 'Could not save. Try again.',
-      });
+      setToggling({ busy: false, error: hideError(error) });
     }
   };
 
   const hidden = operation.status === 'hidden';
-  const dust = operation.status === 'dust';
-  const value =
-    operation.value !== null
-      ? money(operation.value, currency, false, rounding(operation, currency))
-      : operation.estimatedValue !== null
-        ? `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))} at the price at the time`
-        : null;
-  const purchase = operation.type === 'buy';
   // SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool
   // or back has nothing to classify.
   const stakeMove = operation.type === 'stake' || operation.type === 'unstake';
   // CLS-COMPACT: while a blockchain transaction waits for its answer, only what identifies it
   // stays above the question; the technical facts fold into "Details".
   const compact = Boolean(chain && classifying);
-  const rows = facts(operation, currency, record);
   const summary = (
     <>
       {/* CLS-NEXT: what the last answer did, above the next one to classify. */}
       {notice && <Banner tone="pos">{notice}</Banner>}
-      <AmountHero
-        badge={
-          <Badge tone={needs ? 'warn' : hidden || dust ? 'muted' : 'neutral'} dot={needs}>
-            {needs || hidden || dust
-              ? statusLabels[operation.status]
-              : `${sourceLabel(operation)} · ${typeLabel(operation)}`}
-          </Badge>
-        }
-        amount={
-          operation.counterAsset && operation.counterQuantity ? (
-            <>
-              <span className="transactions-hero__line">{signedAmount(operation)}</span>
-              <span className="transactions-hero__line">
-                {amount(operation.counterQuantity, operation.counterAsset, '+')}
-              </span>
-            </>
-          ) : (
-            signedAmount(operation)
-          )
-        }
-        detail={value ?? `Value ${DASH}`}
-      />
-      {stakeMove && (
-        <Banner tone="pos" role="note">
-          {operation.type === 'stake'
-            ? `Moved into ${stakePlace(operation)}: the coins stay yours and keep their purchase price.`
-            : `Returned from ${stakePlace(operation)}: not income and not a deposit, rewards count as they are earned.`}{' '}
-          Only the network fee is a cost.
-        </Banner>
-      )}
-      {operation.status === 'recorded' && operation.type === 'pool-deposit' && (
-        <Banner tone="pos" role="note">
-          Moved into a liquidity pool: the coins stay yours and keep their purchase price until a
-          pool withdrawal returns them. Only the network fee is a cost.
-        </Banner>
-      )}
-      {operation.status === 'recorded' && operation.type === 'pool-withdrawal' && (
-        <Banner tone="pos" role="note">
-          Returned from a liquidity pool:{' '}
-          {operation.pool?.partial ? 'a part of the deposit' : 'the deposit'} comes back as your own
-          coins, not income and not a deposit.
-          {operation.pool?.partial &&
-            (Number(operation.pool.remaining ?? 0) > 0
-              ? ` The ${amount(operation.pool.remaining!, operation.asset)} left in the pool stay yours, with their purchase price.`
-              : ' Nothing is left in the pool.')}
-          {operation.pool &&
-            (operation.pool.difference.startsWith('-')
-              ? ` The ${amount(operation.pool.difference.slice(1), operation.asset)} below it left without a sale price (impermanent loss).`
-              : Number(operation.pool.difference) > 0
-                ? ` The ${amount(operation.pool.difference, operation.asset)} above it is pool income.`
-                : '')}
-        </Banner>
-      )}
-      {record && operation.status === 'recorded' && operation.type !== 'transfer' && (
-        <Banner tone="pos" role="note">
-          Already recorded by hand or from CSV: this transaction doesn't count on its own, so its
-          coins are not counted twice. Change the classification if it is wrong.
-        </Banner>
-      )}
-      {record && operation.status === 'recorded' && operation.type === 'transfer' && (
-        <Banner tone="pos" role="note">
-          These coins moved to {record.account?.name ?? 'that account'} and paid for the purchase
-          you added there, so the purchase is not new money. Change the classification if it is
-          wrong.
-        </Banner>
-      )}
-      {dust && (
-        <Banner tone="pos" role="note">
-          Worth less than your dust threshold, or a token no price source lists, so it doesn't ask
-          to be classified. It still counts in your balance. Classify it if it matters, or hide it.
-        </Banner>
-      )}
-      {operation.classification?.automatic &&
-        operation.status === 'recorded' &&
-        (operation.type === 'buy' || operation.type === 'sell') && (
-          <Banner tone="pos" role="note">
-            Recognised automatically from Bybit's{' '}
-            {operation.chain?.txid.startsWith('bybit-trade-convert-')
-              ? 'convert history'
-              : 'trade history'}
-            :{' '}
-            {operation.type === 'buy'
-              ? 'paid from the USDT or USDC this account already held'
-              : 'the coins sold were already in this account'}
-            , so it counts as a {operation.type === 'buy' ? 'purchase' : 'sale'}, not a deposit.
-            Change the classification if it is wrong.
-          </Banner>
-        )}
-      {operation.classification?.automatic &&
-        operation.status === 'recorded' &&
-        operation.type === 'staking-reward' &&
-        operation.wallet?.network === 'bybit' && (
-          <Banner tone="pos" role="note">
-            Recognised automatically from Bybit's Earn yield history: counts as staking income at
-            the coin's price when Bybit paid it. Change the classification if it is wrong.
-          </Banner>
-        )}
-      {operation.classification?.automatic &&
-        operation.status === 'recorded' &&
-        operation.counterAccount && (
-          <Banner tone="pos" role="note">
-            Recognised automatically: both addresses belong to your wallets and{' '}
-            {operation.counterAccount.name} received the same amount minus the network fee. Counts
-            as a transfer, not a sale or a deposit.
-          </Banner>
-        )}
-      <section aria-label="Details">
-        <KeyValue>
-          {(compact ? rows.filter(([label]) => essential.has(label)) : rows).map(
-            ([label, content]) => (
-              <KeyValueRow key={label} term={label}>
-                {content}
-              </KeyValueRow>
-            ),
-          )}
-        </KeyValue>
-        {compact && rows.some(([label]) => !essential.has(label)) && (
-          <details className="ui-more transactions-facts-more">
-            <summary>
-              <Icon name="chevron" className="shell-icon" />
-              Details
-            </summary>
-            <div>
-              <KeyValue>
-                {rows
-                  .filter(([label]) => !essential.has(label))
-                  .map(([label, content]) => (
-                    <KeyValueRow key={label} term={label}>
-                      {content}
-                    </KeyValueRow>
-                  ))}
-              </KeyValue>
-            </div>
-          </details>
-        )}
-      </section>
+      <Hero operation={operation} currency={currency} />
+      <Notes operation={operation} record={record} />
+      <Facts rows={facts(operation, currency, record)} compact={compact} />
     </>
   );
+  const chainDeleted = () => {
+    announceClassificationChange();
+    onClassified?.('deleted');
+  };
   return (
     <>
       <Drawer
@@ -977,10 +1138,7 @@ export default function OperationDrawer({
             dustThresholdUsd={dustThresholdUsd}
             left={left}
             onSaved={(label) => onClassified?.(label)}
-            onDeleted={() => {
-              announceClassificationChange();
-              onClassified?.('deleted');
-            }}
+            onDeleted={chainDeleted}
             onCancel={needs ? onClose : () => setClassifying(false)}
           >
             {summary}
@@ -989,37 +1147,12 @@ export default function OperationDrawer({
           <>
             <div className="ui-drawer__body">
               {summary}
-              {trade && history && history.length > 1 && (
-                <section aria-labelledby="operation-history">
-                  <h3 id="operation-history" className="ui-section-t">
-                    History
-                  </h3>
-                  <ol className="transactions-history">
-                    {history.map((version) => (
-                      <li key={version.version}>
-                        <span>
-                          {versionLabels[version.kind]} {moment(version.createdAt)}
-                        </span>
-                        <span className="ui-soft">
-                          {version.side === 'buy' ? 'Buy' : 'Sell'} {quantity(version.quantity)}{' '}
-                          {version.instrumentSymbol ?? version.instrumentName} for{' '}
-                          {version.paid
-                            ? `${quantity(version.paid.gross)} ${version.paid.currency}`
-                            : money(version.grossUsd, 'USD')}
-                          {version.comment ? ` · ${version.comment}` : ''}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              )}
+              {trade && history && history.length > 1 && <History history={history} />}
               {chain && !stakeMove && (
                 // Guidance on what the buttons below can do; not a note of its own (role none), so
                 // the drawer's one note stays the verdict on this transaction.
                 <Banner tone="info" role="none">
-                  {counted
-                    ? 'You counted this difference yourself, so you can delete it. Until then you can also change the classification, add a comment or hide it from calculations.'
-                    : `${sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'} can't be deleted. You can change the classification, add a comment or hide it from calculations. Your changes survive the next sync.`}
+                  {chainGuidance(operation, counted)}
                 </Banner>
               )}
               {toggling.error && <Banner tone="neg">{toggling.error}</Banner>}
@@ -1039,10 +1172,7 @@ export default function OperationDrawer({
                 <RemoveCounted
                   operation={chain}
                   disabled={toggling.busy}
-                  onDeleted={() => {
-                    announceClassificationChange();
-                    onClassified?.('deleted');
-                  }}
+                  onDeleted={chainDeleted}
                 />
                 <Button
                   variant="ghost"
@@ -1075,56 +1205,13 @@ export default function OperationDrawer({
         )}
       </Drawer>
       {confirm && (
-        <Modal
-          titleId="operation-confirm-title"
-          size="narrow"
-          // Both steps interrupt with an answer to give, as every confirmation (ConfirmDialog):
-          // Cancel (or OK when it cannot be deleted) takes the keyboard first.
-          role="alertdialog"
-          describedBy="operation-confirm-text"
-          onEscape={dismiss}
-          overDrawer
+        <DeleteConfirm
+          confirm={confirm}
+          operation={operation}
           boxRef={modal}
-        >
-          <ModalHeader
-            titleId="operation-confirm-title"
-            onClose={dismiss}
-            closeDisabled={confirm.step === 'deleting'}
-            title={
-              confirm.step === 'blocked'
-                ? `This ${purchase ? 'purchase' : 'transaction'} can't be deleted`
-                : 'Delete this transaction?'
-            }
-          />
-          <ModalBody>
-            <p id="operation-confirm-text" className="ui-confirm__text">
-              {confirm.step === 'blocked'
-                ? `${confirm.dependent} spends these ${confirm.coin}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
-                : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
-            </p>
-            {confirm.step === 'ask' && confirm.error && <Banner tone="neg">{confirm.error}</Banner>}
-          </ModalBody>
-          <ModalFooter>
-            {confirm.step === 'blocked' ? (
-              <Button variant="primary" onClick={dismiss}>
-                OK
-              </Button>
-            ) : (
-              <>
-                <Button variant="ghost" disabled={confirm.step === 'deleting'} onClick={dismiss}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  disabled={confirm.step === 'deleting'}
-                  onClick={() => void remove()}
-                >
-                  {confirm.step === 'deleting' ? 'Deleting…' : 'Delete transaction'}
-                </Button>
-              </>
-            )}
-          </ModalFooter>
-        </Modal>
+          onDismiss={dismiss}
+          onDelete={() => void remove()}
+        />
       )}
     </>
   );
