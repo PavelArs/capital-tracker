@@ -86,6 +86,7 @@ import {
 } from './chain-swap';
 import {
   coinOf,
+  type MatchableLeg,
   type OwnLeg,
   ownTransferPairs,
   PAIR_FEE_PERCENT,
@@ -927,43 +928,8 @@ export class ChainClassificationService {
       try {
         const done = await this.source.transaction(async (manager) => {
           await lockAccountingOwner(manager, owner);
-          const row = await this.readLeg(manager, owner, outgoing.addressId, outgoing.txid);
-          const arrival = await this.readLeg(manager, owner, incoming.addressId, incoming.txid);
-          const version = await this.lockHead(manager, outgoing.addressId, outgoing.txid);
-          const other = await this.lockHead(manager, incoming.addressId, incoming.txid);
-          // Answered or moved to another account meanwhile: the owner's word stands.
-          if (row.accountId !== outgoing.accountId || arrival.accountId !== incoming.accountId)
-            return false;
-          if (outgoing.accountId === null || incoming.accountId === null) return false;
-          const unanswered = async (address: string, txid: string, at: number) =>
-            at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
-          // XFER-REJOIN: the side answered as a transfer with the other's account and nothing
-          // else is replaced by the transfer both sides name; the other side takes the answer.
-          const lone = async (address: string, txid: string, at: number, account: string) => {
-            if (at === 0) return false;
-            const current = await this.version(manager, address, txid, at);
-            return (
-              current.status === 'classified' &&
-              current.type === 'transfer' &&
-              current.linkedAddressId === null &&
-              (current.details as { accountId?: string } | null)?.accountId === account
-            );
-          };
-          const sending = await unanswered(outgoing.addressId, outgoing.txid, version);
-          const receiving = await unanswered(incoming.addressId, incoming.txid, other);
-          let target: { leg: typeof outgoing; row: LegRow; version: number; toAccount: string };
-          if (
-            sending &&
-            (receiving ||
-              (await lone(incoming.addressId, incoming.txid, other, outgoing.accountId)))
-          )
-            target = { leg: outgoing, row, version, toAccount: incoming.accountId };
-          else if (
-            receiving &&
-            (await lone(outgoing.addressId, outgoing.txid, version, incoming.accountId))
-          )
-            target = { leg: incoming, row: arrival, version: other, toAccount: outgoing.accountId };
-          else return false;
+          const target = await this.transferTarget(manager, owner, outgoing, incoming);
+          if (!target) return false;
           const input: ClassificationInput = {
             requestId: randomUUID(),
             expectedVersion: target.version,
@@ -997,6 +963,51 @@ export class ChainClassificationService {
       }
     }
     return { linked };
+  }
+
+  /**
+   * XFER-AUTO, XFER-REJOIN: the side of a certain pair that takes the transfer, read and locked
+   * now: the send when the receipt is unanswered or a lone transfer from its account, else the
+   * receipt when the send is a lone transfer to its account; null when neither may.
+   */
+  private async transferTarget(
+    manager: EntityManager,
+    owner: string,
+    outgoing: MatchableLeg,
+    incoming: MatchableLeg,
+  ): Promise<{ leg: MatchableLeg; row: LegRow; version: number; toAccount: string } | null> {
+    const row = await this.readLeg(manager, owner, outgoing.addressId, outgoing.txid);
+    const arrival = await this.readLeg(manager, owner, incoming.addressId, incoming.txid);
+    const version = await this.lockHead(manager, outgoing.addressId, outgoing.txid);
+    const other = await this.lockHead(manager, incoming.addressId, incoming.txid);
+    // Answered or moved to another account meanwhile: the owner's word stands.
+    if (row.accountId !== outgoing.accountId || arrival.accountId !== incoming.accountId)
+      return null;
+    if (outgoing.accountId === null || incoming.accountId === null) return null;
+    const unanswered = async (address: string, txid: string, at: number) =>
+      at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
+    // XFER-REJOIN: the side answered as a transfer with the other's account and nothing
+    // else is replaced by the transfer both sides name; the other side takes the answer.
+    const lone = async (address: string, txid: string, at: number, account: string) => {
+      if (at === 0) return false;
+      const current = await this.version(manager, address, txid, at);
+      return (
+        current.status === 'classified' &&
+        current.type === 'transfer' &&
+        current.linkedAddressId === null &&
+        (current.details as { accountId?: string } | null)?.accountId === account
+      );
+    };
+    const sending = await unanswered(outgoing.addressId, outgoing.txid, version);
+    const receiving = await unanswered(incoming.addressId, incoming.txid, other);
+    if (
+      sending &&
+      (receiving || (await lone(incoming.addressId, incoming.txid, other, outgoing.accountId)))
+    )
+      return { leg: outgoing, row, version, toAccount: incoming.accountId };
+    if (receiving && (await lone(outgoing.addressId, outgoing.txid, version, incoming.accountId)))
+      return { leg: incoming, row: arrival, version: other, toAccount: outgoing.accountId };
+    return null;
   }
 
   /**
