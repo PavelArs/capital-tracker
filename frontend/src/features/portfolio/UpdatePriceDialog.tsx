@@ -4,10 +4,10 @@ import { useToast } from '@contexts/ToastContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import { Banner } from '@/ui/Banner';
-import { Button } from '@/ui/Button';
 import { Field } from '@/ui/Field';
+import { SaveFooter } from '@/ui/FormDialog';
 import { Affix, Input } from '@/ui/inputs';
-import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
+import Modal, { ModalBody, ModalHeader } from '@/ui/Modal';
 import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import { numberProblem, positive } from './add-transaction';
@@ -169,14 +169,11 @@ export default function UpdatePriceDialog({
           </Field>
           {error && <Banner tone="neg">{error}</Banner>}
         </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : estimate ? 'Save estimate' : 'Save price'}
-          </Button>
-        </ModalFooter>
+        <SaveFooter
+          label={estimate ? 'Save estimate' : 'Save price'}
+          saving={saving}
+          onCancel={onClose}
+        />
       </form>
     </Modal>
   );

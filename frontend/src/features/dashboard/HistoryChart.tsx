@@ -1,6 +1,20 @@
 import type { HistoryPeriod, HistoryPoint } from '@api/portfolio-history.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import {
+  AreaGradient,
+  areaPath,
+  chartCursor,
+  evenTicks,
+  linePath,
+  observeWidth,
+  PointCursor,
+  runsOf,
+  tipLeftOf,
+  ValueGrid,
+  valueAxis,
+  valuedPoints,
+} from '@/ui/chart';
 import { exactDifference } from '../goals/goal-format';
 import { currencySymbols, money, tone } from '../portfolio/format';
 
@@ -74,13 +88,6 @@ export function tickLabel(time: number, period: HistoryPeriod): string {
   return tickDay.format(at);
 }
 
-export function niceStep(raw: number): number {
-  if (!(raw > 0)) return 1;
-  const power = 10 ** Math.floor(Math.log10(raw));
-  const fraction = raw / power;
-  return (fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10) * power;
-}
-
 const axisNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
 /** Axis amounts with a lowercase k and M, as the prototype writes them: $1.25M, ₽850k, €900. */
@@ -124,11 +131,7 @@ export function dateTicks(times: number[], period: HistoryPeriod, count: number)
       ];
     }
   }
-  return [
-    ...new Set(
-      Array.from({ length: count }, (_, index) => first + ((last - first) * index) / (count - 1)),
-    ),
-  ];
+  return evenTicks(first, last, count);
 }
 
 /** Net invested added (+) or taken out (−) since the previous point; null when unchanged. */
@@ -174,17 +177,9 @@ function scaleOf(
   const pad = (high - low) * 0.08 || high * 0.02 || 1;
   low = lowest < 0 ? low - pad : Math.max(0, low - pad);
   high += pad;
-  const step = niceStep((high - low) / 4);
-  low = Math.floor(low / step) * step;
-  high = Math.ceil(high / step) * step;
-  const y = (value: number) => PAD.top + innerHeight - ((value - low) / (high - low)) * innerHeight;
-  const ticks: number[] = [];
-  for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
+  const { y, ticks } = valueAxis(low, high, PAD.top, innerHeight);
   return { innerWidth, innerHeight, first, last, span, x, y, ticks };
 }
-
-/** The tip sits right of the point, or left of it where it would run out of the box. */
-const tipLeftOf = (at: number, width: number) => (at + 14 + 200 > width ? at - 214 : at + 14);
 
 /** The value line and the area under it; a point without a rate breaks both instead of dropping to zero. */
 function valueShapes(
@@ -193,36 +188,9 @@ function valueShapes(
   y: (value: number) => number,
   base: number,
 ) {
-  const segments: Plotted[][] = [];
-  for (const entry of plotted) {
-    const previous = segments.at(-1)?.at(-1);
-    if (previous && previous.index === entry.index - 1) segments.at(-1)!.push(entry);
-    else segments.push([entry]);
-  }
-  const line = segments
-    .map((segment) =>
-      segment
-        .map(
-          (entry, index) =>
-            `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
-        )
-        .join(''),
-    )
-    .join('');
-  const area = segments
-    .map(
-      (segment) =>
-        `${segment
-          .map(
-            (entry, index) =>
-              `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
-          )
-          .join(
-            '',
-          )}L${x(segment.at(-1)!.time).toFixed(1)} ${base}L${x(segment[0].time).toFixed(1)} ${base}Z`,
-    )
-    .join('');
-  return { line, area };
+  const segments = runsOf(plotted);
+  const line = segments.map((segment) => linePath(segment, x, y)).join('');
+  return { line, area: areaPath(segments, x, y, base) };
 }
 
 // Value of the portfolio over the period (record-portfolio-snapshots, CHART-PERIODS) and the
@@ -249,19 +217,10 @@ export default function HistoryChart({
     if (!element) return;
     const measured = element.getBoundingClientRect().width;
     if (measured > 0) setWidth(measured);
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width > 0) setWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
+    return observeWidth(element, setWidth);
   }, []);
 
-  const plotted: Plotted[] = points.flatMap((point, index) =>
-    point.value === null
-      ? []
-      : [{ index, point, time: Date.parse(point.at), value: Number(point.value) }],
-  );
+  const plotted: Plotted[] = valuedPoints(points);
   if (plotted.length === 0)
     return (
       <p className="dashboard-chart__empty" role="note">
@@ -310,33 +269,15 @@ export default function HistoryChart({
 
   const current = active === null ? null : plotted[active];
   const startValue = points.find((point) => point.value !== null)?.value ?? null;
-  const pick = (clientX: number) => {
-    const rect = box.current?.getBoundingClientRect();
-    const offset = clientX - (rect?.left ?? 0) - PAD.left;
-    const time = first.time + (Math.min(Math.max(offset, 0), innerWidth) / innerWidth) * span;
-    let nearest = 0;
-    for (let index = 1; index < plotted.length; index++)
-      if (Math.abs(plotted[index].time - time) < Math.abs(plotted[nearest].time - time))
-        nearest = index;
-    setActive(nearest);
-  };
-  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const moves: Record<string, number> = {
-      ArrowLeft: -1,
-      ArrowRight: 1,
-      Home: -plotted.length,
-      End: plotted.length,
-    };
-    const move = moves[event.key];
-    if (move === undefined) {
-      if (event.key === 'Escape') setActive(null);
-      return;
-    }
-    event.preventDefault();
-    setActive((index) =>
-      Math.min(plotted.length - 1, Math.max(0, (index ?? plotted.length - 1) + move)),
-    );
-  };
+  const cursor = chartCursor({
+    points: plotted,
+    from: plotted.length - 1,
+    left: PAD.left,
+    innerWidth,
+    start: first.time,
+    span,
+    setActive,
+  });
   const difference = current ? signedDifference(current.point.value, startValue) : null;
   const flow = current ? flowSince(points, current.index) : null;
   const tipLeft = current ? tipLeftOf(x(current.time), width) : 0;
@@ -348,38 +289,20 @@ export default function HistoryChart({
       tabIndex={0}
       role="group"
       aria-label={`${label}. Use the arrow keys to read each point.`}
-      onPointerMove={(event) => pick(event.clientX)}
-      onPointerLeave={() => setActive(null)}
-      onKeyDown={onKey}
-      onBlur={() => setActive(null)}
+      {...cursor}
     >
       <svg viewBox={`0 0 ${width} ${HEIGHT}`} role="img" aria-label={label}>
         <defs>
-          <linearGradient id="dashboard-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="var(--accent)" stopOpacity="0.22" />
-            <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
-          </linearGradient>
+          <AreaGradient id="dashboard-area" />
         </defs>
-        {ticks.map((value) => (
-          <g key={value}>
-            <line
-              x1={PAD.left}
-              x2={PAD.left + innerWidth}
-              y1={y(value)}
-              y2={y(value)}
-              className="dashboard-chart__grid"
-            />
-            <text x={width - 4} y={y(value) + 4} textAnchor="end" className="dashboard-chart__tick">
-              {compact(value, currency)}
-            </text>
-          </g>
-        ))}
-        <line
-          x1={PAD.left}
-          x2={PAD.left + innerWidth}
-          y1={base}
-          y2={base}
-          className="dashboard-chart__axis"
+        <ValueGrid
+          ticks={ticks}
+          y={y}
+          left={PAD.left}
+          right={PAD.left + innerWidth}
+          base={base}
+          width={width}
+          text={(value) => compact(value, currency)}
         />
         {xTicks.map((time, index) => (
           <text
@@ -423,21 +346,7 @@ export default function HistoryChart({
           ))}
         <circle cx={x(last.time)} cy={y(last.value)} r={4.5} className="dashboard-chart__dot" />
         {current && (
-          <g>
-            <line
-              x1={x(current.time)}
-              x2={x(current.time)}
-              y1={PAD.top}
-              y2={base}
-              className="dashboard-chart__cursor"
-            />
-            <circle
-              cx={x(current.time)}
-              cy={y(current.value)}
-              r={5}
-              className="dashboard-chart__dot"
-            />
-          </g>
+          <PointCursor cx={x(current.time)} cy={y(current.value)} top={PAD.top} base={base} />
         )}
       </svg>
       {current && (

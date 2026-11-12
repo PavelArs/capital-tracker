@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
+import { boundedRequest, integer, invalid, list, record } from './provider-client';
 import { base58Bytes } from './solana-address';
 
 // The public Solana mainnet JSON-RPC endpoint (no key, Q7). Its published limits are 100
@@ -61,7 +62,6 @@ export type NewestSlotResult = { ok: true; slot: number | null } | Failure;
 /** Accounts per getMultipleAccounts call, the method's own limit. */
 export const SOLANA_ACCOUNTS_PER_CALL = 100;
 
-class InvalidResponse extends Error {}
 class Refused extends Error {
   /** `said` follows the node's host in the detail: "said: …" or "no longer keeps …". */
   constructor(
@@ -89,22 +89,6 @@ function said(message: string): string {
   );
 }
 
-function invalid(): never {
-  throw new InvalidResponse();
-}
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : invalid();
-}
-function list(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : invalid();
-}
-function integer(value: unknown, maximum: number): number {
-  return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum
-    ? (value as number)
-    : invalid();
-}
 const slot = (value: unknown) => integer(value, 2 ** 31 - 1);
 const time = (value: unknown) => integer(value, MAX_UNIX_SECONDS);
 const lamports = (value: unknown) => BigInt(integer(value, Number.MAX_SAFE_INTEGER));
@@ -350,14 +334,7 @@ export class SolanaRpcClient {
         this.url,
         { jsonrpc: '2.0', id: 1, method, params },
         {
-          // axios' timeout is an idle timeout; the signal bounds the whole response.
-          timeout: this.timeoutMs,
-          signal: AbortSignal.timeout(this.timeoutMs),
-          maxRedirects: 0,
-          maxContentLength: MAX_BODY_BYTES,
-          responseType: 'text',
-          transformResponse: [(data: string) => data],
-          validateStatus: () => true,
+          ...boundedRequest(this.timeoutMs, MAX_BODY_BYTES),
           headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         },
       );

@@ -8,6 +8,7 @@ import {
   presentSource,
   type RecordedOutcome,
   recordSource,
+  runLocked,
   type SourceRow,
 } from '../sync-status/sync-source';
 import { CbrClient, type FxFailure } from './cbr-client';
@@ -155,30 +156,16 @@ export class FxRatesService {
   // Reads the history from 2009 once, then re-reads the last week up to tomorrow, whose
   // rate the Bank of Russia publishes in the afternoon.
   async collect(now = new Date(), onlyIfDue = false): Promise<FxCollectionResult> {
-    const runner = this.source.createQueryRunner();
-    await runner.connect();
-    try {
-      await runner.startTransaction();
-      try {
-        const [lock]: { locked: boolean }[] = await runner.query(
-          'SELECT pg_try_advisory_xact_lock($1) AS locked',
-          [LOCK_KEY],
+    return runLocked(this.source, LOCK_KEY, async () => {
+      if (onlyIfDue) {
+        const [row]: { at: Date | null }[] = await this.source.query(
+          'SELECT "lastAttemptAt" AS at FROM sync_sources WHERE key = $1',
+          [FX_SOURCE_KEY],
         );
-        if (!lock.locked) return { outcome: 'busy' };
-        if (onlyIfDue) {
-          const [row]: { at: Date | null }[] = await this.source.query(
-            'SELECT "lastAttemptAt" AS at FROM sync_sources WHERE key = $1',
-            [FX_SOURCE_KEY],
-          );
-          if (!isDue(row?.at ?? null, now)) return { outcome: 'not_due' };
-        }
-        return { outcome: 'collected', stored: await this.collectRates(now) };
-      } finally {
-        await runner.rollbackTransaction();
+        if (!isDue(row?.at ?? null, now)) return { outcome: 'not_due' };
       }
-    } finally {
-      await runner.release();
-    }
+      return { outcome: 'collected', stored: await this.collectRates(now) };
+    });
   }
 
   private async collectRates(now: Date): Promise<number> {

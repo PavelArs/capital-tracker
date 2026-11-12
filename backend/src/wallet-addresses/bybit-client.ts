@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import axios from 'axios';
 import type { ProviderFailure } from './esplora-client';
+import { loggedDetail } from './provider-client';
 
 // sync-bybit-account (M22, D8): Bybit's free V5 API read with the owner's read-only key. Every
 // private request is signed as Bybit documents it: HMAC-SHA256 with the secret over the
@@ -418,13 +419,19 @@ function page<T>(result: unknown, key: string, size: number, parse: (item: unkno
 }
 
 /** Bybit answers HTTP 200 with retCode 0 for success; any other code is its refusal. */
-export function parseEnvelope(body: unknown): unknown {
+export function parseEnvelope(body: unknown, secrets: string[] = []): unknown {
   const envelope = record(body);
   const code = envelope.retCode;
   if (code === 0) return envelope.result;
   if (typeof code !== 'number') return invalid();
-  const message = typeof envelope.retMsg === 'string' ? envelope.retMsg.slice(0, 160) : '';
-  const detail = `Bybit answered: ${message.replace(/[^\x20-\x7e]/g, '') || 'no message'} (code ${code})`;
+  // A sign error repeats the signed text, which holds the key: cut out before the message is cut.
+  const redact = (text: string) =>
+    secrets.reduce((safe, secret) => safe.split(secret).join('<key>'), text);
+  const message =
+    typeof envelope.retMsg === 'string'
+      ? loggedDetail(envelope.retMsg.replace(/[^\x20-\x7e]/g, ''), redact)
+      : '';
+  const detail = `Bybit answered: ${message || 'no message'} (code ${code})`;
   // An invalid, expired, mis-signed or IP-bound key, or one without the permission needed.
   if ([10003, 10004, 10005, 10010, 33004].includes(code)) throw new Refused('key_rejected', detail);
   if ([10006, 10018].includes(code)) throw new Refused('rate_limited', detail);
@@ -637,7 +644,10 @@ export class BybitClient {
     if (response.status === 401) return { ok: false, reason: 'key_rejected', detail: null };
     if (response.status !== 200) return { ok: false, reason: 'unavailable', detail: null };
     try {
-      return { ok: true, value: parse(parseEnvelope(JSON.parse(response.data))) };
+      return {
+        ok: true,
+        value: parse(parseEnvelope(JSON.parse(response.data), [key.apiKey, key.apiSecret])),
+      };
     } catch (error) {
       if (error instanceof Refused)
         return { ok: false, reason: error.reason, detail: error.detail };

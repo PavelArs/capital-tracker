@@ -1,4 +1,4 @@
-import type { EntityManager } from 'typeorm';
+import type { DataSource, EntityManager } from 'typeorm';
 
 export type SourceState = 'synced' | 'syncing' | 'delayed' | 'failed';
 
@@ -73,4 +73,33 @@ export async function recordSource(
       outcome.errorMessage?.slice(0, 300) ?? null,
     ],
   );
+}
+
+/**
+ * One run of a scheduled job at a time, busy while another holds its lock: a transaction-scoped
+ * advisory lock on a dedicated connection, released by the rollback below or by the connection
+ * ending, never left behind.
+ */
+export async function runLocked<T>(
+  source: DataSource,
+  lockKey: number,
+  run: () => Promise<T>,
+): Promise<T | { outcome: 'busy' }> {
+  const runner = source.createQueryRunner();
+  await runner.connect();
+  try {
+    await runner.startTransaction();
+    try {
+      const [lock]: { locked: boolean }[] = await runner.query(
+        'SELECT pg_try_advisory_xact_lock($1) AS locked',
+        [lockKey],
+      );
+      if (!lock.locked) return { outcome: 'busy' };
+      return await run();
+    } finally {
+      await runner.rollbackTransaction();
+    }
+  } finally {
+    await runner.release();
+  }
 }

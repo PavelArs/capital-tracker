@@ -202,6 +202,29 @@ describe('Bybit records', () => {
     expect(parseWithdrawal({ ...withdrawal, status: 'Pending', txID: '' }).state).toBe('pending');
   });
 
+  it('LOG-REDACT: no part of a key or secret reaches the refusal detail', () => {
+    const detail = (retMsg: string) => {
+      try {
+        parseEnvelope({ retCode: 10004, retMsg }, [key.apiKey, key.apiSecret]);
+      } catch (error) {
+        return (error as { detail: string }).detail;
+      }
+      return '';
+    };
+    // Bybit's sign error repeats the signed text, which holds the key.
+    expect(detail(`error sign! origin_string[1700000000000${key.apiKey}10000limit=1]`)).toBe(
+      'Bybit answered: error sign! origin_string[1700000000000<key>10000limit=1] (code 10004)',
+    );
+    for (const secret of [key.apiKey, key.apiSecret])
+      for (let filler = 0; filler <= 400; filler += 1) {
+        const said = detail(`${'x'.repeat(filler)}${secret} ${'y'.repeat(300)}`);
+        for (let at = 0; at + 6 <= secret.length; at += 1)
+          expect(said).not.toContain(secret.slice(at, at + 6));
+        expect(said).not.toMatch(/<[a-z]* \(code 10004\)$/);
+        expect(said.length).toBeLessThanOrEqual('Bybit answered:  (code 10004)'.length + 160);
+      }
+  });
+
   it("maps Bybit's refusals: a key it does not accept, a rate limit, anything else", () => {
     expect(parseEnvelope({ retCode: 0, retMsg: 'OK', result: { list: [] } })).toEqual({
       list: [] as unknown[],

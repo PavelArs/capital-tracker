@@ -1,5 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
-import { strictInteger, strictRecord } from '../shared/strict-input';
+import { bad, integer, journalPins, object, queryInteger } from './command-input';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms } from './money';
 import { parseTradeHistoryQuery, parseTradePageQuery } from './trade-input';
@@ -41,27 +40,6 @@ export interface SwapAllocationQuery {
   limit: number;
 }
 
-const bad = (): never => {
-  throw new BadRequestException('Invalid accounting input');
-};
-function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
-  return strictRecord(raw, keys) ?? bad();
-}
-function integer(raw: unknown, minimum: number, maximum: number): number {
-  return strictInteger(raw, minimum, maximum) ?? bad();
-}
-function queryInteger(raw: unknown, minimum: number, maximum: number): number {
-  if (typeof raw !== 'string' || raw.length > 5 || !/^(0|[1-9][0-9]*)$/.test(raw)) return bad();
-  const value = Number(raw);
-  if (value < minimum || value > maximum) return bad();
-  return value;
-}
-function pins(row: Record<string, unknown>): SwapPins {
-  return {
-    requestId: parseUuid(row.requestId),
-    expectedJournalRevision: integer(row.expectedJournalRevision, 0, 10000),
-  };
-}
 /** No fee names no source or asset; a fee is paid from held coins or from the incoming ones. */
 function assertFee(fee: {
   feeQuantity: string;
@@ -130,12 +108,12 @@ const fieldKeys = [
 
 export function parseSwapCreate(raw: unknown): SwapCreateInput {
   const row = object(raw, [...pinKeys, ...fieldKeys]);
-  return { ...pins(row), ...fields(row) };
+  return { ...journalPins(row), ...fields(row) };
 }
 export function parseSwapCorrection(raw: unknown): SwapCorrectionInput {
   const row = object(raw, [...pinKeys, 'expectedVersion', ...fieldKeys]);
   return {
-    ...pins(row),
+    ...journalPins(row),
     expectedVersion: integer(row.expectedVersion, 1, 10000),
     ...fields(row),
   };
@@ -143,7 +121,7 @@ export function parseSwapCorrection(raw: unknown): SwapCorrectionInput {
 export function parseSwapVoid(raw: unknown): SwapVoidInput {
   const row = object(raw, [...pinKeys, 'expectedVersion']);
   return {
-    ...pins(row),
+    ...journalPins(row),
     expectedVersion: integer(row.expectedVersion, 1, 10000),
   };
 }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
+import { readAccountingSnapshot } from './accounting-read';
 import {
   appendRewardVersion,
   projectRewardVersion,
@@ -232,22 +233,11 @@ export class AssetRewardService {
     return { created: true, value: receipt };
   }
 
-  private read<T>(work: (manager: EntityManager) => Promise<T>) {
-    return this.source.transaction('REPEATABLE READ', async (manager) => {
-      await manager.query('SET TRANSACTION READ ONLY');
-      try {
-        return await work(manager);
-      } catch (error) {
-        return rethrowAccountingHistory(error);
-      }
-    });
-  }
-
   async list(ownerId: string, id: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const accountId = parseUuid(id);
     const query = parseRewardListQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, accountId);
       const journal = await readJournal(manager, owner, accountId);
       if (
@@ -279,7 +269,7 @@ export class AssetRewardService {
     const accountId = parseUuid(id);
     const target = parseUuid(rewardId);
     const query = parseRewardHistoryQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, accountId);
       if (!(await readRewardHead(manager, owner, accountId, target))) throw new NotFoundException();
       const rows: RewardVersionRow[] = await manager.query(

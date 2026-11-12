@@ -1,7 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
-import { jsonbText } from './jsonb-text';
 import { tronHex } from './tron-address';
 import {
   needsInfo,
@@ -20,6 +19,7 @@ import {
   type TronTokenTransfer,
   type TronTransactionInfo,
 } from './trongrid-client';
+import { insertTransactions } from './wallet-transactions';
 
 // Bounds for one pass; the next pass continues from the committed block time.
 export const MAX_INFO_PER_SYNC = 40;
@@ -354,34 +354,8 @@ export class TronSyncAdapter implements ChainSyncAdapter {
     });
   }
 
-  private async insert(manager: EntityManager, address: ScanRow, legs: TronLeg[]) {
-    if (legs.length === 0) return 0;
-    const values: unknown[] = [];
-    const rows = legs.map((leg) => {
-      const base = values.length;
-      values.push(
-        address.ownerId,
-        address.id,
-        leg.txid,
-        leg.blockHeight,
-        leg.blockTime,
-        leg.receivedUnits.toString(),
-        leg.sentUnits.toString(),
-        leg.feeUnits.toString(),
-        leg.direction,
-        jsonbText(leg.raw),
-        leg.asset,
-      );
-      const slot = (offset: number) => `$${base + offset}`;
-      return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},NULL,${slot(5)},${slot(6)}::numeric,${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)},${slot(10)}::jsonb,${slot(11)})`;
-    });
-    const inserted: { txid: string }[] = await manager.query(
-      `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-        "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
-        VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-      values,
-    );
-    return inserted.length;
+  private insert(manager: EntityManager, address: ScanRow, legs: TronLeg[]) {
+    return insertTransactions(manager, address, legs, { blockHash: 'NULL' });
   }
 
   /**

@@ -31,7 +31,22 @@ export type JournalRow = JournalFields &
     | { originKind: 'declared-empty'; openingRevision: null }
     | { originKind: 'known-cost-carry-in'; openingRevision: number }
   );
-export interface VersionRow {
+/** The payment, comment, settlement and purpose columns of a trade version; null where absent. */
+export interface TradeVersionDetails {
+  paidCurrency: string | null;
+  paidGross: string | null;
+  paidFee: string | null;
+  paidRateDate: string | null;
+  paidPerUsd: string | null;
+  paidRateSource: string | null;
+  comment: string | null;
+  settlementInstrumentId: string | null;
+  settlementName: string | null;
+  settlementSymbol: string | null;
+  settlementQuantity: string | null;
+  purpose: string | null;
+}
+export interface VersionRow extends TradeVersionDetails {
   tradeId: string;
   version: number;
   journalRevision: number;
@@ -48,18 +63,6 @@ export interface VersionRow {
   quantity: string;
   grossUsd: string;
   feeUsd: string;
-  paidCurrency: string | null;
-  paidGross: string | null;
-  paidFee: string | null;
-  paidRateDate: string | null;
-  paidPerUsd: string | null;
-  paidRateSource: string | null;
-  comment: string | null;
-  settlementInstrumentId: string | null;
-  settlementName: string | null;
-  settlementSymbol: string | null;
-  settlementQuantity: string | null;
-  purpose: string | null;
 }
 export interface TradeVersion extends FifoTrade {
   journalRevision: number;

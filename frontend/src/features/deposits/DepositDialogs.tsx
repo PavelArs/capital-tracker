@@ -11,27 +11,17 @@ import {
   type NewDeposit,
   type PayoutSchedule,
 } from '@api/deposits.api';
-import {
-  createContext,
-  type FormEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useId,
-  useState,
-} from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 import { Banner } from '@/ui/Banner';
-import { Button } from '@/ui/Button';
 import { Chip, ChipGroup } from '@/ui/Chip';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { Field, type FieldControl } from '@/ui/Field';
+import { FormDialog, hasProblems, type Problems, useShownProblem } from '@/ui/FormDialog';
 import { Affix, Input, Select } from '@/ui/inputs';
-import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Toggle } from '@/ui/Toggle';
 import { requestFailure } from '@/utils/request-failure';
 import { useAttempt } from '../accounting/feedback';
-import { useFocusFirstProblem } from '../portfolio/focus-problem';
 import { Icon } from '../shell/icons';
 import { dateText, earlyCloseText, money, movementText, today } from './deposit-format';
 import './deposits.css';
@@ -60,13 +50,6 @@ const accountRateProblem = (value: string) => (value.trim() ? rateProblem(value)
 const dateProblem = (value: string) =>
   DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? null : 'Pick a date';
 
-/** Each field's problem by the field's key; a field without one is fine. */
-type Problems = Record<string, string | null>;
-const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean);
-
-/** The problems shown in a form: none until the owner first tries to save it. */
-const ShownProblems = createContext<Problems>({});
-
 /** The server's own words for a refusal it explained, else a general line. */
 const failure = (
   error: unknown,
@@ -83,84 +66,6 @@ const failure = (
     fallback: 'Could not save. Try again.',
   });
 
-/** One modal form: a title, fields, a refusal line and Cancel/Save. */
-function FormDialog({
-  title,
-  note,
-  submit,
-  problems,
-  onClose,
-  onSubmit,
-  children,
-  wide,
-}: {
-  title: string;
-  note?: string;
-  submit: string;
-  /** Every field's problem; each is shown under its field once the owner tried to save. */
-  problems: () => Problems;
-  onClose: () => void;
-  onSubmit: () => Promise<void>;
-  children: ReactNode;
-  wide?: boolean;
-}) {
-  const id = useId();
-  const [error, setError] = useState<string | null>(null);
-  const [tried, setTried] = useState(false);
-  const [saving, setSaving] = useState(false);
-  // Each refused save puts the keyboard on the first field that needs a fix.
-  const { form, refused } = useFocusFirstProblem();
-
-  const shown = tried ? problems() : {};
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    setTried(true);
-    if (hasProblems(problems())) {
-      refused();
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await onSubmit();
-    } catch (caught) {
-      setError(failure(caught));
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      titleId={`${id}-title`}
-      size={wide ? 'wide' : 'default'}
-      onEscape={saving ? undefined : onClose}
-      initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
-    >
-      <form ref={form} onSubmit={save} noValidate>
-        <ModalHeader
-          titleId={`${id}-title`}
-          title={title}
-          onClose={onClose}
-          closeDisabled={saving}
-          intro={note}
-        />
-        <ModalBody>
-          <ShownProblems.Provider value={shown}>{children}</ShownProblems.Provider>
-          {error && <Banner tone="neg">{error}</Banner>}
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : submit}
-          </Button>
-        </ModalFooter>
-      </form>
-    </Modal>
-  );
-}
-
 /**
  * A labelled field of these forms. `name` is its key among the form's problems: once the owner
  * tried to save, its problem is said under it, in place of the hint.
@@ -176,9 +81,9 @@ function FormField({
   name?: string;
   children: (control: FieldControl) => ReactNode;
 }) {
-  const problems = useContext(ShownProblems);
+  const problem = useShownProblem(name);
   return (
-    <Field label={label} hint={hint} error={name ? problems[name] : null}>
+    <Field label={label} hint={hint} error={problem}>
       {children}
     </Field>
   );
@@ -457,8 +362,9 @@ export function AddDepositDialog({
       }
       submit="Add deposit"
       problems={problems}
+      failure={failure}
+      size="wide"
       onClose={onClose}
-      wide
       onSubmit={async () => {
         const body: NewDeposit = { requestId: attempt(entries), ...entries };
         onSaved(await depositsApi.create(body));
@@ -643,6 +549,7 @@ export function MovementDialog({
       note={hints[kind]}
       submit="Record"
       problems={() => ({ date: dateProblem(date), amount: amountProblem(amount, 'the amount') })}
+      failure={failure}
       onClose={onClose}
       onSubmit={async () => {
         const entries = {
@@ -702,6 +609,7 @@ export function CheckDialog({
         date: dateProblem(date),
         balance: amountProblem(balance, 'the balance the bank shows', true),
       })}
+      failure={failure}
       onClose={onClose}
       onSubmit={async () => {
         const entries = { checkedOn: date, bankBalance: balance.trim() };
@@ -744,6 +652,7 @@ export function RateDialog({
       note="From this date on interest is counted at the new rate. Earlier days keep the rate they had."
       submit="Change rate"
       problems={() => ({ from: dateProblem(date), rate: rateProblem(rate) })}
+      failure={failure}
       onClose={onClose}
       onSubmit={async () =>
         onSaved(await depositsApi.addRate(id, { effectiveFrom: date, ratePercent: rate.trim() }))
