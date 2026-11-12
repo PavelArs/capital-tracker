@@ -710,27 +710,10 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
       [state.id],
     );
     if (known.length === 0) return null;
-    const epoch = await this.rpc.epoch();
-    if (!epoch.ok) return epoch;
-    const states: StakeAccountState[] = [];
-    for (let start = 0; start < known.length; start += SOLANA_ACCOUNTS_PER_CALL) {
-      const keys = known.slice(start, start + SOLANA_ACCOUNTS_PER_CALL).map((row) => row.account);
-      const read = await this.rpc.accounts(keys);
-      if (!read.ok) return read;
-      for (const [index, value] of read.values.entries()) {
-        const parsed = parseStakeAccount(keys[index], value, epoch.epoch);
-        if (!parsed) return { ok: false as const, reason: 'invalid_response' as const };
-        states.push(parsed);
-      }
-    }
-    const grown = new Set<string>();
-    const explained = await this.explained(this.source.manager, state.id);
-    for (const item of states) {
-      if (item.lamports <= (explained.get(item.account) ?? 0n)) continue;
-      const newest = await this.rpc.newestSlot(item.account);
-      if (!newest.ok) return newest;
-      if (newest.slot === null || newest.slot <= target) grown.add(item.account);
-    }
+    const states = await this.stakeStates(known);
+    if (!Array.isArray(states)) return states;
+    const grown = await this.grownAccounts(state, states, target);
+    if (!(grown instanceof Set)) return grown;
     await this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
         `SELECT ${scanColumns} FROM wallet_addresses
@@ -759,6 +742,43 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
       }
     });
     return null;
+  }
+
+  /** Each known stake account as the chain shows it in the current epoch. */
+  private async stakeStates(
+    known: readonly { account: string }[],
+  ): Promise<StakeAccountState[] | Failed> {
+    const epoch = await this.rpc.epoch();
+    if (!epoch.ok) return epoch;
+    const states: StakeAccountState[] = [];
+    for (let start = 0; start < known.length; start += SOLANA_ACCOUNTS_PER_CALL) {
+      const keys = known.slice(start, start + SOLANA_ACCOUNTS_PER_CALL).map((row) => row.account);
+      const read = await this.rpc.accounts(keys);
+      if (!read.ok) return read;
+      for (const [index, value] of read.values.entries()) {
+        const parsed = parseStakeAccount(keys[index], value, epoch.epoch);
+        if (!parsed) return { ok: false as const, reason: 'invalid_response' as const };
+        states.push(parsed);
+      }
+    }
+    return states;
+  }
+
+  /** The accounts grown past what the stored history explains, with no newer transaction. */
+  private async grownAccounts(
+    state: ScanRow,
+    states: readonly StakeAccountState[],
+    target: number,
+  ): Promise<Set<string> | Failed> {
+    const grown = new Set<string>();
+    const explained = await this.explained(this.source.manager, state.id);
+    for (const item of states) {
+      if (item.lamports <= (explained.get(item.account) ?? 0n)) continue;
+      const newest = await this.rpc.newestSlot(item.account);
+      if (!newest.ok) return newest;
+      if (newest.slot === null || newest.slot <= target) grown.add(item.account);
+    }
+    return grown;
   }
 
   /** Per stake account: what the stored moves and rewards say it holds. */
