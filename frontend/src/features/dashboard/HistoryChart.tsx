@@ -147,6 +147,84 @@ function signedDifference(value: string | null, start: string | null): string | 
   return exactDifference(value, start);
 }
 
+/**
+ * The box's scale: time across the plotted points, value up over them and net invested, padded
+ * and in round steps; from zero for the whole history unless something is below it.
+ */
+function scaleOf(
+  width: number,
+  plotted: readonly Plotted[],
+  invested: readonly (number | null)[],
+  period: HistoryPeriod,
+) {
+  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
+  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
+  const first = plotted[0];
+  const last = plotted[plotted.length - 1];
+  const span = Math.max(1, last.time - first.time);
+  const x = (time: number) =>
+    PAD.left + (plotted.length === 1 ? innerWidth / 2 : ((time - first.time) / span) * innerWidth);
+  const values = [
+    ...plotted.map((entry) => entry.value),
+    ...invested.filter((value): value is number => value !== null),
+  ];
+  const lowest = Math.min(...values);
+  let low = period === 'ALL' ? Math.min(0, lowest) : lowest;
+  let high = Math.max(...values);
+  const pad = (high - low) * 0.08 || high * 0.02 || 1;
+  low = lowest < 0 ? low - pad : Math.max(0, low - pad);
+  high += pad;
+  const step = niceStep((high - low) / 4);
+  low = Math.floor(low / step) * step;
+  high = Math.ceil(high / step) * step;
+  const y = (value: number) => PAD.top + innerHeight - ((value - low) / (high - low)) * innerHeight;
+  const ticks: number[] = [];
+  for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
+  return { innerWidth, innerHeight, first, last, span, x, y, ticks };
+}
+
+/** The tip sits right of the point, or left of it where it would run out of the box. */
+const tipLeftOf = (at: number, width: number) => (at + 14 + 200 > width ? at - 214 : at + 14);
+
+/** The value line and the area under it; a point without a rate breaks both instead of dropping to zero. */
+function valueShapes(
+  plotted: readonly Plotted[],
+  x: (time: number) => number,
+  y: (value: number) => number,
+  base: number,
+) {
+  const segments: Plotted[][] = [];
+  for (const entry of plotted) {
+    const previous = segments.at(-1)?.at(-1);
+    if (previous && previous.index === entry.index - 1) segments.at(-1)!.push(entry);
+    else segments.push([entry]);
+  }
+  const line = segments
+    .map((segment) =>
+      segment
+        .map(
+          (entry, index) =>
+            `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
+        )
+        .join(''),
+    )
+    .join('');
+  const area = segments
+    .map(
+      (segment) =>
+        `${segment
+          .map(
+            (entry, index) =>
+              `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
+          )
+          .join(
+            '',
+          )}L${x(segment.at(-1)!.time).toFixed(1)} ${base}L${x(segment[0].time).toFixed(1)} ${base}Z`,
+    )
+    .join('');
+  return { line, area };
+}
+
 // Value of the portfolio over the period (record-portfolio-snapshots, CHART-PERIODS) and the
 // net invested step line (split-market-and-flows).
 export default function HistoryChart({
@@ -191,63 +269,17 @@ export default function HistoryChart({
       </p>
     );
 
-  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
-  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
-  const first = plotted[0];
-  const last = plotted[plotted.length - 1];
-  const span = Math.max(1, last.time - first.time);
-  const x = (time: number) =>
-    PAD.left + (plotted.length === 1 ? innerWidth / 2 : ((time - first.time) / span) * innerWidth);
   // Net invested shares the scale; it can fall below zero after selling at a profit.
   const invested = points.map((point) => (point.invested === null ? null : Number(point.invested)));
-  const values = [
-    ...plotted.map((entry) => entry.value),
-    ...invested.filter((value): value is number => value !== null),
-  ];
-  const lowest = Math.min(...values);
-  let low = period === 'ALL' ? Math.min(0, lowest) : lowest;
-  let high = Math.max(...values);
-  const pad = (high - low) * 0.08 || high * 0.02 || 1;
-  low = lowest < 0 ? low - pad : Math.max(0, low - pad);
-  high += pad;
-  const step = niceStep((high - low) / 4);
-  low = Math.floor(low / step) * step;
-  high = Math.ceil(high / step) * step;
-  const y = (value: number) => PAD.top + innerHeight - ((value - low) / (high - low)) * innerHeight;
-  const ticks: number[] = [];
-  for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
+  const { innerWidth, innerHeight, first, last, span, x, y, ticks } = scaleOf(
+    width,
+    plotted,
+    invested,
+    period,
+  );
 
-  // A point without a rate breaks the line instead of dropping to zero.
-  const segments: Plotted[][] = [];
-  for (const entry of plotted) {
-    const previous = segments.at(-1)?.at(-1);
-    if (previous && previous.index === entry.index - 1) segments.at(-1)!.push(entry);
-    else segments.push([entry]);
-  }
-  const line = segments
-    .map((segment) =>
-      segment
-        .map(
-          (entry, index) =>
-            `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
-        )
-        .join(''),
-    )
-    .join('');
   const base = PAD.top + innerHeight;
-  const area = segments
-    .map(
-      (segment) =>
-        `${segment
-          .map(
-            (entry, index) =>
-              `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
-          )
-          .join(
-            '',
-          )}L${x(segment.at(-1)!.time).toFixed(1)} ${base}L${x(segment[0].time).toFixed(1)} ${base}Z`,
-    )
-    .join('');
+  const { line, area } = valueShapes(plotted, x, y, base);
   // A step line: net invested changes only when money comes in or goes out.
   const timeOf = points.map((point) => Date.parse(point.at));
   const visible = (index: number) => timeOf[index] >= first.time && timeOf[index] <= last.time;
@@ -307,11 +339,7 @@ export default function HistoryChart({
   };
   const difference = current ? signedDifference(current.point.value, startValue) : null;
   const flow = current ? flowSince(points, current.index) : null;
-  const tipLeft = current
-    ? x(current.time) + 14 + 200 > width
-      ? x(current.time) - 214
-      : x(current.time) + 14
-    : 0;
+  const tipLeft = current ? tipLeftOf(x(current.time), width) : 0;
 
   return (
     <div
