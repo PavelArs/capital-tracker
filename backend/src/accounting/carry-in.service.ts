@@ -76,6 +76,16 @@ const known = (opening: Opening) =>
   opening.positions.every(
     (position) => position.costStatus === 'known' && position.totalCostUsd !== null,
   );
+/** A started journal wins over a missing opening, and a missing opening over an unknown cost. */
+function ineligibility(
+  journal: JournalRow | undefined,
+  opening: Opening | null,
+): CarryInState['ineligibilityReason'] {
+  if (journal) return 'already-initialized';
+  if (!opening) return 'no-current-opening';
+  if (!known(opening)) return 'unknown-cost';
+  return null;
+}
 
 @Injectable()
 export class CarryInService {
@@ -97,13 +107,7 @@ export class CarryInService {
         if (!opening) throw new Error('Invalid saved carry-in opening');
         origin = projectCarryInOrigin(journal, await readBaseline(manager, owner, id, journal));
       }
-      const reason = journal
-        ? 'already-initialized'
-        : !opening
-          ? 'no-current-opening'
-          : !known(opening)
-            ? 'unknown-cost'
-            : null;
+      const reason = ineligibility(journal, opening);
       return {
         accountId: id,
         eligible: reason === null,
