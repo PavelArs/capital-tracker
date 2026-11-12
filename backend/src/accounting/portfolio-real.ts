@@ -105,32 +105,84 @@ export function realReadings(
   factorOf: (day: string) => InflationFactor | null,
   complete = true,
 ) {
-  const costs = new Map<string, { cost: bigint; estimated: boolean } | null>();
-  const investmentCosts = new Map<string, { cost: bigint; estimated: boolean } | null>();
-  const quantities = new Map<string, { all: bigint; investment: bigint }>();
+  const { costs, investmentCosts, quantities } = grownCosts(accounts, fx, factorOf);
+  const { byAsset, total } = assetReadings(assets, costs);
+  const whole =
+    total === null || byAsset.size === 0 || !complete
+      ? null
+      : reading(total.cost, total.value, total.estimated);
+  if (!accounts.some((account) => account.assetClass === 'property'))
+    return { byAsset, total: whole };
+  const { profit, estimated } = investmentProfit(
+    assets,
+    accounts,
+    { quantities, investmentCosts },
+    complete,
+    whole?.estimated ?? false,
+  );
+  return {
+    byAsset,
+    total: {
+      costBasis: whole?.costBasis ?? null,
+      unrealizedPnl: profit?.unrealizedPnl ?? null,
+      unrealizedReturnPercent: profit?.unrealizedReturnPercent ?? null,
+      estimated,
+    },
+  };
+}
+
+type GrownTotal = { cost: bigint; estimated: boolean } | null;
+type HeldQuantity = { all: bigint; investment: bigint };
+
+/** Each asset's lots grown by inflation, over all accounts and over the investment ones. */
+function grownCosts(
+  accounts: readonly PortfolioAccountInput[],
+  fx: FxConverter,
+  factorOf: (day: string) => InflationFactor | null,
+) {
+  const costs = new Map<string, GrownTotal>();
+  const investmentCosts = new Map<string, GrownTotal>();
+  const quantities = new Map<string, HeldQuantity>();
   for (const account of accounts)
     for (const lot of account.lots) {
       const quantity = canonicalDecimalToAtoms(lot.quantity);
       if (quantity === 0n) continue;
+      const investment = account.assetClass !== 'property';
       const held = quantities.get(lot.instrumentId) ?? { all: 0n, investment: 0n };
       held.all += quantity;
-      if (account.assetClass !== 'property') held.investment += quantity;
+      if (investment) held.investment += quantity;
       quantities.set(lot.instrumentId, held);
       const grown = grownCost(lot, fx, factorOf);
-      for (const target of account.assetClass === 'property' ? [costs] : [costs, investmentCosts]) {
-        const entry = target.get(lot.instrumentId);
-        if (entry === null) continue;
-        target.set(
-          lot.instrumentId,
-          grown === null
-            ? null
-            : {
-                cost: (entry?.cost ?? 0n) + grown.cost,
-                estimated: (entry?.estimated ?? false) || grown.estimated,
-              },
-        );
-      }
+      addGrown(costs, lot.instrumentId, grown);
+      if (investment) addGrown(investmentCosts, lot.instrumentId, grown);
     }
+  return { costs, investmentCosts, quantities };
+}
+
+/** A lot's grown cost in its asset's sum; one lot without it leaves the sum unknown. */
+function addGrown(
+  target: Map<string, GrownTotal>,
+  instrumentId: string,
+  grown: ReturnType<typeof grownCost>,
+) {
+  const entry = target.get(instrumentId);
+  if (entry === null) return;
+  target.set(
+    instrumentId,
+    grown === null
+      ? null
+      : {
+          cost: (entry?.cost ?? 0n) + grown.cost,
+          estimated: (entry?.estimated ?? false) || grown.estimated,
+        },
+  );
+}
+
+/** Each held asset's real reading, and their sum while every one of them is known. */
+function assetReadings(
+  assets: readonly { instrumentId: string; value: string | null }[],
+  costs: ReadonlyMap<string, GrownTotal>,
+) {
   const byAsset = new Map<string, RealReading | null>();
   let total: { cost: bigint; value: bigint | null; estimated: boolean } | null = {
     cost: 0n,
@@ -154,15 +206,26 @@ export function realReadings(
         estimated: total.estimated || entry.estimated,
       };
   }
-  const whole =
-    total === null || byAsset.size === 0 || !complete
-      ? null
-      : reading(total.cost, total.value, total.estimated);
-  if (!accounts.some((account) => account.assetClass === 'property'))
-    return { byAsset, total: whole };
+  return { byAsset, total };
+}
+
+/**
+ * The real profit of the investment (not property) units, null while any is unknown, and
+ * whether any factor behind it is estimated.
+ */
+function investmentProfit(
+  assets: readonly { instrumentId: string; value: string | null }[],
+  accounts: readonly PortfolioAccountInput[],
+  held: {
+    quantities: ReadonlyMap<string, HeldQuantity>;
+    investmentCosts: ReadonlyMap<string, GrownTotal>;
+  },
+  complete: boolean,
+  wholeEstimated: boolean,
+) {
   let investmentCost = 0n;
   let investmentValue: bigint | null = 0n;
-  let estimated = whole?.estimated ?? false;
+  let estimated = wholeEstimated;
   let known =
     complete ||
     (accounts.some(
@@ -172,9 +235,9 @@ export function realReadings(
         (account) => account.assetClass !== 'property' && account.coverage === 'before-coverage',
       ));
   for (const asset of assets) {
-    const held = quantities.get(asset.instrumentId);
-    if (!held || held.investment === 0n) continue;
-    const cost = investmentCosts.get(asset.instrumentId);
+    const quantity = held.quantities.get(asset.instrumentId);
+    if (!quantity || quantity.investment === 0n) continue;
+    const cost = held.investmentCosts.get(asset.instrumentId);
     if (!cost) {
       known = false;
       continue;
@@ -184,17 +247,11 @@ export function realReadings(
     investmentValue =
       investmentValue === null || asset.value === null
         ? null
-        : investmentValue + (valueAtoms(asset.value) * held.investment) / held.all;
+        : investmentValue + (valueAtoms(asset.value) * quantity.investment) / quantity.all;
   }
-  const profit = known ? reading(investmentCost, investmentValue, estimated) : null;
   return {
-    byAsset,
-    total: {
-      costBasis: whole?.costBasis ?? null,
-      unrealizedPnl: profit?.unrealizedPnl ?? null,
-      unrealizedReturnPercent: profit?.unrealizedReturnPercent ?? null,
-      estimated,
-    },
+    profit: known ? reading(investmentCost, investmentValue, estimated) : null,
+    estimated,
   };
 }
 
@@ -237,47 +294,59 @@ export function lotsAfterInflation(input: {
   official: (day: string) => InflationFactor | null;
   personal: ((day: string) => InflationFactor | null) | null;
 }): LotAfterInflation[] {
-  const { instrumentId, accounts, fx, price } = input;
+  const { instrumentId, accounts, price } = input;
   const unit = price === null ? null : canonicalDecimalToAtoms(price);
   const rows: LotAfterInflation[] = [];
   for (const account of accounts)
     for (const lot of account.lots) {
       // Only purchases are listed: a reward or a received coin has no price paid to show.
       if (lot.instrumentId !== instrumentId || lot.purchase !== true) continue;
-      const quantity = canonicalDecimalToAtoms(lot.quantity);
-      if (quantity === 0n) continue;
-      const value = unit === null ? null : quantity * unit;
-      const read = (factorOf: (day: string) => InflationFactor | null) => {
-        const grown = grownCost(lot, fx, factorOf);
-        return grown === null
-          ? null
-          : { inflationPercent: grown.percent, ...reading(grown.cost, value, grown.estimated) };
-      };
-      const official = read(input.official);
-      const paid = paidOf(lot, fx);
-      rows.push({
-        accountId: account.accountId,
-        accountName: account.name,
-        acquiredAt: lot.acquiredAt,
-        quantity: lot.quantity,
-        paid: paid === null ? null : formatAtoms(paid),
-        paidCurrency: lot.native?.currency ?? 'USD',
-        paidExact:
-          lot.native?.entered === true &&
-          lot.native.currency === fx.currency &&
-          paid === canonicalDecimalToAtoms(lot.native.amount),
-        value: value === null ? null : formatProduct(value),
-        nominalPnl:
-          value === null || paid === null ? null : formatSignedProduct(value - paid * ATOM_SCALE),
-        real: {
-          official,
-          personal: personalReading(
-            official,
-            () => (input.personal === null ? null : read(input.personal)),
-            input.personal !== null,
-          ),
-        },
-      });
+      const row = lotAfterInflation(account, lot, input, unit);
+      if (row) rows.push(row);
     }
   return rows.sort((a, b) => b.acquiredAt.localeCompare(a.acquiredAt));
+}
+
+/** One held purchase read on its own; null when none of it is still held. */
+function lotAfterInflation(
+  account: PortfolioAccountInput,
+  lot: PortfolioLot,
+  input: Parameters<typeof lotsAfterInflation>[0],
+  unit: bigint | null,
+): LotAfterInflation | null {
+  const { fx } = input;
+  const quantity = canonicalDecimalToAtoms(lot.quantity);
+  if (quantity === 0n) return null;
+  const value = unit === null ? null : quantity * unit;
+  const read = (factorOf: (day: string) => InflationFactor | null) => {
+    const grown = grownCost(lot, fx, factorOf);
+    return grown === null
+      ? null
+      : { inflationPercent: grown.percent, ...reading(grown.cost, value, grown.estimated) };
+  };
+  const official = read(input.official);
+  const paid = paidOf(lot, fx);
+  return {
+    accountId: account.accountId,
+    accountName: account.name,
+    acquiredAt: lot.acquiredAt,
+    quantity: lot.quantity,
+    paid: paid === null ? null : formatAtoms(paid),
+    paidCurrency: lot.native?.currency ?? 'USD',
+    paidExact:
+      lot.native?.entered === true &&
+      lot.native.currency === fx.currency &&
+      paid === canonicalDecimalToAtoms(lot.native.amount),
+    value: value === null ? null : formatProduct(value),
+    nominalPnl:
+      value === null || paid === null ? null : formatSignedProduct(value - paid * ATOM_SCALE),
+    real: {
+      official,
+      personal: personalReading(
+        official,
+        () => (input.personal === null ? null : read(input.personal)),
+        input.personal !== null,
+      ),
+    },
+  };
 }

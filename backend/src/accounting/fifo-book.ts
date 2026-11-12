@@ -214,7 +214,26 @@ function cashSide(trade: FifoTrade): FifoTrade | null {
   };
 }
 
-function swapItem(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocationItem {
+/** What the taken units cost, known and unknown. */
+export function portionCost(portions: readonly BookPortion[]): CostTally {
+  const total = new CostTally();
+  for (const portion of portions) total.add(portion.cost);
+  return total;
+}
+
+/** The coverage of a single amount: known, or one unknown. */
+function oneAmountCoverage(value: bigint | null) {
+  return {
+    knownSubtotalUsd: value === null ? '0' : formatAtoms(value),
+    unknownCount: value === null ? 1 : 0,
+  };
+}
+
+/** One taken portion as a transfer or swap allocation names it. */
+export function allocationItem(
+  kind: 'principal' | 'fee',
+  portion: BookPortion,
+): TransferAllocationItem {
   return {
     kind,
     instrumentId: portion.fragment.instrumentId,
@@ -225,6 +244,258 @@ function swapItem(kind: 'principal' | 'fee', portion: BookPortion): TransferAllo
     intervalEnd: formatAtoms(portion.interval.end),
     arrival: portion.fragment.arrival,
     ...portionReturned(portion),
+  };
+}
+
+/** What one capital return took off `length` units of a fragment, in USD and as paid. */
+function returnSlice(
+  capitalReturn: FifoCapitalReturn,
+  length: bigint,
+  usd: bigint,
+  native: bigint,
+): ReturnSlice {
+  const currency = capitalReturn.paidCurrency;
+  return {
+    capitalReturnId: capitalReturn.capitalReturnId,
+    version: capitalReturn.version,
+    occurredAt: capitalReturn.occurredAt,
+    currency,
+    usd: lotInterval(length, usd),
+    native: currency === null ? null : lotInterval(length, native),
+  };
+}
+
+/** A fragment's share of a return when its cost is unknown: the cost stays unknown. */
+function returnOnUnknownCost(
+  fragment: BookFragment,
+  capitalReturn: FifoCapitalReturn,
+  length: bigint,
+  share: bigint,
+  nativeShare: bigint,
+): CapitalReturnAllocationItem {
+  // The cost stays unknown, but the units keep their share of the return: a cost
+  // estimated later is lowered by it.
+  if (share > 0n || nativeShare > 0n)
+    fragment.returns = [
+      ...fragment.returns,
+      returnSlice(capitalReturn, length, share, nativeShare),
+    ];
+  return {
+    instrumentId: fragment.instrumentId,
+    quantity: formatAtoms(length),
+    appliedUsd: null,
+    excessUsd: null,
+  };
+}
+
+/**
+ * A fragment's share of a return when its cost is known: the cost takes what it can, the rest
+ * is realized. Paid in the currency the return comes in, the units' cost in it is lowered by the
+ * paid amount itself, not by what the dollar figure implies: rates moved between the two days.
+ */
+function returnOnKnownCost(
+  fragment: BookFragment,
+  capitalReturn: FifoCapitalReturn,
+  share: { length: bigint; cost: bigint; usd: bigint; native: bigint },
+  limits: BookLimits,
+): { taken: bigint; excess: bigint; nativeExcess: bigint; item: CapitalReturnAllocationItem } {
+  const { length, cost } = share;
+  const currency = capitalReturn.paidCurrency;
+  const taken = share.usd < cost ? share.usd : cost;
+  const excess = share.usd - taken;
+  const paidCost =
+    currency !== null && fragment.paidCost?.currency === currency
+      ? intervalCost(fragment.paidCost.cost)
+      : null;
+  const nativeTaken =
+    paidCost !== null
+      ? share.native < paidCost
+        ? share.native
+        : paidCost
+      : share.usd === 0n
+        ? 0n
+        : (share.native * taken) / share.usd;
+  const result = {
+    taken,
+    excess,
+    nativeExcess: share.native - nativeTaken,
+    item: {
+      instrumentId: fragment.instrumentId,
+      quantity: formatAtoms(length),
+      appliedUsd: formatAtoms(taken),
+      excessUsd: formatAtoms(excess),
+    },
+  };
+  if (taken === 0n && nativeTaken === 0n) return result;
+  limits.match?.();
+  fragment.cost = lotInterval(length, cost - taken);
+  if (paidCost !== null && fragment.paidCost)
+    fragment.paidCost = {
+      currency: fragment.paidCost.currency,
+      cost: lotInterval(length, paidCost - nativeTaken),
+    };
+  fragment.returns = [...fragment.returns, returnSlice(capitalReturn, length, taken, nativeTaken)];
+  return result;
+}
+
+/** One portion a sale took, named by where its units came from; a bought lot has a cost. */
+function saleMatch(trade: FifoTrade, portion: BookPortion): AccountFifoResult['matches'][number] {
+  const { fragment, interval } = portion;
+  const common = {
+    sellTradeId: trade.tradeId,
+    sellVersion: trade.version,
+    quantity: formatAtoms(interval.end - interval.start),
+    costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
+    ...portionReturned(portion),
+  };
+  if (fragment.arrival) {
+    const match: ReceivedSaleMatch = {
+      ...common,
+      sourceKind: 'transfer',
+      origin: fragment.origin,
+      arrival: fragment.arrival,
+      intervalStart: formatAtoms(interval.start),
+      intervalEnd: formatAtoms(interval.end),
+    };
+    return match;
+  }
+  if (fragment.source.kind === 'trade') {
+    if (portion.cost === null) throw new FifoHistoryError();
+    return {
+      ...common,
+      costUsd: formatAtoms(portion.cost),
+      buyTradeId: fragment.source.trade.tradeId,
+      buyVersion: fragment.source.trade.version,
+    };
+  }
+  if (fragment.source.kind === 'carry-in') {
+    if (portion.cost === null) throw new FifoHistoryError();
+    return {
+      ...common,
+      costUsd: formatAtoms(portion.cost),
+      sourceKind: 'carry-in',
+      lotId: fragment.source.lot.lotId,
+      openingRevision: fragment.source.lot.openingRevision,
+      ordinal: fragment.source.lot.ordinal,
+    };
+  }
+  if (fragment.source.kind === 'reward') {
+    const match: RewardSaleMatch = {
+      ...common,
+      sourceKind: 'reward',
+      origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
+      intervalStart: formatAtoms(interval.start),
+      intervalEnd: formatAtoms(interval.end),
+    };
+    return match;
+  }
+  if (fragment.source.kind === 'swap') {
+    const match: SwapSaleMatch = {
+      ...common,
+      sourceKind: 'swap',
+      origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
+      intervalStart: formatAtoms(interval.start),
+      intervalEnd: formatAtoms(interval.end),
+    };
+    return match;
+  }
+  const match: CapitalReturnSaleMatch = {
+    ...common,
+    sourceKind: 'capital-return',
+    origin: fragment.origin as Extract<LotOrigin, { kind: 'capital-return' }>,
+    intervalStart: formatAtoms(interval.start),
+    intervalEnd: formatAtoms(interval.end),
+  };
+  return match;
+}
+
+/** One held fragment as a lot, named by where its units came from; a bought lot has a cost. */
+function heldLot(fragment: BookFragment): AccountFifoResult['lots'][number] {
+  const interval = fragment.interval;
+  const remainingQuantity = formatAtoms(interval.end - interval.start);
+  const cost = intervalCost(fragment.cost);
+  const remainingCostUsd = cost === null ? null : formatAtoms(cost);
+  const returned = returnedParts(fragment.returns);
+  if (fragment.arrival)
+    return {
+      ...returned,
+      sourceKind: 'transfer',
+      instrumentId: fragment.instrumentId,
+      instrumentName: fragment.instrumentName,
+      instrumentSymbol: fragment.instrumentSymbol,
+      origin: fragment.origin,
+      arrival: fragment.arrival,
+      intervalStart: formatAtoms(interval.start),
+      intervalEnd: formatAtoms(interval.end),
+      remainingQuantity,
+      remainingCostUsd,
+    };
+  if (fragment.source.kind === 'trade') {
+    const trade = fragment.source.trade;
+    if (cost === null || interval.originalCost === null) throw new FifoHistoryError();
+    return {
+      ...returned,
+      buyTradeId: trade.tradeId,
+      buyVersion: trade.version,
+      instrumentId: trade.instrumentId,
+      instrumentName: trade.instrumentName,
+      instrumentSymbol: trade.instrumentSymbol,
+      occurredAt: trade.occurredAt,
+      orderWithinTimestamp: trade.orderWithinTimestamp,
+      originalQuantity: trade.quantity,
+      originalCostUsd: formatAtoms(interval.originalCost),
+      remainingQuantity,
+      remainingCostUsd: formatAtoms(cost),
+    };
+  }
+  if (fragment.source.kind === 'carry-in') {
+    if (cost === null) throw new FifoHistoryError();
+    return {
+      ...returned,
+      sourceKind: 'carry-in',
+      ...fragment.source.lot,
+      carriedCostUsd: fragment.source.carriedCostUsd,
+      remainingQuantity,
+      remainingCostUsd: formatAtoms(cost),
+    };
+  }
+  if (fragment.source.kind === 'reward')
+    return {
+      ...returned,
+      sourceKind: 'reward',
+      instrumentId: fragment.instrumentId,
+      instrumentName: fragment.instrumentName,
+      instrumentSymbol: fragment.instrumentSymbol,
+      origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
+      intervalStart: formatAtoms(interval.start),
+      intervalEnd: formatAtoms(interval.end),
+      remainingQuantity,
+      remainingCostUsd,
+    };
+  if (fragment.source.kind === 'swap')
+    return {
+      ...returned,
+      sourceKind: 'swap',
+      instrumentId: fragment.instrumentId,
+      instrumentName: fragment.instrumentName,
+      instrumentSymbol: fragment.instrumentSymbol,
+      origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
+      intervalStart: formatAtoms(interval.start),
+      intervalEnd: formatAtoms(interval.end),
+      remainingQuantity,
+      remainingCostUsd,
+    };
+  return {
+    ...returned,
+    sourceKind: 'capital-return',
+    instrumentId: fragment.instrumentId,
+    instrumentName: fragment.instrumentName,
+    instrumentSymbol: fragment.instrumentSymbol,
+    origin: fragment.origin as Extract<LotOrigin, { kind: 'capital-return' }>,
+    intervalStart: formatAtoms(interval.start),
+    intervalEnd: formatAtoms(interval.end),
+    remainingQuantity,
+    remainingCostUsd,
   };
 }
 
@@ -395,72 +666,19 @@ export class FifoBook {
       if (cost === null) {
         unknown++;
         applied.add(null);
-        items.push({
-          instrumentId: fragment.instrumentId,
-          quantity: formatAtoms(length),
-          appliedUsd: null,
-          excessUsd: null,
-        });
-        // The cost stays unknown, but the units keep their share of the return: a cost
-        // estimated later is lowered by it.
-        if (share > 0n || nativeShare > 0n)
-          fragment.returns = [
-            ...fragment.returns,
-            {
-              capitalReturnId: capitalReturn.capitalReturnId,
-              version: capitalReturn.version,
-              occurredAt: capitalReturn.occurredAt,
-              currency,
-              usd: lotInterval(length, share),
-              native: currency === null ? null : lotInterval(length, nativeShare),
-            },
-          ];
+        items.push(returnOnUnknownCost(fragment, capitalReturn, length, share, nativeShare));
         continue;
       }
-      const taken = share < cost ? share : cost;
-      const excess = share - taken;
-      // Paid in the currency the return comes in, the units' cost in it is lowered by the paid
-      // amount itself, not by what the dollar figure implies: rates moved between the two days.
-      const paidCost =
-        currency !== null && fragment.paidCost?.currency === currency
-          ? intervalCost(fragment.paidCost.cost)
-          : null;
-      const nativeTaken =
-        paidCost !== null
-          ? nativeShare < paidCost
-            ? nativeShare
-            : paidCost
-          : share === 0n
-            ? 0n
-            : (nativeShare * taken) / share;
-      realized += excess;
-      realizedNative += nativeShare - nativeTaken;
-      applied.add(taken);
-      items.push({
-        instrumentId: fragment.instrumentId,
-        quantity: formatAtoms(length),
-        appliedUsd: formatAtoms(taken),
-        excessUsd: formatAtoms(excess),
-      });
-      if (taken === 0n && nativeTaken === 0n) continue;
-      this.limits.match?.();
-      fragment.cost = lotInterval(length, cost - taken);
-      if (paidCost !== null && fragment.paidCost)
-        fragment.paidCost = {
-          currency: fragment.paidCost.currency,
-          cost: lotInterval(length, paidCost - nativeTaken),
-        };
-      fragment.returns = [
-        ...fragment.returns,
-        {
-          capitalReturnId: capitalReturn.capitalReturnId,
-          version: capitalReturn.version,
-          occurredAt: capitalReturn.occurredAt,
-          currency,
-          usd: lotInterval(length, taken),
-          native: currency === null ? null : lotInterval(length, nativeTaken),
-        },
-      ];
+      const taken = returnOnKnownCost(
+        fragment,
+        capitalReturn,
+        { length, cost, usd: share, native: nativeShare },
+        this.limits,
+      );
+      realized += taken.excess;
+      realizedNative += taken.nativeExcess;
+      applied.add(taken.taken);
+      items.push(taken.item);
     }
 
     this.append(
@@ -485,14 +703,7 @@ export class FifoBook {
       }),
     );
 
-    this.hasCapitalReturnIdentity = true;
-    this.capitalReturnCount++;
-    this.capitalReturnAmount += amountUsd;
-    this.capitalReturnUnknownCost += unknown;
-    this.capitalReturnApplied.add(unknown > 0 ? null : applied.known);
-    this.capitalReturnRealized.add(unknown > 0 ? null : realized);
-    if (unknown > 0) this.unknownRealizedCount++;
-    else this.knownRealized += realized;
+    this.countCapitalReturn(amountUsd, unknown, applied.known, realized);
     return {
       capitalReturnId: capitalReturn.capitalReturnId,
       version: capitalReturn.version,
@@ -506,6 +717,23 @@ export class FifoBook {
       unknownCostCount: unknown,
       items,
     };
+  }
+
+  /** A return in the summary; with any unknown cost, what it applied and realized is unknown. */
+  private countCapitalReturn(
+    amountUsd: bigint,
+    unknown: number,
+    applied: bigint,
+    realized: bigint,
+  ): void {
+    this.hasCapitalReturnIdentity = true;
+    this.capitalReturnCount++;
+    this.capitalReturnAmount += amountUsd;
+    this.capitalReturnUnknownCost += unknown;
+    this.capitalReturnApplied.add(unknown > 0 ? null : applied);
+    this.capitalReturnRealized.add(unknown > 0 ? null : realized);
+    if (unknown > 0) this.unknownRealizedCount++;
+    else this.knownRealized += realized;
   }
 
   applyReward(reward: FifoReward): void {
@@ -583,10 +811,8 @@ export class FifoBook {
     }
     if (fragment.interval.start < fragment.interval.end) this.append(fragment);
 
-    const principalBasis = new CostTally();
-    for (const portion of principal) principalBasis.add(portion.cost);
-    const feeBasis = new CostTally();
-    for (const portion of feePortions) feeBasis.add(portion.cost);
+    const principalBasis = portionCost(principal);
+    const feeBasis = portionCost(feePortions);
     const complete = consideration !== null && !principalBasis.incomplete && !feeBasis.incomplete;
     const realized = complete ? consideration - principalBasis.known - feeBasis.known : null;
     this.hasSwapIdentity = true;
@@ -603,20 +829,14 @@ export class FifoBook {
       feeConsumedBasisUsd: feeBasis.value,
       realizedUsd: realized === null ? null : formatAtoms(realized),
       coverage: {
-        consideration: {
-          knownSubtotalUsd: consideration === null ? '0' : formatAtoms(consideration),
-          unknownCount: consideration === null ? 1 : 0,
-        },
+        consideration: oneAmountCoverage(consideration),
         principal: principalBasis.coverage,
         fee: feeBasis.coverage,
-        realized: {
-          knownSubtotalUsd: realized === null ? '0' : formatAtoms(realized),
-          unknownCount: realized === null ? 1 : 0,
-        },
+        realized: oneAmountCoverage(realized),
       },
       items: [
-        ...principal.map((portion) => swapItem('principal', portion)),
-        ...feePortions.map((portion) => swapItem('fee', portion)),
+        ...principal.map((portion) => allocationItem('principal', portion)),
+        ...feePortions.map((portion) => allocationItem('fee', portion)),
       ],
     };
   }
@@ -696,70 +916,7 @@ export class FifoBook {
     for (const portion of portions) {
       saleCost.add(portion.cost);
       this.consumedCost.add(portion.cost);
-      const { fragment, interval } = portion;
-      const common = {
-        sellTradeId: trade.tradeId,
-        sellVersion: trade.version,
-        quantity: formatAtoms(interval.end - interval.start),
-        costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
-        ...portionReturned(portion),
-      };
-      if (fragment.arrival) {
-        const match: ReceivedSaleMatch = {
-          ...common,
-          sourceKind: 'transfer',
-          origin: fragment.origin,
-          arrival: fragment.arrival,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-        };
-        this.matches.push(match);
-      } else if (fragment.source.kind === 'trade') {
-        if (portion.cost === null) throw new FifoHistoryError();
-        this.matches.push({
-          ...common,
-          costUsd: formatAtoms(portion.cost),
-          buyTradeId: fragment.source.trade.tradeId,
-          buyVersion: fragment.source.trade.version,
-        });
-      } else if (fragment.source.kind === 'carry-in') {
-        if (portion.cost === null) throw new FifoHistoryError();
-        this.matches.push({
-          ...common,
-          costUsd: formatAtoms(portion.cost),
-          sourceKind: 'carry-in',
-          lotId: fragment.source.lot.lotId,
-          openingRevision: fragment.source.lot.openingRevision,
-          ordinal: fragment.source.lot.ordinal,
-        });
-      } else if (fragment.source.kind === 'reward') {
-        const match: RewardSaleMatch = {
-          ...common,
-          sourceKind: 'reward',
-          origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-        };
-        this.matches.push(match);
-      } else if (fragment.source.kind === 'swap') {
-        const match: SwapSaleMatch = {
-          ...common,
-          sourceKind: 'swap',
-          origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-        };
-        this.matches.push(match);
-      } else {
-        const match: CapitalReturnSaleMatch = {
-          ...common,
-          sourceKind: 'capital-return',
-          origin: fragment.origin as Extract<LotOrigin, { kind: 'capital-return' }>,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-        };
-        this.matches.push(match);
-      }
+      this.matches.push(saleMatch(trade, portion));
     }
     if (saleCost.incomplete) this.unknownRealizedCount++;
     else this.knownRealized += gross - fee - saleCost.known;
@@ -877,93 +1034,8 @@ export class FifoBook {
     const remainingCost = new CostTally();
     const lots: AccountFifoResult['lots'] = [];
     for (const fragment of this.held) {
-      const interval = fragment.interval;
-      const remainingQuantity = formatAtoms(interval.end - interval.start);
-      const cost = intervalCost(fragment.cost);
-      const remainingCostUsd = cost === null ? null : formatAtoms(cost);
-      remainingCost.add(cost);
-      const returned = returnedParts(fragment.returns);
-      if (fragment.arrival) {
-        lots.push({
-          ...returned,
-          sourceKind: 'transfer',
-          instrumentId: fragment.instrumentId,
-          instrumentName: fragment.instrumentName,
-          instrumentSymbol: fragment.instrumentSymbol,
-          origin: fragment.origin,
-          arrival: fragment.arrival,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-          remainingQuantity,
-          remainingCostUsd,
-        });
-      } else if (fragment.source.kind === 'trade') {
-        const trade = fragment.source.trade;
-        if (cost === null || interval.originalCost === null) throw new FifoHistoryError();
-        lots.push({
-          ...returned,
-          buyTradeId: trade.tradeId,
-          buyVersion: trade.version,
-          instrumentId: trade.instrumentId,
-          instrumentName: trade.instrumentName,
-          instrumentSymbol: trade.instrumentSymbol,
-          occurredAt: trade.occurredAt,
-          orderWithinTimestamp: trade.orderWithinTimestamp,
-          originalQuantity: trade.quantity,
-          originalCostUsd: formatAtoms(interval.originalCost),
-          remainingQuantity,
-          remainingCostUsd: formatAtoms(cost),
-        });
-      } else if (fragment.source.kind === 'carry-in') {
-        if (cost === null) throw new FifoHistoryError();
-        lots.push({
-          ...returned,
-          sourceKind: 'carry-in',
-          ...fragment.source.lot,
-          carriedCostUsd: fragment.source.carriedCostUsd,
-          remainingQuantity,
-          remainingCostUsd: formatAtoms(cost),
-        });
-      } else if (fragment.source.kind === 'reward') {
-        lots.push({
-          ...returned,
-          sourceKind: 'reward',
-          instrumentId: fragment.instrumentId,
-          instrumentName: fragment.instrumentName,
-          instrumentSymbol: fragment.instrumentSymbol,
-          origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-          remainingQuantity,
-          remainingCostUsd,
-        });
-      } else if (fragment.source.kind === 'swap') {
-        lots.push({
-          ...returned,
-          sourceKind: 'swap',
-          instrumentId: fragment.instrumentId,
-          instrumentName: fragment.instrumentName,
-          instrumentSymbol: fragment.instrumentSymbol,
-          origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-          remainingQuantity,
-          remainingCostUsd,
-        });
-      } else {
-        lots.push({
-          ...returned,
-          sourceKind: 'capital-return',
-          instrumentId: fragment.instrumentId,
-          instrumentName: fragment.instrumentName,
-          instrumentSymbol: fragment.instrumentSymbol,
-          origin: fragment.origin as Extract<LotOrigin, { kind: 'capital-return' }>,
-          intervalStart: formatAtoms(interval.start),
-          intervalEnd: formatAtoms(interval.end),
-          remainingQuantity,
-          remainingCostUsd,
-        });
-      }
+      remainingCost.add(intervalCost(fragment.cost));
+      lots.push(heldLot(fragment));
     }
     const incomplete =
       this.consumedCost.incomplete || remainingCost.incomplete || this.unknownRealizedCount > 0;
@@ -994,55 +1066,8 @@ export class FifoBook {
       realizations: this.realizations,
       matches: this.matches,
     };
-    if (this.participant) {
-      result.transferSummary = {
-        receivedBasisUsd: this.receivedBasis.value,
-        sentBasisUsd: this.sentBasis.value,
-        feeConsumedBasisUsd: this.feeConsumedBasis.value,
-        fees: [...this.fees.values()]
-          .sort((left, right) => compareText(left.instrumentId, right.instrumentId))
-          .map((fee) => ({
-            instrumentId: fee.instrumentId,
-            instrumentName: fee.instrumentName,
-            instrumentSymbol: fee.instrumentSymbol,
-            quantity: formatAtoms(fee.quantity),
-            consumedBasisUsd: fee.basis.value,
-            ...(fee.basis.incomplete
-              ? {
-                  knownBasisSubtotalUsd: formatAtoms(fee.basis.known),
-                  unknownCostQuantity: formatAtoms(fee.unknownCostQuantity),
-                }
-              : {}),
-          })),
-        ...(this.receivedBasis.incomplete ||
-        this.sentBasis.incomplete ||
-        this.feeConsumedBasis.incomplete
-          ? {
-              basisCoverage: {
-                received: this.receivedBasis.coverage,
-                sent: this.sentBasis.coverage,
-                fee: this.feeConsumedBasis.coverage,
-              },
-            }
-          : {}),
-      };
-    }
-    if (this.hasRewardIdentity) {
-      const rewardSummary: RewardSummary = {
-        activeCount: this.rewardCount,
-        declaredBasisUsd: this.rewardBasis.value,
-        declaredIncomeUsd:
-          this.rewardIncome.incomplete || this.unclassifiedRewards > 0
-            ? null
-            : formatAtoms(this.rewardIncome.known),
-        knownBasisSubtotalUsd: formatAtoms(this.rewardBasis.known),
-        knownIncomeSubtotalUsd: formatAtoms(this.knownCategorizedIncome),
-        unknownBasisCount: this.rewardBasis.unknownCount,
-        unknownIncomeCount: this.rewardIncome.unknownCount,
-        unclassifiedCount: this.unclassifiedRewards,
-      };
-      result.rewardSummary = rewardSummary;
-    }
+    if (this.participant) result.transferSummary = this.transferSummary();
+    if (this.hasRewardIdentity) result.rewardSummary = this.rewardSummary();
     if (this.hasCapitalReturnIdentity) {
       const capitalReturnSummary: CapitalReturnSummary = {
         activeCount: this.capitalReturnCount,
@@ -1053,26 +1078,77 @@ export class FifoBook {
       };
       result.capitalReturnSummary = capitalReturnSummary;
     }
-    if (this.hasSwapIdentity) {
-      const swapSummary: SwapSummary = {
-        activeCount: this.swapCount,
-        considerationUsd: this.swapConsideration.value,
-        principalBasisUsd: this.swapPrincipalBasis.value,
-        feeConsumedBasisUsd: this.swapFeeBasis.value,
-        realizedUsd: this.swapUnknownRealizedCount > 0 ? null : formatAtoms(this.swapKnownRealized),
-        coverage: {
-          consideration: this.swapConsideration.coverage,
-          principal: this.swapPrincipalBasis.coverage,
-          fee: this.swapFeeBasis.coverage,
-          realized: {
-            knownSubtotalUsd: formatAtoms(this.swapKnownRealized),
-            unknownCount: this.swapUnknownRealizedCount,
-          },
-        },
-      };
-      result.swapSummary = swapSummary;
-    }
+    if (this.hasSwapIdentity) result.swapSummary = this.swapSummary();
     return result;
+  }
+
+  private transferSummary(): NonNullable<AccountFifoResult['transferSummary']> {
+    return {
+      receivedBasisUsd: this.receivedBasis.value,
+      sentBasisUsd: this.sentBasis.value,
+      feeConsumedBasisUsd: this.feeConsumedBasis.value,
+      fees: [...this.fees.values()]
+        .sort((left, right) => compareText(left.instrumentId, right.instrumentId))
+        .map((fee) => ({
+          instrumentId: fee.instrumentId,
+          instrumentName: fee.instrumentName,
+          instrumentSymbol: fee.instrumentSymbol,
+          quantity: formatAtoms(fee.quantity),
+          consumedBasisUsd: fee.basis.value,
+          ...(fee.basis.incomplete
+            ? {
+                knownBasisSubtotalUsd: formatAtoms(fee.basis.known),
+                unknownCostQuantity: formatAtoms(fee.unknownCostQuantity),
+              }
+            : {}),
+        })),
+      ...(this.receivedBasis.incomplete ||
+      this.sentBasis.incomplete ||
+      this.feeConsumedBasis.incomplete
+        ? {
+            basisCoverage: {
+              received: this.receivedBasis.coverage,
+              sent: this.sentBasis.coverage,
+              fee: this.feeConsumedBasis.coverage,
+            },
+          }
+        : {}),
+    };
+  }
+
+  private rewardSummary(): RewardSummary {
+    return {
+      activeCount: this.rewardCount,
+      declaredBasisUsd: this.rewardBasis.value,
+      declaredIncomeUsd:
+        this.rewardIncome.incomplete || this.unclassifiedRewards > 0
+          ? null
+          : formatAtoms(this.rewardIncome.known),
+      knownBasisSubtotalUsd: formatAtoms(this.rewardBasis.known),
+      knownIncomeSubtotalUsd: formatAtoms(this.knownCategorizedIncome),
+      unknownBasisCount: this.rewardBasis.unknownCount,
+      unknownIncomeCount: this.rewardIncome.unknownCount,
+      unclassifiedCount: this.unclassifiedRewards,
+    };
+  }
+
+  private swapSummary(): SwapSummary {
+    return {
+      activeCount: this.swapCount,
+      considerationUsd: this.swapConsideration.value,
+      principalBasisUsd: this.swapPrincipalBasis.value,
+      feeConsumedBasisUsd: this.swapFeeBasis.value,
+      realizedUsd: this.swapUnknownRealizedCount > 0 ? null : formatAtoms(this.swapKnownRealized),
+      coverage: {
+        consideration: this.swapConsideration.coverage,
+        principal: this.swapPrincipalBasis.coverage,
+        fee: this.swapFeeBasis.coverage,
+        realized: {
+          knownSubtotalUsd: formatAtoms(this.swapKnownRealized),
+          unknownCount: this.swapUnknownRealizedCount,
+        },
+      },
+    };
   }
 
   /** The legacy wrapper never receives a fragment and keeps its exact DTO type. */

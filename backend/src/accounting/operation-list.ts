@@ -536,14 +536,79 @@ function chainOperation(
   // TOKEN-FEE: a token send's fee is the leg of the network's own coin that paid it.
   const gas = gasOf(row);
   const fee = gas ? networkFee(gas, prices) : networkFee(row, prices);
-  const net = netUnits(row);
-  const magnitude = net < 0n ? -net : net;
-  const quantity = amount(magnitude, network, row.asset);
   // EST-AT-TIME: valued at the price stored for the block time, never today's.
   const price = asset.symbol ? priceAt(prices.get(asset.symbol), row.blockTime) : undefined;
   const answer = row.classification ?? null;
+  const operation = chainRow(row, asset, price, fee, latest);
+  if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
+  const { named, record, carried, recordGone } = recordedAnswer(row, answer, produced, records);
+  // SOL-STAKE-MOVE: SOL moved into the wallet's own stake account or back stays the owner's;
+  // nothing to classify, only the network fee is a cost.
+  const staked = BigInt(row.stakeUnits ?? '0');
+  if (staked !== 0n && answer?.status !== 'classified')
+    return stakeOperation(operation, staked, network, price, fee);
+  // CLS-DUST: nobody has answered it and it is worth too little to ask about.
+  if (
+    (answer === null || answer.status === 'unclassified' || recordGone) &&
+    isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd, hiddenToken)
+  )
+    return { ...operation, status: 'dust' };
+  if (named && record && !recordGone && !carried)
+    return { ...operation, type: record.type, status: 'recorded' };
+  return answeredOperation(
+    { row, operation, price, fee, gas, other, produced },
+    answer,
+    carried,
+    settled,
+    prices,
+    gasOf,
+  );
+}
+
+function stakeOperation(
+  operation: Projected,
+  staked: bigint,
+  network: Network,
+  price: StoredMarketPrice | undefined,
+  fee: OperationFee | null,
+): Projected {
+  const moved = amount(staked < 0n ? -staked : staked, network, null);
+  return {
+    ...operation,
+    type: staked > 0n ? 'stake' : 'unstake',
+    direction: 'internal',
+    status: 'recorded',
+    quantity: moved,
+    estimatedValueUsd: estimate(moved, price),
+    fee,
+  };
+}
+
+/** What chainOperation knows of one leg once its own row is read. */
+interface ChainLeg {
+  row: ChainOperationInput;
+  operation: Projected;
+  price: StoredMarketPrice | undefined;
+  fee: OperationFee | null;
+  gas: ChainOperationInput | undefined;
+  other: ChainOperationInput | null;
+  produced: Projected | undefined;
+}
+
+/** The leg's own row, as it reads before any answer changes it. */
+function chainRow(
+  row: ChainOperationInput,
+  asset: OperationAsset,
+  price: StoredMarketPrice | undefined,
+  fee: OperationFee | null,
+  latest: ReadonlyMap<string, StoredMarketPrice>,
+): Projected {
+  const net = netUnits(row);
+  const magnitude = net < 0n ? -net : net;
+  const quantity = amount(magnitude, row.wallet.network, row.asset);
+  const answer = row.classification ?? null;
   const leg = row.direction === 'self' ? 'internal' : row.direction;
-  const operation: Projected = {
+  return {
     ...blank,
     id: `chain:${row.wallet.id}:${row.txid}`,
     kind: 'chain',
@@ -583,9 +648,18 @@ function chainOperation(
     },
     orderWithinTimestamp: 0,
   };
-  if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
-  // CLS-RECORDED: the trade or swap the owner added by hand or from CSV for this movement, while
-  // it counts in this wallet's account; once it does not, the transaction asks again.
+}
+
+/**
+ * CLS-RECORDED: the trade or swap the owner added by hand or from CSV for this movement, while
+ * it counts in this wallet's account; once it does not, the transaction asks again.
+ */
+function recordedAnswer(
+  row: ChainOperationInput,
+  answer: ChainClassificationInput | null,
+  produced: Projected | undefined,
+  records: ReadonlyMap<string, Projected>,
+) {
   const named =
     answer?.status === 'classified' && answer.details?.type === 'recorded'
       ? answer.details.operation
@@ -595,29 +669,19 @@ function chainOperation(
   const carried = answer?.status === 'classified' && produced?.kind === 'transfer';
   const recordGone =
     named !== null && !carried && (record === undefined || record.account?.id !== row.account?.id);
-  // SOL-STAKE-MOVE: SOL moved into the wallet's own stake account or back stays the owner's;
-  // nothing to classify, only the network fee is a cost.
-  const staked = BigInt(row.stakeUnits ?? '0');
-  if (staked !== 0n && answer?.status !== 'classified') {
-    const moved = amount(staked < 0n ? -staked : staked, network, null);
-    return {
-      ...operation,
-      type: staked > 0n ? 'stake' : 'unstake',
-      direction: 'internal',
-      status: 'recorded',
-      quantity: moved,
-      estimatedValueUsd: estimate(moved, price),
-      fee,
-    };
-  }
-  // CLS-DUST: nobody has answered it and it is worth too little to ask about.
-  if (
-    (answer === null || answer.status === 'unclassified' || recordGone) &&
-    isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd, hiddenToken)
-  )
-    return { ...operation, status: 'dust' };
-  if (named && record && !recordGone && !carried)
-    return { ...operation, type: record.type, status: 'recorded' };
+  return { named, record, carried, recordGone };
+}
+
+/** A leg the owner answered, or one whose answer produced nothing it can read as. */
+function answeredOperation(
+  leg: ChainLeg,
+  answer: ChainClassificationInput | null,
+  carried: boolean,
+  settled: ReadonlyMap<ChainOperationInput, PoolSettlement>,
+  prices: OperationSources['marketPrices'],
+  gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
+): Projected {
+  const { operation, other, produced } = leg;
   // An outgoing Other records no entry: the coins left with no sale price (D1).
   if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
     return { ...operation, type: 'other', status: 'recorded' };
@@ -626,44 +690,8 @@ function chainOperation(
   if (
     answer?.status === 'classified' &&
     (answer.type === 'pool-deposit' || answer.type === 'pool-withdrawal')
-  ) {
-    const deposit = answer.type === 'pool-deposit';
-    const units = (leg: ChainOperationInput) => ({ ...leg, network: leg.wallet.network });
-    const moved = poolCoins(
-      deposit ? poolDepositUnits(units(row)) : poolReturnUnits(units(row)),
-      units(row),
-    );
-    const ownFee = row.asset === null && !isExchange(network);
-    const paired = deposit ? null : other;
-    const deposited = paired && poolCoins(poolDepositUnits(units(paired)), units(paired));
-    const mine = settled.get(row);
-    return {
-      ...operation,
-      type: answer.type,
-      direction: 'internal',
-      status: 'recorded',
-      quantity: moved,
-      estimatedValueUsd: estimate(moved, price),
-      // The owner sent both: the fee of each is theirs.
-      fee: ownFee || gas ? fee : null,
-      valueUsd: produced?.valueUsd ?? null,
-      costBasisUsd: produced?.costBasisUsd ?? null,
-      chain: operation.chain && { ...operation.chain, pairedTxid: paired?.txid ?? null },
-      pool: deposited
-        ? {
-            deposited,
-            difference: formatAtoms(
-              mine
-                ? mine.gain - mine.loss
-                : canonicalDecimalToAtoms(moved) - canonicalDecimalToAtoms(deposited),
-            ),
-            partial: answer.details?.type === 'pool-withdrawal' && answer.details.partial === true,
-            remaining: formatAtoms(mine?.remaining ?? 0n),
-          }
-        : null,
-      orderWithinTimestamp: produced?.orderWithinTimestamp ?? 0,
-    };
-  }
+  )
+    return poolOperation(leg, answer.type, answer.details, settled);
   // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
   // elsewhere leaves the transaction to classify again, with the other side to suggest.
   if (
@@ -672,59 +700,29 @@ function chainOperation(
     (answer.type === 'recorded' && !carried) ||
     !produced
   )
-    return other
-      ? { ...operation, counterAccount: other.account, counterWallet: other.wallet }
-      : operation;
+    return withCounterpart(operation, other);
+  return producedOperation(leg, answer, answer.type, produced, prices, gasOf);
+}
+
+/** The row read as the entry its answer produced. */
+function producedOperation(
+  leg: ChainLeg,
+  answer: ChainClassificationInput,
+  type: ChainType,
+  produced: Projected,
+  prices: OperationSources['marketPrices'],
+  gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
+): Projected {
   // CLS-SWAP: one swap of the paid coins for these, recorded where they arrived; paid from
   // another wallet, that one is the counter account. The fee is the paying leg's own.
-  if (produced.kind === 'swap') {
-    const paying = other && netUnits(other) < 0n ? other : null;
-    return {
-      ...operation,
-      type: 'swap',
-      direction: 'internal',
-      status: 'recorded',
-      asset: onChain(produced.asset, paying),
-      quantity: produced.quantity,
-      counterAsset: produced.counterAsset && onChain(produced.counterAsset, row),
-      counterQuantity: produced.counterQuantity,
-      valueUsd: produced.valueUsd,
-      costBasisUsd: produced.valueUsd,
-      estimatedValueUsd: null,
-      fee: paying ? swapFee(paying, prices, gasOf) : null,
-      account: produced.account,
-      counterAccount:
-        paying?.account && paying.account.id !== produced.account?.id ? paying.account : null,
-      counterWallet: paying?.wallet ?? null,
-      chain: operation.chain && { ...operation.chain, pairedTxid: paying?.txid ?? null },
-      orderWithinTimestamp: produced.orderWithinTimestamp,
-    };
-  }
+  if (produced.kind === 'swap') return swapOperation(leg, produced, prices, gasOf);
   // XFER-*: one transfer between the two accounts; the fee is the only cost.
-  if (produced.kind === 'transfer')
-    return {
-      ...operation,
-      type: 'transfer',
-      direction: 'internal',
-      status: 'recorded',
-      quantity: produced.quantity,
-      estimatedValueUsd: estimate(produced.quantity, price),
-      fee: gas ? fee : produced.fee,
-      account: produced.account,
-      counterAccount: produced.counterAccount,
-      // A manual link to an untracked account names no wallet; a pair of legs does.
-      counterWallet:
-        answer.linkedAddressId ||
-        (other && other.classification?.produced?.id === answer.produced?.id)
-          ? (other?.wallet ?? null)
-          : null,
-      orderWithinTimestamp: produced.orderWithinTimestamp,
-    };
+  if (produced.kind === 'transfer') return transferOperation(leg, answer, produced);
   // A recorded answer produces a transfer or nothing (CLS-PAID): the branch above returned it.
-  if (answer.type === 'recorded') return operation;
+  if (type === 'recorded') return leg.operation;
   return {
-    ...operation,
-    type: answer.type,
+    ...leg.operation,
+    type,
     status: 'recorded',
     valueUsd: produced.valueUsd,
     costBasisUsd: produced.costBasisUsd,
@@ -732,6 +730,119 @@ function chainOperation(
     account: produced.account,
     paid: produced.paid,
     settlement: produced.settlement,
+    orderWithinTimestamp: produced.orderWithinTimestamp,
+  };
+}
+
+/** M13: the owner's other address in the transaction names the counter account and wallet. */
+const withCounterpart = (operation: Projected, other: ChainOperationInput | null): Projected =>
+  other ? { ...operation, counterAccount: other.account, counterWallet: other.wallet } : operation;
+
+function poolOperation(
+  leg: ChainLeg,
+  type: 'pool-deposit' | 'pool-withdrawal',
+  details: Classification | null,
+  settled: ReadonlyMap<ChainOperationInput, PoolSettlement>,
+): Projected {
+  const { row, operation, price, fee, gas, other, produced } = leg;
+  const deposit = type === 'pool-deposit';
+  const units = (leg: ChainOperationInput) => ({ ...leg, network: leg.wallet.network });
+  const moved = poolCoins(
+    deposit ? poolDepositUnits(units(row)) : poolReturnUnits(units(row)),
+    units(row),
+  );
+  const ownFee = row.asset === null && !isExchange(row.wallet.network);
+  const paired = deposit ? null : other;
+  const deposited = paired && poolCoins(poolDepositUnits(units(paired)), units(paired));
+  return {
+    ...operation,
+    type,
+    direction: 'internal',
+    status: 'recorded',
+    quantity: moved,
+    estimatedValueUsd: estimate(moved, price),
+    // The owner sent both: the fee of each is theirs.
+    fee: ownFee || gas ? fee : null,
+    valueUsd: produced?.valueUsd ?? null,
+    costBasisUsd: produced?.costBasisUsd ?? null,
+    chain: operation.chain && { ...operation.chain, pairedTxid: paired?.txid ?? null },
+    pool: poolFigures(deposited, moved, settled.get(row), details),
+    orderWithinTimestamp: produced?.orderWithinTimestamp ?? 0,
+  };
+}
+
+/** POOL-WITHDRAW, POOL-PARTIAL: what the deposit put in and what came back above or below it. */
+function poolFigures(
+  deposited: string | null,
+  moved: string,
+  mine: PoolSettlement | undefined,
+  details: Classification | null,
+): Projected['pool'] {
+  if (!deposited) return null;
+  return {
+    deposited,
+    difference: formatAtoms(
+      mine
+        ? mine.gain - mine.loss
+        : canonicalDecimalToAtoms(moved) - canonicalDecimalToAtoms(deposited),
+    ),
+    partial: details?.type === 'pool-withdrawal' && details.partial === true,
+    remaining: formatAtoms(mine?.remaining ?? 0n),
+  };
+}
+
+function swapOperation(
+  leg: ChainLeg,
+  produced: Projected,
+  prices: OperationSources['marketPrices'],
+  gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
+): Projected {
+  const { row, operation, other } = leg;
+  const paying = other && netUnits(other) < 0n ? other : null;
+  return {
+    ...operation,
+    type: 'swap',
+    direction: 'internal',
+    status: 'recorded',
+    asset: onChain(produced.asset, paying),
+    quantity: produced.quantity,
+    counterAsset: produced.counterAsset && onChain(produced.counterAsset, row),
+    counterQuantity: produced.counterQuantity,
+    valueUsd: produced.valueUsd,
+    costBasisUsd: produced.valueUsd,
+    estimatedValueUsd: null,
+    fee: paying ? swapFee(paying, prices, gasOf) : null,
+    account: produced.account,
+    counterAccount:
+      paying?.account && paying.account.id !== produced.account?.id ? paying.account : null,
+    counterWallet: paying?.wallet ?? null,
+    chain: operation.chain && { ...operation.chain, pairedTxid: paying?.txid ?? null },
+    orderWithinTimestamp: produced.orderWithinTimestamp,
+  };
+}
+
+function transferOperation(
+  leg: ChainLeg,
+  answer: ChainClassificationInput,
+  produced: Projected,
+): Projected {
+  const { operation, price, fee, gas, other } = leg;
+  return {
+    ...operation,
+    type: 'transfer',
+    direction: 'internal',
+    status: 'recorded',
+    quantity: produced.quantity,
+    estimatedValueUsd: estimate(produced.quantity, price),
+    fee: gas ? fee : produced.fee,
+    account: produced.account,
+    counterAccount: produced.counterAccount,
+    // A manual link to an untracked account names no wallet; a pair of legs does.
+    counterWallet:
+      answer.linkedAddressId ||
+      (other && other.classification?.produced?.id === answer.produced?.id)
+        ? (other?.wallet ?? null)
+        : null,
     orderWithinTimestamp: produced.orderWithinTimestamp,
   };
 }
@@ -815,17 +926,10 @@ const inRange = (occurredAt: string, range: OperationRange) => {
   return (!range.from || day >= range.from) && (!range.to || day <= range.to);
 };
 
-export function projectOperations(
-  at: Date,
-  sources: OperationSources,
-  fx: FxConverter = inUsdOnly(),
-  range: OperationRange = {},
-): OperationList {
-  const entries: { operation: Projected; order: number }[] = [];
-  const dustThresholdUsd = sources.dustThresholdUsd ?? null;
-  // Entries a chain classification produced are shown on their chain row, not twice (M12).
-  const producedIds = new Set(
-    sources.chain.flatMap((row) => {
+/** M12: the journal entries a chain classification produced, listed on their chain row. */
+function producedEntryIds(chain: readonly ChainOperationInput[]): Set<string> {
+  return new Set(
+    chain.flatMap((row) => {
       const produced = row.classification?.produced;
       const carried = row.classification?.carryTransferId;
       return row.classification?.status === 'classified' && produced
@@ -833,178 +937,167 @@ export function projectOperations(
         : [];
     }),
   );
-  const produced = new Map<string, Projected>();
-  const push = (operation: Omit<Projected, 'orderWithinTimestamp'>, order: number) => {
-    const projected = { ...operation, orderWithinTimestamp: order };
-    if (producedIds.has(projected.id)) produced.set(projected.id, projected);
-    else entries.push({ operation: projected, order });
-  };
+}
 
-  for (const row of sources.trades) {
-    push(
-      {
-        ...blank,
-        id: `trade:${row.tradeId}`,
-        kind: 'trade',
-        type: row.purpose ? purposeTypes[row.purpose] : row.side,
-        direction: row.side === 'buy' ? 'in' : 'out',
-        occurredAt: row.occurredAt,
-        asset: row.asset,
-        quantity: row.quantity,
-        valueUsd: row.grossUsd,
-        feeUsd: row.feeUsd,
-        account: row.account,
-        status: 'recorded',
-        source: row.broker ? 'broker' : row.csv ? 'csv' : 'manual',
-        version: row.version,
-        paid: row.paid,
-        comment: row.comment,
-        settlement: row.settlement,
-      },
-      row.orderWithinTimestamp,
-    );
-  }
-  for (const row of sources.transfers) {
-    push(
-      {
-        ...blank,
-        ...recorded,
-        id: `transfer:${row.transferId}`,
-        kind: 'transfer',
-        type: 'transfer',
-        direction: 'internal',
-        occurredAt: row.occurredAt,
-        asset: row.asset,
-        quantity: row.quantity,
-        fee: row.fee,
-        account: row.from,
-        counterAccount: row.to,
-        version: row.version,
-      },
-      row.orderWithinTimestamp,
-    );
-  }
-  for (const row of sources.swaps) {
-    push(
-      {
-        ...blank,
-        ...recorded,
-        id: `swap:${row.swapId}`,
-        kind: 'swap',
-        type: 'swap',
-        direction: 'internal',
-        occurredAt: row.occurredAt,
-        asset: row.outgoing,
-        quantity: row.outgoingQuantity,
-        counterAsset: row.incoming,
-        counterQuantity: row.incomingQuantity,
-        valueUsd: row.considerationUsd,
-        fee: row.fee,
-        account: row.account,
-        version: row.version,
-      },
-      row.orderWithinTimestamp,
-    );
-  }
-  for (const row of sources.rewards) {
-    push(
-      {
-        ...blank,
-        ...recorded,
-        source: row.broker ? 'broker' : 'manual',
-        id: `reward:${row.rewardId}`,
-        kind: 'reward',
-        type: rewardTypes[row.category],
-        direction: 'in',
-        occurredAt: row.occurredAt,
-        asset: row.asset,
-        quantity: row.quantity,
-        valueUsd: row.incomeValueUsd,
-        costBasisUsd: row.acquisitionBasisUsd,
-        account: row.account,
-        version: row.version,
-      },
-      row.orderWithinTimestamp,
-    );
-  }
-  for (const row of sources.capitalReturns ?? []) {
-    push(
-      {
-        ...blank,
-        ...recorded,
-        source: row.broker ? 'broker' : 'manual',
-        id: `capital-return:${row.capitalReturnId}`,
-        kind: 'capital-return',
-        type: 'capital-return',
-        direction: 'in',
-        occurredAt: row.occurredAt,
-        asset: row.cash,
-        quantity: row.amount,
-        counterAsset: row.returned,
-        valueUsd: row.amountUsd,
-        paid: row.paid,
-        account: row.account,
-        version: row.version,
-      },
-      row.orderWithinTimestamp,
-    );
-  }
-  for (const row of sources.openings) {
-    push(
-      {
-        ...blank,
-        ...recorded,
-        id: `opening:${row.lotId}`,
-        kind: 'opening',
-        type: 'opening-balance',
-        direction: 'in',
-        occurredAt: row.acquiredAt,
-        asset: row.asset,
-        quantity: row.quantity,
-        costBasisUsd: row.costBasisUsd,
-        account: row.account,
-        version: null,
-      },
-      row.orderWithinTimestamp,
-    );
-  }
-  for (const row of sources.flows) {
-    const deposit = row.direction === 'contribution';
-    push(
-      {
-        ...blank,
-        ...recorded,
-        id: `flow:${row.flowId}`,
-        kind: 'flow',
-        type: deposit ? 'deposit' : 'withdrawal',
-        direction: deposit ? 'in' : 'out',
-        occurredAt: row.occurredAt,
-        asset: USD,
-        quantity: row.amountUsd,
-        valueUsd: row.amountUsd,
-        version: row.version,
-      },
-      0,
-    );
-  }
-  // The legs of one transaction: one identity, or (M22) a Bybit record and the wallet legs of
-  // the same coin under its hash.
+type Unordered = Omit<Projected, 'orderWithinTimestamp'>;
+
+function tradeRow(row: TradeOperationInput): Unordered {
+  return {
+    ...blank,
+    id: `trade:${row.tradeId}`,
+    kind: 'trade',
+    type: row.purpose ? purposeTypes[row.purpose] : row.side,
+    direction: row.side === 'buy' ? 'in' : 'out',
+    occurredAt: row.occurredAt,
+    asset: row.asset,
+    quantity: row.quantity,
+    valueUsd: row.grossUsd,
+    feeUsd: row.feeUsd,
+    account: row.account,
+    status: 'recorded',
+    source: row.broker ? 'broker' : row.csv ? 'csv' : 'manual',
+    version: row.version,
+    paid: row.paid,
+    comment: row.comment,
+    settlement: row.settlement,
+  };
+}
+
+function transferRow(row: TransferOperationInput): Unordered {
+  return {
+    ...blank,
+    ...recorded,
+    id: `transfer:${row.transferId}`,
+    kind: 'transfer',
+    type: 'transfer',
+    direction: 'internal',
+    occurredAt: row.occurredAt,
+    asset: row.asset,
+    quantity: row.quantity,
+    fee: row.fee,
+    account: row.from,
+    counterAccount: row.to,
+    version: row.version,
+  };
+}
+
+function swapRow(row: SwapOperationInput): Unordered {
+  return {
+    ...blank,
+    ...recorded,
+    id: `swap:${row.swapId}`,
+    kind: 'swap',
+    type: 'swap',
+    direction: 'internal',
+    occurredAt: row.occurredAt,
+    asset: row.outgoing,
+    quantity: row.outgoingQuantity,
+    counterAsset: row.incoming,
+    counterQuantity: row.incomingQuantity,
+    valueUsd: row.considerationUsd,
+    fee: row.fee,
+    account: row.account,
+    version: row.version,
+  };
+}
+
+function rewardRow(row: RewardOperationInput): Unordered {
+  return {
+    ...blank,
+    ...recorded,
+    source: row.broker ? 'broker' : 'manual',
+    id: `reward:${row.rewardId}`,
+    kind: 'reward',
+    type: rewardTypes[row.category],
+    direction: 'in',
+    occurredAt: row.occurredAt,
+    asset: row.asset,
+    quantity: row.quantity,
+    valueUsd: row.incomeValueUsd,
+    costBasisUsd: row.acquisitionBasisUsd,
+    account: row.account,
+    version: row.version,
+  };
+}
+
+function capitalReturnRow(row: CapitalReturnOperationInput): Unordered {
+  return {
+    ...blank,
+    ...recorded,
+    source: row.broker ? 'broker' : 'manual',
+    id: `capital-return:${row.capitalReturnId}`,
+    kind: 'capital-return',
+    type: 'capital-return',
+    direction: 'in',
+    occurredAt: row.occurredAt,
+    asset: row.cash,
+    quantity: row.amount,
+    counterAsset: row.returned,
+    valueUsd: row.amountUsd,
+    paid: row.paid,
+    account: row.account,
+    version: row.version,
+  };
+}
+
+function openingRow(row: OpeningOperationInput): Unordered {
+  return {
+    ...blank,
+    ...recorded,
+    id: `opening:${row.lotId}`,
+    kind: 'opening',
+    type: 'opening-balance',
+    direction: 'in',
+    occurredAt: row.acquiredAt,
+    asset: row.asset,
+    quantity: row.quantity,
+    costBasisUsd: row.costBasisUsd,
+    account: row.account,
+    version: null,
+  };
+}
+
+function flowRow(row: FlowOperationInput): Unordered {
+  const deposit = row.direction === 'contribution';
+  return {
+    ...blank,
+    ...recorded,
+    id: `flow:${row.flowId}`,
+    kind: 'flow',
+    type: deposit ? 'deposit' : 'withdrawal',
+    direction: deposit ? 'in' : 'out',
+    occurredAt: row.occurredAt,
+    asset: USD,
+    quantity: row.amountUsd,
+    valueUsd: row.amountUsd,
+    version: row.version,
+  };
+}
+
+/**
+ * BYBIT-LINK-HASH: a Bybit record stored under an identity of its own is also found by the
+ * hash it names.
+ */
+const linkHashOf = (row: ChainOperationInput) =>
+  isExchange(row.wallet.network) ? factsLinkHash(row.exchange) : null;
+
+/**
+ * The legs of one transaction: one identity, or (M22) a Bybit record and the wallet legs of
+ * the same coin under its hash.
+ */
+function transactionLegs(chain: readonly ChainOperationInput[]) {
   const byTxid = new Map<string, ChainOperationInput[]>();
   const add = (key: string, row: ChainOperationInput) =>
     byTxid.set(key, [...(byTxid.get(key) ?? []), row]);
-  // BYBIT-LINK-HASH: a Bybit record stored under an identity of its own is also found by the
-  // hash it names.
-  const hashOf = (row: ChainOperationInput) =>
-    isExchange(row.wallet.network) ? factsLinkHash(row.exchange) : null;
-  for (const row of sources.chain) {
+  for (const row of chain) {
     add(row.txid, row);
     if (!isExchange(row.wallet.network) && row.txid.includes('-')) add(row.txid.split('-')[0], row);
-    const hash = hashOf(row);
+    const hash = linkHashOf(row);
     if (hash && hash !== row.txid) add(hash, row);
   }
-  const legsOf = (row: ChainOperationInput) => {
+  return (row: ChainOperationInput) => {
     const exchange = isExchange(row.wallet.network);
-    const hash = hashOf(row);
+    const hash = linkHashOf(row);
     const loose = exchange
       ? [...(byTxid.get(row.txid) ?? []), ...(hash ? (byTxid.get(hash) ?? []) : [])]
       : (byTxid.get(row.txid.split('-')[0]) ?? []);
@@ -1017,8 +1110,8 @@ export function projectOperations(
           (leg) =>
             isExchange(leg.wallet.network) !== exchange &&
             sameTransaction(
-              { network: row.wallet.network, txid: row.txid, hash: hashOf(row) },
-              { network: leg.wallet.network, txid: leg.txid, hash: hashOf(leg) },
+              { network: row.wallet.network, txid: row.txid, hash: linkHashOf(row) },
+              { network: leg.wallet.network, txid: leg.txid, hash: linkHashOf(leg) },
             ) &&
             coinOf({ network: leg.wallet.network, asset: leg.asset }) ===
               coinOf({ network: row.wallet.network, asset: row.asset }),
@@ -1026,48 +1119,63 @@ export function projectOperations(
       ]),
     ];
   };
-  const byLeg = new Map(sources.chain.map((row) => [`${row.wallet.id}:${row.txid}`, row]));
-  // XFER-PROPOSED: the two legs of a transfer joined by hand can name different hashes; the
-  // transfer both name finds the other one.
+}
+
+/**
+ * XFER-PROPOSED: the two legs of a transfer joined by hand can name different hashes; the
+ * transfer both name finds the other one.
+ */
+function transferPartner(chain: readonly ChainOperationInput[]) {
   const byTransfer = new Map<string, ChainOperationInput[]>();
-  for (const row of sources.chain) {
+  for (const row of chain) {
     const ref = row.classification?.produced;
     if (ref?.kind === 'transfer') byTransfer.set(ref.id, [...(byTransfer.get(ref.id) ?? []), row]);
   }
-  const joined = (row: ChainOperationInput) => {
+  return (row: ChainOperationInput) => {
     const ref = row.classification?.produced;
     if (ref?.kind !== 'transfer') return null;
     return (byTransfer.get(ref.id) ?? []).find((leg) => leg !== row) ?? null;
   };
-  // SWAP-ONE-TX: every leg of one blockchain transaction, across the owner's addresses.
+}
+
+/** SWAP-ONE-TX: every leg of one blockchain transaction, across the owner's addresses. */
+function legsByHash(chain: readonly ChainOperationInput[]) {
   const byHash = new Map<string, ChainOperationInput[]>();
-  for (const row of sources.chain)
+  for (const row of chain)
     if (!isExchange(row.wallet.network))
       byHash.set(hashKey(row), [...(byHash.get(hashKey(row)) ?? []), row]);
-  // TOKEN-FEE: a token send pays its network fee in the network's own coin (ETH, SOL, TRX),
-  // which the chain records as a leg of its own. That leg is listed as the fee of the send
-  // from the same address (the first, when one transaction sent several tokens), not as a
-  // transaction to classify; the coins it spent still count (D1).
+  return byHash;
+}
+
+/**
+ * TOKEN-FEE: a token send pays its network fee in the network's own coin (ETH, SOL, TRX),
+ * which the chain records as a leg of its own. That leg is listed as the fee of the send
+ * from the same address (the first, when one transaction sent several tokens), not as a
+ * transaction to classify; the coins it spent still count (D1).
+ */
+function gasLegs(
+  chain: readonly ChainOperationInput[],
+  byHash: ReadonlyMap<string, readonly ChainOperationInput[]>,
+) {
   const gas = new Map<ChainOperationInput, ChainOperationInput>();
-  for (const row of sources.chain) {
+  for (const row of chain) {
     if (!gasOnly(row)) continue;
     const [send] = (byHash.get(hashKey(row)) ?? [])
       .filter((leg) => leg.wallet.id === row.wallet.id && leg.asset !== null && netUnits(leg) < 0n)
       .sort((left, right) => left.txid.localeCompare(right.txid, 'en', { numeric: true }));
     if (send) gas.set(send, row);
   }
-  const folded = new Set(gas.values());
-  const gasOf = (leg: ChainOperationInput) => gas.get(leg);
-  // CLS-RECORDED: trades and swaps added by hand or from CSV a transaction can name.
-  const records = new Map(
-    entries
-      .filter(({ operation }) => operation.kind === 'trade' || operation.kind === 'swap')
-      .map(({ operation }) => [operation.id, operation] as const),
-  );
-  // POOL-PARTIAL: the withdrawals of one deposit are settled in the order they happened.
+  return gas;
+}
+
+/** POOL-PARTIAL: the withdrawals of one deposit are settled in the order they happened. */
+function poolSettlements(
+  chain: readonly ChainOperationInput[],
+  byLeg: ReadonlyMap<string, ChainOperationInput>,
+) {
   const settled = new Map<ChainOperationInput, PoolSettlement>();
   const withdrawals = new Map<string, ChainOperationInput[]>();
-  for (const row of sources.chain) {
+  for (const row of chain) {
     const answer = row.classification;
     if (answer?.status !== 'classified' || answer.type !== 'pool-withdrawal' || !answer.paired)
       continue;
@@ -1092,31 +1200,95 @@ export function projectOperations(
       settled.set(leg, steps[index]);
     });
   }
+  return settled;
+}
+
+/**
+ * A chain row's produced entry and the owner's other leg in it, or null when the row is listed
+ * as part of another one.
+ */
+function chainRowSides(
+  row: ChainOperationInput,
+  produced: ReadonlyMap<string, Projected>,
+  byLeg: ReadonlyMap<string, ChainOperationInput>,
+  joined: (row: ChainOperationInput) => ChainOperationInput | null,
+  legsOf: (row: ChainOperationInput) => ChainOperationInput[],
+): { entry: Projected | undefined; other: ChainOperationInput | null } | null {
+  const ref = row.classification?.produced;
+  const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
+  const paired = row.classification?.paired;
+  const pair = paired ? (byLeg.get(`${paired.addressId}:${paired.txid}`) ?? null) : null;
+  // CLS-SWAP: a swap is listed once, on the row of the coins it bought.
+  if (entry?.kind === 'swap' && pair && netUnits(row) < 0n) return null;
+  const sibling = joined(row);
+  const other = paired ? pair : (counterpart(row, legsOf(row)) ?? sibling);
+  // XFER-AUTO: a transfer between two of the owner's addresses is listed once, on the
+  // sending leg; the receiving leg is part of it.
+  if (
+    entry?.kind === 'transfer' &&
+    other &&
+    (row.classification?.linkedAddressId || sibling) &&
+    netUnits(row) > 0n
+  )
+    return null;
+  return { entry, other };
+}
+
+/** Every journal's rows with their order within the instant, journal by journal. */
+function journalRows(sources: OperationSources): (readonly [Unordered, number])[] {
+  return [
+    ...sources.trades.map((row) => [tradeRow(row), row.orderWithinTimestamp] as const),
+    ...sources.transfers.map((row) => [transferRow(row), row.orderWithinTimestamp] as const),
+    ...sources.swaps.map((row) => [swapRow(row), row.orderWithinTimestamp] as const),
+    ...sources.rewards.map((row) => [rewardRow(row), row.orderWithinTimestamp] as const),
+    ...(sources.capitalReturns ?? []).map(
+      (row) => [capitalReturnRow(row), row.orderWithinTimestamp] as const,
+    ),
+    ...sources.openings.map((row) => [openingRow(row), row.orderWithinTimestamp] as const),
+    ...sources.flows.map((row) => [flowRow(row), 0] as const),
+  ];
+}
+
+export function projectOperations(
+  at: Date,
+  sources: OperationSources,
+  fx: FxConverter = inUsdOnly(),
+  range: OperationRange = {},
+): OperationList {
+  const entries: { operation: Projected; order: number }[] = [];
+  const dustThresholdUsd = sources.dustThresholdUsd ?? null;
+  // Entries a chain classification produced are shown on their chain row, not twice (M12).
+  const producedIds = producedEntryIds(sources.chain);
+  const produced = new Map<string, Projected>();
+  for (const [operation, order] of journalRows(sources)) {
+    const projected = { ...operation, orderWithinTimestamp: order };
+    if (producedIds.has(projected.id)) produced.set(projected.id, projected);
+    else entries.push({ operation: projected, order });
+  }
+  const legsOf = transactionLegs(sources.chain);
+  const byLeg = new Map(sources.chain.map((row) => [`${row.wallet.id}:${row.txid}`, row]));
+  const joined = transferPartner(sources.chain);
+  const byHash = legsByHash(sources.chain);
+  const gas = gasLegs(sources.chain, byHash);
+  const folded = new Set(gas.values());
+  const gasOf = (leg: ChainOperationInput) => gas.get(leg);
+  // CLS-RECORDED: trades and swaps added by hand or from CSV a transaction can name.
+  const records = new Map(
+    entries
+      .filter(({ operation }) => operation.kind === 'trade' || operation.kind === 'swap')
+      .map(({ operation }) => [operation.id, operation] as const),
+  );
+  const settled = poolSettlements(sources.chain, byLeg);
   for (const row of sources.chain) {
     if (folded.has(row)) continue;
-    const ref = row.classification?.produced;
-    const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
-    const paired = row.classification?.paired;
-    const pair = paired ? (byLeg.get(`${paired.addressId}:${paired.txid}`) ?? null) : null;
-    // CLS-SWAP: a swap is listed once, on the row of the coins it bought.
-    if (entry?.kind === 'swap' && pair && netUnits(row) < 0n) continue;
-    const sibling = joined(row);
-    const other = paired ? pair : (counterpart(row, legsOf(row)) ?? sibling);
-    // XFER-AUTO: a transfer between two of the owner's addresses is listed once, on the
-    // sending leg; the receiving leg is part of it.
-    if (
-      entry?.kind === 'transfer' &&
-      other &&
-      (row.classification?.linkedAddressId || sibling) &&
-      netUnits(row) > 0n
-    )
-      continue;
+    const sides = chainRowSides(row, produced, byLeg, joined, legsOf);
+    if (!sides) continue;
     const operation = oneTransactionSwap(
       chainOperation(
         row,
         sources.marketPrices,
-        entry,
-        other,
+        sides.entry,
+        sides.other,
         dustThresholdUsd,
         gasOf,
         records,
