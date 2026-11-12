@@ -163,12 +163,7 @@ export function parseAccounts(body: unknown): TBankAccount[] {
  * never passes through a float. JSON leaves out a zero part, so an absent part reads as zero.
  */
 export function decimal(value: unknown): string {
-  const item = record(value);
-  const units =
-    item.units === undefined ? '0' : typeof item.units === 'string' ? item.units : invalid();
-  const nano = item.nano === undefined ? 0 : typeof item.nano === 'number' ? item.nano : invalid();
-  if (!/^-?\d{1,18}$/.test(units) || !Number.isInteger(nano) || Math.abs(nano) > 999_999_999)
-    return invalid();
+  const { units, nano } = quotationParts(record(value));
   // The value is units + nano / 1e9 with both parts of one sign; parts of opposite signs are a
   // broken answer, not a value to guess at.
   const negative = units.startsWith('-');
@@ -177,6 +172,16 @@ export function decimal(value: unknown): string {
   const fraction = Math.abs(nano).toString().padStart(9, '0').replace(/0+$/, '');
   const sign = (negative || nano < 0) && (whole !== '0' || fraction) ? '-' : '';
   return `${sign}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+/** The int64 units (as text) and int32 nano of a Quotation, each in range, else invalid. */
+function quotationParts(item: Record<string, unknown>): { units: string; nano: number } {
+  const units =
+    item.units === undefined ? '0' : typeof item.units === 'string' ? item.units : invalid();
+  const nano = item.nano === undefined ? 0 : typeof item.nano === 'number' ? item.nano : invalid();
+  if (!/^-?\d{1,18}$/.test(units) || !Number.isInteger(nano) || Math.abs(nano) > 999_999_999)
+    return invalid();
+  return { units, nano };
 }
 
 /** A MoneyValue as its amount and currency, both '' when T-Bank gives none. */
