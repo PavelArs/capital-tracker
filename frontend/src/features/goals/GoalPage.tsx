@@ -43,16 +43,23 @@ import {
 import '../shell/shell-page.css';
 import './goals.css';
 
+/** When a case reaches the target: already, by a month, or not within the horizon. */
+function reachedText(goal: Goal, scenario: GoalScenario): string {
+  if (goal.status === 'reached') return 'Already';
+  const date = reachedDate(goal, scenario);
+  return date ? monthYear(date) : 'Over 100 years';
+}
+
+/** Red for a shortfall, green for a surplus, plain on the sum. */
+const againstClass = { short: 'goal-neg', more: 'goal-pos', level: '' } as const;
+
 /** The three return cases side by side: what the plan gives at each, and what it would take. */
 function Cases({ goal }: { goal: Goal }) {
   const money = (value: string | null) => flooredText(value, goal.currency);
   const needed = (value: string | null) => neededText(value, goal.currency);
   const dated = goal.deadline !== null;
   const done = goal.status === 'reached';
-  const reached = (scenario: GoalScenario) => {
-    const date = reachedDate(goal, scenario);
-    return done ? 'Already' : date ? monthYear(date) : 'Over 100 years';
-  };
+  const reached = (scenario: GoalScenario) => reachedText(goal, scenario);
   return (
     <div className="ui-table-wrap">
       <table className="ui-table goal-cases">
@@ -94,17 +101,7 @@ function Cases({ goal }: { goal: Goal }) {
                     </td>
                     <td className="ui-num" data-label="Against the target">
                       {against && (
-                        <span
-                          className={
-                            against.tone === 'short'
-                              ? 'goal-neg'
-                              : against.tone === 'more'
-                                ? 'goal-pos'
-                                : ''
-                          }
-                        >
-                          {against.text}
-                        </span>
+                        <span className={againstClass[against.tone]}>{against.text}</span>
                       )}
                     </td>
                     <td className="ui-num" data-label="Needed a month">
@@ -157,6 +154,137 @@ const verdictIcon = (status: Goal['status']) =>
       ? 'check'
       : 'info';
 
+/** The base case, the one the expected return gives. */
+const baseCase = (goal: Goal) => goal.scenarios.find((scenario) => scenario.key === 'base') ?? null;
+
+/** Whether the owner puts money in every month. */
+const plannedOf = (goal: Goal) => goal.monthlyContribution && Number(goal.monthlyContribution) > 0;
+
+/** "42% of the target", and whether some assets are left out for want of a price. */
+function progressHint(goal: Goal): string | undefined {
+  if (goal.progress.percent == null) return undefined;
+  const percent = Math.floor(Number(goal.progress.percent));
+  return `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price or rate'}`;
+}
+
+/** The monthly sum the base case needs to meet the date, while that can be known. */
+function neededHint(goal: Goal, base: GoalScenario | null, known: boolean): string | undefined {
+  if (!known || !base?.requiredMonthly || !goal.deadline || goal.status === 'reached')
+    return undefined;
+  return `Needed for the date: ${neededText(base.requiredMonthly, goal.currency)}`;
+}
+
+/** When the base case reaches a goal with no date. */
+function reachedOnText(goal: Goal, base: GoalScenario | null, known: boolean): string {
+  if (goal.status === 'reached') return 'Already';
+  if (!known) return 'Not known';
+  return base?.reachedOn ? monthYear(base.reachedOn) : 'Over 100 years';
+}
+
+/** The forecast for the date, or for a goal with no date when it is reached. */
+function OutcomeStat({
+  goal,
+  base,
+  known,
+}: {
+  goal: Goal;
+  base: GoalScenario | null;
+  known: boolean;
+}) {
+  if (goal.deadline) {
+    const against = known ? againstTarget(base?.gap ?? null, goal.currency) : null;
+    return (
+      <Stat
+        label={`Forecast for ${monthYear(goal.deadline)}`}
+        value={known ? flooredText(base?.projectedAtDeadline ?? null, goal.currency) : '—'}
+        hint={against?.hint}
+      />
+    );
+  }
+  return (
+    <Stat
+      label="Reached"
+      value={reachedOnText(goal, base, known)}
+      hint={
+        known && base?.monthsToTarget != null && goal.status !== 'reached'
+          ? `In ${span(base.monthsToTarget)}`
+          : undefined
+      }
+    />
+  );
+}
+
+/** The goal's figures: where it stands, the plan and the forecast of the base case. */
+function GoalStats({ goal }: { goal: Goal }) {
+  const base = baseCase(goal);
+  const left = goal.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
+  // With assets that have no price the value is understated, so projections are estimates
+  // for the priced subset, even for a goal that is already reached.
+  const known = goal.progress.current != null;
+  return (
+    <Card>
+      <Stats label="Goal figures">
+        <Stat
+          label="Portfolio now"
+          value={flooredText(goal.progress.current, goal.currency)}
+          hint={progressHint(goal)}
+        />
+        <Stat label="Target" value={enteredText(goal.targetAmount, goal.currency)} />
+        <Stat
+          label="Time left"
+          value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
+          hint={
+            goal.deadline ? `Until ${dateText(goal.deadline)}` : 'Add a date to get a monthly sum'
+          }
+        />
+        <Stat
+          label="You put in a month"
+          value={plannedOf(goal) ? enteredText(goal.monthlyContribution, goal.currency) : 'Nothing'}
+          hint={neededHint(goal, base, known)}
+        />
+        <Stat
+          label="Expected return"
+          value={`${rateText(goal.expectedReturnPercent)}% a year`}
+          hint="The base case"
+        />
+        <OutcomeStat goal={goal} base={base} known={known} />
+      </Stats>
+    </Card>
+  );
+}
+
+/** "1.5 points less and more", both offsets when they differ, or other rates without them. */
+function offsetsText(goal: Goal): string {
+  const gap = offsets(goal);
+  if (!gap) return 'other rates';
+  return gap.less === gap.more
+    ? `${gap.less} points less and more`
+    : `${gap.less} points less and ${gap.more} more`;
+}
+
+/** The three return cases with what they assume, once the portfolio's value is known. */
+function CasesCard({ goal, id }: { goal: Goal; id: string }) {
+  if (goal.scenarios.length === 0 || goal.progress.current == null) return null;
+  return (
+    <Card labelledBy={id}>
+      <CardHeader id={id} title="Three cases" />
+      <p className="goal-note">
+        The same plan at {offsetsText(goal)} a year than the {rateText(goal.expectedReturnPercent)}%
+        you expect.
+      </p>
+      <Cases goal={goal} />
+      <Banner tone="neutral" icon="info">
+        A projection, not a promise: the same return every year on the whole portfolio, with{' '}
+        {plannedOf(goal)
+          ? `${enteredText(goal.monthlyContribution, goal.currency)} put in`
+          : 'nothing put in'}{' '}
+        once a month, the first a month from {dateText(goal.asOf)}, and interest compounded monthly.
+        Bank deposits count at the same rate for now. Markets do not move in a straight line.
+      </Banner>
+    </Card>
+  );
+}
+
 // GOAL-PAGE: one goal with its figures, the verdict, its chart (GOAL-CHART) and the three
 // return cases.
 export default function GoalPage() {
@@ -194,18 +322,6 @@ export default function GoalPage() {
       </div>
     );
 
-  const money = (value: string | null) => (goal ? flooredText(value, goal.currency) : '');
-  const needed = (value: string | null) => (goal ? neededText(value, goal.currency) : '');
-  const entered = (value: string | null) => (goal ? enteredText(value, goal.currency) : '');
-  const base = goal?.scenarios.find((scenario) => scenario.key === 'base') ?? null;
-  const planned = goal?.monthlyContribution && Number(goal.monthlyContribution) > 0;
-  const left = goal?.deadline ? timeLeft(goal.deadline, goal.asOf) : null;
-  const percent = goal?.progress.percent == null ? null : Math.floor(Number(goal.progress.percent));
-  const gap = goal ? offsets(goal) : null;
-  // With assets that have no price the value is understated, so projections are estimates
-  // for the priced subset, even for a goal that is already reached.
-  const known = goal?.progress.current != null;
-  const against = known ? againstTarget(base?.gap ?? null, goal?.currency ?? 'USD') : null;
   const stale = goal ? staleText(goal.progress.stalePrices) : null;
 
   return (
@@ -251,91 +367,9 @@ export default function GoalPage() {
             {verdict(goal)}
           </Banner>
           {stale && <Banner tone="warn">{stale}</Banner>}
-          <Card>
-            <Stats label="Goal figures">
-              <Stat
-                label="Portfolio now"
-                value={money(goal.progress.current)}
-                hint={
-                  percent === null
-                    ? undefined
-                    : `${percent}% of the target${goal.progress.complete ? '' : '; some assets have no price or rate'}`
-                }
-              />
-              <Stat label="Target" value={entered(goal.targetAmount)} />
-              <Stat
-                label="Time left"
-                value={goal.deadline ? (left ?? 'The date has passed') : 'No date'}
-                hint={
-                  goal.deadline
-                    ? `Until ${dateText(goal.deadline)}`
-                    : 'Add a date to get a monthly sum'
-                }
-              />
-              <Stat
-                label="You put in a month"
-                value={planned ? entered(goal.monthlyContribution) : 'Nothing'}
-                hint={
-                  known && base?.requiredMonthly && goal.deadline && goal.status !== 'reached'
-                    ? `Needed for the date: ${needed(base.requiredMonthly)}`
-                    : undefined
-                }
-              />
-              <Stat
-                label="Expected return"
-                value={`${rateText(goal.expectedReturnPercent)}% a year`}
-                hint="The base case"
-              />
-              {goal.deadline ? (
-                <Stat
-                  label={`Forecast for ${monthYear(goal.deadline)}`}
-                  value={known ? money(base?.projectedAtDeadline ?? null) : '—'}
-                  hint={against?.hint}
-                />
-              ) : (
-                <Stat
-                  label="Reached"
-                  value={
-                    goal.status === 'reached'
-                      ? 'Already'
-                      : !known
-                        ? 'Not known'
-                        : base?.reachedOn
-                          ? monthYear(base.reachedOn)
-                          : 'Over 100 years'
-                  }
-                  hint={
-                    known && base?.monthsToTarget != null && goal.status !== 'reached'
-                      ? `In ${span(base.monthsToTarget)}`
-                      : undefined
-                  }
-                />
-              )}
-            </Stats>
-          </Card>
+          <GoalStats goal={goal} />
           <GoalChart goal={goal} />
-          {goal.scenarios.length > 0 && known && (
-            <Card labelledBy={cases}>
-              <CardHeader id={cases} title="Three cases" />
-              <p className="goal-note">
-                The same plan at{' '}
-                {gap
-                  ? gap.less === gap.more
-                    ? `${gap.less} points less and more`
-                    : `${gap.less} points less and ${gap.more} more`
-                  : 'other rates'}{' '}
-                a year than the {rateText(goal.expectedReturnPercent)}% you expect.
-              </p>
-              <Cases goal={goal} />
-              <Banner tone="neutral" icon="info">
-                A projection, not a promise: the same return every year on the whole portfolio, with{' '}
-                {planned ? `${entered(goal.monthlyContribution)} put in` : 'nothing put in'} once a
-                month, the first a month from {dateText(goal.asOf)}, and interest compounded
-                monthly. Bank deposits count at the same rate for now. Markets do not move in a
-                straight line.
-              </Banner>
-            </Card>
-          )}
+          <CasesCard goal={goal} id={cases} />
           <GoalInsights goal={goal} />
           {dialog === 'edit' && (
             <GoalDialog
