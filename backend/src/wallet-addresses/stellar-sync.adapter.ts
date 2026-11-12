@@ -10,8 +10,8 @@ import {
   type StellarPayment,
   type StellarTransaction,
 } from './horizon-client';
-import { jsonbText } from './jsonb-text';
 import { type StellarLeg, type StellarOperation, stellarLeg } from './stellar-legs';
+import { insertTransactions } from './wallet-transactions';
 
 // Bounds for one pass; the next pass continues from the committed transaction. A transaction
 // holds at most 100 operations, so the payment pages always reach past the first one.
@@ -251,33 +251,8 @@ export class StellarSyncAdapter implements ChainSyncAdapter {
     });
   }
 
-  private async insert(manager: EntityManager, address: ScanRow, legs: StellarLeg[]) {
-    if (legs.length === 0) return 0;
-    const values: unknown[] = [];
-    const rows = legs.map((leg) => {
-      const base = values.length;
-      values.push(
-        address.ownerId,
-        address.id,
-        leg.txid,
-        leg.blockHeight,
-        leg.blockTime,
-        leg.receivedUnits.toString(),
-        leg.sentUnits.toString(),
-        leg.feeUnits.toString(),
-        leg.direction,
-        jsonbText(leg.raw),
-      );
-      const slot = (offset: number) => `$${base + offset}`;
-      return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},NULL,${slot(5)},${slot(6)}::numeric,${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)},${slot(10)}::jsonb,NULL)`;
-    });
-    const inserted: { txid: string }[] = await manager.query(
-      `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-        "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
-        VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-      values,
-    );
-    return inserted.length;
+  private insert(manager: EntityManager, address: ScanRow, legs: StellarLeg[]) {
+    return insertTransactions(manager, address, legs, { blockHash: 'NULL', asset: 'NULL' });
   }
 
   /**
