@@ -4918,3 +4918,67 @@ describe('AST-WORDS Add asset says what was and was not saved', () => {
     expect(createTrade).toHaveBeenCalledTimes(1);
   });
 });
+
+// Characterization of asset page notes no other test reached before the page was split up.
+describe('ASSET-WORDS the asset page says which figures are partial', () => {
+  const position = () => screen.getByRole('region', { name: 'Position' });
+  afterEach(() => setValueView('nominal'));
+  const beforeRates = {
+    ...bitcoin,
+    costBasis: null,
+    knownCostSubtotal: '50000',
+    knownCostQuantity: '1',
+    missingRateQuantity: '0.2',
+    unrealizedPnl: null,
+    unrealizedReturnPercent: null,
+    knownUnrealizedPnl: '30000',
+    knownUnrealizedReturnPercent: '60.00',
+    real: {
+      official: {
+        costBasis: '75000',
+        unrealizedPnl: '21000',
+        unrealizedReturnPercent: '28.00',
+        estimated: false,
+      },
+      personal: null,
+    },
+  };
+
+  it('ASSET-WORDS covers only the coins bought after the stored rates, and says so', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([beforeRates]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Cost basis$50,000.00');
+    expect(position()).toHaveTextContent('Unrealized P&L+$30,000.00+60.00%');
+    expect(position()).toHaveTextContent(
+      '0.2 BTC was bought before the stored Bank of Russia rates, so its cost in USD is unknown. Known cost: $50,000.00.',
+    );
+  });
+
+  it('ASSET-WORDS leaves the known nominal cost out of the rates note under Real', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([beforeRates]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    const note = within(position())
+      .getAllByRole('note')
+      .find((banner) => banner.textContent?.includes('stored Bank of Russia rates'));
+    expect(note).toHaveTextContent(
+      /^0\.2 BTC was bought before the stored Bank of Russia rates, so its cost in USD is unknown\.$/,
+    );
+  });
+
+  it('ASSET-WORDS shows the realized P&L of the sales with a known cost, and why', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        { ...bitcoin, realizedPnl: null, knownRealizedSubtotal: '-250.5', unknownRealizedCount: 1 },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Realized P&L-$250.50');
+    expect(position()).toHaveTextContent(
+      'A sale used coins without a purchase price or a stored rate, so realized P&L is unknown. Known part: -$250.50.',
+    );
+  });
+});
