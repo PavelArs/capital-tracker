@@ -1,6 +1,6 @@
 import type { Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
 
-/** Drawing helpers shared by the dashboard, asset, deposit and goal charts. */
+// Drawing helpers shared by the dashboard, asset, deposit and goal charts.
 
 type Scale = (value: number) => number;
 
