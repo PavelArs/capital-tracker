@@ -72,6 +72,10 @@ const failure = (error: unknown, saved: string) => {
   })}`;
 };
 
+/** The failure, after `certain` when the request was refused or `unsure` when no answer came. */
+const failureAfter = (caught: unknown, certain: string, unsure: string) =>
+  failure(caught, answered(status(caught)) ? certain : unsure);
+
 interface Props {
   onClose: () => void;
   /**
@@ -186,62 +190,9 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
           });
       }),
     );
-    if (!done.accountId && done.accountUnsure)
-      done.accountId = await accountingApi.createAccount(accountRequest()).then(
-        (account) => {
-          done.accountUnsure = false;
-          return account.id;
-        },
-        (caught) => {
-          if (definite(caught)) done.accountUnsure = false;
-          return null;
-        },
-      );
-    const kept = done.holdings.some((step) => step.receipt);
-    // A 404 for the account this form made means it is already gone.
-    if (!kept && done.accountId) {
-      const removed = await accountingApi.removeAccount(done.accountId).then(
-        () => true,
-        (caught) => definite(caught) && status(caught) === 404,
-      );
-      if (removed) done.accountId = null;
-    }
+    const kept = await settleAccount(done, accountRequest, definite);
     const bare = !kept && !done.accountId && !done.accountUnsure;
-    const accountId = done.accountId;
-    const unbought = (step: SavedHolding) =>
-      !!step.asset && !!(step.making || step.wasHidden) && !step.receipt;
-    const asked = (step: SavedHolding) =>
-      unbought(step) && (!!step.making || (!bare && !!accountId));
-    const used = done.holdings.some(asked)
-      ? await operationsApi.list().then(
-          ({ operations }) => ({
-            anywhere: new Set(operations.flatMap(instruments)),
-            here: new Set(
-              operations
-                .filter(
-                  ({ account, counterAccount }) =>
-                    !!accountId && (account?.id === accountId || counterAccount?.id === accountId),
-                )
-                .flatMap(instruments),
-            ),
-          }),
-          (caught) => {
-            definite(caught);
-            return null;
-          },
-        )
-      : null;
-    const empty = (step: SavedHolding) => {
-      const asset = step.asset?.id ?? '';
-      if (!unbought(step) || (asked(step) && used === null)) return false;
-      if (step.making && used?.anywhere.has(asset)) return false;
-      return bare || (accountId ? !used?.here.has(asset) : !step.unsure);
-    };
-    const hidden = await Promise.allSettled(
-      done.holdings.flatMap((step) =>
-        step.asset && empty(step) ? [hiddenAssetsApi.hide(step.asset.id)] : [],
-      ),
-    );
+    const hidden = await hideUnbought(done, bare, definite);
     // Only an asset that is gone needs no hiding; any other failure leaves it showing.
     for (const result of hidden)
       if (result.status === 'rejected' && status(result.reason) !== 404) settled = false;
@@ -276,21 +227,12 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const invalid = (problem: BrokerProblem, describedBy = `${id}-${problem}-error`) =>
     found.has(problem) ? { 'aria-invalid': true, 'aria-describedby': describedBy } : {};
-  const positionProblem = entry.positions.some((_, index) =>
-    (['ticker', 'quantity', 'price'] as const).some((field) => found.has(`${field}-${index}`)),
-  );
   const disabled = locked || saving;
   // Nothing is saved before the form locks: closing it then only drops what is typed, so a
   // half-filled form asks first. Once something may be saved, closing settles it as before.
-  const typed =
-    !!entry.broker.trim() ||
-    !!entry.cash.trim() ||
-    entry.positions.some(
-      (position) => !!(position.ticker.trim() || position.quantity.trim() || position.price.trim()),
-    );
   const close = () => {
     if (saving) return;
-    if (!locked && typed) setDiscarding(true);
+    if (!locked && typedAny(entry)) setDiscarding(true);
     else finish();
   };
 
@@ -305,53 +247,24 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
     // be held, so nothing is saved, and neither is anything while the rates cannot be read.
     const currency = entry.currency;
     const now = startedAt.current ?? new Date();
-    const cash = entry.cash.trim();
-    const holdings: Holding[] = [
-      ...filledPositions(entry).map((position) => ({
-        quantity: position.quantity,
-        total: times(position.quantity, position.price),
-        position,
-      })),
-      ...(cash ? [{ quantity: cash, total: cash, position: null }] : []),
-    ];
-    if (currency !== 'USD' && !done.accountId) {
-      // An amount that converts to zero dollars, or past what the server keeps, is refused too.
-      const check = await cachedReads.rates.load().then(
-        (report) =>
-          !freshRates(currency, report, moscowDate(now))
-            ? ('stale' as const)
-            : holdings.every(({ total }) => convertible(total, currency, report))
-              ? ('ok' as const)
-              : ('amount' as const),
-        () => 'unread' as const,
-      );
-      if (check !== 'ok') {
-        setError(
-          {
-            unread: `Could not check the Bank of Russia rate for ${currency}. Nothing was saved; try again.`,
-            stale: `No recent Bank of Russia rate is stored, so ${currency} amounts cannot be converted. Nothing was saved; try again later.`,
-            amount: `An amount is too small or too large to convert to US dollars at the Bank of Russia rate. Nothing was saved; change it and try again.`,
-          }[check],
-        );
-        setSaving(false);
-        return;
-      }
+    const holdings = holdingsOf(entry);
+    const check =
+      currency === 'USD' || done.accountId ? 'ok' : await checkRates(currency, holdings, now);
+    if (check !== 'ok') {
+      setError(rateProblem(check, currency));
+      setSaving(false);
+      return;
     }
     startedAt.current = now;
     setLocked(true);
     while (requests.current.holdings.length < holdings.length)
       requests.current.holdings.push([newRequestId(), newRequestId(), newRequestId()]);
-    while (done.holdings.length < holdings.length)
-      done.holdings.push({
-        asset: null,
-        making: null,
-        wasHidden: false,
-        shown: false,
-        receipt: null,
-        unsure: false,
-        priced: false,
-      });
+    while (done.holdings.length < holdings.length) done.holdings.push(blankStep());
+    await save(done, holdings, currency, now);
+  };
 
+  // The account is made once, then each holding in turn; a retry adds only what is still missing.
+  const save = async (done: Saved, holdings: Holding[], currency: ValuationCurrency, now: Date) => {
     if (!done.accountId) {
       try {
         const account = await accountingApi.createAccount(accountRequest());
@@ -359,7 +272,7 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
       } catch (caught) {
         const code = status(caught);
         done.accountUnsure = !answered(code);
-        setError(failure(caught, answered(code) ? 'Nothing was saved. ' : ''));
+        setError(failureAfter(caught, 'Nothing was saved. ', ''));
         setSaving(false);
         return;
       }
@@ -368,56 +281,15 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
     const partly = 'The account was added, but not all it holds was saved. ';
     for (const [index, holding] of holdings.entries()) {
       const step = done.holdings[index];
-      const [assetRequest, tradeRequest, priceRequest] = requests.current.holdings[index];
+      const ids = requests.current.holdings[index];
       try {
-        const asset =
-          step.asset ?? (await assetFor(step, holding.position, currency, assetRequest));
-        // A hidden cash asset is left out of Portfolio, so the cash held here would not count.
-        if (step.wasHidden && !step.shown) {
-          await hiddenAssetsApi.show(asset.id);
-          step.shown = true;
-        }
-        if (!step.receipt) {
-          try {
-            step.receipt = await tradesApi.create(
-              accountId,
-              holdingTrade({ ...holding, currency }, asset.id, now, {
-                requestId: tradeRequest,
-                expectedJournalRevision: done.revision,
-              }),
-            );
-          } catch (caught) {
-            // Without a certain answer, the buy may have been saved.
-            const code = status(caught);
-            step.unsure = !answered(code);
-            throw caught;
-          }
-          step.unsure = false;
-          done.revision = step.receipt.journalRevision;
-        }
-        // A position starts at the price it was entered with; cash is always worth its amount.
-        if (asset.priceSource === 'manual' && !step.priced) {
-          const trade = step.receipt.trade;
-          // AST-MANUAL-VALUE: a price entered in RUB or EUR stays in it as the dollar moves.
-          const asPaid = trade.paid?.currency === asset.valuationCurrency ? trade.paid : null;
-          await manualPricesApi.set(asset.id, {
-            requestId: priceRequest,
-            expectedRevision: 0,
-            observedAt: trade.occurredAt,
-            ...(asPaid
-              ? { price: perUnit(asPaid.gross, trade.quantity), currency: asPaid.currency }
-              : { price: perUnit(trade.grossUsd, trade.quantity), currency: 'USD' as const }),
-            assertReviewed: true,
-          });
-          step.priced = true;
-        }
+        await saveHolding(done, step, holding, { ids, accountId, currency, now });
       } catch (caught) {
         setError(
-          failure(
+          failureAfter(
             caught,
-            answered(status(caught))
-              ? partly
-              : 'The account was added, but some of what it holds may not have been saved. ',
+            partly,
+            'The account was added, but some of what it holds may not have been saved. ',
           ),
         );
         setSaving(false);
@@ -556,21 +428,7 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
                   Add position
                 </Button>
               )}
-              {positionProblem ? (
-                <span className="ui-field__error" id={`${id}-positions-error`}>
-                  {entry.positions.some((position) =>
-                    [position.quantity, position.price].some(ambiguousComma),
-                  )
-                    ? numberProblem('1,000', '')
-                    : 'Fill in the ticker, the quantity and the price of each position, or clear the row'}
-                </span>
-              ) : (
-                found.has('holdings') && (
-                  <span className="ui-field__error" role="alert">
-                    Add a position or the cash at the broker
-                  </span>
-                )
-              )}
+              <PositionsError id={id} entry={entry} found={found} />
             </fieldset>
             <Field
               id={`${id}-cash`}
@@ -627,6 +485,45 @@ export default function AddBrokerDialog({ onClose, onAdded, steps, onBack, initi
   );
 }
 
+/** Whether anything is typed in the form. */
+const typedAny = (entry: BrokerEntry) =>
+  !!entry.broker.trim() ||
+  !!entry.cash.trim() ||
+  entry.positions.some(
+    (position) => !!(position.ticker.trim() || position.quantity.trim() || position.price.trim()),
+  );
+
+/** What is wrong with the positions, or that the account holds nothing. */
+function PositionsError({
+  id,
+  entry,
+  found,
+}: {
+  id: string;
+  entry: BrokerEntry;
+  found: ReadonlySet<BrokerProblem>;
+}) {
+  const positionProblem = entry.positions.some((_, index) =>
+    (['ticker', 'quantity', 'price'] as const).some((field) => found.has(`${field}-${index}`)),
+  );
+  if (positionProblem)
+    return (
+      <span className="ui-field__error" id={`${id}-positions-error`}>
+        {entry.positions.some((position) =>
+          [position.quantity, position.price].some(ambiguousComma),
+        )
+          ? numberProblem('1,000', '')
+          : 'Fill in the ticker, the quantity and the price of each position, or clear the row'}
+      </span>
+    );
+  if (!found.has('holdings')) return null;
+  return (
+    <span className="ui-field__error" role="alert">
+      Add a position or the cash at the broker
+    </span>
+  );
+}
+
 /** BROKER-ADD-FLOW: closing a half-filled Add broker account asks first. */
 export function DiscardBrokerAccount({
   onKeep,
@@ -645,6 +542,185 @@ export function DiscardBrokerAccount({
     >
       What you entered will be lost.
     </ConfirmDialog>
+  );
+}
+
+/**
+ * The instruments the owner's operations involve, anywhere and in this account; null when they
+ * cannot be read, which `definite` notes.
+ */
+function readUsed(accountId: string | null, definite: (caught: unknown) => boolean) {
+  return operationsApi.list().then(
+    ({ operations }) => ({
+      anywhere: new Set(operations.flatMap(instruments)),
+      here: new Set(
+        operations
+          .filter(
+            ({ account, counterAccount }) =>
+              !!accountId && (account?.id === accountId || counterAccount?.id === accountId),
+          )
+          .flatMap(instruments),
+      ),
+    }),
+    (caught) => {
+      definite(caught);
+      return null;
+    },
+  );
+}
+
+const blankStep = (): SavedHolding => ({
+  asset: null,
+  making: null,
+  wasHidden: false,
+  shown: false,
+  receipt: null,
+  unsure: false,
+  priced: false,
+});
+
+/** The positions filled in, then the cash, each with what it holds and what that cost. */
+function holdingsOf(entry: BrokerEntry): Holding[] {
+  const cash = entry.cash.trim();
+  return [
+    ...filledPositions(entry).map((position) => ({
+      quantity: position.quantity,
+      total: times(position.quantity, position.price),
+      position,
+    })),
+    ...(cash ? [{ quantity: cash, total: cash, position: null }] : []),
+  ];
+}
+
+type RateCheck = 'ok' | 'stale' | 'amount' | 'unread';
+
+/** Whether a recent rate converts every amount; one that converts to zero dollars, or past what the server keeps, is refused too. */
+function checkRates(currency: Exclude<ValuationCurrency, 'USD'>, holdings: Holding[], now: Date) {
+  return cachedReads.rates.load().then(
+    (report): RateCheck => {
+      if (!freshRates(currency, report, moscowDate(now))) return 'stale';
+      return holdings.every(({ total }) => convertible(total, currency, report)) ? 'ok' : 'amount';
+    },
+    (): RateCheck => 'unread',
+  );
+}
+
+const rateProblem = (check: Exclude<RateCheck, 'ok'>, currency: ValuationCurrency) =>
+  ({
+    unread: `Could not check the Bank of Russia rate for ${currency}. Nothing was saved; try again.`,
+    stale: `No recent Bank of Russia rate is stored, so ${currency} amounts cannot be converted. Nothing was saved; try again later.`,
+    amount: `An amount is too small or too large to convert to US dollars at the Bank of Russia rate. Nothing was saved; change it and try again.`,
+  })[check];
+
+/**
+ * Saves what is still missing of one holding, in order: its asset, shown again if it was hidden,
+ * the buy, then its price. Each step notes what it saved; a failure throws.
+ */
+async function saveHolding(
+  done: Saved,
+  step: SavedHolding,
+  holding: Holding,
+  {
+    ids: [assetRequest, tradeRequest, priceRequest],
+    accountId,
+    currency,
+    now,
+  }: { ids: string[]; accountId: string; currency: ValuationCurrency; now: Date },
+) {
+  const asset = step.asset ?? (await assetFor(step, holding.position, currency, assetRequest));
+  // A hidden cash asset is left out of Portfolio, so the cash held here would not count.
+  if (step.wasHidden && !step.shown) {
+    await hiddenAssetsApi.show(asset.id);
+    step.shown = true;
+  }
+  if (!step.receipt) {
+    try {
+      step.receipt = await tradesApi.create(
+        accountId,
+        holdingTrade({ ...holding, currency }, asset.id, now, {
+          requestId: tradeRequest,
+          expectedJournalRevision: done.revision,
+        }),
+      );
+    } catch (caught) {
+      // Without a certain answer, the buy may have been saved.
+      const code = status(caught);
+      step.unsure = !answered(code);
+      throw caught;
+    }
+    step.unsure = false;
+    done.revision = step.receipt.journalRevision;
+  }
+  // A position starts at the price it was entered with; cash is always worth its amount.
+  if (asset.priceSource === 'manual' && !step.priced) {
+    const trade = step.receipt.trade;
+    // AST-MANUAL-VALUE: a price entered in RUB or EUR stays in it as the dollar moves.
+    const asPaid = trade.paid?.currency === asset.valuationCurrency ? trade.paid : null;
+    await manualPricesApi.set(asset.id, {
+      requestId: priceRequest,
+      expectedRevision: 0,
+      observedAt: trade.occurredAt,
+      ...(asPaid
+        ? { price: perUnit(asPaid.gross, trade.quantity), currency: asPaid.currency }
+        : { price: perUnit(trade.grossUsd, trade.quantity), currency: 'USD' as const }),
+      assertReviewed: true,
+    });
+    step.priced = true;
+  }
+}
+
+/**
+ * Settles the account on closing: a request whose answer was lost is asked again under the same
+ * id, and an account that holds nothing yet is removed. Says whether anything it holds is saved.
+ */
+async function settleAccount(
+  done: Saved,
+  accountRequest: () => Parameters<typeof accountingApi.createAccount>[0],
+  definite: (caught: unknown) => boolean,
+) {
+  if (!done.accountId && done.accountUnsure)
+    done.accountId = await accountingApi.createAccount(accountRequest()).then(
+      (account) => {
+        done.accountUnsure = false;
+        return account.id;
+      },
+      (caught) => {
+        if (definite(caught)) done.accountUnsure = false;
+        return null;
+      },
+    );
+  const kept = done.holdings.some((step) => step.receipt);
+  // A 404 for the account this form made means it is already gone.
+  if (!kept && done.accountId) {
+    const removed = await accountingApi.removeAccount(done.accountId).then(
+      () => true,
+      (caught) => definite(caught) && status(caught) === 404,
+    );
+    if (removed) done.accountId = null;
+  }
+  return kept;
+}
+
+/**
+ * Hides each asset this form made, or showed again, that has no saved buy, unless an operation of
+ * the owner may involve it where it matters. Returns how each hiding went.
+ */
+async function hideUnbought(done: Saved, bare: boolean, definite: (caught: unknown) => boolean) {
+  const accountId = done.accountId;
+  const unbought = (step: SavedHolding) =>
+    !!step.asset && !!(step.making || step.wasHidden) && !step.receipt;
+  const asked = (step: SavedHolding) => unbought(step) && (!!step.making || (!bare && !!accountId));
+  const used = done.holdings.some(asked) ? await readUsed(accountId, definite) : null;
+  const empty = (step: SavedHolding) => {
+    const asset = step.asset?.id ?? '';
+    if (!unbought(step) || (asked(step) && used === null)) return false;
+    if (step.making && used?.anywhere.has(asset)) return false;
+    return bare || (accountId ? !used?.here.has(asset) : !step.unsure);
+  };
+  return Promise.allSettled(
+    done.holdings.flatMap((step) =>
+      step.asset && empty(step) ? [hiddenAssetsApi.hide(step.asset.id)] : [],
+    ),
   );
 }
 
