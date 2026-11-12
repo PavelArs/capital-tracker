@@ -1,12 +1,22 @@
 import type { AssetHistoryPoint } from '@api/asset-history.api';
 import type { HistoryPeriod } from '@api/portfolio-history.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  areaPath,
+  chartCursor,
+  evenTicks,
+  linePath,
+  observeWidth,
+  runsOf,
+  tipLeftOf,
+  valueAxis,
+  valuedPoints,
+} from '@/ui/chart';
 import {
   chartDateTicks,
   chartRightPad,
   compact,
-  niceStep,
   pointLabel,
   tickLabel,
 } from '../dashboard/HistoryChart';
@@ -78,19 +88,10 @@ export default function AssetChart({
 
   useEffect(() => {
     const element = box.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width > 0) setWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
+    if (element) return observeWidth(element, setWidth);
   }, []);
 
-  const plotted: Plotted[] = points.flatMap((point, index) =>
-    point.value === null
-      ? []
-      : [{ index, point, time: Date.parse(point.at), value: Number(point.value) }],
-  );
+  const plotted: Plotted[] = valuedPoints(points);
   if (plotted.length === 0)
     return (
       <p className="dashboard-chart__empty" role="note">
@@ -116,29 +117,13 @@ export default function AssetChart({
   const pad = (high - low) * 0.08 || high * 0.02 || 1;
   low = Math.max(0, low - pad);
   high += pad;
-  const step = niceStep((high - low) / 4);
-  low = Math.floor(low / step) * step;
-  high = Math.ceil(high / step) * step;
-  const y = (value: number) => PAD.top + innerHeight - ((value - low) / (high - low)) * innerHeight;
-  const ticks: number[] = [];
-  for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
+  const { y, ticks } = valueAxis(low, high, PAD.top, innerHeight);
 
-  const segments = segmentsOf(plotted);
-  const path = (segment: Plotted[]) =>
-    segment
-      .map(
-        (entry, index) =>
-          `${index ? 'L' : 'M'}${x(entry.time).toFixed(1)} ${y(entry.value).toFixed(1)}`,
-      )
-      .join('');
-  const line = segments.map(path).join('');
+  // A point without a price or rate breaks the line instead of dropping to zero.
+  const segments = runsOf(plotted);
+  const line = segments.map((segment) => linePath(segment, x, y)).join('');
   const base = PAD.top + innerHeight;
-  const area = segments
-    .map(
-      (segment) =>
-        `${path(segment)}L${x(segment.at(-1)!.time).toFixed(1)} ${base}L${x(segment[0].time).toFixed(1)} ${base}Z`,
-    )
-    .join('');
+  const area = areaPath(segments, x, y, base);
   // Cost basis changes only when coins are bought or sold: a step line.
   const costLine = points
     .map((_, index) => {
@@ -149,43 +134,18 @@ export default function AssetChart({
     .join('');
   // Each purchase sits on the cost basis it raised.
   const bought = noCost ? new Map<number, Purchase[]>() : purchasesByPoint(points, purchases);
-  const tickCount = chartDateTicks(width, points.length);
-  const xTicks = [
-    ...new Set(
-      Array.from({ length: tickCount }, (_, index) =>
-        tickCount === 1 ? start : start + ((end - start) * index) / (tickCount - 1),
-      ),
-    ),
-  ];
+  const xTicks = evenTicks(start, end, chartDateTicks(width, points.length));
 
   const current = active === null ? null : plotted[active];
-  const pick = (clientX: number) => {
-    const rect = box.current?.getBoundingClientRect();
-    const offset = clientX - (rect?.left ?? 0) - PAD.left;
-    const time = start + (Math.min(Math.max(offset, 0), innerWidth) / innerWidth) * span;
-    let nearest = 0;
-    for (let index = 1; index < plotted.length; index++)
-      if (Math.abs(plotted[index].time - time) < Math.abs(plotted[nearest].time - time))
-        nearest = index;
-    setActive(nearest);
-  };
-  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const moves: Record<string, number> = {
-      ArrowLeft: -1,
-      ArrowRight: 1,
-      Home: -plotted.length,
-      End: plotted.length,
-    };
-    const move = moves[event.key];
-    if (move === undefined) {
-      if (event.key === 'Escape') setActive(null);
-      return;
-    }
-    event.preventDefault();
-    setActive((index) =>
-      Math.min(plotted.length - 1, Math.max(0, (index ?? plotted.length - 1) + move)),
-    );
-  };
+  const cursor = chartCursor({
+    points: plotted,
+    from: plotted.length - 1,
+    left: PAD.left,
+    innerWidth,
+    start,
+    span,
+    setActive,
+  });
 
   return (
     <div
@@ -194,10 +154,7 @@ export default function AssetChart({
       tabIndex={0}
       role="group"
       aria-label={`${label}. Use the arrow keys to read each point.`}
-      onPointerMove={(event) => pick(event.clientX)}
-      onPointerLeave={() => setActive(null)}
-      onKeyDown={onKey}
-      onBlur={() => setActive(null)}
+      {...cursor}
     >
       <svg viewBox={`0 0 ${width} ${HEIGHT}`} role="img" aria-label={label}>
         <defs>
@@ -287,17 +244,6 @@ export default function AssetChart({
   );
 }
 
-/** A point without a price or rate breaks the line instead of dropping to zero. */
-function segmentsOf(plotted: readonly Plotted[]): Plotted[][] {
-  const segments: Plotted[][] = [];
-  for (const entry of plotted) {
-    const previous = segments.at(-1)?.at(-1);
-    if (previous && previous.index === entry.index - 1) segments.at(-1)!.push(entry);
-    else segments.push([entry]);
-  }
-  return segments;
-}
-
 /** The point in focus: its value, amount and cost basis, and the purchases it holds. */
 function ChartTip({
   current,
@@ -324,7 +270,7 @@ function ChartTip({
   width: number;
 }) {
   // Near the right edge the tip opens to the left of its point.
-  const tipLeft = cx + 14 + 200 > width ? cx - 214 : cx + 14;
+  const tipLeft = tipLeftOf(cx, width);
   return (
     <div
       className="dashboard-tip"

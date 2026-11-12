@@ -1,16 +1,16 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal, GoalForecast, ScenarioKey } from '@api/goals.api';
 import type { HistoryPoint, PortfolioHistory } from '@api/portfolio-history.api';
-import { type KeyboardEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
+import { chartCursor, evenTicks, observeWidth, tipLeftOf, valueAxis } from '@/ui/chart';
 import { Legend, type LegendItem } from '@/ui/Legend';
 import {
   chartDateTicks,
   chartRightPad,
   compact,
-  niceStep,
   pointLabel,
   tickLabel,
 } from '../dashboard/HistoryChart';
@@ -193,19 +193,13 @@ function scaleOf(
       CASES.flatMap((key) => (entry.figures[key] === null ? [] : [Number(entry.figures[key])])),
     ),
   ];
-  let top = Math.max(...topOf.filter(Number.isFinite)) * 1.1 || 1;
-  let bottom = Math.min(
+  const top = Math.max(...topOf.filter(Number.isFinite)) * 1.1 || 1;
+  const bottom = Math.min(
     0,
     ...past.map((entry) => entry.value),
     ...past.map((entry) => Number(entry.invested ?? 0)),
   );
-  const step = niceStep((top - bottom) / 4);
-  top = Math.ceil(top / step) * step;
-  bottom = Math.floor(bottom / step) * step;
-  const y = (value: number) =>
-    PAD.top + innerHeight - ((value - bottom) / (top - bottom)) * innerHeight;
-  const ticks: number[] = [];
-  for (let value = bottom; value <= top + step / 2; value += step) ticks.push(value);
+  const { y, ticks } = valueAxis(bottom, top, PAD.top, innerHeight);
   return { innerWidth, innerHeight, start, span, x, y, ticks, floor: PAD.top + innerHeight };
 }
 
@@ -304,9 +298,6 @@ function legendItems(goal: Goal, forecastDrawn: boolean): LegendItem[] {
 
 const tickAnchor = (index: number, count: number) =>
   index === 0 ? 'start' : index === count - 1 ? 'end' : 'middle';
-
-/** The tip sits right of the point, or left of it where it would run out of the box. */
-const tipLeftOf = (at: number, width: number) => (at + 14 + 210 > width ? at - 224 : at + 14);
 
 /** The portfolio, the money put in and its area, then the band and the cases of a forecast. */
 function ChartLines({
@@ -530,12 +521,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const [active, setActive] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!box || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width > 0) setWidth(entry.contentRect.width);
-    });
-    observer.observe(box);
-    return () => observer.disconnect();
+    if (box) return observeWidth(box, setWidth);
   }, [box]);
 
   // The server leaves the forecast out only when no current value can be estimated.
@@ -571,45 +557,21 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const latestAt = history?.points.at(-1)?.at;
   const origin = originOf(first, goal.progress.current, today, x, y);
   const { scenarioPath, fan } = forecastShapes(band, origin, x, y);
-  const tickCount = chartDateTicks(width, plotted.length);
-  const xTicks = [
-    ...new Set(
-      Array.from({ length: tickCount }, (_, index) =>
-        tickCount === 1 ? start : start + (span * index) / (tickCount - 1),
-      ),
-    ),
-  ];
+  const xTicks = evenTicks(start, start + span, chartDateTicks(width, plotted.length));
 
   const current = active === null ? null : plotted[active];
-  const pick = (clientX: number) => {
-    const rect = box?.getBoundingClientRect();
-    const offset = clientX - (rect?.left ?? 0) - PAD.left;
-    const time = start + (Math.min(Math.max(offset, 0), innerWidth) / innerWidth) * span;
-    let nearest = 0;
-    for (let index = 1; index < plotted.length; index++)
-      if (Math.abs(plotted[index].time - time) < Math.abs(plotted[nearest].time - time))
-        nearest = index;
-    setActive(nearest);
-  };
-  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const moves: Record<string, number> = {
-      ArrowLeft: -1,
-      ArrowRight: 1,
-      Home: -plotted.length,
-      End: plotted.length,
-    };
-    const move = moves[event.key];
-    if (move === undefined) {
-      if (event.key === 'Escape') setActive(null);
-      return;
-    }
-    event.preventDefault();
-    setActive((index) =>
-      Math.min(plotted.length - 1, Math.max(0, (index ?? past.length - 1) + move)),
-    );
-  };
+  // Before any point is read, the keys start from the last day of history with a value.
+  const cursor = chartCursor({
+    points: plotted,
+    from: past.length - 1,
+    left: PAD.left,
+    innerWidth,
+    start,
+    span,
+    setActive,
+  });
   const share = (value: number) => `${Math.max(0, Math.floor((value / target) * 100))}%`;
-  const tipLeft = current ? tipLeftOf(x(current.time), width) : 0;
+  const tipLeft = current ? tipLeftOf(x(current.time), width, 210) : 0;
 
   return (
     <Card variant="chart" labelledBy="goal-chart">
@@ -623,10 +585,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
         tabIndex={0}
         role="group"
         aria-label={`${label}. Use the arrow keys to read each point.`}
-        onPointerMove={(event) => pick(event.clientX)}
-        onPointerLeave={() => setActive(null)}
-        onKeyDown={onKey}
-        onBlur={() => setActive(null)}
+        {...cursor}
       >
         <svg viewBox={`0 0 ${width} ${HEIGHT}`} role="img" aria-label={label}>
           <defs>
