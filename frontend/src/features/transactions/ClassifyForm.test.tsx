@@ -70,12 +70,12 @@ const later = {
   occurredAt: '2025-07-01T00:00:00.000Z',
 };
 
-function renderForm() {
+function renderForm(operation: Operation = receipt) {
   const user = userEvent.setup();
   const onSaved = vi.fn();
   render(
     <MemoryRouter>
-      <ClassifyForm operation={receipt} left={1} onSaved={onSaved} onCancel={() => undefined}>
+      <ClassifyForm operation={operation} left={1} onSaved={onSaved} onCancel={() => undefined}>
         <p>Facts</p>
       </ClassifyForm>
     </MemoryRouter>,
@@ -330,5 +330,100 @@ describe('ClassifyForm problems', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(screen.getByText('At most 500 characters')).toBeInTheDocument();
     expect(classify).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClassifyForm hints', () => {
+  /** The hint a field reads out with its label. */
+  const hintOf = (label: string) =>
+    document.getElementById(screen.getByLabelText(label).getAttribute('aria-describedby') ?? '')
+      ?.textContent;
+  const payment = {
+    ...receipt,
+    id: `chain:${wallet.id}:${'2'.padStart(64, 'a')}`,
+    direction: 'out' as const,
+    chain: { ...receipt.chain!, txid: '2'.padStart(64, 'a'), direction: 'out' as const },
+  };
+
+  const unpriced = {
+    ...receipt,
+    estimatedValueUsd: null,
+    estimatedValue: null,
+    marketValue: { valueUsd: '612.5', observedAt: '2026-10-04T11:00:00.000Z' },
+  };
+
+  it.each([
+    [
+      'a receipt',
+      'Income',
+      receipt,
+      'Value at the time',
+      'What the coins were worth on Jun 20, 2025; it becomes their cost basis.',
+    ],
+    [
+      'a receipt',
+      'Reward',
+      receipt,
+      'Value at the time (optional)',
+      'Without a value the coins count in net worth, not in profit.',
+    ],
+    [
+      'a receipt',
+      'Pool withdrawal',
+      receipt,
+      'Value of the gain (optional)',
+      'Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on Jun 20, 2025.',
+    ],
+    [
+      'a receipt',
+      'Swap',
+      receipt,
+      'Value at the time (optional)',
+      'Empty: USDT and USDC count 1:1, other coins at their stored price on Jun 20, 2025.',
+    ],
+    [
+      'a payment',
+      'Expense',
+      payment,
+      'Value at the time',
+      'What the coins were worth on Jun 20, 2025; it leaves your capital.',
+    ],
+    [
+      'a payment',
+      'Fee',
+      payment,
+      'Value at the time (optional)',
+      'Empty: USDT and USDC count 1:1, other coins at their stored price on Jun 20, 2025.',
+    ],
+    [
+      'CLS-MARKET-VALUE: a receipt without a stored price',
+      'Income',
+      unpriced,
+      'Value at the time',
+      'No price is stored for BTC around Jun 20, 2025, so the coins are valued at its latest stored price (Oct 4, 2026). Change it if they were worth something else.',
+    ],
+  ] as const)(
+    '%s answered as %s says what its value means',
+    async (_name, type, row, label, hint) => {
+      const { user } = renderForm(row);
+      await user.click(screen.getByRole('button', { name: type }));
+      expect(hintOf(label)).toBe(hint);
+    },
+  );
+
+  it('CLS-SWAP: the other side of a swap says where it may come from', async () => {
+    const { user } = renderForm();
+    await user.click(screen.getByRole('button', { name: 'Swap' }));
+    expect(hintOf('Paid with')).toBe(
+      'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.',
+    );
+  });
+
+  it('CLS-BUY: a stablecoin counts 1:1 with USD', async () => {
+    const { user } = renderForm();
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
+    expect(screen.getByText('USDT is counted 1:1 with USD.')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'USD' }));
+    expect(screen.queryByText(/is counted 1:1 with USD/)).toBeNull();
   });
 });
