@@ -64,11 +64,29 @@ const defaultMigrations = () => [
 
 let log: unknown[][];
 
+function failAt(options: Options, step: Step): void {
+  const error = options.fail?.[step];
+  if (error) throw error;
+}
+
+// The fake database's answer to each query of the migration CLI.
+function answer(sql: string, options: Options): unknown[] {
+  if (sql === LOCK) return [{ acquired: 'lock' in options ? options.lock : true }];
+  if (sql === LEDGER) {
+    failAt(options, 'ledger');
+    return [{ name: options.ledger === false ? null : 'migrations' }];
+  }
+  if (sql === APPLIED) return (options.applied ?? []).map((name) => ({ name }));
+  if (sql === TABLES) return (options.tables ?? []).map((tablename) => ({ tablename }));
+  if (sql === UNLOCK) {
+    failAt(options, 'unlock');
+    return [{ pg_advisory_unlock: true }];
+  }
+  return [];
+}
+
 function database(options: Options = {}) {
-  const failing = (step: Step) => {
-    const error = options.fail?.[step];
-    if (error) throw error;
-  };
+  const failing = (step: Step) => failAt(options, step);
   const runner = {
     connect: async () => {
       log.push(['connect']);
@@ -76,18 +94,7 @@ function database(options: Options = {}) {
     },
     query: async (sql: string) => {
       log.push(['query', sql]);
-      if (sql === LOCK) return [{ acquired: 'lock' in options ? options.lock : true }];
-      if (sql === LEDGER) {
-        failing('ledger');
-        return [{ name: options.ledger === false ? null : 'migrations' }];
-      }
-      if (sql === APPLIED) return (options.applied ?? []).map((name) => ({ name }));
-      if (sql === TABLES) return (options.tables ?? []).map((tablename) => ({ tablename }));
-      if (sql === UNLOCK) {
-        failing('unlock');
-        return [{ pg_advisory_unlock: true }];
-      }
-      return [];
+      return answer(sql, options);
     },
     release: async () => {
       log.push(['release']);

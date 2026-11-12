@@ -83,11 +83,23 @@ let log: unknown[][];
 // What a query was sent with, by its SQL.
 const paramsOf = (sql: string) => (log.find((entry) => entry[1] === sql) ?? [])[2];
 
+function failAt(options: Options, step: Step): void {
+  const error = options.fail?.[step];
+  if (error) throw error;
+}
+
+// The fake database's answer to each query of the owner CLI.
+function answer(sql: string, options: Options): unknown[] {
+  if (sql === options.failQuery) throw new Error(`duplicate key ${SECRET}`);
+  if (sql === SQL.lock) return [{ acquired: 'lock' in options ? options.lock : true }];
+  if (sql === SQL.owner) return options.owner ? [options.owner] : [];
+  if (sql === SQL.matches) return options.matches ?? [];
+  if (sql === SQL.exists) return [{ present: options.present ?? false }];
+  return [];
+}
+
 function database(options: Options = {}) {
-  const failing = (step: Step) => {
-    const error = options.fail?.[step];
-    if (error) throw error;
-  };
+  const failing = (step: Step) => failAt(options, step);
   const runner = {
     isTransactionActive: false,
     connect: async () => {
@@ -100,20 +112,12 @@ function database(options: Options = {}) {
     },
     query: async (sql: string, params?: unknown[]) => {
       log.push(params === undefined ? ['query', sql] : ['query', sql, params]);
-      if (sql === options.failQuery) throw new Error(`duplicate key ${SECRET}`);
-      if (sql === SQL.lock) return [{ acquired: 'lock' in options ? options.lock : true }];
-      if (sql === SQL.owner) return options.owner ? [options.owner] : [];
-      if (sql === SQL.matches) return options.matches ?? [];
-      if (sql === SQL.exists) return [{ present: options.present ?? false }];
-      return [];
+      return answer(sql, options);
     },
     commitTransaction: async () => {
       log.push(['commitTransaction']);
-      if (options.commitEnds !== false) runner.isTransactionActive = false;
-      if (options.fail?.commit) {
-        runner.isTransactionActive = options.commitEnds === false;
-        throw options.fail.commit;
-      }
+      runner.isTransactionActive = options.commitEnds === false;
+      failing('commit');
     },
     rollbackTransaction: async () => {
       log.push(['rollbackTransaction']);

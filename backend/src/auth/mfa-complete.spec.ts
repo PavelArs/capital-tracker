@@ -90,24 +90,35 @@ interface Fixture {
   recoveryUnused?: boolean;
 }
 
+// The fake database's answer to each query of factor completion.
+function answer(
+  sql: string,
+  rows: { ownerRow: unknown; factor: unknown; recoveryUnused?: boolean },
+): unknown[] {
+  if (sql.startsWith('SELECT * FROM owner_auth')) return rows.ownerRow ? [rows.ownerRow] : [];
+  if (sql.startsWith('SELECT * FROM owner_mfa')) return rows.factor ? [rows.factor] : [];
+  if (sql.includes('clock_timestamp() AS now')) return [{ now }];
+  if (sql.includes('UPDATE owner_mfa_recovery'))
+    return rows.recoveryUnused ? [[{ codeHash: 'x' }], 1] : [[], 0];
+  if (sql.startsWith('SELECT id, email')) return [user];
+  return [];
+}
+
 function harness(fixture: Fixture = {}) {
-  const ownerRow =
-    fixture.ownerRow === undefined
-      ? { userId: owner, credentialVersion: 'revision' }
-      : fixture.ownerRow;
-  const factor = fixture.factor === undefined ? activeFactor() : fixture.factor;
+  const rows = {
+    ownerRow:
+      fixture.ownerRow === undefined
+        ? { userId: owner, credentialVersion: 'revision' }
+        : fixture.ownerRow,
+    factor: fixture.factor === undefined ? activeFactor() : fixture.factor,
+    recoveryUnused: fixture.recoveryUnused,
+  };
   const pending = fixture.pending ?? pendingSession();
   const log: unknown[][] = [];
   const manager = {
     query: jest.fn(async (sql: string, params?: unknown[]) => {
       log.push(params === undefined ? [flat(sql)] : [flat(sql), params]);
-      if (sql.startsWith('SELECT * FROM owner_auth')) return ownerRow ? [ownerRow] : [];
-      if (sql.startsWith('SELECT * FROM owner_mfa')) return factor ? [factor] : [];
-      if (sql.includes('clock_timestamp() AS now')) return [{ now }];
-      if (sql.includes('UPDATE owner_mfa_recovery'))
-        return fixture.recoveryUnused ? [[{ codeHash: 'x' }], 1] : [[], 0];
-      if (sql.startsWith('SELECT id, email')) return [user];
-      return [];
+      return answer(sql, rows);
     }),
   };
   const source = {
