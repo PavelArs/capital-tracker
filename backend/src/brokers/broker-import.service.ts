@@ -23,7 +23,7 @@ import {
 import { CarryInService } from '../accounting/carry-in.service';
 import { rethrowAccountingHistory } from '../accounting/connected-accounting.store';
 import type { FifoCarryInInput } from '../accounting/fifo';
-import { type Execution, FifoHistoryError } from '../accounting/fifo';
+import { FifoHistoryError } from '../accounting/fifo';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import {
   calculateOwnedTransfers,
@@ -32,7 +32,7 @@ import {
 import type { OwnedAccountInput } from '../accounting/owned-transfer-types';
 import { readSplits } from '../accounting/share-split.store';
 import type { FifoSplit } from '../accounting/share-split-types';
-import { findOrCreateInstrument } from '../accounting/trade.service';
+import { execution, findOrCreateInstrument } from '../accounting/trade.service';
 import {
   AUTOMATIC_COVERAGE_FROM,
   advanceJournal,
@@ -139,22 +139,6 @@ function receipt(row: ImportRow) {
     firstJournalRevision: row.firstJournalRevision,
     lastJournalRevision: row.lastJournalRevision,
     createdAt: row.createdAt.toISOString(),
-  };
-}
-
-/** The fields an owner's own create request would have named, as the CSV import keeps them. */
-function execution(value: Execution): Execution {
-  return {
-    instrumentId: value.instrumentId,
-    side: value.side,
-    occurredAt: value.occurredAt,
-    orderWithinTimestamp: value.orderWithinTimestamp,
-    quantity: value.quantity,
-    grossUsd: value.grossUsd,
-    feeUsd: value.feeUsd,
-    ...(value.paid ? { paid: value.paid } : {}),
-    ...(value.settlement ? { settlement: value.settlement } : {}),
-    ...(value.purpose ? { purpose: value.purpose } : {}),
   };
 }
 

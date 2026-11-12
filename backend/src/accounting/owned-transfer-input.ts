@@ -1,5 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
-import { strictInteger, strictRecord } from '../shared/strict-input';
+import { bad, integer, object, queryInteger } from './command-input';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { parseTradePageQuery } from './trade-input';
 
@@ -52,20 +51,7 @@ const movementKeys = [
   'feeQuantity',
 ] as const;
 const pinKeys = ['requestId', 'expectedFromJournalRevision', 'expectedToJournalRevision'] as const;
-const bad = (): never => {
-  throw new BadRequestException('Invalid accounting input');
-};
 
-function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
-  return strictRecord(raw, keys) ?? bad();
-}
-function integer(raw: unknown, minimum: number, maximum: number): number {
-  return strictInteger(raw, minimum, maximum) ?? bad();
-}
-function queryInteger(raw: unknown, minimum: number, maximum: number): number {
-  if (typeof raw !== 'string' || raw.length > 5 || !/^(0|[1-9][0-9]*)$/.test(raw)) return bad();
-  return integer(Number(raw), minimum, maximum);
-}
 function pins(row: Record<string, unknown>) {
   return {
     requestId: parseUuid(row.requestId),

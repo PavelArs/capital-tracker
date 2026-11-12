@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
+import { readAccountingSnapshot } from './accounting-read';
 import {
   appendSwapVersion,
   projectSwapVersion,
@@ -264,22 +265,11 @@ export class AssetSwapService {
     return { created: true, value: receipt };
   }
 
-  private read<T>(work: (manager: EntityManager) => Promise<T>) {
-    return this.source.transaction('REPEATABLE READ', async (manager) => {
-      await manager.query('SET TRANSACTION READ ONLY');
-      try {
-        return await work(manager);
-      } catch (error) {
-        return rethrowAccountingHistory(error);
-      }
-    });
-  }
-
   async list(ownerId: string, id: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const accountId = parseUuid(id);
     const query = parseSwapListQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, accountId);
       const journal = await readJournal(manager, owner, accountId);
       if (
@@ -311,7 +301,7 @@ export class AssetSwapService {
     const accountId = parseUuid(id);
     const target = parseUuid(swapId);
     const query = parseSwapHistoryQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, accountId);
       if (!(await readSwapHead(manager, owner, accountId, target))) throw new NotFoundException();
       const rows: SwapVersionRow[] = await manager.query(
@@ -332,7 +322,7 @@ export class AssetSwapService {
     const accountId = parseUuid(id);
     const target = parseUuid(swapId);
     const query = parseSwapAllocationQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, accountId);
       const row = await readSwapHead(manager, owner, accountId, target);
       if (!row) throw new NotFoundException();

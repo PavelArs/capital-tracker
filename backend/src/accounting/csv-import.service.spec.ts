@@ -846,6 +846,44 @@ describe('CSV-004-B characterization of the rollback command', () => {
     ['read batch', [owner, account, batchId]],
   ];
 
+  it('CSV-004-B replays a saved rollback with the same payload and refuses another payload', async () => {
+    const saved = {
+      ownerId: owner,
+      accountId: account,
+      batchId,
+      requestId,
+      kind: 'rollback',
+      canonicalPayload: JSON.stringify(['usd-csv-command-v1', 'rollback', batchId, 4]),
+      rowCount: 2,
+      firstJournalRevision: 5,
+      lastJournalRevision: 6,
+      createdAt: created,
+    };
+    const replayed: [string, unknown[]][] = [
+      ['lock owner', [owner]],
+      ['read account', [owner, account]],
+      ['read command', [owner, account, requestId]],
+    ];
+    const same = await rollback({ ...committed, commands: [saved] });
+    expect(same.result).toEqual({
+      created: false,
+      value: {
+        accountId: account,
+        batchId,
+        requestId,
+        kind: 'rollback',
+        rowCount: 2,
+        firstJournalRevision: 5,
+        lastJournalRevision: 6,
+        createdAt: created.toISOString(),
+      },
+    });
+    expect(same.calls).toEqual(replayed);
+    const changed = await rollback({ ...committed, commands: [saved] }, 5);
+    expect(changed.result).toEqual(csvConflict);
+    expect(changed.calls).toEqual(replayed);
+  });
+
   it('CSV-004-B refuses a stale journal after reading the batch', async () => {
     const { calls, result } = await rollback(committed, 3);
     expect(result).toEqual(csvConflict);

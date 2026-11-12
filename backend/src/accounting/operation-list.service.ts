@@ -31,6 +31,7 @@ import {
   type RewardOperationInput,
 } from './operation-list';
 import { isPaidCurrency, isRateSource, type TradePayment } from './paid-currency';
+import type { TradeVersionDetails } from './trade-journal.store';
 import { isTradePurpose } from './trade-purpose';
 
 interface Named {
@@ -51,7 +52,7 @@ interface FeeColumns {
   feeSymbol: string | null;
   feeQuantity: string;
 }
-interface TradeRow extends Versioned {
+interface TradeRow extends Versioned, TradeVersionDetails {
   broker: boolean;
   tradeId: string;
   side: 'buy' | 'sell';
@@ -59,18 +60,6 @@ interface TradeRow extends Versioned {
   grossUsd: string;
   feeUsd: string;
   csv: boolean;
-  paidCurrency: string | null;
-  paidGross: string | null;
-  paidFee: string | null;
-  paidRateDate: string | null;
-  paidPerUsd: string | null;
-  paidRateSource: string | null;
-  comment: string | null;
-  settlementInstrumentId: string | null;
-  settlementName: string | null;
-  settlementSymbol: string | null;
-  settlementQuantity: string | null;
-  purpose: string | null;
 }
 interface TransferRow extends Versioned, FeeColumns {
   transferId: string;
