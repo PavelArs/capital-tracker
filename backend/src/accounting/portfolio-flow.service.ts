@@ -46,6 +46,33 @@ function project(row: PortfolioFlowVersion): FlowVersion {
 function receipt(row: PortfolioFlowVersion) {
   return { journalRevision: row.journalRevision, flow: project(row) };
 }
+/** A repeated request gets its saved answer, unless it asks for something else. */
+function replayed(previous: PortfolioFlowVersion, payload: string) {
+  if (previous.canonicalPayload !== payload) throw conflict();
+  return { created: false, value: receipt(previous) };
+}
+/**
+ * The current head a correction or void names (none for a create), once the journal is at the
+ * expected revision and can take one more version and, for a create, one more active flow.
+ */
+function writableTarget(
+  journal: PortfolioFlowJournal,
+  heads: readonly FlowVersion[],
+  kind: FlowVersion['kind'],
+  target: string | undefined,
+  input: FlowCreate | FlowVoid,
+): FlowVersion | undefined {
+  const current = target === undefined ? undefined : heads.find((row) => row.flowId === target);
+  if (target !== undefined && !current) throw new NotFoundException();
+  if (
+    current?.kind === 'void' ||
+    journal.currentRevision !== input.expectedJournalRevision ||
+    journal.currentRevision >= 10000 ||
+    (kind === 'create' && heads.filter((row) => row.kind !== 'void').length >= 1000)
+  )
+    throw conflict();
+  return current;
+}
 
 @Injectable()
 export class PortfolioFlowService {
@@ -102,20 +129,9 @@ export class PortfolioFlowService {
         [owner, input.requestId],
       );
       // Saved commands precede mutable revision, target state, coverage and capacity.
-      if (previous) {
-        if (previous.canonicalPayload !== payload) throw conflict();
-        return { created: false, value: receipt(previous) };
-      }
+      if (previous) return replayed(previous, payload);
       const heads = await this.heads(manager, owner);
-      const current = target === undefined ? undefined : heads.find((row) => row.flowId === target);
-      if (target !== undefined && !current) throw new NotFoundException();
-      if (
-        current?.kind === 'void' ||
-        journal.currentRevision !== input.expectedJournalRevision ||
-        journal.currentRevision >= 10000 ||
-        (kind === 'create' && heads.filter((row) => row.kind !== 'void').length >= 1000)
-      )
-        throw conflict();
+      const current = writableTarget(journal, heads, kind, target, input);
       const economics = fields ?? current;
       if (!economics) throw new NotFoundException();
       if (economics.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
