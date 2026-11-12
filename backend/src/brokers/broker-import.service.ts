@@ -236,42 +236,9 @@ export class BrokerImportService {
         );
         if (!review.canImport || review.previewHash !== input.previewHash) throw conflict();
         // SPLIT: the declared splits hold for every account of the owner, from this import on.
-        for (const split of review.declaredSplits)
-          await manager.query(
-            `INSERT INTO instrument_splits
-              (id, "ownerId", "instrumentId", "effectiveAt", ratio, "requestId", "canonicalPayload")
-              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              randomUUID(),
-              owner,
-              split.instrumentId,
-              split.effectiveAt,
-              split.ratio,
-              randomUUID(),
-              JSON.stringify({ importRequestId: input.requestId, ...split }),
-            ],
-          );
-        if (input.opening) {
-          const opening = await this.accounting.saveOpeningWithin(manager, owner, account, {
-            requestId: input.requestId,
-            expectedRevision: 0,
-            asOf: input.opening.asOf,
-            positions: review.openingPositions,
-          });
-          await this.carryIn.initializeWithin(manager, owner, account, {
-            requestId: input.requestId,
-            expectedOpeningRevision: opening.value.revision,
-            assertReviewed: true,
-            lots: review.openingLots.map((lot) => ({
-              instrumentId: lot.instrumentId,
-              acquiredAt: lot.acquiredAt,
-              orderWithinTimestamp: lot.orderWithinTimestamp,
-              originalQuantity: lot.originalQuantity,
-              originalCostUsd: lot.originalCostUsd,
-              remainingQuantity: lot.carriedQuantity,
-            })),
-          });
-        }
+        await saveDeclaredSplits(manager, owner, input.requestId, review.declaredSplits);
+        if (input.opening)
+          await this.saveOpening(manager, owner, account, input.requestId, input.opening, review);
         const journal =
           (await readJournal(manager, owner, account)) ??
           (await startEmptyJournal(manager, owner, row, input.requestId));
@@ -306,78 +273,12 @@ export class BrokerImportService {
         const rewards: (string | null)[] = [];
         const returns: (string | null)[] = [];
         for (const [index, entry] of review.entries.entries()) {
-          const revision = first + index;
-          let tradeId: string | null = null;
-          let rewardId: string | null = null;
-          let capitalReturnId: string | null = null;
-          if (entry.trade) {
-            tradeId = randomUUID();
-            const fields = execution(entry.trade);
-            await appendTradeVersion(manager, owner, account, {
-              ...fields,
-              tradeId,
-              version: 1,
-              journalRevision: revision,
-              requestId: randomUUID(),
-              kind: 'create',
-              instrumentName: entry.trade.instrumentName,
-              instrumentSymbol: entry.trade.instrumentSymbol,
-              canonicalPayload: JSON.stringify({
-                kind: 'create',
-                expectedJournalRevision: revision - 1,
-                ...fields,
-              }),
-            });
-          } else if (entry.capitalReturn) {
-            capitalReturnId = randomUUID();
-            const { capitalReturnId: _, version, ...fields } = entry.capitalReturn;
-            const requestId = randomUUID();
-            await appendCapitalReturnVersion(manager, owner, {
-              ...fields,
-              capitalReturnId,
-              version,
-              accountId: account,
-              kind: 'create',
-              requestId,
-              journalRevision: revision,
-              rate: entry.rate,
-              canonicalPayload: capitalReturnPayload('create', {
-                expectedJournalRevision: revision - 1,
-                instrumentId: fields.instrumentId,
-                cashInstrumentId: fields.cashInstrumentId,
-                occurredAt: fields.occurredAt,
-                orderWithinTimestamp: fields.orderWithinTimestamp,
-                amount: fields.amount,
-                amountUsd: fields.amountUsd,
-                paidCurrency: fields.paidCurrency,
-                rate: entry.rate,
-              }),
-            });
-          } else {
-            rewardId = randomUUID();
-            const { rewardId: _, version, ...reward } = entry.reward;
-            const request = {
-              ...reward,
-              assertReward: true as const,
-              requestId: randomUUID(),
-              expectedJournalRevision: revision - 1,
-            };
-            await appendRewardVersion(manager, owner, {
-              ...reward,
-              rewardId,
-              version,
-              accountId: account,
-              kind: 'create',
-              requestId: request.requestId,
-              journalRevision: revision,
-              canonicalPayload: rewardPayload('create', request),
-            });
-          }
+          const ids = await writeEntry(manager, owner, account, entry, first + index);
           for (const operationId of entry.source.operationIds) {
             written.operations.push(operationId);
-            written.trades.push(tradeId);
-            rewards.push(rewardId);
-            returns.push(capitalReturnId);
+            written.trades.push(ids.tradeId);
+            rewards.push(ids.rewardId);
+            returns.push(ids.capitalReturnId);
           }
         }
         await manager.query(
@@ -405,6 +306,36 @@ export class BrokerImportService {
         return { created: true, value: receipt(saved) };
       })
       .catch(rethrowAccountingHistory);
+  }
+
+  /** The reviewed opening holdings, saved as the account's opening and its carried-in lots. */
+  private async saveOpening(
+    manager: EntityManager,
+    owner: string,
+    account: string,
+    requestId: string,
+    declared: BrokerOpening,
+    review: Review,
+  ) {
+    const opening = await this.accounting.saveOpeningWithin(manager, owner, account, {
+      requestId,
+      expectedRevision: 0,
+      asOf: declared.asOf,
+      positions: review.openingPositions,
+    });
+    await this.carryIn.initializeWithin(manager, owner, account, {
+      requestId,
+      expectedOpeningRevision: opening.value.revision,
+      assertReviewed: true,
+      lots: review.openingLots.map((lot) => ({
+        instrumentId: lot.instrumentId,
+        acquiredAt: lot.acquiredAt,
+        orderWithinTimestamp: lot.orderWithinTimestamp,
+        originalQuantity: lot.originalQuantity,
+        originalCostUsd: lot.originalCostUsd,
+        remainingQuantity: lot.carriedQuantity,
+      })),
+    });
   }
 
   private async replay(manager: EntityManager, owner: string, account: string, request: string) {
@@ -737,6 +668,107 @@ export class BrokerImportService {
     }
     return { cash, securities, linked };
   }
+}
+
+/** SPLIT: saves the splits declared with an import for every account of the owner. */
+async function saveDeclaredSplits(
+  manager: EntityManager,
+  owner: string,
+  requestId: string,
+  declaredSplits: Review['declaredSplits'],
+) {
+  for (const split of declaredSplits)
+    await manager.query(
+      `INSERT INTO instrument_splits
+              (id, "ownerId", "instrumentId", "effectiveAt", ratio, "requestId", "canonicalPayload")
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        randomUUID(),
+        owner,
+        split.instrumentId,
+        split.effectiveAt,
+        split.ratio,
+        randomUUID(),
+        JSON.stringify({ importRequestId: requestId, ...split }),
+      ],
+    );
+}
+
+/** Writes one journal entry at its revision; the id of the trade, reward or return it became. */
+async function writeEntry(
+  manager: EntityManager,
+  owner: string,
+  account: string,
+  entry: JournalEntry,
+  revision: number,
+) {
+  let tradeId: string | null = null;
+  let rewardId: string | null = null;
+  let capitalReturnId: string | null = null;
+  if (entry.trade) {
+    tradeId = randomUUID();
+    const fields = execution(entry.trade);
+    await appendTradeVersion(manager, owner, account, {
+      ...fields,
+      tradeId,
+      version: 1,
+      journalRevision: revision,
+      requestId: randomUUID(),
+      kind: 'create',
+      instrumentName: entry.trade.instrumentName,
+      instrumentSymbol: entry.trade.instrumentSymbol,
+      canonicalPayload: JSON.stringify({
+        kind: 'create',
+        expectedJournalRevision: revision - 1,
+        ...fields,
+      }),
+    });
+  } else if (entry.capitalReturn) {
+    capitalReturnId = randomUUID();
+    const { capitalReturnId: _, version, ...fields } = entry.capitalReturn;
+    const requestId = randomUUID();
+    await appendCapitalReturnVersion(manager, owner, {
+      ...fields,
+      capitalReturnId,
+      version,
+      accountId: account,
+      kind: 'create',
+      requestId,
+      journalRevision: revision,
+      rate: entry.rate,
+      canonicalPayload: capitalReturnPayload('create', {
+        expectedJournalRevision: revision - 1,
+        instrumentId: fields.instrumentId,
+        cashInstrumentId: fields.cashInstrumentId,
+        occurredAt: fields.occurredAt,
+        orderWithinTimestamp: fields.orderWithinTimestamp,
+        amount: fields.amount,
+        amountUsd: fields.amountUsd,
+        paidCurrency: fields.paidCurrency,
+        rate: entry.rate,
+      }),
+    });
+  } else {
+    rewardId = randomUUID();
+    const { rewardId: _, version, ...reward } = entry.reward;
+    const request = {
+      ...reward,
+      assertReward: true as const,
+      requestId: randomUUID(),
+      expectedJournalRevision: revision - 1,
+    };
+    await appendRewardVersion(manager, owner, {
+      ...reward,
+      rewardId,
+      version,
+      accountId: account,
+      kind: 'create',
+      requestId: request.requestId,
+      journalRevision: revision,
+      canonicalPayload: rewardPayload('create', request),
+    });
+  }
+  return { tradeId, rewardId, capitalReturnId };
 }
 
 /** The cash asset of each currency the opening or the plan moves; one not used is not read. */
