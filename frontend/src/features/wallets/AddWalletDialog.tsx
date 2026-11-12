@@ -4,7 +4,7 @@ import {
   walletAddressesApi,
 } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
+import { type FormEvent, Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Chip, ChipGroup } from '@/ui/Chip';
@@ -17,7 +17,7 @@ import { PasswordInput } from '@/ui/PasswordInput';
 import AssetIcon from '../shell/AssetIcon';
 import { isEvm } from '../shell/evm-networks';
 import KindField, { type KindChoice } from './KindField';
-import { networkIcon, networks as tracked } from './networks';
+import { type NetworkInfo, networkIcon, networks as tracked } from './networks';
 import {
   type AddressCheck,
   accountNamed,
@@ -304,6 +304,289 @@ function addressFacts(
   return { check, existing, existingWallet, isKey: /^[xyz]pub/.test(check.address) };
 }
 
+/** Step 2 for Bybit: how to make a read-only key, then the key and its secret. */
+function KeyStep({
+  apiKey,
+  apiSecret,
+  keyError,
+  secretError,
+  dropped,
+  role,
+  onChange,
+  onLeave,
+}: {
+  apiKey: string;
+  apiSecret: string;
+  keyError: string | null;
+  secretError: string | null;
+  dropped: string | null;
+  role: 'alert' | undefined;
+  onChange: (value: string, part: 'key' | 'secret') => void;
+  onLeave: (field: 'key' | 'secret') => () => void;
+}) {
+  return (
+    <>
+      <Banner tone="info" role="none">
+        <ol className="wallets-howto">
+          <li>
+            In Bybit open <b>Account → API → Create New Key</b>, choose{' '}
+            <b>System-generated API Keys</b> and <b>API Transaction</b>.
+          </li>
+          <li>
+            Set permissions to <b>Read-Only</b> and tick <b>Earn</b> and <b>Exchange History</b>{' '}
+            under it, so coins in Earn and converts count. Tick nothing that trades or withdraws.
+          </li>
+          <li>Bind it to this server's IP address: an unbound key stops working after 90 days.</li>
+        </ol>
+      </Banner>
+      <div className="ui-field">
+        <label className="ui-field__label" htmlFor="bybit-key">
+          API key
+        </label>
+        <Input
+          id="bybit-key"
+          mono
+          autoComplete="off"
+          spellCheck={false}
+          value={apiKey}
+          aria-invalid={keyError === null ? undefined : true}
+          aria-describedby="bybit-key-help"
+          onChange={(event) => onChange(event.target.value, 'key')}
+          onBlur={onLeave('key')}
+        />
+        <span id="bybit-key-help">
+          {keyError !== null && (
+            <span className="ui-field__error" role={role}>
+              {keyError}
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="ui-field">
+        <label className="ui-field__label" htmlFor="bybit-secret">
+          API secret
+        </label>
+        {/* wallets-14: the secret can be shown to check it was pasted in full; a new step
+            draws the field again, hidden. */}
+        <PasswordInput
+          id="bybit-secret"
+          mono
+          autoComplete="off"
+          spellCheck={false}
+          showLabel="Show secret"
+          hideLabel="Hide secret"
+          value={apiSecret}
+          aria-invalid={secretError === null ? undefined : true}
+          aria-describedby="bybit-secret-help"
+          onChange={(event) => onChange(event.target.value, 'secret')}
+          onBlur={onLeave('secret')}
+        />
+        <span id="bybit-secret-help">
+          <SecretHelp dropped={dropped} error={secretError} role={role} />
+        </span>
+      </div>
+      <Banner tone="info" role="none">
+        The app checks with Bybit that the key is read-only and refuses one that can trade or
+        withdraw. It reads spot trades, deposits and withdrawals of every coin for the last two
+        years, the balances Bybit reports, with Earn ticked the coins in Earn and three months of
+        their yield, and with Exchange History ticked every convert. Coins Kraken does not list are
+        priced from Bybit's own market. P2P purchases are not in the API: add them by hand.
+      </Banner>
+    </>
+  );
+}
+
+/** Step 2 for a blockchain: the address or key, what was pasted (children), what it tracks. */
+function AddressStep({
+  chosen,
+  value,
+  error,
+  existing,
+  note,
+  onChange,
+  onBlur,
+  children,
+}: {
+  chosen: NetworkInfo;
+  value: string;
+  error: string | null;
+  existing: WalletAddress | undefined;
+  note: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <div className="ui-field">
+        <label className="ui-field__label" htmlFor="wallet-address">
+          {chosen.name} wallet address
+        </label>
+        <Input
+          id="wallet-address"
+          mono
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={chosen.placeholder}
+          value={value}
+          aria-invalid={error !== null || existing ? true : undefined}
+          aria-describedby="wallet-address-help"
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
+        />
+        <span id="wallet-address-help">{children}</span>
+      </div>
+      <Banner tone="info" role="none">
+        {note}
+      </Banner>
+    </>
+  );
+}
+
+/** Step 3: the wallet that holds what is added, how a new one is held, and a name for it. */
+function WalletStep({
+  chosen,
+  exchange,
+  accounts,
+  match,
+  chosenName,
+  walletName,
+  kind,
+  label,
+  onWalletName,
+  onKind,
+  onLabel,
+}: {
+  chosen: NetworkInfo;
+  exchange: boolean;
+  accounts: readonly WalletAccount[];
+  match: WalletAccount | undefined;
+  chosenName: string;
+  walletName: string;
+  kind: KindChoice;
+  label: string;
+  onWalletName: (name: string) => void;
+  onKind: (kind: KindChoice) => void;
+  onLabel: (label: string) => void;
+}) {
+  return (
+    <>
+      <Field
+        id="wallet-name"
+        label={
+          <>
+            Wallet <span className="ui-muted">(optional)</span>
+          </>
+        }
+        hint={
+          <>
+            {match
+              ? `The ${exchange ? 'account' : 'address'} joins your wallet ${match.name}.`
+              : `A new wallet named ${chosenName} is created.`}{' '}
+            Pick one of your wallets to group this {exchange ? 'account' : 'address'} with it, or
+            type a new name.
+          </>
+        }
+      >
+        {(control) => (
+          <Input
+            {...control}
+            maxLength={120}
+            placeholder={chosen.defaultWallet}
+            value={walletName}
+            onChange={(event) => onWalletName(event.target.value)}
+          />
+        )}
+      </Field>
+      {accounts.length > 0 && (
+        <ChipGroup label="Your wallets">
+          {accounts.map((account) => (
+            <Chip
+              key={account.accountId}
+              pressed={match?.accountId === account.accountId}
+              onClick={() => onWalletName(account.name)}
+            >
+              {account.name}
+            </Chip>
+          ))}
+        </ChipGroup>
+      )}
+      {!match && <KindField id="wallet-kind" value={kind} onChange={onKind} />}
+      <Field
+        id="wallet-label"
+        label={
+          <>
+            {exchange ? 'Account name' : 'Address name'}{' '}
+            <span className="ui-muted">(optional)</span>
+          </>
+        }
+      >
+        {(control) => (
+          <Input
+            {...control}
+            maxLength={MAX_LABEL}
+            placeholder={`e.g. ${chosen.labelExample}`}
+            value={label}
+            onChange={(event) => onLabel(event.target.value)}
+          />
+        )}
+      </Field>
+    </>
+  );
+}
+
+function StepFooter({
+  step,
+  network,
+  saving,
+  exchange,
+  onClose,
+  onBack,
+}: {
+  step: 1 | 2 | 3;
+  network: Network | null;
+  saving: boolean;
+  exchange: boolean;
+  onClose: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <ModalFooter>
+      {step === 1 ? (
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      ) : (
+        <Button variant="ghost" disabled={saving} onClick={onBack}>
+          Back
+        </Button>
+      )}
+      {/* Back stands apart at the left; Cancel sits with the main action, as in every dialog. */}
+      {step !== 1 && <span className="ui-grow" />}
+      <Button type="submit" variant="primary" disabled={(step === 1 && !network) || saving}>
+        {submitLabel(step, saving, exchange)}
+      </Button>
+    </ModalFooter>
+  );
+}
+
+/** Step 3: the wallet the address joins, or the name and kind of the new wallet it creates. */
+function destinationOf(
+  opened: WalletAccount | undefined,
+  accounts: readonly WalletAccount[],
+  walletName: string,
+  defaultWallet: string,
+  pickedKind: KindChoice | null,
+  exchange: boolean,
+) {
+  const chosenName = walletName.trim() || defaultWallet;
+  // The wallet it was opened for while its name stands, else the one the owner names.
+  const match = opened && chosenName === opened.name ? opened : accountNamed(accounts, chosenName);
+  // W1: while untouched, a Bybit account starts as an exchange.
+  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
+  return { chosenName, match, kind };
+}
+
 interface Props {
   accounts: readonly WalletAccount[];
   addresses: readonly WalletAddress[];
@@ -384,10 +667,14 @@ export default function AddWalletDialog({
   // wallets-04: after a failed Continue a field's problem is said aloud; on leaving a field it is
   // only shown.
   const alertOnTry = tried ? 'alert' : undefined;
-  const chosenName = walletName.trim() || chosen.defaultWallet;
-  // The wallet it was opened for while its name stands, else the one the owner names.
-  const match = opened && chosenName === opened.name ? opened : accountNamed(accounts, chosenName);
-  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
+  const { chosenName, match, kind } = destinationOf(
+    opened,
+    accounts,
+    walletName,
+    chosen.defaultWallet,
+    pickedKind,
+    exchange,
+  );
 
   // WAL-NO-SECRETS: a seed phrase or private key pasted in a field is dropped from the form at once.
   const change = (set: (value: string) => void, value: string, result: AddressCheck | KeyCheck) => {
@@ -494,183 +781,60 @@ export default function AddWalletDialog({
             </>
           )}
           {step === 2 && exchange && (
-            <>
-              <Banner tone="info" role="none">
-                <ol className="wallets-howto">
-                  <li>
-                    In Bybit open <b>Account → API → Create New Key</b>, choose{' '}
-                    <b>System-generated API Keys</b> and <b>API Transaction</b>.
-                  </li>
-                  <li>
-                    Set permissions to <b>Read-Only</b> and tick <b>Earn</b> and{' '}
-                    <b>Exchange History</b> under it, so coins in Earn and converts count. Tick
-                    nothing that trades or withdraws.
-                  </li>
-                  <li>
-                    Bind it to this server's IP address: an unbound key stops working after 90 days.
-                  </li>
-                </ol>
-              </Banner>
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor="bybit-key">
-                  API key
-                </label>
-                <Input
-                  id="bybit-key"
-                  mono
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={apiKey}
-                  aria-invalid={keyError === null ? undefined : true}
-                  aria-describedby="bybit-key-help"
-                  onChange={(event) => changeKey(event.target.value, 'key')}
-                  onBlur={leave('key')}
-                />
-                <span id="bybit-key-help">
-                  {keyError !== null && (
-                    <span className="ui-field__error" role={alertOnTry}>
-                      {keyError}
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor="bybit-secret">
-                  API secret
-                </label>
-                {/* wallets-14: the secret can be shown to check it was pasted in full; a new step
-                    draws the field again, hidden. */}
-                <PasswordInput
-                  id="bybit-secret"
-                  mono
-                  autoComplete="off"
-                  spellCheck={false}
-                  showLabel="Show secret"
-                  hideLabel="Hide secret"
-                  value={apiSecret}
-                  aria-invalid={secretError === null ? undefined : true}
-                  aria-describedby="bybit-secret-help"
-                  onChange={(event) => changeKey(event.target.value, 'secret')}
-                  onBlur={leave('secret')}
-                />
-                <span id="bybit-secret-help">
-                  <SecretHelp dropped={secretMessage} error={secretError} role={alertOnTry} />
-                </span>
-              </div>
-              <Banner tone="info" role="none">
-                The app checks with Bybit that the key is read-only and refuses one that can trade
-                or withdraw. It reads spot trades, deposits and withdrawals of every coin for the
-                last two years, the balances Bybit reports, with Earn ticked the coins in Earn and
-                three months of their yield, and with Exchange History ticked every convert. Coins
-                Kraken does not list are priced from Bybit's own market. P2P purchases are not in
-                the API: add them by hand.
-              </Banner>
-            </>
+            <KeyStep
+              apiKey={apiKey}
+              apiSecret={apiSecret}
+              keyError={keyError}
+              secretError={secretError}
+              dropped={secretMessage}
+              role={alertOnTry}
+              onChange={changeKey}
+              onLeave={leave}
+            />
           )}
           {step === 2 && !exchange && (
-            <>
-              <div className="ui-field">
-                <label className="ui-field__label" htmlFor="wallet-address">
-                  {chosen.name} wallet address
-                </label>
-                <Input
-                  id="wallet-address"
-                  mono
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={chosen.placeholder}
-                  value={input}
-                  aria-invalid={addressError !== null || existing ? true : undefined}
-                  aria-describedby="wallet-address-help"
-                  onChange={(event) => changeAddress(event.target.value)}
-                  onBlur={leave('address')}
-                />
-                <span id="wallet-address-help">
-                  <AddressHelp
-                    dropped={secretMessage}
-                    error={addressError}
-                    role={alertOnTry}
-                    check={check}
-                    isKey={isKey}
-                    existing={existing}
-                    existingWallet={existingWallet}
-                    network={network}
-                    onOpenExisting={onOpenExisting}
-                    onSwitch={(to) => {
-                      setNetwork(to);
-                      setError(null);
-                      focusField('wallet-address');
-                    }}
-                  />
-                </span>
-              </div>
-              <Banner tone="info" role="none">
-                {networkNote(network)}
-              </Banner>
-            </>
+            <AddressStep
+              chosen={chosen}
+              value={input}
+              error={addressError}
+              existing={existing}
+              note={networkNote(network)}
+              onChange={changeAddress}
+              onBlur={leave('address')}
+            >
+              <AddressHelp
+                dropped={secretMessage}
+                error={addressError}
+                role={alertOnTry}
+                check={check}
+                isKey={isKey}
+                existing={existing}
+                existingWallet={existingWallet}
+                network={network}
+                onOpenExisting={onOpenExisting}
+                onSwitch={(to) => {
+                  setNetwork(to);
+                  setError(null);
+                  focusField('wallet-address');
+                }}
+              />
+            </AddressStep>
           )}
           {step === 3 && ready && (
             <>
-              <Field
-                id="wallet-name"
-                label={
-                  <>
-                    Wallet <span className="ui-muted">(optional)</span>
-                  </>
-                }
-                hint={
-                  <>
-                    {match
-                      ? `The ${exchange ? 'account' : 'address'} joins your wallet ${match.name}.`
-                      : `A new wallet named ${chosenName} is created.`}{' '}
-                    Pick one of your wallets to group this {exchange ? 'account' : 'address'} with
-                    it, or type a new name.
-                  </>
-                }
-              >
-                {(control) => (
-                  <Input
-                    {...control}
-                    maxLength={120}
-                    placeholder={chosen.defaultWallet}
-                    value={walletName}
-                    onChange={(event) => setWalletName(event.target.value)}
-                  />
-                )}
-              </Field>
-              {accounts.length > 0 && (
-                <ChipGroup label="Your wallets">
-                  {accounts.map((account) => (
-                    <Chip
-                      key={account.accountId}
-                      pressed={match?.accountId === account.accountId}
-                      onClick={() => setWalletName(account.name)}
-                    >
-                      {account.name}
-                    </Chip>
-                  ))}
-                </ChipGroup>
-              )}
-              {!match && <KindField id="wallet-kind" value={kind} onChange={setPickedKind} />}
-              <Field
-                id="wallet-label"
-                label={
-                  <>
-                    {exchange ? 'Account name' : 'Address name'}{' '}
-                    <span className="ui-muted">(optional)</span>
-                  </>
-                }
-              >
-                {(control) => (
-                  <Input
-                    {...control}
-                    maxLength={MAX_LABEL}
-                    placeholder={`e.g. ${chosen.labelExample}`}
-                    value={label}
-                    onChange={(event) => setLabel(event.target.value)}
-                  />
-                )}
-              </Field>
+              <WalletStep
+                chosen={chosen}
+                exchange={exchange}
+                accounts={accounts}
+                match={match}
+                chosenName={chosenName}
+                walletName={walletName}
+                kind={kind}
+                label={label}
+                onWalletName={setWalletName}
+                onKind={setPickedKind}
+                onLabel={setLabel}
+              />
               <AddSummary
                 network={chosen.name}
                 exchange={exchange}
@@ -682,29 +846,17 @@ export default function AddWalletDialog({
           )}
           {error && <Banner tone="neg">{error}</Banner>}
         </ModalBody>
-        <ModalFooter>
-          {step === 1 ? (
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              disabled={saving}
-              onClick={() => {
-                setError(null);
-                setStep(step === 3 ? 2 : 1);
-              }}
-            >
-              Back
-            </Button>
-          )}
-          {/* Back stands apart at the left; Cancel sits with the main action, as in every dialog. */}
-          {step !== 1 && <span className="ui-grow" />}
-          <Button type="submit" variant="primary" disabled={(step === 1 && !network) || saving}>
-            {submitLabel(step, saving, exchange)}
-          </Button>
-        </ModalFooter>
+        <StepFooter
+          step={step}
+          network={network}
+          saving={saving}
+          exchange={exchange}
+          onClose={onClose}
+          onBack={() => {
+            setError(null);
+            setStep(step === 3 ? 2 : 1);
+          }}
+        />
       </form>
     </Modal>
   );
