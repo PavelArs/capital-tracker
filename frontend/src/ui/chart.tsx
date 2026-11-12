@@ -117,7 +117,8 @@ export function chartCursor({
   setActive: Dispatch<SetStateAction<number | null>>;
 }) {
   const pick = (event: PointerEvent<HTMLElement>) => {
-    const offset = event.clientX - event.currentTarget.getBoundingClientRect().left - left;
+    // A box that reports no left edge counts from 0, as each chart did on its own.
+    const offset = event.clientX - (event.currentTarget.getBoundingClientRect().left ?? 0) - left;
     const time = start + (Math.min(Math.max(offset, 0), innerWidth) / innerWidth) * span;
     let nearest = 0;
     for (let index = 1; index < points.length; index++)

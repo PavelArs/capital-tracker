@@ -1,11 +1,42 @@
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, PointerEvent } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { chartCursor, niceStep, valueAxis } from './chart';
 
 describe('chart helpers', () => {
-  it('rounds an axis step up to 1, 2, 5 or 10 times a power of ten, and to 1 without a range', () => {
+  it('rounds an axis step to 1, 2, 5 or 10 times a power of ten, and to 1 without a range', () => {
     expect([0.12, 0.2, 2.5, 4, 8, 40, 1250].map(niceStep)).toEqual([0.1, 0.2, 2, 5, 10, 50, 1000]);
     expect([0, -3, Number.NaN].map(niceStep)).toEqual([1, 1, 1]);
+  });
+
+  it('turns to the next round step at exactly 1.5, 3 and 7 times a power of ten', () => {
+    expect([1.49, 1.5, 2.99, 3, 6.99, 7].map(niceStep)).toEqual([1, 2, 2, 5, 5, 10]);
+    expect([149, 150, 299, 300, 699, 700].map(niceStep)).toEqual([100, 200, 200, 500, 500, 1000]);
+  });
+
+  it('reads the pointer against the box that listens, and from 0 when the box has no left edge', () => {
+    let active: number | null = null;
+    const { onPointerMove } = chartCursor({
+      points: [{ time: 0 }, { time: 1 }, { time: 2 }],
+      from: 2,
+      left: 4,
+      innerWidth: 100,
+      start: 0,
+      span: 2,
+      setActive: (next) => {
+        active = typeof next === 'function' ? next(active) : next;
+      },
+    });
+    const move = (clientX: number, box: object, child: object) =>
+      onPointerMove({
+        clientX,
+        currentTarget: { getBoundingClientRect: () => box },
+        target: { getBoundingClientRect: () => child },
+      } as unknown as PointerEvent<HTMLElement>);
+    // The box starts at 100, so 154 is the middle of the plot; the child's 0 would read the end.
+    move(154, { left: 100 }, { left: 0 });
+    expect(active).toBe(1);
+    move(54, {}, { left: -100 });
+    expect(active).toBe(1);
   });
 
   it('widens the value axis to round steps and puts a tick on each', () => {
