@@ -469,26 +469,13 @@ export class EtherscanClient {
         url: asked,
         method: rpc ? 'post' : 'get',
         data: rpc?.body,
-        params: rpc
-          ? undefined
-          : this.keyless
-            ? { ...this.extraParams, ...params }
-            : { chainid: String(this.chainId), ...params, apikey: this.apiKey },
+        params: rpc ? undefined : this.query(params),
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
         maxRedirects: MAX_REDIRECTS,
-        beforeRedirect: (options: {
-          protocol?: string;
-          hostname?: string;
-          port?: string | number;
-        }) => {
-          const port = String(options.port ?? '');
-          const same =
-            options.protocol === origin.protocol &&
-            options.hostname === origin.hostname &&
-            (port === origin.port || (origin.port === '' && ['', '80', '443'].includes(port)));
-          if (!same) {
+        beforeRedirect: (options: RedirectTarget) => {
+          if (!sameOrigin(origin, options)) {
             movedTo = options.hostname ?? null;
             throw new Error('Redirected to another host');
           }
@@ -500,12 +487,7 @@ export class EtherscanClient {
         headers: { Accept: 'application/json' },
       });
     } catch (error) {
-      if (movedTo !== null) {
-        const target = said(movedTo);
-        return { ok: false, reason: 'unavailable', detail: `${host} moved to ${target}` };
-      }
-      const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
-      return { ok: false, reason: 'unavailable', detail: `${host} did not answer${code}` };
+      return unanswered(host, movedTo, error);
     } finally {
       this.pace.lastRequestAt = Date.now();
     }
@@ -526,20 +508,55 @@ export class EtherscanClient {
     try {
       return parse(JSON.parse(response.data));
     } catch (error) {
-      if (error instanceof Refused) {
-        const detail = error.said ? `${host} said: ${error.said}` : undefined;
-        return {
-          ok: false,
-          reason: error.reason,
-          ...(detail ? { detail } : {}),
-          ...(error.unprocessed ? { unprocessed: true as const } : {}),
-        };
-      }
-      return {
-        ok: false,
-        reason: 'invalid_response',
-        detail: `${host} sent an unexpected answer`,
-      };
+      return unreadable(host, error);
     }
   }
+
+  /** The query of `baseUrl`: a keyless explorer's own parameters, else Etherscan's chain and key. */
+  private query(params: Record<string, string>) {
+    return this.keyless
+      ? { ...this.extraParams, ...params }
+      : { chainid: String(this.chainId), ...params, apikey: this.apiKey };
+  }
+}
+
+/** Where a redirect points, as axios passes it to beforeRedirect. */
+type RedirectTarget = { protocol?: string; hostname?: string; port?: string | number };
+
+/** REDIRECT: whether a redirect stays on the host and scheme asked, a default port alike. */
+function sameOrigin(origin: URL, options: RedirectTarget): boolean {
+  const port = String(options.port ?? '');
+  return (
+    options.protocol === origin.protocol &&
+    options.hostname === origin.hostname &&
+    (port === origin.port || (origin.port === '' && ['', '80', '443'].includes(port)))
+  );
+}
+
+/** A request that got no answer: redirected to another host, or not answered at all. */
+function unanswered(host: string, movedTo: string | null, error: unknown): Failed {
+  if (movedTo !== null) {
+    const target = said(movedTo);
+    return { ok: false, reason: 'unavailable', detail: `${host} moved to ${target}` };
+  }
+  const code = axios.isAxiosError(error) && error.code ? ` (${error.code})` : '';
+  return { ok: false, reason: 'unavailable', detail: `${host} did not answer${code}` };
+}
+
+/** An answer the parser refused, with what the source said, or one it could not read. */
+function unreadable(host: string, error: unknown): Failed {
+  if (error instanceof Refused) {
+    const detail = error.said ? `${host} said: ${error.said}` : undefined;
+    return {
+      ok: false,
+      reason: error.reason,
+      ...(detail ? { detail } : {}),
+      ...(error.unprocessed ? { unprocessed: true as const } : {}),
+    };
+  }
+  return {
+    ok: false,
+    reason: 'invalid_response',
+    detail: `${host} sent an unexpected answer`,
+  };
 }
