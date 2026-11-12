@@ -4837,3 +4837,84 @@ describe('PV-WORDS the portfolio page says each gap in its own words', () => {
     expect(vi.mocked(depositsApi.list).mock.calls.length).toBeGreaterThan(asked);
   });
 });
+
+// Characterization of Add asset paths no other test reached before the dialog was split up.
+describe('AST-WORDS Add asset says what was and was not saved', () => {
+  const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    renderAt('/portfolio');
+    await openAddAsset(user);
+    return screen.getByRole('dialog', { name: 'Add asset' });
+  };
+  const deposit100 = async (user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) => {
+    await within(dialog).findByLabelText('Wallet or account');
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+  };
+
+  it('AST-WORDS says when the accounts cannot be read', async () => {
+    vi.mocked(accountingApi.listAccounts).mockRejectedValue(httpError(500));
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    expect(
+      await within(dialog).findByText(
+        'Could not load your accounts, so a balance cannot be added. Close this window and try again.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'unreachable',
+      new AxiosError('Network Error'),
+      'Could not reach the server. Try again; the same request will not make the account twice.',
+    ],
+    ['refused', httpError(400), 'Could not make the account. Nothing was saved; try again.'],
+  ])('AST-WORDS says a new account that is %s was not made', async (_case, error, text) => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    vi.spyOn(accountingApi, 'createAccount').mockRejectedValueOnce(error);
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await deposit100(user, dialog);
+    await user.type(within(dialog).getByLabelText('Wallet or account'), 'Home safe');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(text);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('AST-WORDS saves a ruble balance when the rates cannot be read, and the server converts it', async () => {
+    vi.mocked(fxRatesApi.get).mockRejectedValue(httpError(500));
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await within(dialog).findByLabelText('Wallet or account');
+    await user.type(within(dialog).getByLabelText('Name'), 'Cash at home');
+    await user.type(within(dialog).getByLabelText('Amount'), '90120');
+    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(createTrade.mock.calls[0][1]).toMatchObject({
+      paid: { currency: 'RUB', gross: '90120' },
+    });
+  });
+
+  it.each([
+    [400, 'The asset and its balance were saved, but its price was not. Try again.'],
+    [
+      500,
+      'The asset and its balance were saved; its price may have been saved too. Try again; the same request will not save it twice.',
+    ],
+  ])('AST-WORDS says a hand price refused with %i was not saved', async (status, text) => {
+    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    setPrice.mockRejectedValueOnce(httpError(status));
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await deposit100(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(text);
+    expect(createTrade).toHaveBeenCalledTimes(1);
+  });
+});
