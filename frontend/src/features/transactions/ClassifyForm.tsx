@@ -789,6 +789,398 @@ function failure(
   return 'Could not save the classification. Try again.';
 }
 
+/** Answers whose value may be left empty. */
+const optionalTypes: ReadonlySet<ChainType | null> = new Set<ChainType>([
+  'reward',
+  'staking-reward',
+  'pool-reward',
+  'airdrop',
+  'swap',
+  'fee',
+  'pool-withdrawal',
+]);
+
+/** What the value field asks for: what a value means for this answer, or what leaving it empty does. */
+function valueHint(operation: Operation, draft: Draft): string {
+  const on = day(operation.occurredAt);
+  if (draft.offered && draft.suggested && shownValue(draft) === draft.suggested)
+    return `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${on}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`;
+  if (draft.type === 'swap' && replaceKey.test(draft.pair))
+    return 'Empty: the value of the record you added.';
+  if (draft.type === 'swap' || draft.type === 'fee')
+    return `Empty: USDT and USDC count 1:1, other coins at their stored price on ${on}.`;
+  if (draft.type === 'pool-withdrawal')
+    return `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${on}.`;
+  if (draft.type === 'expense' || operation.direction !== 'in')
+    return `What the coins were worth on ${on}; it leaves your capital.`;
+  if (optionalTypes.has(draft.type))
+    return 'Without a value the coins count in net worth, not in profit.';
+  return `What the coins were worth on ${on}; it becomes their cost basis.`;
+}
+
+/** What picking the other side of a swap does: replace a record, be one, or pair two transactions. */
+function pairHint(
+  operation: Operation,
+  draft: Draft,
+  paidElsewhere: Operation['account'] | undefined,
+): string {
+  if (replaceKey.test(draft.pair))
+    return `The ${legDirection(operation) === 'out' ? 'purchase' : 'sale'} you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.`;
+  if (!recordKey.test(draft.pair))
+    return 'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.';
+  return paidElsewhere
+    ? `The coins move to ${paidElsewhere.name} just before that purchase and pay for it there. Nothing is counted twice.`
+    : 'This transaction is that record: nothing new is added, and the coins are not counted twice.';
+}
+
+const optionList = (items: [string, string][]) =>
+  items.map(([key, label]) => (
+    <option key={key} value={key}>
+      {label}
+    </option>
+  ));
+
+/** What a part of the form needs: its ids, the transaction, the answer so far and its errors. */
+interface PartProps {
+  id: string;
+  operation: Operation;
+  draft: Draft;
+  change: (next: Partial<Draft>) => void;
+  errorOf: (problem: Problem, text: string) => string | null;
+  leave: (problem: Problem) => () => void;
+}
+
+/** CLS-BUY: what a buy paid or a sale received, in which currency and at which rate. */
+function PriceFields({ id, operation, draft, change, errorOf, leave }: PartProps) {
+  const rated = draft.currency === 'EUR' || draft.currency === 'RUB';
+  return (
+    <div className="ui-subform">
+      <div className="ui-field-row">
+        <Field
+          id={`${id}-amount`}
+          label={draft.type === 'buy' ? 'You paid' : 'You received'}
+          error={errorOf(
+            'amount',
+            draft.type === 'buy' ? 'Enter the amount you paid' : 'Enter the amount you received',
+          )}
+        >
+          {(control) => (
+            <Affix suffix={draft.currency}>
+              <Input
+                {...control}
+                numeric
+                placeholder="0.00"
+                value={draft.amount}
+                onChange={(event) => change({ amount: event.target.value })}
+                onBlur={leave('amount')}
+              />
+            </Affix>
+          )}
+        </Field>
+        <div className="ui-field">
+          <span className="ui-field__label" id={`${id}-currency`}>
+            Currency
+          </span>
+          <SegmentedControl
+            name={`${id}-currency`}
+            labelledBy={`${id}-currency`}
+            options={currencies}
+            value={draft.currency}
+            onChange={(currency) => change({ currency, rate: '' })}
+          />
+        </div>
+      </div>
+      {rated ? (
+        <Field
+          id={`${id}-rate`}
+          label="Exchange rate"
+          error={errorOf('rate', 'Enter a rate above zero, or leave it empty')}
+          hint={`Empty means the Bank of Russia rate of ${day(operation.occurredAt)}.`}
+        >
+          {(control) => (
+            <Affix suffix={`${draft.currency} per 1 USD`} wide>
+              <Input
+                {...control}
+                numeric
+                placeholder="Bank of Russia rate"
+                value={draft.rate}
+                onChange={(event) => change({ rate: event.target.value })}
+                onBlur={leave('rate')}
+              />
+            </Affix>
+          )}
+        </Field>
+      ) : (
+        draft.currency !== 'USD' && (
+          <span className="ui-field__hint">{draft.currency} is counted 1:1 with USD.</span>
+        )
+      )}
+    </div>
+  );
+}
+
+/** XFER-MANUAL, XFER-ADDRESS: the other wallet of a transfer and, when several, its address. */
+function TransferFields({
+  id,
+  operation,
+  draft,
+  change,
+  errorOf,
+  leave,
+  accounts,
+  accountsFailed,
+  legs,
+}: PartProps & { accounts: Account[] | null; accountsFailed: boolean; legs: Operation[] }) {
+  const own = ownAccount(operation);
+  const others = (accounts ?? []).filter((account) => account.id !== own?.id);
+  const known = [operation.account, operation.counterAccount].find(
+    (place) => place && place.id === draft.account && place.id !== own?.id,
+  );
+  const out = legDirection(operation) === 'out';
+  return (
+    <div className="ui-subform">
+      <Field
+        id={`${id}-account`}
+        label={out ? 'Sent to' : 'Received from'}
+        error={
+          errorOf('account', 'Choose the other wallet') ??
+          (accountsFailed ? 'Could not load your wallets. Close this window and try again.' : null)
+        }
+      >
+        {(control) => (
+          <Select
+            {...control}
+            value={draft.account}
+            onChange={(event) => change({ account: event.target.value, partner: '' })}
+            onBlur={leave('account')}
+          >
+            <option value="">{accounts ? 'Choose your wallet' : 'Loading wallets…'}</option>
+            {others.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+            {/* The saved or suggested wallet stays shown while the list loads. */}
+            {!accounts && known && <option value={known.id}>{known.name}</option>}
+          </Select>
+        )}
+      </Field>
+      {legs.length > 1 && (
+        <Field
+          id={`${id}-partner`}
+          label={out ? 'Received at' : 'Sent from'}
+          error={errorOf('partner', 'Choose the address of that wallet')}
+          hint={`Several addresses of that wallet took part in this transaction. Choose the one that ${out ? 'received' : 'sent'} these coins.`}
+        >
+          {(control) => (
+            <Select
+              {...control}
+              value={draft.partner}
+              onChange={(event) => change({ partner: event.target.value })}
+              onBlur={leave('partner')}
+            >
+              <option value="">Choose the address</option>
+              {legs.map((leg) => (
+                <option key={leg.wallet?.id} value={leg.wallet?.id}>
+                  {[leg.wallet && addressText(leg.wallet), signedAmount(leg)].join(' · ')}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
+      <span className="ui-field__hint">
+        Transfers between your wallets don't change your capital. Only the network fee
+        {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
+        counted as a cost.
+      </span>
+    </div>
+  );
+}
+
+/** CLS-SWAP, CLS-RECORDED, CLS-SWAP-RECORD: the other side of a swap. */
+function SwapField({
+  id,
+  operation,
+  draft,
+  change,
+  errorOf,
+  leave,
+  operations,
+  dustThresholdUsd,
+}: PartProps & { operations: Operation[]; dustThresholdUsd: string | null }) {
+  const pairs = swapCandidates(operation, operations, dustThresholdUsd);
+  const records = recordCandidates(operation, operations);
+  const replaceable = replaceCandidates(operation, operations);
+  // CLS-PAID: the picked record belongs to another account, so the coins go there to pay for it.
+  const paidElsewhere = recordKey.test(draft.pair)
+    ? operations.find(
+        (item) => item.id === draft.pair && item.account?.id !== operation.account?.id,
+      )?.account
+    : undefined;
+  return (
+    <div className="ui-subform">
+      <Field
+        id={`${id}-pair`}
+        label={legDirection(operation) === 'out' ? 'Received in exchange' : 'Paid with'}
+        error={errorOf('pair', 'Choose the transaction on the other side')}
+        hint={pairHint(operation, draft, paidElsewhere)}
+      >
+        {(control) => (
+          <Select
+            {...control}
+            value={draft.pair}
+            onChange={(event) => change({ pair: event.target.value })}
+            onBlur={leave('pair')}
+          >
+            <option value="">Choose the transaction</option>
+            {records.length > 0 || replaceable.length > 0 ? (
+              <>
+                <optgroup label="Your blockchain transactions">{optionList(pairs)}</optgroup>
+                {records.length > 0 && (
+                  <optgroup label="Added by you or from CSV">{optionList(records)}</optgroup>
+                )}
+                {replaceable.length > 0 && (
+                  <optgroup label="Added by you, to be replaced by this swap">
+                    {optionList(replaceable)}
+                  </optgroup>
+                )}
+              </>
+            ) : (
+              optionList(pairs)
+            )}
+          </Select>
+        )}
+      </Field>
+    </div>
+  );
+}
+
+/** POOL-WITHDRAW, POOL-PARTIAL: the deposit a withdrawal returns, and whether all of it. */
+function PoolWithdrawalFields({
+  id,
+  operation,
+  draft,
+  change,
+  errorOf,
+  leave,
+  operations,
+}: PartProps & { operations: Operation[] }) {
+  return (
+    <div className="ui-subform">
+      <Field
+        id={`${id}-deposit`}
+        label="Returns the deposit"
+        error={errorOf('deposit', 'Choose the pool deposit this withdrawal returns')}
+        hint={`Your pool deposits of ${legAsset(operation).symbol ?? 'this coin'} from this wallet made before it. Classify the deposit as Pool deposit first.`}
+      >
+        {(control) => (
+          <Select
+            {...control}
+            value={draft.deposit}
+            onChange={(event) => change({ deposit: event.target.value })}
+            onBlur={leave('deposit')}
+          >
+            <option value="">Choose the pool deposit</option>
+            {poolCandidates(operation, operations).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      <Toggle
+        checked={draft.partial}
+        onChange={(partial) => change({ partial })}
+        describedBy={`${id}-partial-hint`}
+      >
+        Part of the deposit
+      </Toggle>
+      <span className="ui-field__hint" id={`${id}-partial-hint`}>
+        {draft.partial
+          ? 'The rest is still in the pool: it stays in your balance with its purchase price. Classify the other parts in the order they happened.'
+          : 'The last or only withdrawal of this deposit: what is missing from it counts as impermanent loss.'}
+      </span>
+    </div>
+  );
+}
+
+/** The value of an answer in USD: required, or optional where it may be left empty. */
+function ValueField({ id, operation, draft, change, errorOf, leave }: PartProps) {
+  const optional = optionalTypes.has(draft.type);
+  return (
+    <div className="ui-subform">
+      <Field
+        id={`${id}-value`}
+        label={`${draft.type === 'pool-withdrawal' ? 'Value of the gain' : 'Value at the time'}${optional ? ' (optional)' : ''}`}
+        error={errorOf(
+          'value',
+          optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
+        )}
+        hint={valueHint(operation, draft)}
+      >
+        {(control) => (
+          <Affix suffix="USD">
+            <Input
+              {...control}
+              numeric
+              placeholder="0.00"
+              value={shownValue(draft)}
+              onChange={(event) => change({ value: event.target.value, offered: false })}
+              onBlur={leave('value')}
+            />
+          </Affix>
+        )}
+      </Field>
+    </div>
+  );
+}
+
+/** POOL-DEPOSIT: nothing to enter, the coins stay the owner's. */
+function PoolDepositNote({ operation }: { operation: Operation }) {
+  return (
+    <div className="ui-subform">
+      <span className="ui-field__hint">
+        The coins stay yours while they are in the pool: they keep their purchase price and count in
+        your balance. This is not a sale and not a withdrawal. Only the network fee
+        {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is a
+        cost.
+      </span>
+    </div>
+  );
+}
+
+function FormFooter({
+  operation,
+  left,
+  saving,
+  ready,
+  onDeleted,
+  onCancel,
+}: {
+  operation: Operation;
+  left: number;
+  saving: boolean;
+  ready: boolean;
+  onDeleted?: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <DrawerFooter>
+      <span className="transactions-left">{left} left to classify</span>
+      <span className="ui-grow" />
+      {onDeleted && <RemoveCounted operation={operation} disabled={saving} onDeleted={onDeleted} />}
+      <Button variant="ghost" onClick={onCancel}>
+        Later
+      </Button>
+      <Button type="submit" variant="primary" disabled={!ready} busy={saving}>
+        {saving ? 'Saving…' : 'Save'}
+      </Button>
+    </DrawerFooter>
+  );
+}
+
 interface Props {
   operation: Operation;
   /** The whole list, for the other side of a swap. */
@@ -854,10 +1246,7 @@ export default function ClassifyForm({
   const swap = draft.type === 'swap';
   // CLS-RECORDED: the swap names a record added by hand: nothing to value.
   const recorded = swap && recordKey.test(draft.pair);
-  // CLS-SWAP-RECORD: the swap replaces a purchase or sale added by hand.
-  const replacing = swap && replaceKey.test(draft.pair);
   const poolDeposit = draft.type === 'pool-deposit';
-  const poolWithdrawal = draft.type === 'pool-withdrawal';
   useEffect(() => {
     if (!transfer || accounts) return;
     let live = true;
@@ -868,11 +1257,6 @@ export default function ClassifyForm({
       live = false;
     };
   }, [transfer, accounts]);
-  const own = ownAccount(operation);
-  const others = (accounts ?? []).filter((account) => account.id !== own?.id);
-  const known = [operation.account, operation.counterAccount].find(
-    (place) => place && place.id === draft.account && place.id !== own?.id,
-  );
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -898,32 +1282,9 @@ export default function ClassifyForm({
     }
   };
 
-  const pairs = swap ? swapCandidates(operation, operations, dustThresholdUsd) : [];
-  const records = swap ? recordCandidates(operation, operations) : [];
-  const replaceable = swap ? replaceCandidates(operation, operations) : [];
-  // CLS-PAID: the picked record belongs to another account, so the coins go there to pay for it.
-  const paidElsewhere = recorded
-    ? operations.find(
-        (item) => item.id === draft.pair && item.account?.id !== operation.account?.id,
-      )?.account
-    : undefined;
-  const options = (items: [string, string][]) =>
-    items.map(([key, label]) => (
-      <option key={key} value={key}>
-        {label}
-      </option>
-    ));
   const priced = draft.type === 'buy' || draft.type === 'sell';
-  const rated = draft.currency === 'EUR' || draft.currency === 'RUB';
-  const optional =
-    draft.type === 'reward' ||
-    draft.type === 'staking-reward' ||
-    draft.type === 'pool-reward' ||
-    draft.type === 'airdrop' ||
-    draft.type === 'swap' ||
-    draft.type === 'fee' ||
-    poolWithdrawal;
   const other = draft.type === 'other';
+  const part: PartProps = { id, operation, draft, change, errorOf, leave };
   // Other asks only for a comment, so it shows up front rather than under "More options".
   const commentField = (
     <Field
@@ -975,224 +1336,21 @@ export default function ClassifyForm({
             ))}
           </OptionGrid>
         </section>
-        {priced && (
-          <div className="ui-subform">
-            <div className="ui-field-row">
-              <Field
-                id={`${id}-amount`}
-                label={draft.type === 'buy' ? 'You paid' : 'You received'}
-                error={errorOf(
-                  'amount',
-                  draft.type === 'buy'
-                    ? 'Enter the amount you paid'
-                    : 'Enter the amount you received',
-                )}
-              >
-                {(control) => (
-                  <Affix suffix={draft.currency}>
-                    <Input
-                      {...control}
-                      numeric
-                      placeholder="0.00"
-                      value={draft.amount}
-                      onChange={(event) => change({ amount: event.target.value })}
-                      onBlur={leave('amount')}
-                    />
-                  </Affix>
-                )}
-              </Field>
-              <div className="ui-field">
-                <span className="ui-field__label" id={`${id}-currency`}>
-                  Currency
-                </span>
-                <SegmentedControl
-                  name={`${id}-currency`}
-                  labelledBy={`${id}-currency`}
-                  options={currencies}
-                  value={draft.currency}
-                  onChange={(currency) => change({ currency, rate: '' })}
-                />
-              </div>
-            </div>
-            {rated ? (
-              <Field
-                id={`${id}-rate`}
-                label="Exchange rate"
-                error={errorOf('rate', 'Enter a rate above zero, or leave it empty')}
-                hint={`Empty means the Bank of Russia rate of ${day(operation.occurredAt)}.`}
-              >
-                {(control) => (
-                  <Affix suffix={`${draft.currency} per 1 USD`} wide>
-                    <Input
-                      {...control}
-                      numeric
-                      placeholder="Bank of Russia rate"
-                      value={draft.rate}
-                      onChange={(event) => change({ rate: event.target.value })}
-                      onBlur={leave('rate')}
-                    />
-                  </Affix>
-                )}
-              </Field>
-            ) : (
-              draft.currency !== 'USD' && (
-                <span className="ui-field__hint">{draft.currency} is counted 1:1 with USD.</span>
-              )
-            )}
-          </div>
-        )}
+        {priced && <PriceFields {...part} />}
         {transfer && (
-          <div className="ui-subform">
-            <Field
-              id={`${id}-account`}
-              label={legDirection(operation) === 'out' ? 'Sent to' : 'Received from'}
-              error={
-                errorOf('account', 'Choose the other wallet') ??
-                (accountsFailed
-                  ? 'Could not load your wallets. Close this window and try again.'
-                  : null)
-              }
-            >
-              {(control) => (
-                <Select
-                  {...control}
-                  value={draft.account}
-                  onChange={(event) => change({ account: event.target.value, partner: '' })}
-                  onBlur={leave('account')}
-                >
-                  <option value="">{accounts ? 'Choose your wallet' : 'Loading wallets…'}</option>
-                  {others.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                  {/* The saved or suggested wallet stays shown while the list loads. */}
-                  {!accounts && known && <option value={known.id}>{known.name}</option>}
-                </Select>
-              )}
-            </Field>
-            {choosesAddress && (
-              <Field
-                id={`${id}-partner`}
-                label={legDirection(operation) === 'out' ? 'Received at' : 'Sent from'}
-                error={errorOf('partner', 'Choose the address of that wallet')}
-                hint={`Several addresses of that wallet took part in this transaction. Choose the one that ${legDirection(operation) === 'out' ? 'received' : 'sent'} these coins.`}
-              >
-                {(control) => (
-                  <Select
-                    {...control}
-                    value={draft.partner}
-                    onChange={(event) => change({ partner: event.target.value })}
-                    onBlur={leave('partner')}
-                  >
-                    <option value="">Choose the address</option>
-                    {legs.map((leg) => (
-                      <option key={leg.wallet?.id} value={leg.wallet?.id}>
-                        {[leg.wallet && addressText(leg.wallet), signedAmount(leg)].join(' · ')}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
-            )}
-            <span className="ui-field__hint">
-              Transfers between your wallets don't change your capital. Only the network fee
-              {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
-              counted as a cost.
-            </span>
-          </div>
+          <TransferFields
+            {...part}
+            accounts={accounts}
+            accountsFailed={accountsFailed}
+            legs={legs}
+          />
         )}
         {swap && (
-          <div className="ui-subform">
-            <Field
-              id={`${id}-pair`}
-              label={legDirection(operation) === 'out' ? 'Received in exchange' : 'Paid with'}
-              error={errorOf('pair', 'Choose the transaction on the other side')}
-              hint={
-                replacing
-                  ? `The ${legDirection(operation) === 'out' ? 'purchase' : 'sale'} you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.`
-                  : recorded
-                    ? paidElsewhere
-                      ? `The coins move to ${paidElsewhere.name} just before that purchase and pay for it there. Nothing is counted twice.`
-                      : 'This transaction is that record: nothing new is added, and the coins are not counted twice.'
-                    : 'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.'
-              }
-            >
-              {(control) => (
-                <Select
-                  {...control}
-                  value={draft.pair}
-                  onChange={(event) => change({ pair: event.target.value })}
-                  onBlur={leave('pair')}
-                >
-                  <option value="">Choose the transaction</option>
-                  {records.length > 0 || replaceable.length > 0 ? (
-                    <>
-                      <optgroup label="Your blockchain transactions">{options(pairs)}</optgroup>
-                      {records.length > 0 && (
-                        <optgroup label="Added by you or from CSV">{options(records)}</optgroup>
-                      )}
-                      {replaceable.length > 0 && (
-                        <optgroup label="Added by you, to be replaced by this swap">
-                          {options(replaceable)}
-                        </optgroup>
-                      )}
-                    </>
-                  ) : (
-                    options(pairs)
-                  )}
-                </Select>
-              )}
-            </Field>
-          </div>
+          <SwapField {...part} operations={operations} dustThresholdUsd={dustThresholdUsd} />
         )}
-        {poolDeposit && (
-          <div className="ui-subform">
-            <span className="ui-field__hint">
-              The coins stay yours while they are in the pool: they keep their purchase price and
-              count in your balance. This is not a sale and not a withdrawal. Only the network fee
-              {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
-              a cost.
-            </span>
-          </div>
-        )}
-        {poolWithdrawal && (
-          <div className="ui-subform">
-            <Field
-              id={`${id}-deposit`}
-              label="Returns the deposit"
-              error={errorOf('deposit', 'Choose the pool deposit this withdrawal returns')}
-              hint={`Your pool deposits of ${legAsset(operation).symbol ?? 'this coin'} from this wallet made before it. Classify the deposit as Pool deposit first.`}
-            >
-              {(control) => (
-                <Select
-                  {...control}
-                  value={draft.deposit}
-                  onChange={(event) => change({ deposit: event.target.value })}
-                  onBlur={leave('deposit')}
-                >
-                  <option value="">Choose the pool deposit</option>
-                  {poolCandidates(operation, operations).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Toggle
-              checked={draft.partial}
-              onChange={(partial) => change({ partial })}
-              describedBy={`${id}-partial-hint`}
-            >
-              Part of the deposit
-            </Toggle>
-            <span className="ui-field__hint" id={`${id}-partial-hint`}>
-              {draft.partial
-                ? 'The rest is still in the pool: it stays in your balance with its purchase price. Classify the other parts in the order they happened.'
-                : 'The last or only withdrawal of this deposit: what is missing from it counts as impermanent loss.'}
-            </span>
-          </div>
+        {poolDeposit && <PoolDepositNote operation={operation} />}
+        {draft.type === 'pool-withdrawal' && (
+          <PoolWithdrawalFields {...part} operations={operations} />
         )}
         {other && (
           <div className="ui-subform">
@@ -1205,44 +1363,7 @@ export default function ClassifyForm({
           </div>
         )}
         {draft.type && !priced && !transfer && !other && !poolDeposit && !recorded && (
-          <div className="ui-subform">
-            <Field
-              id={`${id}-value`}
-              label={`${poolWithdrawal ? 'Value of the gain' : 'Value at the time'}${optional ? ' (optional)' : ''}`}
-              error={errorOf(
-                'value',
-                optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
-              )}
-              hint={
-                draft.offered && draft.suggested && shownValue(draft) === draft.suggested
-                  ? `No price is stored for ${operation.asset.symbol ?? operation.asset.name} around ${day(operation.occurredAt)}, so the coins are valued at its latest stored price (${day(operation.marketValue?.observedAt ?? operation.occurredAt)}). Change it if they were worth something else.`
-                  : replacing
-                    ? 'Empty: the value of the record you added.'
-                    : swap || draft.type === 'fee'
-                      ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                      : poolWithdrawal
-                        ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                        : draft.type === 'expense' || operation.direction !== 'in'
-                          ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
-                          : optional
-                            ? 'Without a value the coins count in net worth, not in profit.'
-                            : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`
-              }
-            >
-              {(control) => (
-                <Affix suffix="USD">
-                  <Input
-                    {...control}
-                    numeric
-                    placeholder="0.00"
-                    value={shownValue(draft)}
-                    onChange={(event) => change({ value: event.target.value, offered: false })}
-                    onBlur={leave('value')}
-                  />
-                </Affix>
-              )}
-            </Field>
-          </div>
+          <ValueField {...part} />
         )}
         <details className="ui-more">
           <summary>
@@ -1258,19 +1379,14 @@ export default function ClassifyForm({
         </details>
         {error && <Banner tone="neg">{error}</Banner>}
       </div>
-      <DrawerFooter>
-        <span className="transactions-left">{left} left to classify</span>
-        <span className="ui-grow" />
-        {onDeleted && (
-          <RemoveCounted operation={operation} disabled={saving} onDeleted={onDeleted} />
-        )}
-        <Button variant="ghost" onClick={onCancel}>
-          Later
-        </Button>
-        <Button type="submit" variant="primary" disabled={!ready} busy={saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
-      </DrawerFooter>
+      <FormFooter
+        operation={operation}
+        left={left}
+        saving={saving}
+        ready={ready}
+        onDeleted={onDeleted}
+        onCancel={onCancel}
+      />
     </form>
   );
 }
