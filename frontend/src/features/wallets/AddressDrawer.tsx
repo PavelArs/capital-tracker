@@ -231,6 +231,51 @@ function TransactionItem({
   );
 }
 
+/** M23, M24: what Stellar reports beyond the transactions read; Zcash shows the transparent balance. */
+function NetworkNote({ address, symbol }: { address: WalletAddress; symbol: string }) {
+  if (address.network === 'stellar' && address.reportedBalance) {
+    const reported = quantity(address.reportedBalance);
+    const read = quantity(address.chainBalance ?? '0');
+    return (
+      <Banner tone="warn">
+        Stellar reports {reported} {symbol}; the transactions read give {read} {symbol}. The app
+        does not read offers on the Stellar exchange, claimable balances or liquidity pools, and the
+        public server keeps only recent history.
+      </Banner>
+    );
+  }
+  if (address.network === 'zcash')
+    return (
+      <Banner tone="info">
+        This is the balance of the transparent address. Shielded balances are private and the app
+        cannot read them: ZEC moved to a shielded address shows as sent.
+      </Banner>
+    );
+  return null;
+}
+
+function SyncNotes({ address, run }: { address: WalletAddress; run: SyncRun | undefined }) {
+  const offNote = syncOffNote(address);
+  const problem = syncProblem(address, run);
+  return (
+    <>
+      {offNote && (
+        // WALLET-SYNC-OFF: why nothing is read any more, and that the found transactions stay.
+        <Banner tone={offNote.tone} role="note">
+          {offNote.text}
+        </Banner>
+      )}
+      {problem && (
+        // wallets-13: an amber note with an alert icon, as on the Wallets row. A sync the owner
+        // just ran is said aloud (wallets-02); a failure the background job stored is a note.
+        <Banner tone="warn" role={run?.state === 'failed' ? 'alert' : 'note'}>
+          {problem}
+        </Banner>
+      )}
+    </>
+  );
+}
+
 /** The wallet the address belongs to and its name; the drawer stays open after Save. */
 function WalletForm({
   address,
@@ -552,7 +597,6 @@ export default function AddressDrawer({
       setSwitching(false);
     }
   };
-  const offNote = syncOffNote(address);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [allCoins, setAllCoins] = useState(false);
   const count = address.transactionCount;
@@ -626,35 +670,10 @@ export default function AddressDrawer({
         <TokensSection address={address} onChange={(saved) => onSaved(saved, false)} />
         {address.staking && <StakingSection address={address} staking={address.staking} />}
         {address.pools && <PoolsSection pools={address.pools} />}
-        {address.network === 'stellar' && address.reportedBalance && (
-          <Banner tone="warn">
-            Stellar reports {quantity(address.reportedBalance)} {network.symbol}; the transactions
-            read give {quantity(address.chainBalance ?? '0')} {network.symbol}. The app does not
-            read offers on the Stellar exchange, claimable balances or liquidity pools, and the
-            public server keeps only recent history.
-          </Banner>
-        )}
-        {address.network === 'zcash' && (
-          <Banner tone="info">
-            This is the balance of the transparent address. Shielded balances are private and the
-            app cannot read them: ZEC moved to a shielded address shows as sent.
-          </Banner>
-        )}
+        <NetworkNote address={address} symbol={network.symbol} />
         {exchange && <EarnSection exchange={exchange} />}
         {exchange && <ConvertNote exchange={exchange} />}
-        {offNote && (
-          // WALLET-SYNC-OFF: why nothing is read any more, and that the found transactions stay.
-          <Banner tone={offNote.tone} role="note">
-            {offNote.text}
-          </Banner>
-        )}
-        {syncProblem(address, run) && (
-          // wallets-13: an amber note with an alert icon, as on the Wallets row. A sync the owner
-          // just ran is said aloud (wallets-02); a failure the background job stored is a note.
-          <Banner tone="warn" role={run?.state === 'failed' ? 'alert' : 'note'}>
-            {syncProblem(address, run)}
-          </Banner>
-        )}
+        <SyncNotes address={address} run={run} />
         <WalletForm address={address} accounts={accounts} exchange={!!exchange} onSaved={onSaved} />
         <AddressHistory address={address} exchange={!!exchange} />
         <SyncJournal address={address} run={run} />
