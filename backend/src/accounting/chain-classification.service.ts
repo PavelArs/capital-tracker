@@ -45,6 +45,7 @@ import {
   type RecordedClassification,
   type RecordSwapClassification,
   type SwapClassification,
+  type TransferClassification,
   unfit,
 } from './chain-classification';
 import {
@@ -75,6 +76,7 @@ import {
   unpaidFor,
 } from './chain-recorded';
 import {
+  type PlannedRecordSwap,
   type PlannedSwap,
   planRecordSwap,
   planSwap,
@@ -84,6 +86,7 @@ import {
 } from './chain-swap';
 import {
   coinOf,
+  type MatchableLeg,
   type OwnLeg,
   ownTransferPairs,
   PAIR_FEE_PERCENT,
@@ -313,6 +316,143 @@ const operationKey = (
     comment: value?.type === 'transfer' || value?.type === 'swap' ? null : comment,
   });
 
+/**
+ * CLS-DUPLICATE: the record is replaced by an answer, not by hiding or clearing one, nor by a
+ * swap against a record.
+ */
+function checkReplaces(input: ClassificationInput) {
+  if (input.replaces && (input.hidden || input.classification === null))
+    throw new BadRequestException('Invalid accounting input');
+  if (input.replaces && input.classification?.type === 'swap' && 'record' in input.classification)
+    throw new BadRequestException('Invalid accounting input');
+}
+
+/** The status an answer is stored with: hidden, or classified unless it was cleared. */
+const answerStatus = (input: ClassificationInput): ClassificationRow['status'] =>
+  input.hidden ? 'hidden' : input.classification ? 'classified' : 'unclassified';
+
+/** What an answer records, worked out before anything is written. */
+interface AnswerPlan {
+  accountId: string | null;
+  pays: Pays | null;
+  partner: Partner | null;
+  withdrawal: PoolWithdrawalClassification | null;
+  planned: PlannedOperation | null;
+  movement: PlannedTransfer | null;
+  linkable: boolean;
+  linked: string | null;
+}
+
+/** XFER-*, CLS-PAID: the owned transfer an answer records, if any. */
+function plannedMovement(
+  target: Leg,
+  accountId: string | null,
+  transfer: TransferClassification | null,
+  partner: Partner | null,
+  pays: Pays | null,
+): PlannedTransfer | null {
+  const { address, txid, row } = target;
+  // XFER-PROPOSED: the link column names a leg of the same hash; a pair joined across two
+  // hashes is found by the transfer both name instead.
+  const crossHash = transfer?.partner !== undefined && partner !== null && partner.txid !== txid;
+  return transfer && accountId
+    ? planTransfer(
+        { ...own(address, row), accountId },
+        transfer.accountId,
+        partner && own(partner.address, partner.row),
+        // XFER-ADDRESS: a leg of this very transaction fits exactly, the fee being the
+        // sender's own; only a pair of two hashes has the missing part as its fee.
+        crossHash,
+      )
+    : pays && accountId
+      ? planTransfer({ ...own(address, row), accountId }, pays.accountId, null)
+      : null;
+}
+
+/**
+ * The entry an answer stands for stays as it is when the answer, its account, note and link are
+ * the same, and the other leg of a transfer still names that transfer.
+ */
+const entryKept = (
+  live: ClassificationRow | null,
+  value: ClassificationInput['classification'],
+  accountId: string | null,
+  comment: string | null,
+  linked: string | null,
+  partner: Partner | null,
+) =>
+  live !== null &&
+  value !== null &&
+  operationKey(live.accountId, live.details, live.comment) ===
+    operationKey(accountId, value, comment) &&
+  live.linkedAddressId === linked &&
+  (partner === null ||
+    (partner.current?.status === 'classified' && partner.current.transferId === live.transferId));
+
+/**
+ * A note added to a recognised transfer leaves it recognised; a Bybit trade (M22), a Tron
+ * reward claim (TRON-REWARD) or Earn yield (BYBIT-EARN) the app recorded by itself is
+ * recognised too.
+ */
+const recognised = (
+  produced: Produced,
+  kept: boolean,
+  live: ClassificationRow | null,
+  automatic: boolean,
+) =>
+  produced.transferId
+    ? (kept && live?.automatic) || automatic
+    : automatic && (produced.tradeId || produced.rewardId)
+      ? true
+      : null;
+
+/**
+ * CLS-SWAP: the swap both sides name stays as it is when the answer is the same and both sides
+ * still name each other and that swap.
+ */
+const swapKept = (
+  live: ClassificationRow | null,
+  accountId: string | null,
+  value: SwapClassification,
+  comment: string | null,
+  otherCurrent: ClassificationRow | null,
+) =>
+  live !== null &&
+  operationKey(live.accountId, live.details, live.comment) ===
+    operationKey(accountId, value, comment) &&
+  live.pairedAddressId === value.with.addressId &&
+  live.pairedTxid === value.with.txid &&
+  otherCurrent?.status === 'classified' &&
+  otherCurrent.swapId === live.swapId;
+
+/**
+ * CLS-SWAP-RECORD: refuses a record that cannot be the other side of the leg's swap: not a plain
+ * buy or sale, moved the same way, the same coin, or too far away, checked in that order.
+ * Returns the leg's coin.
+ */
+function swapRecordCoin(
+  found: OwnRecord,
+  plan: PlannedRecordSwap,
+  chain: SwapSide,
+  blockTime: Date,
+): ReturnType<typeof chainCoin> {
+  const { answer } = found;
+  if (
+    (answer.type !== 'buy' && answer.type !== 'sell') ||
+    answer.fee !== undefined ||
+    answer.perUsd !== undefined
+  )
+    throw new UnprocessableEntityException('That record cannot be replaced by a swap');
+  if (found.inbound !== plan.paying)
+    throw new UnprocessableEntityException('Choose a record that moved coins the other way');
+  const coin = chainCoin(chain);
+  if (found.coin === coin.symbol?.toUpperCase())
+    throw new UnprocessableEntityException('A swap needs two different coins');
+  if (Math.abs(found.at.getTime() - blockTime.getTime()) > SWAP_RECORD_WINDOW_MS)
+    throw new UnprocessableEntityException('That record is too far from this transaction');
+  return coin;
+}
+
 @Injectable()
 export class ChainClassificationService {
   private readonly logger = new Logger(ChainClassificationService.name);
@@ -336,11 +476,7 @@ export class ChainClassificationService {
     const address = parseUuid(addressId);
     if (!chainTxid.test(txid)) throw new NotFoundException();
     const input = parseClassification(raw);
-    // CLS-DUPLICATE: the record is replaced by an answer, not by hiding or clearing one.
-    if (input.replaces && (input.hidden || input.classification === null))
-      throw new BadRequestException('Invalid accounting input');
-    if (input.replaces && input.classification?.type === 'swap' && 'record' in input.classification)
-      throw new BadRequestException('Invalid accounting input');
+    checkReplaces(input);
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a
     // malformed amount is a 400 here, not a conflict inside the journal.
@@ -375,42 +511,10 @@ export class ChainClassificationService {
         const row = await this.readLeg(manager, owner, address, txid);
         const version = await this.lockHead(manager, address, txid);
         if (version !== input.expectedVersion) throw conflict();
-        // BYBIT-GAP-DELETE: a deleted record is gone for every answer.
-        if (
-          version > 0 &&
-          (await this.version(manager, address, txid, version)).status === 'deleted'
-        )
-          throw new NotFoundException();
-        // BYBIT-TRADES: a Buy paid in the fill's own quote coin needs the records to hold that
-        // coin, as for the automatic answer. Otherwise the shortfall would be entered as new
-        // money while the unanswered receipts that supplied the coin still count (D1).
-        if (
-          value?.type === 'buy' &&
-          row.network === 'bybit' &&
-          row.quoteAsset === value.currency &&
-          !(await this.journalHolds(manager, owner, row, value))
-        )
-          throw new ConflictException(
-            `The account's records do not hold the ${value.currency} this trade paid with yet; answer the ${value.currency} deposit or transfer first`,
-          );
-        // CLS-DUPLICATE: a record the answer replaces goes in the same transaction. A priced
-        // entry settles in the account's cash, which the record has spent, so it goes first;
-        // otherwise coins are added before the record goes and spent ones are freed first.
-        const replaced = input.replaces
-          ? await this.replacedRecord(manager, owner, { address, txid, row, version }, input)
-          : null;
-        const priced = replaced?.answer.type === 'buy' || replaced?.answer.type === 'sell';
-        const voidFirst = replaced !== null && (priced || !inbound(row));
-        if (replaced && voidFirst) await this.voidRecord(manager, owner, replaced);
-        const saved = await this.record(
-          manager,
-          owner,
-          { address, txid, row, version },
-          input,
-          payload,
-          false,
-        );
-        if (replaced && !voidFirst) await this.voidRecord(manager, owner, replaced);
+        await this.checkNotDeleted(manager, address, txid, version);
+        await this.checkQuoteHeld(manager, owner, row, value);
+        const target = { address, txid, row, version };
+        const saved = await this.recordReplacing(manager, owner, target, input, payload);
         return { created: true, value: classificationView(saved) };
       });
     } catch (error) {
@@ -419,6 +523,62 @@ export class ChainClassificationService {
     // An answer can make an earlier transfer possible: the sender now holds the coins.
     if (result.created) await this.linkQuietly(owner);
     return result;
+  }
+
+  /** BYBIT-GAP-DELETE: a deleted record is gone for every answer. */
+  private async checkNotDeleted(
+    manager: EntityManager,
+    address: string,
+    txid: string,
+    version: number,
+  ) {
+    if (version > 0 && (await this.version(manager, address, txid, version)).status === 'deleted')
+      throw new NotFoundException();
+  }
+
+  /**
+   * BYBIT-TRADES: a Buy paid in the fill's own quote coin needs the records to hold that coin,
+   * as for the automatic answer. Otherwise the shortfall would be entered as new money while
+   * the unanswered receipts that supplied the coin still count (D1).
+   */
+  private async checkQuoteHeld(
+    manager: EntityManager,
+    owner: string,
+    row: LegRow,
+    value: ClassificationInput['classification'],
+  ) {
+    if (
+      value?.type === 'buy' &&
+      row.network === 'bybit' &&
+      row.quoteAsset === value.currency &&
+      !(await this.journalHolds(manager, owner, row, value))
+    )
+      throw new ConflictException(
+        `The account's records do not hold the ${value.currency} this trade paid with yet; answer the ${value.currency} deposit or transfer first`,
+      );
+  }
+
+  /**
+   * CLS-DUPLICATE: a record the answer replaces goes in the same transaction. A priced entry
+   * settles in the account's cash, which the record has spent, so it goes first; otherwise coins
+   * are added before the record goes and spent ones are freed first.
+   */
+  private async recordReplacing(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    input: ClassificationInput,
+    payload: string,
+  ): Promise<ClassificationRow> {
+    const replaced = input.replaces
+      ? await this.replacedRecord(manager, owner, target, input)
+      : null;
+    const priced = replaced?.answer.type === 'buy' || replaced?.answer.type === 'sell';
+    const voidFirst = replaced !== null && (priced || !inbound(target.row));
+    if (replaced && voidFirst) await this.voidRecord(manager, owner, replaced);
+    const saved = await this.record(manager, owner, target, input, payload, false);
+    if (replaced && !voidFirst) await this.voidRecord(manager, owner, replaced);
+    return saved;
   }
 
   /**
@@ -799,43 +959,8 @@ export class ChainClassificationService {
       try {
         const done = await this.source.transaction(async (manager) => {
           await lockAccountingOwner(manager, owner);
-          const row = await this.readLeg(manager, owner, outgoing.addressId, outgoing.txid);
-          const arrival = await this.readLeg(manager, owner, incoming.addressId, incoming.txid);
-          const version = await this.lockHead(manager, outgoing.addressId, outgoing.txid);
-          const other = await this.lockHead(manager, incoming.addressId, incoming.txid);
-          // Answered or moved to another account meanwhile: the owner's word stands.
-          if (row.accountId !== outgoing.accountId || arrival.accountId !== incoming.accountId)
-            return false;
-          if (outgoing.accountId === null || incoming.accountId === null) return false;
-          const unanswered = async (address: string, txid: string, at: number) =>
-            at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
-          // XFER-REJOIN: the side answered as a transfer with the other's account and nothing
-          // else is replaced by the transfer both sides name; the other side takes the answer.
-          const lone = async (address: string, txid: string, at: number, account: string) => {
-            if (at === 0) return false;
-            const current = await this.version(manager, address, txid, at);
-            return (
-              current.status === 'classified' &&
-              current.type === 'transfer' &&
-              current.linkedAddressId === null &&
-              (current.details as { accountId?: string } | null)?.accountId === account
-            );
-          };
-          const sending = await unanswered(outgoing.addressId, outgoing.txid, version);
-          const receiving = await unanswered(incoming.addressId, incoming.txid, other);
-          let target: { leg: typeof outgoing; row: LegRow; version: number; toAccount: string };
-          if (
-            sending &&
-            (receiving ||
-              (await lone(incoming.addressId, incoming.txid, other, outgoing.accountId)))
-          )
-            target = { leg: outgoing, row, version, toAccount: incoming.accountId };
-          else if (
-            receiving &&
-            (await lone(outgoing.addressId, outgoing.txid, version, incoming.accountId))
-          )
-            target = { leg: incoming, row: arrival, version: other, toAccount: outgoing.accountId };
-          else return false;
+          const target = await this.transferTarget(manager, owner, outgoing, incoming);
+          if (!target) return false;
           const input: ClassificationInput = {
             requestId: randomUUID(),
             expectedVersion: target.version,
@@ -869,6 +994,51 @@ export class ChainClassificationService {
       }
     }
     return { linked };
+  }
+
+  /**
+   * XFER-AUTO, XFER-REJOIN: the side of a certain pair that takes the transfer, read and locked
+   * now: the send when the receipt is unanswered or a lone transfer from its account, else the
+   * receipt when the send is a lone transfer to its account; null when neither may.
+   */
+  private async transferTarget(
+    manager: EntityManager,
+    owner: string,
+    outgoing: MatchableLeg,
+    incoming: MatchableLeg,
+  ): Promise<{ leg: MatchableLeg; row: LegRow; version: number; toAccount: string } | null> {
+    const row = await this.readLeg(manager, owner, outgoing.addressId, outgoing.txid);
+    const arrival = await this.readLeg(manager, owner, incoming.addressId, incoming.txid);
+    const version = await this.lockHead(manager, outgoing.addressId, outgoing.txid);
+    const other = await this.lockHead(manager, incoming.addressId, incoming.txid);
+    // Answered or moved to another account meanwhile: the owner's word stands.
+    if (row.accountId !== outgoing.accountId || arrival.accountId !== incoming.accountId)
+      return null;
+    if (outgoing.accountId === null || incoming.accountId === null) return null;
+    const unanswered = async (address: string, txid: string, at: number) =>
+      at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
+    // XFER-REJOIN: the side answered as a transfer with the other's account and nothing
+    // else is replaced by the transfer both sides name; the other side takes the answer.
+    const lone = async (address: string, txid: string, at: number, account: string) => {
+      if (at === 0) return false;
+      const current = await this.version(manager, address, txid, at);
+      return (
+        current.status === 'classified' &&
+        current.type === 'transfer' &&
+        current.linkedAddressId === null &&
+        (current.details as { accountId?: string } | null)?.accountId === account
+      );
+    };
+    const sending = await unanswered(outgoing.addressId, outgoing.txid, version);
+    const receiving = await unanswered(incoming.addressId, incoming.txid, other);
+    if (
+      sending &&
+      (receiving || (await lone(incoming.addressId, incoming.txid, other, outgoing.accountId)))
+    )
+      return { leg: outgoing, row, version, toAccount: incoming.accountId };
+    if (receiving && (await lone(outgoing.addressId, outgoing.txid, version, incoming.accountId)))
+      return { leg: incoming, row: arrival, version: other, toAccount: outgoing.accountId };
+    return null;
   }
 
   /**
@@ -1036,18 +1206,12 @@ export class ChainClassificationService {
     payload: string,
     automatic: boolean,
   ): Promise<ClassificationRow> {
-    const { address, txid, row } = target;
+    const { address, txid } = target;
     const value = input.hidden ? null : input.classification;
     const current = target.version
       ? await this.version(manager, address, txid, target.version)
       : null;
-    if (
-      current?.status === 'classified' &&
-      current.type === 'pool-deposit' &&
-      value?.type !== 'pool-deposit' &&
-      (await this.withdrawalsOf(manager, owner, address, txid, null)).length > 0
-    )
-      throw namedDeposit();
+    await this.checkNamedDeposit(manager, owner, target, current, value);
     await this.checkWithdrawalOrder(manager, owner, target, current, value);
     if (value?.type === 'swap')
       return 'record' in value
@@ -1055,6 +1219,64 @@ export class ChainClassificationService {
         : this.recordSwap(manager, owner, target, input, payload, value);
     const live = current && (await this.active(manager, owner, current)) ? current : null;
     const comment = input.comment ?? null;
+    const plan = await this.planAnswer(manager, owner, target, input, value);
+    const { accountId, partner, linked } = plan;
+    const keep = entryKept(live, value, accountId, comment, linked, partner);
+    let produced: Produced = keep && live ? live : nothing;
+    if (!keep) produced = await this.replaceEntry(manager, owner, target, live, plan);
+    const saved = await this.append(manager, owner, {
+      address,
+      txid,
+      previous: target.version,
+      requestId: input.requestId,
+      payload,
+      status: answerStatus(input),
+      details: input.classification,
+      comment,
+      produced: { ...nothing, ...produced },
+      linkedAddressId: produced.transferId ? linked : null,
+      automatic: recognised(produced, keep, live, automatic),
+      paired: plan.withdrawal?.deposit ?? null,
+    });
+    if (partner && !keep && produced.transferId && accountId)
+      await this.appendPartner(manager, owner, target, partner, plan.linkable, {
+        produced,
+        automatic,
+        accountId,
+      });
+    return saved;
+  }
+
+  /** POOL-UNDO: a deposit cannot change while a withdrawal names it. */
+  private async checkNamedDeposit(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    current: ClassificationRow | null,
+    value: ClassificationInput['classification'],
+  ) {
+    if (
+      current?.status === 'classified' &&
+      current.type === 'pool-deposit' &&
+      value?.type !== 'pool-deposit' &&
+      (await this.withdrawalsOf(manager, owner, target.address, target.txid, null)).length > 0
+    )
+      throw namedDeposit();
+  }
+
+  /**
+   * What an answer records, checked and planned before anything is written: the purchase its
+   * coins pay for (CLS-PAID), the other leg of a transfer, the journal entry and the owned
+   * transfer, and the other leg the link column names.
+   */
+  private async planAnswer(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    input: ClassificationInput,
+    value: ClassificationInput['classification'],
+  ): Promise<AnswerPlan> {
+    const { txid, row } = target;
     const accountId = row.accountId;
     if (value && accountId === null)
       throw new UnprocessableEntityException('Choose the account of this wallet first');
@@ -1072,97 +1294,71 @@ export class ChainClassificationService {
       : value && value.type !== 'transfer'
         ? planOperation(leg(row), await this.priced(manager, row, value), input.comment)
         : null;
-    // XFER-PROPOSED: the link column names a leg of the same hash; a pair joined across two
-    // hashes is found by the transfer both name instead.
-    const crossHash = transfer?.partner !== undefined && partner !== null && partner.txid !== txid;
-    const movement =
-      transfer && accountId
-        ? planTransfer(
-            { ...own(address, row), accountId },
-            transfer.accountId,
-            partner && own(partner.address, partner.row),
-            // XFER-ADDRESS: a leg of this very transaction fits exactly, the fee being the
-            // sender's own; only a pair of two hashes has the missing part as its fee.
-            crossHash,
-          )
-        : pays && accountId
-          ? planTransfer({ ...own(address, row), accountId }, pays.accountId, null)
-          : null;
+    const movement = plannedMovement(target, accountId, transfer, partner, pays);
     // The link column names a leg of the same identity; a Bybit record under an identity of its
     // own (BYBIT-LINK-HASH) is joined by the transfer both name instead, like a crossed pair.
     const linkable = partner !== null && partner.txid === txid;
     const linked = linkable ? partner.address : null;
-    const keep =
-      live !== null &&
-      value !== null &&
-      operationKey(live.accountId, live.details, live.comment) ===
-        operationKey(accountId, value, comment) &&
-      live.linkedAddressId === linked &&
-      (partner === null ||
-        (partner.current?.status === 'classified' &&
-          partner.current.transferId === live.transferId));
-    let produced: Produced = keep && live ? live : nothing;
-    if (!keep) {
-      // Spent coins are freed before the new entry and added coins removed after it.
-      const written = [
-        key(address, txid),
-        ...(partner ? [key(partner.address, partner.txid)] : []),
-      ];
-      const retireOwn = async () => {
-        if (live) await this.retire(manager, owner, live, written);
-      };
-      const retirePartner = async () => {
-        if (partner?.live && !(live && sameEntry(live, partner.live)))
-          await this.retire(manager, owner, partner.live, written);
-      };
-      const spends = !inbound(row);
-      await (spends ? retireOwn() : retirePartner());
-      if (planned && accountId)
-        produced = await this.produce(manager, owner, row, accountId, planned);
-      if (movement && accountId)
-        produced = await (pays
-          ? this.carryToRecord(manager, owner, row, accountId, movement, pays)
-          : this.move(manager, owner, row, accountId, movement));
-      await (spends ? retirePartner() : retireOwn());
-    }
-    const saved = await this.append(manager, owner, {
-      address,
-      txid,
-      previous: target.version,
-      requestId: input.requestId,
-      payload,
-      status: input.hidden ? 'hidden' : input.classification ? 'classified' : 'unclassified',
-      details: input.classification,
-      comment,
-      produced: { ...nothing, ...produced },
-      linkedAddressId: produced.transferId ? linked : null,
-      // A note added to a recognised transfer leaves it recognised; a Bybit trade (M22), a Tron
-      // reward claim (TRON-REWARD) or Earn yield (BYBIT-EARN) the app recorded by itself is
-      // recognised too.
-      automatic: produced.transferId
-        ? (keep && live?.automatic) || automatic
-        : automatic && (produced.tradeId || produced.rewardId)
-          ? true
-          : null,
-      paired: withdrawal?.deposit ?? null,
+    return { accountId, pays, partner, withdrawal, planned, movement, linkable, linked };
+  }
+
+  /** Spent coins are freed before the new entry and added coins removed after it. */
+  private async replaceEntry(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    live: ClassificationRow | null,
+    plan: AnswerPlan,
+  ): Promise<Produced> {
+    const { address, txid, row } = target;
+    const { accountId, pays, partner, planned, movement } = plan;
+    let produced: Produced = nothing;
+    const written = [key(address, txid), ...(partner ? [key(partner.address, partner.txid)] : [])];
+    const retireOwn = async () => {
+      if (live) await this.retire(manager, owner, live, written);
+    };
+    const retirePartner = async () => {
+      if (partner?.live && !(live && sameEntry(live, partner.live)))
+        await this.retire(manager, owner, partner.live, written);
+    };
+    const spends = !inbound(row);
+    await (spends ? retireOwn() : retirePartner());
+    if (planned && accountId)
+      produced = await this.produce(manager, owner, row, accountId, planned);
+    if (movement && accountId)
+      produced = await (pays
+        ? this.carryToRecord(manager, owner, row, accountId, movement, pays)
+        : this.move(manager, owner, row, accountId, movement));
+    await (spends ? retirePartner() : retireOwn());
+    return produced;
+  }
+
+  /** XFER-AUTO: the other leg takes the transfer too and names this leg where it can. */
+  private async appendPartner(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    partner: Partner,
+    linkable: boolean,
+    entry: { produced: Produced; automatic: boolean; accountId: string },
+  ) {
+    const { address, txid } = target;
+    const { produced, automatic, accountId } = entry;
+    await this.append(manager, owner, {
+      address: partner.address,
+      txid: partner.txid,
+      previous: partner.version,
+      requestId: randomUUID(),
+      payload: JSON.stringify({ linkedTo: { addressId: address, txid }, ...produced }),
+      status: 'classified',
+      details: { type: 'transfer', accountId },
+      // A transfer the owner noted on one side keeps its note when the other side joins it.
+      comment: partner.live?.type === 'transfer' ? partner.live.comment : null,
+      produced: { ...nothing, accountId: partner.row.accountId, transferId: produced.transferId },
+      linkedAddressId: linkable ? address : null,
+      automatic,
+      paired: null,
     });
-    if (partner && !keep && produced.transferId && accountId)
-      await this.append(manager, owner, {
-        address: partner.address,
-        txid: partner.txid,
-        previous: partner.version,
-        requestId: randomUUID(),
-        payload: JSON.stringify({ linkedTo: { addressId: address, txid }, ...produced }),
-        status: 'classified',
-        details: { type: 'transfer', accountId },
-        // A transfer the owner noted on one side keeps its note when the other side joins it.
-        comment: partner.live?.type === 'transfer' ? partner.live.comment : null,
-        produced: { ...nothing, accountId: partner.row.accountId, transferId: produced.transferId },
-        linkedAddressId: linkable ? address : null,
-        automatic,
-        paired: null,
-      });
-    return saved;
   }
 
   /**
@@ -1195,39 +1391,10 @@ export class ChainClassificationService {
       otherCurrent && (await this.active(manager, owner, otherCurrent)) ? otherCurrent : null;
     const plan = planSwap(side(address, txid, row), side(other.addressId, other.txid, otherRow));
     const comment = input.comment ?? null;
-    const keep =
-      live !== null &&
-      operationKey(live.accountId, live.details, live.comment) ===
-        operationKey(row.accountId, value, comment) &&
-      live.pairedAddressId === other.addressId &&
-      live.pairedTxid === other.txid &&
-      otherCurrent?.status === 'classified' &&
-      otherCurrent.swapId === live.swapId;
+    const keep = swapKept(live, row.accountId, value, comment, otherCurrent);
     let produced: Produced = keep && live ? live : nothing;
-    if (!keep) {
-      const paying = plan.paying.addressId === address && plan.paying.txid === txid;
-      const [payingLive, receivingLive] = paying ? [live, otherLive] : [otherLive, live];
-      const written = [key(address, txid), key(other.addressId, other.txid)];
-      if (payingLive) await this.retire(manager, owner, payingLive, written);
-      const receivingRetires =
-        receivingLive && !(payingLive && sameEntry(payingLive, receivingLive))
-          ? receivingLive
-          : null;
-      if (!receivingRetires) produced = await this.swap(manager, owner, plan, value.valueUsd);
-      else {
-        await manager.query('SAVEPOINT chain_swap');
-        try {
-          await this.retire(manager, owner, receivingRetires, written);
-          produced = await this.swap(manager, owner, plan, value.valueUsd);
-          await manager.query('RELEASE SAVEPOINT chain_swap');
-        } catch (error) {
-          if (!refused(error)) throw error;
-          await manager.query('ROLLBACK TO SAVEPOINT chain_swap');
-          produced = await this.swap(manager, owner, plan, value.valueUsd);
-          await this.retire(manager, owner, receivingRetires, written);
-        }
-      }
-    }
+    if (!keep)
+      produced = await this.replaceSwap(manager, owner, target, plan, value, live, otherLive);
     const saved = await this.append(manager, owner, {
       address,
       txid,
@@ -1264,6 +1431,58 @@ export class ChainClassificationService {
   }
 
   /**
+   * CLS-SWAP: the new swap of both legs. The paying side's entry is voided first; the receiving
+   * side's, unless it is the same entry, around the swap (swapRetiring).
+   */
+  private async replaceSwap(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    plan: PlannedSwap,
+    value: SwapClassification,
+    live: ClassificationRow | null,
+    otherLive: ClassificationRow | null,
+  ): Promise<Produced> {
+    const { address, txid } = target;
+    const other = value.with;
+    const paying = plan.paying.addressId === address && plan.paying.txid === txid;
+    const [payingLive, receivingLive] = paying ? [live, otherLive] : [otherLive, live];
+    const written = [key(address, txid), key(other.addressId, other.txid)];
+    if (payingLive) await this.retire(manager, owner, payingLive, written);
+    const receivingRetires =
+      receivingLive && !(payingLive && sameEntry(payingLive, receivingLive)) ? receivingLive : null;
+    if (!receivingRetires) return this.swap(manager, owner, plan, value.valueUsd);
+    return this.swapRetiring(manager, owner, plan, value.valueUsd, receivingRetires, written);
+  }
+
+  /**
+   * CLS-SWAP: voids the receiving side's entry before the swap where the books allow that, and
+   * after it otherwise.
+   */
+  private async swapRetiring(
+    manager: EntityManager,
+    owner: string,
+    plan: PlannedSwap,
+    valueUsd: string | null,
+    receiving: ClassificationRow,
+    written: string[],
+  ): Promise<Produced> {
+    await manager.query('SAVEPOINT chain_swap');
+    try {
+      await this.retire(manager, owner, receiving, written);
+      const produced = await this.swap(manager, owner, plan, valueUsd);
+      await manager.query('RELEASE SAVEPOINT chain_swap');
+      return produced;
+    } catch (error) {
+      if (!refused(error)) throw error;
+      await manager.query('ROLLBACK TO SAVEPOINT chain_swap');
+      const produced = await this.swap(manager, owner, plan, valueUsd);
+      await this.retire(manager, owner, receiving, written);
+      return produced;
+    }
+  }
+
+  /**
    * CLS-SWAP-RECORD: answers the leg as a swap against a purchase or sale the owner added by
    * hand or from CSV in the same account (a coin bought, these coins spent, or the other way
    * round). The record goes and one swap takes its place, at the transaction's time and with its
@@ -1289,20 +1508,7 @@ export class ChainClassificationService {
     );
     if (!found || found.version !== value.record.version)
       throw new ConflictException('That record changed; reload and try again');
-    const { answer } = found;
-    if (
-      (answer.type !== 'buy' && answer.type !== 'sell') ||
-      answer.fee !== undefined ||
-      answer.perUsd !== undefined
-    )
-      throw new UnprocessableEntityException('That record cannot be replaced by a swap');
-    if (found.inbound !== plan.paying)
-      throw new UnprocessableEntityException('Choose a record that moved coins the other way');
-    const coin = chainCoin(chain);
-    if (found.coin === coin.symbol?.toUpperCase())
-      throw new UnprocessableEntityException('A swap needs two different coins');
-    if (Math.abs(found.at.getTime() - row.blockTime.getTime()) > SWAP_RECORD_WINDOW_MS)
-      throw new UnprocessableEntityException('That record is too far from this transaction');
+    const coin = swapRecordCoin(found, plan, chain, row.blockTime);
     const current = target.version
       ? await this.version(manager, address, txid, target.version)
       : null;
@@ -1311,40 +1517,7 @@ export class ChainClassificationService {
     await this.voidRecord(manager, owner, found);
     const legCoin = await findOrCreateInstrument(manager, owner, coin, true);
     if (!legCoin) throw new Error('Chain coin was not created');
-    const [outgoingInstrumentId, incomingInstrumentId] = plan.paying
-      ? [legCoin.id, found.instrumentId]
-      : [found.instrumentId, legCoin.id];
-    const [outgoingQuantity, incomingQuantity] = plan.paying
-      ? [plan.quantity, found.quantity]
-      : [found.quantity, plan.quantity];
-    const fee = plan.feeQuantity !== '0';
-    let swapId: string;
-    try {
-      const created = await this.swaps.mutateWithin(manager, owner, plan.accountId, 'create', {
-        ...parseSwapCreate({
-          requestId: randomUUID(),
-          expectedJournalRevision: await this.revision(manager, owner, plan.accountId),
-          assertExecuted: true,
-          outgoingInstrumentId,
-          incomingInstrumentId,
-          occurredAt: plan.occurredAt,
-          orderWithinTimestamp: 0,
-          outgoingQuantity,
-          incomingQuantity,
-          considerationUsd: value.valueUsd ?? found.valueUsd,
-          feeSource: fee ? 'held' : null,
-          feeInstrumentId: fee ? legCoin.id : null,
-          feeQuantity: plan.feeQuantity,
-        }),
-        orderWithinTimestamp: null,
-      });
-      swapId = created.value.swap.swapId;
-    } catch (error) {
-      if (!refused(error)) throw error;
-      throw new UnprocessableEntityException(
-        'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first',
-      );
-    }
+    const swapId = await this.recordSwapEntry(manager, owner, plan, found, value, legCoin.id);
     return this.append(manager, owner, {
       address,
       txid,
@@ -1359,6 +1532,50 @@ export class ChainClassificationService {
       automatic: null,
       paired: null,
     });
+  }
+
+  /** CLS-SWAP-RECORD: the swap that takes the record's place, at the transaction's time. */
+  private async recordSwapEntry(
+    manager: EntityManager,
+    owner: string,
+    plan: PlannedRecordSwap,
+    found: OwnRecord,
+    value: RecordSwapClassification,
+    legCoinId: string,
+  ): Promise<string> {
+    const [outgoingInstrumentId, incomingInstrumentId] = plan.paying
+      ? [legCoinId, found.instrumentId]
+      : [found.instrumentId, legCoinId];
+    const [outgoingQuantity, incomingQuantity] = plan.paying
+      ? [plan.quantity, found.quantity]
+      : [found.quantity, plan.quantity];
+    const fee = plan.feeQuantity !== '0';
+    try {
+      const created = await this.swaps.mutateWithin(manager, owner, plan.accountId, 'create', {
+        ...parseSwapCreate({
+          requestId: randomUUID(),
+          expectedJournalRevision: await this.revision(manager, owner, plan.accountId),
+          assertExecuted: true,
+          outgoingInstrumentId,
+          incomingInstrumentId,
+          occurredAt: plan.occurredAt,
+          orderWithinTimestamp: 0,
+          outgoingQuantity,
+          incomingQuantity,
+          considerationUsd: value.valueUsd ?? found.valueUsd,
+          feeSource: fee ? 'held' : null,
+          feeInstrumentId: fee ? legCoinId : null,
+          feeQuantity: plan.feeQuantity,
+        }),
+        orderWithinTimestamp: null,
+      });
+      return created.value.swap.swapId;
+    } catch (error) {
+      if (!refused(error)) throw error;
+      throw new UnprocessableEntityException(
+        'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first',
+      );
+    }
   }
 
   /**
@@ -2018,49 +2235,75 @@ export class ChainClassificationService {
     written: string[],
   ) {
     if (row.swapId && row.swapAccountId) {
-      // The swap goes first: it spends what the carrying transfer brought.
-      const head = await readSwapHead(manager, owner, row.swapAccountId, row.swapId);
-      if (!head) throw new Error('Missing produced swap');
-      await this.swaps.mutateWithin(
-        manager,
-        owner,
-        row.swapAccountId,
-        'void',
-        parseSwapVoid({
-          requestId: randomUUID(),
-          expectedJournalRevision: await this.revision(manager, owner, row.swapAccountId),
-          expectedVersion: projectSwapVersion(head).version,
-        }),
-        row.swapId,
-      );
-      if (row.transferId) await this.voidTransfer(manager, owner, row.transferId);
-      if (
-        row.pairedAddressId &&
-        row.pairedTxid &&
-        !written.includes(key(row.pairedAddressId, row.pairedTxid))
-      )
-        await this.unlink(manager, owner, row.pairedAddressId, row.pairedTxid, row.swapId);
+      await this.retireSwap(manager, owner, row, row.swapAccountId, row.swapId, written);
       return;
     }
     if (row.transferId) {
-      // CLS-PAID: a purchase that spent the coins is settled again without them first.
-      if (row.type === 'recorded') await this.releaseRecord(manager, owner, row);
-      await this.voidTransfer(manager, owner, row.transferId);
-      // A Bybit leg and a wallet leg of one hash can differ in identity (M22).
-      const other =
-        row.linkedAddressId &&
-        (await this.linkedTxid(manager, owner, row.linkedAddressId, row.transferId));
-      if (row.linkedAddressId && other && !written.includes(key(row.linkedAddressId, other)))
-        await this.unlink(manager, owner, row.linkedAddressId, other, row.transferId);
-      // XFER-PROPOSED: the other leg of a pair joined across two hashes names no address.
-      if (row.type === 'transfer' && !row.linkedAddressId)
-        for (const sibling of await this.siblings(manager, owner, row))
-          if (!written.includes(key(sibling.addressId, sibling.txid)))
-            await this.unlink(manager, owner, sibling.addressId, sibling.txid, row.transferId);
+      await this.retireTransfer(manager, owner, row, row.transferId, written);
       return;
     }
     // An outgoing Other produced nothing to void.
     if (!row.tradeId && !row.rewardId) return;
+    await this.retireEntry(manager, owner, row);
+  }
+
+  /** The swap goes first: it spends what the carrying transfer brought. */
+  private async retireSwap(
+    manager: EntityManager,
+    owner: string,
+    row: ClassificationRow,
+    swapAccountId: string,
+    swapId: string,
+    written: string[],
+  ) {
+    const head = await readSwapHead(manager, owner, swapAccountId, swapId);
+    if (!head) throw new Error('Missing produced swap');
+    await this.swaps.mutateWithin(
+      manager,
+      owner,
+      swapAccountId,
+      'void',
+      parseSwapVoid({
+        requestId: randomUUID(),
+        expectedJournalRevision: await this.revision(manager, owner, swapAccountId),
+        expectedVersion: projectSwapVersion(head).version,
+      }),
+      swapId,
+    );
+    if (row.transferId) await this.voidTransfer(manager, owner, row.transferId);
+    if (
+      row.pairedAddressId &&
+      row.pairedTxid &&
+      !written.includes(key(row.pairedAddressId, row.pairedTxid))
+    )
+      await this.unlink(manager, owner, row.pairedAddressId, row.pairedTxid, swapId);
+  }
+
+  private async retireTransfer(
+    manager: EntityManager,
+    owner: string,
+    row: ClassificationRow,
+    transferId: string,
+    written: string[],
+  ) {
+    // CLS-PAID: a purchase that spent the coins is settled again without them first.
+    if (row.type === 'recorded') await this.releaseRecord(manager, owner, row);
+    await this.voidTransfer(manager, owner, transferId);
+    // A Bybit leg and a wallet leg of one hash can differ in identity (M22).
+    const other =
+      row.linkedAddressId &&
+      (await this.linkedTxid(manager, owner, row.linkedAddressId, transferId));
+    if (row.linkedAddressId && other && !written.includes(key(row.linkedAddressId, other)))
+      await this.unlink(manager, owner, row.linkedAddressId, other, transferId);
+    // XFER-PROPOSED: the other leg of a pair joined across two hashes names no address.
+    if (row.type === 'transfer' && !row.linkedAddressId)
+      for (const sibling of await this.siblings(manager, owner, row))
+        if (!written.includes(key(sibling.addressId, sibling.txid)))
+          await this.unlink(manager, owner, sibling.addressId, sibling.txid, transferId);
+  }
+
+  /** The trade, or else the reward, an answer produced. */
+  private async retireEntry(manager: EntityManager, owner: string, row: ClassificationRow) {
     const accountId = row.accountId!;
     const expectedJournalRevision = await this.revision(manager, owner, accountId);
     if (row.tradeId) {
