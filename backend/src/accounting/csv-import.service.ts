@@ -264,6 +264,45 @@ function checkCandidate(
   }
   return null;
 }
+/** Each confirmed row, in order, as a new trade at its own journal revision with its source row. */
+async function appendImportedRows(
+  manager: EntityManager,
+  owner: string,
+  id: string,
+  target: string,
+  journal: JournalRow,
+  rows: CsvNormalization['rows'],
+  instruments: Map<string, Instrument>,
+) {
+  for (const row of rows) {
+    if (!row.execution) throw new Error('Missing validated CSV execution');
+    const fields = execution(row.execution);
+    const instrument = instruments.get(fields.instrumentId);
+    if (!instrument) throw new Error('Missing validated CSV instrument');
+    const tradeId = randomUUID();
+    const requestId = randomUUID();
+    const revision = journal.currentRevision + row.ordinal;
+    await appendTradeVersion(manager, owner, id, {
+      ...fields,
+      tradeId,
+      requestId,
+      version: 1,
+      journalRevision: revision,
+      kind: 'create',
+      instrumentName: instrument.name,
+      instrumentSymbol: instrument.symbol,
+      canonicalPayload: JSON.stringify({
+        kind: 'create',
+        expectedJournalRevision: revision - 1,
+        ...fields,
+      }),
+    });
+    await manager.query(
+      'INSERT INTO account_csv_import_rows ("ownerId","accountId","batchId",ordinal,"startLine","tradeId","createVersion","rollbackVersion") VALUES ($1,$2,$3,$4,$5,$6,1,NULL)',
+      [owner, id, target, row.ordinal, row.startLine, tradeId],
+    );
+  }
+}
 
 @Injectable()
 export class CsvImportService {
@@ -380,34 +419,7 @@ export class CsvImportService {
           throw invalid();
         if (!view.canConfirm || view.previewHash !== input.previewHash) throw conflict();
         const rows = view.rows;
-        for (const row of rows) {
-          if (!row.execution) throw new Error('Missing validated CSV execution');
-          const fields = execution(row.execution);
-          const instrument = instruments.get(fields.instrumentId);
-          if (!instrument) throw new Error('Missing validated CSV instrument');
-          const tradeId = randomUUID();
-          const requestId = randomUUID();
-          const revision = journal.currentRevision + row.ordinal;
-          await appendTradeVersion(manager, owner, id, {
-            ...fields,
-            tradeId,
-            requestId,
-            version: 1,
-            journalRevision: revision,
-            kind: 'create',
-            instrumentName: instrument.name,
-            instrumentSymbol: instrument.symbol,
-            canonicalPayload: JSON.stringify({
-              kind: 'create',
-              expectedJournalRevision: revision - 1,
-              ...fields,
-            }),
-          });
-          await manager.query(
-            'INSERT INTO account_csv_import_rows ("ownerId","accountId","batchId",ordinal,"startLine","tradeId","createVersion","rollbackVersion") VALUES ($1,$2,$3,$4,$5,$6,1,NULL)',
-            [owner, id, target, row.ordinal, row.startLine, tradeId],
-          );
-        }
+        await appendImportedRows(manager, owner, id, target, journal, rows, instruments);
         const settings: Settings = {
           format: input.format,
           mapping: input.mapping,
