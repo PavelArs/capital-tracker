@@ -14,12 +14,18 @@ import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { OptionGrid, OptionTile } from '@/ui/OptionTile';
 import { PasswordInput } from '@/ui/PasswordInput';
-import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import { isEvm } from '../shell/evm-networks';
 import KindField, { type KindChoice } from './KindField';
 import { networkIcon, networks as tracked } from './networks';
-import { accountNamed, checkAddress, checkApiKey } from './wallets';
+import {
+  type AddressCheck,
+  accountNamed,
+  checkAddress,
+  checkApiKey,
+  type KeyCheck,
+  newAccountRequest,
+} from './wallets';
 
 export interface WalletAccount {
   accountId: string;
@@ -87,20 +93,24 @@ const networkGroups = [
 const MAX_LABEL = 40;
 const isTracked = (key: string): key is Network => key in tracked;
 
+/** BYBIT-KEY: why Bybit's key was refused, when it is Bybit's to say; null for the common reasons. */
+function bybitFailure(error: unknown, status: number): string | null {
+  // The server says why Bybit's answer about the key was refused.
+  const said = isAxiosError(error)
+    ? (error.response?.data as { message?: unknown })?.message
+    : null;
+  if (status === 422 && typeof said === 'string') return said;
+  if (status === 503) return 'Bybit could not be reached. Try again in a few minutes.';
+  if (status === 400) return 'This is not a Bybit API key and secret. Copy both again from Bybit.';
+  return null;
+}
+
 function failure(error: unknown, network: Network, key: boolean): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   if (status === undefined)
     return 'Could not reach the server. Try again; the same request will not add the wallet twice.';
-  if (network === 'bybit') {
-    // BYBIT-KEY: the server says why Bybit's answer about the key was refused.
-    const said = isAxiosError(error)
-      ? (error.response?.data as { message?: unknown })?.message
-      : null;
-    if (status === 422 && typeof said === 'string') return said;
-    if (status === 503) return 'Bybit could not be reached. Try again in a few minutes.';
-    if (status === 400)
-      return 'This is not a Bybit API key and secret. Copy both again from Bybit.';
-  }
+  const bybit = network === 'bybit' ? bybitFailure(error, status) : null;
+  if (bybit !== null) return bybit;
   if (status === 400)
     return key
       ? 'This is not a valid account public key. Check that it was copied in full.'
@@ -108,6 +118,157 @@ function failure(error: unknown, network: Network, key: boolean): string {
   if (status === 404) return 'That wallet no longer exists. Close this window and reload the page.';
   if (status === 401) return 'Your session has ended. Sign in again.';
   return 'Could not add the wallet. Try again.';
+}
+
+/** What a wallet on each network tracks, said on step 2; the other EVM chains share one note. */
+const networkNotes: Partial<Record<Network, string>> = {
+  ethereum:
+    'One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20 token on Ethereum mainnet, named as the chain names them. The same address on another chain (Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain or Avalanche) is added as a wallet of its own.',
+  solana:
+    'Paste the wallet address, not a token account: the app finds its token accounts itself. It tracks SOL and every SPL token on Solana mainnet, named as the chain names them.',
+  stellar:
+    'Paste the account address that starts with G. The app tracks XLM on the Stellar public network; issued assets such as USDC on Stellar are not read. An exchange deposit address with a memo is not your wallet.',
+  zcash:
+    'Paste a transparent address that starts with t1 or t3. Shielded balances are private, so the app cannot read them: ZEC moved to a shielded address shows as sent, and ZEC from one shows as received.',
+  tron: 'Paste the address that starts with T. The app tracks TRX, USDT and USDC on Tron mainnet and the TRX you staked for energy or bandwidth; other tokens are not read.',
+};
+
+function networkNote(network: Network | null): string {
+  const note = network === null ? undefined : networkNotes[network];
+  if (note) return note;
+  if (network !== null && isEvm(network))
+    return `Paste the same 0x address you use on Ethereum. The app tracks ${tracked[network].symbol} and every token this address holds on ${tracked[network].name}, named as the chain names them; its other chains are separate wallets.`;
+  return 'Hardware wallets like Trezor use a new address for every deposit. Paste the account public key (zpub) from Trezor Suite to track all of them at once.';
+}
+
+/** From a wallet's page the address joins that wallet (its name is preset in step 3). */
+function dialogTitle(opened: WalletAccount | undefined, network: Network | undefined): string {
+  if (!opened) return 'Add wallet';
+  return network === 'bybit' ? 'Connect Bybit API' : `Add an address to ${opened.name}`;
+}
+
+function submitLabel(step: 1 | 2 | 3, saving: boolean, exchange: boolean): string {
+  if (step !== 3) return 'Continue';
+  if (saving) return exchange ? 'Checking the key…' : 'Adding…';
+  return exchange ? 'Add account' : 'Add wallet';
+}
+
+/** wallets-04: the field a refused Continue puts the keyboard on. */
+function problemField(exchange: boolean, keyOk: boolean): string {
+  if (!exchange) return 'wallet-address';
+  return keyOk ? 'bybit-secret' : 'bybit-key';
+}
+
+/** WAL-NO-SECRETS: why a pasted value is dropped, when it is a seed phrase or a private key. */
+const droppedSecret = (result: AddressCheck | KeyCheck): string | null =>
+  !result.ok && result.secret ? result.message : null;
+
+function DroppedSecret({ message }: { message: string }) {
+  return (
+    <span className="ui-field__error" role="alert">
+      {message} It was not saved.
+    </span>
+  );
+}
+
+function SecretHelp({
+  dropped,
+  error,
+  role,
+}: {
+  dropped: string | null;
+  error: string | null;
+  role: 'alert' | undefined;
+}) {
+  if (dropped) return <DroppedSecret message={dropped} />;
+  if (error !== null)
+    return (
+      <span className="ui-field__error" role={role}>
+        {error}
+      </span>
+    );
+  return (
+    <span className="ui-field__hint">Stored encrypted on the server and never shown again.</span>
+  );
+}
+
+function AddressHelp({
+  dropped,
+  error,
+  role,
+  check,
+  isKey,
+  existing,
+  existingWallet,
+  network,
+  onOpenExisting,
+  onSwitch,
+}: {
+  dropped: string | null;
+  error: string | null;
+  role: 'alert' | undefined;
+  check: AddressCheck;
+  isKey: boolean;
+  existing: WalletAddress | undefined;
+  existingWallet: string | undefined;
+  network: Network | null;
+  onOpenExisting: (address: WalletAddress) => void;
+  onSwitch: (network: Network) => void;
+}) {
+  if (dropped) return <DroppedSecret message={dropped} />;
+  if (existing)
+    return (
+      <span className="ui-field__error" role={role}>
+        {isKey ? 'This key is already tracked' : 'This address is already tracked'}
+        {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
+        <Button variant="link" onClick={() => onOpenExisting(existing)}>
+          Open it
+        </Button>
+      </span>
+    );
+  if (check.ok) return <span className="wallets-ok">{check.kind}</span>;
+  // wallets-06: an address of another network offers to switch to it.
+  const { switchTo } = check;
+  if (error !== null)
+    return (
+      <span className="ui-field__error" role={role}>
+        {error}
+        {switchTo && (
+          <>
+            {' '}
+            <Button variant="link" onClick={() => onSwitch(switchTo)}>
+              Switch to {tracked[switchTo].name}
+            </Button>
+          </>
+        )}
+      </span>
+    );
+  return (
+    <span className="ui-field__hint">
+      {network === 'bitcoin'
+        ? 'Paste a public address from Receive in your wallet app, or the account public key.'
+        : 'Paste the public address. You can find it under Receive in your wallet app.'}
+    </span>
+  );
+}
+
+/** The pasted address: its check, the tracked one it repeats (WAL-DUP) and that one's wallet. */
+function addressFacts(
+  network: Network | null,
+  input: string,
+  addresses: readonly WalletAddress[],
+  accounts: readonly WalletAccount[],
+) {
+  const check = checkAddress(network ?? 'bitcoin', input);
+  if (!check.ok) return { check, existing: undefined, existingWallet: undefined, isKey: false };
+  const existing = addresses.find(
+    (item) => item.network === network && item.address === check.address,
+  );
+  const existingWallet = existing?.accountId
+    ? accounts.find((account) => account.accountId === existing.accountId)?.name
+    : undefined;
+  // M21: an account public key (xpub, ypub, zpub) stands for every address of the account.
+  return { check, existing, existingWallet, isKey: /^[xyz]pub/.test(check.address) };
 }
 
 interface Props {
@@ -174,52 +335,37 @@ export default function AddWalletDialog({
   const keyCheck = checkApiKey(apiKey, 'key');
   const secretCheck = checkApiKey(apiSecret, 'secret');
   const keyReady = keyCheck.ok && secretCheck.ok;
-  const check = checkAddress(network ?? 'bitcoin', input);
-  const existing = check.ok
-    ? addresses.find((item) => item.network === network && item.address === check.address)
-    : undefined;
-  const existingWallet = existing?.accountId
-    ? accounts.find((account) => account.accountId === existing.accountId)?.name
-    : undefined;
-  const showError = !check.ok && (tried || left.has('address'));
+  const { check, existing, existingWallet, isKey } = addressFacts(
+    network,
+    input,
+    addresses,
+    accounts,
+  );
+  const ready = exchange ? keyReady : check.ok;
+  // A field's problem shows once Continue was tried or the owner left the field.
+  const problem = (result: AddressCheck | KeyCheck, field: 'address' | 'key' | 'secret') =>
+    !result.ok && (tried || left.has(field)) ? result.message : null;
+  const addressError = problem(check, 'address');
+  const keyError = problem(keyCheck, 'key');
+  const secretError = problem(secretCheck, 'secret');
   // wallets-04: after a failed Continue a field's problem is said aloud; on leaving a field it is
   // only shown.
   const alertOnTry = tried ? 'alert' : undefined;
-  // wallets-06: an address of another network offers to switch to it.
-  const switchTo = check.ok ? undefined : check.switchTo;
-  const showKeyError = !keyCheck.ok && (tried || left.has('key'));
-  const showSecretError = !secretCheck.ok && (tried || left.has('secret'));
-  // M21: an account public key (xpub, ypub, zpub) stands for every address of the account.
-  const isKey = check.ok && /^[xyz]pub/.test(check.address);
   const chosenName = walletName.trim() || chosen.defaultWallet;
   // The wallet it was opened for while its name stands, else the one the owner names.
   const match = opened && chosenName === opened.name ? opened : accountNamed(accounts, chosenName);
   const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
 
-  // WAL-NO-SECRETS: a seed phrase or private key pasted as the key is dropped at once.
-  const changeKey = (value: string, part: 'key' | 'secret') => {
-    const next = checkApiKey(value, part);
-    const set = part === 'key' ? setApiKey : setApiSecret;
-    if (!next.ok && next.secret) {
-      set('');
-      setSecretMessage(next.message);
-      return;
-    }
-    setSecretMessage(null);
-    set(value);
+  // WAL-NO-SECRETS: a seed phrase or private key pasted in a field is dropped from the form at once.
+  const change = (set: (value: string) => void, value: string, result: AddressCheck | KeyCheck) => {
+    const dropped = droppedSecret(result);
+    setSecretMessage(dropped);
+    set(dropped === null ? value : '');
   };
-
-  const changeAddress = (value: string) => {
-    // WAL-NO-SECRETS: a seed phrase or private key is dropped from the form at once.
-    const next = checkAddress(network ?? 'bitcoin', value);
-    if (!next.ok && next.secret) {
-      setInput('');
-      setSecretMessage(next.message);
-      return;
-    }
-    setSecretMessage(null);
-    setInput(value);
-  };
+  const changeKey = (value: string, part: 'key' | 'secret') =>
+    change(part === 'key' ? setApiKey : setApiSecret, value, checkApiKey(value, part));
+  const changeAddress = (value: string) =>
+    change(setInput, value, checkAddress(network ?? 'bitcoin', value));
 
   const next = (event: FormEvent) => {
     event.preventDefault();
@@ -228,37 +374,26 @@ export default function AddWalletDialog({
       if (network) setStep(2);
       return;
     }
-    if (step === 2) {
-      setTried(true);
-      if (exchange ? keyReady : check.ok && !existing) setStep(3);
-      // wallets-04: the keyboard goes to the field that needs the owner.
-      else if (!exchange) focusField('wallet-address');
-      else focusField(keyCheck.ok ? 'bybit-secret' : 'bybit-key');
+    if (step === 3) {
+      void save();
       return;
     }
-    void save();
+    setTried(true);
+    if (ready && (exchange || !existing)) setStep(3);
+    // wallets-04: the keyboard goes to the field that needs the owner.
+    else focusField(problemField(exchange, keyCheck.ok));
   };
 
   const save = async () => {
-    if (!network || !(exchange ? keyReady : check.ok)) return;
+    if (!network || !ready) return;
     setSaving(true);
     setError(null);
     try {
       // WAL-INVALID: a new wallet goes with its address in one request, so an address the server
       // refuses leaves no empty wallet behind.
-      let destination: { accountId: string } | { newAccount: NewWalletAccount };
-      if (match) destination = { accountId: match.accountId };
-      else {
-        const key = `${chosenName}\n${kind}`;
-        if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
-        destination = {
-          newAccount: {
-            requestId: attempt.current.requestId,
-            name: chosenName,
-            ...(kind ? { kind } : {}),
-          },
-        };
-      }
+      const destination: { accountId: string } | { newAccount: NewWalletAccount } = match
+        ? { accountId: match.accountId }
+        : { newAccount: newAccountRequest(attempt, chosenName, kind) };
       const named = label.trim() ? { label: label.trim() } : {};
       const result = await walletAddressesApi.add(
         network === 'bybit'
@@ -290,14 +425,7 @@ export default function AddWalletDialog({
       <form ref={form} onSubmit={next} noValidate>
         <ModalHeader
           titleId="add-wallet"
-          // From a wallet's page: the address joins that wallet (its name is preset in step 3).
-          title={
-            opened
-              ? initialNetwork === 'bybit'
-                ? 'Connect Bybit API'
-                : `Add an address to ${opened.name}`
-              : 'Add wallet'
-          }
+          title={dialogTitle(opened, initialNetwork)}
           onClose={onClose}
           closeDisabled={saving}
           steps={{ current: step, total: 3 }}
@@ -360,15 +488,15 @@ export default function AddWalletDialog({
                   autoComplete="off"
                   spellCheck={false}
                   value={apiKey}
-                  aria-invalid={showKeyError ? true : undefined}
+                  aria-invalid={keyError === null ? undefined : true}
                   aria-describedby="bybit-key-help"
                   onChange={(event) => changeKey(event.target.value, 'key')}
                   onBlur={leave('key')}
                 />
                 <span id="bybit-key-help">
-                  {showKeyError && (
+                  {keyError !== null && (
                     <span className="ui-field__error" role={alertOnTry}>
-                      {keyCheck.message}
+                      {keyError}
                     </span>
                   )}
                 </span>
@@ -387,25 +515,13 @@ export default function AddWalletDialog({
                   showLabel="Show secret"
                   hideLabel="Hide secret"
                   value={apiSecret}
-                  aria-invalid={showSecretError ? true : undefined}
+                  aria-invalid={secretError === null ? undefined : true}
                   aria-describedby="bybit-secret-help"
                   onChange={(event) => changeKey(event.target.value, 'secret')}
                   onBlur={leave('secret')}
                 />
                 <span id="bybit-secret-help">
-                  {secretMessage ? (
-                    <span className="ui-field__error" role="alert">
-                      {secretMessage} It was not saved.
-                    </span>
-                  ) : showSecretError ? (
-                    <span className="ui-field__error" role={alertOnTry}>
-                      {secretCheck.message}
-                    </span>
-                  ) : (
-                    <span className="ui-field__hint">
-                      Stored encrypted on the server and never shown again.
-                    </span>
-                  )}
+                  <SecretHelp dropped={secretMessage} error={secretError} role={alertOnTry} />
                 </span>
               </div>
               <Banner tone="info" role="none">
@@ -431,72 +547,36 @@ export default function AddWalletDialog({
                   spellCheck={false}
                   placeholder={chosen.placeholder}
                   value={input}
-                  aria-invalid={showError || existing ? true : undefined}
+                  aria-invalid={addressError !== null || existing ? true : undefined}
                   aria-describedby="wallet-address-help"
                   onChange={(event) => changeAddress(event.target.value)}
                   onBlur={leave('address')}
                 />
                 <span id="wallet-address-help">
-                  {secretMessage ? (
-                    <span className="ui-field__error" role="alert">
-                      {secretMessage} It was not saved.
-                    </span>
-                  ) : existing ? (
-                    <span className="ui-field__error" role={alertOnTry}>
-                      {isKey ? 'This key is already tracked' : 'This address is already tracked'}
-                      {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
-                      <Button variant="link" onClick={() => onOpenExisting(existing)}>
-                        Open it
-                      </Button>
-                    </span>
-                  ) : check.ok ? (
-                    <span className="wallets-ok">{check.kind}</span>
-                  ) : showError ? (
-                    <span className="ui-field__error" role={alertOnTry}>
-                      {check.message}
-                      {switchTo && (
-                        <>
-                          {' '}
-                          <Button
-                            variant="link"
-                            onClick={() => {
-                              setNetwork(switchTo);
-                              setError(null);
-                              focusField('wallet-address');
-                            }}
-                          >
-                            Switch to {tracked[switchTo].name}
-                          </Button>
-                        </>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="ui-field__hint">
-                      {network === 'bitcoin'
-                        ? 'Paste a public address from Receive in your wallet app, or the account public key.'
-                        : 'Paste the public address. You can find it under Receive in your wallet app.'}
-                    </span>
-                  )}
+                  <AddressHelp
+                    dropped={secretMessage}
+                    error={addressError}
+                    role={alertOnTry}
+                    check={check}
+                    isKey={isKey}
+                    existing={existing}
+                    existingWallet={existingWallet}
+                    network={network}
+                    onOpenExisting={onOpenExisting}
+                    onSwitch={(to) => {
+                      setNetwork(to);
+                      setError(null);
+                      focusField('wallet-address');
+                    }}
+                  />
                 </span>
               </div>
               <Banner tone="info" role="none">
-                {network === 'ethereum'
-                  ? 'One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20 token on Ethereum mainnet, named as the chain names them. The same address on another chain (Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain or Avalanche) is added as a wallet of its own.'
-                  : network !== null && isEvm(network)
-                    ? `Paste the same 0x address you use on Ethereum. The app tracks ${tracked[network].symbol} and every token this address holds on ${tracked[network].name}, named as the chain names them; its other chains are separate wallets.`
-                    : network === 'solana'
-                      ? 'Paste the wallet address, not a token account: the app finds its token accounts itself. It tracks SOL and every SPL token on Solana mainnet, named as the chain names them.'
-                      : network === 'stellar'
-                        ? 'Paste the account address that starts with G. The app tracks XLM on the Stellar public network; issued assets such as USDC on Stellar are not read. An exchange deposit address with a memo is not your wallet.'
-                        : network === 'zcash'
-                          ? 'Paste a transparent address that starts with t1 or t3. Shielded balances are private, so the app cannot read them: ZEC moved to a shielded address shows as sent, and ZEC from one shows as received.'
-                          : network === 'tron'
-                            ? 'Paste the address that starts with T. The app tracks TRX, USDT and USDC on Tron mainnet and the TRX you staked for energy or bandwidth; other tokens are not read.'
-                            : 'Hardware wallets like Trezor use a new address for every deposit. Paste the account public key (zpub) from Trezor Suite to track all of them at once.'}
+                {networkNote(network)}
               </Banner>
             </>
           )}
-          {step === 3 && (exchange ? keyReady : check.ok) && (
+          {step === 3 && ready && (
             <>
               <Field
                 id="wallet-name"
@@ -599,15 +679,7 @@ export default function AddWalletDialog({
           {/* Back stands apart at the left; Cancel sits with the main action, as in every dialog. */}
           {step !== 1 && <span className="ui-grow" />}
           <Button type="submit" variant="primary" disabled={(step === 1 && !network) || saving}>
-            {step === 3
-              ? saving
-                ? exchange
-                  ? 'Checking the key…'
-                  : 'Adding…'
-                : exchange
-                  ? 'Add account'
-                  : 'Add wallet'
-              : 'Continue'}
+            {submitLabel(step, saving, exchange)}
           </Button>
         </ModalFooter>
       </form>
