@@ -34,31 +34,29 @@ async function overview(world: {
   sync: boolean;
 }) {
   const calls: Call[] = [];
+  const state = {
+    state: 'delayed',
+    lastAttemptAt: new Date('2026-10-20T10:00:00.000Z'),
+    lastSuccessAt: new Date('2026-10-19T10:00:00.000Z'),
+    nextRunAt: new Date('2026-10-20T11:00:00.000Z'),
+    errorCode: 'unavailable',
+    errorMessage: 'Inflation data did not answer for USD',
+  };
+  const personal = (currency: string) => {
+    const rate = world.personal[currency];
+    return rate === undefined ? [] : [{ annualPercent: rate }];
+  };
+  // A statement is answered by the first table it reads; any other returns nothing.
+  const answers: [string, (parameters: unknown[]) => unknown[]][] = [
+    ['FROM inflation_months', (parameters) => world.official[parameters[0] as string] ?? []],
+    ['FROM inflation_manual_months', (parameters) => world.manual[parameters[1] as string] ?? []],
+    ['FROM inflation_personal_rates', (parameters) => personal(parameters[1] as string)],
+    ['FROM sync_sources', () => (world.sync ? [state] : [])],
+  ];
   const manager = {
     query: async (sql: string, parameters: unknown[] = []) => {
       calls.push({ sql, parameters });
-      if (sql.includes('FROM inflation_months'))
-        return world.official[parameters[0] as string] ?? [];
-      if (sql.includes('FROM inflation_manual_months'))
-        return world.manual[parameters[1] as string] ?? [];
-      if (sql.includes('FROM inflation_personal_rates')) {
-        const rate = world.personal[parameters[1] as string];
-        return rate === undefined ? [] : [{ annualPercent: rate }];
-      }
-      if (sql.includes('FROM sync_sources'))
-        return world.sync
-          ? [
-              {
-                state: 'delayed',
-                lastAttemptAt: new Date('2026-10-20T10:00:00.000Z'),
-                lastSuccessAt: new Date('2026-10-19T10:00:00.000Z'),
-                nextRunAt: new Date('2026-10-20T11:00:00.000Z'),
-                errorCode: 'unavailable',
-                errorMessage: 'Inflation data did not answer for USD',
-              },
-            ]
-          : [];
-      return [];
+      return answers.find(([fragment]) => sql.includes(fragment))?.[1](parameters) ?? [];
     },
   };
   const source = {

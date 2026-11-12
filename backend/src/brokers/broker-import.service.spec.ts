@@ -220,9 +220,6 @@ function build(
   log?: Call[],
 ) {
   const query = async (sql: string, parameters: unknown[] = []) => {
-    log?.push({ sql, parameters });
-    const written = log && writeAnswer(world, sql, parameters, log);
-    if (written) return written;
     if (sql === 'SET TRANSACTION READ ONLY') return [];
     if (sql.includes('AS "providerUid"'))
       return (world.linkedSplits ?? []).map((split) => ({ ...split, assetUid: null, ratio: 2 }));
@@ -262,10 +259,16 @@ function build(
       return [{ count: world.rewardCount ?? 0, active: world.rewardCount ?? 0 }];
     if (sql.includes('FROM account_capital_return_versions'))
       return [{ count: world.capitalReturnCount ?? 0, active: world.capitalReturnCount ?? 0 }];
-    if (log) return [];
     throw new Error(`Unexpected query: ${sql}`);
   };
-  const manager = { query, queryRunner: { isTransactionActive: true } };
+  // With a log, every statement is recorded and the import's own ones answered; a statement
+  // neither knows returns nothing.
+  const logged = async (sql: string, parameters: unknown[] = []) => {
+    if (!log) return query(sql, parameters);
+    log.push({ sql, parameters });
+    return writeAnswer(world, sql, parameters, log) ?? query(sql, parameters).catch(() => []);
+  };
+  const manager = { query: logged, queryRunner: { isTransactionActive: true } };
   const source = {
     manager,
     transaction: async (level: unknown, work?: (manager: unknown) => unknown) =>

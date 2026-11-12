@@ -205,18 +205,20 @@ describe('DEP-RATE characterization of a rate change', () => {
 
   async function addRate(deposit: Stored, raw: unknown, changed = true) {
     const calls: Call[] = [];
+    // A statement is answered by the first fragment it holds; any other returns nothing.
+    const answers: [string, () => unknown[]][] = [
+      ['SELECT id FROM bank_deposits', () => [{ id: depositId }]],
+      ['FROM bank_deposits WHERE', () => [deposit.deposit]],
+      ['FROM bank_deposit_rates', () => deposit.rates],
+      ['FROM bank_deposit_movements', () => deposit.movements],
+      ['FROM bank_deposit_checks', () => deposit.checks],
+      ['INSERT INTO bank_deposit_rates', () => (changed ? [{ '?column?': 1 }] : [])],
+    ];
     const manager = {
       queryRunner: { isTransactionActive: true },
       query: async (sql: string, parameters: unknown[] = []) => {
         calls.push({ sql, parameters });
-        if (sql.startsWith('SELECT id FROM bank_deposits')) return [{ id: depositId }];
-        if (sql.includes('FROM bank_deposits WHERE')) return [deposit.deposit];
-        if (sql.includes('FROM bank_deposit_rates')) return deposit.rates;
-        if (sql.includes('FROM bank_deposit_movements')) return deposit.movements;
-        if (sql.includes('FROM bank_deposit_checks')) return deposit.checks;
-        if (sql.includes('INSERT INTO bank_deposit_rates'))
-          return changed ? [{ '?column?': 1 }] : [];
-        return [];
+        return answers.find(([fragment]) => sql.includes(fragment))?.[1]() ?? [];
       },
     };
     const source = { transaction: async (work: (m: unknown) => unknown) => work(manager) };
