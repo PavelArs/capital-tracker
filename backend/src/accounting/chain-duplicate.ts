@@ -30,9 +30,11 @@ export function duplicateFits(leg: Movement, record: Movement): boolean {
   if (leg.inbound !== record.inbound || leg.atoms <= 0n || record.atoms <= 0n) return false;
   if (Math.abs(leg.at.getTime() - record.at.getTime()) > DUPLICATE_WINDOW_HOURS * 3_600_000)
     return false;
-  const gap = leg.atoms > record.atoms ? leg.atoms - record.atoms : record.atoms - leg.atoms;
-  return gap * 100n <= leg.atoms * DUPLICATE_AMOUNT_PERCENT;
+  return atomsGap(leg.atoms, record.atoms) * 100n <= leg.atoms * DUPLICATE_AMOUNT_PERCENT;
 }
+
+/** How far apart two amounts in atoms are. */
+const atomsGap = (left: bigint, right: bigint) => (left > right ? left - right : right - left);
 
 /**
  * CLS-DUPLICATE: the unanswered transactions that are each the single closest match of one
@@ -75,6 +77,17 @@ export function proposeDuplicatesBounded<L extends Movement, R extends Movement>
     left.amount !== right.amount ? (left.amount < right.amount ? -1 : 1) : left.time - right.time;
   const ofLeg = new ClosestEdges<L, Edge>(closer);
   const ofRecord = new ClosestEdges<R, Edge>(closer);
+  const offer = (leg: L, record: R) => {
+    if (!duplicateFits(leg, record)) return;
+    const edge = {
+      leg,
+      record,
+      amount: atomsGap(leg.atoms, record.atoms),
+      time: Math.abs(leg.at.getTime() - record.at.getTime()),
+    };
+    ofLeg.offer(leg, edge);
+    ofRecord.offer(record, edge);
+  };
   let limitedGroups = 0;
   groups.forEach((group, index) => {
     if (!allowed[index]) {
@@ -83,18 +96,7 @@ export function proposeDuplicatesBounded<L extends Movement, R extends Movement>
     }
     for (const leg of group.legs) {
       const [from, to] = range(group.sorted, leg);
-      for (let position = from; position < to; position++) {
-        const record = group.sorted[position];
-        if (!duplicateFits(leg, record)) continue;
-        const edge = {
-          leg,
-          record,
-          amount: leg.atoms > record.atoms ? leg.atoms - record.atoms : record.atoms - leg.atoms,
-          time: Math.abs(leg.at.getTime() - record.at.getTime()),
-        };
-        ofLeg.offer(leg, edge);
-        ofRecord.offer(record, edge);
-      }
+      for (let position = from; position < to; position++) offer(leg, group.sorted[position]);
     }
   });
   // Newest first; transactions at one moment keep the order they were given in.
@@ -163,21 +165,25 @@ export function tradeAnswer(trade: TradeRecord): Classification | null {
       return sameAmount(trade.grossUsd, trade.feeUsd)
         ? { type: 'fee', valueUsd: trade.feeUsd }
         : null;
-    default: {
-      const currency = trade.paid?.currency ?? trade.settlementSymbol ?? 'USD';
-      const known = settlementCurrencies.find((code) => code === currency);
-      if (known === undefined) return null;
-      const answer: PricedClassification = {
-        type: trade.side,
-        currency: known as SettlementCurrency,
-        amount: trade.paid?.gross ?? trade.grossUsd,
-      };
-      const fee = trade.paid?.fee ?? trade.feeUsd;
-      if (!zero(fee)) answer.fee = fee;
-      if (trade.paid) answer.perUsd = trade.paid.perUsd;
-      return answer;
-    }
+    default:
+      return pricedAnswer(trade);
   }
+}
+
+/** A purchase or sale: its amounts in the currency it was paid in, with the rate if any. */
+function pricedAnswer(trade: TradeRecord): PricedClassification | null {
+  const currency = trade.paid?.currency ?? trade.settlementSymbol ?? 'USD';
+  const known = settlementCurrencies.find((code) => code === currency);
+  if (known === undefined) return null;
+  const answer: PricedClassification = {
+    type: trade.side,
+    currency: known as SettlementCurrency,
+    amount: trade.paid?.gross ?? trade.grossUsd,
+  };
+  const fee = trade.paid?.fee ?? trade.feeUsd;
+  if (!zero(fee)) answer.fee = fee;
+  if (trade.paid) answer.perUsd = trade.paid.perUsd;
+  return answer;
 }
 
 /** The answer a reward stands for; null when its basis and its income value disagree. */
