@@ -202,6 +202,20 @@ function isCalendarDate(text: string): boolean {
   return !Number.isNaN(time) && new Date(time).toISOString().slice(0, 10) === text;
 }
 
+function nameProblem(name: string): string | undefined {
+  if (!name) return 'Enter a name';
+  return Array.from(name).length > NAME_LENGTH ? `At most ${NAME_LENGTH} characters` : undefined;
+}
+
+/** What is wrong with a new or moved date: it must be a real day, after today, within 100 years. */
+function deadlineProblem(deadline: string): string | undefined {
+  if (!isCalendarDate(deadline)) return 'Pick a date';
+  if (deadline <= today()) return 'Pick a date after today, or clear it';
+  return deadline > addMonths(today(), MAX_MONTHS)
+    ? 'Pick a date within 100 years, or clear it'
+    : undefined;
+}
+
 /**
  * Every field's problem at once (goals-05). A date the goal already has stays as it is, also on
  * and after its day (goals-28); a new or moved date has to be ahead.
@@ -214,28 +228,15 @@ function problemsOf(terms: {
   monthly: string;
   kept: string | null;
 }): Problems {
-  const name = terms.name.trim();
   const { deadline } = terms;
   const moved = deadline !== '' && deadline !== terms.kept;
   return {
-    name: !name
-      ? 'Enter a name'
-      : Array.from(name).length > NAME_LENGTH
-        ? `At most ${NAME_LENGTH} characters`
-        : undefined,
+    name: nameProblem(terms.name.trim()),
     target:
       !MONEY.test(terms.target.trim()) || Number(terms.target) === 0
         ? 'Enter a sum above 0, with up to two decimals'
         : undefined,
-    deadline: !moved
-      ? undefined
-      : !isCalendarDate(deadline)
-        ? 'Pick a date'
-        : deadline <= today()
-          ? 'Pick a date after today, or clear it'
-          : deadline > addMonths(today(), MAX_MONTHS)
-            ? 'Pick a date within 100 years, or clear it'
-            : undefined,
+    deadline: moved ? deadlineProblem(deadline) : undefined,
     rate: RATE.test(terms.rate.trim())
       ? undefined
       : 'Enter a percent a year from 0 to 999.9999, with up to four decimals',
@@ -288,6 +289,24 @@ function usePreview(terms: PreviewTerms | null) {
     : { preview: state.preview, failed: state.failed, pending: state.key !== key };
 }
 
+/** The server refused these terms: saving them would be refused the same way. */
+function refusalOf(failed: unknown): string | null {
+  if (!isAxiosError<{ message?: unknown }>(failed)) return null;
+  const status = failed.response?.status;
+  if (status !== 400 && status !== 422) return null;
+  return typeof failed.response?.data?.message === 'string' && status === 422
+    ? `These terms cannot be saved: ${failed.response.data.message}.`
+    : 'These terms cannot be saved. Check the fields.';
+}
+
+/** Why no plan is shown: the terms are not ready, it failed, or it is on its way. */
+function noPlanText(ready: boolean, failed: unknown): string {
+  if (!ready) return 'Enter the sum and the return to see a plan.';
+  return failed !== null
+    ? 'Could not work out the plan right now. The goal can still be saved.'
+    : 'Working out the plan…';
+}
+
 /** The verdict the goal page would show for these terms, under the fields. */
 function PlanPreview({
   ready,
@@ -301,14 +320,7 @@ function PlanPreview({
   failed: unknown;
   pending: boolean;
 }) {
-  // The server refused these terms: saving them would be refused the same way.
-  const refusal =
-    isAxiosError<{ message?: unknown }>(failed) &&
-    (failed.response?.status === 400 || failed.response?.status === 422)
-      ? typeof failed.response.data?.message === 'string' && failed.response.status === 422
-        ? `These terms cannot be saved: ${failed.response.data.message}.`
-        : 'These terms cannot be saved. Check the fields.'
-      : null;
+  const refusal = refusalOf(failed);
   if (refusal !== null)
     return (
       <div className="goal-preview" aria-busy={pending}>
@@ -318,13 +330,7 @@ function PlanPreview({
   if (!ready || failed !== null || preview === null)
     return (
       <div className="goal-preview" aria-busy={ready && pending}>
-        <Banner tone="info">
-          {!ready
-            ? 'Enter the sum and the return to see a plan.'
-            : failed !== null
-              ? 'Could not work out the plan right now. The goal can still be saved.'
-              : 'Working out the plan…'}
-        </Banner>
+        <Banner tone="info">{noPlanText(ready, failed)}</Banner>
       </div>
     );
   const tone = bannerTone[preview.status];
@@ -335,6 +341,51 @@ function PlanPreview({
       </Banner>
     </div>
   );
+}
+
+const dialogWords = {
+  edit: {
+    title: 'Edit goal',
+    submit: 'Save goal',
+    unreachable:
+      'Could not reach the server. The change may have been saved; saving it again is safe.',
+  },
+  add: {
+    title: 'Add goal',
+    submit: 'Add goal',
+    unreachable:
+      'Could not reach the server. The goal may have been added; adding it again does not add it twice.',
+  },
+};
+
+/** The terms a plan is asked for, as the fields stand. */
+function previewTermsOf(
+  fields: {
+    currency: GoalCurrency;
+    target: string;
+    deadline: string;
+    rate: string;
+    monthly: string;
+  },
+  goal: Goal | undefined,
+): PreviewTerms {
+  return {
+    currency: fields.currency,
+    targetAmount: fields.target.trim(),
+    deadline: fields.deadline || null,
+    expectedReturnPercent: fields.rate.trim(),
+    monthlyContribution: fields.monthly.trim() || null,
+    // The goal being changed, so a date it keeps is judged as saving it would be.
+    ...(goal ? { goalId: goal.id } : {}),
+  };
+}
+
+/** The portfolio now, under the sum, once the plan has it in the currency chosen. */
+function portfolioHint(preview: GoalPreview | null, currency: GoalCurrency): string | undefined {
+  const now = preview?.progress.current ?? null;
+  return now !== null && preview?.currency === currency
+    ? `Your portfolio now: ${flooredText(now, currency)}`
+    : undefined;
 }
 
 /** GOAL-TERMS: a goal is a sum in one currency with an optional date, for the whole portfolio. */
@@ -364,32 +415,18 @@ export function GoalDialog({
   // The plan is asked for as soon as the terms could be saved, whatever the name says.
   const ready = !hasProblems({ ...problems(), name: undefined });
   const plan = usePreview(
-    ready
-      ? {
-          currency,
-          targetAmount: target.trim(),
-          deadline: deadline || null,
-          expectedReturnPercent: rate.trim(),
-          monthlyContribution: monthly.trim() || null,
-          // The goal being changed, so a date it keeps is judged as saving it would be.
-          ...(goal ? { goalId: goal.id } : {}),
-        }
-      : null,
+    ready ? previewTermsOf({ currency, target, deadline, rate, monthly }, goal) : null,
   );
-  const now = plan.preview?.progress.current ?? null;
   const currencyId = useId();
+  const words = dialogWords[goal ? 'edit' : 'add'];
 
   return (
     <FormDialog
-      title={goal ? 'Edit goal' : 'Add goal'}
+      title={words.title}
       note="A goal counts your whole portfolio. The app works out what to put in each month, or when you get there."
-      submit={goal ? 'Save goal' : 'Add goal'}
+      submit={words.submit}
       problems={problems}
-      unreachable={
-        goal
-          ? 'Could not reach the server. The change may have been saved; saving it again is safe.'
-          : 'Could not reach the server. The goal may have been added; adding it again does not add it twice.'
-      }
+      unreachable={words.unreachable}
       onClose={onClose}
       onSubmit={async () => {
         const terms: GoalTerms = {
@@ -432,15 +469,7 @@ export function GoalDialog({
         />
       </div>
       <div className="ui-row2">
-        <Field
-          label="Sum to reach"
-          name="target"
-          hint={
-            now !== null && plan.preview?.currency === currency
-              ? `Your portfolio now: ${flooredText(now, currency)}`
-              : undefined
-          }
-        >
+        <Field label="Sum to reach" name="target" hint={portfolioHint(plan.preview, currency)}>
           {(control) => (
             <Affix suffix={currency}>
               <Input
