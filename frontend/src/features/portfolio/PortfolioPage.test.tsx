@@ -4982,3 +4982,38 @@ describe('ASSET-WORDS the asset page says which figures are partial', () => {
     );
   });
 });
+
+// Characterization of the folded Other row before the allocation was split up.
+it('ALLOC-OTHER counts the folded slices as assets, types or accounts', async () => {
+  const slices = (keys: string[]) =>
+    keys.map((key, index) => ({
+      key,
+      label: key,
+      value: String(300 - index * 100),
+      percent: ((300 - index * 100) / 6).toFixed(2),
+    }));
+  const data = portfolio([], {
+    allocation: {
+      complete: true,
+      byAsset: slices(['First coin', 'Second coin', 'Third coin']),
+      byType: slices(['crypto', 'fiat', 'manual']),
+      byAccount: slices(['First wallet', 'Second wallet', 'Third wallet']),
+    },
+  });
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <Allocation portfolio={data} limit={2} />
+    </MemoryRouter>,
+  );
+  const region = screen.getByRole('region', { name: 'Allocation' });
+  const other = () =>
+    within(region)
+      .getAllByRole('listitem')
+      .find((row) => row.textContent?.startsWith('Other '))?.textContent;
+  expect(other()).toMatch(/^Other 2 assets/);
+  await user.click(within(region).getByRole('radio', { name: 'Classes' }));
+  expect(other()).toMatch(/^Other 2 types/);
+  await user.click(within(region).getByRole('radio', { name: 'Accounts' }));
+  expect(other()).toMatch(/^Other 2 accounts/);
+});
