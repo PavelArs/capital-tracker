@@ -250,3 +250,48 @@ describe('CASH-CONVERT a sale or buy of one currency settled in another is a con
     }
   });
 });
+
+describe('XFER-AUTO, CLS-SWAP: the place of a transfer, a swap and a Bybit row', () => {
+  const cold = { id: 'a', name: 'Cold storage' };
+  const bybit = { id: 'b', name: 'Bybit' };
+  const wallet = {
+    id: 'w',
+    network: 'bitcoin',
+    address: 'bc1qsyntheticwalletaddress0f3t4',
+    label: null,
+  };
+  const place = (changes: object) =>
+    ({
+      type: 'income',
+      account: null,
+      counterAccount: null,
+      wallet: null,
+      ...changes,
+    }) as unknown as Operation;
+
+  it('names both accounts of a move and a Bybit account by its UID', () => {
+    for (const [operation, parts] of [
+      [
+        place({ type: 'transfer', wallet, account: cold, counterAccount: bybit }),
+        { lead: 'Cold storage → Bybit', address: '' },
+      ],
+      [
+        place({ type: 'swap', wallet, account: cold, counterAccount: bybit }),
+        { lead: 'Bybit → Cold storage', address: '' },
+      ],
+      [place({ type: 'swap', wallet, account: cold }), { lead: 'Cold storage', address: '' }],
+      [
+        place({ wallet: { ...wallet, network: 'bybit', address: '100000001' } }),
+        { lead: 'Bybit account UID 100000001', address: '' },
+      ],
+      [
+        place({ type: 'reward', account: cold, counterAccount: bybit }),
+        { lead: 'Cold storage → Bybit', address: '' },
+      ],
+      [place({}), { lead: 'Whole portfolio', address: '' }],
+    ] as const) {
+      expect(placeParts(operation)).toEqual(parts);
+      expect(placeLabel(operation)).toBe(parts.lead + parts.address);
+    }
+  });
+});

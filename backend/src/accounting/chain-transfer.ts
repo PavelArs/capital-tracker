@@ -89,32 +89,54 @@ export function planTransfer(
   if (partner && coinOf(partner) !== coinOf(leg)) throw mismatch();
   const moved = netAtoms(leg);
   if (moved === 0n) throw unfit();
-  if (proposed && partner) {
-    const [sent, arrived] = moved < 0n ? [-moved, netAtoms(partner)] : [-netAtoms(partner), moved];
-    if (arrived <= 0n || sent < arrived) throw mismatch();
-    return {
-      fromAccountId: moved < 0n ? leg.accountId : counterAccountId,
-      toAccountId: moved < 0n ? counterAccountId : leg.accountId,
-      quantity: formatAtoms(arrived),
-      feeQuantity: formatAtoms(sent - arrived),
-    };
-  }
+  if (proposed && partner) return proposedTransfer(leg, counterAccountId, partner, moved);
   const sender = moved < 0n ? leg : partner;
   const fee = sender ? feeAtoms(sender) : 0n;
-  let arrived: bigint;
-  if (moved < 0n) {
-    arrived = partner ? netAtoms(partner) : -moved - fee;
-    if (arrived <= 0n || -moved !== arrived + fee) throw partner ? mismatch() : unfit();
-  } else {
-    arrived = moved;
-    if (partner && -netAtoms(partner) !== arrived + fee) throw mismatch();
-  }
+  const arrived = arrivedAtoms(moved, partner, fee);
   return {
-    fromAccountId: moved < 0n ? leg.accountId : counterAccountId,
-    toAccountId: moved < 0n ? counterAccountId : leg.accountId,
+    ...transferSides(leg, counterAccountId, moved),
     quantity: formatAtoms(arrived),
     feeQuantity: formatAtoms(fee),
   };
+}
+
+/** The leg's account sends when its coins left, and receives otherwise. */
+function transferSides(
+  leg: OwnLeg & { accountId: string },
+  counterAccountId: string,
+  moved: bigint,
+) {
+  return {
+    fromAccountId: moved < 0n ? leg.accountId : counterAccountId,
+    toAccountId: moved < 0n ? counterAccountId : leg.accountId,
+  };
+}
+
+/** XFER-PROPOSED: the partner has another hash, so the fee is what went missing between them. */
+function proposedTransfer(
+  leg: OwnLeg & { accountId: string },
+  counterAccountId: string,
+  partner: OwnLeg,
+  moved: bigint,
+): PlannedTransfer {
+  const [sent, arrived] = moved < 0n ? [-moved, netAtoms(partner)] : [-netAtoms(partner), moved];
+  if (arrived <= 0n || sent < arrived) throw mismatch();
+  return {
+    ...transferSides(leg, counterAccountId, moved),
+    quantity: formatAtoms(arrived),
+    feeQuantity: formatAtoms(sent - arrived),
+  };
+}
+
+/** What arrived in the other account: what was sent less the sender's fee, never less. */
+function arrivedAtoms(moved: bigint, partner: OwnLeg | null, fee: bigint): bigint {
+  if (moved > 0n) {
+    if (partner && -netAtoms(partner) !== moved + fee) throw mismatch();
+    return moved;
+  }
+  const arrived = partner ? netAtoms(partner) : -moved - fee;
+  if (arrived <= 0n || -moved !== arrived + fee) throw partner ? mismatch() : unfit();
+  return arrived;
 }
 
 /** A leg with the owner's current answer for it, for automatic matching. */
@@ -143,24 +165,8 @@ export function ownTransferPairs(
 ): { outgoing: MatchableLeg; incoming: MatchableLeg }[] {
   const pairs: { outgoing: MatchableLeg; incoming: MatchableLeg }[] = [];
   const certain = (moving: MatchableLeg[]) => {
-    if (moving.length !== 2) return;
-    const outgoing = moving.find((leg) => net(leg) < 0n);
-    const incoming = moving.find((leg) => net(leg) > 0n);
-    if (!outgoing || !incoming || coinOf(outgoing) !== coinOf(incoming)) return;
-    if (outgoing.accountId === null || incoming.accountId === null) return;
-    if (outgoing.accountId === incoming.accountId) return;
-    // Neither answered, or one answered as a transfer with the other's account and nothing else.
-    const open = (leg: MatchableLeg) => leg.status === null || leg.status === 'unclassified';
-    const lone = (leg: MatchableLeg, other: MatchableLeg) =>
-      leg.status === 'classified' && leg.loneTo === other.accountId;
-    if (
-      !(open(outgoing) && open(incoming)) &&
-      !(open(outgoing) && lone(incoming, outgoing)) &&
-      !(lone(outgoing, incoming) && open(incoming))
-    )
-      return;
-    if (-netAtoms(outgoing) !== netAtoms(incoming) + feeAtoms(outgoing)) return;
-    pairs.push({ outgoing, incoming });
+    const pair = certainPair(moving);
+    if (pair) pairs.push(pair);
   };
   const moving = legs.filter((leg) => net(leg) !== 0n);
   // Between wallets: the legs of one transaction identity.
@@ -181,6 +187,33 @@ export function ownTransferPairs(
       ),
     ]);
   return pairs;
+}
+
+/** The one sender and one receiver of `moving` when they are certainly a transfer, or null. */
+function certainPair(
+  moving: MatchableLeg[],
+): { outgoing: MatchableLeg; incoming: MatchableLeg } | null {
+  if (moving.length !== 2) return null;
+  const outgoing = moving.find((leg) => net(leg) < 0n);
+  const incoming = moving.find((leg) => net(leg) > 0n);
+  if (!outgoing || !incoming || coinOf(outgoing) !== coinOf(incoming)) return null;
+  if (outgoing.accountId === null || incoming.accountId === null) return null;
+  if (outgoing.accountId === incoming.accountId) return null;
+  if (!stillOpen(outgoing, incoming)) return null;
+  if (-netAtoms(outgoing) !== netAtoms(incoming) + feeAtoms(outgoing)) return null;
+  return { outgoing, incoming };
+}
+
+/** Neither answered, or one answered as a transfer with the other's account and nothing else. */
+function stillOpen(outgoing: MatchableLeg, incoming: MatchableLeg): boolean {
+  const open = (leg: MatchableLeg) => leg.status === null || leg.status === 'unclassified';
+  const lone = (leg: MatchableLeg, other: MatchableLeg) =>
+    leg.status === 'classified' && leg.loneTo === other.accountId;
+  return (
+    (open(outgoing) && open(incoming)) ||
+    (open(outgoing) && lone(incoming, outgoing)) ||
+    (lone(outgoing, incoming) && open(incoming))
+  );
 }
 
 /**

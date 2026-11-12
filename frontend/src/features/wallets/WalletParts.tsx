@@ -474,6 +474,89 @@ function ChainAmounts({
   );
 }
 
+/**
+ * The note under an address row, if any. The row's messages have no role of their own (a card of
+ * synced rows has no notes), except a failed sync the owner just ran.
+ */
+function RowMessage({
+  address,
+  run,
+  switching,
+  onTurnOn,
+  onStart,
+}: {
+  address: WalletAddress;
+  run: SyncRun | undefined;
+  switching: boolean;
+  onTurnOn: () => void;
+  onStart: () => void;
+}) {
+  const offNote = syncOffNote(address);
+  // WALLET-SYNC-OFF: the wallet is not read until the owner turns the sync on; the note comes
+  // before any "Load history", which could not run.
+  if (offNote)
+    return (
+      <Banner
+        tone={offNote.tone}
+        role="none"
+        className="wallets-inset"
+        action={
+          <Button size="sm" icon="refresh" busy={switching} onClick={onTurnOn}>
+            {switching ? 'Turning on…' : 'Turn sync on'}
+          </Button>
+        }
+      >
+        {offNote.text}
+      </Banner>
+    );
+  const complete = address.sync.state === 'complete';
+  const loading =
+    run?.state === 'running' || (run === undefined && address.sync.status === 'syncing');
+  if (!complete && loading)
+    return (
+      <Banner tone="info" role="none" className="wallets-inset">
+        Loading the transaction history. A long history takes a few minutes; it keeps loading in the
+        background, so you can leave this page.
+      </Banner>
+    );
+  const problem = syncProblem(address, run);
+  // wallets-13: an amber note with an alert icon. A sync the owner just ran is said aloud
+  // (wallets-02); a failure the background job stored is only shown.
+  if (problem)
+    return (
+      <Banner
+        tone="warn"
+        role={run?.state === 'failed' ? 'alert' : 'none'}
+        className="wallets-inset"
+        action={
+          <Button size="sm" icon="refresh" onClick={onStart}>
+            Retry now
+          </Button>
+        }
+      >
+        {problem}
+      </Banner>
+    );
+  if (run !== undefined || complete) return null;
+  const partial = address.sync.state === 'partial';
+  return (
+    <Banner
+      tone="info"
+      role="none"
+      className="wallets-inset"
+      action={
+        <Button size="sm" onClick={onStart}>
+          {partial ? 'Continue loading' : 'Load history'}
+        </Button>
+      }
+    >
+      {partial
+        ? 'Part of the history is loaded; the balance appears when the rest is.'
+        : 'The transaction history is not loaded yet.'}
+    </Banner>
+  );
+}
+
 export function AddressRow({
   address,
   run,
@@ -498,8 +581,6 @@ export function AddressRow({
   const network = networkOf(address);
   const name = address.label ?? network.name;
   const when = syncAge(address, run);
-  const problem = syncProblem(address, run);
-  const offNote = syncOffNote(address);
   const [switching, setSwitching] = useState(false);
   const turnOn = async () => {
     setSwitching(true);
@@ -519,62 +600,15 @@ export function AddressRow({
   // wallets-09: the row is named by its name and full address and described by what it shows.
   const detailsId = useId();
   const described = `${detailsId}-amounts ${detailsId}-value ${detailsId}-status`;
-  const loading =
-    address.sync.state !== 'complete' &&
-    (run?.state === 'running' || (run === undefined && address.sync.status === 'syncing'));
-  // The row's messages have no role of their own (a card of synced rows has no notes), except a
-  // failed sync the owner just ran.
-  const message = offNote ? (
-    // WALLET-SYNC-OFF: the wallet is not read until the owner turns the sync on; the note comes
-    // before any "Load history", which could not run.
-    <Banner
-      tone={offNote.tone}
-      role="none"
-      className="wallets-inset"
-      action={
-        <Button size="sm" icon="refresh" busy={switching} onClick={() => void turnOn()}>
-          {switching ? 'Turning on…' : 'Turn sync on'}
-        </Button>
-      }
-    >
-      {offNote.text}
-    </Banner>
-  ) : loading ? (
-    <Banner tone="info" role="none" className="wallets-inset">
-      Loading the transaction history. A long history takes a few minutes; it keeps loading in the
-      background, so you can leave this page.
-    </Banner>
-  ) : problem ? (
-    // wallets-13: an amber note with an alert icon. A sync the owner just ran is said aloud
-    // (wallets-02); a failure the background job stored is only shown.
-    <Banner
-      tone="warn"
-      role={run?.state === 'failed' ? 'alert' : 'none'}
-      className="wallets-inset"
-      action={
-        <Button size="sm" icon="refresh" onClick={start}>
-          Retry now
-        </Button>
-      }
-    >
-      {problem}
-    </Banner>
-  ) : run === undefined && address.sync.state !== 'complete' ? (
-    <Banner
-      tone="info"
-      role="none"
-      className="wallets-inset"
-      action={
-        <Button size="sm" onClick={start}>
-          {address.sync.state === 'partial' ? 'Continue loading' : 'Load history'}
-        </Button>
-      }
-    >
-      {address.sync.state === 'partial'
-        ? 'Part of the history is loaded; the balance appears when the rest is.'
-        : 'The transaction history is not loaded yet.'}
-    </Banner>
-  ) : null;
+  const message = (
+    <RowMessage
+      address={address}
+      run={run}
+      switching={switching}
+      onTurnOn={() => void turnOn()}
+      onStart={start}
+    />
+  );
   const syncing = syncBadge(address, run).label === 'Syncing';
   const label = `${name} ${address.address}`;
   const more = (

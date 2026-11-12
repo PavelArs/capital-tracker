@@ -6,6 +6,7 @@ import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
+  type PortfolioLot,
   type ReturnedCost,
   resolvePrice,
   type StoredPrice,
@@ -49,72 +50,83 @@ export function withEstimatedCosts(
         account.assetClass === 'property'
       )
         return lot;
-      const stored = near.get(nearKey(lot.instrumentId, lot.acquiredAt));
-      if (!stored) return lot;
-      const market = new Map<string, StoredPrice>();
-      const manual = new Map<string, StoredPrice>();
-      if (instrument.priceSource === 'market')
-        market.set(instrument.symbol?.toUpperCase() ?? '', stored);
-      else manual.set(instrument.id, stored);
-      // The price comes per unit of its own day, or of the arrival when it is earlier.
-      const { price } = resolvePrice(
-        instrument,
-        { market, manual, splits },
-        new Date(lot.acquiredAt),
-        usd,
-      );
-      if (!price) return lot;
-      // The lot's quantity is in the units held at the valuation: a split between divides it.
-      const unitsAt = Math.max(Date.parse(lot.acquiredAt), Date.parse(stored.observedAt));
-      const ratio = splits.reduce(
-        (units, split) =>
-          split.instrumentId === lot.instrumentId &&
-          Date.parse(split.effectiveAt) > unitsAt &&
-          Date.parse(split.effectiveAt) <= valuedAt
-            ? units * BigInt(split.ratio)
-            : units,
-        1n,
-      );
-      const product = canonicalDecimalToAtoms(lot.quantity) * canonicalDecimalToAtoms(price.value);
-      const scale = ATOM * ratio;
-      // A capital return since paid part of it back. Returns above the estimate leave nothing of
-      // it, and only what they took off it stays returned, so no later reading adds back more.
-      let cost = (product + scale - 1n) / scale;
-      const returned: ReturnedCost[] = [];
-      for (const part of lot.returned ?? []) {
-        if (cost === 0n) break;
-        const whole = canonicalDecimalToAtoms(part.costUsd);
-        let taken = whole;
-        if (taken > cost) taken = cost;
-        cost -= taken;
-        returned.push(
-          taken === whole
-            ? part
-            : {
-                ...part,
-                costUsd: formatAtoms(taken),
-                // Rounded down: less paid back counted keeps the cost from reading lower.
-                ...(part.native
-                  ? {
-                      native: {
-                        currency: part.native.currency,
-                        amount: formatAtoms(
-                          (canonicalDecimalToAtoms(part.native.amount) * taken) / whole,
-                        ),
-                      },
-                    }
-                  : {}),
-              },
-        );
-      }
-      return {
-        ...lot,
-        costUsd: formatAtoms(cost),
-        ...(lot.returned ? { returned } : {}),
-        costEstimated: true,
-      };
+      return estimatedLot(lot, instrument, near, splits, usd, valuedAt);
     }),
   }));
+}
+
+/** One lot without a purchase price, costed at the stored price nearest its arrival. */
+function estimatedLot(
+  lot: PortfolioLot,
+  instrument: PortfolioInstrument,
+  near: ReadonlyMap<string, StoredPrice>,
+  splits: readonly FifoSplit[],
+  usd: FxConverter,
+  valuedAt: number,
+): PortfolioLot {
+  const stored = near.get(nearKey(lot.instrumentId, lot.acquiredAt));
+  if (!stored) return lot;
+  const market = new Map<string, StoredPrice>();
+  const manual = new Map<string, StoredPrice>();
+  if (instrument.priceSource === 'market')
+    market.set(instrument.symbol?.toUpperCase() ?? '', stored);
+  else manual.set(instrument.id, stored);
+  // The price comes per unit of its own day, or of the arrival when it is earlier.
+  const { price } = resolvePrice(
+    instrument,
+    { market, manual, splits },
+    new Date(lot.acquiredAt),
+    usd,
+  );
+  if (!price) return lot;
+  // The lot's quantity is in the units held at the valuation: a split between divides it.
+  const unitsAt = Math.max(Date.parse(lot.acquiredAt), Date.parse(stored.observedAt));
+  const ratio = splits.reduce(
+    (units, split) =>
+      split.instrumentId === lot.instrumentId &&
+      Date.parse(split.effectiveAt) > unitsAt &&
+      Date.parse(split.effectiveAt) <= valuedAt
+        ? units * BigInt(split.ratio)
+        : units,
+    1n,
+  );
+  const product = canonicalDecimalToAtoms(lot.quantity) * canonicalDecimalToAtoms(price.value);
+  const scale = ATOM * ratio;
+  // A capital return since paid part of it back. Returns above the estimate leave nothing of
+  // it, and only what they took off it stays returned, so no later reading adds back more.
+  let cost = (product + scale - 1n) / scale;
+  const returned: ReturnedCost[] = [];
+  for (const part of lot.returned ?? []) {
+    if (cost === 0n) break;
+    const whole = canonicalDecimalToAtoms(part.costUsd);
+    let taken = whole;
+    if (taken > cost) taken = cost;
+    cost -= taken;
+    returned.push(taken === whole ? part : partlyReturned(part, taken, whole));
+  }
+  return {
+    ...lot,
+    costUsd: formatAtoms(cost),
+    ...(lot.returned ? { returned } : {}),
+    costEstimated: true,
+  };
+}
+
+/** The part of a capital return the estimate could take, its paid amount in proportion. */
+function partlyReturned(part: ReturnedCost, taken: bigint, whole: bigint): ReturnedCost {
+  return {
+    ...part,
+    costUsd: formatAtoms(taken),
+    // Rounded down: less paid back counted keeps the cost from reading lower.
+    ...(part.native
+      ? {
+          native: {
+            currency: part.native.currency,
+            amount: formatAtoms((canonicalDecimalToAtoms(part.native.amount) * taken) / whole),
+          },
+        }
+      : {}),
+  };
 }
 
 interface NearRow {

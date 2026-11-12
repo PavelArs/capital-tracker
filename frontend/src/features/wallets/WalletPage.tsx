@@ -44,6 +44,7 @@ import { useWallets } from './useWallets';
 import {
   AddressRow,
   connectsBybit,
+  type Holding,
   holdingsOf,
   networkCount,
   ReconcileNote,
@@ -109,6 +110,52 @@ function LastSync({
   );
 }
 
+/** WAL-OPEN: one transaction of the wallet; the row opens it in Transactions. */
+function OperationRow({
+  operation,
+  quoteCurrency,
+  asked,
+}: {
+  operation: Operation;
+  quoteCurrency: OperationList['quoteCurrency'];
+  asked: AccountingCurrency | undefined;
+}) {
+  const transfer =
+    operation.type === 'transfer' && operation.counterAccount
+      ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
+      : '';
+  return (
+    <li>
+      <Link
+        className="wallets-holdings__open"
+        to={`/transactions?open=${encodeURIComponent(operation.id)}${asked ? `&currency=${asked}` : ''}`}
+      >
+        <span className="wallets-holdings__main">
+          {operation.status === 'needs-classification' ? (
+            <Badge tone="warn" dot>
+              {statusLabels[operation.status]}
+            </Badge>
+          ) : (
+            typeLabel(operation)
+          )}
+          <span className="ui-sub">
+            {day(operation.occurredAt)}
+            {transfer}
+          </span>
+        </span>
+        <span className="ui-num wallets-holdings__side">
+          {signedAmount(operation)}
+          {operation.value !== null && (
+            <span className="ui-sub">
+              {money(operation.value, quoteCurrency, false, rounding(operation, quoteCurrency))}
+            </span>
+          )}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
 function WalletTransactions({
   accountId,
   asked,
@@ -151,41 +198,12 @@ function WalletTransactions({
         <>
           <ul className="wallets-list wallets-holdings">
             {pagedOwn.rows.map((operation) => (
-              <li key={operation.id}>
-                <Link
-                  className="wallets-holdings__open"
-                  to={`/transactions?open=${encodeURIComponent(operation.id)}${asked ? `&currency=${asked}` : ''}`}
-                >
-                  <span className="wallets-holdings__main">
-                    {operation.status === 'needs-classification' ? (
-                      <Badge tone="warn" dot>
-                        {statusLabels[operation.status]}
-                      </Badge>
-                    ) : (
-                      typeLabel(operation)
-                    )}
-                    <span className="ui-sub">
-                      {day(operation.occurredAt)}
-                      {operation.type === 'transfer' && operation.counterAccount
-                        ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
-                        : ''}
-                    </span>
-                  </span>
-                  <span className="ui-num wallets-holdings__side">
-                    {signedAmount(operation)}
-                    {operation.value !== null && typeof operations === 'object' && (
-                      <span className="ui-sub">
-                        {money(
-                          operation.value,
-                          operations.quoteCurrency,
-                          false,
-                          rounding(operation, operations.quoteCurrency),
-                        )}
-                      </span>
-                    )}
-                  </span>
-                </Link>
-              </li>
+              <OperationRow
+                key={operation.id}
+                operation={operation}
+                quoteCurrency={operations.quoteCurrency}
+                asked={asked}
+              />
             ))}
           </ul>
           {pagedOwn.pager && <Pager {...pagedOwn.pager} label="transactions" />}
@@ -199,6 +217,184 @@ function WalletTransactions({
       )}
     </Card>
   );
+}
+
+function WalletActions({
+  canSync,
+  syncing,
+  onEdit,
+  onRemove,
+  onSyncAll,
+}: {
+  canSync: boolean;
+  syncing: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+  onSyncAll: () => void;
+}) {
+  return (
+    <>
+      <Button variant="ghost" icon="edit" onClick={onEdit}>
+        Edit
+      </Button>
+      <Button variant="ghost" destructive onClick={onRemove}>
+        Remove
+      </Button>
+      {canSync && (
+        // wallets-02: the button stays focusable while it runs, so the keyboard stays on it.
+        <Button
+          icon="refresh"
+          aria-disabled={syncing}
+          onClick={() => {
+            if (!syncing) onSyncAll();
+          }}
+        >
+          {syncing ? 'Syncing…' : 'Sync now'}
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** Four figures spread over the card, as in the prototype. */
+function WalletStats({
+  total,
+  currency,
+  assets,
+  own,
+  runs,
+}: {
+  total: string | null;
+  currency: AccountingCurrency;
+  assets: number;
+  own: WalletAddress[];
+  runs: Record<string, SyncRun>;
+}) {
+  return (
+    <Stats>
+      <Stat label="Total value" value={money(total, currency)} />
+      <Stat label="Assets" value={assets} />
+      {own.length > 0 && own.every((address) => networkOf(address).exchange) ? (
+        // The backend refuses a key that can trade, so the connection only reads. Whether
+        // it works now is the last sync's to say.
+        <Stat label="Connection" value="API, read-only" />
+      ) : (
+        <Stat label="Tracked networks" value={networkCount(own) || 'None'} />
+      )}
+      <Stat label="Last sync" value={<LastSync addresses={own} runs={runs} />} />
+    </Stats>
+  );
+}
+
+/** WALLET-ASSETS-MORE: five assets, the rest behind "Show N more". */
+function WalletAssets({
+  holdings,
+  allAssets,
+  chains,
+  total,
+  currency,
+  asked,
+  onToggle,
+}: {
+  holdings: Holding[];
+  allAssets: boolean;
+  chains: ReturnType<typeof tokenChains>;
+  total: string | null;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+  onToggle: () => void;
+}) {
+  const shownHoldings = allAssets ? holdings : holdings.slice(0, SHORT_PAGE);
+  return (
+    <Card labelledBy="wallet-assets">
+      <CardHeader id="wallet-assets" title="Assets" />
+      {holdings.length === 0 ? (
+        <EmptyState id="wallet-assets-none" title="No assets in this wallet." compact />
+      ) : (
+        <ul className="wallets-list wallets-holdings">
+          {shownHoldings.map((holding) => (
+            <li key={holding.asset.instrumentId}>
+              <Link
+                className="wallets-asset wallets-holdings__asset"
+                to={withCurrency(`/portfolio/${holding.asset.instrumentId}`, asked)}
+              >
+                <AssetIcon
+                  symbol={holding.asset.symbol}
+                  name={holding.asset.name}
+                  assetType={holding.asset.assetType}
+                  network={onlyChain(holding.asset.symbol, chains)}
+                  size="sm"
+                />
+                <span>
+                  {holding.asset.name}
+                  <span className="ui-sub">
+                    {withChains(
+                      `${quantity(holding.quantity)} ${holding.asset.symbol ?? ''}`.trim(),
+                      holding.asset.symbol,
+                      chains,
+                    )}
+                  </span>
+                </span>
+              </Link>
+              <span className="ui-num wallets-holdings__side">
+                {holding.value === null ? DASH : money(holding.value, currency)}
+                {holding.value !== null && total !== null && Number(total) > 0 && (
+                  <span className="ui-sub">{holdingShare(holding.value, total)}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {holdings.length > SHORT_PAGE && (
+        <Button variant="link" className="wallets-all" aria-expanded={allAssets} onClick={onToggle}>
+          {allAssets ? 'Show less' : `Show ${holdings.length - SHORT_PAGE} more`}
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+/** A wallet without addresses is tracked by hand; it offers what can read it. */
+function ManualNote({
+  name,
+  bybit,
+  onAdd,
+}: {
+  name: string;
+  bybit: boolean;
+  onAdd: (adding: true | 'bybit') => void;
+}) {
+  return (
+    <Card as="div">
+      {bybit ? (
+        // wallets-08: a Bybit account kept by hand can read itself with a read-only key.
+        <p className="ui-soft wallets-text">
+          {name} is tracked by hand: balances come from the transactions you add.{' '}
+          <Button variant="link" onClick={() => onAdd('bybit')}>
+            Connect Bybit API
+          </Button>{' '}
+          to read its balances and history with a read-only key.
+        </p>
+      ) : (
+        <p className="ui-soft wallets-text">
+          {name} is tracked by hand: balances come from the transactions you add.{' '}
+          <Button variant="link" onClick={() => onAdd(true)}>
+            Add a wallet address
+          </Button>{' '}
+          to compare them with the blockchain.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/** WALLET-REMOVE: what removing the wallet stops, and why a wallet with history stays. */
+function removalText(name: string, addresses: number): string {
+  if (addresses === 0)
+    return `${name} leaves your wallets. A wallet that holds recorded transactions cannot be removed, because they are your history.`;
+  const stop = addresses === 1 ? 'address stops' : `${addresses} addresses stop`;
+  return `${name} leaves your wallets and its ${stop} syncing. A wallet that holds recorded transactions cannot be removed, because they are your history; remove its addresses instead.`;
 }
 
 /** WALLET-REMOVE: the reason the server gave, or a plain sentence for what went wrong. */
@@ -281,7 +477,6 @@ export default function WalletPage() {
   // wallet: another wallet's page opens folded.
   const [unfolded, setUnfolded] = useState<string | null>(null);
   const allAssets = unfolded === accountId;
-  const shownHoldings = allAssets ? holdings : holdings.slice(0, SHORT_PAGE);
   const refresh = () => {
     void load(true);
     void loadOperations();
@@ -321,42 +516,23 @@ export default function WalletPage() {
             title={account.name}
             subtitle={subtitle(own, kind)}
             actions={
-              <>
-                <Button variant="ghost" icon="edit" onClick={() => setEditing(true)}>
-                  Edit
-                </Button>
-                <Button variant="ghost" destructive onClick={() => setRemoving(true)}>
-                  Remove
-                </Button>
-                {own.some((address) => !address.sync.off) && (
-                  // wallets-02: the button stays focusable while it runs, so the keyboard stays on it.
-                  <Button
-                    icon="refresh"
-                    aria-disabled={syncing}
-                    onClick={() => {
-                      if (!syncing) void syncAll();
-                    }}
-                  >
-                    {syncing ? 'Syncing…' : 'Sync now'}
-                  </Button>
-                )}
-              </>
+              <WalletActions
+                canSync={own.some((address) => !address.sync.off)}
+                syncing={syncing}
+                onEdit={() => setEditing(true)}
+                onRemove={() => setRemoving(true)}
+                onSyncAll={() => void syncAll()}
+              />
             }
           />
           <Card className="wallet-overview" label="Summary">
-            {/* Four figures spread over the card, as in the prototype. */}
-            <Stats>
-              <Stat label="Total value" value={money(total, currency)} />
-              <Stat label="Assets" value={holdings.length} />
-              {own.length > 0 && own.every((address) => networkOf(address).exchange) ? (
-                // The backend refuses a key that can trade, so the connection only reads. Whether
-                // it works now is the last sync's to say.
-                <Stat label="Connection" value="API, read-only" />
-              ) : (
-                <Stat label="Tracked networks" value={networkCount(own) || 'None'} />
-              )}
-              <Stat label="Last sync" value={<LastSync addresses={own} runs={runs} />} />
-            </Stats>
+            <WalletStats
+              total={total}
+              currency={currency}
+              assets={holdings.length}
+              own={own}
+              runs={runs}
+            />
             <ReconcileNote
               result={
                 hiddenSymbols ? reconcile(list, portfolio, accountId, hiddenSymbols) : PENDING
@@ -395,57 +571,15 @@ export default function WalletPage() {
             </Card>
           )}
           <div className="wallets-split">
-            <Card labelledBy="wallet-assets">
-              <CardHeader id="wallet-assets" title="Assets" />
-              {holdings.length === 0 ? (
-                <EmptyState id="wallet-assets-none" title="No assets in this wallet." compact />
-              ) : (
-                <ul className="wallets-list wallets-holdings">
-                  {shownHoldings.map((holding) => (
-                    <li key={holding.asset.instrumentId}>
-                      <Link
-                        className="wallets-asset wallets-holdings__asset"
-                        to={withCurrency(`/portfolio/${holding.asset.instrumentId}`, asked)}
-                      >
-                        <AssetIcon
-                          symbol={holding.asset.symbol}
-                          name={holding.asset.name}
-                          assetType={holding.asset.assetType}
-                          network={onlyChain(holding.asset.symbol, chains)}
-                          size="sm"
-                        />
-                        <span>
-                          {holding.asset.name}
-                          <span className="ui-sub">
-                            {withChains(
-                              `${quantity(holding.quantity)} ${holding.asset.symbol ?? ''}`.trim(),
-                              holding.asset.symbol,
-                              chains,
-                            )}
-                          </span>
-                        </span>
-                      </Link>
-                      <span className="ui-num wallets-holdings__side">
-                        {holding.value === null ? DASH : money(holding.value, currency)}
-                        {holding.value !== null && total !== null && Number(total) > 0 && (
-                          <span className="ui-sub">{holdingShare(holding.value, total)}</span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {holdings.length > SHORT_PAGE && (
-                <Button
-                  variant="link"
-                  className="wallets-all"
-                  aria-expanded={allAssets}
-                  onClick={() => setUnfolded(allAssets ? null : accountId)}
-                >
-                  {allAssets ? 'Show less' : `Show ${holdings.length - SHORT_PAGE} more`}
-                </Button>
-              )}
-            </Card>
+            <WalletAssets
+              holdings={holdings}
+              allAssets={allAssets}
+              chains={chains}
+              total={total}
+              currency={currency}
+              asked={asked}
+              onToggle={() => setUnfolded(allAssets ? null : accountId)}
+            />
             <WalletTransactions
               accountId={accountId}
               asked={asked}
@@ -454,26 +588,11 @@ export default function WalletPage() {
             />
           </div>
           {own.length === 0 && (
-            <Card as="div">
-              {connectsBybit(account.name, own, kind) ? (
-                // wallets-08: a Bybit account kept by hand can read itself with a read-only key.
-                <p className="ui-soft wallets-text">
-                  {account.name} is tracked by hand: balances come from the transactions you add.{' '}
-                  <Button variant="link" onClick={() => setAdding('bybit')}>
-                    Connect Bybit API
-                  </Button>{' '}
-                  to read its balances and history with a read-only key.
-                </p>
-              ) : (
-                <p className="ui-soft wallets-text">
-                  {account.name} is tracked by hand: balances come from the transactions you add.{' '}
-                  <Button variant="link" onClick={() => setAdding(true)}>
-                    Add a wallet address
-                  </Button>{' '}
-                  to compare them with the blockchain.
-                </p>
-              )}
-            </Card>
+            <ManualNote
+              name={account.name}
+              bybit={connectsBybit(account.name, own, kind)}
+              onAdd={setAdding}
+            />
           )}
         </>
       )}
@@ -537,9 +656,7 @@ export default function WalletPage() {
           }}
           onClose={() => setRemoving(false)}
         >
-          {own.length > 0
-            ? `${account.name} leaves your wallets and its ${own.length === 1 ? 'address stops' : `${own.length} addresses stop`} syncing. A wallet that holds recorded transactions cannot be removed, because they are your history; remove its addresses instead.`
-            : `${account.name} leaves your wallets. A wallet that holds recorded transactions cannot be removed, because they are your history.`}
+          {removalText(account.name, own.length)}
         </ConfirmDialog>
       )}
       {open && portfolio && (

@@ -62,18 +62,20 @@ function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => 
   // Prefetches still on their way that no page has joined yet, each with its own token so an
   // older one settling late cannot take the place of a newer one.
   const unclaimed = new Map<string, object>();
+  // What a page that asks takes from a prefetch: undefined when it has to ask itself.
+  const claim = (id: string): T | undefined => {
+    // A page that joins a prefetch on its way has had its answer.
+    unclaimed.delete(id);
+    // A page opened right after a prefetch uses its answer once; later loads ask again.
+    if (!prefetched.has(id)) return undefined;
+    const warm = warmFor(id) ? recall<T>(id) : undefined;
+    prefetched.delete(id);
+    return warm !== undefined && !inFlight.has(id) ? warm : undefined;
+  };
   const ask = (args: A, byPage: boolean): Promise<T> => {
     const id = key(args);
-    if (byPage) {
-      // A page that joins a prefetch on its way has had its answer.
-      unclaimed.delete(id);
-      // A page opened right after a prefetch uses its answer once; later loads ask again.
-      if (prefetched.has(id)) {
-        const warm = warmFor(id) ? recall<T>(id) : undefined;
-        prefetched.delete(id);
-        if (warm !== undefined && !inFlight.has(id)) return Promise.resolve(warm);
-      }
-    }
+    const warm = byPage ? claim(id) : undefined;
+    if (warm !== undefined) return Promise.resolve(warm);
     const startedIn = generationNow();
     const shared = inFlight.get(id);
     // An answer to a question asked before a change is not shared with one asked after it.

@@ -156,3 +156,61 @@ describe('MFA-001 CLI bounded input', () => {
     }
   });
 });
+
+describe('MFA-001 the error each CLI input gives, checked in order', () => {
+  const outcome = (args: string[]) => {
+    try {
+      return parseMfaCommand(args);
+    } catch (error) {
+      return error instanceof MfaInputError ? error.message : error;
+    }
+  };
+  const usage =
+    'Use mfa-cli.js prepare --user-id UUID --output PATH [--replace] or confirm --user-id UUID --candidate-id UUID --output PATH [--code-stdin]';
+  const output = '/tmp/output';
+
+  it.each([
+    [[], usage],
+    [['setup', '--user-id', userId], usage],
+    [['prepare', '--output', output, '--code-stdin'], 'Invalid or duplicate MFA CLI option'],
+    [['prepare', '--replace', '--replace'], 'Invalid or duplicate MFA CLI option'],
+    [['prepare', '--user-id'], 'Missing MFA CLI option value'],
+    [['prepare', '--user-id', '--output', output], 'Missing MFA CLI option value'],
+    [['prepare', '--output', 'bad\0path'], 'Invalid or missing owner user ID'],
+    [['prepare', '--user-id', 'x', '--output', output], 'Invalid or missing owner user ID'],
+    [['prepare', '--user-id', userId], 'Invalid or missing output path'],
+    [['prepare', '--user-id', userId, '--output', 'bad\0path'], 'Invalid or missing output path'],
+    [['confirm', '--user-id', userId, '--output', output], 'Invalid or missing candidate ID'],
+    [
+      ['confirm', '--candidate-id', 'x', '--user-id', userId, '--output', output],
+      'Invalid or missing candidate ID',
+    ],
+    [['confirm', '--replace'], 'Invalid or duplicate MFA CLI option'],
+  ])('refuses %j with its own message', (args, message) => {
+    expect(outcome(args)).toBe(message);
+  });
+
+  it('reads the flags in any order and leaves them false when absent', () => {
+    expect(outcome(['prepare', '--output', output, '--user-id', userId])).toEqual({
+      action: 'prepare',
+      userId,
+      output,
+      replace: false,
+    });
+    expect(
+      outcome([
+        'confirm',
+        '--code-stdin',
+        '--output',
+        output,
+        '--candidate-id',
+        candidateId,
+        '--user-id',
+        userId,
+      ]),
+    ).toEqual({ action: 'confirm', userId, candidateId, output, codeStdin: true });
+    expect(
+      outcome(['confirm', '--user-id', userId, '--candidate-id', candidateId, '--output', output]),
+    ).toEqual({ action: 'confirm', userId, candidateId, output, codeStdin: false });
+  });
+});

@@ -62,6 +62,30 @@ function pins(row: Record<string, unknown>): SwapPins {
     expectedJournalRevision: integer(row.expectedJournalRevision, 0, 10000),
   };
 }
+/** No fee names no source or asset; a fee is paid from held coins or from the incoming ones. */
+function assertFee(fee: {
+  feeQuantity: string;
+  feeSource: unknown;
+  feeInstrumentId: string | null;
+  incomingInstrumentId: string;
+  incomingQuantity: string;
+}): void {
+  const { feeQuantity, feeSource, feeInstrumentId } = fee;
+  if (feeQuantity === '0') {
+    if (feeSource !== null || feeInstrumentId !== null) bad();
+  } else {
+    if (feeSource !== 'held' && feeSource !== 'incoming') bad();
+    if (feeInstrumentId === null) bad();
+    if (feeSource === 'incoming' && feeInstrumentId !== fee.incomingInstrumentId) bad();
+  }
+
+  if (
+    feeSource === 'incoming' &&
+    canonicalDecimalToAtoms(feeQuantity) > canonicalDecimalToAtoms(fee.incomingQuantity)
+  )
+    bad();
+}
+
 function fields(row: Record<string, unknown>): SwapFields {
   if (row.assertExecuted !== true) return bad();
   const outgoingInstrumentId = parseUuid(row.outgoingInstrumentId);
@@ -72,19 +96,7 @@ function fields(row: Record<string, unknown>): SwapFields {
   const incomingQuantity = parseDecimal(row.incomingQuantity, true);
   const feeSource = row.feeSource;
   const feeInstrumentId = row.feeInstrumentId === null ? null : parseUuid(row.feeInstrumentId);
-  if (feeQuantity === '0') {
-    if (feeSource !== null || feeInstrumentId !== null) return bad();
-  } else {
-    if (feeSource !== 'held' && feeSource !== 'incoming') return bad();
-    if (feeInstrumentId === null) return bad();
-    if (feeSource === 'incoming' && feeInstrumentId !== incomingInstrumentId) return bad();
-  }
-
-  if (
-    feeSource === 'incoming' &&
-    canonicalDecimalToAtoms(feeQuantity) > canonicalDecimalToAtoms(incomingQuantity)
-  )
-    return bad();
+  assertFee({ feeQuantity, feeSource, feeInstrumentId, incomingInstrumentId, incomingQuantity });
 
   return {
     assertExecuted: true,

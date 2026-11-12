@@ -127,22 +127,21 @@ export function validateCsvSource(raw: unknown): Buffer {
 function delimiter(raw: unknown): ',' | ';' {
   return raw === ',' || raw === ';' ? raw : bad();
 }
+/** A fixed UTC offset of at most 14 hours, such as +03:00; a zero offset is +00:00. */
+function offset(value: unknown): string {
+  if (typeof value !== 'string' || value.length !== 6 || !/^[+-][0-9]{2}:[0-9]{2}$/.test(value))
+    return bad();
+  const hour = Number(value.slice(1, 3));
+  const minute = Number(value.slice(4));
+  if (hour > 14 || minute > 59 || (hour === 14 && minute !== 0)) return bad();
+  return hour === 0 && minute === 0 ? '+00:00' : value;
+}
 function format(raw: unknown): CsvFormat {
   const row = object(raw, ['delimiter', 'decimalSeparator', 'timestampMode', 'fixedOffset']);
   if (row.decimalSeparator !== '.' && row.decimalSeparator !== ',') return bad();
   if (row.timestampMode !== 'offset' && row.timestampMode !== 'fixed-offset') return bad();
-  let fixedOffset: string | undefined;
-  if (row.timestampMode === 'offset') {
-    if (has(row, 'fixedOffset')) return bad();
-  } else {
-    const value = row.fixedOffset;
-    if (typeof value !== 'string' || value.length !== 6 || !/^[+-][0-9]{2}:[0-9]{2}$/.test(value))
-      return bad();
-    const hour = Number(value.slice(1, 3));
-    const minute = Number(value.slice(4));
-    if (hour > 14 || minute > 59 || (hour === 14 && minute !== 0)) return bad();
-    fixedOffset = hour === 0 && minute === 0 ? '+00:00' : value;
-  }
+  if (row.timestampMode === 'offset' && has(row, 'fixedOffset')) return bad();
+  const fixedOffset = row.timestampMode === 'offset' ? undefined : offset(row.fixedOffset);
   return {
     delimiter: delimiter(row.delimiter),
     decimalSeparator: row.decimalSeparator,

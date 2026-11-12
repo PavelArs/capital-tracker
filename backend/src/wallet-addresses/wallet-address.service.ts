@@ -13,7 +13,7 @@ import { insertAccount } from '../accounting/accounting.service';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { type AccountInput, parseUuid } from '../accounting/input';
 import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
-import { presentSource, type SourceRow } from '../sync-status/sync-source';
+import { presentSource, type SourceRow, type SourceStatus } from '../sync-status/sync-source';
 import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import { bybitCoins, gapLeg, toUnits, UnreadableAmount } from './bybit-records';
@@ -39,6 +39,7 @@ import { type SyncOffReason, setSyncEnabled } from './sync-switch';
 import { balancesLateral, leftOut, withDust } from './token-left-out';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
+  type BalanceGap,
   type ExchangeRegistration,
   parseBalanceGap,
   parseRegistration,
@@ -271,23 +272,24 @@ function sourceRow(raw: AddressRow['source']): SourceRow | null {
   };
 }
 
+type HistoryState = 'never' | 'partial' | 'complete';
+
+/** A history read whole, one begun, or one not read at all. */
+function progressOf(complete: boolean, started: boolean): HistoryState {
+  if (complete) return 'complete';
+  return started ? 'partial' : 'never';
+}
+
 /** How much of the history is stored: Bitcoin walks newest first, Ethereum oldest first. */
-function historyState(row: AddressRow): 'never' | 'partial' | 'complete' {
+function historyState(row: AddressRow): HistoryState {
+  const complete = !!row.completedAt;
   // An account key is complete once a whole round has counted and stored its addresses.
-  if (row.derived) {
-    if (row.derived.walking) return 'partial';
-    return row.completedAt ? 'complete' : row.derived.derived > 0 ? 'partial' : 'never';
-  }
-  if (row.network === 'bitcoin')
-    return row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
+  if (row.derived)
+    return row.derived.walking ? 'partial' : progressOf(complete, row.derived.derived > 0);
+  if (row.network === 'bitcoin') return row.walkTopTxid ? 'partial' : progressOf(complete, false);
   // Bybit: complete once every list was read up to the last hour and the balances fetched.
-  if (row.exchange)
-    return row.completedAt
-      ? 'complete'
-      : row.exchange.readFrom > row.exchange.historyFrom
-        ? 'partial'
-        : 'never';
-  return row.completedAt ? 'complete' : row.scannedBlock !== null ? 'partial' : 'never';
+  if (row.exchange) return progressOf(complete, row.exchange.readFrom > row.exchange.historyFrom);
+  return progressOf(complete, row.scannedBlock !== null);
 }
 
 /** The balance of each asset the network's wallet can hold, its own coin first. */
@@ -388,67 +390,72 @@ function stakingOf(row: AddressRow) {
  * its 14 days. Claimed vote rewards are received TRX already in the balance; unclaimed ones are
  * shown and not counted.
  */
-function tronStakingOf(row: AddressRow) {
-  const trx = chainAsset('tron', null);
-  const units = (value: string | undefined) => BigInt(value ?? '0');
-  const format = (value: bigint) => formatUnits(value, trx);
-  const staked = units(row.tron?.staked);
-  const rewarded = units(row.tron?.rewarded);
-  const reported = row.tron?.reported ?? null;
-  const unstaking = reported?.unstaking ?? [];
-  const reportedTotal = reported
-    ? units(reported.energy) +
-      units(reported.bandwidth) +
-      unstaking.reduce((sum, item) => sum + units(item.units), 0n)
-    : null;
-  if (staked === 0n && rewarded === 0n && !reportedTotal) return null;
-  const position = (
-    account: string,
-    kind: 'energy' | 'bandwidth' | 'unstaking' | null,
-    state: StakeState | null,
-    quantity: bigint,
-    availableAt: string | null = null,
-  ) => ({
+/** Sun stored as text; a missing amount reads as none. */
+const sunOf = (value: string | undefined) => BigInt(value ?? '0');
+const formatTrx = (value: bigint) => formatUnits(value, chainAsset('tron', null));
+
+/** One line of a Tron wallet's staking: a resource, an unstake, or the history's whole stake. */
+function tronPosition(
+  account: string,
+  kind: 'energy' | 'bandwidth' | 'unstaking' | null,
+  state: StakeState | null,
+  quantity: bigint,
+  availableAt: string | null = null,
+) {
+  return {
     account,
     kind,
     validator: null,
     pool: null,
     state,
-    quantity: format(quantity),
-    rewards: format(0n),
+    quantity: formatTrx(quantity),
+    rewards: formatTrx(0n),
     availableAt,
-  });
-  const accounts = reported
-    ? [
-        ...(units(reported.energy) > 0n
-          ? [position('energy', 'energy', 'active', units(reported.energy))]
-          : []),
-        ...(units(reported.bandwidth) > 0n
-          ? [position('bandwidth', 'bandwidth', 'active', units(reported.bandwidth))]
-          : []),
-        ...unstaking.map((item, index) =>
-          position(
-            `unstaking-${index + 1}`,
-            'unstaking',
-            'deactivating',
-            units(item.units),
-            item.availableAt,
-          ),
-        ),
-      ]
-    : staked > 0n
-      ? [position('tron', null, null, staked)]
-      : [];
+  };
+}
+
+/** The staking lines the chain reported: energy and bandwidth when any, then each unstake. */
+function reportedPositions(reported: TronReported, unstaking: TronReported['unstaking']) {
+  const energy = sunOf(reported.energy);
+  const bandwidth = sunOf(reported.bandwidth);
+  return [
+    ...(energy > 0n ? [tronPosition('energy', 'energy', 'active', energy)] : []),
+    ...(bandwidth > 0n ? [tronPosition('bandwidth', 'bandwidth', 'active', bandwidth)] : []),
+    ...unstaking.map((item, index) =>
+      tronPosition(
+        `unstaking-${index + 1}`,
+        'unstaking',
+        'deactivating',
+        sunOf(item.units),
+        item.availableAt,
+      ),
+    ),
+  ];
+}
+
+function tronStakingOf(row: AddressRow) {
+  const trx = chainAsset('tron', null);
+  const staked = sunOf(row.tron?.staked);
+  const rewarded = sunOf(row.tron?.rewarded);
+  const reported = row.tron?.reported ?? null;
+  const unstaking = reported?.unstaking ?? [];
+  const reportedTotal = reported
+    ? sunOf(reported.energy) +
+      sunOf(reported.bandwidth) +
+      unstaking.reduce((sum, item) => sum + sunOf(item.units), 0n)
+    : null;
+  if (staked === 0n && rewarded === 0n && !reportedTotal) return null;
+  const history = staked > 0n ? [tronPosition('tron', null, null, staked)] : [];
   return {
     symbol: trx.symbol,
-    quantity: format(staked),
-    rewards: format(rewarded),
-    accounts,
+    quantity: formatTrx(staked),
+    rewards: formatTrx(rewarded),
+    accounts: reported ? reportedPositions(reported, unstaking) : history,
     // What the chain reports staked, when it differs from what the history explains.
     reportedQuantity:
-      reportedTotal !== null && reportedTotal !== staked ? format(reportedTotal) : null,
+      reportedTotal !== null && reportedTotal !== staked ? formatTrx(reportedTotal) : null,
     unclaimedRewards:
-      reported && units(reported.unclaimed) > 0n ? format(units(reported.unclaimed)) : null,
+      reported && sunOf(reported.unclaimed) > 0n ? formatTrx(sunOf(reported.unclaimed)) : null,
   };
 }
 
@@ -474,13 +481,12 @@ function tronReportedBalance(row: AddressRow) {
   const reported = row.tron?.reported;
   if (!reported) return null;
   const trx = chainAsset('tron', null);
-  const units = (value: string | undefined) => BigInt(value ?? '0');
   const total =
-    units(reported.balance) +
-    units(reported.energy) +
-    units(reported.bandwidth) +
-    reported.unstaking.reduce((sum, item) => sum + units(item.units), 0n);
-  const explained = units(row.balances.find((item) => item.asset === trx.token)?.units);
+    sunOf(reported.balance) +
+    sunOf(reported.energy) +
+    sunOf(reported.bandwidth) +
+    reported.unstaking.reduce((sum, item) => sum + sunOf(item.units), 0n);
+  const explained = sunOf(row.balances.find((item) => item.asset === trx.token)?.units);
   return total === explained ? null : formatUnits(total, trx);
 }
 
@@ -499,11 +505,76 @@ function poolsOf(row: AddressRow) {
   return pools.length === 0 ? null : pools;
 }
 
+/** The balance the chain reports when it differs from the stored history's (Tron, Stellar). */
+function reportedOf(row: AddressRow): string | null {
+  return row.network === 'tron' ? tronReportedBalance(row) : reportedBalanceOf(row);
+}
+
+/** A Bybit account's key facts, and what Bybit reported once its history is complete. */
+function exchangeOf(exchange: ExchangeRow, complete: boolean) {
+  return {
+    // The last four characters of the API key; the secret is never returned.
+    keyHint: exchange.keyHint,
+    ipBound: exchange.ipBound,
+    keyExpiresAt: exchange.keyExpiresAt && new Date(exchange.keyExpiresAt).toISOString(),
+    reportedAt:
+      complete && exchange.balancesAt ? new Date(exchange.balancesAt).toISOString() : null,
+    // Coins Bybit holds whose ticker the app cannot record (BYBIT-ANY-COIN); they never count.
+    untracked: complete
+      ? (exchange.balances ?? [])
+          .filter((item) => !isBybitCoin(item.coin))
+          .map((item) => ({ symbol: item.coin, quantity: item.quantity }))
+      : [],
+    historyFrom: new Date(exchange.historyFrom).toISOString(),
+    earnAllowed: exchange.earnAllowed,
+    convertAllowed: exchange.convertAllowed,
+    // BYBIT-HIDDEN: what the owner hid from the records, still held at Bybit.
+    hidden: complete
+      ? exchange.hiddenLegs
+          .filter((item) => isBybitCoin(item.coin) && BigInt(item.units) !== 0n)
+          .map((item) => ({
+            symbol: item.coin,
+            quantity: formatUnits(BigInt(item.units), chainAsset('bybit', item.coin)),
+          }))
+      : [],
+    // BYBIT-EARN: the tracked coins in each Earn product, already in the balances.
+    earn:
+      complete && exchange.earn
+        ? exchange.earn
+            .filter((item) => isBybitCoin(item.coin))
+            .map((item) => ({
+              symbol: item.coin,
+              quantity: item.quantity,
+              product: item.product,
+            }))
+        : null,
+  };
+}
+
+/** How far the history is stored and how the wallet's background source last ran. */
+function syncOf(row: AddressRow, state: HistoryState, status: SourceStatus | null) {
+  return {
+    state,
+    completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,
+    status: status?.state ?? null,
+    lastAttemptAt: status?.lastAttemptAt ?? null,
+    lastSuccessAt: status?.lastSuccessAt ?? null,
+    nextRunAt: status?.nextRunAt ?? null,
+    errorMessage: status?.errorMessage ?? null,
+    // WALLET-SYNC-OFF: present only while the background job skips the address. "failures"
+    // means the app switched it off, "manual" the owner. The stored transactions stay.
+    ...(row.syncDisabledAt && row.syncDisabledReason
+      ? { off: { reason: row.syncDisabledReason, at: row.syncDisabledAt.toISOString() } }
+      : {}),
+  };
+}
+
 function summary(row: AddressRow, now = new Date()) {
   const state = historyState(row);
-  const balances = state === 'complete' ? balancesOf(row) : null;
-  const staking = state === 'complete' ? stakingOf(row) : null;
-  const pools = state === 'complete' ? poolsOf(row) : null;
+  const complete = state === 'complete';
+  const balances = complete ? balancesOf(row) : null;
+  const staking = complete ? stakingOf(row) : null;
+  const pools = complete ? poolsOf(row) : null;
   const source = sourceRow(row.source);
   const status = source ? presentSource(source, now) : null;
   return {
@@ -518,61 +589,11 @@ function summary(row: AddressRow, now = new Date()) {
     chainBalance: balances?.[0].quantity ?? null,
     balances,
     // TOKEN-HIDE: the other tokens left out of the balances, with the reason (Ethereum, Solana).
-    ...(movesAnyToken(row.network)
-      ? { hiddenTokens: state === 'complete' ? hiddenTokensOf(row) : null }
-      : {}),
+    ...(movesAnyToken(row.network) ? { hiddenTokens: complete ? hiddenTokensOf(row) : null } : {}),
     staking,
     pools,
-    reportedBalance:
-      state === 'complete'
-        ? row.network === 'tron'
-          ? tronReportedBalance(row)
-          : reportedBalanceOf(row)
-        : null,
-    exchange: row.exchange
-      ? {
-          // The last four characters of the API key; the secret is never returned.
-          keyHint: row.exchange.keyHint,
-          ipBound: row.exchange.ipBound,
-          keyExpiresAt:
-            row.exchange.keyExpiresAt && new Date(row.exchange.keyExpiresAt).toISOString(),
-          reportedAt:
-            state === 'complete' && row.exchange.balancesAt
-              ? new Date(row.exchange.balancesAt).toISOString()
-              : null,
-          // Coins Bybit holds whose ticker the app cannot record (BYBIT-ANY-COIN); they never count.
-          untracked:
-            state === 'complete'
-              ? (row.exchange.balances ?? [])
-                  .filter((item) => !isBybitCoin(item.coin))
-                  .map((item) => ({ symbol: item.coin, quantity: item.quantity }))
-              : [],
-          historyFrom: new Date(row.exchange.historyFrom).toISOString(),
-          earnAllowed: row.exchange.earnAllowed,
-          convertAllowed: row.exchange.convertAllowed,
-          // BYBIT-HIDDEN: what the owner hid from the records, still held at Bybit.
-          hidden:
-            state === 'complete'
-              ? row.exchange.hiddenLegs
-                  .filter((item) => isBybitCoin(item.coin) && BigInt(item.units) !== 0n)
-                  .map((item) => ({
-                    symbol: item.coin,
-                    quantity: formatUnits(BigInt(item.units), chainAsset('bybit', item.coin)),
-                  }))
-              : [],
-          // BYBIT-EARN: the tracked coins in each Earn product, already in the balances.
-          earn:
-            state === 'complete' && row.exchange.earn
-              ? row.exchange.earn
-                  .filter((item) => isBybitCoin(item.coin))
-                  .map((item) => ({
-                    symbol: item.coin,
-                    quantity: item.quantity,
-                    product: item.product,
-                  }))
-              : null,
-        }
-      : null,
+    reportedBalance: complete ? reportedOf(row) : null,
+    exchange: row.exchange ? exchangeOf(row.exchange, complete) : null,
     accountKey: row.derived
       ? {
           prefix: row.address.slice(0, 4),
@@ -582,21 +603,25 @@ function summary(row: AddressRow, now = new Date()) {
           alsoTracked: row.derived.alsoTracked,
         }
       : null,
-    sync: {
-      state,
-      completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,
-      status: status?.state ?? null,
-      lastAttemptAt: status?.lastAttemptAt ?? null,
-      lastSuccessAt: status?.lastSuccessAt ?? null,
-      nextRunAt: status?.nextRunAt ?? null,
-      errorMessage: status?.errorMessage ?? null,
-      // WALLET-SYNC-OFF: present only while the background job skips the address. "failures"
-      // means the app switched it off, "manual" the owner. The stored transactions stay.
-      ...(row.syncDisabledAt && row.syncDisabledReason
-        ? { off: { reason: row.syncDisabledReason, at: row.syncDisabledAt.toISOString() } }
-        : {}),
-    },
+    sync: syncOf(row, state, status),
   };
+}
+
+/**
+ * BYBIT-COUNT-GAP: the gap was read against the balance Bybit reports now, and what comes in
+ * fits inside it; a stored balance with more decimals than Bybit keeps needs a reload.
+ */
+function checkGap(exchange: ExchangeRow, gap: BalanceGap) {
+  try {
+    const reported = exchange.balances?.find((item) => item.coin === gap.coin)?.quantity;
+    if (toUnits(reported ?? '0') !== toUnits(gap.reported))
+      throw new ConflictException('Bybit reports another balance now');
+    if (gap.direction === 'in' && toUnits(gap.quantity) > toUnits(gap.reported))
+      throw new UnprocessableEntityException('The difference exceeds the balance Bybit holds');
+  } catch (error) {
+    if (error instanceof UnreadableAmount) throw new ConflictException('Reload the balances');
+    throw error;
+  }
 }
 
 function transaction(row: TransactionRow) {
@@ -939,16 +964,7 @@ export class WalletAddressService {
       const row = await this.address(manager, owner, addressId);
       if (!row.exchange || row.accountId === null)
         throw new UnprocessableEntityException('Only a Bybit account in a wallet can count a gap');
-      try {
-        const reported = row.exchange.balances?.find((item) => item.coin === gap.coin)?.quantity;
-        if (toUnits(reported ?? '0') !== toUnits(gap.reported))
-          throw new ConflictException('Bybit reports another balance now');
-        if (gap.direction === 'in' && toUnits(gap.quantity) > toUnits(gap.reported))
-          throw new UnprocessableEntityException('The difference exceeds the balance Bybit holds');
-      } catch (error) {
-        if (error instanceof UnreadableAmount) throw new ConflictException('Reload the balances');
-        throw error;
-      }
+      checkGap(row.exchange, gap);
       const leg = gapLeg(
         gap,
         new Date(),

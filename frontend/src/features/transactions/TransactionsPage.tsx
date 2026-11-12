@@ -78,6 +78,35 @@ const isStatusView = (value: string | null): value is StatusView =>
   value === 'dust' ||
   value === 'unpriced';
 
+/** The view the address asks for: a status, a source, or all. */
+function viewOf(params: URLSearchParams): View {
+  const status = params.get('status');
+  if (isStatusView(status)) return status;
+  return views.find(([key]) => key === params.get('source'))?.[0] ?? 'all';
+}
+
+/** Filters live in the address, so other screens can link to "Needs classification". */
+function filtersOf(params: URLSearchParams) {
+  const asset = params.get('asset') ?? '';
+  return {
+    view: viewOf(params),
+    asset,
+    place: params.get('account') ?? '',
+    // COST-UNKNOWN: the asset page links the rows that leave its cost basis empty.
+    unknownCost: params.get('cost') === 'unknown' && asset !== '',
+    kind: params.get('type') ?? '',
+  };
+}
+
+/**
+ * The Dust chip appears once a threshold is set or something is dust; the No price chip once a
+ * row lacks a price. The chosen view's chip always shows.
+ */
+function chipHidden(key: View, count: number, dustThresholdUsd: string | null, view: View) {
+  if (key === view || count > 0) return false;
+  return key === 'unpriced' || (key === 'dust' && dustThresholdUsd === null);
+}
+
 // Dust is filtered out of every view but its own (CLS-DUST).
 function inView(operation: Operation, view: View): boolean {
   // UNPRICED-FILTER: a counted row whose asset had no stored price at its time; hidden and
@@ -440,7 +469,11 @@ const proposalsKept = () =>
 // A kept list is painted at once only with its cards: another page may have kept the list alone,
 // and the cards would then arrive above it.
 const shownList = (currency?: AccountingCurrency, range?: OperationRange) =>
-  proposalsKept() ? lastList(currency, range) : undefined;
+  proposalsKept() ? (lastList(currency, range) ?? null) : null;
+// A read failed while a list was on screen: a refresh of that list, or a read of another
+// period or currency.
+const staleKind = (shown: string, asked: string): 'refresh' | 'other' =>
+  shown === asked ? 'refresh' : 'other';
 const proposalsArrived = (): Promise<unknown> => {
   if (proposalsKept()) return Promise.resolve();
   const asked = generationNow();
@@ -466,6 +499,227 @@ const periodText = (range: OperationRange | undefined) => {
   return 'all time';
 };
 
+/** What an answer did, as the drawer or a toast says it. */
+function answerText(label: string): string {
+  if (label === 'hidden') return 'Hidden from calculations.';
+  if (label === 'included') return 'Included in calculations again.';
+  return `Saved as ${label}.`;
+}
+
+/**
+ * CLS-ADJACENT: the next one is the neighbour in time among the rows the filters show: the next
+ * older one below it in the list, or at the end the next newer one above it.
+ */
+function adjacent(operations: Operation[], id: string, open: ReadonlySet<string>) {
+  const at = operations.findIndex((item) => item.id === id);
+  const older = operations.slice(at + 1).find((item) => open.has(item.id));
+  const newer = operations
+    .slice(0, Math.max(at, 0))
+    .reverse()
+    .find((item) => open.has(item.id));
+  return (older ?? newer)?.id;
+}
+
+type Day = { heading: string; operations: Operation[] };
+
+/** One group per UTC day, under a heading as in the prototype. */
+function byDay(rows: Operation[], now: string | undefined): Day[] {
+  const days: Day[] = [];
+  for (const operation of rows) {
+    const heading = dayHeading(operation.occurredAt, now ?? operation.occurredAt);
+    const last = days.at(-1);
+    if (last?.heading === heading) last.operations.push(operation);
+    else days.push({ heading, operations: [operation] });
+  }
+  return days;
+}
+
+function staleText(
+  stale: 'refresh' | 'other',
+  range: OperationRange | undefined,
+  currency: AccountingCurrency,
+): string {
+  return stale === 'refresh'
+    ? 'Could not refresh the list, so it may be out of date.'
+    : `Could not load the transactions you asked for. The list still shows ${periodText(range)} in ${currency}.`;
+}
+
+/** The filter sheet's button: how many rows it shows, once that is known. */
+function sheetDone(count: number | null): string {
+  if (count === null) return 'Show transactions';
+  return `Show ${count} ${count === 1 ? 'transaction' : 'transactions'}`;
+}
+
+function dustText(dustThresholdUsd: string | null): string {
+  return dustThresholdUsd === null
+    ? 'No dust threshold is set, so incoming wallet transactions ask to be classified, except those of tokens no price source lists or that you hid.'
+    : `Incoming wallet transactions worth less than ${money(dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`;
+}
+
+function FilterSelect({
+  label,
+  all,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  /** The empty choice: "All assets". */
+  all: string;
+  value: string;
+  options: [string, string][];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="ui-filter">
+      <span>{label}</span>
+      <Select size="sm" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{all}</option>
+        {options.map(([key, name]) => (
+          <option key={key} value={key}>
+            {name}
+          </option>
+        ))}
+      </Select>
+    </label>
+  );
+}
+
+/** No row to show: nothing is left to classify, or no row matches the filters. */
+function NoRows({ caughtUp, onClear }: { caughtUp: boolean; onClear: () => void }) {
+  if (caughtUp)
+    return (
+      <EmptyState
+        id="transactions-caught-up"
+        title="All caught up"
+        tone="pos"
+        icon={<Icon name="check" className="shell-icon" />}
+      >
+        Every transaction from your wallets is classified. New ones appear here after the next sync.
+      </EmptyState>
+    );
+  return (
+    <EmptyState
+      id="transactions-none"
+      title="No transactions match"
+      compact
+      actions={
+        <Button size="sm" onClick={onClear}>
+          Clear filters
+        </Button>
+      }
+    />
+  );
+}
+
+/** The rows of the list by day: two-line rows on a phone, the table on wide screens. */
+function TransactionRows({
+  days,
+  narrow,
+  currency,
+  openId,
+  onOpen,
+}: {
+  days: Day[];
+  narrow: boolean;
+  currency: AccountingCurrency;
+  openId: string | null;
+  onOpen: (id: string) => void;
+}) {
+  if (narrow)
+    return (
+      <ol className="ui-rows transactions-list" aria-label="Transactions">
+        {days.map((group) => (
+          <li key={group.heading} className="transactions-list__day">
+            <h2 className="transactions-list__heading">{group.heading}</h2>
+            <ul>
+              {group.operations.map((operation) => (
+                <OperationItem
+                  key={operation.id}
+                  operation={operation}
+                  currency={currency}
+                  current={operation.id === openId}
+                  onOpen={() => onOpen(operation.id)}
+                />
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+    );
+  return (
+    <div className="ui-table-wrap">
+      <table className="ui-table transactions-table" aria-label="Transactions">
+        <colgroup>
+          {columns.map((column) => (
+            <col key={column} className={`transactions-col--${column}`} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Type</th>
+            <th scope="col">Asset</th>
+            <th scope="col" className="ui-num">
+              Amount
+            </th>
+            <th scope="col" className="ui-num">
+              Value
+            </th>
+            <th scope="col">Account</th>
+            <th scope="col">Status</th>
+            <th scope="col">Source</th>
+          </tr>
+        </thead>
+        {days.map((group) => (
+          <tbody key={group.heading}>
+            <tr className="transactions-day">
+              <th scope="rowgroup" colSpan={columns.length}>
+                {group.heading}
+              </th>
+            </tr>
+            {group.operations.map((operation) => (
+              <OperationRow
+                key={operation.id}
+                operation={operation}
+                currency={currency}
+                current={operation.id === openId}
+                onOpen={() => onOpen(operation.id)}
+              />
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+}
+
+/** "2 of 6 transactions in the period, newest first", and what the values are in. */
+function ListNote({
+  shown,
+  total,
+  filtered,
+  period,
+  currency,
+}: {
+  shown: number;
+  total: number;
+  filtered: boolean;
+  period: boolean;
+  currency: AccountingCurrency;
+}) {
+  return (
+    <Banner tone="info">
+      {filtered ? `${shown} of ${total}` : total} {total === 1 ? 'transaction' : 'transactions'}
+      {period ? ' in the period' : ''}, newest first.{' '}
+      {currency === 'USD'
+        ? 'Values are in USD as recorded'
+        : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
+      ; ≈ marks an estimate at the price stored for the transaction's time. Dates and times are in
+      UTC.
+    </Banner>
+  );
+}
+
 export default function TransactionsPage() {
   // No currency in the address means the owner's main currency (Settings).
   const [asked] = useAskedCurrency();
@@ -477,7 +731,7 @@ export default function TransactionsPage() {
   const period = useMemo(() => periodOf(from, to), [from, to]);
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
-  const [list, setList] = useState<OperationList | null>(() => shownList(asked, period) ?? null);
+  const [list, setList] = useState<OperationList | null>(() => shownList(asked, period));
   // The period the list on screen was read for; a new period or currency keeps the old rows until
   // it arrives.
   const [readRange, setReadRange] = useState(period);
@@ -520,10 +774,10 @@ export default function TransactionsPage() {
       setFailed(false);
       if (fresh) {
         const kept = shownList(currency, range);
-        setList(kept ?? null);
+        setList(kept);
         setReadRange(range);
         shownFor.current = askKey(currency, range);
-        onScreen.current = kept !== undefined;
+        onScreen.current = kept !== null;
       }
       try {
         // Only the first paint waits for the cards; a refresh of a list on screen does not.
@@ -539,10 +793,10 @@ export default function TransactionsPage() {
         setStale(null);
         return next;
       } catch {
-        if (request === latest.current) {
-          if (!onScreen.current) setFailed(true);
-          else setStale(shownFor.current === askKey(currency, range) ? 'refresh' : 'other');
-        }
+        // Only the latest read says it failed.
+        if (request !== latest.current) return null;
+        if (!onScreen.current) setFailed(true);
+        else setStale(staleKind(shownFor.current, askKey(currency, range)));
         return null;
       }
     },
@@ -563,16 +817,7 @@ export default function TransactionsPage() {
     };
   }, []);
 
-  // Filters live in the address, so other screens can link to "Needs classification".
-  const status = params.get('status');
-  const view: View = isStatusView(status)
-    ? status
-    : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all');
-  const asset = params.get('asset') ?? '';
-  const place = params.get('account') ?? '';
-  // COST-UNKNOWN: the asset page links the rows that leave its cost basis empty.
-  const unknownCost = params.get('cost') === 'unknown' && asset !== '';
-  const kind = params.get('type') ?? '';
+  const { view, asset, place, unknownCost, kind } = filtersOf(params);
   const replaceParams = (next: URLSearchParams) => {
     pending.current = { from: params, next };
     setParams(next, { replace: true });
@@ -677,14 +922,7 @@ export default function TransactionsPage() {
     replaceParams(new URLSearchParams(asked ? { currency: asked } : {}));
   };
   const currency = list?.quoteCurrency ?? 'USD';
-  // One group per UTC day, under a heading as in the prototype.
-  const days: { heading: string; operations: Operation[] }[] = [];
-  for (const operation of paged.rows) {
-    const heading = dayHeading(operation.occurredAt, list?.at ?? operation.occurredAt);
-    const last = days.at(-1);
-    if (last?.heading === heading) last.operations.push(operation);
-    else days.push({ heading, operations: [operation] });
-  }
+  const days = byDay(paged.rows, list?.at);
   const page = useRef<HTMLDivElement>(null);
   // A completed command whose drawer or dialog closed says so in a toast (notification rules,
   // contexts/ToastContext.tsx); what the drawer still shows stays in the drawer.
@@ -712,6 +950,11 @@ export default function TransactionsPage() {
     });
   };
   const empty = operations.length === 0 && !period;
+  // Nothing waits for the owner and no filter narrows the list.
+  const caughtUp =
+    view === 'needs-classification' && !asset && !place && !kind && !query && !period;
+  // Until the new period's rows arrive, the count would be the old period's.
+  const sheetCount = listPeriod === periodKey(period) ? visible.length : null;
   // Wide screens: the search closes the chip row (the prototype); phones: beside Filters.
   const searchBox = (
     <Input
@@ -777,41 +1020,33 @@ export default function TransactionsPage() {
       done('Record deleted', 'The wallet shows the difference again.');
       return;
     }
-    const said =
-      label === 'hidden'
-        ? 'Hidden from calculations.'
-        : label === 'included'
-          ? 'Included in calculations again.'
-          : `Saved as ${label}.`;
+    const said = answerText(label);
+    if (was.status !== 'needs-classification') {
+      setOpenId(was.id);
+      setNotice(said);
+      return;
+    }
     const waiting = next.operations.filter(
       (item) => item.status === 'needs-classification' && item.id !== was.id,
     );
-    // CLS-ADJACENT: the next one is the neighbour in time among the rows the filters show:
-    // the next older one below it in the list, or at the end the next newer one above it.
-    const open = new Map(waiting.filter(matches).map((item) => [item.id, item]));
-    const at = operations.findIndex((item) => item.id === was.id);
-    const older = operations.slice(at + 1).find((item) => open.has(item.id));
-    const newer = operations
-      .slice(0, Math.max(at, 0))
-      .reverse()
-      .find((item) => open.has(item.id));
-    const neighbour = was.status === 'needs-classification' ? (older ?? newer) : undefined;
-    const following = neighbour && open.get(neighbour.id);
+    const following = adjacent(
+      operations,
+      was.id,
+      new Set(waiting.filter(matches).map((item) => item.id)),
+    );
     if (following) {
-      setOpenId(following.id);
+      setOpenId(following);
       setNotice(`${said} Here is the next one.`);
-    } else if (was.status === 'needs-classification') {
-      // The last one: back to the list, and a toast says so.
-      setOpenId(null);
-      done(
-        waiting.length > 0
-          ? `${said} Nothing else to classify here.`
-          : `All transactions classified. The last one was ${label === 'hidden' ? 'hidden' : `saved as ${label}`}.`,
-      );
-    } else {
-      setOpenId(was.id);
-      setNotice(said);
+      return;
     }
+    // The last one: back to the list, and a toast says so.
+    setOpenId(null);
+    const last = label === 'hidden' ? 'hidden' : `saved as ${label}`;
+    done(
+      waiting.length > 0
+        ? `${said} Nothing else to classify here.`
+        : `All transactions classified. The last one was ${last}.`,
+    );
   };
 
   return (
@@ -837,9 +1072,7 @@ export default function TransactionsPage() {
             </Button>
           }
         >
-          {stale === 'refresh'
-            ? 'Could not refresh the list, so it may be out of date.'
-            : `Could not load the transactions you asked for. The list still shows ${periodText(readRange)} in ${list.quoteCurrency}.`}
+          {staleText(stale, readRange, list.quoteCurrency)}
         </Banner>
       )}
       {list !== null && !failed && (
@@ -888,11 +1121,7 @@ export default function TransactionsPage() {
                 const count = operations.filter(
                   (operation) => inView(operation, key) && matches(operation),
                 ).length;
-                // The Dust chip appears once a threshold is set or something is dust.
-                if (key === 'dust' && count === 0 && list.dustThresholdUsd === null && view !== key)
-                  return null;
-                // The No price chip appears once a row lacks a price.
-                if (key === 'unpriced' && count === 0 && view !== key) return null;
+                if (chipHidden(key, count, list.dustThresholdUsd, view)) return null;
                 return (
                   <Chip
                     key={key}
@@ -913,59 +1142,30 @@ export default function TransactionsPage() {
               onReset={() =>
                 update({ asset: '', account: '', type: '', from: '', to: '', cost: '' })
               }
-              done={
-                // Until the new period's rows arrive, the count would be the old period's.
-                listPeriod === periodKey(period)
-                  ? `Show ${visible.length} ${visible.length === 1 ? 'transaction' : 'transactions'}`
-                  : 'Show transactions'
-              }
+              done={sheetDone(sheetCount)}
               search={narrow ? searchBox : undefined}
             >
-              <label className="ui-filter">
-                <span>Asset</span>
-                <Select
-                  size="sm"
-                  value={asset}
-                  onChange={(event) => update({ asset: event.target.value })}
-                >
-                  <option value="">All assets</option>
-                  {assetOptions.map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="ui-filter">
-                <span>Account</span>
-                <Select
-                  size="sm"
-                  value={place}
-                  onChange={(event) => update({ account: event.target.value })}
-                >
-                  <option value="">All accounts</option>
-                  {placeOptions.map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="ui-filter">
-                <span>Type</span>
-                <Select
-                  size="sm"
-                  value={kind}
-                  onChange={(event) => update({ type: event.target.value })}
-                >
-                  <option value="">All types</option>
-                  {kindOptions.map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <FilterSelect
+                label="Asset"
+                all="All assets"
+                value={asset}
+                options={assetOptions}
+                onChange={(value) => update({ asset: value })}
+              />
+              <FilterSelect
+                label="Account"
+                all="All accounts"
+                value={place}
+                options={placeOptions}
+                onChange={(value) => update({ account: value })}
+              />
+              <FilterSelect
+                label="Type"
+                all="All types"
+                value={kind}
+                options={kindOptions}
+                onChange={(value) => update({ type: value })}
+              />
               <PeriodFilter
                 period={period}
                 today={new Date().toISOString().slice(0, 10)}
@@ -992,112 +1192,28 @@ export default function TransactionsPage() {
               tone="info"
               action={<Link to="/preferences">Change the threshold in Settings</Link>}
             >
-              {list.dustThresholdUsd === null
-                ? 'No dust threshold is set, so incoming wallet transactions ask to be classified, except those of tokens no price source lists or that you hid.'
-                : `Incoming wallet transactions worth less than ${money(list.dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`}
+              {dustText(list.dustThresholdUsd)}
             </Banner>
           )}
-          {visible.length === 0 &&
-          view === 'needs-classification' &&
-          !asset &&
-          !place &&
-          !kind &&
-          !query &&
-          !period ? (
-            <EmptyState
-              id="transactions-caught-up"
-              title="All caught up"
-              tone="pos"
-              icon={<Icon name="check" className="shell-icon" />}
-            >
-              Every transaction from your wallets is classified. New ones appear here after the next
-              sync.
-            </EmptyState>
-          ) : visible.length === 0 ? (
-            <EmptyState
-              id="transactions-none"
-              title="No transactions match"
-              compact
-              actions={
-                <Button size="sm" onClick={clear}>
-                  Clear filters
-                </Button>
-              }
-            />
-          ) : narrow ? (
-            <ol className="ui-rows transactions-list" aria-label="Transactions">
-              {days.map((group) => (
-                <li key={group.heading} className="transactions-list__day">
-                  <h2 className="transactions-list__heading">{group.heading}</h2>
-                  <ul>
-                    {group.operations.map((operation) => (
-                      <OperationItem
-                        key={operation.id}
-                        operation={operation}
-                        currency={currency}
-                        current={operation.id === openId}
-                        onOpen={() => open(operation.id)}
-                      />
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ol>
+          {visible.length === 0 ? (
+            <NoRows caughtUp={caughtUp} onClear={clear} />
           ) : (
-            <div className="ui-table-wrap">
-              <table className="ui-table transactions-table" aria-label="Transactions">
-                <colgroup>
-                  {columns.map((column) => (
-                    <col key={column} className={`transactions-col--${column}`} />
-                  ))}
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">Asset</th>
-                    <th scope="col" className="ui-num">
-                      Amount
-                    </th>
-                    <th scope="col" className="ui-num">
-                      Value
-                    </th>
-                    <th scope="col">Account</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Source</th>
-                  </tr>
-                </thead>
-                {days.map((group) => (
-                  <tbody key={group.heading}>
-                    <tr className="transactions-day">
-                      <th scope="rowgroup" colSpan={columns.length}>
-                        {group.heading}
-                      </th>
-                    </tr>
-                    {group.operations.map((operation) => (
-                      <OperationRow
-                        key={operation.id}
-                        operation={operation}
-                        currency={currency}
-                        current={operation.id === openId}
-                        onOpen={() => open(operation.id)}
-                      />
-                    ))}
-                  </tbody>
-                ))}
-              </table>
-            </div>
+            <TransactionRows
+              days={days}
+              narrow={narrow}
+              currency={currency}
+              openId={openId}
+              onOpen={open}
+            />
           )}
           {paged.more && <LoadMore {...paged.more} label="transactions" />}
-          <Banner tone="info">
-            {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
-            {operations.length === 1 ? 'transaction' : 'transactions'}
-            {period ? ' in the period' : ''}, newest first.{' '}
-            {currency === 'USD'
-              ? 'Values are in USD as recorded'
-              : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
-            ; ≈ marks an estimate at the price stored for the transaction's time. Dates and times
-            are in UTC.
-          </Banner>
+          <ListNote
+            shown={visible.length}
+            total={operations.length}
+            filtered={Boolean(filtered)}
+            period={Boolean(period)}
+            currency={currency}
+          />
         </Card>
       )}
       {opened && (

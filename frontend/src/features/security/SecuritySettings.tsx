@@ -33,6 +33,14 @@ type Dialog =
   | { kind: 'session'; session: SecuritySession }
   | { kind: 'everywhere' };
 
+/** The line under Active sessions: loading, this browser alone, or several. */
+function sessionsText(overview: SecurityOverview | null, others: number): string {
+  if (!overview) return 'Loading…';
+  return others === 0
+    ? 'Only this browser is signed in.'
+    : 'Browsers and devices signed in to this account.';
+}
+
 // PR-AUTH-4, prototype Settings → Security: the factor, recovery codes and signed-in browsers.
 export default function SecuritySettings() {
   const { logoutEverywhere } = useAuth();
@@ -118,13 +126,7 @@ export default function SecuritySettings() {
           <SettingRow
             title="Active sessions"
             titleId="security-sessions"
-            description={
-              !overview
-                ? 'Loading…'
-                : others === 0
-                  ? 'Only this browser is signed in.'
-                  : 'Browsers and devices signed in to this account.'
-            }
+            description={sessionsText(overview, others)}
             control={
               <Button disabled={!overview} onClick={() => setDialog({ kind: 'everywhere' })}>
                 Log out everywhere

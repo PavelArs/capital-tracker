@@ -78,3 +78,23 @@ describe('DEP-ACCOUNT: a savings or current account is entered without a term', 
     );
   });
 });
+
+describe('DEP-ACCRUAL: the term a deposit can have', () => {
+  it.each([
+    ['ends on its start', { endDate: '2026-07-01' }],
+    ['ends before its start', { endDate: '2026-06-30' }],
+    ['runs longer than 30 years', { endDate: '2056-07-02' }],
+    ['pays at the end without an end date', { endDate: null, payout: 'at-end' }],
+    ['has no yes-or-no capitalization', { capitalized: 'yes' }],
+  ])('refuses a deposit that %s', (_name, change) => {
+    expect(() => parseDeposit({ ...term, ...change })).toThrow('Invalid deposit input');
+  });
+
+  it('accepts a term of exactly 30 years, one day, or no end date', () => {
+    expect(parseDeposit({ ...term, endDate: '2056-07-01' }).endDate).toBe('2056-07-01');
+    expect(parseDeposit({ ...term, endDate: '2026-07-02', payout: 'at-end' }).payout).toBe(
+      'at-end',
+    );
+    expect(parseDeposit({ ...term, endDate: null }).endDate).toBeNull();
+  });
+});

@@ -27,6 +27,20 @@ interface Walk {
   pages: number | null;
 }
 
+const failed = (reason: StepFailure, imported: number): StepResult => ({
+  outcome: 'provider_error',
+  reason,
+  imported,
+});
+
+/**
+ * The range holds other transactions than when the walk began (the instance followed a
+ * reorganisation or reindexed): it is read again from its first page.
+ */
+function pageCountMoved(walk: Walk, totalPages: number | null): boolean {
+  return walk.pages !== null && totalPages !== null && totalPages !== walk.pages;
+}
+
 /**
  * ZCASH-SYNC: transparent Zcash history from Blockbook. A walk fixes a block range, from the
  * block after the last walk to a few blocks below the tip, and reads its pages one by one;
@@ -44,35 +58,33 @@ export class ZcashSyncAdapter implements ChainSyncAdapter {
   ) {}
 
   async step(ownerId: string, addressId: string): Promise<StepResult> {
-    let state = await this.scan(ownerId, addressId);
-    let imported = 0;
-    const failed = (reason: StepFailure): StepResult => ({
-      outcome: 'provider_error',
-      reason,
-      imported,
-    });
+    const state = await this.scan(ownerId, addressId);
     const from = state.readTo === null ? 0 : state.readTo + 1;
-    let walk: Walk;
-    if (state.walkTo === null || state.walkPage === null) {
-      const status = await this.client.status();
-      if (!status.ok) return failed(status.reason);
-      const to = status.height - ZCASH_CONFIRMATIONS + 1;
-      if (to < from) {
-        await this.commit(state, [], null, true);
-        return { outcome: 'complete', reason: null, imported };
-      }
-      walk = { to, page: 1, pages: null };
-    } else {
-      walk = { to: state.walkTo, page: state.walkPage, pages: state.walkPages };
+    if (state.walkTo !== null && state.walkPage !== null) {
+      const walk = { to: state.walkTo, page: state.walkPage, pages: state.walkPages };
+      return this.walk(state, from, walk);
     }
+    const status = await this.client.status();
+    if (!status.ok) return failed(status.reason, 0);
+    const to = status.height - ZCASH_CONFIRMATIONS + 1;
+    if (to < from) {
+      await this.commit(state, [], null, true);
+      return { outcome: 'complete', reason: null, imported: 0 };
+    }
+    return this.walk(state, from, { to, page: 1, pages: null });
+  }
+
+  /** Reads a walk's pages from `start`, each committed with the walk's next place. */
+  private async walk(initial: WalkRow, from: number, start: Walk): Promise<StepResult> {
+    let state = initial;
+    let walk = start;
+    let imported = 0;
     const started = Date.now();
     for (let pages = 0; pages < MAX_ZCASH_PAGES; pages++) {
       if (Date.now() - started > SYNC_TIME_BUDGET_MS) break;
       const read = await this.client.page(state.address, from, walk.to, walk.page);
-      if (!read.ok) return failed(read.reason);
-      if (walk.pages !== null && read.totalPages !== null && read.totalPages !== walk.pages) {
-        // The range holds other transactions than when the walk began (the instance followed
-        // a reorganisation or reindexed): read it again from its first page.
+      if (!read.ok) return failed(read.reason, imported);
+      if (pageCountMoved(walk, read.totalPages)) {
         walk = { ...walk, page: 1, pages: null };
         continue;
       }

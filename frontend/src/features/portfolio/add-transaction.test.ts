@@ -1,5 +1,12 @@
+import type { Operation } from '@api/operations.api';
 import { describe, expect, it } from 'vitest';
-import { ambiguousComma, decimal, numberProblem, rateDate } from './add-transaction';
+import {
+  ambiguousComma,
+  decimal,
+  entryFromOperation,
+  numberProblem,
+  rateDate,
+} from './add-transaction';
 
 describe('NUM-COMMA a comma is a decimal point unless it could be a thousands separator', () => {
   it('reads a comma followed by one, two or four digits as a decimal point', () => {
@@ -56,5 +63,120 @@ describe('RATE-DATE the pre-filled Bank of Russia rate follows the Moscow date',
 
   it('keeps the recorded instant of an edited entry', () => {
     expect(rateDate(entry('2026-10-09', ''), now, true)).toBe('2026-10-09');
+  });
+});
+
+// Characterization of how a recorded operation opens for editing, before it was split up.
+describe('OPS-EDIT-ENTRY a recorded operation as the window shows it', () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const recorded: Operation = {
+    id: `trade:${id(30)}`,
+    kind: 'trade',
+    type: 'buy',
+    direction: 'in',
+    occurredAt: '2025-06-13T00:00:00.000Z',
+    orderWithinTimestamp: 2,
+    asset: { instrumentId: id(1), symbol: 'BTC', name: 'Bitcoin' },
+    quantity: '0.01',
+    counterAsset: null,
+    counterQuantity: null,
+    valueUsd: '1000',
+    estimatedValueUsd: null,
+    costBasisUsd: null,
+    feeUsd: '0',
+    fee: null,
+    paid: null,
+    settlement: null,
+    comment: 'First buy',
+    classification: null,
+    account: { id: id(11), name: 'Hardware wallet' },
+    counterAccount: null,
+    wallet: null,
+    counterWallet: null,
+    chain: null,
+    status: 'recorded',
+    source: 'manual',
+    version: 1,
+    value: '1000',
+    estimatedValue: null,
+    costBasis: null,
+    feeValue: '0',
+  };
+
+  it('OPS-EDIT-ENTRY keeps a payment in rubles at the rate the owner typed, and its fee', () => {
+    expect(
+      entryFromOperation({
+        ...recorded,
+        direction: 'out',
+        type: 'sell',
+        occurredAt: '2025-06-13T14:30:15.000Z',
+        asset: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
+        comment: null,
+        paid: {
+          currency: 'RUB',
+          gross: '80000',
+          fee: '50',
+          rateDate: '2025-06-13',
+          perUsd: '79.5',
+          rateSource: 'owner',
+        },
+      }),
+    ).toEqual({
+      side: 'sell',
+      instrumentId: '',
+      amount: '0.01',
+      date: '2025-06-13',
+      time: '14:30',
+      total: '80000',
+      currency: 'RUB',
+      rate: '79.5',
+      rateEdited: true,
+      fee: '50',
+      comment: '',
+    });
+  });
+
+  it('OPS-EDIT-ENTRY leaves the Bank of Russia rate to the date', () => {
+    expect(
+      entryFromOperation({
+        ...recorded,
+        paid: {
+          currency: 'EUR',
+          gross: '900',
+          fee: '0',
+          rateDate: '2025-06-13',
+          perUsd: '0.9',
+          rateSource: 'bank-of-russia',
+        },
+      }),
+    ).toMatchObject({ total: '900', currency: 'EUR', rate: '', rateEdited: false, fee: '' });
+  });
+
+  it('OPS-EDIT-ENTRY keeps a USDT settlement and a time a second past midnight', () => {
+    expect(
+      entryFromOperation({
+        ...recorded,
+        occurredAt: '2025-06-13T00:00:30.000Z',
+        valueUsd: null,
+        feeUsd: null,
+        settlement: {
+          asset: { instrumentId: id(4), symbol: 'usdt', name: 'Tether' },
+          quantity: '1000',
+        },
+      }),
+    ).toMatchObject({ time: '00:00', total: '', currency: 'USDT', fee: '' });
+  });
+
+  it("OPS-EDIT-ENTRY shows a transfer's fee in the coin moved and no fee on a fee", () => {
+    const transfer = { ...recorded, kind: 'transfer', type: 'transfer' } as const;
+    expect(
+      entryFromOperation({
+        ...transfer,
+        fee: { asset: recorded.asset, quantity: '0.0001' },
+      }).fee,
+    ).toBe('0.0001');
+    expect(entryFromOperation(transfer).fee).toBe('');
+    expect(entryFromOperation({ ...recorded, type: 'fee', feeUsd: '5' }).fee).toBe('');
+    expect(entryFromOperation({ ...recorded, feeUsd: '1.5' }).fee).toBe('1.5');
   });
 });

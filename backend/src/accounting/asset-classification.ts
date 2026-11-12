@@ -38,24 +38,36 @@ export function classifyAsset(input: InstrumentInput): AssetClassification {
   const ticker = input.symbol?.replace(/[a-z]+/g, (letters) => letters.toUpperCase()) ?? null;
   const type = input.assetType ?? (ticker && marketTickers.includes(ticker) ? 'crypto' : 'manual');
   if (input.assetType === undefined && input.valuationCurrency !== undefined) return bad();
-  if (type === 'crypto') {
-    if (!ticker || (input.valuationCurrency ?? 'USD') !== 'USD') return bad();
-    return {
-      assetType: type,
-      valuationCurrency: 'USD',
-      priceSource: marketTickers.includes(ticker) ? 'market' : 'manual',
-    };
-  }
-  if (type === 'fiat') {
-    const currency = valuationCurrencies.find((code) => code === ticker);
-    if (!currency || (input.valuationCurrency ?? currency) !== currency) return bad();
-    return { assetType: type, valuationCurrency: currency, priceSource: 'fixed' };
-  }
+  if (type === 'crypto') return cryptoAsset(ticker, input.valuationCurrency);
+  if (type === 'fiat') return fiatAsset(ticker, input.valuationCurrency);
   return {
     assetType: type,
     valuationCurrency: input.valuationCurrency ?? 'USD',
     priceSource: 'manual',
   };
+}
+
+/** A coin is valued in USD, at the market price when the collection quotes its ticker. */
+function cryptoAsset(
+  ticker: string | null,
+  valuationCurrency: ValuationCurrency | undefined,
+): AssetClassification {
+  if (!ticker || (valuationCurrency ?? 'USD') !== 'USD') return bad();
+  return {
+    assetType: 'crypto',
+    valuationCurrency: 'USD',
+    priceSource: marketTickers.includes(ticker) ? 'market' : 'manual',
+  };
+}
+
+/** Cash is its own currency, at a fixed price of one. */
+function fiatAsset(
+  ticker: string | null,
+  valuationCurrency: ValuationCurrency | undefined,
+): AssetClassification {
+  const currency = valuationCurrencies.find((code) => code === ticker);
+  if (!currency || (valuationCurrency ?? currency) !== currency) return bad();
+  return { assetType: 'fiat', valuationCurrency: currency, priceSource: 'fixed' };
 }
 
 /** Replay identity: the legacy body keeps its original payload. */

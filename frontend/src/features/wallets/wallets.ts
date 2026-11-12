@@ -1,6 +1,7 @@
 import type { WalletKind } from '@api/accounting.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
-import type { ChainBalance, WalletAddress } from '@api/wallet-addresses.api';
+import type { ChainBalance, NewWalletAccount, WalletAddress } from '@api/wallet-addresses.api';
+import { newRequestId } from '../accounting/feedback';
 import { shortValue } from '../shell/CopyValue';
 import { isEvm } from '../shell/evm-networks';
 import { addressAssets, networkOf } from './networks';
@@ -500,6 +501,21 @@ export const kindLabels: Record<WalletKind, string> = {
   hardware: 'Hardware wallet',
   exchange: 'Exchange',
 };
+
+/**
+ * WAL-INVALID: the wallet a request makes together with an address. `attempt` keeps one request id
+ * per name and kind, so a retry after a lost answer cannot make it twice and a changed kind is a
+ * new request.
+ */
+export function newAccountRequest(
+  attempt: { current: { key: string; requestId: string } | null },
+  name: string,
+  kind: WalletKind | '',
+): NewWalletAccount {
+  const key = `${name}\n${kind}`;
+  if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
+  return { requestId: attempt.current.requestId, name, ...(kind ? { kind } : {}) };
+}
 
 /** The kind of each account by its id. */
 export function kindsOf(

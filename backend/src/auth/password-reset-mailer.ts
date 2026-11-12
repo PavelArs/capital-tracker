@@ -18,6 +18,12 @@ function transient({ code, responseCode }: SmtpError): boolean {
   return typeof code === 'string' && TRANSIENT_CODES.has(code);
 }
 
+/** The log line of a refused send: only the SMTP error code and reply code. */
+function notSent({ code, responseCode }: SmtpError, retry: boolean): string {
+  const reply = responseCode ? ` ${String(responseCode)}` : '';
+  return `Password reset email was not sent (${String(code ?? 'error')}${reply})${retry ? '; retrying once' : ''}`;
+}
+
 export interface ResetMailSettings {
   host: string;
   port: number;
@@ -110,11 +116,7 @@ export class PasswordResetMailer {
       } catch (error) {
         const code: SmtpError = (error as SmtpError) ?? {};
         const retry = attempt === 1 && transient(code);
-        this.logger.warn(
-          `Password reset email was not sent (${String(code.code ?? 'error')}${
-            code.responseCode ? ` ${String(code.responseCode)}` : ''
-          })${retry ? '; retrying once' : ''}`,
-        );
+        this.logger.warn(notSent(code, retry));
         if (!retry) {
           recordResetMail('failed');
           return;

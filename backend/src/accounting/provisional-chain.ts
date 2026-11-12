@@ -71,13 +71,7 @@ export function applyChainMoves(
   at: string,
   journalHeld: JournalHeld = heldFromLots(lots),
 ): PortfolioLot[] {
-  const due = moves
-    .filter((move) => move.occurredAt <= at)
-    .sort(
-      (left, right) =>
-        (left.occurredAt < right.occurredAt ? -1 : left.occurredAt > right.occurredAt ? 1 : 0) ||
-        Number(right.inbound) - Number(left.inbound),
-    );
+  const due = moves.filter((move) => move.occurredAt <= at).sort(receiptsFirst);
   if (due.length === 0) return [...lots];
   let held = [...lots];
   // Per instrument: what the chain movements so far added (+) or took (-), and what payments
@@ -100,12 +94,11 @@ export function applyChainMoves(
     const wanted = canonicalDecimalToAtoms(move.quantity);
     const order = oldestFirst(held, move.instrumentId, move.occurredAt);
     const found = order.reduce((sum, { lot }) => sum + canonicalDecimalToAtoms(lot.quantity), 0n);
-    let paid = wanted;
-    if (found < wanted) {
-      const then =
-        journalHeld(move.instrumentId, move.occurredAt) + (chain.get(move.instrumentId) ?? 0n);
-      paid = then < wanted ? (then > found ? then : found) : wanted;
-    }
+    const paid = paymentTaken(
+      wanted,
+      found,
+      () => journalHeld(move.instrumentId, move.occurredAt) + (chain.get(move.instrumentId) ?? 0n),
+    );
     held = take(held, order, paid < found ? paid : found);
     if (paid > found) add(owed, move.instrumentId, paid - found);
     add(chain, move.instrumentId, -paid);
@@ -114,6 +107,24 @@ export function applyChainMoves(
     held = take(held, oldestFirst(held, instrumentId), units);
   }
   return held;
+}
+
+/** Time order; at the same instant a receipt counts before a payment. */
+function receiptsFirst(left: ChainMove, right: ChainMove): number {
+  return (
+    (left.occurredAt < right.occurredAt ? -1 : left.occurredAt > right.occurredAt ? 1 : 0) ||
+    Number(right.inbound) - Number(left.inbound)
+  );
+}
+
+/**
+ * What a payment took: all it asked for when the lots held it, else what the wallet held then
+ * (`heldThen`), but never less than the lots had nor more than it asked for.
+ */
+function paymentTaken(wanted: bigint, found: bigint, heldThen: () => bigint): bigint {
+  if (found >= wanted) return wanted;
+  const then = heldThen();
+  return then < wanted ? (then > found ? then : found) : wanted;
 }
 
 /** The instrument's lots that had arrived by `by`, oldest first, as FIFO would spend them. */

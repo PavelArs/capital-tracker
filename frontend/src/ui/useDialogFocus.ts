@@ -62,6 +62,21 @@ function inertOutside(dialog: HTMLElement): () => void {
   };
 }
 
+/** Tab wraps from the last control to the first, and Shift+Tab back, so focus stays inside. */
+function keepTabInside(event: KeyboardEvent, inside: HTMLElement) {
+  const items = [...inside.querySelectorAll<HTMLElement>(focusable)];
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  // Focus outside the dialog (the body after a focused button turned disabled, or a control
+  // behind the scrim) comes back in at the edge Tab moves towards.
+  const outside = !active || !inside.contains(active);
+  if (outside || (event.shiftKey ? active === first : active === last)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first)?.focus();
+  }
+}
+
 /**
  * The keyboard contract of every modal surface: focus goes in when it opens, Tab stays inside,
  * Escape closes when allowed, and focus returns to what opened it. While it is open the rest of
@@ -89,17 +104,7 @@ export function useDialogFocus(root: RefObject<HTMLElement | null>, options: Opt
       if (event.key === 'Escape') latest.current.onEscape?.();
       const inside = root.current;
       if (event.key !== 'Tab' || !inside) return;
-      const items = [...inside.querySelectorAll<HTMLElement>(focusable)];
-      const first = items[0];
-      const last = items[items.length - 1];
-      const active = document.activeElement;
-      // Focus outside the dialog (the body after a focused button turned disabled, or a control
-      // behind the scrim) comes back in at the edge Tab moves towards.
-      const outside = !active || !inside.contains(active);
-      if (outside || (event.shiftKey ? active === first : active === last)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first)?.focus();
-      }
+      keepTabInside(event, inside);
     };
     window.addEventListener('keydown', onKey);
     return () => {

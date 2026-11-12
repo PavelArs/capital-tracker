@@ -85,18 +85,28 @@ export function parseCbrDynamic(body: string, code: string, from: string, to: st
       const after = rates.length ? ` after ${rates[rates.length - 1].date}` : '';
       invalid(`unexpected content${after}: ${excerpt(content.slice(start).trimStart())}`);
     }
-    const [, day, month, year, id, inner] = match;
-    const date = `${year}-${month}-${day}`;
-    if (id !== code) invalid(`series ${id} on ${date}`);
-    const parsed = new Date(`${date}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date)
-      invalid(`impossible date ${day}.${month}.${year}`);
-    if (date < from || date > to) invalid(`${date} outside the range`);
-    const last = rates[rates.length - 1]?.date;
-    if (last && last >= date) invalid(`${date} after ${last}`);
-    rates.push({ date, rubPerUnit: readRecord(inner, date) });
+    const date = recordDate(match, code, from, to, rates[rates.length - 1]?.date);
+    rates.push({ date, rubPerUnit: readRecord(match[5], date) });
   }
   return rates;
+}
+
+/** The date of a record of the asked series, a real day in the range after the `last` one. */
+function recordDate(
+  [, day, month, year, id]: RegExpExecArray,
+  code: string,
+  from: string,
+  to: string,
+  last: string | undefined,
+): string {
+  const date = `${year}-${month}-${day}`;
+  if (id !== code) invalid(`series ${id} on ${date}`);
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date)
+    invalid(`impossible date ${day}.${month}.${year}`);
+  if (date < from || date > to) invalid(`${date} outside the range`);
+  if (last && last >= date) invalid(`${date} after ${last}`);
+  return date;
 }
 
 export class CbrClient {

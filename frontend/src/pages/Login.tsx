@@ -47,6 +47,16 @@ function factorFailure(error: unknown, kind: FactorKind): { field?: string; noti
   return { notice: "Couldn't check the code. Check your connection and try again." };
 }
 
+const factorField: Record<FactorKind, string> = { totp: 'login-totp', recovery: 'login-recovery' };
+
+/** What is wrong with a code before it is sent; undefined when it has the right shape. */
+function factorProblem(kind: FactorKind, value: string): string | undefined {
+  if (kind === 'totp') return /^[0-9]{6}$/.test(value) ? undefined : 'Enter all 6 digits';
+  return recoveryPattern.test(value)
+    ? undefined
+    : 'Recovery codes look like 1a2b3c4d-5e6f7a8b-9c0d1e2f-3a4b5c6d';
+}
+
 /** BR 2.1, prototype Sign-in tab: password first, then a TOTP or a single-use recovery code. */
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -128,19 +138,29 @@ export default function Login() {
     return null;
   };
 
+  // A code that failed: the pending step surely ended, so back to the password, or the code is
+  // wrong or unchecked, said under the field or above the form.
+  const answerRefusedCode = (error: unknown, sentAt: number, field: string) => {
+    const ended = status(error) === 401 ? endedStep(sentAt) : null;
+    if (ended) {
+      startOver();
+      setFailure(ended);
+      focusAfterAnswer('login-password');
+      return;
+    }
+    const refused = factorFailure(error, kind);
+    setFieldErrors({ code: refused.field });
+    setFailure(refused.notice ?? '');
+    setCode('');
+    focusAfterAnswer(field);
+  };
+
   const submitFactor = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
     const value = kind === 'totp' ? code : code.trim();
-    const problem =
-      kind === 'totp'
-        ? /^[0-9]{6}$/.test(value)
-          ? undefined
-          : 'Enter all 6 digits'
-        : recoveryPattern.test(value)
-          ? undefined
-          : 'Recovery codes look like 1a2b3c4d-5e6f7a8b-9c0d1e2f-3a4b5c6d';
-    const field = kind === 'totp' ? 'login-totp' : 'login-recovery';
+    const problem = factorProblem(kind, value);
+    const field = factorField[kind];
     setFieldErrors({ code: problem });
     setFailure('');
     if (problem) {
@@ -152,18 +172,7 @@ export default function Login() {
     try {
       await verifyFactor(kind, value);
     } catch (error) {
-      const ended = status(error) === 401 ? endedStep(sentAt) : null;
-      if (ended) {
-        startOver();
-        setFailure(ended);
-        focusAfterAnswer('login-password');
-        return;
-      }
-      const refused = factorFailure(error, kind);
-      setFieldErrors({ code: refused.field });
-      setFailure(refused.notice ?? '');
-      setCode('');
-      focusAfterAnswer(field);
+      answerRefusedCode(error, sentAt, field);
     } finally {
       setBusy(false);
     }

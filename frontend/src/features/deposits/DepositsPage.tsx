@@ -1,6 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
-import type { Deposit } from '@api/deposits.api';
-import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import type { Deposit, DepositList } from '@api/deposits.api';
+import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useToast } from '@contexts/ToastContext';
 import { Fragment, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -195,6 +195,55 @@ const shareFormat = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 1,
 });
 
+/** What is held in banks, its share of the net worth, and the rate the total uses. */
+function DepositsSummary({
+  titleId,
+  list,
+  shown,
+  portfolio,
+}: {
+  titleId: string;
+  list: DepositList;
+  shown: AccountingCurrency;
+  portfolio: PortfolioValuation | null;
+}) {
+  const total = list.totals[shown] ?? null;
+  // The net worth in the currency shown, once it has arrived.
+  const net = portfolio?.currency === shown ? portfolio : null;
+  // Why there is no share of it: unknown, zero or below zero. Missing is not zero.
+  const unknown = net && netWorthUnknown(net);
+  // Display only: a ratio of two exact totals in the same currency, estimated against the known
+  // net worth while it leaves something out (NW-SHARE-ESTIMATE).
+  const base = net && shareBase(net);
+  const share = total !== null && base ? (Number(total) / base.value) * 100 : null;
+  return (
+    <Card labelledBy={titleId}>
+      <h2 id={titleId} className="ui-sr">
+        Total in deposits
+      </h2>
+      <Stats size="lg">
+        <Stat lead label="In banks" value={money(total, shown)} />
+        {(share !== null || (total !== null && unknown)) && (
+          <Stat
+            label="Share of net worth"
+            value={
+              share === null
+                ? DASH
+                : `${estimateMark(base?.estimated)}${shareFormat.format(share)}%`
+            }
+            hint={(share === null ? unknown : base?.estimated) || undefined}
+          />
+        )}
+      </Stats>
+      <p className="deposit-total__note">
+        At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only while
+        interest it earned is unpaid.
+        {list.interestMissingCount ? ` ${accountsWithoutRate(list.interestMissingCount)}` : ''}
+      </p>
+    </Card>
+  );
+}
+
 // DEP-LIST: every deposit with what it is worth today and what needs a look, bank by bank.
 export default function DepositsPage() {
   const { data: list, error, reload } = useCachedRead(cachedReads.deposits);
@@ -206,15 +255,6 @@ export default function DepositsPage() {
   const navigate = useNavigate();
   const shown = asked ?? main ?? 'USD';
   const { data: portfolio } = useCachedRead(cachedReads.portfolio, asked ?? undefined);
-  const total = list?.totals[shown] ?? null;
-  // The net worth in the currency shown, once it has arrived.
-  const net = portfolio?.currency === shown ? portfolio : null;
-  // Why there is no share of it: unknown, zero or below zero. Missing is not zero.
-  const unknown = net && netWorthUnknown(net);
-  // Display only: a ratio of two exact totals in the same currency, estimated against the known
-  // net worth while it leaves something out (NW-SHARE-ESTIMATE).
-  const base = net && shareBase(net);
-  const share = total !== null && base ? (Number(total) / base.value) * 100 : null;
 
   return (
     <div className="shell-page">
@@ -248,32 +288,12 @@ export default function DepositsPage() {
         </EmptyState>
       ) : (
         <>
-          <Card labelledBy={`${summaryId}-title`}>
-            <h2 id={`${summaryId}-title`} className="ui-sr">
-              Total in deposits
-            </h2>
-            <Stats size="lg">
-              <Stat lead label="In banks" value={money(total, shown)} />
-              {(share !== null || (total !== null && unknown)) && (
-                <Stat
-                  label="Share of net worth"
-                  value={
-                    share === null
-                      ? DASH
-                      : `${estimateMark(base?.estimated)}${shareFormat.format(share)}%`
-                  }
-                  hint={(share === null ? unknown : base?.estimated) || undefined}
-                />
-              )}
-            </Stats>
-            <p className="deposit-total__note">
-              At the Bank of Russia rate of {dateText(list.asOf)}. A closed deposit counts only
-              while interest it earned is unpaid.
-              {list.interestMissingCount
-                ? ` ${accountsWithoutRate(list.interestMissingCount)}`
-                : ''}
-            </p>
-          </Card>
+          <DepositsSummary
+            titleId={`${summaryId}-title`}
+            list={list}
+            shown={shown}
+            portfolio={portfolio}
+          />
           <ul className="deposit-banks">
             {byBank(list.items).map(([bank, deposits]) => (
               <Bank key={bank} bank={bank} deposits={deposits} asOf={list.asOf} shown={shown} />

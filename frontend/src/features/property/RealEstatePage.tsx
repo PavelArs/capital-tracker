@@ -20,7 +20,7 @@ import { Icon } from '../shell/icons';
 import { estimateMark, netWorthUnknown, shareBase } from '../shell/net-worth';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
-import { useCachedRead } from '../shell/useCachedRead';
+import { type CachedRead, useCachedRead } from '../shell/useCachedRead';
 import AddPropertyDialog from './AddPropertyDialog';
 import {
   estimateOverdue,
@@ -144,6 +144,82 @@ function PropertyTile({
   );
 }
 
+/** A refresh that failed: of the figures, of the rent kept, or the rent never read. */
+function RefreshBanner({
+  failed,
+  recorded,
+  onRefresh,
+}: {
+  failed: boolean;
+  recorded: CachedRead<PropertyDetails[]>;
+  onRefresh: () => void;
+}) {
+  if (!(failed || recorded.stale || (!recorded.data && !!recorded.error))) return null;
+  return (
+    <Banner
+      tone="warn"
+      role="alert"
+      action={
+        <Button variant="secondary" size="sm" onClick={onRefresh}>
+          Refresh
+        </Button>
+      }
+    >
+      {failed
+        ? 'Could not refresh your real estate; showing the last loaded figures.'
+        : recorded.data
+          ? 'Could not refresh the rent; showing the last loaded ones.'
+          : 'Could not read the rent.'}
+    </Banner>
+  );
+}
+
+/** What the owner holds in real estate, and its share of the net worth. */
+function RealEstateSummary({
+  titleId,
+  properties,
+  portfolio,
+}: {
+  titleId: string;
+  properties: Property[];
+  portfolio: PortfolioValuation;
+}) {
+  const total = propertyTotal(properties);
+  const unpriced = properties.filter(({ value }) => value === null).length;
+  // PROPERTY-SHARE: what is held in real estate against the whole net worth, as Banks and Brokers.
+  const share = total !== null ? propertyShare(total, portfolio) : null;
+  const unknown = netWorthUnknown(portfolio);
+  const estimated = shareBase(portfolio)?.estimated;
+  return (
+    <Card labelledBy={titleId}>
+      <h2 id={titleId} className="ui-sr">
+        Total in real estate
+      </h2>
+      <Stats size="lg">
+        <Stat
+          lead
+          label="In real estate"
+          value={money(total, portfolio.currency)}
+          hint={
+            unpriced > 0
+              ? `Your share of each property at its latest estimate; ${unpriced} without an estimate left out.`
+              : 'Your share of each property at its latest estimate.'
+          }
+        />
+        <Stat
+          label="Share of net worth"
+          value={
+            share === null
+              ? '—'
+              : `${estimateMark(estimated)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share.percent)}%`
+          }
+          hint={(share === null ? unknown : estimated) || undefined}
+        />
+      </Stats>
+    </Card>
+  );
+}
+
 // Real estate (v8): each property at the owner's own estimate, with what the owner's share is
 // worth, what it cost and the gain. A property's page updates the estimate.
 export default function RealEstatePage() {
@@ -187,8 +263,6 @@ export default function RealEstatePage() {
   }, [load]);
 
   const properties = portfolio && classes ? propertiesOf(portfolio, classes) : null;
-  const total = propertyTotal(properties ?? []);
-  const unpriced = properties?.filter(({ value }) => value === null).length ?? 0;
   // The rent and note of each property: not made, not read yet, or not readable.
   const detailsOf = (instrumentId: string) =>
     recorded.data
@@ -196,10 +270,6 @@ export default function RealEstatePage() {
       : recorded.error
         ? undefined
         : 'loading';
-  // PROPERTY-SHARE: what is held in real estate against the whole net worth, as Banks and Brokers.
-  const share = portfolio && total !== null ? propertyShare(total, portfolio) : null;
-  const unknown = portfolio && netWorthUnknown(portfolio);
-  const estimated = portfolio && shareBase(portfolio)?.estimated;
   const addButton = (
     <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
       Add property
@@ -225,60 +295,23 @@ export default function RealEstatePage() {
         </EmptyState>
       ) : (
         <>
-          {(failed || recorded.stale || (!recorded.data && !!recorded.error)) && (
-            <Banner
-              tone="warn"
-              role="alert"
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    load(true);
-                    recorded.reload(true);
-                  }}
-                >
-                  Refresh
-                </Button>
-              }
-            >
-              {failed
-                ? 'Could not refresh your real estate; showing the last loaded figures.'
-                : recorded.data
-                  ? 'Could not refresh the rent; showing the last loaded ones.'
-                  : 'Could not read the rent.'}
-            </Banner>
-          )}
+          <RefreshBanner
+            failed={failed}
+            recorded={recorded}
+            onRefresh={() => {
+              load(true);
+              recorded.reload(true);
+            }}
+          />
           <PageIntro action={addButton}>
             The value is your own estimate. Buying counts as money put in; a new estimate counts as
             market movement. The app reminds you when an estimate is older than two months.
           </PageIntro>
-          <Card labelledBy={`${summaryId}-title`}>
-            <h2 id={`${summaryId}-title`} className="ui-sr">
-              Total in real estate
-            </h2>
-            <Stats size="lg">
-              <Stat
-                lead
-                label="In real estate"
-                value={money(total, portfolio.currency)}
-                hint={
-                  unpriced > 0
-                    ? `Your share of each property at its latest estimate; ${unpriced} without an estimate left out.`
-                    : 'Your share of each property at its latest estimate.'
-                }
-              />
-              <Stat
-                label="Share of net worth"
-                value={
-                  share === null
-                    ? '—'
-                    : `${estimateMark(estimated)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share.percent)}%`
-                }
-                hint={(share === null ? unknown : estimated) || undefined}
-              />
-            </Stats>
-          </Card>
+          <RealEstateSummary
+            titleId={`${summaryId}-title`}
+            properties={properties}
+            portfolio={portfolio}
+          />
           <ul className="property-list">
             {properties.map((property) => (
               <PropertyTile

@@ -200,15 +200,90 @@ export const bannerTone = {
   unknown: 'info',
 } as const;
 
-/** The sentence under a goal: where it stands and what it takes, from the base case. */
-export function verdict(goal: GoalPreview): string {
-  const money = (value: string | null) => flooredText(value, goal.currency);
-  const needed = (value: string | null) => neededText(value, goal.currency);
-  const entered = (value: string | null) => enteredText(value, goal.currency);
-  const base = goal.scenarios.find((scenario) => scenario.key === 'base');
+type Verdict = (
+  goal: GoalPreview,
+  base: GoalScenario | undefined,
+  planned: string | null,
+) => string;
+
+function reachedVerdict(goal: GoalPreview): string {
+  const { current } = goal.progress;
+  const above = current === null ? null : difference(current, goal.targetAmount);
+  return isPositive(above)
+    ? `Reached. Your net worth is ${flooredText(above, goal.currency)} above it.`
+    : 'Reached.';
+}
+
+const unknownVerdict = (goal: GoalPreview): string =>
+  goal.progress.current === null
+    ? 'Nothing in this currency could be valued yet, so the progress is not known.'
+    : 'Some assets have no price or rate, so the value is understated and the plan cannot be judged yet.';
+
+const onTrackVerdict: Verdict = (goal, base, planned) => {
   const baseReached = base ? reachedDate(goal, base) : null;
-  const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
-  const { current, remaining } = goal.progress;
+  if (planned !== null && baseReached) {
+    const early = goal.deadline ? monthsFrom(baseReached, goal.deadline) : 0;
+    return `On track. ${enteredText(planned, goal.currency)} a month gets there by ${monthYear(baseReached)}${
+      early > 0 ? `, ${span(early)} early` : ''
+    }.`;
+  }
+  return `On track. The portfolio grows to the sum by ${
+    goal.deadline ? monthYear(goal.deadline) : 'then'
+  } without further contributions.`;
+};
+
+/** When the base case gets there at what the owner puts in; nothing when nothing is put in. */
+function behindTail(goal: GoalPreview, base: GoalScenario | undefined, planned: string | null) {
+  if (planned === null) return '';
+  return base?.reachedOn
+    ? `; at ${enteredText(planned, goal.currency)} it takes until ${monthYear(base.reachedOn)}`
+    : `; at ${enteredText(planned, goal.currency)} it is not reached in 100 years`;
+}
+
+const behindVerdict: Verdict = (goal, base, planned) => {
+  const needed = (value: string | null) => neededText(value, goal.currency);
+  // The deadline day itself still counts (goals-28); no payment is left before it.
+  if (goal.deadline !== null && goal.deadline === goal.asOf)
+    return `Due today. ${needed(goal.progress.remaining)} to go.`;
+  const needs = base?.requiredMonthly ?? null;
+  if (needs === null || goal.deadline === null)
+    return 'Behind. No monthly payment is left before the date.';
+  const short = difference(needs, goal.monthlyContribution ?? '0');
+  const head = planned !== null ? `Behind by ${needed(short)} a month. ` : 'Behind. ';
+  return `${head}Reaching it by ${monthYear(goal.deadline)} needs ${needed(needs)} a month${behindTail(goal, base, planned)}.`;
+};
+
+const overdueVerdict: Verdict = (goal, base, planned) => {
+  const date = goal.deadline ? `The date, ${dateText(goal.deadline)}, has passed. ` : '';
+  const left = `${neededText(goal.progress.remaining, goal.currency)} to go.`;
+  const later =
+    planned !== null && base?.reachedOn
+      ? ` At ${enteredText(planned, goal.currency)} a month you get there in ${monthYear(base.reachedOn)}.`
+      : '';
+  return `${date}${left}${later}`;
+};
+
+const openVerdict: Verdict = (goal, base, planned) => {
+  if (base?.reachedOn && base.monthsToTarget !== null) {
+    const when = `${monthYear(base.reachedOn)}, in ${span(base.monthsToTarget)}`;
+    return planned !== null
+      ? `At ${enteredText(planned, goal.currency)} a month you get there in ${when}.`
+      : `The portfolio alone gets there in ${when}.`;
+  }
+  return 'At this pace it takes more than 100 years. Put in more each month or expect a higher return.';
+};
+
+const verdicts: Record<GoalStatus, Verdict> = {
+  reached: reachedVerdict,
+  unknown: unknownVerdict,
+  'on-track': onTrackVerdict,
+  behind: behindVerdict,
+  overdue: overdueVerdict,
+  open: openVerdict,
+};
+
+/** The sentence under a goal: where it stands and what it takes, from the base case. */
+export function verdict(goal: GoalPreview): string | undefined {
   // With unpriced assets the value is understated: only "on track" still holds, and projections
   // describe only the priced subset.
   if (!goal.progress.complete && goal.status !== 'reached' && goal.status !== 'unknown') {
@@ -216,64 +291,11 @@ export function verdict(goal: GoalPreview): string {
       ? 'On track even without the assets that have no price or rate yet.'
       : 'Estimated from priced assets only. The full portfolio may reach the target earlier.';
   }
-  switch (goal.status) {
-    case 'reached': {
-      const above = current === null ? null : difference(current, goal.targetAmount);
-      return isPositive(above)
-        ? `Reached. Your net worth is ${money(above)} above it.`
-        : 'Reached.';
-    }
-    case 'unknown':
-      return current === null
-        ? 'Nothing in this currency could be valued yet, so the progress is not known.'
-        : 'Some assets have no price or rate, so the value is understated and the plan cannot be judged yet.';
-    case 'on-track': {
-      if (planned !== null && baseReached) {
-        const early = goal.deadline ? monthsFrom(baseReached, goal.deadline) : 0;
-        return `On track. ${entered(planned)} a month gets there by ${monthYear(baseReached)}${
-          early > 0 ? `, ${span(early)} early` : ''
-        }.`;
-      }
-      return `On track. The portfolio grows to the sum by ${
-        goal.deadline ? monthYear(goal.deadline) : 'then'
-      } without further contributions.`;
-    }
-    case 'behind': {
-      // The deadline day itself still counts (goals-28); no payment is left before it.
-      if (goal.deadline !== null && goal.deadline === goal.asOf)
-        return `Due today. ${needed(remaining)} to go.`;
-      const needs = base?.requiredMonthly ?? null;
-      if (needs === null || goal.deadline === null)
-        return 'Behind. No monthly payment is left before the date.';
-      const short = difference(needs, goal.monthlyContribution ?? '0');
-      const head = planned !== null ? `Behind by ${needed(short)} a month. ` : 'Behind. ';
-      const tail =
-        planned === null
-          ? ''
-          : base?.reachedOn
-            ? `; at ${entered(planned)} it takes until ${monthYear(base.reachedOn)}`
-            : `; at ${entered(planned)} it is not reached in 100 years`;
-      return `${head}Reaching it by ${monthYear(goal.deadline)} needs ${needed(needs)} a month${tail}.`;
-    }
-    case 'overdue': {
-      const date = goal.deadline ? `The date, ${dateText(goal.deadline)}, has passed. ` : '';
-      const left = `${needed(remaining)} to go.`;
-      const later =
-        planned !== null && base?.reachedOn
-          ? ` At ${entered(planned)} a month you get there in ${monthYear(base.reachedOn)}.`
-          : '';
-      return `${date}${left}${later}`;
-    }
-    case 'open': {
-      if (base?.reachedOn && base.monthsToTarget !== null) {
-        const when = `${monthYear(base.reachedOn)}, in ${span(base.monthsToTarget)}`;
-        return planned !== null
-          ? `At ${entered(planned)} a month you get there in ${when}.`
-          : `The portfolio alone gets there in ${when}.`;
-      }
-      return 'At this pace it takes more than 100 years. Put in more each month or expect a higher return.';
-    }
-  }
+  const base = goal.scenarios.find((scenario) => scenario.key === 'base');
+  const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
+  // A status this build does not know gives no sentence, not a failed render.
+  if (!Object.hasOwn(verdicts, goal.status)) return undefined;
+  return verdicts[goal.status](goal, base, planned);
 }
 
 /**

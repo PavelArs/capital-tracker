@@ -1,8 +1,9 @@
 import type { AccountClass } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
+import type { PriceBook } from '@api/manual-prices.api';
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { PropertyDetails } from '@api/property-details.api';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { Banner } from '@/ui/Banner';
 import { Button, ButtonLink } from '@/ui/Button';
@@ -22,10 +23,16 @@ import UpdatePriceDialog from '../portfolio/UpdatePriceDialog';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
-import { useCachedRead } from '../shell/useCachedRead';
+import { type CachedRead, useCachedRead } from '../shell/useCachedRead';
 import { assetKey } from '../transactions/operation-format';
 import PropertyDetailsDialog from './PropertyDetailsDialog';
-import { estimateOverdue, firstBought, propertiesOf, shareText } from './real-estate';
+import {
+  estimateOverdue,
+  firstBought,
+  type Property,
+  propertiesOf,
+  shareText,
+} from './real-estate';
 import '../shell/shell-page.css';
 import './property.css';
 
@@ -34,6 +41,16 @@ const day = (at: string) => dayText(moscowDate(at));
 
 /** What the figures say about the rent: not made, not read yet, or not readable. */
 type Recorded = PropertyDetails | null | undefined | 'loading';
+
+/** The record of one property: none made, not read yet, or not readable. */
+function recordOf(recorded: CachedRead<PropertyDetails[]>, instrumentId: string): Recorded {
+  if (recorded.data)
+    return recorded.data.find((item) => item.instrumentId === instrumentId) ?? null;
+  return recorded.error ? undefined : 'loading';
+}
+
+/** A read that failed with nothing kept to show. */
+const neverRead = (read: Pick<CachedRead<unknown>, 'data' | 'error'>) => !!read.error && !read.data;
 
 function rentFigure(recorded: Recorded) {
   if (recorded === 'loading') return { value: DASH, hint: 'Loading' };
@@ -66,7 +83,7 @@ export default function PropertyPage() {
   const classes = Object.fromEntries(
     (accounts.data ?? []).map((account) => [account.id, account.assetClass ?? null]),
   );
-  const failed = (portfolio.error && !portfolio.data) || (accounts.error && !accounts.data);
+  const failed = neverRead(portfolio) || neverRead(accounts);
   const loaded = portfolio.data && accounts.data;
   const property = loaded
     ? propertiesOf(portfolio.data as NonNullable<typeof portfolio.data>, classes).find(
@@ -147,6 +164,145 @@ export default function PropertyPage() {
   );
 }
 
+/** When the estimate was set, and what the whole property is worth when only a share is held. */
+function estimateHint(property: Property, currency: AccountingCurrency): string {
+  const estimated = property.asset.price?.observedAt ?? null;
+  if (!estimated) return 'No estimate yet';
+  const whole =
+    property.share < 100
+      ? ` · whole property ${price(property.asset.price?.value ?? null, currency)}`
+      : '';
+  return `Set ${day(estimated)}${whole}`;
+}
+
+/** A refresh that failed: of the estimates, or of the purchases and chart. */
+function StaleBanner({ estimates, onRefresh }: { estimates: boolean; onRefresh: () => void }) {
+  return (
+    <Banner
+      tone="warn"
+      role="alert"
+      action={
+        <Button size="sm" icon="refresh" onClick={onRefresh}>
+          Refresh
+        </Button>
+      }
+    >
+      {estimates
+        ? 'Could not refresh the estimates; showing the last loaded ones.'
+        : 'Could not refresh the purchases and chart; showing the last loaded ones.'}
+    </Banner>
+  );
+}
+
+/** The estimates entered, newest first, or why they are not shown yet. */
+function EstimatesCard({ prices }: { prices: CachedRead<PriceBook> }) {
+  return (
+    <Card labelledBy="property-estimates">
+      <CardHeader
+        id="property-estimates"
+        title="Estimates"
+        sub={prices.data ? prices.data.items.length : undefined}
+      />
+      {prices.error && !prices.data ? (
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => prices.reload()}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load the estimates.
+        </Banner>
+      ) : !prices.data ? (
+        <InlineSkeleton label="Loading estimates" />
+      ) : (
+        <ul className="ui-rows">
+          {prices.data.items.map((item) => (
+            <li key={item.revision} className={`${rowClass()} property-estimate-row`}>
+              <ListRowText
+                title={day(item.observedAt)}
+                detail="Your estimate"
+                amount={money(item.price, item.quoteCurrency, false, 'exact')}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** The rent as the record says it, or why it is not shown. */
+function rentLine(mine: Recorded, rent: ReactNode): ReactNode {
+  if (mine === undefined) return 'Could not be read';
+  if (mine === 'loading' || mine === null || mine.monthlyRent === null) return rent;
+  return `${money(mine.monthlyRent, mine.currency, false, 'exact')} a month`;
+}
+
+/** The note as the record says it, or why there is none. */
+function noteLine(mine: Recorded): ReactNode {
+  if (mine === undefined) return 'Could not be read';
+  if (mine && mine !== 'loading' && mine.note)
+    return <span className="property-note">{mine.note}</span>;
+  return 'None';
+}
+
+/** The rent and notes the owner keeps, editable once the stored record has been read. */
+function NotesCard({
+  mine,
+  rent,
+  stale,
+  onEdit,
+  onRefresh,
+}: {
+  mine: Recorded;
+  rent: ReactNode;
+  stale: boolean;
+  onEdit: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <Card labelledBy="property-notes">
+      <CardHeader
+        id="property-notes"
+        title="Rent and notes"
+        actions={
+          // Saving replaces the whole record, so what is stored must have been read first.
+          <Button
+            size="sm"
+            icon="edit"
+            disabled={mine === 'loading' || mine === undefined || stale}
+            onClick={onEdit}
+          >
+            Edit
+          </Button>
+        }
+      />
+      {(stale || mine === undefined) && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRefresh}>
+              Refresh
+            </Button>
+          }
+        >
+          {mine === undefined
+            ? 'Could not read the rent and notes.'
+            : 'Could not refresh the rent and notes; showing the last loaded ones.'}
+        </Banner>
+      )}
+      <KeyValue>
+        <KeyValueRow term="Rent">{rentLine(mine, rent)}</KeyValueRow>
+        <KeyValueRow term="Notes">{noteLine(mine)}</KeyValueRow>
+      </KeyValue>
+      <p className="ui-sub">A mortgage or other debt is not subtracted from the value.</p>
+    </Card>
+  );
+}
+
 function PropertyDetailsView({
   property,
   portfolio,
@@ -178,11 +334,7 @@ function PropertyDetailsView({
   const prices = useCachedRead(cachedReads.manualPrices, instrumentId);
   const operations = useCachedRead(cachedReads.operations, asked);
   const recorded = useCachedRead(cachedReads.propertyDetails);
-  const mine: Recorded = recorded.data
-    ? (recorded.data.find((item) => item.instrumentId === instrumentId) ?? null)
-    : recorded.error
-      ? undefined
-      : 'loading';
+  const mine = recordOf(recorded, instrumentId);
   const rent = rentFigure(mine);
   const heldElsewhere = asset.holdings.some((holding) => classes[holding.accountId] !== 'property');
   const estimateButton = (
@@ -212,38 +364,21 @@ function PropertyDetailsView({
         </Banner>
       )}
       {(prices.stale || lots.stale || operations.stale) && (
-        <Banner
-          tone="warn"
-          role="alert"
-          action={
-            <Button
-              size="sm"
-              icon="refresh"
-              onClick={() => {
-                prices.reload(true);
-                lots.reload(true);
-                operations.reload(true);
-              }}
-            >
-              Refresh
-            </Button>
-          }
-        >
-          {prices.stale
-            ? 'Could not refresh the estimates; showing the last loaded ones.'
-            : 'Could not refresh the purchases and chart; showing the last loaded ones.'}
-        </Banner>
+        <StaleBanner
+          estimates={prices.stale}
+          onRefresh={() => {
+            prices.reload(true);
+            lots.reload(true);
+            operations.reload(true);
+          }}
+        />
       )}
       <Card label="Property figures">
         <Stats>
           <Stat
             label="Your estimate"
             value={money(property.value, currency)}
-            hint={
-              estimated
-                ? `Set ${day(estimated)}${share < 100 ? ` · whole property ${price(asset.price?.value ?? null, currency)}` : ''}`
-                : 'No estimate yet'
-            }
+            hint={estimateHint(property, currency)}
           />
           <Stat
             label="Purchase price"
@@ -280,90 +415,14 @@ function PropertyDetailsView({
           names={{ value: 'Estimated value', cost: 'Money put in' }}
         />
       )}
-      <Card labelledBy="property-estimates">
-        <CardHeader
-          id="property-estimates"
-          title="Estimates"
-          sub={prices.data ? prices.data.items.length : undefined}
-        />
-        {prices.error && !prices.data ? (
-          <Banner
-            tone="neg"
-            action={
-              <Button size="sm" icon="refresh" onClick={() => prices.reload()}>
-                Try again
-              </Button>
-            }
-          >
-            Could not load the estimates.
-          </Banner>
-        ) : !prices.data ? (
-          <InlineSkeleton label="Loading estimates" />
-        ) : (
-          <ul className="ui-rows">
-            {prices.data.items.map((item) => (
-              <li key={item.revision} className={`${rowClass()} property-estimate-row`}>
-                <ListRowText
-                  title={day(item.observedAt)}
-                  detail="Your estimate"
-                  amount={money(item.price, item.quoteCurrency, false, 'exact')}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      <Card labelledBy="property-notes">
-        <CardHeader
-          id="property-notes"
-          title="Rent and notes"
-          actions={
-            // Saving replaces the whole record, so what is stored must have been read first.
-            <Button
-              size="sm"
-              icon="edit"
-              disabled={mine === 'loading' || mine === undefined || recorded.stale}
-              onClick={() => setEditing(true)}
-            >
-              Edit
-            </Button>
-          }
-        />
-        {(recorded.stale || mine === undefined) && (
-          <Banner
-            tone="warn"
-            role="alert"
-            action={
-              <Button size="sm" icon="refresh" onClick={() => recorded.reload(true)}>
-                Refresh
-              </Button>
-            }
-          >
-            {mine === undefined
-              ? 'Could not read the rent and notes.'
-              : 'Could not refresh the rent and notes; showing the last loaded ones.'}
-          </Banner>
-        )}
-        <KeyValue>
-          <KeyValueRow term="Rent">
-            {mine === undefined
-              ? 'Could not be read'
-              : mine === 'loading' || mine === null || mine.monthlyRent === null
-                ? rent.value
-                : `${money(mine.monthlyRent, mine.currency, false, 'exact')} a month`}
-          </KeyValueRow>
-          <KeyValueRow term="Notes">
-            {mine === undefined ? (
-              'Could not be read'
-            ) : mine && mine !== 'loading' && mine.note ? (
-              <span className="property-note">{mine.note}</span>
-            ) : (
-              'None'
-            )}
-          </KeyValueRow>
-        </KeyValue>
-        <p className="ui-sub">A mortgage or other debt is not subtracted from the value.</p>
-      </Card>
+      <EstimatesCard prices={prices} />
+      <NotesCard
+        mine={mine}
+        rent={rent.value}
+        stale={recorded.stale}
+        onEdit={() => setEditing(true)}
+        onRefresh={() => recorded.reload(true)}
+      />
       <ButtonLink
         to={`/transactions?asset=${encodeURIComponent(assetKey({ instrumentId, symbol: asset.symbol, name: asset.name }))}`}
         size="sm"

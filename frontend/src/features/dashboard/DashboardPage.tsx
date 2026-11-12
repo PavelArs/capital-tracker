@@ -5,10 +5,11 @@ import {
   type HistorySection,
   historyPeriods,
   type PortfolioHistory,
+  type RealProfit,
 } from '@api/portfolio-history.api';
 import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { clockText } from '@utils/dates';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { accountsWithoutRate } from '../deposits/deposit-format';
 import NearestGoal from '../goals/NearestGoal';
@@ -18,10 +19,11 @@ import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { DASH, money, percent, quantity, tone } from '../portfolio/format';
 import { estimateOverdue, propertiesOf, propertyTotal } from '../property/real-estate';
 import AboutChart from '../shell/AboutChart';
+import type { AccountClasses } from '../shell/asset-identity';
 import { useAttention } from '../shell/attention-context';
 import { basisText } from '../shell/basis-text';
 import { Icon } from '../shell/icons';
-import { useInflationBasis } from '../shell/inflation-basis';
+import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import { marketMissingText } from '../shell/market-missing';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
@@ -246,23 +248,115 @@ function Amount({ value, currency }: { value: string; currency: AccountingCurren
 const NO_REAL =
   'No real profit: an inflation figure, exchange rate or price is missing for some of your deposits.';
 
-// Under the net worth: profit or loss to date against all the money put in, whatever the
-// period; the period itself only drives the chart and the split below. Under Real, money put
-// in is grown by the inflation since each deposit's day (INFL-REAL).
-function NetWorth({
-  history,
-  portfolio,
-  asked,
+/** The figure's data state: the last one loaded after a failed refresh, or stale prices. */
+function HeroBadge({
   refreshFailed,
+  at,
+  portfolio,
 }: {
-  history: PortfolioHistory;
-  portfolio: PortfolioValuation | null;
-  asked: AccountingCurrency | undefined;
-  /** The last refresh failed: the figure is the last one loaded. */
   refreshFailed: boolean;
+  at: string;
+  portfolio: PortfolioValuation | null;
 }) {
-  const { currency } = history;
-  const classes = useAccountClasses();
+  if (refreshFailed) return <Badge tone="warn">As of {clockText(at)}</Badge>;
+  if (portfolio !== null && portfolio.stalePriceCount > 0)
+    return <Badge tone="warn">Stale prices</Badge>;
+  return null;
+}
+
+/** The profit, its percent and the money put in of the reading shown; none under Real without one. */
+function profitFigures(
+  history: PortfolioHistory,
+  real: RealProfit | null,
+  shownReal: boolean,
+  noReal: boolean,
+) {
+  if (shownReal && real)
+    return { profit: real.profit, profitPercent: real.profitPercent, invested: real.invested };
+  if (noReal) return { profit: null, profitPercent: null, invested: null };
+  return {
+    profit: history.profit,
+    profitPercent: history.profitPercent,
+    invested: history.invested,
+  };
+}
+
+const arrows = { neg: '▼ ', pos: '▲ ' } as const;
+
+/** What the profit is measured on, or why there is no real one, with the note icon last. */
+function ProfitBasis({
+  noReal,
+  shownReal,
+  real,
+  invested,
+  currency,
+  basis,
+  info,
+}: {
+  noReal: boolean;
+  shownReal: boolean;
+  real: RealProfit | null;
+  invested: string | null;
+  currency: AccountingCurrency;
+  basis: InflationBasis;
+  info: ReactNode;
+}) {
+  if (noReal)
+    return (
+      <span className="dashboard-hero__period">
+        {real === null ? NO_REAL : 'No real profit: prices are missing for the assets held.'}
+        {info}
+      </span>
+    );
+  if (invested === null) return info;
+  return (
+    // The note icon is the last word of the line it qualifies, so it wraps with it.
+    <span className="dashboard-hero__period">
+      {shownReal && real ? (
+        <>
+          {`real, on ${money(invested, currency)} put in, in today's money · ${basisText(basis, real, currency)} · `}
+          <Link to="/settings">Settings</Link>
+        </>
+      ) : (
+        `on ${money(invested, currency)} net invested`
+      )}
+      {info}
+    </span>
+  );
+}
+
+/** The bank deposits inside the net worth, while they are in the currency shown. */
+function DepositsNote({
+  portfolio,
+  currency,
+  asked,
+}: {
+  portfolio: PortfolioValuation | null;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+}) {
+  if (portfolio === null || portfolio.currency !== currency) return null;
+  if (!(Number(portfolio.depositsValue) > 0)) return null;
+  return (
+    <div className="dashboard-hero__note">
+      Includes {money(portfolio.depositsValue, currency)} in{' '}
+      <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
+    </div>
+  );
+}
+
+/** The real estate inside the net worth: at least its value, and what is left out or old. */
+function PropertyNote({
+  portfolio,
+  classes,
+  currency,
+  asked,
+}: {
+  portfolio: PortfolioValuation | null;
+  classes: AccountClasses;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+}) {
   const properties = portfolio ? propertiesOf(portfolio, classes) : [];
   const propertyValue = portfolio ? propertyTotal(properties) : null;
   const unpricedProperties = properties.filter(({ value }) => value === null).length;
@@ -280,6 +374,39 @@ function NetWorth({
   const unknownClasses = portfolio?.accounts.some(
     (account) => classes[account.accountId] === undefined,
   );
+  if (portfolio?.currency !== currency || unknownClasses || !(Number(propertyValue) > 0))
+    return null;
+  return (
+    <div className="dashboard-hero__note">
+      Includes {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
+      {money(propertyValue, currency)} in{' '}
+      <Link to={withCurrency('/real-estate', asked)}>real estate</Link> (estimated)
+      {unpricedProperties > 0 && ` · ${unpricedProperties} without a price or rate left out.`}
+      {unavailablePropertyAccounts > 0 &&
+        ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
+      {oldEstimates > 0 &&
+        ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
+    </div>
+  );
+}
+
+// Under the net worth: profit or loss to date against all the money put in, whatever the
+// period; the period itself only drives the chart and the split below. Under Real, money put
+// in is grown by the inflation since each deposit's day (INFL-REAL).
+function NetWorth({
+  history,
+  portfolio,
+  asked,
+  refreshFailed,
+}: {
+  history: PortfolioHistory;
+  portfolio: PortfolioValuation | null;
+  asked: AccountingCurrency | undefined;
+  /** The last refresh failed: the figure is the last one loaded. */
+  refreshFailed: boolean;
+}) {
+  const { currency } = history;
+  const classes = useAccountClasses();
   const [view] = useValueView();
   const [basis] = useInflationBasis();
   const real = history.real?.[basis] ?? null;
@@ -290,9 +417,7 @@ function NetWorth({
   // A real reading can exist and still state no profit when no held asset is priced.
   const shownReal = realView && real !== null && real.profit !== null;
   const noReal = realView && !shownReal;
-  const profit = shownReal ? real.profit : noReal ? null : history.profit;
-  const profitPercent = shownReal ? real.profitPercent : noReal ? null : history.profitPercent;
-  const invested = shownReal ? real.invested : noReal ? null : history.invested;
+  const { profit, profitPercent, invested } = profitFigures(history, real, shownReal, noReal);
   const direction = tone(profit);
   // What is left out of these figures is said once, in a tooltip, not as lines of text.
   const note = [unknownCostNote(portfolio), history.complete ? null : INCOMPLETE_NOTE]
@@ -315,11 +440,7 @@ function NetWorth({
       <div className="dashboard-hero__label">
         Total net worth · {currency}
         {/* The number carries its own data state: the banners above can scroll away. */}
-        {refreshFailed ? (
-          <Badge tone="warn">As of {clockText(history.at)}</Badge>
-        ) : portfolio !== null && portfolio.stalePriceCount > 0 ? (
-          <Badge tone="warn">Stale prices</Badge>
-        ) : null}
+        <HeroBadge refreshFailed={refreshFailed} at={history.at} portfolio={portfolio} />
       </div>
       <div className="dashboard-hero__value" aria-live="polite">
         {history.value === null ? 'No rate' : <Amount value={history.value} currency={currency} />}
@@ -329,52 +450,22 @@ function NetWorth({
         aria-label={realView ? 'Real profit or loss to date' : 'Profit or loss to date'}
       >
         <span>
-          {direction === 'neg' ? '▼ ' : direction === 'pos' ? '▲ ' : ''}
+          {direction ? arrows[direction] : ''}
           {noReal ? DASH : money(profit, currency, true)}
         </span>
         {profitPercent !== null && <span>{percent(profitPercent)}</span>}
-        {noReal ? (
-          <span className="dashboard-hero__period">
-            {real === null ? NO_REAL : 'No real profit: prices are missing for the assets held.'}
-            {info}
-          </span>
-        ) : invested !== null ? (
-          // The note icon is the last word of the line it qualifies, so it wraps with it.
-          <span className="dashboard-hero__period">
-            {shownReal ? (
-              <>
-                {`real, on ${money(invested, currency)} put in, in today's money · ${basisText(basis, real, currency)} · `}
-                <Link to="/settings">Settings</Link>
-              </>
-            ) : (
-              `on ${money(invested, currency)} net invested`
-            )}
-            {info}
-          </span>
-        ) : (
-          info
-        )}
+        <ProfitBasis
+          noReal={noReal}
+          shownReal={shownReal}
+          real={real}
+          invested={invested}
+          currency={currency}
+          basis={basis}
+          info={info}
+        />
       </div>
-      {portfolio !== null &&
-        portfolio.currency === currency &&
-        Number(portfolio.depositsValue) > 0 && (
-          <div className="dashboard-hero__note">
-            Includes {money(portfolio.depositsValue, currency)} in{' '}
-            <Link to={withCurrency('/deposits', asked)}>bank deposits</Link>
-          </div>
-        )}
-      {portfolio?.currency === currency && !unknownClasses && Number(propertyValue) > 0 && (
-        <div className="dashboard-hero__note">
-          Includes {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
-          {money(propertyValue, currency)} in{' '}
-          <Link to={withCurrency('/real-estate', asked)}>real estate</Link> (estimated)
-          {unpricedProperties > 0 && ` · ${unpricedProperties} without a price or rate left out.`}
-          {unavailablePropertyAccounts > 0 &&
-            ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
-          {oldEstimates > 0 &&
-            ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
-        </div>
-      )}
+      <DepositsNote portfolio={portfolio} currency={currency} asked={asked} />
+      <PropertyNote portfolio={portfolio} classes={classes} currency={currency} asked={asked} />
       <ChangeSplit history={history} portfolio={portfolio} />
     </section>
   );
@@ -411,6 +502,226 @@ function Empty({ onAdd }: { onAdd: () => void }) {
       Add your first wallet or asset to start tracking your capital. Wallet balances and history
       load automatically.
     </EmptyState>
+  );
+}
+
+/** The section's answer, while it is for the section, period and currency now asked. */
+function sectionAnswer(
+  chosen: HistorySection | null,
+  sectionHistory: PortfolioHistory | null,
+  currency: AccountingCurrency | undefined,
+): PortfolioHistory | null {
+  if (chosen === null || sectionHistory === null) return null;
+  return sectionHistory.section === chosen && sectionHistory.currency === currency
+    ? sectionHistory
+    : null;
+}
+
+/**
+ * What the chart draws: the whole, or the chosen section. As with the whole, another period
+ * keeps the last chart until its answer comes; a failed read of it does not pass the old
+ * period's chart off as the new one.
+ */
+function chartedOf(
+  chosen: HistorySection | null,
+  shown: PortfolioHistory | null,
+  ofSection: PortfolioHistory | null,
+  period: HistoryPeriod,
+  sectionFailed: boolean,
+): PortfolioHistory | null {
+  if (chosen === null) return shown;
+  return ofSection !== null && (ofSection.period === period || !sectionFailed) ? ofSection : null;
+}
+
+/** "Portfolio value, past month, from $1.00 to $2.00": the chart said in words. */
+function chartLabelOf(charted: PortfolioHistory | null, name: string): string {
+  if (!charted) return '';
+  return `${name} value, ${periodLabels[charted.period]}, from ${money(
+    charted.points.find((point) => point.value !== null)?.value ?? null,
+    charted.currency,
+  )} to ${money(charted.value, charted.currency)}`;
+}
+
+/** Deposits whose interest is not counted, and prices that are old. */
+function PortfolioBanners({ portfolio }: { portfolio: PortfolioValuation | null }) {
+  if (portfolio === null) return null;
+  return (
+    <>
+      {!!portfolio.interestMissingDepositCount && (
+        <Banner tone="warn">{accountsWithoutRate(portfolio.interestMissingDepositCount)}</Banner>
+      )}
+      {portfolio.stalePriceCount > 0 && (
+        <Banner tone="warn">
+          {portfolio.stalePriceCount === 1
+            ? '1 price is older than 2 hours; the last stored price is used.'
+            : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
+        </Banner>
+      )}
+    </>
+  );
+}
+
+/** SECTION-CHART: the chips that put one section alone on the chart. */
+function SectionChips({
+  sections,
+  chosen,
+  onChoose,
+}: {
+  sections: readonly HistorySection[];
+  chosen: HistorySection | null;
+  onChoose: (section: HistorySection | null) => void;
+}) {
+  return (
+    <ChipGroup label="Show on the chart">
+      <Chip pressed={chosen === null} onClick={() => onChoose(null)}>
+        Everything
+      </Chip>
+      {SECTIONS.filter((item) => sections.includes(item.key)).map((item) => (
+        <Chip key={item.key} pressed={chosen === item.key} onClick={() => onChoose(item.key)}>
+          {item.label}
+        </Chip>
+      ))}
+    </ChipGroup>
+  );
+}
+
+/** The chart, or why the chosen section has none yet. */
+function ChartPanel({
+  charted,
+  label,
+  sectionFailed,
+  chosenLabel,
+  onRetry,
+}: {
+  charted: PortfolioHistory | null;
+  label: string;
+  sectionFailed: boolean;
+  chosenLabel: string;
+  onRetry: () => void;
+}) {
+  if (charted !== null)
+    return (
+      <HistoryChart
+        key={`${charted.section ?? 'all'}:${charted.period}:${charted.currency}:${charted.at}`}
+        points={charted.points}
+        period={charted.period}
+        currency={charted.currency}
+        label={label}
+      />
+    );
+  if (sectionFailed) return <ErrorState what={`the ${chosenLabel} chart`} onRetry={onRetry} />;
+  return (
+    <p className="dashboard-chart__empty" role="status">
+      Loading the {chosenLabel} chart…
+    </p>
+  );
+}
+
+/** Transfers between sections are not money put in, so a section's Net invested can be off. */
+function TransfersNote({ count }: { count: number | undefined }) {
+  if (!count) return null;
+  return (
+    <p className="dashboard-chart__note" role="note">
+      {count === 1
+        ? '1 transfer between sections (made at any time) is'
+        : `${count} transfers between sections (made at any time) are`}{' '}
+      not counted as money put in, so Net invested here can read low or high.
+    </p>
+  );
+}
+
+/** No history to show yet: it failed to load, or it is loading. */
+function HistoryPending({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+  if (failed) return <ErrorState what="your capital history" onRetry={onRetry} />;
+  return <DashboardLoading />;
+}
+
+/** The allocation once the valuation is in, its placeholder while it loads, nothing if it failed. */
+function DashboardAllocation({
+  portfolio,
+  failed,
+}: {
+  portfolio: PortfolioValuation | null;
+  failed: boolean;
+}) {
+  if (portfolio !== null) return <Allocation portfolio={portfolio} limit={6} places={1} />;
+  return failed ? null : <AllocationLoading />;
+}
+
+/** The capital chart: its legend, period tabs, section chips and the chart or its state. */
+function CapitalChart({
+  titleId,
+  tabs,
+  panelProps,
+  sections,
+  chosen,
+  chosenLabel,
+  onChoose,
+  charted,
+  label,
+  sectionFailed,
+  onRetrySection,
+}: {
+  titleId: string;
+  tabs: ReactNode;
+  panelProps: ReturnType<typeof useSegmentedTabs>['panelProps'];
+  /** The sections to choose from; null when there is only the whole. */
+  sections: readonly HistorySection[] | null;
+  chosen: HistorySection | null;
+  chosenLabel: string;
+  onChoose: (section: HistorySection | null) => void;
+  charted: PortfolioHistory | null;
+  label: string;
+  sectionFailed: boolean;
+  onRetrySection: () => void;
+}) {
+  return (
+    <Card variant="chart" className="dashboard-chart-card" labelledBy={titleId}>
+      <span id={titleId} className="ui-sr">
+        Portfolio value over time
+      </span>
+      <div className="ui-toolbar">
+        <div className="dashboard-chart-card__title">
+          {/* The legend leads the card as in the prototype; the heading stays for readers. */}
+          <h2 className="ui-sr">Capital</h2>
+          <div className="dashboard-chart-card__name">
+            <div role="group" aria-label="Chart legend">
+              <Legend items={legend(chosen === null ? undefined : `${chosenLabel} value`)} />
+            </div>
+            <AboutChart>
+              Snapshots at stored prices and Bank of Russia rates: hourly for the last week, daily
+              since Jan 1, 2025, in UTC. Net invested is the money put in minus the money taken out;
+              the gap to the value line is your profit or loss.
+            </AboutChart>
+          </div>
+        </div>
+        {tabs}
+      </div>
+      {sections && <SectionChips sections={sections} chosen={chosen} onChoose={onChoose} />}
+      {/* A chart kept from before is not passed off as current (STALE-STATE). */}
+      {chosen !== null && sectionFailed && charted !== null && (
+        <Banner
+          tone="neg"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetrySection}>
+              Try again
+            </Button>
+          }
+        >
+          Could not update the {chosenLabel} chart. Showing the last loaded figures.
+        </Banner>
+      )}
+      <div {...panelProps}>
+        <ChartPanel
+          charted={charted}
+          label={label}
+          sectionFailed={sectionFailed}
+          chosenLabel={chosenLabel}
+          onRetry={onRetrySection}
+        />
+      </div>
+      <TransfersNote count={charted?.transfersAcross} />
+    </Card>
   );
 }
 
@@ -517,30 +828,13 @@ export default function DashboardPage() {
   // One section alone is the whole: there is nothing to filter. A section that went away
   // (its last account removed) is no longer asked for.
   const filtering = sections.length > 1;
-  const chosen = filtering && section !== null && sections.includes(section) ? section : null;
+  const choosable = filtering ? sections : null;
+  const chosen = section !== null && choosable?.includes(section) ? section : null;
   const chosenLabel = SECTIONS.find((item) => item.key === chosen)?.label ?? '';
   // The section's answer counts only for the period, currency and section now asked.
-  const ofSection =
-    chosen !== null &&
-    sectionHistory !== null &&
-    sectionHistory.section === chosen &&
-    sectionHistory.currency === shown?.currency
-      ? sectionHistory
-      : null;
-  // As with the whole, another period keeps the last chart until its answer comes; a failed
-  // read of it does not pass the old period's chart off as the new one.
-  const charted =
-    chosen === null
-      ? shown
-      : ofSection !== null && (ofSection.period === period || !sectionFailed)
-        ? ofSection
-        : null;
-  const chartLabel = charted
-    ? `${chosen === null ? 'Portfolio' : chosenLabel} value, ${periodLabels[charted.period]}, from ${money(
-        charted.points.find((point) => point.value !== null)?.value ?? null,
-        charted.currency,
-      )} to ${money(charted.value, charted.currency)}`
-    : '';
+  const ofSection = sectionAnswer(chosen, sectionHistory, shown?.currency);
+  const charted = chartedOf(chosen, shown, ofSection, period, sectionFailed);
+  const chartLabel = chartLabelOf(charted, chosen === null ? 'Portfolio' : chosenLabel);
 
   return (
     <div className="shell-page">
@@ -558,10 +852,8 @@ export default function DashboardPage() {
           Could not update your capital history. Showing the last loaded figures.
         </Banner>
       )}
-      {failed && shown === null ? (
-        <ErrorState what="your capital history" onRetry={() => void load()} />
-      ) : shown === null ? (
-        <DashboardLoading />
+      {shown === null ? (
+        <HistoryPending failed={failed} onRetry={() => void load()} />
       ) : isEmptyPortfolio(shown) ? (
         <>
           <NearestGoal />
@@ -569,18 +861,7 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
-          {portfolio !== null && !!portfolio.interestMissingDepositCount && (
-            <Banner tone="warn">
-              {accountsWithoutRate(portfolio.interestMissingDepositCount)}
-            </Banner>
-          )}
-          {portfolio !== null && portfolio.stalePriceCount > 0 && (
-            <Banner tone="warn">
-              {portfolio.stalePriceCount === 1
-                ? '1 price is older than 2 hours; the last stored price is used.'
-                : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
-            </Banner>
-          )}
+          <PortfolioBanners portfolio={portfolio} />
           <NetWorth
             history={shown}
             portfolio={portfolio}
@@ -588,82 +869,19 @@ export default function DashboardPage() {
             refreshFailed={failed || showingKept(current)}
           />
           <NearestGoal />
-          <Card variant="chart" className="dashboard-chart-card" labelledBy={chartTitle}>
-            <span id={chartTitle} className="ui-sr">
-              Portfolio value over time
-            </span>
-            <div className="ui-toolbar">
-              <div className="dashboard-chart-card__title">
-                {/* The legend leads the card as in the prototype; the heading stays for readers. */}
-                <h2 className="ui-sr">Capital</h2>
-                <div className="dashboard-chart-card__name">
-                  <div role="group" aria-label="Chart legend">
-                    <Legend items={legend(chosen === null ? undefined : `${chosenLabel} value`)} />
-                  </div>
-                  <AboutChart>
-                    Snapshots at stored prices and Bank of Russia rates: hourly for the last week,
-                    daily since Jan 1, 2025, in UTC. Net invested is the money put in minus the
-                    money taken out; the gap to the value line is your profit or loss.
-                  </AboutChart>
-                </div>
-              </div>
-              {tabs}
-            </div>
-            {filtering && (
-              <ChipGroup label="Show on the chart">
-                <Chip pressed={chosen === null} onClick={() => setSection(null)}>
-                  Everything
-                </Chip>
-                {SECTIONS.filter((item) => sections.includes(item.key)).map((item) => (
-                  <Chip
-                    key={item.key}
-                    pressed={chosen === item.key}
-                    onClick={() => setSection(item.key)}
-                  >
-                    {item.label}
-                  </Chip>
-                ))}
-              </ChipGroup>
-            )}
-            {/* A chart kept from before is not passed off as current (STALE-STATE). */}
-            {chosen !== null && sectionFailed && charted !== null && (
-              <Banner
-                tone="neg"
-                action={
-                  <Button size="sm" icon="refresh" onClick={() => void loadSection()}>
-                    Try again
-                  </Button>
-                }
-              >
-                Could not update the {chosenLabel} chart. Showing the last loaded figures.
-              </Banner>
-            )}
-            <div {...panelProps}>
-              {charted !== null ? (
-                <HistoryChart
-                  key={`${charted.section ?? 'all'}:${charted.period}:${charted.currency}:${charted.at}`}
-                  points={charted.points}
-                  period={charted.period}
-                  currency={charted.currency}
-                  label={chartLabel}
-                />
-              ) : sectionFailed ? (
-                <ErrorState what={`the ${chosenLabel} chart`} onRetry={() => void loadSection()} />
-              ) : (
-                <p className="dashboard-chart__empty" role="status">
-                  Loading the {chosenLabel} chart…
-                </p>
-              )}
-            </div>
-            {!!charted?.transfersAcross && (
-              <p className="dashboard-chart__note" role="note">
-                {charted.transfersAcross === 1
-                  ? '1 transfer between sections (made at any time) is'
-                  : `${charted.transfersAcross} transfers between sections (made at any time) are`}{' '}
-                not counted as money put in, so Net invested here can read low or high.
-              </p>
-            )}
-          </Card>
+          <CapitalChart
+            titleId={chartTitle}
+            tabs={tabs}
+            panelProps={panelProps}
+            sections={choosable}
+            chosen={chosen}
+            chosenLabel={chosenLabel}
+            onChoose={setSection}
+            charted={charted}
+            label={chartLabel}
+            sectionFailed={sectionFailed}
+            onRetrySection={() => void loadSection()}
+          />
           <div className="dashboard-bottom">
             <TopAssets
               chains={tokenChains(wallets)}
@@ -672,11 +890,7 @@ export default function DashboardPage() {
               onRetry={() => void loadPortfolio()}
               asked={asked}
             />
-            {portfolio !== null ? (
-              <Allocation portfolio={portfolio} limit={6} places={1} />
-            ) : (
-              !portfolioFailed && <AllocationLoading />
-            )}
+            <DashboardAllocation portfolio={portfolio} failed={portfolioFailed} />
           </div>
         </>
       )}

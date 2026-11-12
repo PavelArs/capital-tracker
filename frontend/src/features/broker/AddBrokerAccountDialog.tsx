@@ -57,6 +57,185 @@ interface Props {
   onImport?: (account: { accountId: string; name: string }) => void;
 }
 
+const typedIn = (draft: BrokerEntry) =>
+  !!draft.broker.trim() ||
+  !!draft.cash.trim() ||
+  draft.positions.some((position) =>
+    [position.ticker, position.quantity, position.price].some((part) => part.trim()),
+  );
+
+const stepNumbers: Record<Exclude<Step, 'manual'>, number> = { choose: 1, token: 2, accounts: 3 };
+
+/** The submit button's words for the step: continue, or connect the accounts chosen. */
+function submitLabel(step: Step, busy: boolean, chosen: number): string {
+  if (step !== 'accounts') return busy ? 'Checking…' : 'Continue';
+  if (chosen === 0) return 'Connect';
+  return busy ? 'Connecting…' : `Connect ${chosen} account${chosen === 1 ? '' : 's'}`;
+}
+
+/** Step 1: T-Bank or another broker. */
+function ChooseStep({
+  broker,
+  onBroker,
+}: {
+  broker: Broker | null;
+  onBroker: (broker: Broker) => void;
+}) {
+  return (
+    <>
+      <p className="ui-soft">Which broker do you want to add?</p>
+      <OptionGrid layout="tile" label="Broker">
+        <OptionTile
+          pressed={broker === 'tbank'}
+          onClick={() => onBroker('tbank')}
+          icon={
+            <span className="broker-tile-icon broker-tile-icon--tbank" aria-hidden="true">
+              <Icon name="briefcase" />
+            </span>
+          }
+          title="T-Bank"
+          description="Connects with a read-only token"
+        />
+        <OptionTile
+          pressed={broker === 'manual'}
+          onClick={() => onBroker('manual')}
+          icon={
+            <span className="broker-tile-icon" aria-hidden="true">
+              <Icon name="edit" />
+            </span>
+          }
+          title="Another broker"
+          description="Enter positions by hand"
+        />
+      </OptionGrid>
+      <Banner tone="info" icon="shield" role="none">
+        Read-only. The app never places orders and never asks for a broker password.
+      </Banner>
+    </>
+  );
+}
+
+/** Step 2: how to make a read-only T-Bank token, and the field for it. */
+function TokenStep({
+  id,
+  token,
+  tokenError,
+  busy,
+  onToken,
+}: {
+  id: string;
+  token: string;
+  tokenError: string | null;
+  busy: boolean;
+  onToken: (token: string) => void;
+}) {
+  return (
+    <>
+      <Banner tone="info" role="none">
+        <ol className="broker-howto">
+          <li>In T-Bank Investments open Settings → Tokens.</li>
+          <li>
+            Create a token with <b>Read-only</b> access to all accounts.
+          </li>
+          <li>Paste it below. T-Bank shows it only once.</li>
+        </ol>
+      </Banner>
+      <Field
+        id={`${id}-token`}
+        label="T-Bank token"
+        hint="Only read-only tokens are accepted. A token that can place orders is refused. Stored encrypted."
+        error={tokenError}
+        liveError
+      >
+        {(control) => (
+          <PasswordInput
+            {...control}
+            mono
+            autoComplete="off"
+            spellCheck={false}
+            showLabel="Show token"
+            hideLabel="Hide token"
+            value={token}
+            disabled={busy}
+            onChange={(event) => onToken(event.target.value)}
+          />
+        )}
+      </Field>
+    </>
+  );
+}
+
+/** Step 3: the T-Bank accounts the token reaches, to choose and name. */
+function AccountsStep({
+  accounts,
+  picks,
+  chosen,
+  busy,
+  onChange,
+}: {
+  accounts: TBankAccountOption[];
+  picks: Record<string, Pick>;
+  /** How many accounts are chosen. */
+  chosen: number;
+  busy: boolean;
+  onChange: (account: string, changes: Partial<Pick>) => void;
+}) {
+  const available = accounts.filter((account) => !account.connected);
+  return (
+    <>
+      <p className="ui-soft">
+        {available.length === 0
+          ? 'Every open account this token reaches is already connected.'
+          : `The token gives access to ${accounts.length === 1 ? '1 T-Bank account' : `${accounts.length} T-Bank accounts`}. Choose the ones to track and rename them if you like.`}
+      </p>
+      {chosen >= MAX_PICKS && (
+        <p className="ui-soft" role="status">
+          {MAX_PICKS} accounts is the most to connect at once. Connect the rest afterwards with the
+          same token.
+        </p>
+      )}
+      <ul className="broker-picks">
+        {accounts.map((account) => {
+          const pick = picks[account.id];
+          const on = pick.checked && !account.connected;
+          const note = account.connected ? 'Already connected' : null;
+          return (
+            <li
+              key={account.id}
+              className={`broker-pick${account.connected ? ' broker-pick--off' : ''}`}
+            >
+              <label className="broker-pick__check">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={busy || account.connected || (!on && chosen >= MAX_PICKS)}
+                  onChange={(event) => onChange(account.id, { checked: event.target.checked })}
+                />
+                <span>
+                  <b>{accountName(account)}</b>
+                  {note && <small> · {note}</small>}
+                </span>
+              </label>
+              <Input
+                aria-label={`Name for ${accountName(account)}`}
+                maxLength={MAX_NAME}
+                autoComplete="off"
+                value={account.connected ? accountName(account) : pick.name}
+                disabled={busy || !on}
+                aria-invalid={on && pick.name.trim() === '' ? true : undefined}
+                onChange={(event) => onChange(account.id, { name: event.target.value })}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      <Banner tone="info" icon="clock" role="none">
+        The accounts appear empty at first. Positions and cash arrive with the history import.
+      </Banner>
+    </>
+  );
+}
+
 // BROKER-ADD-FLOW: the one "Add broker account" dialog, shaped like Add wallet. Step 1 chooses the
 // broker: T-Bank reads its accounts with one read-only token (BROKER-SETUP), and any other broker
 // opens the positions editor. The token is held only in this dialog until it is sent, and goes
@@ -92,13 +271,7 @@ export default function AddBrokerAccountDialog({ onClose, onAdded, onImport }: P
   }, [step]);
 
   // What was typed in the positions editor before going back counts as half-filled too.
-  const drafted =
-    !!draft &&
-    (!!draft.broker.trim() ||
-      !!draft.cash.trim() ||
-      draft.positions.some((position) =>
-        [position.ticker, position.quantity, position.price].some((part) => part.trim()),
-      ));
+  const drafted = !!draft && typedIn(draft);
   const close = () => {
     if (busy) return;
     if (drafted || (broker === 'tbank' && (trimmed || step === 'accounts'))) setDiscarding(true);
@@ -215,17 +388,7 @@ export default function AddBrokerAccountDialog({ onClose, onAdded, onImport }: P
       />
     );
 
-  const available = (accounts ?? []).filter((account) => !account.connected);
-  const label =
-    step !== 'accounts'
-      ? busy
-        ? 'Checking…'
-        : 'Continue'
-      : chosen.length === 0
-        ? 'Connect'
-        : busy
-          ? 'Connecting…'
-          : `Connect ${chosen.length} account${chosen.length === 1 ? '' : 's'}`;
+  const label = submitLabel(step, busy, chosen.length);
   return (
     <>
       <Modal
@@ -241,137 +404,32 @@ export default function AddBrokerAccountDialog({ onClose, onAdded, onImport }: P
             onClose={close}
             closeDisabled={busy}
             steps={{
-              current: step === 'choose' ? 1 : step === 'token' ? 2 : 3,
+              current: stepNumbers[step],
               total: broker === 'manual' ? 2 : 3,
             }}
           />
           <ModalBody>
-            {step === 'choose' && (
-              <>
-                <p className="ui-soft">Which broker do you want to add?</p>
-                <OptionGrid layout="tile" label="Broker">
-                  <OptionTile
-                    pressed={broker === 'tbank'}
-                    onClick={() => setBroker('tbank')}
-                    icon={
-                      <span className="broker-tile-icon broker-tile-icon--tbank" aria-hidden="true">
-                        <Icon name="briefcase" />
-                      </span>
-                    }
-                    title="T-Bank"
-                    description="Connects with a read-only token"
-                  />
-                  <OptionTile
-                    pressed={broker === 'manual'}
-                    onClick={() => setBroker('manual')}
-                    icon={
-                      <span className="broker-tile-icon" aria-hidden="true">
-                        <Icon name="edit" />
-                      </span>
-                    }
-                    title="Another broker"
-                    description="Enter positions by hand"
-                  />
-                </OptionGrid>
-                <Banner tone="info" icon="shield" role="none">
-                  Read-only. The app never places orders and never asks for a broker password.
-                </Banner>
-              </>
-            )}
+            {step === 'choose' && <ChooseStep broker={broker} onBroker={setBroker} />}
             {step === 'token' && (
-              <>
-                <Banner tone="info" role="none">
-                  <ol className="broker-howto">
-                    <li>In T-Bank Investments open Settings → Tokens.</li>
-                    <li>
-                      Create a token with <b>Read-only</b> access to all accounts.
-                    </li>
-                    <li>Paste it below. T-Bank shows it only once.</li>
-                  </ol>
-                </Banner>
-                <Field
-                  id={`${id}-token`}
-                  label="T-Bank token"
-                  hint="Only read-only tokens are accepted. A token that can place orders is refused. Stored encrypted."
-                  error={tokenError}
-                  liveError
-                >
-                  {(control) => (
-                    <PasswordInput
-                      {...control}
-                      mono
-                      autoComplete="off"
-                      spellCheck={false}
-                      showLabel="Show token"
-                      hideLabel="Hide token"
-                      value={token}
-                      disabled={busy}
-                      onChange={(event) => {
-                        setToken(event.target.value);
-                        setTokenError(null);
-                      }}
-                    />
-                  )}
-                </Field>
-              </>
+              <TokenStep
+                id={id}
+                token={token}
+                tokenError={tokenError}
+                busy={busy}
+                onToken={(value) => {
+                  setToken(value);
+                  setTokenError(null);
+                }}
+              />
             )}
             {step === 'accounts' && accounts && (
-              <>
-                <p className="ui-soft">
-                  {available.length === 0
-                    ? 'Every open account this token reaches is already connected.'
-                    : `The token gives access to ${accounts.length === 1 ? '1 T-Bank account' : `${accounts.length} T-Bank accounts`}. Choose the ones to track and rename them if you like.`}
-                </p>
-                {chosen.length >= MAX_PICKS && (
-                  <p className="ui-soft" role="status">
-                    {MAX_PICKS} accounts is the most to connect at once. Connect the rest afterwards
-                    with the same token.
-                  </p>
-                )}
-                <ul className="broker-picks">
-                  {accounts.map((account) => {
-                    const pick = picks[account.id];
-                    const on = pick.checked && !account.connected;
-                    const note = account.connected ? 'Already connected' : null;
-                    return (
-                      <li
-                        key={account.id}
-                        className={`broker-pick${account.connected ? ' broker-pick--off' : ''}`}
-                      >
-                        <label className="broker-pick__check">
-                          <input
-                            type="checkbox"
-                            checked={on}
-                            disabled={
-                              busy || account.connected || (!on && chosen.length >= MAX_PICKS)
-                            }
-                            onChange={(event) =>
-                              change(account.id, { checked: event.target.checked })
-                            }
-                          />
-                          <span>
-                            <b>{accountName(account)}</b>
-                            {note && <small> · {note}</small>}
-                          </span>
-                        </label>
-                        <Input
-                          aria-label={`Name for ${accountName(account)}`}
-                          maxLength={MAX_NAME}
-                          autoComplete="off"
-                          value={account.connected ? accountName(account) : pick.name}
-                          disabled={busy || !on}
-                          aria-invalid={on && pick.name.trim() === '' ? true : undefined}
-                          onChange={(event) => change(account.id, { name: event.target.value })}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-                <Banner tone="info" icon="clock" role="none">
-                  The accounts appear empty at first. Positions and cash arrive with the history
-                  import.
-                </Banner>
-              </>
+              <AccountsStep
+                accounts={accounts}
+                picks={picks}
+                chosen={chosen.length}
+                busy={busy}
+                onChange={change}
+              />
             )}
             {error && step !== 'choose' && <Banner tone="neg">{error}</Banner>}
           </ModalBody>

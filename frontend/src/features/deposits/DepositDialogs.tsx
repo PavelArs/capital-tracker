@@ -355,6 +355,42 @@ function previewText(preview: DepositPreview, currency: DepositCurrency): string
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
+type DepositForm = Omit<DepositTerms, 'endDate' | 'ratePercent'> & {
+  endDate: string;
+  rate: string;
+};
+
+/** The terms sent: an account has no term, so the terms that only a term has are not sent for it. */
+function termsOf(form: DepositForm): DepositTerms {
+  const isAccount = form.kind === 'account';
+  return {
+    kind: form.kind,
+    name: form.name.trim() || (isAccount ? DEFAULT_ACCOUNT_NAME : DEFAULT_NAME),
+    bank: form.bank.trim(),
+    currency: form.currency,
+    startDate: form.startDate,
+    endDate: isAccount ? null : form.endDate || null,
+    payout: isAccount && form.payout === 'at-end' ? 'monthly' : form.payout,
+    capitalized: form.capitalized,
+    dayBasis: form.dayBasis,
+    earlyClose: isAccount ? 'keeps-interest' : form.earlyClose,
+    ratePercent: isAccount && !form.rate.trim() ? null : form.rate.trim(),
+    amount: form.amount.trim(),
+  };
+}
+
+/** What is wrong with a term deposit's end date, or that interest at the end needs one. */
+function endDateProblem(endDate: string, startDate: string, payout: PayoutSchedule): string | null {
+  if (!endDate)
+    return payout === 'at-end' ? 'Interest at the end of the term needs an end date' : null;
+  const problem = dateProblem(endDate);
+  if (problem) return problem;
+  if (endDate <= startDate) return 'Must be after the opening date';
+  return endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
+    ? `A term is at most ${MAX_TERM_YEARS} years`
+    : null;
+}
+
 /** DEP-TERMS: a deposit is entered once; the app computes the rest. */
 export function AddDepositDialog({
   banks = [],
@@ -383,39 +419,27 @@ export function AddDepositDialog({
   const attempt = useAttempt();
   const knownBanks = [...new Set(banks)];
   const isAccount = kind === 'account';
-  // An account has no term, so the terms that only a term has are not sent for it.
-  const entries: DepositTerms = {
+  const entries = termsOf({
     kind,
-    name: name.trim() || (isAccount ? DEFAULT_ACCOUNT_NAME : DEFAULT_NAME),
-    bank: bank.trim(),
+    name,
+    bank,
     currency,
     startDate,
-    endDate: isAccount ? null : endDate || null,
-    payout: isAccount && payout === 'at-end' ? 'monthly' : payout,
+    endDate,
+    payout,
     capitalized,
     dayBasis,
-    earlyClose: isAccount ? 'keeps-interest' : earlyClose,
-    ratePercent: isAccount && !rate.trim() ? null : rate.trim(),
-    amount: amount.trim(),
-  };
+    earlyClose,
+    rate,
+    amount,
+  });
 
   const problems = (): Problems => ({
     bank: bank.trim() ? null : 'Enter the bank',
     amount: amountProblem(amount, 'the amount put in'),
     rate: isAccount ? accountRateProblem(rate) : rateProblem(rate),
     startDate: dateProblem(startDate),
-    endDate: isAccount
-      ? null
-      : endDate
-        ? (dateProblem(endDate) ??
-          (endDate <= startDate
-            ? 'Must be after the opening date'
-            : endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
-              ? `A term is at most ${MAX_TERM_YEARS} years`
-              : null))
-        : payout === 'at-end'
-          ? 'Interest at the end of the term needs an end date'
-          : null,
+    endDate: isAccount ? null : endDateProblem(endDate, startDate, payout),
   });
   // An account with no rate has no interest to preview: nothing is shown for it rather than zero.
   const preview = usePreview(

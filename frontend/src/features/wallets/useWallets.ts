@@ -1,7 +1,7 @@
 import type { WalletKind } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { HiddenAsset } from '@api/hidden-assets.api';
-import type { PortfolioValuation } from '@api/portfolio-valuation.api';
+import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { useToast } from '@contexts/ToastContext';
@@ -16,6 +16,57 @@ import { classedOf, hiddenSymbolsOf, kindsOf } from './wallets';
 const MAX_SYNC_REQUESTS = 40;
 // While the background job loads a history, the page looks again this often.
 const BACKGROUND_REFRESH_MS = 10_000;
+
+/** The portfolio kept from the last visit, shown at once only with the addresses and accounts. */
+function keptPortfolio(asked: AccountingCurrency | undefined, quiet: boolean) {
+  const kept = quiet ? undefined : cachedReads.portfolio.last(asked);
+  const keptAddresses = cachedReads.wallets.last();
+  const keptAccounts = cachedReads.accounts.last();
+  return kept && keptAddresses && keptAccounts ? kept : undefined;
+}
+
+const addressName = (address: WalletAddress) => address.label ?? networkOf(address).name;
+
+/** Why "Sync now" failed when the server refused it or gave no answer. */
+function syncFailure(error: unknown): string {
+  // wallets-20: only a request that got no answer could not reach the server.
+  const response = isAxiosError(error) ? error.response : undefined;
+  if (response?.status === undefined) return failureMessage('server');
+  // A switched-off address is refused with 409 too, but nothing else is syncing it.
+  if (response.status === 409)
+    return failureMessage(
+      /switched off/.test(String(response.data?.message ?? '')) ? 'off' : 'busy',
+    );
+  return failureMessage(response.status === 401 ? 'session' : 'failed');
+}
+
+/**
+ * Reads the history in bounded requests until it is complete or the source fails. The last
+ * address read, or null when the page went away or the source failed (its run then says why).
+ */
+async function syncHistory(
+  id: string,
+  mounted: { current: boolean },
+  replace: (address: WalletAddress) => void,
+  setRun: (id: string, run: SyncRun | null) => void,
+): Promise<WalletAddress | null> {
+  let synced: WalletAddress | null = null;
+  for (let request = 0; request < MAX_SYNC_REQUESTS; request++) {
+    const result = await walletAddressesApi.sync(id);
+    if (!mounted.current) return null;
+    replace(result.address);
+    synced = result.address;
+    if (result.outcome === 'provider_error') {
+      const message =
+        result.address.sync.errorMessage ??
+        failureMessage(result.reason ?? 'unavailable', result.address);
+      setRun(id, { state: 'failed', message });
+      return null;
+    }
+    if (result.outcome === 'complete') break;
+  }
+  return synced;
+}
 
 /**
  * The portfolio and the tracked addresses behind the Wallets pages, "Sync now", and a quiet
@@ -62,10 +113,8 @@ export function useWallets() {
     async (quiet = false) => {
       const request = ++latest.current;
       setFailed(false);
-      const kept = quiet ? undefined : cachedReads.portfolio.last(asked);
-      const keptAddresses = cachedReads.wallets.last();
-      const keptAccounts = cachedReads.accounts.last();
-      if (!quiet) setPortfolio(kept && keptAddresses && keptAccounts ? kept : null);
+      const kept = keptPortfolio(asked, quiet);
+      if (!quiet) setPortfolio(kept ?? null);
       try {
         // ASSET-HIDE: the hidden list lands with the balances it is compared against; one that
         // cannot be read leaves the comparison unknown rather than trusting an older list.
@@ -83,8 +132,7 @@ export function useWallets() {
         setAddresses(nextAddresses);
         setHiddenAssets(nextHidden);
       } catch {
-        if (request === latest.current && !quiet && !(kept && keptAddresses && keptAccounts))
-          setFailed(true);
+        if (request === latest.current && !quiet && !kept) setFailed(true);
       }
     },
     [asked],
@@ -122,55 +170,16 @@ export function useWallets() {
       running.current.add(id);
       setRun(id, { state: 'running' });
       try {
-        let synced: WalletAddress | null = null;
-        for (let request = 0; request < MAX_SYNC_REQUESTS; request++) {
-          const result = await walletAddressesApi.sync(id);
-          if (!mounted.current) return;
-          replace(result.address);
-          synced = result.address;
-          if (result.outcome === 'provider_error') {
-            setRun(id, {
-              state: 'failed',
-              message:
-                result.address.sync.errorMessage ??
-                failureMessage(result.reason ?? 'unavailable', result.address),
-            });
-            return;
-          }
-          if (result.outcome === 'complete') break;
-        }
+        const synced = await syncHistory(id, mounted, replace, setRun);
+        if (!synced) return;
         setRun(id, null);
-        if (synced?.sync.state === 'complete')
-          toast.show({
-            tone: 'success',
-            title: `${synced.label ?? networkOf(synced).name} is synced`,
-          });
+        if (synced.sync.state === 'complete')
+          toast.show({ tone: 'success', title: `${addressName(synced)} is synced` });
         // A list asked for while the history loaded may be older than the last page.
         void load(true);
         announceSyncChange();
       } catch (error) {
-        if (!mounted.current) return;
-        // wallets-20: only a request that got no answer could not reach the server.
-        const status = isAxiosError(error) ? error.response?.status : undefined;
-        // A switched-off address is refused with 409 too, but nothing else is syncing it.
-        const off =
-          isAxiosError(error) &&
-          status === 409 &&
-          /switched off/.test(String(error.response?.data?.message ?? ''));
-        setRun(id, {
-          state: 'failed',
-          message: failureMessage(
-            status === undefined
-              ? 'server'
-              : off
-                ? 'off'
-                : status === 409
-                  ? 'busy'
-                  : status === 401
-                    ? 'session'
-                    : 'failed',
-          ),
-        });
+        if (mounted.current) setRun(id, { state: 'failed', message: syncFailure(error) });
       } finally {
         announceSyncChange();
         running.current.delete(id);
@@ -192,7 +201,7 @@ export function useWallets() {
         if (enabled) setRun(id, null);
         toast.show({
           tone: 'success',
-          title: `Sync is ${enabled ? 'on' : 'off'} for ${address.label ?? networkOf(address).name}`,
+          title: `Sync is ${enabled ? 'on' : 'off'} for ${addressName(address)}`,
         });
         void load(true);
       } catch {

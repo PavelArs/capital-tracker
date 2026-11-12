@@ -6,6 +6,7 @@ import {
   HORIZON_TRANSACTION_PAGE_SIZE,
   HorizonClient,
   OPERATION_BITS,
+  type PageResult,
   type StellarPayment,
   type StellarTransaction,
 } from './horizon-client';
@@ -24,6 +25,74 @@ interface ScanRow {
   address: string;
   /** The TOID of the newest transaction whose legs are stored; null before the first. */
   readTo: string | null;
+}
+
+const failed = (reason: StepFailure, imported = 0): StepResult => ({
+  outcome: 'provider_error',
+  reason,
+  imported,
+});
+
+/**
+ * Up to `pages` pages of a Horizon list past `after`; `all` once a page ran short or `reached`
+ * says the items go far enough.
+ */
+async function readList<T>(
+  pages: number,
+  size: number,
+  after: bigint | null,
+  position: (item: T) => bigint,
+  read: (cursor: bigint | null) => Promise<PageResult<T>>,
+  reached: (items: T[]) => boolean = () => false,
+): Promise<{ ok: true; items: T[]; all: boolean } | { ok: false; reason: StepFailure }> {
+  const items: T[] = [];
+  const latest = () => {
+    const last = items.at(-1);
+    return last === undefined ? null : position(last);
+  };
+  for (let page = 0; page < pages; page++) {
+    const listed = await read(latest() ?? after);
+    if (!listed.ok) return listed;
+    for (const item of listed.items) {
+      // Oldest first and past the cursor: anything else is an answer the sync cannot trust.
+      if ((latest() ?? after ?? -1n) >= position(item))
+        return { ok: false, reason: 'invalid_response' };
+      items.push(item);
+    }
+    if (listed.items.length < size || reached(items)) return { ok: true, items, all: true };
+  }
+  return { ok: true, items, all: false };
+}
+
+/** The legs of the listed transactions up to `end`; null when a payment names another hash. */
+function legsOf(
+  address: string,
+  transactions: readonly StellarTransaction[],
+  byTransaction: ReadonlyMap<bigint, StellarOperation[]>,
+  end: bigint,
+): { legs: StellarLeg[]; done: bigint | null } | null {
+  const legs: StellarLeg[] = [];
+  let done: bigint | null = null;
+  for (const transaction of transactions) {
+    if (transaction.toid > end) break;
+    const operations = byTransaction.get(transaction.toid) ?? [];
+    // A payment names the transaction it belongs to by hash too.
+    if (operations.some(({ payment }) => payment.hash !== transaction.hash)) return null;
+    const leg = stellarLeg(address, transaction, operations);
+    if (leg) legs.push(leg);
+    done = transaction.toid;
+  }
+  return { legs, done };
+}
+
+/** Whether an operation in the range belongs to no listed transaction. */
+function unlisted(
+  transactions: readonly StellarTransaction[],
+  payments: readonly StellarPayment[],
+  end: bigint,
+): boolean {
+  const listed = new Set(transactions.map((item) => item.toid));
+  return payments.some((item) => item.transaction <= end && !listed.has(item.transaction));
 }
 
 /**
@@ -45,111 +114,92 @@ export class StellarSyncAdapter implements ChainSyncAdapter {
 
   async step(ownerId: string, addressId: string): Promise<StepResult> {
     const state = await this.scan(ownerId, addressId);
-    const failed = (reason: StepFailure, imported = 0): StepResult => ({
-      outcome: 'provider_error',
-      reason,
-      imported,
-    });
     const after = state.readTo === null ? null : BigInt(state.readTo);
     const started = Date.now();
 
-    const transactions: StellarTransaction[] = [];
-    let listedAll = false;
-    for (let page = 0; page < MAX_STELLAR_TRANSACTION_PAGES; page++) {
-      const cursor = transactions.at(-1)?.toid ?? after;
-      const listed = await this.client.transactions(state.address, cursor);
-      if (!listed.ok) return failed(listed.reason);
-      for (const item of listed.items) {
-        // Oldest first and past the cursor: anything else is an answer the sync cannot trust.
-        if ((transactions.at(-1)?.toid ?? after ?? -1n) >= item.toid)
-          return failed('invalid_response');
-        transactions.push(item);
-      }
-      if (listed.items.length < HORIZON_TRANSACTION_PAGE_SIZE) {
-        listedAll = true;
-        break;
-      }
-    }
+    const listed = await readList(
+      MAX_STELLAR_TRANSACTION_PAGES,
+      HORIZON_TRANSACTION_PAGE_SIZE,
+      after,
+      (item: StellarTransaction) => item.toid,
+      (cursor) => this.client.transactions(state.address, cursor),
+    );
+    if (!listed.ok) return failed(listed.reason);
+    const transactions = listed.items;
     if (transactions.length === 0) {
       await this.commit(state, [], null, true);
-      const refused = await this.refreshBalance(state);
-      return refused ? failed(refused) : { outcome: 'complete', reason: null, imported: 0 };
+      return this.completed(state, 0);
     }
     // Everything up to the last listed transaction; the payments must reach it.
-    let end = transactions[transactions.length - 1].toid;
+    const last = transactions[transactions.length - 1].toid;
 
     // The operations of the stored transaction itself come after its TOID: start past them.
     const paidAfter = after === null ? null : after | OPERATION_BITS;
-    const payments: StellarPayment[] = [];
-    let paidAll = false;
-    for (let page = 0; page < MAX_STELLAR_PAYMENT_PAGES; page++) {
-      const cursor = payments.at(-1)?.id ?? paidAfter;
-      const listed = await this.client.payments(state.address, cursor);
-      if (!listed.ok) return failed(listed.reason);
-      for (const item of listed.items) {
-        if ((payments.at(-1)?.id ?? paidAfter ?? -1n) >= item.id) return failed('invalid_response');
-        payments.push(item);
-      }
-      if (listed.items.length < HORIZON_PAYMENT_PAGE_SIZE || payments.at(-1)!.transaction > end) {
-        paidAll = true;
-        break;
-      }
-    }
+    const paid = await readList(
+      MAX_STELLAR_PAYMENT_PAGES,
+      HORIZON_PAYMENT_PAGE_SIZE,
+      paidAfter,
+      (item: StellarPayment) => item.id,
+      (cursor) => this.client.payments(state.address, cursor),
+      (items) => items[items.length - 1].transaction > last,
+    );
+    if (!paid.ok) return failed(paid.reason);
+    const payments = paid.items;
     // The page budget ran out inside the read range: the transaction of the last operation may
     // go on in the next page, so only the ones before it are complete.
-    if (!paidAll) end = payments[payments.length - 1].transaction - 1n;
-    const ready = transactions.filter((item) => item.toid <= end);
+    const paidTo = paid.all ? last : payments[payments.length - 1].transaction - 1n;
+    const ready = transactions.filter((item) => item.toid <= paidTo);
     if (ready.length === 0) return failed('invalid_response');
-    end = ready[ready.length - 1].toid;
 
+    const read = await this.operations(payments, ready[ready.length - 1].toid, started);
+    const legs = legsOf(state.address, transactions, read.byTransaction, read.end);
+    if (!legs || unlisted(transactions, payments, read.end)) return failed('invalid_response');
+
+    const { failure } = read;
+    const caughtUp = failure === null && listed.all && legs.done === last;
+    const imported =
+      legs.done === null ? 0 : await this.commit(state, legs.legs, legs.done, caughtUp);
+    if (failure) return failed(failure, imported);
+    if (!caughtUp) return { outcome: 'partial', reason: null, imported };
+    return this.completed(state, imported);
+  }
+
+  /** A history read to its end: the balance Horizon reports is stored beside it. */
+  private async completed(state: ScanRow, imported: number): Promise<StepResult> {
+    const refused = await this.refreshBalance(state);
+    return refused ? failed(refused, imported) : { outcome: 'complete', reason: null, imported };
+  }
+
+  /**
+   * Each transaction's operations up to `end`, with the XLM each merge moved. A merge whose
+   * amount is not read now ends the range before its transaction.
+   */
+  private async operations(
+    payments: readonly StellarPayment[],
+    end: bigint,
+    started: number,
+  ): Promise<{
+    byTransaction: Map<bigint, StellarOperation[]>;
+    end: bigint;
+    failure: StepFailure | null;
+  }> {
     const byTransaction = new Map<bigint, StellarOperation[]>();
-    let failure: StepFailure | null = null;
     for (const payment of payments) {
       if (payment.transaction > end) break;
       let merged: bigint | null = null;
       if (payment.merge) {
-        if (Date.now() - started > SYNC_TIME_BUDGET_MS) {
-          // Stop before this transaction; the next pass reads its merge.
-          end = payment.transaction - 1n;
-          break;
-        }
+        // Stop before this transaction; the next pass reads its merge.
+        if (Date.now() - started > SYNC_TIME_BUDGET_MS)
+          return { byTransaction, end: payment.transaction - 1n, failure: null };
         const read = await this.client.mergeAmount(payment.id, payment.merge.into);
-        if (!read.ok) {
-          failure = read.reason;
-          end = payment.transaction - 1n;
-          break;
-        }
+        if (!read.ok) return { byTransaction, end: payment.transaction - 1n, failure: read.reason };
         merged = read.units;
       }
       const operations = byTransaction.get(payment.transaction) ?? [];
       operations.push({ payment, merged });
       byTransaction.set(payment.transaction, operations);
     }
-    const legs: StellarLeg[] = [];
-    let done: bigint | null = null;
-    for (const transaction of transactions) {
-      if (transaction.toid > end) break;
-      const operations = byTransaction.get(transaction.toid) ?? [];
-      // A payment names the transaction it belongs to by hash too.
-      if (operations.some(({ payment }) => payment.hash !== transaction.hash))
-        return failed('invalid_response');
-      const leg = stellarLeg(state.address, transaction, operations);
-      if (leg) legs.push(leg);
-      done = transaction.toid;
-    }
-    // Every operation in the range belongs to a listed transaction.
-    const listed = new Set(transactions.map((item) => item.toid));
-    if (payments.some((item) => item.transaction <= end && !listed.has(item.transaction)))
-      return failed('invalid_response');
-
-    const caughtUp = failure === null && listedAll && done === transactions.at(-1)!.toid;
-    const imported = done === null ? 0 : await this.commit(state, legs, done, caughtUp);
-    if (failure) return failed(failure, imported);
-    if (caughtUp) {
-      const refused = await this.refreshBalance(state);
-      if (refused) return failed(refused, imported);
-    }
-    return { outcome: caughtUp ? 'complete' : 'partial', reason: null, imported };
+    return { byTransaction, end, failure: null };
   }
 
   private async scan(owner: string, id: string): Promise<ScanRow> {

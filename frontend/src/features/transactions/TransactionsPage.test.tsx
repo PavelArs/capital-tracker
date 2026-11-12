@@ -4877,3 +4877,152 @@ describe('UNPRICED-FILTER', () => {
     );
   });
 });
+
+describe('CLS-NEXT: what the page says once nothing is left to classify', () => {
+  const waiting = chainOperation(1, {
+    account: cold,
+    occurredAt: '2025-06-22T08:00:00.000Z',
+    quantity: '0.001',
+  });
+  const elsewhere = chainOperation(2, {
+    account: bybit,
+    occurredAt: '2025-06-21T08:00:00.000Z',
+    quantity: '0.002',
+    chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null, direction: 'in' },
+  });
+  const answered = (row: Operation) =>
+    operation({
+      ...row,
+      type: 'buy',
+      status: 'recorded',
+      valueUsd: '10',
+      costBasisUsd: '10',
+      feeUsd: '0',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'buy', currency: 'USDT', amount: '10' },
+        comment: null,
+        automatic: false,
+      },
+    });
+  const openFirst = async (path: string, before: Operation[], after: Operation[]) => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list(before))
+      .mockResolvedValue(list(after));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage(path);
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name: 'Incoming transaction · BTC' }) };
+  };
+  const saveBuy = async (user: ReturnType<typeof userEvent.setup>, drawer: HTMLElement) => {
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '10');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+  };
+
+  it('the last answer closes the drawer and says every transaction is classified', async () => {
+    const { user, drawer } = await openFirst('/transactions', [waiting], [answered(waiting)]);
+    await saveBuy(user, drawer);
+    expect(
+      await screen.findByText('All transactions classified. The last one was saved as Buy.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the last one hidden says it was hidden', async () => {
+    const { user, drawer } = await openFirst(
+      '/transactions',
+      [waiting],
+      [{ ...waiting, status: 'hidden' }],
+    );
+    await user.click(within(drawer).getByText('More options'));
+    await user.click(within(drawer).getByLabelText('Hide from calculations'));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText('All transactions classified. The last one was hidden.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the last one the filters show says nothing else is to classify here', async () => {
+    const { user, drawer } = await openFirst(
+      `/transactions?account=${cold.id}`,
+      [waiting, elsewhere],
+      [answered(waiting), elsewhere],
+    );
+    await saveBuy(user, drawer);
+    expect(
+      await screen.findByText('Saved as Buy. Nothing else to classify here.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('CLS-HIDE: a hidden row included again stays open and says so', async () => {
+    const hidden = operation({
+      ...waiting,
+      status: 'hidden',
+      classification: { version: 1, hidden: true, value: null, comment: null, automatic: false },
+    });
+    const { user, drawer } = await openFirst(
+      '/transactions',
+      [hidden],
+      [{ ...waiting, classification: { ...hidden.classification!, version: 2, hidden: false } }],
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Include in calculations' }));
+    const again = await screen.findByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await waitFor(() =>
+      expect(within(again).getByRole('status')).toHaveTextContent(
+        'Included in calculations again.',
+      ),
+    );
+  });
+});
+
+describe('OPS-LIST: the note under the list', () => {
+  const note = () => screen.getByText(/, newest first\./);
+  const tail =
+    "≈ marks an estimate at the price stored for the transaction's time. Dates and times are in UTC.";
+
+  it('counts every transaction in USD as recorded', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(note().textContent).toBe(
+      `6 transactions, newest first. Values are in USD as recorded; ${tail}`,
+    );
+  });
+
+  it('counts a single transaction', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([manual]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(note().textContent).toBe(
+      `1 transaction, newest first. Values are in USD as recorded; ${tail}`,
+    );
+  });
+
+  it('counts what the filters show in the period, in another currency', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue({
+      ...list([receipt, transfer]),
+      quoteCurrency: 'EUR',
+    });
+    renderPage('/transactions?currency=EUR&from=2025-06-01&status=needs-classification');
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(note().textContent).toBe(
+      `1 of 2 transactions in the period, newest first. Values are in EUR at the Bank of Russia rate of each transaction's date; ${tail}`,
+    );
+  });
+
+  it('CLS-DUST: the Dust view without a threshold says what asks to be classified', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([manual], null));
+    renderPage('/transactions?status=dust');
+    expect(
+      await screen.findByText(
+        'No dust threshold is set, so incoming wallet transactions ask to be classified, except those of tokens no price source lists or that you hid.',
+      ),
+    ).toBeInTheDocument();
+  });
+});

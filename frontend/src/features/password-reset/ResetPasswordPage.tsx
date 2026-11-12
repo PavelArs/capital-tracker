@@ -34,6 +34,29 @@ function refusedState(error: unknown): ResetLinkState | null {
   return error.response.data?.error === 'expired' ? 'expired' : 'invalid';
 }
 
+/** What is wrong with the fields, before anything is sent. */
+function fieldErrors(password: string, confirmation: string) {
+  const problem = passwordProblem(password);
+  return {
+    password: problem || undefined,
+    confirmation: !problem && password !== confirmation ? "Passwords don't match" : undefined,
+  };
+}
+
+/** The first field with a problem, for the keyboard to go to; null when both are fine. */
+function problemField(errors: ReturnType<typeof fieldErrors>) {
+  if (errors.password) return 'reset-password';
+  return errors.confirmation ? 'reset-confirmation' : null;
+}
+
+/** A reset the server refused or did not answer: said under the password, or above the form. */
+function resetFailure(error: unknown): { password: string } | { failure: string } {
+  const status = isAxiosError(error) ? error.response?.status : undefined;
+  if (status === 400) return { password: 'Use 15 to 128 characters without line breaks' };
+  if (status === 429) return { failure: 'Too many attempts. Wait a minute and try again.' };
+  return { failure: "Couldn't reset the password. Check your connection and try again." };
+}
+
 /** PR-AUTH-3: one link sets one new password and signs every device out. */
 export default function ResetPasswordPage() {
   const [token] = useState(linkToken);
@@ -72,17 +95,27 @@ export default function ResetPasswordPage() {
     if (screen === 'done' || screen === 'expired' || screen === 'invalid') forgetLink();
   }, [screen]);
 
+  // A refused link closes the form; any other failure is said and the keyboard goes back to it.
+  const answerFailure = (error: unknown) => {
+    const refused = refusedState(error);
+    if (refused) {
+      setScreen(refused);
+      return;
+    }
+    const answer = resetFailure(error);
+    if ('password' in answer) setErrors(answer);
+    else setFailure(answer.failure);
+    focusAfterAnswer('reset-password');
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
-    const problem = passwordProblem(password);
-    const next = {
-      password: problem || undefined,
-      confirmation: !problem && password !== confirmation ? "Passwords don't match" : undefined,
-    };
+    const next = fieldErrors(password, confirmation);
     setErrors(next);
-    if (next.password || next.confirmation) {
-      focusAfterAnswer(next.password ? 'reset-password' : 'reset-confirmation');
+    const field = problemField(next);
+    if (field) {
+      focusAfterAnswer(field);
       return;
     }
     setBusy(true);
@@ -96,16 +129,7 @@ export default function ResetPasswordPage() {
       setConfirmation('');
       setScreen('done');
     } catch (error) {
-      const refused = refusedState(error);
-      if (refused) setScreen(refused);
-      else if (isAxiosError(error) && error.response?.status === 400) {
-        setErrors({ password: 'Use 15 to 128 characters without line breaks' });
-      } else if (isAxiosError(error) && error.response?.status === 429) {
-        setFailure('Too many attempts. Wait a minute and try again.');
-      } else {
-        setFailure("Couldn't reset the password. Check your connection and try again.");
-      }
-      if (!refused) focusAfterAnswer('reset-password');
+      answerFailure(error);
     } finally {
       setBusy(false);
     }

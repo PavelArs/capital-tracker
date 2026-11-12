@@ -159,6 +159,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
     );
   }
 
+  const verifyLabel = busy ? 'Checking…' : 'Verify and continue';
   const errorBlock = error && (
     <Banner id="security-authenticator-error" tone="neg">
       {error}
@@ -226,7 +227,7 @@ export default function AuthenticatorDialog({ onFinished, onClose }: Props) {
             ) : (
               // auth-02: aria-disabled, not disabled, so focus is not dropped while it checks.
               <Button type="submit" variant="primary" aria-disabled={busy}>
-                {busy ? 'Checking…' : 'Verify and continue'}
+                {verifyLabel}
               </Button>
             )}
           </ModalFooter>

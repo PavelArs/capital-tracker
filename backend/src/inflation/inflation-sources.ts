@@ -77,36 +77,59 @@ const positive = (text: string, where: string): number => {
   return value > 0 ? value : invalid(`value 0 ${where}`);
 };
 
+/** A quoted field read from just after its opening quote, and the index of its closing quote. */
+function quotedField(text: string, from: number): { value: string; end: number } {
+  let value = '';
+  for (let i = from; i < text.length; i++) {
+    if (text[i] !== '"') value += text[i];
+    else if (text[i + 1] === '"') {
+      value += '"';
+      i++;
+    } else return { value, end: i };
+  }
+  return invalid('unterminated quote');
+}
+
 // RFC 4180 enough for the OECD file: quoted fields may hold commas and doubled quotes.
 function csvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
-  let quoted = false;
+  const endField = () => {
+    row.push(field);
+    field = '';
+  };
+  const endRow = () => {
+    endField();
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+    row = [];
+  };
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    if (quoted) {
-      if (char !== '"') field += char;
-      else if (text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else quoted = false;
-    } else if (char === '"') quoted = true;
-    else if (char === ',') {
-      row.push(field);
-      field = '';
-    } else if (char === '\n' || char === '\r') {
+    if (char === '"') {
+      const quoted = quotedField(text, i + 1);
+      field += quoted.value;
+      i = quoted.end;
+    } else if (char === ',') endField();
+    else if (char === '\n' || char === '\r') {
       if (char === '\r' && text[i + 1] === '\n') i++;
-      row.push(field);
-      field = '';
-      if (row.length > 1 || row[0] !== '') rows.push(row);
-      row = [];
+      endRow();
     } else field += char;
   }
-  if (quoted) invalid('unterminated quote');
-  row.push(field);
-  if (row.length > 1 || row[0] !== '') rows.push(row);
+  endRow();
   return rows;
+}
+
+/** Refuses a month seen before, then remembers it. */
+function once(seen: Set<string>, month: string): void {
+  if (seen.has(month)) invalid(`${month} twice`);
+  seen.add(month);
+}
+
+function checkOecdSeries(row: string[], width: number, area: number, unit: number): void {
+  if (row.length !== width) invalid('a row of another width');
+  if ((area >= 0 && row[area] !== 'USA') || (unit >= 0 && row[unit] !== 'IX'))
+    invalid(`another series ${excerpt(`${row[area] ?? ''} ${row[unit] ?? ''}`)}`);
 }
 
 /**
@@ -130,13 +153,10 @@ export function parseOecdCpiLevels(body: string): Level[] {
   const seen = new Set<string>();
   const levels: Level[] = [];
   for (const row of rows.slice(1)) {
-    if (row.length !== header.length) invalid('a row of another width');
-    if ((area >= 0 && row[area] !== 'USA') || (unit >= 0 && row[unit] !== 'IX'))
-      invalid(`another series ${excerpt(`${row[area] ?? ''} ${row[unit] ?? ''}`)}`);
+    checkOecdSeries(row, header.length, area, unit);
     const month = row[time];
     if (!isMonth(month)) invalid(`month ${excerpt(month)}`);
-    if (seen.has(month)) invalid(`${month} twice`);
-    seen.add(month);
+    once(seen, month);
     if (row[value] === '') continue;
     levels.push({ month, value: positive(row[value], `on ${month}`) });
   }
@@ -161,29 +181,48 @@ export function parseEurostatHicp(body: string): MonthlyChange[] {
     value?: unknown;
     dimension?: { time?: { category?: { index?: unknown } } };
   };
-  if (!Array.isArray(root.id) || !Array.isArray(root.size) || root.id.length !== root.size.length)
-    invalid('no dimensions');
-  const ids = root.id as unknown[];
-  const sizes = root.size as unknown[];
-  const timeAxis = ids.indexOf('time');
-  if (timeAxis < 0) invalid('no time dimension');
-  ids.forEach((id, axis) => {
-    if (axis !== timeAxis && sizes[axis] !== 1)
-      invalid(`dimension ${excerpt(String(id))} is not one value`);
-  });
+  checkOneSeries(root.id, root.size);
   const index = root.dimension?.time?.category?.index;
   const values = root.value;
-  if (!index || typeof index !== 'object' || Array.isArray(index)) invalid('no months');
-  if (!values || typeof values !== 'object' || Array.isArray(values)) invalid('no values');
+  if (!isRecord(index)) invalid('no months');
+  if (!isRecord(values)) invalid('no values');
+  const levels = eurostatLevels(monthPositions(index), values);
+  if (levels.length === 0) invalid('no values');
+  return levelsToChanges(levels);
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** Every dimension but time holds exactly one category. */
+function checkOneSeries(id: unknown, size: unknown): void {
+  if (!Array.isArray(id) || !Array.isArray(size) || id.length !== size.length)
+    invalid('no dimensions');
+  const ids = id as unknown[];
+  const sizes = size as unknown[];
+  const timeAxis = ids.indexOf('time');
+  if (timeAxis < 0) invalid('no time dimension');
+  ids.forEach((name, axis) => {
+    if (axis !== timeAxis && sizes[axis] !== 1)
+      invalid(`dimension ${excerpt(String(name))} is not one value`);
+  });
+}
+
+function monthPositions(index: Record<string, unknown>): Map<number, string> {
   const positions = new Map<number, string>();
-  for (const [month, position] of Object.entries(index as Record<string, unknown>)) {
+  for (const [month, position] of Object.entries(index)) {
     if (!isMonth(month) || !Number.isInteger(position) || (position as number) < 0)
       invalid(`month ${excerpt(month)}`);
     positions.set(position as number, month);
   }
+  return positions;
+}
+
+/** The levels in position order; a position without a value is a month not published. */
+function eurostatLevels(positions: Map<number, string>, values: Record<string, unknown>): Level[] {
   const levels: Level[] = [];
   for (const [position, month] of [...positions].sort(([a], [b]) => a - b)) {
-    const value = (values as Record<string, unknown>)[String(position)];
+    const value = values[String(position)];
     if (value === undefined || value === null) continue;
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
       invalid(`value on ${month}`);
@@ -191,8 +230,7 @@ export function parseEurostatHicp(body: string): MonthlyChange[] {
     if (last && last >= month) invalid(`${month} after ${last}`);
     levels.push({ month, value });
   }
-  if (levels.length === 0) invalid('no values');
-  return levelsToChanges(levels);
+  return levels;
 }
 
 /** The year-over-year inflation of a month, in percent, as the Bank of Russia publishes it. */
@@ -208,6 +246,14 @@ const cell = (html: string) =>
     .replace(/<[^>]*>/g, '')
     .replace(/&#160;|&nbsp;/g, ' ')
     .trim();
+
+function cbrMonth(text: string): string {
+  const date = CBR_DATE.exec(text);
+  if (!date) invalid(`date ${excerpt(text)}`);
+  const month = `${date[2]}-${date[1]}`;
+  if (!isMonth(month)) invalid(`date ${excerpt(text)}`);
+  return month;
+}
 
 /**
  * The table of https://www.cbr.ru/hd_base/infl/ : `<table class="data">` with a header row
@@ -228,12 +274,8 @@ export function parseCbrInflation(html: string): YearOverYear[] {
   const result: YearOverYear[] = [];
   for (const row of rows.slice(1)) {
     if (row.length !== header.length) invalid(`unexpected row ${excerpt(row.join('|'), 120)}`);
-    const date = CBR_DATE.exec(row[0]);
-    if (!date) invalid(`date ${excerpt(row[0])}`);
-    const month = `${date[2]}-${date[1]}`;
-    if (!isMonth(month)) invalid(`date ${excerpt(row[0])}`);
-    if (seen.has(month)) invalid(`${month} twice`);
-    seen.add(month);
+    const month = cbrMonth(row[0]);
+    once(seen, month);
     if (!CBR_PERCENT.test(row[column])) invalid(`value ${excerpt(row[column])} on ${month}`);
     result.push({ month, percent: Number(row[column].replace(',', '.')) });
   }

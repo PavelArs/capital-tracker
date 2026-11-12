@@ -76,21 +76,14 @@ export interface ZcashLeg {
  * give the ZEC sent and received, as on Bitcoin. ZEC that left for or came from the shielded
  * pool shows only as the transparent side of that move.
  */
-export function parseTransaction(address: string, value: unknown): ZcashLeg | null {
-  const tx = record(value, 'transaction');
-  const txid =
-    typeof tx.txid === 'string' && /^[0-9a-f]{64}$/.test(tx.txid) ? tx.txid : invalid('txid');
-  // Unconfirmed transactions have height -1; the range of a walk never holds one.
-  const blockHeight = integer(tx.blockHeight, 0, MAX_HEIGHT, 'blockHeight');
-  const blockHash =
-    typeof tx.blockHash === 'string' && /^[0-9a-f]{64}$/.test(tx.blockHash)
-      ? tx.blockHash
-      : invalid('blockHash');
-  const blockTime = new Date(
-    integer(tx.blockTime, 1, MAX_UNIX_SECONDS, 'blockTime') * 1000,
-  ).toISOString();
+/** A lowercase 64-digit hex hash. */
+function hexHash(value: unknown, what: string): string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value) ? value : invalid(what);
+}
+
+/** ZEC the transaction's outputs paid to `address`, and whether any paid somewhere else. */
+function outputsTo(address: string, tx: Record<string, unknown>) {
   let received = 0n;
-  let sent = 0n;
   let foreign = false;
   for (const output of list(tx.vout, 'vout').map((item) => record(item, 'output'))) {
     const units = output.value === undefined ? 0n : zatoshi(output.value, 'output value');
@@ -98,6 +91,12 @@ export function parseTransaction(address: string, value: unknown): ZcashLeg | nu
     if (to.length === 1 && to[0] === address) received += units;
     else if (units > 0n) foreign = true;
   }
+  return { received, foreign };
+}
+
+/** ZEC the transaction's inputs spent from `address`, and whether anyone else paid in. */
+function inputsFrom(address: string, tx: Record<string, unknown>) {
+  let sent = 0n;
   let theirs = false;
   for (const input of list(tx.vin, 'vin').map((item) => record(item, 'input'))) {
     // A coinbase input spends no previous output.
@@ -107,13 +106,29 @@ export function parseTransaction(address: string, value: unknown): ZcashLeg | nu
     if (from.length === 1 && from[0] === address) sent += units;
     else theirs = true;
   }
+  return { sent, theirs };
+}
+
+/** The fee the wallet paid: only when its own inputs alone paid in, and only a plausible one. */
+function paidFee(fees: unknown, sent: bigint, theirs: boolean): bigint {
+  if (sent <= 0n || theirs || typeof fees !== 'string' || !/^[0-9]{1,25}$/.test(fees)) return 0n;
+  const charged = BigInt(fees);
+  return charged > 0n && charged <= MAX_ZCASH_FEE && charged <= sent ? charged : 0n;
+}
+
+export function parseTransaction(address: string, value: unknown): ZcashLeg | null {
+  const tx = record(value, 'transaction');
+  const txid = hexHash(tx.txid, 'txid');
+  // Unconfirmed transactions have height -1; the range of a walk never holds one.
+  const blockHeight = integer(tx.blockHeight, 0, MAX_HEIGHT, 'blockHeight');
+  const blockHash = hexHash(tx.blockHash, 'blockHash');
+  const blockTime = new Date(
+    integer(tx.blockTime, 1, MAX_UNIX_SECONDS, 'blockTime') * 1000,
+  ).toISOString();
+  const { received, foreign } = outputsTo(address, tx);
+  const { sent, theirs } = inputsFrom(address, tx);
   if (received === 0n && sent === 0n) return null;
-  // The wallet paid the fee when only its own inputs paid in.
-  let fee = 0n;
-  if (sent > 0n && !theirs && typeof tx.fees === 'string' && /^[0-9]{1,25}$/.test(tx.fees)) {
-    const charged = BigInt(tx.fees);
-    if (charged > 0n && charged <= MAX_ZCASH_FEE && charged <= sent) fee = charged;
-  }
+  const fee = paidFee(tx.fees, sent, theirs);
   // Self only when every transparent output came back and nothing but the fee went elsewhere,
   // so a move into the shielded pool stays a send.
   const self = sent > 0n && !foreign && fee > 0n && sent - received === fee;
@@ -138,6 +153,27 @@ export interface ZcashPage {
   /** True when no page follows this one. */
   last: boolean;
   legs: ZcashLeg[];
+}
+
+/** The legs of a page's transactions, each inside the range and listed once. */
+function rangeLegs(
+  address: string,
+  range: { from: number; to: number },
+  items: readonly unknown[],
+): ZcashLeg[] {
+  const legs: ZcashLeg[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const tx = record(item, 'transaction');
+    const height = integer(tx.blockHeight, 0, MAX_HEIGHT, 'blockHeight');
+    if (height < range.from || height > range.to) invalid('blockHeight range');
+    const leg = parseTransaction(address, tx);
+    const txid = tx.txid as string;
+    if (seen.has(txid)) invalid('duplicate txid');
+    seen.add(txid);
+    if (leg) legs.push(leg);
+  }
+  return legs;
 }
 
 /**
@@ -166,18 +202,7 @@ export function parsePage(
     body.totalPages === undefined || body.totalPages === -1
       ? null
       : integer(body.totalPages, 0, MAX_HEIGHT, 'totalPages');
-  const legs: ZcashLeg[] = [];
-  const seen = new Set<string>();
-  for (const item of items) {
-    const tx = record(item, 'transaction');
-    const height = integer(tx.blockHeight, 0, MAX_HEIGHT, 'blockHeight');
-    if (height < range.from || height > range.to) invalid('blockHeight range');
-    const leg = parseTransaction(address, tx);
-    const txid = tx.txid as string;
-    if (seen.has(txid)) invalid('duplicate txid');
-    seen.add(txid);
-    if (leg) legs.push(leg);
-  }
+  const legs = rangeLegs(address, range, items);
   const totalPages = reported === null || reported < 1 ? null : reported;
   const last =
     items.length < BLOCKBOOK_PAGE_SIZE || (totalPages !== null && range.page >= totalPages);

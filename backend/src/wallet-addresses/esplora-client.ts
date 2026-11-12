@@ -50,22 +50,14 @@ function owner(value: Record<string, unknown>): string | null {
   return typeof address === 'string' ? address : invalid();
 }
 
-// An address's history, or an account's (M21): a transaction's effect on every address it owns.
-function observe(owned: ReadonlySet<string>, value: unknown): ChainObservation {
-  const tx = record(value);
-  const txid = typeof tx.txid === 'string' && hash.test(tx.txid) ? tx.txid : invalid();
-  const status = record(tx.status);
-  if (status.confirmed !== true) invalid();
-  const blockHash =
-    typeof status.block_hash === 'string' && hash.test(status.block_hash)
-      ? status.block_hash
-      : invalid();
-  const blockHeight = amount(status.block_height, 2 ** 31 - 1);
-  const blockTime = new Date(amount(status.block_time, MAX_UNIX_SECONDS) * 1000).toISOString();
-  const fee = BigInt(amount(tx.fee));
+function hexHash(value: unknown): string {
+  return typeof value === 'string' && hash.test(value) ? value : invalid();
+}
+
+/** What the outputs paid to owned addresses, and whether every other output is empty. */
+function outputsTo(owned: ReadonlySet<string>, tx: Record<string, unknown>) {
   let related = false;
   let received = 0n;
-  let sent = 0n;
   let everyOutputReturns = true;
   for (const output of list(tx.vout).map(record)) {
     const value = BigInt(amount(output.value));
@@ -74,6 +66,13 @@ function observe(owned: ReadonlySet<string>, value: unknown): ChainObservation {
     if (mine) received += value;
     else if (value > 0n) everyOutputReturns = false;
   }
+  return { related, received, everyOutputReturns };
+}
+
+/** What the inputs spent from owned addresses. */
+function inputsFrom(owned: ReadonlySet<string>, tx: Record<string, unknown>) {
+  let related = false;
+  let sent = 0n;
   for (const input of list(tx.vin).map(record)) {
     // Coinbase inputs spend no previous output.
     if (input.prevout === null && input.is_coinbase === true) continue;
@@ -84,7 +83,24 @@ function observe(owned: ReadonlySet<string>, value: unknown): ChainObservation {
       sent += value;
     }
   }
-  if (!related) invalid();
+  return { related, sent };
+}
+
+// An address's history, or an account's (M21): a transaction's effect on every address it owns.
+function observe(owned: ReadonlySet<string>, value: unknown): ChainObservation {
+  const tx = record(value);
+  const txid = hexHash(tx.txid);
+  const status = record(tx.status);
+  if (status.confirmed !== true) invalid();
+  const blockHash = hexHash(status.block_hash);
+  const blockHeight = amount(status.block_height, 2 ** 31 - 1);
+  const blockTime = new Date(amount(status.block_time, MAX_UNIX_SECONDS) * 1000).toISOString();
+  const fee = BigInt(amount(tx.fee));
+  const outputs = outputsTo(owned, tx);
+  const { received, everyOutputReturns } = outputs;
+  const inputs = inputsFrom(owned, tx);
+  const { sent } = inputs;
+  if (!outputs.related && !inputs.related) invalid();
   const direction: Direction =
     sent > 0n && everyOutputReturns && received <= sent ? 'self' : received > sent ? 'in' : 'out';
   return {

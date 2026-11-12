@@ -80,6 +80,34 @@ const saveFailure = (what: string) => (error: unknown) =>
     fallback: `Could not save ${what}. Try again.`,
   });
 
+type RowState = 'ready' | 'saving' | 'saved' | 'invalid' | 'failed';
+
+/** What a saved rate means now: it follows the official one, or real values use it. */
+function savedHint(row: CurrencyInflation, basis: InflationBasis): string {
+  if (row.personalRatePercent === null) return 'Saved. Your rate now follows the official one.';
+  return `Saved. Your ${row.currency} rate is ${percentText(row.personalRatePercent)} a year. ${
+    basis === 'personal' ? 'Real values use it now.' : 'Choose My rate above to use it.'
+  }`;
+}
+
+/** The line under a currency: the problem, the save, or the official rate it can follow. */
+function rowHint(
+  state: RowState,
+  failure: string,
+  row: CurrencyInflation,
+  basis: InflationBasis,
+): string {
+  if (state === 'invalid')
+    return 'Enter a yearly rate above -50% and below 1000%, or leave it empty to follow the official rate.';
+  if (state === 'failed') return failure;
+  if (state === 'saved') return savedHint(row, basis);
+  if (row.officialSource === null) return 'No official index for this currency yet.';
+  if (row.officialLastMonth === null) return `No ${row.officialSource} figures loaded yet.`;
+  if (row.officialTrailingYearPercent === null)
+    return `${row.officialSource} has no twelve full months yet.`;
+  return `Official ${percentText(row.officialTrailingYearPercent)} over 12 months · published to ${monthText(row.officialLastMonth)}`;
+}
+
 /** One currency: the official rate for reference and the owner's own yearly rate beside it. */
 function CurrencyRow({
   row,
@@ -93,7 +121,7 @@ function CurrencyRow({
   const id = useId();
   const toast = useToast();
   const [text, setText] = useState(row.personalRatePercent ?? '');
-  const [state, setState] = useState<'ready' | 'saving' | 'saved' | 'invalid' | 'failed'>('ready');
+  const [state, setState] = useState<RowState>('ready');
   const [failure, setFailure] = useState('');
   // What the server holds changes only through this row, so it follows the answer.
   useEffect(() => setText(row.personalRatePercent ?? ''), [row.personalRatePercent]);
@@ -122,22 +150,7 @@ function CurrencyRow({
       });
     }
   };
-  const hint = (() => {
-    if (state === 'invalid')
-      return 'Enter a yearly rate above -50% and below 1000%, or leave it empty to follow the official rate.';
-    if (state === 'failed') return failure;
-    if (state === 'saved')
-      return row.personalRatePercent === null
-        ? 'Saved. Your rate now follows the official one.'
-        : `Saved. Your ${row.currency} rate is ${percentText(row.personalRatePercent)} a year. ${
-            basis === 'personal' ? 'Real values use it now.' : 'Choose My rate above to use it.'
-          }`;
-    if (row.officialSource === null) return 'No official index for this currency yet.';
-    if (row.officialLastMonth === null) return `No ${row.officialSource} figures loaded yet.`;
-    if (row.officialTrailingYearPercent === null)
-      return `${row.officialSource} has no twelve full months yet.`;
-    return `Official ${official} over 12 months · published to ${monthText(row.officialLastMonth)}`;
-  })();
+  const hint = rowHint(state, failure, row, basis);
   const alert = state === 'invalid' || state === 'failed';
   return (
     <form onSubmit={(event) => void save(event)} noValidate>

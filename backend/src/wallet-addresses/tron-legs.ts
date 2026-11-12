@@ -81,6 +81,130 @@ export function needsInfo(hex: string, group: Omit<TronTransactionGroup, 'info'>
   return group.transaction === null || group.transaction.owner === hex;
 }
 
+/** TRX the transaction's own contract moved for the wallet, and how much of it was staked. */
+interface ContractMove {
+  received: bigint;
+  sent: bigint;
+  staked: bigint;
+  self: boolean;
+}
+
+const NO_MOVE: ContractMove = { received: 0n, sent: 0n, staked: 0n, self: false };
+
+/** What a successful transaction's contract moved; `owned` when the wallet signed it. */
+function contractMove(
+  tx: TronTransaction,
+  hex: string,
+  owned: boolean,
+  info: TronTransactionInfo | null,
+): ContractMove {
+  const value = tx.parameter;
+  switch (tx.contractType) {
+    case 'TransferContract': {
+      const to = tronHex(value.to_address);
+      return {
+        received: to === hex ? sun(value, 'amount') : 0n,
+        sent: owned ? sun(value, 'amount') : 0n,
+        staked: 0n,
+        self: owned && to === hex,
+      };
+    }
+    case 'TriggerSmartContract':
+      return { ...NO_MOVE, sent: owned ? sun(value, 'call_value') : 0n };
+    case 'FreezeBalanceV2Contract':
+    case 'FreezeBalanceContract': {
+      const frozen = owned ? sun(value, 'frozen_balance') : 0n;
+      return { ...NO_MOVE, sent: frozen, staked: frozen };
+    }
+  }
+  return owned && info ? recordedMove(tx.contractType, info) : NO_MOVE;
+}
+
+/** Amounts of a signed transaction that only the node's record of the run tells. */
+function recordedMove(contractType: string, info: TronTransactionInfo): ContractMove {
+  if (contractType === 'UnfreezeBalanceContract') {
+    return { ...NO_MOVE, received: info.unfreezeAmount, staked: -info.unfreezeAmount };
+  }
+  if (contractType === TRON_REWARD_CONTRACT) return { ...NO_MOVE, received: info.withdrawAmount };
+  if (!RETURNS_STAKE.has(contractType)) return NO_MOVE;
+  return { ...NO_MOVE, received: info.withdrawExpireAmount, staked: -info.withdrawExpireAmount };
+}
+
+/** The TRX leg: the contract's move, what contracts inside it moved and the signer's fee. */
+function trxLeg(
+  group: TronTransactionGroup,
+  hex: string,
+  move: ContractMove,
+  fee: bigint,
+  blockHeight: number,
+  blockTime: string,
+): TronLeg[] {
+  const { txid, transaction: tx, info } = group;
+  let { received, sent } = move;
+  for (const item of group.internal) {
+    if (item.rejected) continue;
+    if (item.from === hex) sent += item.units;
+    if (item.to === hex) received += item.units;
+  }
+  if (received === 0n && sent === 0n && fee === 0n) return [];
+  return [
+    {
+      txid,
+      asset: null,
+      blockHeight,
+      blockHash: null,
+      blockTime,
+      receivedUnits: received,
+      // The fee leaves the wallet with the value, as on the other networks.
+      sentUnits: sent + fee,
+      feeUnits: fee,
+      direction: move.self ? 'self' : received > sent + fee ? 'in' : 'out',
+      raw: {
+        txid,
+        hash: txid,
+        contractType: tx?.contractType ?? null,
+        transaction: tx?.raw ?? null,
+        internal: group.internal.map((item) => item.raw),
+        info: info?.raw ?? null,
+      },
+    },
+  ];
+}
+
+/** The USDT and USDC legs; zero-value transfers (address poisoning) and look-alikes move nothing. */
+function tokenLegs(
+  address: string,
+  group: TronTransactionGroup,
+  blockHeight: number,
+  blockTime: string,
+): TronLeg[] {
+  const { txid } = group;
+  return tokens.flatMap(({ token, contract, number }) => {
+    const moving = group.tokens.filter((item) => item.contract === contract && item.value > 0n);
+    const delta = moving.reduce(
+      (total, item) =>
+        total + (item.to === address ? item.value : 0n) - (item.from === address ? item.value : 0n),
+      0n,
+    );
+    if (delta === 0n) return [];
+    const leg = `${txid}-${number}`;
+    return [
+      {
+        txid: leg,
+        asset: token,
+        blockHeight,
+        blockHash: null,
+        blockTime,
+        receivedUnits: delta > 0n ? delta : 0n,
+        sentUnits: delta < 0n ? -delta : 0n,
+        feeUnits: 0n,
+        direction: delta > 0n ? 'in' : 'out',
+        raw: { txid: leg, hash: txid, contract, transfers: moving.map((item) => item.raw) },
+      },
+    ];
+  });
+}
+
 /** The stored legs and stake move of one transaction for the wallet (`address`, its `hex`). */
 export function tronLegs(
   address: string,
@@ -94,98 +218,13 @@ export function tronLegs(
   const owned = tx !== null && tx.owner === hex;
   if (owned && info === null) throw new Error('A signed Tron transaction needs its record');
   const success = info ? !info.failed : (tx?.success ?? true);
-  let received = 0n;
-  let sent = 0n;
-  let staked = 0n;
-  let self = false;
-  if (tx && success) {
-    const value = tx.parameter;
-    switch (tx.contractType) {
-      case 'TransferContract': {
-        const to = tronHex(value.to_address);
-        if (owned) sent += sun(value, 'amount');
-        if (to === hex) received += sun(value, 'amount');
-        self = owned && to === hex;
-        break;
-      }
-      case 'TriggerSmartContract':
-        if (owned) sent += sun(value, 'call_value');
-        break;
-      case 'FreezeBalanceV2Contract':
-      case 'FreezeBalanceContract':
-        if (owned) {
-          sent += sun(value, 'frozen_balance');
-          staked += sun(value, 'frozen_balance');
-        }
-        break;
-      case 'UnfreezeBalanceContract':
-        if (owned && info) {
-          received += info.unfreezeAmount;
-          staked -= info.unfreezeAmount;
-        }
-        break;
-      case TRON_REWARD_CONTRACT:
-        if (owned && info) received += info.withdrawAmount;
-        break;
-      default:
-        if (owned && info && RETURNS_STAKE.has(tx.contractType)) {
-          received += info.withdrawExpireAmount;
-          staked -= info.withdrawExpireAmount;
-        }
-    }
-  }
-  for (const item of group.internal) {
-    if (item.rejected) continue;
-    if (item.from === hex) sent += item.units;
-    if (item.to === hex) received += item.units;
-  }
+  const move = tx && success ? contractMove(tx, hex, owned, info) : NO_MOVE;
   const fee = owned && info ? info.fee : 0n;
-  const legs: TronLeg[] = [];
-  if (received !== 0n || sent !== 0n || fee !== 0n) {
-    legs.push({
-      txid,
-      asset: null,
-      blockHeight,
-      blockHash: null,
-      blockTime,
-      receivedUnits: received,
-      // The fee leaves the wallet with the value, as on the other networks.
-      sentUnits: sent + fee,
-      feeUnits: fee,
-      direction: self ? 'self' : received > sent + fee ? 'in' : 'out',
-      raw: {
-        txid,
-        hash: txid,
-        contractType: tx?.contractType ?? null,
-        transaction: tx?.raw ?? null,
-        internal: group.internal.map((item) => item.raw),
-        info: info?.raw ?? null,
-      },
-    });
-  }
-  // Zero-value transfers (address poisoning) and look-alike tokens move nothing tracked.
-  for (const { token, contract, number } of tokens) {
-    const moving = group.tokens.filter((item) => item.contract === contract && item.value > 0n);
-    const delta = moving.reduce(
-      (total, item) =>
-        total + (item.to === address ? item.value : 0n) - (item.from === address ? item.value : 0n),
-      0n,
-    );
-    if (delta === 0n) continue;
-    const leg = `${txid}-${number}`;
-    legs.push({
-      txid: leg,
-      asset: token,
-      blockHeight,
-      blockHash: null,
-      blockTime,
-      receivedUnits: delta > 0n ? delta : 0n,
-      sentUnits: delta < 0n ? -delta : 0n,
-      feeUnits: 0n,
-      direction: delta > 0n ? 'in' : 'out',
-      raw: { txid: leg, hash: txid, contract, transfers: moving.map((item) => item.raw) },
-    });
-  }
+  const legs = [
+    ...trxLeg(group, hex, move, fee, blockHeight, blockTime),
+    ...tokenLegs(address, group, blockHeight, blockTime),
+  ];
+  const { staked } = move;
   return {
     legs,
     stake: staked === 0n ? null : { txid, blockHeight, blockTime, units: staked },

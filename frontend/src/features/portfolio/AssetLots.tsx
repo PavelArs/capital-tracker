@@ -1,6 +1,7 @@
 import { cachedReads } from '@api/cached-reads';
 import {
   type AccountingCurrency,
+  type AssetLots,
   type LotAfterInflation,
   type LotReading,
 } from '@api/portfolio-valuation.api';
@@ -244,42 +245,68 @@ export default function AssetLotsCard({
       ) : answer === null ? (
         <InlineSkeleton label="Loading purchases" />
       ) : (
-        <>
-          {stale && (
-            <Banner
-              tone="warn"
-              role="alert"
-              action={
-                <Button size="sm" icon="refresh" onClick={() => reload(true)}>
-                  Try again
-                </Button>
-              }
-            >
-              Could not refresh the purchases. The figures below may be out of date.
-            </Banner>
-          )}
-          {answer.lots.length === 0 ? (
-            <p className="ui-none">No purchases to show.</p>
-          ) : phone ? (
-            <LotsList lots={answer.lots} basis={basis} currency={answer.currency} />
-          ) : (
-            <LotsTable lots={answer.lots} basis={basis} currency={answer.currency} />
-          )}
-          {!answer.complete && (
-            <Banner tone="warn">
-              An account whose history starts later may hold more purchases than are listed.
-            </Banner>
-          )}
-          {answer.lots.length > 0 && (
-            <p className="ui-sub portfolio-card-note">
-              A purchase is ahead in real terms when it is worth more than what you paid grown by{' '}
-              {answer.currency} inflation since that day.
-              {answer.lots.some((lot) => readingOf(lot, basis) === null) &&
-                ' A dash means a purchase price, a Bank of Russia rate or an inflation figure is missing for that purchase.'}
-            </p>
-          )}
-        </>
+        <LotsBody
+          answer={answer}
+          basis={basis}
+          phone={phone}
+          stale={stale}
+          onRetry={() => reload(true)}
+        />
       )}
     </Card>
+  );
+}
+
+/** The purchases as rows on a phone or a table, with what the figures may leave out. */
+function LotsBody({
+  answer,
+  basis,
+  phone,
+  stale,
+  onRetry,
+}: {
+  answer: AssetLots;
+  basis: InflationBasis;
+  phone: boolean;
+  /** A refresh failed and the figures on screen may be out of date. */
+  stale: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <>
+      {stale && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetry}>
+              Try again
+            </Button>
+          }
+        >
+          Could not refresh the purchases. The figures below may be out of date.
+        </Banner>
+      )}
+      {answer.lots.length === 0 ? (
+        <p className="ui-none">No purchases to show.</p>
+      ) : phone ? (
+        <LotsList lots={answer.lots} basis={basis} currency={answer.currency} />
+      ) : (
+        <LotsTable lots={answer.lots} basis={basis} currency={answer.currency} />
+      )}
+      {!answer.complete && (
+        <Banner tone="warn">
+          An account whose history starts later may hold more purchases than are listed.
+        </Banner>
+      )}
+      {answer.lots.length > 0 && (
+        <p className="ui-sub portfolio-card-note">
+          A purchase is ahead in real terms when it is worth more than what you paid grown by{' '}
+          {answer.currency} inflation since that day.
+          {answer.lots.some((lot) => readingOf(lot, basis) === null) &&
+            ' A dash means a purchase price, a Bank of Russia rate or an inflation figure is missing for that purchase.'}
+        </p>
+      )}
+    </>
   );
 }

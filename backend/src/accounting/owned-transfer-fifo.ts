@@ -1,16 +1,14 @@
 import { swapAtoms } from './asset-swap-fifo';
 import type { SwapAllocation } from './asset-swap-types';
 import type { CapitalReturnAllocation } from './capital-return-types';
-import { CostTally } from './cost-evidence';
-import { type BookPortion, FifoBook, portionReturned } from './fifo-book';
+import { allocationItem, type BookLimits, FifoBook, portionCost } from './fifo-book';
 import { FifoHistoryError } from './fifo-lot-interval';
-import { canonicalDecimalToAtoms, formatAtoms } from './money';
+import { canonicalDecimalToAtoms } from './money';
 import type {
   ActiveTransferInput,
   OwnedAccountInput,
   OwnedProjection,
   TransferAllocation,
-  TransferAllocationItem,
 } from './owned-transfer-types';
 import { type FifoSplit, SPLIT_LIMITS, validSplitRatio } from './share-split-types';
 
@@ -45,26 +43,6 @@ export class OwnedTransferCapacityError extends FifoHistoryError {
   }
 }
 
-function cost(portions: readonly BookPortion[]): CostTally {
-  const total = new CostTally();
-  for (const portion of portions) total.add(portion.cost);
-  return total;
-}
-
-function item(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocationItem {
-  return {
-    kind,
-    instrumentId: portion.fragment.instrumentId,
-    quantity: formatAtoms(portion.interval.end - portion.interval.start),
-    costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
-    origin: portion.fragment.origin,
-    intervalStart: formatAtoms(portion.interval.start),
-    intervalEnd: formatAtoms(portion.interval.end),
-    arrival: portion.fragment.arrival,
-    ...portionReturned(portion),
-  };
-}
-
 type Event =
   | {
       kind: 'trade';
@@ -97,6 +75,8 @@ type Event =
   | { kind: 'transfer'; occurredAt: string; orderWithinTimestamp: number; index: number }
   | { kind: 'split'; occurredAt: string; orderWithinTimestamp: number; index: number };
 
+type AccountEvent = Extract<Event, { accountId: string }>;
+
 // A split takes effect before anything else at its instant: units traded then are new units.
 const eventRank = {
   split: -1,
@@ -107,142 +87,114 @@ const eventRank = {
   transfer: 4,
 } as const;
 
-/** Pure full-component replay. Callers load current-effective heads in one DB snapshot. */
-export function calculateOwnedTransfers(
-  accounts: readonly OwnedAccountInput[],
-  transfers: readonly ActiveTransferInput[],
-  at?: string,
-  splits: readonly FifoSplit[] = [],
-): OwnedProjection {
+interface ActivityTotals {
+  trades: number;
+  rewards: number;
+  swaps: number;
+  capitalReturns: number;
+}
+
+/** Each account's own limits, then the running totals across the component. */
+function countActivity(account: OwnedAccountInput, totals: ActivityTotals): void {
+  const rewards = account.rewards?.length ?? 0;
+  const swaps = account.swaps?.length ?? 0;
+  const capitalReturns = account.capitalReturns?.length ?? 0;
   if (
-    accounts.length > OWNED_TRANSFER_LIMITS.accounts ||
-    transfers.length > OWNED_TRANSFER_LIMITS.activeTransfers ||
-    splits.length > SPLIT_LIMITS.activeSplits
+    account.trades.length > 1000 ||
+    account.initialLots.length > 100 ||
+    rewards > OWNED_TRANSFER_LIMITS.activeRewards ||
+    swaps > OWNED_TRANSFER_LIMITS.activeSwaps ||
+    capitalReturns > OWNED_TRANSFER_LIMITS.activeCapitalReturns
   )
     throw new OwnedTransferCapacityError();
-  const byAccount = new Map(accounts.map((account) => [account.accountId, account]));
-  if (byAccount.size !== accounts.length) throw new FifoHistoryError();
-  let tradeCount = 0;
-  let rewardCount = 0;
-  let swapCount = 0;
-  let capitalReturnCount = 0;
-  let heldFragments = 0;
-  let matches = 0;
-  const books = new Map<string, FifoBook>();
-  const events: Event[] = [];
-  for (const account of accounts) {
+  totals.trades += account.trades.length;
+  totals.rewards += rewards;
+  totals.swaps += swaps;
+  totals.capitalReturns += capitalReturns;
+  if (
+    totals.trades > OWNED_TRANSFER_LIMITS.activeTrades ||
+    totals.rewards > OWNED_TRANSFER_LIMITS.activeRewards ||
+    totals.swaps > OWNED_TRANSFER_LIMITS.activeSwaps ||
+    totals.capitalReturns > OWNED_TRANSFER_LIMITS.activeCapitalReturns
+  )
+    throw new OwnedTransferCapacityError();
+}
+
+/** One book's hooks; every book of the component counts into the same `held` and `matches`. */
+function capacityLimits(counters: { matches: number; heldFragments: number }): BookLimits {
+  return {
+    match: () => {
+      if (++counters.matches > OWNED_TRANSFER_LIMITS.matches)
+        throw new OwnedTransferCapacityError();
+    },
+    addFragment: () => {
+      if (++counters.heldFragments > OWNED_TRANSFER_LIMITS.heldFragments)
+        throw new OwnedTransferCapacityError();
+    },
+    removeFragment: () => {
+      counters.heldFragments--;
+    },
+  };
+}
+
+/** The opening lots in their own order, none after coverage starts and no two at one place. */
+function addBaseline(book: FifoBook, account: OwnedAccountInput): void {
+  const baseline = [...account.initialLots].sort((left, right) =>
+    left.acquiredAt === right.acquiredAt
+      ? left.orderWithinTimestamp - right.orderWithinTimestamp
+      : left.acquiredAt < right.acquiredAt
+        ? -1
+        : 1,
+  );
+  for (const [index, lot] of baseline.entries()) {
     if (
-      account.trades.length > 1000 ||
-      account.initialLots.length > 100 ||
-      (account.rewards?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeRewards ||
-      (account.swaps?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeSwaps ||
-      (account.capitalReturns?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeCapitalReturns
+      lot.acquiredAt > account.coverageFrom ||
+      (index > 0 &&
+        baseline[index - 1].acquiredAt === lot.acquiredAt &&
+        baseline[index - 1].orderWithinTimestamp === lot.orderWithinTimestamp)
     )
-      throw new OwnedTransferCapacityError();
-    tradeCount += account.trades.length;
-    rewardCount += account.rewards?.length ?? 0;
-    swapCount += account.swaps?.length ?? 0;
-    capitalReturnCount += account.capitalReturns?.length ?? 0;
-    if (tradeCount > OWNED_TRANSFER_LIMITS.activeTrades) throw new OwnedTransferCapacityError();
-    if (rewardCount > OWNED_TRANSFER_LIMITS.activeRewards) throw new OwnedTransferCapacityError();
-    if (swapCount > OWNED_TRANSFER_LIMITS.activeSwaps) throw new OwnedTransferCapacityError();
-    if (capitalReturnCount > OWNED_TRANSFER_LIMITS.activeCapitalReturns)
-      throw new OwnedTransferCapacityError();
-    const book = new FifoBook(account.accountId, {
-      match: () => {
-        if (++matches > OWNED_TRANSFER_LIMITS.matches) throw new OwnedTransferCapacityError();
-      },
-      addFragment: () => {
-        if (++heldFragments > OWNED_TRANSFER_LIMITS.heldFragments)
-          throw new OwnedTransferCapacityError();
-      },
-      removeFragment: () => {
-        heldFragments--;
-      },
-    });
-    books.set(account.accountId, book);
-    if (account.rewards?.length) book.markRewardIdentity();
-    if (account.swaps?.length) book.markSwapIdentity();
-    if (account.capitalReturns?.length) book.markCapitalReturnIdentity();
-    if (at === undefined || account.coverageFrom <= at) {
-      const baseline = [...account.initialLots].sort((left, right) =>
-        left.acquiredAt === right.acquiredAt
-          ? left.orderWithinTimestamp - right.orderWithinTimestamp
-          : left.acquiredAt < right.acquiredAt
-            ? -1
-            : 1,
-      );
-      for (const [index, lot] of baseline.entries()) {
-        if (
-          lot.acquiredAt > account.coverageFrom ||
-          (index > 0 &&
-            baseline[index - 1].acquiredAt === lot.acquiredAt &&
-            baseline[index - 1].orderWithinTimestamp === lot.orderWithinTimestamp)
-        )
-          throw new FifoHistoryError();
-        book.addInitial(lot);
-      }
-    }
-    for (const [index, trade] of account.trades.entries()) {
-      if (trade.occurredAt < account.coverageFrom) throw new FifoHistoryError();
-      events.push({
-        kind: 'trade',
-        accountId: account.accountId,
-        occurredAt: trade.occurredAt,
-        orderWithinTimestamp: trade.orderWithinTimestamp,
-        index,
-      });
-    }
-    for (const [index, reward] of (account.rewards ?? []).entries()) {
-      if (reward.occurredAt < account.coverageFrom) throw new FifoHistoryError();
-      events.push({
-        kind: 'reward',
-        accountId: account.accountId,
-        occurredAt: reward.occurredAt,
-        orderWithinTimestamp: reward.orderWithinTimestamp,
-        index,
-      });
-    }
-    for (const [index, swap] of (account.swaps ?? []).entries()) {
-      if (swap.occurredAt < account.coverageFrom) throw new FifoHistoryError();
-      swapAtoms(swap);
-      events.push({
-        kind: 'swap',
-        accountId: account.accountId,
-        occurredAt: swap.occurredAt,
-        orderWithinTimestamp: swap.orderWithinTimestamp,
-        index,
-      });
-    }
-    for (const [index, capitalReturn] of (account.capitalReturns ?? []).entries()) {
-      if (capitalReturn.occurredAt < account.coverageFrom) throw new FifoHistoryError();
-      events.push({
-        kind: 'capital-return',
-        accountId: account.accountId,
-        occurredAt: capitalReturn.occurredAt,
-        orderWithinTimestamp: capitalReturn.orderWithinTimestamp,
-        index,
-      });
-    }
+      throw new FifoHistoryError();
+    book.addInitial(lot);
   }
-  const rewardIds = new Set<string>();
-  for (const account of accounts)
-    for (const reward of account.rewards ?? []) {
-      if (rewardIds.has(reward.rewardId)) throw new FifoHistoryError();
-      rewardIds.add(reward.rewardId);
+}
+
+function pushAccountEvents(account: OwnedAccountInput, events: Event[]): void {
+  const push = <T extends { occurredAt: string; orderWithinTimestamp: number }>(
+    kind: AccountEvent['kind'],
+    rows: readonly T[],
+    check: (row: T) => unknown = () => undefined,
+  ) => {
+    for (const [index, row] of rows.entries()) {
+      if (row.occurredAt < account.coverageFrom) throw new FifoHistoryError();
+      check(row);
+      events.push({
+        kind,
+        accountId: account.accountId,
+        occurredAt: row.occurredAt,
+        orderWithinTimestamp: row.orderWithinTimestamp,
+        index,
+      });
     }
-  const swapIds = new Set<string>();
-  for (const account of accounts)
-    for (const swap of account.swaps ?? []) {
-      if (swapIds.has(swap.swapId)) throw new FifoHistoryError();
-      swapIds.add(swap.swapId);
-    }
-  const capitalReturnIds = new Set<string>();
-  for (const account of accounts)
-    for (const capitalReturn of account.capitalReturns ?? []) {
-      if (capitalReturnIds.has(capitalReturn.capitalReturnId)) throw new FifoHistoryError();
-      capitalReturnIds.add(capitalReturn.capitalReturnId);
-    }
+  };
+  push('trade', account.trades);
+  push('reward', account.rewards ?? []);
+  push('swap', account.swaps ?? [], swapAtoms);
+  push('capital-return', account.capitalReturns ?? []);
+}
+
+function assertUnique(ids: readonly string[]): void {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) throw new FifoHistoryError();
+    seen.add(id);
+  }
+}
+
+function pushTransferEvents(
+  transfers: readonly ActiveTransferInput[],
+  byAccount: ReadonlyMap<string, OwnedAccountInput>,
+  events: Event[],
+): void {
   const transferIds = new Set<string>();
   for (const [index, transfer] of transfers.entries()) {
     const source = byAccount.get(transfer.fromAccountId);
@@ -273,8 +225,10 @@ export function calculateOwnedTransfers(
       index,
     });
   }
+}
 
-  // One split per security and instant; it belongs to no account, so it occupies none.
+/** One split per security and instant; it belongs to no account, so it occupies none. */
+function pushSplitEvents(splits: readonly FifoSplit[], events: Event[]): void {
   const splitKeys = new Set<string>();
   for (const [index, split] of splits.entries()) {
     const key = JSON.stringify([split.instrumentId, split.effectiveAt]);
@@ -282,8 +236,13 @@ export function calculateOwnedTransfers(
     splitKeys.add(key);
     events.push({ kind: 'split', occurredAt: split.effectiveAt, orderWithinTimestamp: -1, index });
   }
+}
 
-  // Validate the entire effective chronology, including events after an as-of prefix.
+/** No account takes part in two events at one instant and order within it. */
+function assertOneEventPerPlace(
+  events: readonly Event[],
+  transfers: readonly ActiveTransferInput[],
+): void {
   const occupied = new Map<string, Set<string>>();
   for (const event of events) {
     if (event.kind === 'split') continue;
@@ -299,95 +258,163 @@ export function calculateOwnedTransfers(
       occupied.set(id, keys);
     }
   }
-  events.sort((left, right) =>
-    left.occurredAt < right.occurredAt
-      ? -1
-      : left.occurredAt > right.occurredAt
-        ? 1
-        : left.orderWithinTimestamp - right.orderWithinTimestamp ||
-          (left.kind === right.kind
-            ? left.index - right.index
-            : eventRank[left.kind] - eventRank[right.kind]),
-  );
+}
 
-  const allocations = new Map<string, TransferAllocation>();
-  const swapAllocations = new Map<string, SwapAllocation>();
-  const capitalReturnAllocations = new Map<string, CapitalReturnAllocation>();
+function compareEvents(left: Event, right: Event): number {
+  if (left.occurredAt < right.occurredAt) return -1;
+  if (left.occurredAt > right.occurredAt) return 1;
+  return (
+    left.orderWithinTimestamp - right.orderWithinTimestamp ||
+    (left.kind === right.kind
+      ? left.index - right.index
+      : eventRank[left.kind] - eventRank[right.kind])
+  );
+}
+
+interface Replay {
+  byAccount: ReadonlyMap<string, OwnedAccountInput>;
+  books: ReadonlyMap<string, FifoBook>;
+  transfers: readonly ActiveTransferInput[];
+  splits: readonly FifoSplit[];
+  allocations: Map<string, TransferAllocation>;
+  swapAllocations: Map<string, SwapAllocation>;
+  capitalReturnAllocations: Map<string, CapitalReturnAllocation>;
+}
+
+function replaySplit(split: FifoSplit, replay: Replay): void {
+  // An account whose history starts at or after the split holds new units already.
+  for (const [id, book] of replay.books)
+    if (replay.byAccount.get(id)!.coverageFrom < split.effectiveAt)
+      book.applySplit(split.instrumentId, BigInt(split.ratio));
+}
+
+function replayAccountEvent(event: AccountEvent, replay: Replay): void {
+  const account = replay.byAccount.get(event.accountId)!;
+  const book = replay.books.get(event.accountId)!;
+  if (event.kind === 'trade') book.applyTrade(account.trades[event.index]);
+  else if (event.kind === 'reward') book.applyReward(account.rewards![event.index]);
+  else if (event.kind === 'swap') {
+    const swap = account.swaps![event.index];
+    replay.swapAllocations.set(swap.swapId, book.applySwap(swap));
+  } else {
+    const capitalReturn = account.capitalReturns![event.index];
+    replay.capitalReturnAllocations.set(
+      capitalReturn.capitalReturnId,
+      book.applyCapitalReturn(capitalReturn),
+    );
+  }
+}
+
+function replayEvent(event: Event, replay: Replay): void {
+  if (event.kind === 'split') replaySplit(replay.splits[event.index], replay);
+  else if (event.kind === 'transfer') replayTransfer(replay.transfers[event.index], replay);
+  else replayAccountEvent(event, replay);
+}
+
+function replayTransfer(transfer: ActiveTransferInput, replay: Replay): void {
+  const sender = replay.books.get(transfer.fromAccountId)!;
+  const receiver = replay.books.get(transfer.toAccountId)!;
+  sender.occupy(transfer.occurredAt, transfer.orderWithinTimestamp);
+  receiver.occupy(transfer.occurredAt, transfer.orderWithinTimestamp);
+  const principal = sender.consume(
+    transfer.instrumentId,
+    canonicalDecimalToAtoms(transfer.quantity),
+  );
+  const fee =
+    transfer.feeInstrumentId === null
+      ? []
+      : sender.consume(transfer.feeInstrumentId, canonicalDecimalToAtoms(transfer.feeQuantity));
+  sender.recordSent(principal);
+  sender.recordFee(fee);
+  receiver.receive(principal, { transferId: transfer.transferId, version: transfer.version });
+  const principalCost = portionCost(principal);
+  const feeCost = portionCost(fee);
+  replay.allocations.set(transfer.transferId, {
+    transferId: transfer.transferId,
+    principalBasisUsd: principalCost.value,
+    feeConsumedBasisUsd: feeCost.value,
+    items: [
+      ...principal.map((portion) => allocationItem('principal', portion)),
+      ...fee.map((portion) => allocationItem('fee', portion)),
+    ],
+    ...(principalCost.incomplete || feeCost.incomplete
+      ? {
+          basisCoverage: {
+            principal: principalCost.coverage,
+            fee: feeCost.coverage,
+          },
+        }
+      : {}),
+  });
+}
+
+/** The account's book, with its opening lots when its history has begun by `at`. */
+function openBook(
+  account: OwnedAccountInput,
+  counters: { matches: number; heldFragments: number },
+  at: string | undefined,
+): FifoBook {
+  const book = new FifoBook(account.accountId, capacityLimits(counters));
+  if (account.rewards?.length) book.markRewardIdentity();
+  if (account.swaps?.length) book.markSwapIdentity();
+  if (account.capitalReturns?.length) book.markCapitalReturnIdentity();
+  if (at === undefined || account.coverageFrom <= at) addBaseline(book, account);
+  return book;
+}
+
+/** Pure full-component replay. Callers load current-effective heads in one DB snapshot. */
+export function calculateOwnedTransfers(
+  accounts: readonly OwnedAccountInput[],
+  transfers: readonly ActiveTransferInput[],
+  at?: string,
+  splits: readonly FifoSplit[] = [],
+): OwnedProjection {
+  if (
+    accounts.length > OWNED_TRANSFER_LIMITS.accounts ||
+    transfers.length > OWNED_TRANSFER_LIMITS.activeTransfers ||
+    splits.length > SPLIT_LIMITS.activeSplits
+  )
+    throw new OwnedTransferCapacityError();
+  const byAccount = new Map(accounts.map((account) => [account.accountId, account]));
+  if (byAccount.size !== accounts.length) throw new FifoHistoryError();
+  const totals: ActivityTotals = { trades: 0, rewards: 0, swaps: 0, capitalReturns: 0 };
+  const counters = { matches: 0, heldFragments: 0 };
+  const books = new Map<string, FifoBook>();
+  const events: Event[] = [];
+  for (const account of accounts) {
+    countActivity(account, totals);
+    books.set(account.accountId, openBook(account, counters, at));
+    pushAccountEvents(account, events);
+  }
+  assertUnique(accounts.flatMap((account) => (account.rewards ?? []).map((row) => row.rewardId)));
+  assertUnique(accounts.flatMap((account) => (account.swaps ?? []).map((row) => row.swapId)));
+  assertUnique(
+    accounts.flatMap((account) => (account.capitalReturns ?? []).map((row) => row.capitalReturnId)),
+  );
+  pushTransferEvents(transfers, byAccount, events);
+  pushSplitEvents(splits, events);
+
+  // Validate the entire effective chronology, including events after an as-of prefix.
+  assertOneEventPerPlace(events, transfers);
+  events.sort(compareEvents);
+
+  const replay: Replay = {
+    byAccount,
+    books,
+    transfers,
+    splits,
+    allocations: new Map(),
+    swapAllocations: new Map(),
+    capitalReturnAllocations: new Map(),
+  };
   for (const event of events) {
     if (at !== undefined && event.occurredAt > at) break;
-    if (event.kind === 'split') {
-      const split = splits[event.index];
-      // An account whose history starts at or after the split holds new units already.
-      for (const [id, book] of books)
-        if (byAccount.get(id)!.coverageFrom < split.effectiveAt)
-          book.applySplit(split.instrumentId, BigInt(split.ratio));
-      continue;
-    }
-    if (event.kind === 'trade') {
-      const account = byAccount.get(event.accountId)!;
-      books.get(event.accountId)!.applyTrade(account.trades[event.index]);
-      continue;
-    }
-    if (event.kind === 'reward') {
-      const account = byAccount.get(event.accountId)!;
-      books.get(event.accountId)!.applyReward(account.rewards![event.index]);
-      continue;
-    }
-    if (event.kind === 'swap') {
-      const account = byAccount.get(event.accountId)!;
-      const swap = account.swaps![event.index];
-      swapAllocations.set(swap.swapId, books.get(event.accountId)!.applySwap(swap));
-      continue;
-    }
-    if (event.kind === 'capital-return') {
-      const account = byAccount.get(event.accountId)!;
-      const capitalReturn = account.capitalReturns![event.index];
-      capitalReturnAllocations.set(
-        capitalReturn.capitalReturnId,
-        books.get(event.accountId)!.applyCapitalReturn(capitalReturn),
-      );
-      continue;
-    }
-    const transfer = transfers[event.index];
-    const sender = books.get(transfer.fromAccountId)!;
-    const receiver = books.get(transfer.toAccountId)!;
-    sender.occupy(transfer.occurredAt, transfer.orderWithinTimestamp);
-    receiver.occupy(transfer.occurredAt, transfer.orderWithinTimestamp);
-    const principal = sender.consume(
-      transfer.instrumentId,
-      canonicalDecimalToAtoms(transfer.quantity),
-    );
-    const fee =
-      transfer.feeInstrumentId === null
-        ? []
-        : sender.consume(transfer.feeInstrumentId, canonicalDecimalToAtoms(transfer.feeQuantity));
-    sender.recordSent(principal);
-    sender.recordFee(fee);
-    receiver.receive(principal, { transferId: transfer.transferId, version: transfer.version });
-    const principalCost = cost(principal);
-    const feeCost = cost(fee);
-    allocations.set(transfer.transferId, {
-      transferId: transfer.transferId,
-      principalBasisUsd: principalCost.value,
-      feeConsumedBasisUsd: feeCost.value,
-      items: [
-        ...principal.map((portion) => item('principal', portion)),
-        ...fee.map((portion) => item('fee', portion)),
-      ],
-      ...(principalCost.incomplete || feeCost.incomplete
-        ? {
-            basisCoverage: {
-              principal: principalCost.coverage,
-              fee: feeCost.coverage,
-            },
-          }
-        : {}),
-    });
+    replayEvent(event, replay);
   }
   return {
     accounts: new Map([...books].map(([id, book]) => [id, book.project()])),
-    allocations,
-    swapAllocations,
-    capitalReturnAllocations,
+    allocations: replay.allocations,
+    swapAllocations: replay.swapAllocations,
+    capitalReturnAllocations: replay.capitalReturnAllocations,
   };
 }
