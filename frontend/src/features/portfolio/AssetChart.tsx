@@ -123,13 +123,7 @@ export default function AssetChart({
   const ticks: number[] = [];
   for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
 
-  // A point without a price or rate breaks the line instead of dropping to zero.
-  const segments: Plotted[][] = [];
-  for (const entry of plotted) {
-    const previous = segments.at(-1)?.at(-1);
-    if (previous && previous.index === entry.index - 1) segments.at(-1)!.push(entry);
-    else segments.push([entry]);
-  }
+  const segments = segmentsOf(plotted);
   const path = (segment: Plotted[]) =>
     segment
       .map(
@@ -192,12 +186,6 @@ export default function AssetChart({
       Math.min(plotted.length - 1, Math.max(0, (index ?? plotted.length - 1) + move)),
     );
   };
-  const tipLeft = current
-    ? x(current.time) + 14 + 200 > width
-      ? x(current.time) - 214
-      : x(current.time) + 14
-    : 0;
-  const purchasesHere = current ? (bought.get(current.index) ?? []) : [];
 
   return (
     <div
@@ -282,41 +270,95 @@ export default function AssetChart({
         )}
       </svg>
       {current && (
-        <div
-          className="dashboard-tip"
-          role="status"
-          style={{
-            left: Math.max(0, tipLeft),
-            top: Math.max(0, Math.min(y(current.value) - 40, HEIGHT - 110)),
-          }}
-        >
-          <div>{pointLabel(current.point, period, current.index === points.length - 1)}</div>
-          <div className="dashboard-tip__value">{money(current.point.value, currency)}</div>
-          <div className="dashboard-tip__row">
-            <span>Amount</span>
-            <span>
-              {quantity(current.point.quantity)} {symbol}
-            </span>
-          </div>
-          <div className="dashboard-tip__row">
-            <span>Cost basis</span>
-            <span>
-              {noCost ? 'unknown' : money(current.point.cost, currency)}
-              {!noCost && !current.point.costComplete && ' known'}
-            </span>
-          </div>
-          {purchasesHere.map((purchase) => (
-            <div className="dashboard-tip__flow" key={`${purchase.at}:${purchase.quantity}`}>
-              <span>Purchase</span>
-              <span>
-                +{quantity(purchase.quantity)} {symbol}
-              </span>
-            </div>
-          ))}
-          {!current.point.complete && (
-            <div className="dashboard-tip__note">Incomplete: no price, rate or full history</div>
-          )}
+        <ChartTip
+          current={current}
+          last={current.index === points.length - 1}
+          period={period}
+          currency={currency}
+          symbol={symbol}
+          noCost={noCost}
+          purchases={bought.get(current.index) ?? []}
+          cx={x(current.time)}
+          cy={y(current.value)}
+          width={width}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A point without a price or rate breaks the line instead of dropping to zero. */
+function segmentsOf(plotted: readonly Plotted[]): Plotted[][] {
+  const segments: Plotted[][] = [];
+  for (const entry of plotted) {
+    const previous = segments.at(-1)?.at(-1);
+    if (previous && previous.index === entry.index - 1) segments.at(-1)!.push(entry);
+    else segments.push([entry]);
+  }
+  return segments;
+}
+
+/** The point in focus: its value, amount and cost basis, and the purchases it holds. */
+function ChartTip({
+  current,
+  last,
+  period,
+  currency,
+  symbol,
+  noCost,
+  purchases,
+  cx,
+  cy,
+  width,
+}: {
+  current: Plotted;
+  last: boolean;
+  period: HistoryPeriod;
+  currency: AccountingCurrency;
+  symbol: string;
+  noCost: boolean;
+  purchases: readonly Purchase[];
+  /** Where the point is drawn, and the chart's width. */
+  cx: number;
+  cy: number;
+  width: number;
+}) {
+  // Near the right edge the tip opens to the left of its point.
+  const tipLeft = cx + 14 + 200 > width ? cx - 214 : cx + 14;
+  return (
+    <div
+      className="dashboard-tip"
+      role="status"
+      style={{
+        left: Math.max(0, tipLeft),
+        top: Math.max(0, Math.min(cy - 40, HEIGHT - 110)),
+      }}
+    >
+      <div>{pointLabel(current.point, period, last)}</div>
+      <div className="dashboard-tip__value">{money(current.point.value, currency)}</div>
+      <div className="dashboard-tip__row">
+        <span>Amount</span>
+        <span>
+          {quantity(current.point.quantity)} {symbol}
+        </span>
+      </div>
+      <div className="dashboard-tip__row">
+        <span>Cost basis</span>
+        <span>
+          {noCost ? 'unknown' : money(current.point.cost, currency)}
+          {!noCost && !current.point.costComplete && ' known'}
+        </span>
+      </div>
+      {purchases.map((purchase) => (
+        <div className="dashboard-tip__flow" key={`${purchase.at}:${purchase.quantity}`}>
+          <span>Purchase</span>
+          <span>
+            +{quantity(purchase.quantity)} {symbol}
+          </span>
         </div>
+      ))}
+      {!current.point.complete && (
+        <div className="dashboard-tip__note">Incomplete: no price, rate or full history</div>
       )}
     </div>
   );
