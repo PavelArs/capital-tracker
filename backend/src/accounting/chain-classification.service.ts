@@ -2018,49 +2018,75 @@ export class ChainClassificationService {
     written: string[],
   ) {
     if (row.swapId && row.swapAccountId) {
-      // The swap goes first: it spends what the carrying transfer brought.
-      const head = await readSwapHead(manager, owner, row.swapAccountId, row.swapId);
-      if (!head) throw new Error('Missing produced swap');
-      await this.swaps.mutateWithin(
-        manager,
-        owner,
-        row.swapAccountId,
-        'void',
-        parseSwapVoid({
-          requestId: randomUUID(),
-          expectedJournalRevision: await this.revision(manager, owner, row.swapAccountId),
-          expectedVersion: projectSwapVersion(head).version,
-        }),
-        row.swapId,
-      );
-      if (row.transferId) await this.voidTransfer(manager, owner, row.transferId);
-      if (
-        row.pairedAddressId &&
-        row.pairedTxid &&
-        !written.includes(key(row.pairedAddressId, row.pairedTxid))
-      )
-        await this.unlink(manager, owner, row.pairedAddressId, row.pairedTxid, row.swapId);
+      await this.retireSwap(manager, owner, row, row.swapAccountId, row.swapId, written);
       return;
     }
     if (row.transferId) {
-      // CLS-PAID: a purchase that spent the coins is settled again without them first.
-      if (row.type === 'recorded') await this.releaseRecord(manager, owner, row);
-      await this.voidTransfer(manager, owner, row.transferId);
-      // A Bybit leg and a wallet leg of one hash can differ in identity (M22).
-      const other =
-        row.linkedAddressId &&
-        (await this.linkedTxid(manager, owner, row.linkedAddressId, row.transferId));
-      if (row.linkedAddressId && other && !written.includes(key(row.linkedAddressId, other)))
-        await this.unlink(manager, owner, row.linkedAddressId, other, row.transferId);
-      // XFER-PROPOSED: the other leg of a pair joined across two hashes names no address.
-      if (row.type === 'transfer' && !row.linkedAddressId)
-        for (const sibling of await this.siblings(manager, owner, row))
-          if (!written.includes(key(sibling.addressId, sibling.txid)))
-            await this.unlink(manager, owner, sibling.addressId, sibling.txid, row.transferId);
+      await this.retireTransfer(manager, owner, row, row.transferId, written);
       return;
     }
     // An outgoing Other produced nothing to void.
     if (!row.tradeId && !row.rewardId) return;
+    await this.retireEntry(manager, owner, row);
+  }
+
+  /** The swap goes first: it spends what the carrying transfer brought. */
+  private async retireSwap(
+    manager: EntityManager,
+    owner: string,
+    row: ClassificationRow,
+    swapAccountId: string,
+    swapId: string,
+    written: string[],
+  ) {
+    const head = await readSwapHead(manager, owner, swapAccountId, swapId);
+    if (!head) throw new Error('Missing produced swap');
+    await this.swaps.mutateWithin(
+      manager,
+      owner,
+      swapAccountId,
+      'void',
+      parseSwapVoid({
+        requestId: randomUUID(),
+        expectedJournalRevision: await this.revision(manager, owner, swapAccountId),
+        expectedVersion: projectSwapVersion(head).version,
+      }),
+      swapId,
+    );
+    if (row.transferId) await this.voidTransfer(manager, owner, row.transferId);
+    if (
+      row.pairedAddressId &&
+      row.pairedTxid &&
+      !written.includes(key(row.pairedAddressId, row.pairedTxid))
+    )
+      await this.unlink(manager, owner, row.pairedAddressId, row.pairedTxid, swapId);
+  }
+
+  private async retireTransfer(
+    manager: EntityManager,
+    owner: string,
+    row: ClassificationRow,
+    transferId: string,
+    written: string[],
+  ) {
+    // CLS-PAID: a purchase that spent the coins is settled again without them first.
+    if (row.type === 'recorded') await this.releaseRecord(manager, owner, row);
+    await this.voidTransfer(manager, owner, transferId);
+    // A Bybit leg and a wallet leg of one hash can differ in identity (M22).
+    const other =
+      row.linkedAddressId &&
+      (await this.linkedTxid(manager, owner, row.linkedAddressId, transferId));
+    if (row.linkedAddressId && other && !written.includes(key(row.linkedAddressId, other)))
+      await this.unlink(manager, owner, row.linkedAddressId, other, transferId);
+    // XFER-PROPOSED: the other leg of a pair joined across two hashes names no address.
+    if (row.type === 'transfer' && !row.linkedAddressId)
+      for (const sibling of await this.siblings(manager, owner, row))
+        if (!written.includes(key(sibling.addressId, sibling.txid)))
+          await this.unlink(manager, owner, sibling.addressId, sibling.txid, transferId);
+  }
+
+  /** The trade, or else the reward, an answer produced. */
+  private async retireEntry(manager: EntityManager, owner: string, row: ClassificationRow) {
     const accountId = row.accountId!;
     const expectedJournalRevision = await this.revision(manager, owner, accountId);
     if (row.tradeId) {
