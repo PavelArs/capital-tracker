@@ -1,3 +1,5 @@
+import type { WalletKind } from '@api/accounting.api';
+import type { AccountingCurrency, PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { useToast } from '@contexts/ToastContext';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -20,6 +22,7 @@ import { useWallets } from './useWallets';
 import {
   AddressRow,
   connectsBybit,
+  type Holding,
   holdingsOf,
   ManualRow,
   networksText,
@@ -28,7 +31,7 @@ import {
   trackedSymbols,
   withoutHiddenTokens,
 } from './WalletParts';
-import { gapAddress, isCoin, PENDING, pricesOf, reconcile } from './wallets';
+import { gapAddress, isCoin, PENDING, pricesOf, type Reconciliation, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import './wallets.css';
 
@@ -53,6 +56,130 @@ function PagedSources({
       </ul>
       {paged.more && <LoadMore {...paged.more} label={label} />}
     </>
+  );
+}
+
+type WalletAccountValue = PortfolioValuation['accounts'][number];
+
+/** Each wallet with its addresses and holdings: wallets with addresses first, then by value, then by name. */
+function walletCards(
+  portfolio: PortfolioValuation | null,
+  walletAccounts: WalletAccountValue[],
+  list: WalletAddress[],
+) {
+  if (!portfolio) return [];
+  return walletAccounts
+    .map((account) => ({
+      account,
+      addresses: list.filter((address) => address.accountId === account.accountId),
+      holdings: holdingsOf(portfolio, account.accountId),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.addresses.length > 0) - Number(left.addresses.length > 0) ||
+        Number(right.account.pricedValue ?? 0) - Number(left.account.pricedValue ?? 0) ||
+        left.account.name.localeCompare(right.account.name, 'en'),
+    );
+}
+
+function UnassignedCard({
+  items,
+  row,
+}: {
+  items: WalletAddress[];
+  row: (address: WalletAddress) => ReactNode;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <Card variant="flush" className="wallets-card" labelledBy="wallets-unassigned">
+      <div className="wallets-card__head">
+        <span className="wallets-card__icon" aria-hidden="true">
+          <Icon name="wallets" />
+        </span>
+        <div className="wallets-card__title">
+          <h2 id="wallets-unassigned">Not in a wallet yet</h2>
+          <span>Open an address and choose the wallet it belongs to.</span>
+        </div>
+      </div>
+      <PagedSources items={items} label="addresses" row={row} />
+    </Card>
+  );
+}
+
+/** One wallet: its tracked addresses, the coins entered by hand, and whether the chain agrees. */
+function WalletCard({
+  account,
+  own,
+  holdings: all,
+  kind,
+  currency,
+  narrow,
+  asked,
+  row,
+  reconciliation,
+  target,
+  onConnect,
+  onCounted,
+}: {
+  account: WalletAccountValue;
+  own: WalletAddress[];
+  holdings: Holding[];
+  kind: WalletKind | null;
+  currency: AccountingCurrency;
+  narrow: boolean;
+  asked: AccountingCurrency | undefined;
+  row: (address: WalletAddress) => ReactNode;
+  reconciliation: Reconciliation;
+  target: WalletAddress | null;
+  onConnect: () => void;
+  onCounted: () => void;
+}) {
+  const holdings = withoutHiddenTokens(all, own);
+  const tracked = trackedSymbols(own);
+  const manual = holdings.filter(
+    (holding) => ![...tracked].some((symbol) => isCoin(holding.asset, symbol)),
+  );
+  const headingId = `wallet-${account.accountId}`;
+  return (
+    <Card variant="flush" className="wallets-card" labelledBy={headingId}>
+      {/* The whole head opens the wallet (prototype): the link's area covers it, and its
+          name stays the wallet's name. */}
+      <div className="wallets-card__head wallets-card__head--link">
+        <span className="wallets-card__icon" aria-hidden="true">
+          <Icon name={kind ?? 'wallets'} />
+        </span>
+        <div className="wallets-card__title">
+          <h2 id={headingId}>
+            <Link
+              className="wallets-card__link"
+              to={withCurrency(`/wallets/${account.accountId}`, asked)}
+            >
+              {account.name}
+            </Link>
+          </h2>
+          <span>{subtitle(own, kind)}</span>
+        </div>
+        <div className="wallets-card__total">
+          <strong className="ui-num">{money(account.pricedValue, currency)}</strong>
+          <span>{networksText(own)}</span>
+        </div>
+      </div>
+      {own.length > 0 || manual.length > 0 ? (
+        <PagedSources items={own} label={`addresses of ${account.name}`} row={row}>
+          {manual.length > 0 && (
+            <ManualRow
+              holdings={manual}
+              currency={currency}
+              narrow={narrow}
+              onConnect={connectsBybit(account.name, own, kind) ? onConnect : undefined}
+            />
+          )}
+        </PagedSources>
+      ) : (
+        <p className="wallets-empty-row">Nothing in this wallet yet.</p>
+      )}
+      <ReconcileNote result={reconciliation} target={target} onCounted={onCounted} />
+    </Card>
   );
 }
 
@@ -131,21 +258,7 @@ export default function WalletsPage() {
   const unassigned = list.filter(
     (address) => !address.accountId || !accounts.some((a) => a.accountId === address.accountId),
   );
-  const cards = portfolio
-    ? walletAccounts
-        .map((account) => ({
-          account,
-          addresses: list.filter((address) => address.accountId === account.accountId),
-          holdings: holdingsOf(portfolio, account.accountId),
-        }))
-        // Wallets with addresses first, then by value, then by name.
-        .sort(
-          (left, right) =>
-            Number(right.addresses.length > 0) - Number(left.addresses.length > 0) ||
-            Number(right.account.pricedValue ?? 0) - Number(left.account.pricedValue ?? 0) ||
-            left.account.name.localeCompare(right.account.name, 'en'),
-        )
-    : [];
+  const cards = walletCards(portfolio, walletAccounts, list);
 
   // PAGES: twenty wallets a page.
   const pagedCards = useInfinite(cards);
@@ -191,87 +304,28 @@ export default function WalletsPage() {
             Wallets are read-only. The app stores only public addresses and read-only exchange keys;
             it never asks for a seed phrase or a private key.
           </PageIntro>
-          {unassigned.length > 0 && (
-            <Card variant="flush" className="wallets-card" labelledBy="wallets-unassigned">
-              <div className="wallets-card__head">
-                <span className="wallets-card__icon" aria-hidden="true">
-                  <Icon name="wallets" />
-                </span>
-                <div className="wallets-card__title">
-                  <h2 id="wallets-unassigned">Not in a wallet yet</h2>
-                  <span>Open an address and choose the wallet it belongs to.</span>
-                </div>
-              </div>
-              <PagedSources items={unassigned} label="addresses" row={row} />
-            </Card>
-          )}
-          {pagedCards.rows.map(({ account, addresses: own, holdings: all }) => {
-            const holdings = withoutHiddenTokens(all, own);
-            const tracked = trackedSymbols(own);
-            const manual = holdings.filter(
-              (holding) => ![...tracked].some((symbol) => isCoin(holding.asset, symbol)),
-            );
-            const headingId = `wallet-${account.accountId}`;
-            const kind = kinds[account.accountId] ?? null;
-            return (
-              <Card
-                key={account.accountId}
-                variant="flush"
-                className="wallets-card"
-                labelledBy={headingId}
-              >
-                {/* The whole head opens the wallet (prototype): the link's area covers it, and its
-                    name stays the wallet's name. */}
-                <div className="wallets-card__head wallets-card__head--link">
-                  <span className="wallets-card__icon" aria-hidden="true">
-                    <Icon name={kind ?? 'wallets'} />
-                  </span>
-                  <div className="wallets-card__title">
-                    <h2 id={headingId}>
-                      <Link
-                        className="wallets-card__link"
-                        to={withCurrency(`/wallets/${account.accountId}`, asked)}
-                      >
-                        {account.name}
-                      </Link>
-                    </h2>
-                    <span>{subtitle(own, kind)}</span>
-                  </div>
-                  <div className="wallets-card__total">
-                    <strong className="ui-num">{money(account.pricedValue, currency)}</strong>
-                    <span>{networksText(own)}</span>
-                  </div>
-                </div>
-                {own.length > 0 || manual.length > 0 ? (
-                  <PagedSources items={own} label={`addresses of ${account.name}`} row={row}>
-                    {manual.length > 0 && (
-                      <ManualRow
-                        holdings={manual}
-                        currency={currency}
-                        narrow={narrow}
-                        onConnect={
-                          connectsBybit(account.name, own, kinds[account.accountId] ?? null)
-                            ? () => setAdding(account.accountId)
-                            : undefined
-                        }
-                      />
-                    )}
-                  </PagedSources>
-                ) : (
-                  <p className="wallets-empty-row">Nothing in this wallet yet.</p>
-                )}
-                <ReconcileNote
-                  result={
-                    hiddenSymbols
-                      ? reconcile(list, portfolio, account.accountId, hiddenSymbols)
-                      : PENDING
-                  }
-                  target={gapAddress(list, account.accountId)}
-                  onCounted={() => void load(true)}
-                />
-              </Card>
-            );
-          })}
+          <UnassignedCard items={unassigned} row={row} />
+          {pagedCards.rows.map(({ account, addresses: own, holdings }) => (
+            <WalletCard
+              key={account.accountId}
+              account={account}
+              own={own}
+              holdings={holdings}
+              kind={kinds[account.accountId] ?? null}
+              currency={currency}
+              narrow={narrow}
+              asked={asked}
+              row={row}
+              reconciliation={
+                hiddenSymbols
+                  ? reconcile(list, portfolio, account.accountId, hiddenSymbols)
+                  : PENDING
+              }
+              target={gapAddress(list, account.accountId)}
+              onConnect={() => setAdding(account.accountId)}
+              onCounted={() => void load(true)}
+            />
+          ))}
           {pagedCards.more && <LoadMore {...pagedCards.more} label="wallets" />}
         </>
       )}
