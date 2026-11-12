@@ -55,11 +55,16 @@ export function errorCode(error: unknown): string {
 }
 
 const LOGGED_CHARS = 160;
-/** The first characters of what a provider said, on one line, without what `redact` cuts out. */
+/**
+ * The first characters of what a provider said, on one line. `redact` reads the whole answer, so
+ * the line holds no part of anything it replaces, and no part of a placeholder ("<key>", "<id>").
+ */
 export function loggedDetail(detail: string, redact: (text: string) => string): string {
-  // Redacted before the cut, so no identifier is left half-shown at the end.
-  return redact(detail.slice(0, LOGGED_CHARS + 100))
-    .slice(0, LOGGED_CHARS)
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Redacted whole, then cut: a key that crossed the end of a redacted window stayed as it was,
+  // and its start moved into the line when earlier replacements made the text shorter. The work
+  // is bounded by the size limit of the answer. A placeholder split by the cut is dropped.
+  const safe = redact(detail);
+  const cut =
+    safe.length > LOGGED_CHARS ? safe.slice(0, LOGGED_CHARS).replace(/<[a-z]*$/, '') : safe;
+  return cut.replace(/\s+/g, ' ').trim();
 }

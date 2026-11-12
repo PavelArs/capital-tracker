@@ -184,6 +184,72 @@ describe('Chain provider clients at the outbound HTTP boundary', () => {
     30_000,
   );
 
+  describe('LOG-REDACT: no part of a key reaches the refusal log', () => {
+    // Synthetic, with no repeated run, so a run of 6 of its characters in a line is a leak.
+    const KEY = 'SYNTHETICKEYzyxwvutsrqponmlk';
+    const IDS = `${'a'.repeat(64)} ${'b'.repeat(64)} ${'c'.repeat(64)} `;
+    const runs = Array.from({ length: KEY.length - 5 }, (_, at) => KEY.slice(at, at + 6));
+    const expectSafe = (line: string, limit: number) => {
+      expect(runs.filter((run) => line.includes(run))).toEqual([]);
+      expect(line).not.toMatch(/<[a-z]*$/);
+      expect(line).not.toMatch(/[\r\n\t]/);
+      expect(line.length).toBeLessThanOrEqual(limit);
+    };
+    // The key at every raw position, after text that redaction shortens and after text it keeps.
+    const details = [0, 1].flatMap((withIds) =>
+      Array.from(
+        { length: 401 },
+        (_, filler) => `${withIds ? IDS : ''}${'x'.repeat(filler)}${KEY} ${'y'.repeat(300)}`,
+      ),
+    );
+
+    it('with the key at every position from 0 to 400 in what the shared cut is given', () => {
+      const redact = (text: string) =>
+        text.replaceAll(KEY, '<key>').replace(/\b[0-9a-f]{64}\b/g, '<id>');
+      for (const detail of details) expectSafe(loggedDetail(detail, redact), 160);
+    });
+
+    it("with the review's case: three IDs, 38 characters, then the key at raw position 233", async () => {
+      replies.push({ status: 503, body: `${IDS}${'x'.repeat(38)}${KEY} ${'y'.repeat(300)}` });
+      await new TronGridClient({ apiKey: KEY, baseUrl, timeoutMs: 500, pauseMs: 0 }).tip();
+      expect(warn.mock.calls).toEqual([
+        [
+          `TronGrid /walletsolidity/getblock answered 503: <id> <id> <id> ${'x'.repeat(38)}<key> ${'y'.repeat(101)}`,
+        ],
+      ]);
+    });
+
+    it.each([
+      [
+        'TronGrid',
+        () => new TronGridClient({ apiKey: KEY, baseUrl, timeoutMs: 500, pauseMs: 0 }).tip(),
+      ],
+      [
+        'Blockbook',
+        () =>
+          new BlockbookClient({
+            baseUrls: [baseUrl],
+            apiKey: KEY,
+            timeoutMs: 500,
+            pauseMs: 0,
+          }).status(),
+      ],
+    ])(
+      '%s, with the key at every position from 0 to 400 in its answer',
+      async (name, call) => {
+        for (const detail of details) {
+          replies.push({ status: 503, body: detail });
+          await call();
+        }
+        expect(warn.mock.calls).toHaveLength(details.length);
+        for (const [line] of warn.mock.calls)
+          expectSafe(String(line).replace(/^.* answered 503: /, ''), 160);
+        expect(String(warn.mock.calls[0][0])).toContain(`${name} `);
+      },
+      30_000,
+    );
+  });
+
   describe('refusal log', () => {
     // An ID across the cut at 160 characters is redacted first, so none of it shows.
     const detail = `down\n\n${'x'.repeat(140)} ${HASH} ${'y'.repeat(300)}`;
@@ -288,5 +354,7 @@ describe('Shared provider client helpers', () => {
     // Cut first, "secret" would end at character 160 as "secre".
     expect(loggedDetail(`${'d'.repeat(154)} secret tail`, redact)).toBe(`${'d'.repeat(154)} <key>`);
     expect(loggedDetail(' \n ', redact)).toBe('');
+    // Only a cut can split a placeholder: a short answer keeps its own "<" at the end.
+    expect(loggedDetail('amount must be <min', redact)).toBe('amount must be <min');
   });
 });
