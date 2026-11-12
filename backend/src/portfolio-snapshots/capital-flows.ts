@@ -1,10 +1,13 @@
-import { deriveCarryInAmounts } from '../accounting/fifo';
+import type { FifoSwap } from '../accounting/asset-swap-types';
+import type { FifoCapitalReturn } from '../accounting/capital-return-types';
+import { deriveCarryInAmounts, type FifoCarryInInput, type FifoTrade } from '../accounting/fifo';
 import {
   canonicalDecimalToAtoms,
   formatPercent,
   formatProduct,
   formatSignedProduct,
 } from '../accounting/money';
+import type { OwnedAccountInput } from '../accounting/owned-transfer-types';
 import type { PaidCurrency } from '../accounting/paid-currency';
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
 import { settlementLeg } from '../accounting/trade-settlement';
@@ -86,98 +89,124 @@ export function capitalFlows(inputs: ValuationInputs, only?: ReadonlySet<string>
     for (const [accountId, account] of ledger.accounts) {
       // SECTION-CHART: a section's chart counts the money of its own accounts only.
       if (only && !only.has(accountId)) continue;
-      const start = Date.parse(account.coverageFrom);
-      for (const lot of account.initialLots) {
-        // ASSET-HIDE: a hidden asset's money is out of the figures, as its holdings are.
-        if (inputs.hidden.has(lot.instrumentId)) continue;
-        flows.push({
-          at: start,
-          baseline: true,
-          instrumentId: lot.instrumentId,
-          usd: signed(
-            deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity)
-              .carriedCostUsd,
-          ),
-          rateDate: moscowDate(lot.acquiredAt),
-        });
-      }
-      for (const trade of account.trades) {
-        // A fee only lowers the return (PR-OPS-2).
-        if (trade.purpose === 'fee') continue;
-        // The cash side: what a buy spent of the account's cash or a sale kept as cash, in USD
-        // and as paid. A sale kept as cash moves no money in or out.
-        const cash = settlementLeg(trade);
-        if (trade.settlement && trade.side === 'sell' && cash === null) continue;
-        // ASSET-HIDE: what is hidden is outside, so a trade between a shown and a hidden side
-        // moves money in or out of what is shown, like a trade settled from outside.
-        const shownAsset = !inputs.hidden.has(trade.instrumentId);
-        const shownCash = cash !== null && !inputs.hidden.has(trade.settlement!.instrumentId);
-        if (!shownAsset && !shownCash) continue;
-        // A buy brings in its gross plus fee and a sale takes out its proceeds net of fee; the
-        // cash side shown pays a buy's share or keeps a sale's proceeds.
-        const sign = trade.side === 'buy' ? 1n : -1n;
-        const flow = (gross: bigint, fee: bigint, settled: bigint) =>
-          sign * ((shownAsset ? gross + sign * fee : 0n) - (shownCash ? settled : 0n));
-        const usd = flow(signed(trade.grossUsd), signed(trade.feeUsd), cash?.usd ?? 0n);
-        if (trade.settlement && usd === 0n) continue;
-        flows.push({
-          at: Date.parse(trade.occurredAt),
-          instrumentId: shownAsset ? trade.instrumentId : trade.settlement!.instrumentId,
-          usd,
-          rateDate: moscowDate(trade.occurredAt),
-          ...(trade.paid
-            ? {
-                native: {
-                  currency: trade.paid.currency,
-                  amount: flow(
-                    signed(trade.paid.gross),
-                    signed(trade.paid.fee),
-                    cash?.quantity ?? 0n,
-                  ),
-                },
-              }
-            : {}),
-        });
-      }
-      for (const swap of account.swaps ?? []) {
-        // ASSET-HIDE: a swap between a shown and a hidden asset moves its value, what the
-        // incoming asset cost, in or out of what is shown. A swap without that value is left
-        // out, like money without a rate (INVESTED-RATED).
-        const shownIn = !inputs.hidden.has(swap.incomingInstrumentId);
-        if (shownIn === !inputs.hidden.has(swap.outgoingInstrumentId)) continue;
-        if (swap.considerationUsd === null) continue;
-        const value = signed(swap.considerationUsd);
-        flows.push({
-          at: Date.parse(swap.occurredAt),
-          instrumentId: shownIn ? swap.incomingInstrumentId : swap.outgoingInstrumentId,
-          usd: shownIn ? value : -value,
-          rateDate: moscowDate(swap.occurredAt),
-        });
-      }
-      for (const returned of account.capitalReturns ?? []) {
-        // ASSET-HIDE: a capital return is principal moving from an asset to its cash. Between a
-        // shown and a hidden one it moves money in or out of what is shown; between two shown
-        // (or two hidden) assets it moves none.
-        const shownCash = !inputs.hidden.has(returned.cashInstrumentId);
-        if (shownCash === !inputs.hidden.has(returned.instrumentId)) continue;
-        const sign = shownCash ? 1n : -1n;
-        flows.push({
-          at: Date.parse(returned.occurredAt),
-          instrumentId: shownCash ? returned.cashInstrumentId : returned.instrumentId,
-          usd: sign * signed(returned.amountUsd),
-          rateDate: moscowDate(returned.occurredAt),
-          ...(returned.paidCurrency
-            ? {
-                native: {
-                  currency: returned.paidCurrency,
-                  amount: sign * signed(returned.amount),
-                },
-              }
-            : {}),
-        });
-      }
+      pushAccountFlows(flows, account, inputs.hidden);
     }
   return flows.sort((left, right) => left.at - right.at);
+}
+
+/** One account's flows, in the order carry-ins, trades, swaps, capital returns. */
+function pushAccountFlows(
+  flows: CapitalFlow[],
+  account: OwnedAccountInput,
+  hidden: ReadonlySet<string>,
+) {
+  const start = Date.parse(account.coverageFrom);
+  for (const lot of account.initialLots) {
+    // ASSET-HIDE: a hidden asset's money is out of the figures, as its holdings are.
+    if (!hidden.has(lot.instrumentId)) flows.push(carryInFlow(lot, start));
+  }
+  for (const trade of account.trades) {
+    const flow = tradeFlow(trade, hidden);
+    if (flow) flows.push(flow);
+  }
+  for (const swap of account.swaps ?? []) {
+    const flow = swapFlow(swap, hidden);
+    if (flow) flows.push(flow);
+  }
+  for (const returned of account.capitalReturns ?? []) {
+    const flow = capitalReturnFlow(returned, hidden);
+    if (flow) flows.push(flow);
+  }
+}
+
+function carryInFlow(lot: FifoCarryInInput, start: number): CapitalFlow {
+  return {
+    at: start,
+    baseline: true,
+    instrumentId: lot.instrumentId,
+    usd: signed(
+      deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity)
+        .carriedCostUsd,
+    ),
+    rateDate: moscowDate(lot.acquiredAt),
+  };
+}
+
+function tradeFlow(trade: FifoTrade, hidden: ReadonlySet<string>): CapitalFlow | null {
+  // A fee only lowers the return (PR-OPS-2).
+  if (trade.purpose === 'fee') return null;
+  // The cash side: what a buy spent of the account's cash or a sale kept as cash, in USD
+  // and as paid. A sale kept as cash moves no money in or out.
+  const cash = settlementLeg(trade);
+  if (trade.settlement && trade.side === 'sell' && cash === null) return null;
+  // ASSET-HIDE: what is hidden is outside, so a trade between a shown and a hidden side
+  // moves money in or out of what is shown, like a trade settled from outside.
+  const shownAsset = !hidden.has(trade.instrumentId);
+  const shownCash = cash !== null && !hidden.has(trade.settlement!.instrumentId);
+  if (!shownAsset && !shownCash) return null;
+  // A buy brings in its gross plus fee and a sale takes out its proceeds net of fee; the
+  // cash side shown pays a buy's share or keeps a sale's proceeds.
+  const sign = trade.side === 'buy' ? 1n : -1n;
+  const flow = (gross: bigint, fee: bigint, settled: bigint) =>
+    sign * ((shownAsset ? gross + sign * fee : 0n) - (shownCash ? settled : 0n));
+  const usd = flow(signed(trade.grossUsd), signed(trade.feeUsd), cash?.usd ?? 0n);
+  if (trade.settlement && usd === 0n) return null;
+  return {
+    at: Date.parse(trade.occurredAt),
+    instrumentId: shownAsset ? trade.instrumentId : trade.settlement!.instrumentId,
+    usd,
+    rateDate: moscowDate(trade.occurredAt),
+    ...(trade.paid
+      ? {
+          native: {
+            currency: trade.paid.currency,
+            amount: flow(signed(trade.paid.gross), signed(trade.paid.fee), cash?.quantity ?? 0n),
+          },
+        }
+      : {}),
+  };
+}
+
+function swapFlow(swap: FifoSwap, hidden: ReadonlySet<string>): CapitalFlow | null {
+  // ASSET-HIDE: a swap between a shown and a hidden asset moves its value, what the
+  // incoming asset cost, in or out of what is shown. A swap without that value is left
+  // out, like money without a rate (INVESTED-RATED).
+  const shownIn = !hidden.has(swap.incomingInstrumentId);
+  if (shownIn === !hidden.has(swap.outgoingInstrumentId)) return null;
+  if (swap.considerationUsd === null) return null;
+  const value = signed(swap.considerationUsd);
+  return {
+    at: Date.parse(swap.occurredAt),
+    instrumentId: shownIn ? swap.incomingInstrumentId : swap.outgoingInstrumentId,
+    usd: shownIn ? value : -value,
+    rateDate: moscowDate(swap.occurredAt),
+  };
+}
+
+function capitalReturnFlow(
+  returned: FifoCapitalReturn,
+  hidden: ReadonlySet<string>,
+): CapitalFlow | null {
+  // ASSET-HIDE: a capital return is principal moving from an asset to its cash. Between a
+  // shown and a hidden one it moves money in or out of what is shown; between two shown
+  // (or two hidden) assets it moves none.
+  const shownCash = !hidden.has(returned.cashInstrumentId);
+  if (shownCash === !hidden.has(returned.instrumentId)) return null;
+  const sign = shownCash ? 1n : -1n;
+  return {
+    at: Date.parse(returned.occurredAt),
+    instrumentId: shownCash ? returned.cashInstrumentId : returned.instrumentId,
+    usd: sign * signed(returned.amountUsd),
+    rateDate: moscowDate(returned.occurredAt),
+    ...(returned.paidCurrency
+      ? {
+          native: {
+            currency: returned.paidCurrency,
+            amount: sign * signed(returned.amount),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -281,16 +310,9 @@ export function splitChange(
   marketMissing: MarketMissing | null;
 } {
   if (start === null) return { ...unknownSplit, marketMissing: 'no-start' };
-  let deposits = 0n;
-  let withdrawals = 0n;
-  const inWindow: StatedFlow[] = [];
-  for (const flow of flows) {
-    if (flow.at <= start.at || flow.at > end.at) continue;
-    if (flow.amount === null) return { ...unknownSplit, marketMissing: 'flow-without-rate' };
-    inWindow.push(flow);
-    if (flow.amount > 0n) deposits += flow.amount;
-    else withdrawals -= flow.amount;
-  }
+  const window = flowsBetween(flows, start.at, end.at);
+  if (window === null) return { ...unknownSplit, marketMissing: 'flow-without-rate' };
+  const { deposits, withdrawals, inWindow } = window;
   const netFlow = deposits - withdrawals;
   const split = {
     deposits: formatProduct(deposits),
@@ -307,27 +329,13 @@ export function splitChange(
   if (start.unrated === true || end.unrated === true) return noMarket('deposit-without-rate');
   // Only a coin that has no price now is left out. One that had none at the start of the
   // period but has now (its prices begin later) leaves its market effect unknown, as before.
-  const left = new Set<string>();
-  if (end.unpriced === true) {
-    if (end.held === undefined) return noMarket('value-unknown');
-    for (const [id, asset] of end.held) if (asset.value === null) left.add(id);
-  }
-  if (start.unpriced === true) {
-    if (start.held === undefined) return noMarket('value-unknown');
-    for (const [id, asset] of start.held)
-      if (asset.value === null && !left.has(id)) return noMarket('priced-later');
-  }
-  // The value of the coins left out, to take from both ends.
-  let startLeft = 0n;
-  for (const id of left) {
-    // A point read without its coins cannot say what the coins left out were worth at it.
-    if (start.held === undefined) return noMarket('value-unknown');
-    const before = start.held.get(id);
-    const after = end.held?.get(id);
-    if ((before?.quantity ?? '0') !== (after?.quantity ?? '0')) return noMarket('unpriced-changed');
-    if (inWindow.some((flow) => flow.instrumentId === id)) return noMarket('unpriced-changed');
-    if (before?.value) startLeft += valueAtoms(before.value);
-  }
+  const left = unpricedAt(end);
+  if (left === null) return noMarket('value-unknown');
+  const unpricedBefore = unpricedAt(start);
+  if (unpricedBefore === null) return noMarket('value-unknown');
+  if ([...unpricedBefore].some((id) => !left.has(id))) return noMarket('priced-later');
+  const startLeft = leftValueAtStart(left, start, end, inWindow);
+  if (typeof startLeft === 'string') return noMarket(startLeft);
   const from = valueAtoms(start.value) - startLeft;
   const market = valueAtoms(end.value) - from - netFlow;
   const base = from + deposits;
@@ -337,6 +345,50 @@ export function splitChange(
     marketReturnPercent: base > 0n ? formatPercent(market, base) : null,
     marketMissing: null,
   };
+}
+
+/** Deposits and withdrawals after `from` up to `to`; null when one of them has no rate. */
+function flowsBetween(flows: readonly StatedFlow[], from: number, to: number) {
+  let deposits = 0n;
+  let withdrawals = 0n;
+  const inWindow: StatedFlow[] = [];
+  for (const flow of flows) {
+    if (flow.at <= from || flow.at > to) continue;
+    if (flow.amount === null) return null;
+    inWindow.push(flow);
+    if (flow.amount > 0n) deposits += flow.amount;
+    else withdrawals -= flow.amount;
+  }
+  return { deposits, withdrawals, inWindow };
+}
+
+/** The held coins without a price at a point; null when the point was read without its coins. */
+function unpricedAt(point: SplitPoint): Set<string> | null {
+  const ids = new Set<string>();
+  if (point.unpriced !== true) return ids;
+  if (point.held === undefined) return null;
+  for (const [id, asset] of point.held) if (asset.value === null) ids.add(id);
+  return ids;
+}
+
+/** The value of the coins left out, to take from both ends, or why it cannot be. */
+function leftValueAtStart(
+  left: ReadonlySet<string>,
+  start: SplitPoint,
+  end: SplitPoint,
+  inWindow: readonly StatedFlow[],
+): bigint | MarketMissing {
+  let startLeft = 0n;
+  for (const id of left) {
+    // A point read without its coins cannot say what the coins left out were worth at it.
+    if (start.held === undefined) return 'value-unknown';
+    const before = start.held.get(id);
+    const after = end.held?.get(id);
+    if ((before?.quantity ?? '0') !== (after?.quantity ?? '0')) return 'unpriced-changed';
+    if (inWindow.some((flow) => flow.instrumentId === id)) return 'unpriced-changed';
+    if (before?.value) startLeft += valueAtoms(before.value);
+  }
+  return startLeft;
 }
 
 /**
