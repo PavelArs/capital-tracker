@@ -280,6 +280,13 @@ describe('FLOW-COMMAND: one flow create, correction or void (recording fake)', (
     expect(log).toEqual(start);
   });
 
+  it('refuses a missing target as not found even when the journal revision is stale', async () => {
+    const { service } = database({ journal: journal(1), heads: [flowVersion()] });
+    await expect(
+      service.correct(owner, uuid(0xf9), raw({ expectedJournalRevision: 0 })),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it.each([
     ['a voided target', { heads: [flowVersion({ kind: 'void' })] }, raw()],
     ['a stale journal revision', { heads: [flowVersion()] }, raw({ expectedJournalRevision: 0 })],

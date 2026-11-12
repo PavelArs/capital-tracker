@@ -4,14 +4,16 @@ import { Readable } from 'node:stream';
 // each case loads it in an isolated registry against a fake data source and a fake password
 // hash; no database is reached. tests/e2e/owner-auth.spec.ts and sessions-db.cjs carry the real
 // PostgreSQL evidence.
-const mockDatabase: { source: unknown; hashed: string[]; log: unknown[][] } = {
+const mockDatabase: { source: unknown; loads: number; hashed: string[]; log: unknown[][] } = {
   source: undefined,
+  loads: 0,
   hashed: [],
   log: [],
 };
 jest.mock('./typeorm-data-source', () => ({
   __esModule: true,
   get default() {
+    mockDatabase.loads += 1;
     return mockDatabase.source;
   },
 }));
@@ -192,6 +194,7 @@ const env = { ...process.env };
 let exitCode: typeof process.exitCode;
 beforeEach(() => {
   log = [];
+  mockDatabase.loads = 0;
   mockDatabase.log = log;
   mockDatabase.hashed = [];
   exitCode = process.exitCode;
@@ -246,6 +249,16 @@ describe('OWNER-CLI refusals before any database work', () => {
     database();
     process.env[name] = '';
     expect(await ownerCli(bootstrap)).toEqual(failed(`Missing required database setting: ${name}`));
+  });
+
+  it('loads the data source only after the settings pass', async () => {
+    database();
+    process.env.DB_HOST = '';
+    await ownerCli(bootstrap);
+    expect(mockDatabase.loads).toBe(0);
+    process.env.DB_HOST = SETTINGS.DB_HOST;
+    await ownerCli(bootstrap);
+    expect(mockDatabase.loads).toBe(1);
   });
 
   it('checks the settings in their fixed order', async () => {

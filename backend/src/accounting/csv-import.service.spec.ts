@@ -474,6 +474,20 @@ describe('CSV-002-A characterization of the import preview', () => {
     ]);
   });
 
+  it('CSV-002-A exactly 1000 active trades and exactly 10000 versions are inside both caps', async () => {
+    const heads = Array.from({ length: 999 }, (_, index) =>
+      head(
+        `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        new Date(Date.UTC(2025, 0, 2) + index * 1000).toISOString(),
+      ),
+    );
+    const bytes = csv(buy('2025-03-01T00:00:00Z'));
+    const full = await preview({ bytes, heads });
+    expect(view(full.result).batchErrors).toEqual([]);
+    const last = await preview({ bytes, revision: 9999 });
+    expect(view(last.result).batchErrors.map((error) => error.code)).not.toContain('version-cap');
+  });
+
   it('CSV-002-A a full journal reports the version cap and then the connected capacity', async () => {
     const bytes = csv(buy('2025-03-01T00:00:00Z'), buy('2025-03-02T00:00:00Z'));
     const { result } = await preview({ bytes, revision: 9999 });

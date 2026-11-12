@@ -1,13 +1,15 @@
 // Source-level pin of the explicit migration CLI. Importing migrate.ts runs it, so each case
 // loads it in an isolated registry against a fake data source; no database is reached.
 // tests/e2e/migrations.cjs carries the real PostgreSQL evidence.
-const mockDatabase: { source: unknown; Executor: unknown } = {
+const mockDatabase: { source: unknown; loads: number; Executor: unknown } = {
   source: undefined,
+  loads: 0,
   Executor: undefined,
 };
 jest.mock('./typeorm-data-source', () => ({
   __esModule: true,
   get default() {
+    mockDatabase.loads += 1;
     return mockDatabase.source;
   },
 }));
@@ -150,6 +152,7 @@ const env = { ...process.env };
 let exitCode: typeof process.exitCode;
 beforeEach(() => {
   log = [];
+  mockDatabase.loads = 0;
   exitCode = process.exitCode;
   process.exitCode = undefined;
   process.env = { ...env, ...SETTINGS };
@@ -189,6 +192,16 @@ describe('MIGRATE-CLI refusals before any database work', () => {
     database();
     process.env[name] = '';
     expect(await migrate('run')).toEqual(failed(`Missing required migration setting: ${name}`));
+  });
+
+  it('loads the data source only after the settings pass', async () => {
+    database();
+    process.env.DB_HOST = '';
+    await migrate('run');
+    expect(mockDatabase.loads).toBe(0);
+    process.env.DB_HOST = SETTINGS.DB_HOST;
+    await migrate('show');
+    expect(mockDatabase.loads).toBe(1);
   });
 
   it('checks the settings in their fixed order', async () => {

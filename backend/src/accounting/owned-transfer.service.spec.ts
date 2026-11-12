@@ -602,17 +602,18 @@ describe('XFER-COMMAND: one transfer create, correction or void (recording fake)
     await expect(corrected).resolves.toMatchObject({ created: true });
   });
 
-  it('refuses a stale journal revision after reading the ledger', async () => {
-    const { log, manager, service } = database(state());
-    const run = service.mutateWithin(
-      manager,
-      owner,
-      'create',
-      createInput({ expectedToJournalRevision: 1 }),
-    );
-    await expect(run).rejects.toThrow(new ConflictException(conflictMessage));
-    expect(log).toEqual([...pairRead('create'), ...preparation, ...ledgerRead(true)]);
-  });
+  it.each([
+    ['sending', { expectedFromJournalRevision: 2 }, [['journal', [owner, toId]]]],
+    ['receiving', { expectedToJournalRevision: 1 }, []],
+  ])(
+    'refuses a stale journal revision of the %s account after reading the ledger',
+    async (_n, stale, started) => {
+      const { log, manager, service } = database(state());
+      const run = service.mutateWithin(manager, owner, 'create', createInput(stale));
+      await expect(run).rejects.toThrow(new ConflictException(conflictMessage));
+      expect(log).toEqual([...pairRead('create'), ...started, ...preparation, ...ledgerRead(true)]);
+    },
+  );
 
   it.each([
     ['both accounts', [fromId, toId], fromId],
