@@ -287,6 +287,21 @@ function assertWritable(
     throw notCovered(id, journal.coverageFrom.toISOString());
 }
 
+/** The transfer, reward and swap summaries a journal reports, and the revision budget they share. */
+function participationSummaries(
+  fifo: Pick<AccountFifoResult, 'transferSummary' | 'rewardSummary' | 'swapSummary'>,
+  revision: number,
+) {
+  return {
+    ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
+    ...(fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
+    ...(fifo.swapSummary ? { swapSummary: fifo.swapSummary } : {}),
+    ...(fifo.transferSummary || fifo.rewardSummary || fifo.swapSummary
+      ? { revisionBudget: { used: revision, limit: 10000 } }
+      : {}),
+  };
+}
+
 /** What the cash side may spend: the ledger without the trade and the coins of `apart`. */
 function settlementView(
   ledger: ConnectedLedger,
@@ -681,14 +696,7 @@ export class TradeService {
           versionCount: await readTradeVersionCount(manager, owner, id),
           limits: { activeTrades: 1000, versions: 10000 },
           summary: fifo.summary,
-          ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
-          ...(fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
-          ...(fifo.swapSummary ? { swapSummary: fifo.swapSummary } : {}),
-          ...(fifo.transferSummary || fifo.rewardSummary || fifo.swapSummary
-            ? {
-                revisionBudget: { used: journal.currentRevision, limit: 10000 },
-              }
-            : {}),
+          ...participationSummaries(fifo, journal.currentRevision),
         },
       };
     });
