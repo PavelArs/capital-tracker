@@ -307,3 +307,21 @@ describe('PROXY-002 explicit auth metadata controls integration', () => {
     await expect(sources.tracker(req, ctx)).resolves.toBe('unchanged-existing-tracker');
   });
 });
+
+describe('PROXY-002 raw header lists a trusted peer cannot send', () => {
+  it.each([
+    ['an odd raw list', ['X-Forwarded-For', clientIp, 'Host']],
+    ['no raw list', undefined],
+    ['a raw name that is not text', [7, 'x', 'X-Forwarded-For', clientIp]],
+  ])('rejects %s', (_name, rawHeaders) => {
+    rejected(() =>
+      service().resolve({ ...request(), rawHeaders: rawHeaders as unknown as string[] }),
+    );
+  });
+
+  it('reads past other raw fields to the one forwarded address', () => {
+    const req = request();
+    req.rawHeaders = ['Host', 'app.example.invalid', 'X-Forwarded-For', clientIp, 'Accept', '*/*'];
+    expect(service().resolve(req).client).toBe(clientIp);
+  });
+});

@@ -52,6 +52,27 @@ interface ClientSource {
   readonly subject: string;
 }
 
+/** The one X-Forwarded-For field a trusted peer sent, the same raw as parsed. */
+function forwardedFor(request: SourceRequest): string {
+  const raw = request.rawHeaders;
+  if (!Array.isArray(raw) || raw.length % 2 !== 0) {
+    throw new BadRequestException('Invalid client address');
+  }
+  const forwarded: string[] = [];
+  for (let index = 0; index < raw.length; index += 2) {
+    if (typeof raw[index] !== 'string') throw new BadRequestException('Invalid client address');
+    if (raw[index].toLowerCase() === 'x-forwarded-for') forwarded.push(raw[index + 1]);
+  }
+  if (
+    forwarded.length !== 1 ||
+    typeof request.headers['x-forwarded-for'] !== 'string' ||
+    forwarded[0] !== request.headers['x-forwarded-for']
+  ) {
+    throw new BadRequestException('Invalid client address');
+  }
+  return forwarded[0];
+}
+
 @Injectable()
 export class AuthClientSourceService {
   private readonly peers: ReadonlySet<string>;
@@ -68,26 +89,7 @@ export class AuthClientSourceService {
     const cached = this.cache.get(request);
     if (cached) return cached;
     const peer = canonicalIp(request.socket?.remoteAddress);
-    let client = peer;
-    if (this.peers.has(peer)) {
-      const raw = request.rawHeaders;
-      if (!Array.isArray(raw) || raw.length % 2 !== 0) {
-        throw new BadRequestException('Invalid client address');
-      }
-      const forwarded: string[] = [];
-      for (let index = 0; index < raw.length; index += 2) {
-        if (typeof raw[index] !== 'string') throw new BadRequestException('Invalid client address');
-        if (raw[index].toLowerCase() === 'x-forwarded-for') forwarded.push(raw[index + 1]);
-      }
-      if (
-        forwarded.length !== 1 ||
-        typeof request.headers['x-forwarded-for'] !== 'string' ||
-        forwarded[0] !== request.headers['x-forwarded-for']
-      ) {
-        throw new BadRequestException('Invalid client address');
-      }
-      client = canonicalIp(forwarded[0]);
-    }
+    const client = this.peers.has(peer) ? canonicalIp(forwardedFor(request)) : peer;
     const source = Object.freeze({ peer, client, subject: rateSubject(client) });
     this.cache.set(request, source);
     return source;
