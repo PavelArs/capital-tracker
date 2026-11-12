@@ -75,6 +75,7 @@ import {
   unpaidFor,
 } from './chain-recorded';
 import {
+  type PlannedRecordSwap,
   type PlannedSwap,
   planRecordSwap,
   planSwap,
@@ -312,6 +313,34 @@ const operationKey = (
     value,
     comment: value?.type === 'transfer' || value?.type === 'swap' ? null : comment,
   });
+
+/**
+ * CLS-SWAP-RECORD: refuses a record that cannot be the other side of the leg's swap: not a plain
+ * buy or sale, moved the same way, the same coin, or too far away, checked in that order.
+ * Returns the leg's coin.
+ */
+function swapRecordCoin(
+  found: OwnRecord,
+  plan: PlannedRecordSwap,
+  chain: SwapSide,
+  blockTime: Date,
+): ReturnType<typeof chainCoin> {
+  const { answer } = found;
+  if (
+    (answer.type !== 'buy' && answer.type !== 'sell') ||
+    answer.fee !== undefined ||
+    answer.perUsd !== undefined
+  )
+    throw new UnprocessableEntityException('That record cannot be replaced by a swap');
+  if (found.inbound !== plan.paying)
+    throw new UnprocessableEntityException('Choose a record that moved coins the other way');
+  const coin = chainCoin(chain);
+  if (found.coin === coin.symbol?.toUpperCase())
+    throw new UnprocessableEntityException('A swap needs two different coins');
+  if (Math.abs(found.at.getTime() - blockTime.getTime()) > SWAP_RECORD_WINDOW_MS)
+    throw new UnprocessableEntityException('That record is too far from this transaction');
+  return coin;
+}
 
 @Injectable()
 export class ChainClassificationService {
@@ -1289,20 +1318,7 @@ export class ChainClassificationService {
     );
     if (!found || found.version !== value.record.version)
       throw new ConflictException('That record changed; reload and try again');
-    const { answer } = found;
-    if (
-      (answer.type !== 'buy' && answer.type !== 'sell') ||
-      answer.fee !== undefined ||
-      answer.perUsd !== undefined
-    )
-      throw new UnprocessableEntityException('That record cannot be replaced by a swap');
-    if (found.inbound !== plan.paying)
-      throw new UnprocessableEntityException('Choose a record that moved coins the other way');
-    const coin = chainCoin(chain);
-    if (found.coin === coin.symbol?.toUpperCase())
-      throw new UnprocessableEntityException('A swap needs two different coins');
-    if (Math.abs(found.at.getTime() - row.blockTime.getTime()) > SWAP_RECORD_WINDOW_MS)
-      throw new UnprocessableEntityException('That record is too far from this transaction');
+    const coin = swapRecordCoin(found, plan, chain, row.blockTime);
     const current = target.version
       ? await this.version(manager, address, txid, target.version)
       : null;
@@ -1311,40 +1327,7 @@ export class ChainClassificationService {
     await this.voidRecord(manager, owner, found);
     const legCoin = await findOrCreateInstrument(manager, owner, coin, true);
     if (!legCoin) throw new Error('Chain coin was not created');
-    const [outgoingInstrumentId, incomingInstrumentId] = plan.paying
-      ? [legCoin.id, found.instrumentId]
-      : [found.instrumentId, legCoin.id];
-    const [outgoingQuantity, incomingQuantity] = plan.paying
-      ? [plan.quantity, found.quantity]
-      : [found.quantity, plan.quantity];
-    const fee = plan.feeQuantity !== '0';
-    let swapId: string;
-    try {
-      const created = await this.swaps.mutateWithin(manager, owner, plan.accountId, 'create', {
-        ...parseSwapCreate({
-          requestId: randomUUID(),
-          expectedJournalRevision: await this.revision(manager, owner, plan.accountId),
-          assertExecuted: true,
-          outgoingInstrumentId,
-          incomingInstrumentId,
-          occurredAt: plan.occurredAt,
-          orderWithinTimestamp: 0,
-          outgoingQuantity,
-          incomingQuantity,
-          considerationUsd: value.valueUsd ?? found.valueUsd,
-          feeSource: fee ? 'held' : null,
-          feeInstrumentId: fee ? legCoin.id : null,
-          feeQuantity: plan.feeQuantity,
-        }),
-        orderWithinTimestamp: null,
-      });
-      swapId = created.value.swap.swapId;
-    } catch (error) {
-      if (!refused(error)) throw error;
-      throw new UnprocessableEntityException(
-        'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first',
-      );
-    }
+    const swapId = await this.recordSwapEntry(manager, owner, plan, found, value, legCoin.id);
     return this.append(manager, owner, {
       address,
       txid,
@@ -1359,6 +1342,50 @@ export class ChainClassificationService {
       automatic: null,
       paired: null,
     });
+  }
+
+  /** CLS-SWAP-RECORD: the swap that takes the record's place, at the transaction's time. */
+  private async recordSwapEntry(
+    manager: EntityManager,
+    owner: string,
+    plan: PlannedRecordSwap,
+    found: OwnRecord,
+    value: RecordSwapClassification,
+    legCoinId: string,
+  ): Promise<string> {
+    const [outgoingInstrumentId, incomingInstrumentId] = plan.paying
+      ? [legCoinId, found.instrumentId]
+      : [found.instrumentId, legCoinId];
+    const [outgoingQuantity, incomingQuantity] = plan.paying
+      ? [plan.quantity, found.quantity]
+      : [found.quantity, plan.quantity];
+    const fee = plan.feeQuantity !== '0';
+    try {
+      const created = await this.swaps.mutateWithin(manager, owner, plan.accountId, 'create', {
+        ...parseSwapCreate({
+          requestId: randomUUID(),
+          expectedJournalRevision: await this.revision(manager, owner, plan.accountId),
+          assertExecuted: true,
+          outgoingInstrumentId,
+          incomingInstrumentId,
+          occurredAt: plan.occurredAt,
+          orderWithinTimestamp: 0,
+          outgoingQuantity,
+          incomingQuantity,
+          considerationUsd: value.valueUsd ?? found.valueUsd,
+          feeSource: fee ? 'held' : null,
+          feeInstrumentId: fee ? legCoinId : null,
+          feeQuantity: plan.feeQuantity,
+        }),
+        orderWithinTimestamp: null,
+      });
+      return created.value.swap.swapId;
+    } catch (error) {
+      if (!refused(error)) throw error;
+      throw new UnprocessableEntityException(
+        'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first',
+      );
+    }
   }
 
   /**
