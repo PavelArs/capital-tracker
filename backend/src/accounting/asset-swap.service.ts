@@ -10,6 +10,7 @@ import {
   readSwapReplay,
   SWAP_LIMITS,
   type SwapKind,
+  type SwapVersion,
   type SwapVersionRow,
   swapHeadJoin,
   swapReceipt,
@@ -33,6 +34,8 @@ import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  type ConnectedAccount,
+  type ConnectedLedger,
   notCovered,
   projectConnectedLedger,
   readConnectedLedger,
@@ -68,6 +71,91 @@ function fields(value: RequestedFields): RequestedFields {
     feeInstrumentId: value.feeInstrumentId,
     feeQuantity: value.feeQuantity,
   };
+}
+type SwapInput = SwapCreateInput | ChainSwapCreateInput | SwapCorrectionInput | SwapVoidInput;
+
+/** The swap a correction or void names, as it stands; none for a create. */
+async function readTargetSwap(
+  manager: EntityManager,
+  owner: string,
+  accountId: string,
+  target: string | undefined,
+): Promise<SwapVersion | undefined> {
+  const row =
+    target === undefined ? undefined : await readSwapHead(manager, owner, accountId, target);
+  if (target !== undefined && !row) throw new NotFoundException();
+  return row ? projectSwapVersion(row) : undefined;
+}
+
+/** The fields of the next version once its version check passes: as requested, or as it stands. */
+function requestedSwap(input: SwapInput, current: SwapVersion | undefined): RequestedFields {
+  if (
+    'expectedVersion' in input &&
+    (current?.kind === 'void' || current?.version !== input.expectedVersion)
+  )
+    throw conflict();
+  const requested = 'outgoingQuantity' in input ? fields(input) : current && fields(current);
+  if (!requested) throw new Error('Swap fields required');
+  return requested;
+}
+
+/** The outgoing, incoming and fee instruments, each of them the owner's. */
+async function readSwapInstruments(
+  manager: EntityManager,
+  owner: string,
+  requested: RequestedFields,
+) {
+  const instrumentIds = [
+    ...new Set([
+      requested.outgoingInstrumentId,
+      requested.incomingInstrumentId,
+      ...(requested.feeInstrumentId === null ? [] : [requested.feeInstrumentId]),
+    ]),
+  ];
+  const instruments: { id: string; name: string; symbol: string | null }[] = await manager.query(
+    'SELECT id,name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=ANY($2::uuid[])',
+    [owner, instrumentIds],
+  );
+  if (instruments.length !== instrumentIds.length) throw new NotFoundException();
+  const byInstrument = new Map(instruments.map((instrument) => [instrument.id, instrument]));
+  return {
+    outgoing: byInstrument.get(requested.outgoingInstrumentId)!,
+    incoming: byInstrument.get(requested.incomingInstrumentId)!,
+    fee:
+      requested.feeInstrumentId === null ? undefined : byInstrument.get(requested.feeInstrumentId)!,
+  };
+}
+
+/** The owner's and then the account's limits; only a create counts the active swaps. */
+async function assertSwapCapacity(
+  manager: EntityManager,
+  owner: string,
+  accountId: string,
+  kind: SwapKind,
+): Promise<void> {
+  const ownerCounts = await readSwapCounts(manager, owner);
+  const accountCounts = await readSwapCounts(manager, owner, accountId);
+  for (const counts of [ownerCounts, accountCounts]) {
+    if (
+      counts.versionCount >= SWAP_LIMITS.versions ||
+      (kind === 'create' && counts.activeCount >= SWAP_LIMITS.activeSwaps)
+    )
+      throw conflict();
+  }
+}
+
+/** The order as given, or after every other event at the swap's instant (CLS-SWAP). */
+function swapOrder(
+  account: ConnectedAccount,
+  others: FifoSwap[],
+  transfers: ConnectedLedger['transfers'],
+  requested: RequestedFields,
+): number {
+  const orderWithinTimestamp =
+    requested.orderWithinTimestamp ??
+    automaticOrder({ ...account, swaps: others }, transfers, requested.occurredAt, undefined);
+  if (orderWithinTimestamp === null) throw conflict();
+  return orderWithinTimestamp;
 }
 
 @Injectable()
@@ -135,43 +223,10 @@ export class AssetSwapService {
       return { created: false, value: swapReceipt(replay) };
     }
     await readOwnedAccount(manager, owner, accountId);
-    const row =
-      target === undefined ? undefined : await readSwapHead(manager, owner, accountId, target);
-    if (target !== undefined && !row) throw new NotFoundException();
-    const current = row ? projectSwapVersion(row) : undefined;
-    if (
-      'expectedVersion' in input &&
-      (current?.kind === 'void' || current?.version !== input.expectedVersion)
-    )
-      throw conflict();
-    const requested = 'outgoingQuantity' in input ? fields(input) : current && fields(current);
-    if (!requested) throw new Error('Swap fields required');
-    const instrumentIds = [
-      ...new Set([
-        requested.outgoingInstrumentId,
-        requested.incomingInstrumentId,
-        ...(requested.feeInstrumentId === null ? [] : [requested.feeInstrumentId]),
-      ]),
-    ];
-    const instruments: { id: string; name: string; symbol: string | null }[] = await manager.query(
-      'SELECT id,name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=ANY($2::uuid[])',
-      [owner, instrumentIds],
-    );
-    if (instruments.length !== instrumentIds.length) throw new NotFoundException();
-    const byInstrument = new Map(instruments.map((instrument) => [instrument.id, instrument]));
-    const outgoing = byInstrument.get(requested.outgoingInstrumentId)!;
-    const incoming = byInstrument.get(requested.incomingInstrumentId)!;
-    const fee =
-      requested.feeInstrumentId === null ? undefined : byInstrument.get(requested.feeInstrumentId)!;
-    const ownerCounts = await readSwapCounts(manager, owner);
-    const accountCounts = await readSwapCounts(manager, owner, accountId);
-    for (const counts of [ownerCounts, accountCounts]) {
-      if (
-        counts.versionCount >= SWAP_LIMITS.versions ||
-        (kind === 'create' && counts.activeCount >= SWAP_LIMITS.activeSwaps)
-      )
-        throw conflict();
-    }
+    const current = await readTargetSwap(manager, owner, accountId, target);
+    const requested = requestedSwap(input, current);
+    const { outgoing, incoming, fee } = await readSwapInstruments(manager, owner, requested);
+    await assertSwapCapacity(manager, owner, accountId, kind);
     const ledger = await readConnectedLedger(manager, owner, [accountId], { lock: true });
     const account = ledger.accounts.get(accountId)!;
     if (account.journal.currentRevision !== input.expectedJournalRevision) throw conflict();
@@ -180,15 +235,7 @@ export class AssetSwapService {
     assertRevisionCapacity(ledger);
     const swapId = target ?? randomUUID();
     const others = (account.swaps ?? []).filter((swap) => swap.swapId !== swapId);
-    const orderWithinTimestamp =
-      requested.orderWithinTimestamp ??
-      automaticOrder(
-        { ...account, swaps: others },
-        ledger.transfers,
-        requested.occurredAt,
-        undefined,
-      );
-    if (orderWithinTimestamp === null) throw conflict();
+    const orderWithinTimestamp = swapOrder(account, others, ledger.transfers, requested);
     const values: SwapFields = { ...requested, orderWithinTimestamp };
     const next = {
       ...values,

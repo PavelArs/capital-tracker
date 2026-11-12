@@ -35,6 +35,18 @@ const text = (value: unknown) => (value === null || value === undefined ? null :
 const iso = (value: unknown) => (value as Date).toISOString();
 const exact = (column: string) => `trim_scale(${column})::text`;
 
+/**
+ * The operation a chain transaction's classification made. A swap's details name the other side;
+ * a transfer that carried its coins is not listed.
+ */
+function operationIdOf(row: Row): string | null {
+  if (row.swapId) return `swap:${row.swapId}`;
+  if (row.tradeId) return `trade:${row.tradeId}`;
+  if (row.rewardId) return `reward:${row.rewardId}`;
+  if (row.transferId) return `transfer:${row.transferId}`;
+  return null;
+}
+
 /** The last version that is not a void: what a voided entry said before it left the books. */
 const lastContent = (versions: string, key: string) =>
   `JOIN LATERAL (SELECT * FROM ${versions} c WHERE c."ownerId"=h."ownerId" AND c."${key}"=h.id
@@ -601,16 +613,7 @@ export class OwnerExportService {
       automatic:
         row.automatic === null || row.automatic === undefined ? null : row.automatic === true,
       linkedAddressId: text(row.linkedAddressId),
-      // A swap's details name the other side; a transfer that carried its coins is not listed.
-      operationId: row.swapId
-        ? `swap:${row.swapId}`
-        : row.tradeId
-          ? `trade:${row.tradeId}`
-          : row.rewardId
-            ? `reward:${row.rewardId}`
-            : row.transferId
-              ? `transfer:${row.transferId}`
-              : null,
+      operationId: operationIdOf(row),
       classificationVersion:
         row.classificationVersion === null ? null : Number(row.classificationVersion),
       classifiedAt: row.classifiedAt ? iso(row.classifiedAt) : null,

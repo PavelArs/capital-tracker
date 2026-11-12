@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import type { AccountingService } from '../accounting/accounting.service';
@@ -129,11 +130,94 @@ interface World {
   journalRevision?: number;
   rewardCount?: number;
   capitalReturnCount?: number;
+  /** An earlier import of the request, found by the first replay or only inside the transaction. */
+  earlier?: { payload: string; at: 'first' | 'second' };
+  /** A journal another command started first, so this import cannot start one. */
+  journalTaken?: boolean;
+}
+
+/** One statement the import sent, or one call it made into another accounting service. */
+interface Call {
+  sql: string;
+  parameters: unknown[];
+}
+
+const importedAt = new Date('2024-04-01T00:00:00.000Z');
+// Enough of a stored version for the stores to read back; the import discards what they return.
+const versionRow = {
+  createdAt: importedAt,
+  occurredAt: importedAt,
+  quantity: '1',
+  grossUsd: '1',
+  feeUsd: '0',
+  acquisitionBasisUsd: null,
+  incomeValueUsd: null,
+  amount: '1',
+  amountUsd: '1',
+  paidCurrency: null,
+};
+
+/** The rows the stub answers to the import's own statements; undefined for the preview's reads. */
+function writeAnswer(
+  world: World,
+  sql: string,
+  parameters: unknown[],
+  log: Call[],
+): unknown[] | undefined {
+  if (
+    sql.includes('INSERT INTO account_trade_versions') ||
+    sql.includes('INSERT INTO account_reward_versions') ||
+    sql.includes('v."requestId"=$3')
+  )
+    return [versionRow];
+  if (sql.includes('FROM broker_imports WHERE')) {
+    const replays = log.filter((call) => call.sql.includes('FROM broker_imports WHERE')).length;
+    if (!world.earlier || (world.earlier.at === 'second' && replays < 2)) return [];
+    return [
+      {
+        id: 'b1d6a8a0-1f0e-4c3a-9b1e-000000000001',
+        accountId: account,
+        requestId: parameters[2],
+        canonicalPayload: world.earlier.payload,
+        trades: 1,
+        rewards: 2,
+        capitalReturns: 3,
+        firstJournalRevision: 4,
+        lastJournalRevision: 5,
+        createdAt: importedAt,
+      },
+    ];
+  }
+  if (sql.includes('SELECT id,"currentRevision" FROM manual_accounts'))
+    return [{ id: account, currentRevision: null }];
+  if (sql.includes('SELECT EXISTS(SELECT 1 FROM account_opening_snapshots'))
+    return [{ present: world.journalTaken ?? false }];
+  if (sql.includes('INSERT INTO account_trade_journals'))
+    return [{ currentRevision: 0, coverageFrom: new Date('1970-01-01T00:00:00.000Z') }];
+  if (sql.includes('INSERT INTO accounting_instruments'))
+    return [{ id: parameters[0], name: parameters[4], symbol: parameters[5] }];
+  if (sql.includes('INSERT INTO broker_imports'))
+    return [
+      {
+        id: parameters[0],
+        accountId: parameters[2],
+        requestId: parameters[3],
+        canonicalPayload: parameters[4],
+        trades: parameters[5],
+        rewards: parameters[6],
+        capitalReturns: parameters[7],
+        firstJournalRevision: parameters[8],
+        lastJournalRevision: parameters[9],
+        createdAt: importedAt,
+      },
+    ];
+  return undefined;
 }
 
 function build(
   history: { operations: TBankOperation[]; positions?: TBankPosition[] },
   world: World,
+  log?: Call[],
 ) {
   const query = async (sql: string, parameters: unknown[] = []) => {
     if (sql === 'SET TRANSACTION READ ONLY') return [];
@@ -177,7 +261,14 @@ function build(
       return [{ count: world.capitalReturnCount ?? 0, active: world.capitalReturnCount ?? 0 }];
     throw new Error(`Unexpected query: ${sql}`);
   };
-  const manager = { query, queryRunner: { isTransactionActive: true } };
+  // With a log, every statement is recorded and the import's own ones answered; a statement
+  // neither knows returns nothing.
+  const logged = async (sql: string, parameters: unknown[] = []) => {
+    if (!log) return query(sql, parameters);
+    log.push({ sql, parameters });
+    return writeAnswer(world, sql, parameters, log) ?? query(sql, parameters).catch(() => []);
+  };
+  const manager = { query: logged, queryRunner: { isTransactionActive: true } };
   const source = {
     manager,
     transaction: async (level: unknown, work?: (manager: unknown) => unknown) =>
@@ -186,13 +277,67 @@ function build(
   const connections = {
     history: async () => ({ brokerAccountId: '2000000001', ...history }),
   };
+  const recorded =
+    (name: string, answer: unknown) =>
+    async (_manager: unknown, ...parameters: unknown[]) => {
+      log?.push({ sql: name, parameters });
+      return answer;
+    };
   return new BrokerImportService(
     source as unknown as DataSource,
     connections as unknown as BrokerConnectionsService,
-    {} as AccountingService,
-    {} as CarryInService,
+    {
+      saveOpeningWithin: recorded('accounting.saveOpeningWithin', { value: { revision: 1 } }),
+    } as unknown as AccountingService,
+    { initializeWithin: recorded('carryIn.initializeWithin', {}) } as unknown as CarryInService,
   );
 }
+
+const fixedIds = new Set([owner, account, share, fund, rubCash, bond]);
+
+const requestId = '6f1c2d3e-4b5a-4c6d-8e7f-000000000001';
+
+/**
+ * The value with each random UUID named by its first appearance, so a run is compared whole:
+ * every statement, parameter and payload in order.
+ */
+function normalized<T>(value: T): T {
+  const names = new Map<string, string>();
+  return JSON.parse(
+    JSON.stringify(value).replace(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g,
+      (uuid) => {
+        if (fixedIds.has(uuid) || uuid === requestId) return uuid;
+        if (!names.has(uuid)) names.set(uuid, `uuid-${names.size + 1}`);
+        return names.get(uuid)!;
+      },
+    ),
+  ) as T;
+}
+
+const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+/** Previews the history, then imports what the preview showed, recording every call. */
+async function runImport(
+  history: { operations: TBankOperation[]; positions?: TBankPosition[] },
+  world: World = {},
+  raw: Record<string, unknown> = {},
+  hash?: string,
+) {
+  const { previewHash } = await preview(history, world, raw);
+  const log: Call[] = [];
+  const outcome = await build(history, world, log)
+    .import(owner, account, { requestId, previewHash: hash ?? previewHash, ...raw })
+    .then(
+      (value) => ({ value }),
+      (error: Error) => ({ error: error.constructor.name, message: error.message }),
+    );
+  return normalized({ calls: log, outcome });
+}
+
+/** The statements of one kind, by a fragment of their text. */
+const callsOf = (calls: readonly Call[], fragment: string) =>
+  calls.filter((call) => call.sql.includes(fragment));
 
 const preview = (
   history: { operations: TBankOperation[]; positions?: TBankPosition[] },
@@ -443,5 +588,193 @@ describe('BROKER-SYNC characterization of the import preview', () => {
         { splits: [{ asset: fund, effectiveAt: '2024-03-01T12:00:00.000Z', ratio: 2 }] },
       ),
     ).rejects.toThrow(refused);
+  });
+});
+
+// BROKER-SYNC characterization of the import's writes: every statement, parameter and call in
+// order, with random ids named by first appearance. The rows themselves are probed in tests/e2e.
+describe('BROKER-SYNC characterization of the import writes', () => {
+  const held = { operations: clean, positions: [heldShare, cash('9645')] };
+  const conflict = new ConflictException('Broker import conflicts with saved state');
+  // The prices an import saves are observed now.
+  beforeEach(() => jest.useFakeTimers({ now: importedAt }));
+  afterEach(() => jest.useRealTimers());
+
+  it('BROKER-SYNC trades and a reward are written in order, then the journal advances', async () => {
+    const { outcome, calls } = await runImport(held);
+    expect(outcome).toEqual({
+      value: {
+        created: true,
+        value: {
+          importId: 'uuid-5',
+          accountId: account,
+          requestId,
+          trades: 3,
+          rewards: 1,
+          capitalReturns: 0,
+          firstJournalRevision: 1,
+          lastJournalRevision: 4,
+          createdAt: importedAt.toISOString(),
+        },
+      },
+    });
+    expect(callsOf(calls, 'INSERT INTO broker_imported_operations')[0].parameters).toEqual([
+      owner,
+      account,
+      'uuid-5',
+      [deposit.id, buy.id, fee.id, sell.id, dividend.id],
+      ['uuid-6', 'uuid-8', 'uuid-8', 'uuid-10', null],
+      [null, null, null, null, 'uuid-12'],
+      [null, null, null, null, null],
+      '2000000001',
+    ]);
+    expect(digest(calls)).toBe('0173e46d8c7b3afeb8b3113526de8f2e6682a0a287611dc41628aac87054ad90');
+  });
+
+  it('BROKER-CAPRET a capital return is written with its rate and payload', async () => {
+    const bondBuy = operation({
+      ...buy,
+      id: '100000011',
+      instrumentUid: bond,
+      instrumentType: 'bond',
+      ticker: 'SYNTHBOND',
+      quantity: '1',
+      payment: '-1000',
+    });
+    const repayment = operation({
+      id: '100000012',
+      type: 'OPERATION_TYPE_BOND_REPAYMENT',
+      occurredAt: '2024-03-02T10:00:00Z',
+      instrumentUid: bond,
+      instrumentType: 'bond',
+      ticker: 'SYNTHBOND',
+      quantity: '1',
+      payment: '400',
+    });
+    const { outcome, calls } = await runImport({
+      operations: [deposit, bondBuy, repayment],
+      positions: [position({ instrumentUid: bond, instrumentType: 'bond' }), cash('9400')],
+    });
+    expect(outcome).toMatchObject({ value: { created: true, value: { capitalReturns: 1 } } });
+    expect(callsOf(calls, 'INSERT INTO account_capital_returns')).toHaveLength(1);
+    expect(digest(calls)).toBe('d2522ba26c98ea16fcc07be05b2f9955d1ee616e397fc3f5a951712c31528ae1');
+  });
+
+  it('BROKER-ASSET-ID a link saved before its asset facts learns them from the import', async () => {
+    const { outcome, calls } = await runImport(held, {
+      links: [{ uid: share, assetUid: null, instrumentType: null }],
+      cashInstrument: true,
+    });
+    expect(outcome).toMatchObject({ value: { created: true } });
+    expect(callsOf(calls, 'UPDATE broker_instrument_links')[0].parameters).toEqual([
+      owner,
+      share,
+      null,
+      'share',
+    ]);
+    expect(callsOf(calls, 'INSERT INTO accounting_instruments')).toEqual([]);
+    expect(digest(calls)).toBe('6bccd8541f6e5f4a5d514f3edc0b85b39595e008c3fb6e691739bc4cde374a42');
+  });
+
+  it('BROKER-OPENING the opening and its lots are saved before the journal starts', async () => {
+    const { outcome, calls } = await runImport(
+      {
+        operations: [sell],
+        positions: [position({ instrumentUid: share, quantity: '2' }), cash('600')],
+      },
+      {},
+      {
+        opening: {
+          asOf: '2024-03-01T00:00:00.000Z',
+          lots: [
+            { asset: share, acquiredAt: '2024-02-01T00:00:00.000Z', quantity: '3', costUsd: '30' },
+          ],
+        },
+      },
+    );
+    expect(outcome).toMatchObject({ value: { created: true } });
+    expect(callsOf(calls, 'accounting.saveOpeningWithin')).toHaveLength(1);
+    expect(callsOf(calls, 'carryIn.initializeWithin')).toHaveLength(1);
+    expect(digest(calls)).toBe('140c8c2ac4f99089e39fb98c51eab677d2701e24520bb59365a3110b89f48444');
+  });
+
+  it('SPLIT a declared split is saved for the owner before the opening and entries', async () => {
+    const { outcome, calls } = await runImport(
+      {
+        operations: clean,
+        positions: [position({ instrumentUid: share, quantity: '3' }), cash('9645')],
+      },
+      {},
+      { splits: [{ asset: share, effectiveAt: '2024-03-01T12:00:00.000Z', ratio: 2 }] },
+    );
+    expect(outcome).toMatchObject({ value: { created: true } });
+    expect(callsOf(calls, 'INSERT INTO instrument_splits')).toHaveLength(1);
+    expect(digest(calls)).toBe('98cb1ed6f009342aace3d485a71b21f27c6f023e7e13f955b9034b757b2d6a85');
+  });
+
+  it('BROKER-SYNC a repeated request returns its first receipt, a changed one conflicts', async () => {
+    const payload = (hash: string) => JSON.stringify({ provider: 'tbank', previewHash: hash });
+    const hash = (await preview(held)).previewHash;
+    const replayDigests = {
+      first: '4e903267a250487432d7e97a05b56f9d3e86fd323751f7db12b064fcefaff7fe',
+      second: 'c94656faa1d35f21b27c2041d9ca504ef4d81536c584bf9659850872c4526eaa',
+    };
+    for (const at of ['first', 'second'] as const) {
+      const same = await runImport(held, { earlier: { payload: payload(hash), at } });
+      expect(same.outcome).toEqual({
+        value: {
+          created: false,
+          value: {
+            importId: 'uuid-1',
+            accountId: account,
+            requestId,
+            trades: 1,
+            rewards: 2,
+            capitalReturns: 3,
+            firstJournalRevision: 4,
+            lastJournalRevision: 5,
+            createdAt: importedAt.toISOString(),
+          },
+        },
+      });
+      expect(digest(same.calls)).toBe(replayDigests[at]);
+      const changed = await runImport(held, { earlier: { payload: payload('0'.repeat(64)), at } });
+      expect(changed.outcome).toEqual({
+        error: 'ConflictException',
+        message: conflict.message,
+      });
+      expect(changed.calls).toEqual(same.calls);
+    }
+  });
+
+  it('BROKER-SYNC a stale preview, a refused history or a taken journal writes nothing', async () => {
+    const stale = await runImport(held, {}, {}, '0'.repeat(64));
+    expect(stale.outcome).toEqual({ error: 'ConflictException', message: conflict.message });
+    expect(digest(stale.calls)).toBe(
+      '21e8171cc7ea48c201a94ff955f9082dab3c61f3f784bad671fbfac40e96337a',
+    );
+    const refusedHistory = await runImport(held, { held: true });
+    expect(refusedHistory.outcome).toEqual({
+      error: 'ConflictException',
+      message: conflict.message,
+    });
+    expect(refusedHistory.calls).toEqual(stale.calls);
+    const taken = await runImport(held, { journalTaken: true });
+    expect(taken.outcome).toEqual({ error: 'ConflictException', message: conflict.message });
+    expect(callsOf(taken.calls, 'INSERT INTO broker_imports')).toEqual([]);
+    expect(digest(taken.calls)).toBe(
+      '1c3496c5ec43884b51edf84e40440a30e887a711282eea06f30c19324cd757f0',
+    );
+  });
+
+  it('BROKER-ASSET-ID identities or links that disagree conflict instead of guessing', async () => {
+    const twoTypes = {
+      operations: clean,
+      positions: [position({ instrumentUid: share, instrumentType: 'etf' }), cash('9645')],
+    };
+    await expect(preview(twoTypes)).rejects.toThrow(conflict);
+    await expect(
+      preview(held, { links: [{ uid: share, assetUid: null, instrumentType: 'bond' }] }),
+    ).rejects.toThrow(conflict);
   });
 });

@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
 import {
   appendCapitalReturnVersion,
@@ -22,6 +22,14 @@ import { parseTradeVoid } from './trade-input';
 import { readOwnedAccount } from './trade-journal.store';
 
 const conflict = () => new ConflictException('Capital return request conflicts with saved state');
+
+/** A void takes one version from the owner and from the account; the owner is counted first. */
+async function assertVersionCapacity(manager: EntityManager, owner: string, account: string) {
+  for (const scope of [undefined, account]) {
+    const counts = await readCapitalReturnCounts(manager, owner, scope);
+    if (counts.versionCount >= CAPITAL_RETURN_LIMITS.versions) throw conflict();
+  }
+}
 
 @Injectable()
 export class CapitalReturnService {
@@ -49,10 +57,7 @@ export class CapitalReturnService {
         const row = await readCapitalReturnHead(manager, owner, account, target);
         if (!row) throw new NotFoundException();
         if (row.kind === 'void') throw conflict();
-        for (const scope of [undefined, account]) {
-          const counts = await readCapitalReturnCounts(manager, owner, scope);
-          if (counts.versionCount >= CAPITAL_RETURN_LIMITS.versions) throw conflict();
-        }
+        await assertVersionCapacity(manager, owner, account);
         const ledger = await readConnectedLedger(manager, owner, [account], { lock: true });
         const held = ledger.accounts.get(account)!;
         if (held.journal.currentRevision !== input.expectedJournalRevision) throw conflict();

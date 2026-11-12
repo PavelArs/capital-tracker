@@ -1,21 +1,11 @@
 import { cachedReads } from '@api/cached-reads';
-import {
-  announceClassificationChange,
-  CLASSIFICATION_CHANGED,
-  operationsApi,
-  type TransferProposals as Proposals,
-  type ProposedLeg,
-  type TransferProposal,
-} from '@api/operations.api';
-import { SYNC_CHANGED } from '@api/sync-status.api';
-import { useCallback, useEffect, useState } from 'react';
+import type { ProposedLeg, TransferProposal } from '@api/operations.api';
 import { requestFailure } from '@/utils/request-failure';
-import { useAttempt } from '../accounting/feedback';
 import { quantity } from '../portfolio/format';
-import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
+import LoadMore from '../shell/InfiniteScroll';
 import { moment, shortAddress } from './operation-format';
 import { ProposalCard, ProposalItem } from './ProposalCard';
-import { takeHandover } from './proposals-handover';
+import { useProposals } from './useProposals';
 
 const place = (leg: ProposedLeg) =>
   leg.wallet.label ??
@@ -41,68 +31,31 @@ const failure = (error: unknown) =>
  * them is the transfer's fee.
  */
 export default function TransferProposals({ onJoined }: { onJoined: (message: string) => void }) {
-  const [found, setFound] = useState<Proposals | null>(
-    () => cachedReads.transferProposals.last() ?? null,
+  const { found, proposals, paged, busy, problem, act } = useProposals(
+    'transfer',
+    cachedReads.transferProposals,
+    failure,
   );
-  const [busy, setBusy] = useState<string | null>(null);
-  const [problem, setProblem] = useState<{ key: string; text: string } | null>(null);
-  // A retry of one answer after a lost reply keeps its request id, so it is recorded once.
-  const attempt = useAttempt();
-
-  const load = useCallback(async () => {
-    try {
-      setFound(await cachedReads.transferProposals.load());
-    } catch {
-      // The list is an offer; without it the page works as before.
-    }
-  }, []);
-  useEffect(() => {
-    // The page read it together with the list a moment ago; asking again would only repeat it.
-    // Only an answer that was kept counts: one that landed after a drop was not remembered.
-    const handed = takeHandover('transfer') && cachedReads.transferProposals.last() !== undefined;
-    if (!handed) void load();
-    window.addEventListener(CLASSIFICATION_CHANGED, load);
-    window.addEventListener(SYNC_CHANGED, load);
-    return () => {
-      window.removeEventListener(CLASSIFICATION_CHANGED, load);
-      window.removeEventListener(SYNC_CHANGED, load);
-    };
-  }, [load]);
-
-  const proposals = found?.proposals ?? [];
-  // PAGES: twenty proposals a page.
-  const paged = useInfinite(proposals);
   if (proposals.length === 0) return null;
   const keyOf = (item: TransferProposal) => `${item.outgoing.addressId}:${item.outgoing.txid}`;
-  const join = async (item: TransferProposal) => {
-    const key = keyOf(item);
-    setBusy(key);
-    setProblem(null);
-    const answer = {
-      expectedVersion: item.outgoing.version,
-      hidden: false,
-      classification: {
-        type: 'transfer' as const,
-        accountId: item.incoming.accountId,
-        partner: { addressId: item.incoming.addressId, txid: item.incoming.txid },
+  const join = (item: TransferProposal) =>
+    act(
+      keyOf(item),
+      item.outgoing,
+      {
+        expectedVersion: item.outgoing.version,
+        hidden: false,
+        classification: {
+          type: 'transfer' as const,
+          accountId: item.incoming.accountId,
+          partner: { addressId: item.incoming.addressId, txid: item.incoming.txid },
+        },
       },
-    };
-    try {
-      await operationsApi.classify({ id: item.outgoing.addressId }, item.outgoing.txid, {
-        requestId: attempt([key, answer]),
-        ...answer,
-      });
-      attempt.done([key, answer]);
-      announceClassificationChange();
-      onJoined(
-        `Joined as one transfer: ${quantity(item.arrived)} ${item.coin} from ${item.outgoing.accountName} to ${item.incoming.accountName}.`,
-      );
-    } catch (error) {
-      setProblem({ key, text: failure(error) });
-    } finally {
-      setBusy(null);
-    }
-  };
+      () =>
+        onJoined(
+          `Joined as one transfer: ${quantity(item.arrived)} ${item.coin} from ${item.outgoing.accountName} to ${item.incoming.accountName}.`,
+        ),
+    );
 
   return (
     <ProposalCard

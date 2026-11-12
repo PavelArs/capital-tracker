@@ -408,6 +408,10 @@ export async function appendTradeVersion(
     'UPDATE account_trades SET "currentVersion"=$4 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
     [owner, id, next.tradeId, next.version],
   );
+  return projectAppended(saved, next);
+}
+/** The saved version as a read returns it, with the rows written beside it. */
+function projectAppended(saved: VersionRow, next: PreparedTrade): TradeVersion {
   return projectTradeVersion({
     ...saved,
     instrumentName: next.instrumentName,

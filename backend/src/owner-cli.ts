@@ -1,11 +1,15 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
-import { OwnerInputError, parseOwnerCommand, readOwnerPassword } from './auth/owner-input';
+import type { QueryRunner } from 'typeorm';
+import {
+  OwnerCommand,
+  OwnerInputError,
+  parseOwnerCommand,
+  readOwnerPassword,
+} from './auth/owner-input';
 import { hashPassword } from './auth/password';
 
-async function main(): Promise<void> {
-  const command = parseOwnerCommand(process.argv.slice(2));
-  const password = await readOwnerPassword(command.passwordStdin);
+function checkDatabaseSettings(): void {
   for (const setting of ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME']) {
     if (!process.env[setting])
       throw new OwnerInputError(`Missing required database setting: ${setting}`);
@@ -13,6 +17,68 @@ async function main(): Promise<void> {
   const port = Number(process.env.DB_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new OwnerInputError('Invalid database port configuration');
+}
+
+// First provisioning binds the explicitly selected existing user, or a new user on an empty
+// installation. Answers the bound user ID.
+async function bootstrapOwner(
+  runner: QueryRunner,
+  command: OwnerCommand,
+  owner: unknown,
+  hash: string,
+): Promise<string> {
+  if (owner)
+    throw new OwnerInputError(
+      'Owner already provisioned; use recover with the established user ID',
+    );
+  const matches: { id: string }[] = await runner.query(
+    'SELECT id FROM users WHERE lower(email) = $1',
+    [command.email],
+  );
+  let userId = command.userId;
+  if (userId) {
+    if (matches.length !== 1 || matches[0].id !== userId) {
+      throw new OwnerInputError('Owner selection is unknown, mismatched or ambiguous');
+    }
+  } else {
+    const [existing] = await runner.query('SELECT EXISTS(SELECT 1 FROM users) AS present');
+    if (existing.present)
+      throw new OwnerInputError('Existing users require explicit --existing-user-id selection');
+    userId = randomUUID();
+    await runner.query('INSERT INTO users(id, email, password) VALUES ($1, $2, $3)', [
+      userId,
+      command.email,
+      hash,
+    ]);
+  }
+  await runner.query(
+    'INSERT INTO owner_auth(id, "userId", "credentialVersion") VALUES (1, $1, $2)',
+    [userId, randomUUID()],
+  );
+  return userId;
+}
+
+// Recovery names the established owner. It clears pending enrollment and factor limits and
+// rotates the credential revision; the confirmed factor and recovery codes stay.
+async function recoverOwner(
+  runner: QueryRunner,
+  owner: { userId: string } | undefined,
+  userId: string | undefined,
+): Promise<string | undefined> {
+  if (!owner || owner.userId !== userId)
+    throw new OwnerInputError('Recovery requires the established owner user ID');
+  await runner.query('SELECT 1 FROM owner_mfa WHERE id = 1 FOR UPDATE');
+  await runner.query(`UPDATE owner_mfa SET "candidateId" = NULL, "candidateEnvelope" = NULL,
+        "candidateExpiresAt" = NULL, "candidateAttempts" = 0, "failedAttempts" = 0,
+        "failureWindowStart" = NULL, "blockedUntil" = NULL, "consecutiveFailures" = 0 WHERE id = 1`);
+  await runner.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [randomUUID()]);
+  return userId;
+}
+
+async function main(): Promise<void> {
+  const command = parseOwnerCommand(process.argv.slice(2));
+  const password = await readOwnerPassword(command.passwordStdin);
+  checkDatabaseSettings();
   const hash = await hashPassword(password);
   const { default: source } = await import('./typeorm-data-source');
   source.setOptions({ connectTimeoutMS: 5000 });
@@ -25,46 +91,10 @@ async function main(): Promise<void> {
     if (lock.acquired !== true)
       throw new OwnerInputError('Another migration or owner command is running; retry later');
     const [owner] = await runner.query('SELECT * FROM owner_auth WHERE id = 1 FOR UPDATE');
-    let userId = command.userId;
-    if (command.action === 'bootstrap') {
-      if (owner)
-        throw new OwnerInputError(
-          'Owner already provisioned; use recover with the established user ID',
-        );
-      const matches: { id: string }[] = await runner.query(
-        'SELECT id FROM users WHERE lower(email) = $1',
-        [command.email],
-      );
-      if (userId) {
-        if (matches.length !== 1 || matches[0].id !== userId) {
-          throw new OwnerInputError('Owner selection is unknown, mismatched or ambiguous');
-        }
-      } else {
-        const [existing] = await runner.query('SELECT EXISTS(SELECT 1 FROM users) AS present');
-        if (existing.present)
-          throw new OwnerInputError('Existing users require explicit --existing-user-id selection');
-        userId = randomUUID();
-        await runner.query('INSERT INTO users(id, email, password) VALUES ($1, $2, $3)', [
-          userId,
-          command.email,
-          hash,
-        ]);
-      }
-      await runner.query(
-        'INSERT INTO owner_auth(id, "userId", "credentialVersion") VALUES (1, $1, $2)',
-        [userId, randomUUID()],
-      );
-    } else {
-      if (!owner || owner.userId !== userId)
-        throw new OwnerInputError('Recovery requires the established owner user ID');
-      await runner.query('SELECT 1 FROM owner_mfa WHERE id = 1 FOR UPDATE');
-      await runner.query(`UPDATE owner_mfa SET "candidateId" = NULL, "candidateEnvelope" = NULL,
-        "candidateExpiresAt" = NULL, "candidateAttempts" = 0, "failedAttempts" = 0,
-        "failureWindowStart" = NULL, "blockedUntil" = NULL, "consecutiveFailures" = 0 WHERE id = 1`);
-      await runner.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [
-        randomUUID(),
-      ]);
-    }
+    const userId =
+      command.action === 'bootstrap'
+        ? await bootstrapOwner(runner, command, owner, hash)
+        : await recoverOwner(runner, owner, command.userId);
     await runner.query('UPDATE users SET password = $1, "updatedAt" = now() WHERE id = $2', [
       hash,
       userId,

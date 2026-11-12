@@ -19,6 +19,7 @@ import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
 import {
+  type ChainClassificationInput,
   type ChainOperationInput,
   markUnpriced,
   type OperationAsset,
@@ -209,6 +210,58 @@ function returnedPayment(row: CapitalReturnRow): TradePayment | null {
     rateDate: row.rateDate,
     perUsd: parseDecimal(row.perUsd, true),
     rateSource: row.rateSource,
+  };
+}
+
+/** The entry an answer produced: a swap first, then a trade, a reward, a transfer. */
+function produced(row: ChainRow): ChainClassificationInput['produced'] {
+  if (row.producedSwapId) return { kind: 'swap', id: row.producedSwapId };
+  if (row.producedTradeId) return { kind: 'trade', id: row.producedTradeId };
+  if (row.producedRewardId) return { kind: 'reward', id: row.producedRewardId };
+  if (row.producedTransferId) return { kind: 'transfer', id: row.producedTransferId };
+  return null;
+}
+
+function chainClassification(row: ChainRow): ChainClassificationInput | null {
+  if (row.classificationVersion === null || row.classificationStatus === null) return null;
+  return {
+    version: row.classificationVersion,
+    status: row.classificationStatus,
+    type: row.classificationType,
+    details: row.classificationDetails,
+    comment: row.classificationComment,
+    produced: produced(row),
+    linkedAddressId: row.linkedAddressId,
+    automatic: row.automatic === true,
+    paired:
+      row.pairedAddressId && row.pairedTxid
+        ? { addressId: row.pairedAddressId, txid: row.pairedTxid }
+        : null,
+    carryTransferId: row.producedSwapId ? row.producedTransferId : null,
+  };
+}
+
+function chainOperation(row: ChainRow): ChainOperationInput {
+  return {
+    wallet: {
+      id: row.addressId,
+      network: row.network,
+      address: row.address,
+      label: row.label,
+    },
+    account: row.accountId && row.accountName ? { id: row.accountId, name: row.accountName } : null,
+    txid: row.txid,
+    asset: row.asset,
+    blockHeight: row.blockHeight,
+    blockTime: row.blockTime.toISOString(),
+    direction: row.direction,
+    receivedUnits: row.receivedUnits,
+    sentUnits: row.sentUnits,
+    feeUnits: row.feeUnits,
+    stakeUnits: row.stakeUnits,
+    call: row.contractCall ? { method: row.callMethod } : null,
+    exchange: chainFacts(row.bybitRecord),
+    classification: chainClassification(row),
   };
 }
 
@@ -539,55 +592,7 @@ export class OperationListService {
             occurredAt: row.occurredAt.toISOString(),
             amountUsd: decimal(row.amountUsd),
           })),
-          chain: chain.map((row) => ({
-            wallet: {
-              id: row.addressId,
-              network: row.network,
-              address: row.address,
-              label: row.label,
-            },
-            account:
-              row.accountId && row.accountName
-                ? { id: row.accountId, name: row.accountName }
-                : null,
-            txid: row.txid,
-            asset: row.asset,
-            blockHeight: row.blockHeight,
-            blockTime: row.blockTime.toISOString(),
-            direction: row.direction,
-            receivedUnits: row.receivedUnits,
-            sentUnits: row.sentUnits,
-            feeUnits: row.feeUnits,
-            stakeUnits: row.stakeUnits,
-            call: row.contractCall ? { method: row.callMethod } : null,
-            exchange: chainFacts(row.bybitRecord),
-            classification:
-              row.classificationVersion === null || row.classificationStatus === null
-                ? null
-                : {
-                    version: row.classificationVersion,
-                    status: row.classificationStatus,
-                    type: row.classificationType,
-                    details: row.classificationDetails,
-                    comment: row.classificationComment,
-                    produced: row.producedSwapId
-                      ? { kind: 'swap', id: row.producedSwapId }
-                      : row.producedTradeId
-                        ? { kind: 'trade', id: row.producedTradeId }
-                        : row.producedRewardId
-                          ? { kind: 'reward', id: row.producedRewardId }
-                          : row.producedTransferId
-                            ? { kind: 'transfer', id: row.producedTransferId }
-                            : null,
-                    linkedAddressId: row.linkedAddressId,
-                    automatic: row.automatic === true,
-                    paired:
-                      row.pairedAddressId && row.pairedTxid
-                        ? { addressId: row.pairedAddressId, txid: row.pairedTxid }
-                        : null,
-                    carryTransferId: row.producedSwapId ? row.producedTransferId : null,
-                  },
-          })),
+          chain: chain.map(chainOperation),
           marketPrices,
           latestPrices,
           dustThresholdUsd: await readDustThreshold(manager, owner),

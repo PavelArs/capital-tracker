@@ -78,6 +78,25 @@ export function parsePasswordJson(input: Buffer): string {
   return confirmedPassword(parsed);
 }
 
+/**
+ * Applies one chunk of raw terminal input to the hidden value, code point by code point, and
+ * stops at the first one that ends the input: Ctrl-C or Ctrl-D, a line end, or the byte limit.
+ */
+function hiddenChunk(
+  value: string,
+  chunk: string,
+): { value: string; end?: 'cancel' | 'line' | 'overflow' } {
+  for (const character of chunk) {
+    if (character === '\u0003' || character === '\u0004') return { value, end: 'cancel' };
+    if (character === '\r' || character === '\n') return { value, end: 'line' };
+    if (character === '\u007f' || character === '\b')
+      value = Array.from(value).slice(0, -1).join('');
+    else value += character;
+    if (Buffer.byteLength(value, 'utf8') > 512) return { value, end: 'overflow' };
+  }
+  return { value };
+}
+
 export async function hiddenQuestion(prompt: string): Promise<string> {
   const input = process.stdin;
   const wasRaw = input.isRaw;
@@ -98,21 +117,17 @@ export async function hiddenQuestion(prompt: string): Promise<string> {
         reject(new OwnerInputError('Password input cancelled'));
       };
       const onData = (chunk: string) => {
-        for (const character of chunk) {
-          if (character === '\u0003' || character === '\u0004') return onCancel();
-          if (character === '\r' || character === '\n') {
-            cleanup();
-            resolve(value);
-            return;
-          }
-          if (character === '\u007f' || character === '\b')
-            value = Array.from(value).slice(0, -1).join('');
-          else value += character;
-          if (Buffer.byteLength(value, 'utf8') > 512) {
-            cleanup();
-            reject(new OwnerInputError('Password input exceeds 512 bytes'));
-            return;
-          }
+        const step = hiddenChunk(value, chunk);
+        value = step.value;
+        if (step.end === 'cancel') return onCancel();
+        if (step.end === 'line') {
+          cleanup();
+          resolve(value);
+          return;
+        }
+        if (step.end === 'overflow') {
+          cleanup();
+          reject(new OwnerInputError('Password input exceeds 512 bytes'));
         }
       };
       input.on('data', onData);
