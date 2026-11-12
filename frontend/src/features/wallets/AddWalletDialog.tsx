@@ -252,6 +252,39 @@ function AddressHelp({
   );
 }
 
+/** Step 3's summary of what is added: the network and the key's end, or the address. */
+function AddSummary({
+  network,
+  exchange,
+  apiKey,
+  check,
+  isKey,
+}: {
+  network: string;
+  exchange: boolean;
+  apiKey: string;
+  check: AddressCheck;
+  isKey: boolean;
+}) {
+  return (
+    <KeyValue variant="panel">
+      <KeyValueRow term="Network">{network}</KeyValueRow>
+      {exchange ? (
+        <>
+          <KeyValueRow term="API key">
+            <span className="ui-mono">…{apiKey.trim().slice(-4)}</span>
+          </KeyValueRow>
+          <KeyValueRow term="Access">Read-only, checked with Bybit when you add it</KeyValueRow>
+        </>
+      ) : (
+        <KeyValueRow term={isKey ? 'Public key' : 'Address'}>
+          <span className="ui-mono wallets-break">{check.ok && check.address}</span>
+        </KeyValueRow>
+      )}
+    </KeyValue>
+  );
+}
+
 /** The pasted address: its check, the tracked one it repeats (WAL-DUP) and that one's wallet. */
 function addressFacts(
   network: Network | null,
@@ -638,23 +671,13 @@ export default function AddWalletDialog({
                   />
                 )}
               </Field>
-              <KeyValue variant="panel">
-                <KeyValueRow term="Network">{chosen.name}</KeyValueRow>
-                {exchange ? (
-                  <>
-                    <KeyValueRow term="API key">
-                      <span className="ui-mono">…{apiKey.trim().slice(-4)}</span>
-                    </KeyValueRow>
-                    <KeyValueRow term="Access">
-                      Read-only, checked with Bybit when you add it
-                    </KeyValueRow>
-                  </>
-                ) : (
-                  <KeyValueRow term={isKey ? 'Public key' : 'Address'}>
-                    <span className="ui-mono wallets-break">{check.ok && check.address}</span>
-                  </KeyValueRow>
-                )}
-              </KeyValue>
+              <AddSummary
+                network={chosen.name}
+                exchange={exchange}
+                apiKey={apiKey}
+                check={check}
+                isKey={isKey}
+              />
             </>
           )}
           {error && <Banner tone="neg">{error}</Banner>}
