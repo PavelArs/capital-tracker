@@ -315,6 +315,25 @@ const operationKey = (
   });
 
 /**
+ * CLS-SWAP: the swap both sides name stays as it is when the answer is the same and both sides
+ * still name each other and that swap.
+ */
+const swapKept = (
+  live: ClassificationRow | null,
+  accountId: string | null,
+  value: SwapClassification,
+  comment: string | null,
+  otherCurrent: ClassificationRow | null,
+) =>
+  live !== null &&
+  operationKey(live.accountId, live.details, live.comment) ===
+    operationKey(accountId, value, comment) &&
+  live.pairedAddressId === value.with.addressId &&
+  live.pairedTxid === value.with.txid &&
+  otherCurrent?.status === 'classified' &&
+  otherCurrent.swapId === live.swapId;
+
+/**
  * CLS-SWAP-RECORD: refuses a record that cannot be the other side of the leg's swap: not a plain
  * buy or sale, moved the same way, the same coin, or too far away, checked in that order.
  * Returns the leg's coin.
@@ -1224,39 +1243,10 @@ export class ChainClassificationService {
       otherCurrent && (await this.active(manager, owner, otherCurrent)) ? otherCurrent : null;
     const plan = planSwap(side(address, txid, row), side(other.addressId, other.txid, otherRow));
     const comment = input.comment ?? null;
-    const keep =
-      live !== null &&
-      operationKey(live.accountId, live.details, live.comment) ===
-        operationKey(row.accountId, value, comment) &&
-      live.pairedAddressId === other.addressId &&
-      live.pairedTxid === other.txid &&
-      otherCurrent?.status === 'classified' &&
-      otherCurrent.swapId === live.swapId;
+    const keep = swapKept(live, row.accountId, value, comment, otherCurrent);
     let produced: Produced = keep && live ? live : nothing;
-    if (!keep) {
-      const paying = plan.paying.addressId === address && plan.paying.txid === txid;
-      const [payingLive, receivingLive] = paying ? [live, otherLive] : [otherLive, live];
-      const written = [key(address, txid), key(other.addressId, other.txid)];
-      if (payingLive) await this.retire(manager, owner, payingLive, written);
-      const receivingRetires =
-        receivingLive && !(payingLive && sameEntry(payingLive, receivingLive))
-          ? receivingLive
-          : null;
-      if (!receivingRetires) produced = await this.swap(manager, owner, plan, value.valueUsd);
-      else {
-        await manager.query('SAVEPOINT chain_swap');
-        try {
-          await this.retire(manager, owner, receivingRetires, written);
-          produced = await this.swap(manager, owner, plan, value.valueUsd);
-          await manager.query('RELEASE SAVEPOINT chain_swap');
-        } catch (error) {
-          if (!refused(error)) throw error;
-          await manager.query('ROLLBACK TO SAVEPOINT chain_swap');
-          produced = await this.swap(manager, owner, plan, value.valueUsd);
-          await this.retire(manager, owner, receivingRetires, written);
-        }
-      }
-    }
+    if (!keep)
+      produced = await this.replaceSwap(manager, owner, target, plan, value, live, otherLive);
     const saved = await this.append(manager, owner, {
       address,
       txid,
@@ -1290,6 +1280,58 @@ export class ChainClassificationService {
         paired: { addressId: address, txid },
       });
     return saved;
+  }
+
+  /**
+   * CLS-SWAP: the new swap of both legs. The paying side's entry is voided first; the receiving
+   * side's, unless it is the same entry, around the swap (swapRetiring).
+   */
+  private async replaceSwap(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    plan: PlannedSwap,
+    value: SwapClassification,
+    live: ClassificationRow | null,
+    otherLive: ClassificationRow | null,
+  ): Promise<Produced> {
+    const { address, txid } = target;
+    const other = value.with;
+    const paying = plan.paying.addressId === address && plan.paying.txid === txid;
+    const [payingLive, receivingLive] = paying ? [live, otherLive] : [otherLive, live];
+    const written = [key(address, txid), key(other.addressId, other.txid)];
+    if (payingLive) await this.retire(manager, owner, payingLive, written);
+    const receivingRetires =
+      receivingLive && !(payingLive && sameEntry(payingLive, receivingLive)) ? receivingLive : null;
+    if (!receivingRetires) return this.swap(manager, owner, plan, value.valueUsd);
+    return this.swapRetiring(manager, owner, plan, value.valueUsd, receivingRetires, written);
+  }
+
+  /**
+   * CLS-SWAP: voids the receiving side's entry before the swap where the books allow that, and
+   * after it otherwise.
+   */
+  private async swapRetiring(
+    manager: EntityManager,
+    owner: string,
+    plan: PlannedSwap,
+    valueUsd: string | null,
+    receiving: ClassificationRow,
+    written: string[],
+  ): Promise<Produced> {
+    await manager.query('SAVEPOINT chain_swap');
+    try {
+      await this.retire(manager, owner, receiving, written);
+      const produced = await this.swap(manager, owner, plan, valueUsd);
+      await manager.query('RELEASE SAVEPOINT chain_swap');
+      return produced;
+    } catch (error) {
+      if (!refused(error)) throw error;
+      await manager.query('ROLLBACK TO SAVEPOINT chain_swap');
+      const produced = await this.swap(manager, owner, plan, valueUsd);
+      await this.retire(manager, owner, receiving, written);
+      return produced;
+    }
   }
 
   /**
