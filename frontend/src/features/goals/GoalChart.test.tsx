@@ -1,7 +1,7 @@
 import { type Goal, type GoalForecast, goalsApi } from '@api/goals.api';
 import { type PortfolioHistory, portfolioHistoryApi } from '@api/portfolio-history.api';
 import { forgetReads } from '@api/read-cache';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GoalChart from './GoalChart';
@@ -408,5 +408,167 @@ describe('GOAL-CHART goal chart', () => {
     // jump to each later level, with no slanted segment between snapshots.
     expect(invested).toMatch(/^M[\d.]+ [\d.-]+(H[\d.]+V[\d.-]+){3}$/);
     expect(invested).not.toContain('L');
+  });
+});
+
+describe('GOAL-CHART cursor, scale and width', () => {
+  /** The box sits 100 px from the left; it keeps its first 800 px, a plot 732 px wide from x = 4. */
+  const shown = async () => {
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      width: 1068,
+      height: 290,
+    } as DOMRect);
+    const chart = await show();
+    await within(chart).findByText('Today');
+    return chart;
+  };
+  const tipDate = () => screen.queryByRole('status')?.firstElementChild?.textContent ?? null;
+  const attrs = (chart: HTMLElement, selector: string, names: string[]) =>
+    [...(chart.querySelector('svg')?.querySelectorAll(selector) ?? [])].map((node) =>
+      names.map((name) => node.getAttribute(name) ?? node.textContent).join(' '),
+    );
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('GOAL-CHART moves the cursor with the arrow keys from the last day of history, stops at both ends and leaves other keys alone', async () => {
+    const chart = await shown();
+    act(() => chart.focus());
+    const keys = [
+      'ArrowLeft',
+      'ArrowLeft',
+      'ArrowLeft',
+      'ArrowRight',
+      'End',
+      'ArrowRight',
+      'Home',
+      'a',
+      'ArrowUp',
+      'Escape',
+      'ArrowRight',
+      'toString',
+    ];
+    // [key, whether the page keeps the key (not prevented), the point in the tip after it]
+    expect(keys.map((key) => [key, fireEvent.keyDown(chart, { key }), tipDate()])).toEqual([
+      ['ArrowLeft', false, 'Thu, Oct 1, 2026'],
+      ['ArrowLeft', false, 'Sat, Aug 1, 2026'],
+      ['ArrowLeft', false, 'Sat, Aug 1, 2026'],
+      ['ArrowRight', false, 'Thu, Oct 1, 2026'],
+      ['End', false, 'Jan 28, 2027 · forecast'],
+      ['ArrowRight', false, 'Jan 28, 2027 · forecast'],
+      ['Home', false, 'Sat, Aug 1, 2026'],
+      ['a', true, 'Sat, Aug 1, 2026'],
+      ['ArrowUp', true, 'Sat, Aug 1, 2026'],
+      ['Escape', true, null],
+      ['ArrowRight', false, 'Nov 2026 · forecast'],
+      // React reads a key named after an Object member as that member: not a move.
+      ['toString', true, 'Nov 2026 · forecast'],
+    ]);
+    fireEvent.blur(chart);
+    expect(tipDate()).toBeNull();
+  });
+
+  it('GOAL-CHART reads the point nearest the pointer, held inside the plot, and clears it when the pointer leaves', async () => {
+    const chart = await shown();
+    // Over 180 days from Aug 1, the history ends at x 298.4 of the plot (Oct 13, 09:00) and the
+    // first forecast month is at 422.9 (Nov 13); the box adds 104.
+    const read = (clientX: number) => {
+      fireEvent.pointerMove(chart, { clientX });
+      return tipDate();
+    };
+    expect([-50, 464, 465, 2000].map(read)).toEqual([
+      'Sat, Aug 1, 2026',
+      'Now',
+      'Nov 2026 · forecast',
+      'Jan 28, 2027 · forecast',
+    ]);
+    fireEvent.pointerLeave(chart);
+    expect(tipDate()).toBeNull();
+  });
+
+  it('GOAL-CHART draws the scale from zero in round steps, the dates and the cursor', async () => {
+    const chart = await shown();
+    expect(attrs(chart, '.goal-chart__grid', ['x1', 'x2', 'y1'])).toEqual([
+      '4 736 262',
+      '4 736 214.4',
+      '4 736 166.8',
+      '4 736 119.20000000000002',
+      '4 736 71.6',
+      '4 736 24',
+    ]);
+    expect(attrs(chart, 'g > text.goal-chart__tick', ['x', 'y', 'text'])).toEqual([
+      '796 266 ₽0',
+      '796 218.4 ₽5M',
+      '796 170.8 ₽10M',
+      '796 123.20000000000002 ₽15M',
+      '796 75.6 ₽20M',
+      '796 28 ₽25M',
+    ]);
+    expect(attrs(chart, '.goal-chart__axis', ['x1', 'x2', 'y1', 'y2'])).toEqual(['4 736 262 262']);
+    expect(attrs(chart, 'svg > text.goal-chart__tick', ['x', 'y', 'text-anchor', 'text'])).toEqual([
+      '4 284 start Aug 2026',
+      '187 284 middle Sep 2026',
+      '370 284 middle Oct 2026',
+      '553 284 middle Dec 2026',
+      '736 284 end Jan 2027',
+      '304.8666666666667 14 start Today',
+    ]);
+    act(() => chart.focus());
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' });
+    expect(attrs(chart, '.goal-chart__cursor', ['x1', 'x2', 'y1', 'y2'])).toEqual([
+      '252.0666666666667 252.0666666666667 24 262',
+    ]);
+    expect(attrs(chart, 'g > circle.goal-chart__dot', ['cx', 'cy', 'r'])).toEqual([
+      '252.0666666666667 212.496 5',
+    ]);
+    expect(screen.getByRole('status').getAttribute('style')).toBe(
+      'left: 266.0666666666667px; top: 160px;',
+    );
+    // Near the right edge the tip opens to the left of its point.
+    fireEvent.keyDown(chart, { key: 'End' });
+    expect(screen.getByRole('status').getAttribute('style')).toBe('left: 512px; top: 160px;');
+  });
+
+  it('GOAL-CHART follows the width of its box once the box appears, keeps the last width over a zero one and stops on unmount', async () => {
+    const observed: { report?: ResizeObserverCallback; box?: Element; stopped: boolean }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        entry: { report?: ResizeObserverCallback; box?: Element; stopped: boolean };
+        constructor(report: ResizeObserverCallback) {
+          this.entry = { report, stopped: false };
+          observed.push(this.entry);
+        }
+        observe(box: Element) {
+          this.entry.box = box;
+        }
+        disconnect() {
+          this.entry.stopped = true;
+        }
+      },
+    );
+    vi.spyOn(portfolioHistoryApi, 'get').mockResolvedValue(history);
+    vi.spyOn(goalsApi, 'forecast').mockResolvedValue(forecast);
+    const { unmount } = render(<GoalChart goal={goal} />);
+    expect(screen.getByText('Loading the chart…')).toBeInTheDocument();
+    expect(observed).toHaveLength(0);
+    const chart = await screen.findByRole('group', { name: /Use the arrow keys/ });
+    expect(observed).toHaveLength(1);
+    expect(observed[0].box).toBe(chart);
+    const resize = (width: number) =>
+      act(() =>
+        observed[0].report?.(
+          [{ contentRect: { width } } as ResizeObserverEntry],
+          {} as ResizeObserver,
+        ),
+      );
+    resize(600);
+    expect(chart.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 600 290');
+    resize(0);
+    expect(chart.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 600 290');
+    unmount();
+    expect(observed[0].stopped).toBe(true);
   });
 });
