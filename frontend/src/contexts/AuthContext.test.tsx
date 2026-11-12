@@ -249,6 +249,27 @@ describe('cookie-backed auth state', () => {
     unmount();
     expect(unauthorized).toBeNull();
   });
+
+  it('keeps loading until the replayed bootstrap answers, ignoring the discarded one', async () => {
+    let finish: (value: typeof owner) => void = () => {};
+    vi.mocked(authApi.getCurrentUser)
+      .mockRejectedValueOnce(new Error('Discarded bootstrap'))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider, reactStrictMode: true });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(authApi.getCurrentUser).toHaveBeenCalledTimes(2);
+    expect(result.current).toMatchObject({ user: null, loading: true });
+    await act(async () => {
+      finish(owner);
+    });
+    expect(result.current).toMatchObject({ user: owner, loading: false });
+  });
 });
 
 describe('answers kept by the browser follow the session', () => {
@@ -369,5 +390,28 @@ describe('answers kept by the browser follow the session', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(result.current.user).toBeNull();
     expect(held.size).toBe(0);
+  });
+
+  it('does not adopt a profile when the session was refused while its kept answers loaded', async () => {
+    let loaded: (rows: StoredRead[]) => void = () => {};
+    setReadStore({
+      load: () =>
+        new Promise((resolve) => {
+          loaded = resolve;
+        }),
+      save: async () => {},
+      clear: async () => {},
+    });
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current).toMatchObject({ user: null, loading: true });
+    act(notifyUnauthorized);
+    await act(async () => {
+      loaded([kept(owner.id)]);
+    });
+    expect(result.current).toMatchObject({ user: null, mfaPending: false, loading: false });
+    expect(recall('portfolio:[]')).toBeUndefined();
   });
 });
