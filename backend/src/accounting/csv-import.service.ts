@@ -192,6 +192,27 @@ function sourceBytes(batch: BatchRow): Buffer {
 function active(heads: TradeVersion[]) {
   return heads.filter((h) => h.kind !== 'void');
 }
+/** The account summary with these trades, or the refusal its connected history gives. */
+function projectCandidate(
+  ledger: ConnectedLedger,
+  id: string,
+  ticks: number,
+  trades: readonly FifoTrade[],
+):
+  | { summary: AccountFifoResult['summary'] }
+  | { refusal: 'insufficient-holdings' | 'connected-history' | 'connected-capacity' } {
+  try {
+    assertRevisionCapacity(ledger, id, ticks);
+    return {
+      summary: projectConnectedLedger(ledger, { accountId: id, trades }).accounts.get(id)!.summary,
+    };
+  } catch (error) {
+    if (error instanceof OwnedTransferCapacityError) return { refusal: 'connected-capacity' };
+    if (error instanceof FifoHistoryError)
+      return { refusal: ledger.transfers.length ? 'connected-history' : 'insufficient-holdings' };
+    throw error;
+  }
+}
 
 @Injectable()
 export class CsvImportService {
@@ -664,18 +685,14 @@ export class CsvImportService {
     else if (journal.currentRevision + links.length > 10000) reason = 'version-cap';
     else {
       const removed = new Set(links.map((l) => l.tradeId));
-      try {
-        assertRevisionCapacity(ledger, id, links.length);
-        summaryAfter = projectConnectedLedger(ledger, {
-          accountId: id,
-          trades: current.filter((h) => !removed.has(h.tradeId)),
-        }).accounts.get(id)!.summary;
-      } catch (error) {
-        if (error instanceof OwnedTransferCapacityError) reason = 'connected-capacity';
-        else if (error instanceof FifoHistoryError)
-          reason = ledger.transfers.length ? 'connected-history' : 'insufficient-holdings';
-        else throw error;
-      }
+      const projected = projectCandidate(
+        ledger,
+        id,
+        links.length,
+        current.filter((h) => !removed.has(h.tradeId)),
+      );
+      if ('refusal' in projected) reason = projected.refusal;
+      else summaryAfter = projected.summary;
     }
     return {
       journalRevision: journal.currentRevision,
