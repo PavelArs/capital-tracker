@@ -76,6 +76,33 @@ const known = (opening: Opening) =>
   opening.positions.every(
     (position) => position.costStatus === 'known' && position.totalCostUsd !== null,
   );
+/** A started journal wins over a missing opening, and a missing opening over an unknown cost. */
+function ineligibility(
+  journal: JournalRow | undefined,
+  opening: Opening | null,
+): CarryInState['ineligibilityReason'] {
+  if (journal) return 'already-initialized';
+  if (!opening) return 'no-current-opening';
+  if (!known(opening)) return 'unknown-cost';
+  return null;
+}
+/** Whether one reconciliation row has this instrument-level issue. */
+function hasIssue(
+  code: Exclude<IssueCode, 'acquisition-after-coverage'>,
+  row: Reconciliation,
+  exists: boolean,
+  supplied: boolean,
+): boolean {
+  return code === 'extra-instrument'
+    ? !exists
+    : code === 'missing-instrument'
+      ? !supplied
+      : exists &&
+        supplied &&
+        (code === 'quantity-mismatch'
+          ? row.openingQuantity !== row.carriedQuantity
+          : row.openingCostUsd !== row.carriedCostUsd);
+}
 
 @Injectable()
 export class CarryInService {
@@ -97,13 +124,7 @@ export class CarryInService {
         if (!opening) throw new Error('Invalid saved carry-in opening');
         origin = projectCarryInOrigin(journal, await readBaseline(manager, owner, id, journal));
       }
-      const reason = journal
-        ? 'already-initialized'
-        : !opening
-          ? 'no-current-opening'
-          : !known(opening)
-            ? 'unknown-cost'
-            : null;
+      const reason = ineligibility(journal, opening);
       return {
         accountId: id,
         eligible: reason === null,
@@ -318,17 +339,8 @@ export class CarryInService {
       for (const row of reconciliation) {
         const exists = positions.has(row.instrumentId);
         const supplied = totals.has(row.instrumentId);
-        const matches =
-          code === 'extra-instrument'
-            ? !exists
-            : code === 'missing-instrument'
-              ? !supplied
-              : exists &&
-                supplied &&
-                (code === 'quantity-mismatch'
-                  ? row.openingQuantity !== row.carriedQuantity
-                  : row.openingCostUsd !== row.carriedCostUsd);
-        if (matches) issues.push({ code, instrumentId: row.instrumentId, ordinal: null });
+        if (hasIssue(code, row, exists, supplied))
+          issues.push({ code, instrumentId: row.instrumentId, ordinal: null });
       }
     }
     return {
