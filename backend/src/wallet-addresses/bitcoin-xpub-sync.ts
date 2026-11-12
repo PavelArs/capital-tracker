@@ -36,6 +36,22 @@ interface DerivedRow {
 
 class Lagging extends Error {}
 
+/** What one pass has used of its budget and stored so far. */
+interface Pass {
+  started: number;
+  requests: number;
+  imported: number;
+}
+
+const spent = (pass: Pass) =>
+  pass.requests >= MAX_REQUESTS_PER_SYNC || Date.now() - pass.started > SYNC_TIME_BUDGET_MS;
+
+const finish = (
+  pass: Pass,
+  outcome: StepResult['outcome'],
+  reason: ProviderFailure | null,
+): StepResult => ({ outcome, reason, imported: pass.imported });
+
 /**
  * XPUB-SCAN: one Bitcoin account tracked through its public key. A round first asks the
  * transaction count of every derived address, deriving more until 20 in a row on each chain
@@ -52,52 +68,18 @@ export class BitcoinXpubSync {
 
   async step(ownerId: string, walletId: string, key: string): Promise<StepResult> {
     const account = new AccountKey(key);
-    const started = Date.now();
-    let requests = 0;
-    let imported = 0;
-    const finish = (outcome: StepResult['outcome'], reason: ProviderFailure | null) => ({
-      outcome,
-      reason,
-      imported,
-    });
-    const spent = () =>
-      requests >= MAX_REQUESTS_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS;
+    const pass: Pass = { started: Date.now(), requests: 0, imported: 0 };
 
     await this.extend(ownerId, walletId, account);
     await this.startRound(walletId);
 
     // Every address of the round is counted before any history is read.
-    for (let row = await this.nextCheck(walletId); row; row = await this.nextCheck(walletId)) {
-      if (spent()) return finish('partial', null);
-      requests++;
-      const count = await this.esplora.transactionCount(row.address);
-      if (!count.ok) return finish('provider_error', count.reason);
-      await this.source.query(
-        `UPDATE wallet_xpub_addresses SET "txCount" = $4, "checkPending" = false
-          WHERE "walletId" = $1 AND chain = $2 AND "addressIndex" = $3`,
-        [walletId, row.chain, row.addressIndex, count.count],
-      );
-      if (count.count > 0) await this.extend(ownerId, walletId, account);
-    }
+    const counting = await this.countRound(ownerId, walletId, account, pass);
+    if (counting) return counting;
 
     for (let row = await this.nextWalk(walletId); row; row = await this.nextWalk(walletId)) {
-      const owned = await this.owned(walletId);
-      for (let state: DerivedRow = row; ; ) {
-        if (spent()) return finish('partial', null);
-        requests++;
-        const page = await this.esplora.page(state.address, state.walkCursorTxid, owned);
-        if (!page.ok) return finish('provider_error', page.reason);
-        let committed: Awaited<ReturnType<BitcoinXpubSync['commit']>>;
-        try {
-          committed = await this.commit(state, page.transactions);
-        } catch (error) {
-          if (error instanceof Lagging) return finish('provider_error', 'unavailable');
-          throw error;
-        }
-        imported += committed.inserted;
-        if (committed.finished) break;
-        state = committed.state;
-      }
+      const walking = await this.walk(row, await this.owned(walletId), pass);
+      if (walking) return walking;
     }
 
     await this.source.query(
@@ -105,7 +87,53 @@ export class BitcoinXpubSync {
         WHERE "ownerId" = $1 AND id = $2`,
       [ownerId, walletId],
     );
-    return finish('complete', null);
+    return finish(pass, 'complete', null);
+  }
+
+  /** Counts each address of the round, deriving more once one is used; a result ends the pass. */
+  private async countRound(
+    ownerId: string,
+    walletId: string,
+    account: AccountKey,
+    pass: Pass,
+  ): Promise<StepResult | null> {
+    for (let row = await this.nextCheck(walletId); row; row = await this.nextCheck(walletId)) {
+      if (spent(pass)) return finish(pass, 'partial', null);
+      pass.requests++;
+      const count = await this.esplora.transactionCount(row.address);
+      if (!count.ok) return finish(pass, 'provider_error', count.reason);
+      await this.source.query(
+        `UPDATE wallet_xpub_addresses SET "txCount" = $4, "checkPending" = false
+          WHERE "walletId" = $1 AND chain = $2 AND "addressIndex" = $3`,
+        [walletId, row.chain, row.addressIndex, count.count],
+      );
+      if (count.count > 0) await this.extend(ownerId, walletId, account);
+    }
+    return null;
+  }
+
+  /** Walks one address's history page by page until it is stored; a result ends the pass. */
+  private async walk(
+    row: DerivedRow,
+    owned: ReadonlySet<string>,
+    pass: Pass,
+  ): Promise<StepResult | null> {
+    for (let state = row; ; ) {
+      if (spent(pass)) return finish(pass, 'partial', null);
+      pass.requests++;
+      const page = await this.esplora.page(state.address, state.walkCursorTxid, owned);
+      if (!page.ok) return finish(pass, 'provider_error', page.reason);
+      let committed: Awaited<ReturnType<BitcoinXpubSync['commit']>>;
+      try {
+        committed = await this.commit(state, page.transactions);
+      } catch (error) {
+        if (error instanceof Lagging) return finish(pass, 'provider_error', 'unavailable');
+        throw error;
+      }
+      pass.imported += committed.inserted;
+      if (committed.finished) return null;
+      state = committed.state;
+    }
   }
 
   // Derives each chain up to GAP_LIMIT addresses past its last used one. Derivation is local;
