@@ -3,7 +3,7 @@ import type { Operation, OperationList, OperationRange } from '@api/operations.a
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { generationNow } from '@api/read-cache';
 import { useToast } from '@contexts/ToastContext';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Badge from '@/ui/Badge';
 import { Banner } from '@/ui/Banner';
@@ -18,7 +18,7 @@ import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { useAttention } from '../shell/attention-context';
-import LoadMore, { useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
+import LoadMore, { type MoreProps, useInfinite, useScrollMemory } from '../shell/InfiniteScroll';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
@@ -720,6 +720,196 @@ function ListNote({
   );
 }
 
+type Filters = ReturnType<typeof filtersOf>;
+type Options = [string, string][];
+
+/**
+ * The list once it is read: the chips and filters, the rows by day and what they show; until
+ * then, or when there is none, what stands in for it.
+ */
+function TransactionsList({
+  failed,
+  list,
+  empty,
+  addButton,
+  onRetry,
+  operations,
+  currency,
+  filters,
+  query,
+  period,
+  periodShown,
+  visible,
+  matches,
+  options,
+  narrow,
+  searchBox,
+  update,
+  onView,
+  onClear,
+  days,
+  openId,
+  onOpen,
+  more,
+}: {
+  failed: boolean;
+  list: OperationList | null;
+  empty: boolean;
+  addButton: ReactNode;
+  onRetry: () => void;
+  operations: Operation[];
+  currency: AccountingCurrency;
+  filters: Filters;
+  query: string;
+  period: OperationRange | undefined;
+  /** The rows on screen were read for the chosen period, so they count for it. */
+  periodShown: boolean;
+  visible: Operation[];
+  matches: (operation: Operation) => boolean;
+  options: { asset: Options; place: Options; kind: Options };
+  narrow: boolean;
+  searchBox: ReactNode;
+  update: (changes: Record<string, string>) => void;
+  onView: (view: View) => void;
+  onClear: () => void;
+  days: Day[];
+  openId: string | null;
+  onOpen: (id: string) => void;
+  more: MoreProps | null;
+}) {
+  if (failed) return <ErrorState what="your transactions" onRetry={onRetry} />;
+  if (list === null) return <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />;
+  if (empty)
+    return (
+      <EmptyState
+        id="transactions-empty"
+        title="No transactions yet"
+        actions={
+          <>
+            {addButton}
+            <ButtonLink to="/wallets">Open wallets</ButtonLink>
+          </>
+        }
+      >
+        Purchases, sales and transfers you record and transactions found in your wallets appear
+        here.
+      </EmptyState>
+    );
+  const { view, asset, place, unknownCost, kind } = filters;
+  const { dustThresholdUsd } = list;
+  const filtered = view !== 'all' || asset || place || kind || query || period || unknownCost;
+  // Nothing waits for the owner and no filter narrows the list.
+  const caughtUp =
+    view === 'needs-classification' && !asset && !place && !kind && !query && !period;
+  // Until the new period's rows arrive, the count would be the old period's.
+  const sheetCount = periodShown ? visible.length : null;
+  return (
+    <Card labelledBy="transactions-all" className="transactions-card">
+      <h2 id="transactions-all" className="ui-sr">
+        All transactions
+      </h2>
+      <div className="ui-toolbar">
+        <ChipGroup label="Filter transactions">
+          {views.map(([key, label]) => {
+            // OPS-COUNTS: what the chip would show with the other filters as they are.
+            const count = operations.filter(
+              (operation) => inView(operation, key) && matches(operation),
+            ).length;
+            if (chipHidden(key, count, dustThresholdUsd, view)) return null;
+            return (
+              <Chip
+                key={key}
+                pressed={view === key}
+                count={count}
+                // Only rows that wait for the owner are counted in amber.
+                countTone={key === 'needs-classification' && count > 0 ? 'warn' : 'muted'}
+                onClick={() => onView(key)}
+              >
+                {label}
+              </Chip>
+            );
+          })}
+        </ChipGroup>
+        {!narrow && searchBox}
+        <FilterSheet
+          active={[asset, place, kind, period].filter(Boolean).length}
+          onReset={() => update({ asset: '', account: '', type: '', from: '', to: '', cost: '' })}
+          done={sheetDone(sheetCount)}
+          search={narrow ? searchBox : undefined}
+        >
+          <FilterSelect
+            label="Asset"
+            all="All assets"
+            value={asset}
+            options={options.asset}
+            onChange={(value) => update({ asset: value })}
+          />
+          <FilterSelect
+            label="Account"
+            all="All accounts"
+            value={place}
+            options={options.place}
+            onChange={(value) => update({ account: value })}
+          />
+          <FilterSelect
+            label="Type"
+            all="All types"
+            value={kind}
+            options={options.kind}
+            onChange={(value) => update({ type: value })}
+          />
+          <PeriodFilter
+            period={period}
+            today={new Date().toISOString().slice(0, 10)}
+            onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
+          />
+        </FilterSheet>
+      </div>
+      {unknownCost && (
+        <Banner
+          tone="info"
+          action={
+            <Button variant="link" onClick={() => update({ cost: '' })}>
+              Show all of this asset
+            </Button>
+          }
+        >
+          Incoming transactions without a purchase price, which leave the cost basis and profit of
+          this asset incomplete. Open one and answer it as a purchase, income or a transfer from
+          your own wallet to give it a cost.
+        </Banner>
+      )}
+      {view === 'dust' && (
+        <Banner
+          tone="info"
+          action={<Link to="/preferences">Change the threshold in Settings</Link>}
+        >
+          {dustText(dustThresholdUsd)}
+        </Banner>
+      )}
+      {visible.length === 0 ? (
+        <NoRows caughtUp={caughtUp} onClear={onClear} />
+      ) : (
+        <TransactionRows
+          days={days}
+          narrow={narrow}
+          currency={currency}
+          openId={openId}
+          onOpen={onOpen}
+        />
+      )}
+      {more && <LoadMore {...more} label="transactions" />}
+      <ListNote
+        shown={visible.length}
+        total={operations.length}
+        filtered={Boolean(filtered)}
+        period={Boolean(period)}
+        currency={currency}
+      />
+    </Card>
+  );
+}
+
 export default function TransactionsPage() {
   // No currency in the address means the owner's main currency (Settings).
   const [asked] = useAskedCurrency();
@@ -817,7 +1007,8 @@ export default function TransactionsPage() {
     };
   }, []);
 
-  const { view, asset, place, unknownCost, kind } = filtersOf(params);
+  const filters = filtersOf(params);
+  const { view, asset, place, unknownCost, kind } = filters;
   const replaceParams = (next: URLSearchParams) => {
     pending.current = { from: params, next };
     setParams(next, { replace: true });
@@ -914,7 +1105,6 @@ export default function TransactionsPage() {
   });
   // A reload comes back to the rows and the place the owner was at.
   useScrollMemory('transactions', list !== null && !failed);
-  const filtered = view !== 'all' || asset || place || kind || query || period || unknownCost;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
@@ -950,11 +1140,6 @@ export default function TransactionsPage() {
     });
   };
   const empty = operations.length === 0 && !period;
-  // Nothing waits for the owner and no filter narrows the list.
-  const caughtUp =
-    view === 'needs-classification' && !asset && !place && !kind && !query && !period;
-  // Until the new period's rows arrive, the count would be the old period's.
-  const sheetCount = listPeriod === periodKey(period) ? visible.length : null;
   // Wide screens: the search closes the chip row (the prototype); phones: beside Filters.
   const searchBox = (
     <Input
@@ -1091,131 +1276,31 @@ export default function TransactionsPage() {
           />
         </>
       )}
-      {failed ? (
-        <ErrorState what="your transactions" onRetry={() => void load(asked, period, true)} />
-      ) : list === null ? (
-        <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
-      ) : empty ? (
-        <EmptyState
-          id="transactions-empty"
-          title="No transactions yet"
-          actions={
-            <>
-              {addButton}
-              <ButtonLink to="/wallets">Open wallets</ButtonLink>
-            </>
-          }
-        >
-          Purchases, sales and transfers you record and transactions found in your wallets appear
-          here.
-        </EmptyState>
-      ) : (
-        <Card labelledBy="transactions-all" className="transactions-card">
-          <h2 id="transactions-all" className="ui-sr">
-            All transactions
-          </h2>
-          <div className="ui-toolbar">
-            <ChipGroup label="Filter transactions">
-              {views.map(([key, label]) => {
-                // OPS-COUNTS: what the chip would show with the other filters as they are.
-                const count = operations.filter(
-                  (operation) => inView(operation, key) && matches(operation),
-                ).length;
-                if (chipHidden(key, count, list.dustThresholdUsd, view)) return null;
-                return (
-                  <Chip
-                    key={key}
-                    pressed={view === key}
-                    count={count}
-                    // Only rows that wait for the owner are counted in amber.
-                    countTone={key === 'needs-classification' && count > 0 ? 'warn' : 'muted'}
-                    onClick={() => setView(key)}
-                  >
-                    {label}
-                  </Chip>
-                );
-              })}
-            </ChipGroup>
-            {!narrow && searchBox}
-            <FilterSheet
-              active={[asset, place, kind, period].filter(Boolean).length}
-              onReset={() =>
-                update({ asset: '', account: '', type: '', from: '', to: '', cost: '' })
-              }
-              done={sheetDone(sheetCount)}
-              search={narrow ? searchBox : undefined}
-            >
-              <FilterSelect
-                label="Asset"
-                all="All assets"
-                value={asset}
-                options={assetOptions}
-                onChange={(value) => update({ asset: value })}
-              />
-              <FilterSelect
-                label="Account"
-                all="All accounts"
-                value={place}
-                options={placeOptions}
-                onChange={(value) => update({ account: value })}
-              />
-              <FilterSelect
-                label="Type"
-                all="All types"
-                value={kind}
-                options={kindOptions}
-                onChange={(value) => update({ type: value })}
-              />
-              <PeriodFilter
-                period={period}
-                today={new Date().toISOString().slice(0, 10)}
-                onChange={(next) => update({ from: next?.from ?? '', to: next?.to ?? '' })}
-              />
-            </FilterSheet>
-          </div>
-          {unknownCost && (
-            <Banner
-              tone="info"
-              action={
-                <Button variant="link" onClick={() => update({ cost: '' })}>
-                  Show all of this asset
-                </Button>
-              }
-            >
-              Incoming transactions without a purchase price, which leave the cost basis and profit
-              of this asset incomplete. Open one and answer it as a purchase, income or a transfer
-              from your own wallet to give it a cost.
-            </Banner>
-          )}
-          {view === 'dust' && (
-            <Banner
-              tone="info"
-              action={<Link to="/preferences">Change the threshold in Settings</Link>}
-            >
-              {dustText(list.dustThresholdUsd)}
-            </Banner>
-          )}
-          {visible.length === 0 ? (
-            <NoRows caughtUp={caughtUp} onClear={clear} />
-          ) : (
-            <TransactionRows
-              days={days}
-              narrow={narrow}
-              currency={currency}
-              openId={openId}
-              onOpen={open}
-            />
-          )}
-          {paged.more && <LoadMore {...paged.more} label="transactions" />}
-          <ListNote
-            shown={visible.length}
-            total={operations.length}
-            filtered={Boolean(filtered)}
-            period={Boolean(period)}
-            currency={currency}
-          />
-        </Card>
-      )}
+      <TransactionsList
+        failed={failed}
+        list={list}
+        empty={empty}
+        addButton={addButton}
+        onRetry={() => void load(asked, period, true)}
+        operations={operations}
+        currency={currency}
+        filters={filters}
+        query={query}
+        period={period}
+        periodShown={listPeriod === periodKey(period)}
+        visible={visible}
+        matches={matches}
+        options={{ asset: assetOptions, place: placeOptions, kind: kindOptions }}
+        narrow={narrow}
+        searchBox={searchBox}
+        update={update}
+        onView={setView}
+        onClear={clear}
+        days={days}
+        openId={openId}
+        onOpen={open}
+        more={paged.more}
+      />
       {opened && (
         <OperationDrawer
           key={`${opened.id}:${opened.classification?.version ?? 0}`}
