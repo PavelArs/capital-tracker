@@ -141,7 +141,7 @@ describe('Chain provider clients at the outbound HTTP boundary', () => {
     ],
     ['Esplora', esplora, 32 * MB, invalid, [] as string[][]],
   ])(
-    '%s reads an answer of up to %d bytes',
+    '%s reads an answer of exactly its size limit',
     async (_name, call, cap, result, logged) => {
       replies.push({ status: 200, body: Buffer.alloc(cap, ' ') });
       await expect(call(10_000)).resolves.toEqual(result);
@@ -175,7 +175,7 @@ describe('Chain provider clients at the outbound HTTP boundary', () => {
     ],
     ['Esplora', esplora, 32 * MB, unavailable, [] as string[][]],
   ])(
-    '%s refuses an answer longer than %d bytes',
+    '%s refuses an answer one byte over its size limit',
     async (_name, call, cap, result, logged) => {
       replies.push({ status: 200, body: Buffer.alloc(cap + 1, ' ') });
       await expect(call(10_000)).resolves.toEqual(result);
@@ -258,7 +258,7 @@ describe('Chain provider clients parse answers strictly', () => {
 });
 
 describe('Shared provider client helpers', () => {
-  it('takes only a plain object as a record and only an array as a list', () => {
+  it('takes only a non-array object as a record and only an array as a list', () => {
     const value = { a: 1 };
     expect(record(value)).toBe(value);
     for (const bad of [[], null, undefined, 'text', 1, true]) expect(() => record(bad)).toThrow();

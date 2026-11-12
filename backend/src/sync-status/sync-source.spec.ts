@@ -5,7 +5,7 @@ import { FxRatesService } from '../fx-rates/fx-rates.service';
 import { InflationService } from '../inflation/inflation.service';
 import { PricesService } from '../prices/prices.service';
 import { WalletSyncService } from '../wallet-addresses/wallet-sync.service';
-import { recordSource } from './sync-source';
+import { recordSource, runLocked } from './sync-source';
 
 describe('recordSource', () => {
   const at = new Date('2026-10-30T09:00:00Z');
@@ -292,5 +292,89 @@ describe('SYNC-RUN-LOCK: the due checks under the lock', () => {
       ['run', due[2], now, true],
       ...closed,
     ]);
+  });
+});
+
+describe('SYNC-RUN-LOCK: what runLocked does when a step fails', () => {
+  type Step = 'connect' | 'startTransaction' | 'lock' | 'rollbackTransaction' | 'release';
+  function failing(fail: Partial<Record<Step, Error>>, locked: unknown = true) {
+    const calls: string[] = [];
+    const step = (name: Step) => {
+      calls.push(name);
+      if (fail[name]) throw fail[name];
+    };
+    const runner = {
+      connect: async () => step('connect'),
+      startTransaction: async () => step('startTransaction'),
+      query: async () => {
+        step('lock');
+        return [{ locked }];
+      },
+      rollbackTransaction: async () => step('rollbackTransaction'),
+      release: async () => step('release'),
+    };
+    const source = { createQueryRunner: () => runner } as unknown as DataSource;
+    const run = jest.fn(async () => {
+      calls.push('run');
+      return 'done';
+    });
+    return { calls, run, result: runLocked(source, 1, run) };
+  }
+  const error = (name: string) => new Error(`synthetic ${name} failure`);
+
+  it('is busy, without the run, when the lock answer is not true', async () => {
+    const { calls, run, result } = failing({}, null);
+    await expect(result).resolves.toEqual({ outcome: 'busy' });
+    expect(run).not.toHaveBeenCalled();
+    expect(calls).toEqual([
+      'connect',
+      'startTransaction',
+      'lock',
+      'rollbackTransaction',
+      'release',
+    ]);
+  });
+
+  it('does not release a connection that never connected', async () => {
+    const { calls, result } = failing({ connect: error('connect') });
+    await expect(result).rejects.toThrow('synthetic connect failure');
+    expect(calls).toEqual(['connect']);
+  });
+
+  it('releases without a rollback when the transaction does not start', async () => {
+    const { calls, result } = failing({ startTransaction: error('start') });
+    await expect(result).rejects.toThrow('synthetic start failure');
+    expect(calls).toEqual(['connect', 'startTransaction', 'release']);
+  });
+
+  it('rolls back and releases when the lock query fails', async () => {
+    const { calls, run, result } = failing({ lock: error('lock') });
+    await expect(result).rejects.toThrow('synthetic lock failure');
+    expect(run).not.toHaveBeenCalled();
+    expect(calls).toEqual([
+      'connect',
+      'startTransaction',
+      'lock',
+      'rollbackTransaction',
+      'release',
+    ]);
+  });
+
+  it('passes on a failed rollback and still releases', async () => {
+    const { calls, result } = failing({ rollbackTransaction: error('rollback') });
+    await expect(result).rejects.toThrow('synthetic rollback failure');
+    expect(calls).toEqual([
+      'connect',
+      'startTransaction',
+      'lock',
+      'run',
+      'rollbackTransaction',
+      'release',
+    ]);
+  });
+
+  it('passes on a failed release', async () => {
+    const { result } = failing({ release: error('release') });
+    await expect(result).rejects.toThrow('synthetic release failure');
   });
 });

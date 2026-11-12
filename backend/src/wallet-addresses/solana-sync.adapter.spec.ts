@@ -416,9 +416,18 @@ describe('SOL-SYNC-PROGRESS stores a batch under the address lock', () => {
     expect(query.mock.calls[0][1]).toEqual(['owner-id', 'address-id']);
     expect(state.solanaSync).toEqual({ ...progress, revision: expect.any(String) });
     expect(state.solanaSync?.revision).not.toBe('revision-1');
+    const [owner, id, stored] = query.mock.calls.at(-1)?.[1] as string[];
+    expect([owner, id]).toEqual(['owner-id', 'address-id']);
+    expect(JSON.parse(stored)).toEqual(state.solanaSync);
   });
 
-  const moved = { ...expected, solanaSync: { revision: 'revision-2' } };
+  it('the lock reads only an address that is not removed, for update', async () => {
+    const { adapter, query } = harness(expected);
+    await adapter.checkpoint(expected, { target: 10 });
+    const sql = String(query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE');
+  });
+
   const runs = {
     'a backfill batch': (adapter: Storing) =>
       adapter.storeBackfill(expected, legs, facts, 7, false, null),
@@ -428,7 +437,10 @@ describe('SOL-SYNC-PROGRESS stores a batch under the address lock', () => {
   };
   for (const [name, run] of Object.entries(runs)) {
     for (const [locked, why] of [
-      [moved, 'another sync moved it'],
+      [{ ...expected, solanaSync: { revision: 'revision-2' } }, 'another sync moved its revision'],
+      [{ ...expected, scannedBlock: 5 }, 'another sync moved its scanned block'],
+      [{ ...expected, tokenBackfillTo: 10 }, 'another sync moved its backfill end'],
+      [{ ...expected, tokenBackfillAt: 2 }, 'another sync moved its backfill place'],
       [undefined, 'the address is gone'],
     ] as const) {
       it(`${name} stores nothing once ${why}`, async () => {

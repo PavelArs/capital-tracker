@@ -31,7 +31,7 @@ export type JournalRow = JournalFields &
     | { originKind: 'declared-empty'; openingRevision: null }
     | { originKind: 'known-cost-carry-in'; openingRevision: number }
   );
-/** The payment, comment, settlement and purpose rows of a trade version; null where absent. */
+/** The payment, comment, settlement and purpose columns of a trade version; null where absent. */
 export interface TradeVersionDetails {
   paidCurrency: string | null;
   paidGross: string | null;

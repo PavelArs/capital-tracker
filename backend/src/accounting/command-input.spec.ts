@@ -257,6 +257,7 @@ describe('query integers shared by the swap and transfer allocation reads', () =
         refused(() => parse({ ...pinned, offset: value }));
         refused(() => parse({ ...pinned, limit: value }));
         refused(() => parse({ ...pinned, [revision]: value }));
+        refused(() => parse({ ...pinned, [other]: value }));
       }
       for (const query of [
         { ...pinned, [revision]: '10001' },
